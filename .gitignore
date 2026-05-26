@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.turbo/
+.env
+.env.*
+!.env.example
+!infra/.env.staging.example
+*.sqlite
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+coverage/
+*.tsbuildinfo

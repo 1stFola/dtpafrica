@@ -1,0 +1,459 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id                String   @id @default(uuid())
+  firstName         String   @map("first_name")
+  lastName          String   @map("last_name")
+  displayName       String   @map("display_name")
+  dateOfBirth       DateTime? @map("date_of_birth") @db.Date
+  age               Int?
+  ageGroup          String?  @map("age_group")
+  nationality       String?
+  heightCm          Int?     @map("height_cm")
+  weightKg          Float?   @map("weight_kg")
+  dominantFoot      String?  @map("dominant_foot")
+  positionPrimary   String   @map("position_primary")
+  positionSecondary String?  @map("position_secondary")
+  playerPhotoUrl    String?  @map("player_photo_url")
+  videoUrl          String?  @map("video_url")
+  biography         String?  @db.Text
+  slug              String?  @unique
+  city              String?
+  state             String?
+  isFeatured        Boolean  @default(false) @map("is_featured")
+  isPublic          Boolean  @default(false) @map("is_public")
+  registrationStatus String  @default("approved") @map("registration_status")
+  guardianName      String?  @map("guardian_name")
+  guardianEmail     String?  @map("guardian_email")
+  guardianPhone     String?  @map("guardian_phone")
+  overallRating     Int?     @map("overall_rating")
+  offensiveRating   Int?     @map("offensive_rating")
+  defensiveRating   Int?     @map("defensive_rating")
+  ratingAttributes  Json?    @map("rating_attributes")
+  benchmarkMetadata Json?    @map("benchmark_metadata")
+  mediaItems        Json?    @map("media_items")
+  scoutingSummary   String?  @map("scouting_summary") @db.Text
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  matchMetrics       PlayerMatchMetrics[]
+  aggregatedMetrics  PlayerAggregatedMetrics[]
+  tacticalScores     TacticalScores?
+  philosophyFitRows  PhilosophyFitProfile[]
+  positionFit        PositionFitSnapshot?
+  scoreboardSquad    SbTeamSquad[]
+  scoreboardEvents   SbMatchEvent[] @relation("SbEventPlayer")
+  scoreboardAssists  SbMatchEvent[] @relation("SbEventAssistPlayer")
+  mvceValuations     MvceValuationRun[]
+
+  @@index([positionPrimary])
+  @@index([ageGroup])
+  @@index([overallRating])
+  @@index([isFeatured, isPublic])
+  @@map("players")
+}
+
+model BlogPost {
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  title        String
+  excerpt      String?  @db.Text
+  body         String   @db.Text
+  coverImageUrl String? @map("cover_image_url")
+  isPublished  Boolean  @default(true) @map("is_published")
+  publishedAt  DateTime @default(now()) @map("published_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("blog_posts")
+}
+
+model Academy {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  city        String?
+  country     String?
+  description String?  @db.Text
+  logoUrl     String?  @map("logo_url")
+  websiteUrl  String?  @map("website_url")
+  isPublished Boolean  @default(true) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("academies")
+}
+
+model StaticContent {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("static_content")
+}
+
+model ContactMessage {
+  id         String    @id @default(uuid())
+  name       String
+  email      String
+  phone      String?
+  subject    String?
+  message    String    @db.Text
+  readAt     DateTime? @map("read_at")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([readAt, archivedAt])
+  @@map("contact_messages")
+}
+
+model Match {
+  id           String   @id @default(uuid())
+  externalRef  String?  @map("external_ref")
+  competition  String?
+  season       String?
+  playedAt     DateTime? @map("played_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  metrics PlayerMatchMetrics[]
+
+  @@map("matches")
+}
+
+model PlayerMatchMetrics {
+  id                         String   @id @default(uuid())
+  playerId                   String   @map("player_id")
+  matchId                    String   @map("match_id")
+  minutesPlayed              Float    @default(0) @map("minutes_played")
+  ballTouches                Int      @default(0) @map("ball_touches")
+  oneTouchPossessions        Int      @default(0) @map("one_touch_possessions")
+  multiTouchPossessions      Int      @default(0) @map("multi_touch_possessions")
+  possessionDurationSeconds  Float    @default(0) @map("possession_duration_seconds")
+  releaseLacesCount          Int      @default(0) @map("release_laces_count")
+  releaseInsideFootCount     Int      @default(0) @map("release_inside_foot_count")
+  releaseOtherFootzoneCount  Int      @default(0) @map("release_other_footzone_count")
+  leftFootTouchCount         Int      @default(0) @map("left_foot_touch_count")
+  rightFootTouchCount        Int      @default(0) @map("right_foot_touch_count")
+  leftFootReleaseCount       Int      @default(0) @map("left_foot_release_count")
+  rightFootReleaseCount      Int      @default(0) @map("right_foot_release_count")
+  leftFootReceiveCount       Int      @default(0) @map("left_foot_receive_count")
+  rightFootReceiveCount      Int      @default(0) @map("right_foot_receive_count")
+  leftFootKickingPowerMph    Float?   @map("left_foot_kicking_power_mph")
+  rightFootKickingPowerMph   Float?   @map("right_foot_kicking_power_mph")
+  totalDistanceMiles         Float    @default(0) @map("total_distance_miles")
+  sprintDistanceYards        Float    @default(0) @map("sprint_distance_yards")
+  firstStepAccelerations     Int      @default(0) @map("first_step_accelerations")
+  intenseAccelerations       Int      @default(0) @map("intense_accelerations")
+  kickingPowerMph            Float?   @map("kicking_power_mph")
+  topSpeedMph                Float?   @map("top_speed_mph")
+  sprints                    Int      @default(0)
+  intenseTurns               Int      @default(0) @map("intense_turns")
+  avgTurnEntrySpeedMph       Float?   @map("avg_turn_entry_speed_mph")
+  avgTurnExitSpeedMph        Float?   @map("avg_turn_exit_speed_mph")
+  leftTurns                  Int      @default(0) @map("left_turns")
+  rightTurns                 Int      @default(0) @map("right_turns")
+  backTurns                  Int      @default(0) @map("back_turns")
+  distanceWithBallYards      Float    @default(0) @map("distance_with_ball_yards")
+  topSpeedWithBallMph        Float?   @map("top_speed_with_ball_mph")
+  intenseTurnsWithBall       Int      @default(0) @map("intense_turns_with_ball")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, matchId])
+  @@index([playerId])
+  @@index([matchId])
+  @@map("player_match_metrics")
+}
+
+model PlayerAggregatedMetrics {
+  id              String   @id @default(uuid())
+  playerId        String   @map("player_id")
+  season          String   @default("rolling")
+  matchesPlayed   Int      @default(0) @map("matches_played")
+  minutesPlayed   Float    @default(0) @map("minutes_played")
+  rawAverages     Json     @map("raw_averages")
+  derivedMetrics  Json     @map("derived_metrics")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, season])
+  @@map("player_aggregated_metrics")
+}
+
+model TacticalScores {
+  id                            String   @id @default(uuid())
+  playerId                      String   @unique @map("player_id")
+  gegenpressScore               Float    @default(0) @map("gegenpress_score")
+  tikiTakaScore                 Float    @default(0) @map("tiki_taka_score")
+  counterAttackScore            Float    @default(0) @map("counter_attack_score")
+  totalFootballScore            Float    @default(0) @map("total_football_score")
+  highLineScore                 Float    @default(0) @map("high_line_score")
+  wingerScore                   Float    @default(0) @map("winger_score")
+  lowBlockScore                 Float    @default(0) @map("low_block_score")
+  quickReleaseScore             Float    @default(0) @map("quick_release_score")
+  ballRetentionScore            Float    @default(0) @map("ball_retention_score")
+  technicalCleanlinessScore     Float    @default(0) @map("technical_cleanliness_score")
+  directPlayScore               Float    @default(0) @map("direct_play_score")
+  flairScore                    Float    @default(0) @map("flair_score")
+  pressResistanceScore          Float    @default(0) @map("press_resistance_score")
+  possessionHubScore            Float    @default(0) @map("possession_hub_score")
+  transitionExplosivenessScore  Float    @default(0) @map("transition_explosiveness_score")
+  isolationThreatScore          Float    @default(0) @map("isolation_threat_score")
+  twoFootednessScore            Float    @default(0) @map("two_footedness_score")
+  createdAt                     DateTime @default(now()) @map("created_at")
+  updatedAt                     DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([gegenpressScore])
+  @@index([tikiTakaScore])
+  @@index([counterAttackScore])
+  @@index([totalFootballScore])
+  @@index([wingerScore])
+  @@index([highLineScore])
+  @@index([lowBlockScore])
+  @@map("tactical_scores")
+}
+
+model PhilosophyFitProfile {
+  id                String   @id @default(uuid())
+  playerId          String   @map("player_id")
+  formation         String
+  philosophy        String
+  positionSlot      String?  @map("position_slot")
+  philosophyFitScore Float   @map("philosophy_fit_score")
+  positionFitScore  Float    @map("position_fit_score")
+  confidenceScore   Float    @map("confidence_score")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId, philosophy, formation])
+  @@map("philosophy_fit_profiles")
+}
+
+model PositionFitSnapshot {
+  id                  String   @id @default(uuid())
+  playerId            String   @unique @map("player_id")
+  primaryPositionFit  String   @map("primary_position_fit")
+  secondaryPositionFit String? @map("secondary_position_fit")
+  hybridFit           String?  @map("hybrid_fit")
+  confidence          Float
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@map("position_fit_snapshots")
+}
+
+model TacticalBenchmark {
+  id                  String   @id @default(uuid())
+  playerName          String   @map("player_name")
+  position            String
+  country             String?
+  clubStyle           String?  @map("club_style")
+  tacticalArchetype   String?  @map("tactical_archetype")
+  dominantFoot        String?  @map("dominant_foot")
+  gegenpressScore     Float    @default(0) @map("gegenpress_score")
+  tikiTakaScore       Float    @default(0) @map("tiki_taka_score")
+  counterAttackScore  Float    @default(0) @map("counter_attack_score")
+  totalFootballScore  Float    @default(0) @map("total_football_score")
+  highLineScore       Float    @default(0) @map("high_line_score")
+  wingerScore         Float    @default(0) @map("winger_score")
+  lowBlockScore       Float    @default(0) @map("low_block_score")
+  bestSystemFit       String?  @map("best_system_fit")
+  description         String?  @db.Text
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("tactical_benchmarks")
+}
+
+// —— ScoreBoard (operational football data; separate from SIP `matches`) ——
+
+model SbCompetition {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  season      String
+  type        String   @default("tournament")
+  country     String?  @default("Nigeria")
+  description String?  @db.Text
+  isPublished Boolean  @default(true) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  teams   SbTeam[]
+  matches SbMatch[]
+  highlights SbHighlight[]
+
+  @@map("sb_competitions")
+}
+
+model SbTeam {
+  id            String   @id @default(uuid())
+  competitionId String   @map("competition_id")
+  slug          String
+  name          String
+  shortName     String?  @map("short_name")
+  logoUrl       String?  @map("logo_url")
+  city          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  competition  SbCompetition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  homeMatches  SbMatch[]     @relation("SbHomeTeam")
+  awayMatches  SbMatch[]     @relation("SbAwayTeam")
+  squad        SbTeamSquad[]
+  events       SbMatchEvent[]
+
+  @@unique([competitionId, slug])
+  @@map("sb_teams")
+}
+
+model SbTeamSquad {
+  id           String  @id @default(uuid())
+  teamId       String  @map("team_id")
+  playerId     String? @map("player_id")
+  shirtNumber  Int?    @map("shirt_number")
+  displayName  String  @map("display_name")
+  position     String?
+
+  team   SbTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player Player? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([teamId])
+  @@index([playerId])
+  @@map("sb_team_squad")
+}
+
+model SbMatch {
+  id            String    @id @default(uuid())
+  competitionId String    @map("competition_id")
+  homeTeamId    String    @map("home_team_id")
+  awayTeamId    String    @map("away_team_id")
+  status        String    @default("scheduled")
+  minute        Int?
+  homeScore     Int       @default(0) @map("home_score")
+  awayScore     Int       @default(0) @map("away_score")
+  kickoffAt     DateTime? @map("kickoff_at")
+  venue         String?
+  roundLabel    String?   @map("round_label")
+  stats         Json?
+  isPublished   Boolean   @default(true) @map("is_published")
+  sipMatchId    String?   @map("sip_match_id")
+  sipIngestStatus String   @default("pending") @map("sip_ingest_status")
+  sipIngestedAt DateTime? @map("sip_ingested_at")
+  sipIngestSummary Json?   @map("sip_ingest_summary")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  competition SbCompetition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  homeTeam    SbTeam        @relation("SbHomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam    SbTeam        @relation("SbAwayTeam", fields: [awayTeamId], references: [id])
+  events      SbMatchEvent[]
+  highlights  SbHighlight[]
+  ingestAudits SbSipIngestAudit[]
+
+  @@index([competitionId, status])
+  @@index([sipIngestStatus])
+  @@index([kickoffAt])
+  @@map("sb_matches")
+}
+
+model SbSipIngestAudit {
+  id        String   @id @default(uuid())
+  matchId   String   @map("match_id")
+  status    String
+  message   String?  @db.Text
+  summary   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  match SbMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, createdAt])
+  @@map("sb_sip_ingest_audits")
+}
+
+model SbMatchEvent {
+  id          String   @id @default(uuid())
+  matchId     String   @map("match_id")
+  teamId      String?  @map("team_id")
+  playerId    String?  @map("player_id")
+  assistPlayerId String? @map("assist_player_id")
+  playerLabel String?  @map("player_label")
+  assistLabel String?  @map("assist_label")
+  type        String
+  minute      Int
+  detail      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  match  SbMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team   SbTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  player Player? @relation("SbEventPlayer", fields: [playerId], references: [id], onDelete: SetNull)
+  assistPlayer Player? @relation("SbEventAssistPlayer", fields: [assistPlayerId], references: [id], onDelete: SetNull)
+  highlights SbHighlight[]
+
+  @@index([matchId, minute])
+  @@index([playerId])
+  @@index([assistPlayerId])
+  @@map("sb_match_events")
+}
+
+model SbHighlight {
+  id            String   @id @default(uuid())
+  competitionId String?  @map("competition_id")
+  matchId       String?  @map("match_id")
+  eventId       String?  @map("event_id")
+  title         String
+  youtubeUrl    String   @map("youtube_url")
+  isPublished   Boolean  @default(true) @map("is_published")
+  publishedAt   DateTime @default(now()) @map("published_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  competition SbCompetition? @relation(fields: [competitionId], references: [id], onDelete: SetNull)
+  match       SbMatch?       @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  event       SbMatchEvent?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@map("sb_highlights")
+}
+
+model MvceValuationRun {
+  id                String   @id @default(uuid())
+  playerId          String   @map("player_id")
+  inputs            Json
+  baseScore         Float    @map("base_score")
+  adjustedScore     Float    @map("adjusted_score")
+  confidenceLabel   String   @map("confidence_label")
+  marketValueLabel  String   @map("market_value_label")
+  marketValueMinEur Int?     @map("market_value_min_eur")
+  marketValueMaxEur Int?     @map("market_value_max_eur")
+  factors           Json
+  multipliers       Json
+  strengths         Json
+  weaknesses        Json
+  scoutNotes        String   @map("scout_notes") @db.Text
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId, createdAt])
+  @@map("mvce_valuation_runs")
+}

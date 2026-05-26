@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://dtp:dtp@localhost:5432/dtp_africa
+      ADMIN_API_KEY: ci-admin-key
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @dtp/api prisma:generate
+
+      - name: Validate Prisma schema
+        run: pnpm --filter @dtp/api exec prisma validate
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
+
+      - name: Build engines
+        run: pnpm --filter @dtp/engines build
+
+      - name: Build UI package
+        run: pnpm --filter @dtp/ui build
+
+      - name: Build API
+        run: pnpm --filter @dtp/api build
+
+      - name: Build web
+        run: pnpm --filter @dtp/web build
+
+      - name: Validate staging compose
+        run: docker compose --env-file infra/.env.staging.example -f infra/docker-compose.staging.yml config
