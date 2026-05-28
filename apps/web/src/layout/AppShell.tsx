@@ -22,9 +22,11 @@ export function AppShell() {
           ))}
         </nav>
       </header>
-      <main className="app-main">
-        <Outlet />
-      </main>
+      <div className="app-body app-body--no-rail">
+        <main className="app-main">
+          <Outlet />
+        </main>
+      </div>
       <footer className="app-footer">
         <nav className="footer-nav" aria-label="Footer">
           <NavLink to="/about">About</NavLink>

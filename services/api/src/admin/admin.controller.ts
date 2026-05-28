@@ -29,6 +29,8 @@ import { UpsertAcademyDto } from "./dto/upsert-academy.dto";
 import { UpsertStaticContentDto } from "./dto/upsert-static-content.dto";
 import { UpsertBlogPostDto } from "./dto/upsert-blog-post.dto";
 import { AdminApiKeyGuard } from "./guards/admin-api-key.guard";
+import { AdsConfigService } from "../ads/ads-config.service";
+import { PatchAdsConfigDto } from "../ads/dto/patch-ads-config.dto";
 
 @Controller("admin")
 @UseGuards(AdminApiKeyGuard)
@@ -40,7 +42,8 @@ export class AdminController {
     @Inject(AdminAcademiesService) private readonly academies: AdminAcademiesService,
     @Inject(AdminBlogService) private readonly blog: AdminBlogService,
     @Inject(AdminContentService) private readonly content: AdminContentService,
-    @Inject(AdminCalibrationService) private readonly calibration: AdminCalibrationService
+    @Inject(AdminCalibrationService) private readonly calibration: AdminCalibrationService,
+    @Inject(AdsConfigService) private readonly ads: AdsConfigService
   ) {}
 
   @Get("session")
@@ -235,5 +238,15 @@ export class AdminController {
   @Put("content/:key")
   upsertContent(@Param("key") key: string, @Body() dto: UpsertStaticContentDto) {
     return this.content.upsert(key, dto);
+  }
+
+  @Get("ads")
+  getAdsConfig() {
+    return this.ads.getConfig();
+  }
+
+  @Patch("ads")
+  patchAdsConfig(@Body() dto: PatchAdsConfigDto) {
+    return this.ads.updateConfig(dto);
   }
 }

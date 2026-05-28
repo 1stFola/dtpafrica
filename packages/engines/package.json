@@ -13,13 +13,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo \"add vitest\"",
+    "test": "tsx --test src/**/*.test.ts",
     "build": "tsc && node ./scripts/copy-calibration-legacy.mjs",
     "calibrate": "node ./scripts/run-calibration.mjs",
     "lint": "echo ok"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }

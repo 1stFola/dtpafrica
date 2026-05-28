@@ -17,6 +17,7 @@ This folder is the **source of truth** for replacing the legacy Trickle-exported
 | [10-SCOREBOARD-PHASE-1-IMPLEMENTED.md](./10-SCOREBOARD-PHASE-1-IMPLEMENTED.md) | ScoreBoard — competitions, live, standings, supervisor |
 | [11-MVCE-PHASE-1-IMPLEMENTED.md](./11-MVCE-PHASE-1-IMPLEMENTED.md) | MVCE — valuation engine, dashboard, compare |
 | [12-ADMIN-CMS-IMPLEMENTED.md](./12-ADMIN-CMS-IMPLEMENTED.md) | Admin CMS — players, blog, featured flags |
+| [14-ACADEMY-DASHBOARD-IMPLEMENTED.md](./14-ACADEMY-DASHBOARD-IMPLEMENTED.md) | Academy Dashboard — squad, fixtures, development, SIP, MVCE |
 
 **Authoritative specs**
 

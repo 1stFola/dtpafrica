@@ -4,6 +4,7 @@ import { fetchMatch, type SbMatchDetail, type SbTeamWithSquad } from "../../../a
 import { EventTimeline } from "../components/EventTimeline";
 import { MatchStatsBars } from "../components/MatchStatsBars";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { AdPlacement } from "../../../components/AdPlacement";
 
 function TeamRoster({ team }: { team: SbTeamWithSquad }) {
   return (
@@ -114,6 +115,8 @@ export function MatchCenterPage() {
       </div>
 
       {match.venue && <p className="muted">{match.venue}</p>}
+
+      <AdPlacement slotKey="matchCenterInline" />
 
       <section className="sb-section">
         <h2>Match timeline</h2>

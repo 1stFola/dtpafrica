@@ -1,0 +1,839 @@
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { normalizeClubName } from "@dtp/engines";
+import { Prisma } from "@prisma/client";
+import { PrismaService } from "../prisma/prisma.service";
+import { getRosterReadiness } from "../scoreboard/roster-guard";
+import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
+import { CompetitionEngineService } from "../scoreboard/competition-engine.service";
+import { ScoreboardService } from "../scoreboard/scoreboard.service";
+import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
+import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
+
+export type SbCompetitionStatus = "active" | "upcoming" | "draft" | "archived";
+
+export type MatchdayRosterSlot = {
+  squadId: string;
+  displayName: string;
+  position: string | null;
+  shirtNumber: number | null;
+  playerId: string | null;
+  playerSlug: string | null;
+  role: "xi" | "sub";
+  cleanSheets?: number;
+};
+
+export type MatchdayRosterPayload = {
+  teamId: string;
+  xi: MatchdayRosterSlot[];
+  subs: MatchdayRosterSlot[];
+};
+
+export type SpotterOpsState = {
+  lineupsLocked: boolean;
+  officialsConfirmed: number;
+  addedTime: number;
+  offlineQueueCount: number;
+  lastUndoAt: string | null;
+};
+
+type SpotterStatsStored = {
+  lineupsLocked: boolean;
+  officialsConfirmed: number;
+  addedTime: number;
+  formation?: { home: string; away: string };
+  pitchSelection?: { teamId: string; squadId: string } | null;
+  offlineQueue?: Array<{ id: string; type: string; minute: number; at: string }>;
+};
+
+type MatchStatsJson = {
+  matchdayRosters?: Record<string, MatchdayRosterPayload>;
+  spotter?: SpotterStatsStored;
+  possession?: { home: number; away: number };
+};
+
+function defaultSpotterState(): SpotterStatsStored {
+  return {
+    lineupsLocked: false,
+    officialsConfirmed: 0,
+    addedTime: 0,
+    offlineQueue: [],
+  };
+}
+
+function slugify(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function deriveCompetitionStatus(
+  isPublished: boolean,
+  matchStatuses: string[]
+): SbCompetitionStatus {
+  if (!isPublished) return "draft";
+  if (matchStatuses.some((s) => s === "live" || s === "halftime")) return "active";
+  if (
+    matchStatuses.length > 0 &&
+    matchStatuses.every((s) => s === "finished" || s === "cancelled")
+  ) {
+    return "archived";
+  }
+  return "upcoming";
+}
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(cell.trim());
+      cell = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell.trim());
+      if (row.some((c) => c.length)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += ch;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some((c) => c.length)) rows.push(row);
+  return rows;
+}
+
+@Injectable()
+export class AdminScoreboardService {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ScoreboardService) private readonly scoreboard: ScoreboardService,
+    @Inject(CompetitionEngineService)
+    private readonly competitionEngine: CompetitionEngineService,
+    @Inject(PlayerDirectoryService)
+    private readonly playerDirectory: PlayerDirectoryService
+  ) {}
+
+  async stats() {
+    const [competitions, teams, squadRows, matches, highlights, liveMatches] =
+      await Promise.all([
+        this.prisma.sbCompetition.count(),
+        this.prisma.sbTeam.count(),
+        this.prisma.sbTeamSquad.count(),
+        this.prisma.sbMatch.count(),
+        this.prisma.sbHighlight.count(),
+        this.prisma.sbMatch.count({
+          where: { status: { in: ["live", "halftime"] } },
+        }),
+      ]);
+    return {
+      competitions,
+      teams,
+      squadRows,
+      matches,
+      highlights,
+      liveMatches,
+    };
+  }
+
+  async listCompetitions(filters?: { status?: string; type?: string; q?: string }) {
+    const rows = await this.prisma.sbCompetition.findMany({
+      include: {
+        _count: { select: { teams: true, matches: true } },
+        matches: { select: { status: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    return rows
+      .map((c) => {
+        const status = deriveCompetitionStatus(
+          c.isPublished,
+          c.matches.map((m) => m.status)
+        );
+        return {
+          id: c.id,
+          slug: c.slug,
+          name: c.name,
+          type: c.type,
+          region: c.country,
+          season: c.season,
+          teamsCount: c._count.teams,
+          matchesCount: c._count.matches,
+          status,
+          isPublished: c.isPublished,
+          isFeatured: (c.description ?? "").includes("[featured]"),
+          formatType: c.formatType,
+          logoUrl: null as string | null,
+        };
+      })
+      .filter((c) => {
+        if (filters?.status && c.status !== filters.status) return false;
+        if (filters?.type && c.type.toLowerCase() !== filters.type.toLowerCase())
+          return false;
+        if (filters?.q) {
+          const needle = filters.q.toLowerCase();
+          if (
+            !c.name.toLowerCase().includes(needle) &&
+            !c.slug.includes(needle) &&
+            !(c.region ?? "").toLowerCase().includes(needle)
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+  }
+
+  async listTeams(filters?: { q?: string; competitionId?: string }) {
+    const rows = await this.prisma.sbTeam.findMany({
+      where: filters?.competitionId ? { competitionId: filters.competitionId } : undefined,
+      include: {
+        competition: { select: { id: true, name: true, slug: true } },
+        _count: { select: { squad: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+    return rows
+      .filter((t) => {
+        if (!filters?.q) return true;
+        const needle = filters.q.toLowerCase();
+        return (
+          t.name.toLowerCase().includes(needle) ||
+          t.slug.includes(needle) ||
+          (t.city ?? "").toLowerCase().includes(needle)
+        );
+      })
+      .map((t) => ({
+        id: t.id,
+        slug: t.slug,
+        name: normalizeClubName(t.name),
+        shortName: t.shortName,
+        region: t.city,
+        logoUrl: t.logoUrl,
+        competition: t.competition,
+        squadCount: t._count.squad,
+      }));
+  }
+
+  async listScoreboardPlayers(q?: string) {
+    const squad = await this.prisma.sbTeamSquad.findMany({
+      include: {
+        team: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            competition: { select: { name: true, slug: true } },
+          },
+        },
+        player: {
+          select: {
+            id: true,
+            slug: true,
+            displayName: true,
+            positionPrimary: true,
+            positionSecondary: true,
+            playerPhotoUrl: true,
+            isPublic: true,
+          },
+        },
+      },
+      orderBy: { displayName: "asc" },
+    });
+
+    const byPlayer = new Map<
+      string,
+      {
+        playerId: string | null;
+        slug: string | null;
+        displayName: string;
+        positionPrimary: string | null;
+        teams: Array<{ teamId: string; teamName: string; competitionSlug: string }>;
+      }
+    >();
+
+    for (const row of squad) {
+      const key = row.playerId ?? `squad:${row.id}`;
+      const displayName = row.player?.displayName ?? row.displayName;
+      const slug = row.player?.slug ?? slugify(displayName);
+      const existing = byPlayer.get(key) ?? {
+        playerId: row.playerId,
+        slug,
+        displayName,
+        positionPrimary: row.position ?? row.player?.positionPrimary ?? null,
+        teams: [],
+      };
+      existing.teams.push({
+        teamId: row.team.id,
+        teamName: normalizeClubName(row.team.name),
+        competitionSlug: row.team.competition.slug,
+      });
+      byPlayer.set(key, existing);
+    }
+
+    let list = [...byPlayer.values()];
+    if (q) {
+      const needle = q.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.displayName.toLowerCase().includes(needle) ||
+          (p.slug ?? "").includes(needle)
+      );
+    }
+    return list;
+  }
+
+  async listMatches(competitionId?: string) {
+    return this.scoreboard.listMatches({
+      competitionId,
+      publicOnly: false,
+    });
+  }
+
+  async getMatchRoster(matchId: string, teamId: string) {
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: {
+        homeTeam: { include: { squad: { include: { player: { select: { id: true, slug: true } } } } } },
+        awayTeam: { include: { squad: { include: { player: { select: { id: true, slug: true } } } } } },
+      },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+    const team =
+      match.homeTeamId === teamId
+        ? match.homeTeam
+        : match.awayTeamId === teamId
+          ? match.awayTeam
+          : null;
+    if (!team) throw new BadRequestException("Team not in this match");
+
+    const stats = (match.stats ?? {}) as MatchStatsJson;
+    const saved = stats.matchdayRosters?.[teamId];
+
+    return {
+      matchId,
+      teamId,
+      directory: team.squad.map((s) => ({
+        squadId: s.id,
+        displayName: s.displayName,
+        position: s.position,
+        shirtNumber: s.shirtNumber,
+        playerId: s.playerId,
+        playerSlug: s.player?.slug ?? (s.playerId ? null : slugify(s.displayName)),
+      })),
+      roster: saved ?? { teamId, xi: [], subs: [] },
+    };
+  }
+
+  async saveMatchRoster(matchId: string, payload: MatchdayRosterPayload) {
+    if (payload.xi.length > 11) {
+      throw new BadRequestException("Starting XI cannot exceed 11 players");
+    }
+    if (payload.xi.length + payload.subs.length > 20) {
+      throw new BadRequestException("Matchday roster cannot exceed 20 players");
+    }
+    const match = await this.prisma.sbMatch.findUnique({ where: { id: matchId } });
+    if (!match) throw new NotFoundException("Match not found");
+    if (match.homeTeamId !== payload.teamId && match.awayTeamId !== payload.teamId) {
+      throw new BadRequestException("Team not in this match");
+    }
+
+    const resolved = await this.resolveRosterPlayerIds(payload);
+
+    const stats = ((match.stats ?? {}) as MatchStatsJson) ?? {};
+    stats.matchdayRosters = {
+      ...(stats.matchdayRosters ?? {}),
+      [payload.teamId]: resolved,
+    };
+
+    await this.prisma.sbMatch.update({
+      where: { id: matchId },
+      data: { stats: stats as Prisma.InputJsonValue },
+    });
+    return { ok: true, roster: resolved };
+  }
+
+  private async resolveRosterPlayerIds(payload: MatchdayRosterPayload) {
+    const slots = [...payload.xi, ...payload.subs];
+    const squadRows = await this.prisma.sbTeamSquad.findMany({
+      where: { id: { in: slots.map((s) => s.squadId) } },
+      select: { id: true, playerId: true, position: true, displayName: true },
+    });
+    const squadById = new Map(squadRows.map((s) => [s.id, s]));
+
+    const linkSlot = async (slot: MatchdayRosterSlot) => {
+      if (slot.playerId) return slot;
+      const squad = squadById.get(slot.squadId);
+      if (squad?.playerId) {
+        return { ...slot, playerId: squad.playerId };
+      }
+      const player = await this.playerDirectory.resolveOrCreatePlayer(
+        slot.displayName,
+        slot.position ?? squad?.position
+      );
+      await this.prisma.sbTeamSquad.update({
+        where: { id: slot.squadId },
+        data: { playerId: player.id },
+      });
+      return {
+        ...slot,
+        playerId: player.id,
+        playerSlug: player.slug,
+      };
+    };
+
+    const xi = await Promise.all(payload.xi.map(linkSlot));
+    const subs = await Promise.all(payload.subs.map(linkSlot));
+    return { ...payload, xi, subs };
+  }
+
+  async getSpotterOps(matchId: string) {
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: {
+        homeTeam: { include: { squad: true } },
+        awayTeam: { include: { squad: true } },
+        events: { orderBy: { minute: "asc" } },
+      },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+    const stats = (match.stats ?? {}) as MatchStatsJson;
+    const spotter = stats.spotter ?? defaultSpotterState();
+    return {
+      match: {
+        id: match.id,
+        status: match.status,
+        minute: match.minute,
+        homeScore: match.homeScore,
+        awayScore: match.awayScore,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        events: match.events,
+      },
+      ops: {
+        lineupsLocked: spotter.lineupsLocked ?? false,
+        officialsConfirmed: spotter.officialsConfirmed ?? 0,
+        addedTime: spotter.addedTime ?? 0,
+        offlineQueueCount: spotter.offlineQueue?.length ?? 0,
+        lastUndoAt: null,
+        formation: spotter.formation ?? { home: "4-3-3", away: "4-3-3" },
+        pitchSelection: spotter.pitchSelection ?? null,
+      } satisfies SpotterOpsState & {
+        formation: { home: string; away: string };
+        pitchSelection: { teamId: string; squadId: string } | null;
+      },
+      matchdayRosters: stats.matchdayRosters ?? {},
+      rosterReadiness: getRosterReadiness(
+        stats,
+        match.homeTeamId,
+        match.awayTeamId
+      ),
+    };
+  }
+
+  async patchSpotterOps(
+    matchId: string,
+    patch: Partial<SpotterOpsState> & {
+      lockLineups?: boolean;
+      pushOfflineEvent?: { type: string; minute: number };
+      popOfflineQueue?: boolean;
+    }
+  ) {
+    const match = await this.prisma.sbMatch.findUnique({ where: { id: matchId } });
+    if (!match) throw new NotFoundException("Match not found");
+    const stats = ((match.stats ?? {}) as MatchStatsJson) ?? {};
+    const spotter: SpotterStatsStored = { ...(stats.spotter ?? defaultSpotterState()) };
+
+    if (patch.lockLineups !== undefined) spotter.lineupsLocked = patch.lockLineups;
+    if (patch.lineupsLocked !== undefined) spotter.lineupsLocked = patch.lineupsLocked;
+    if (patch.officialsConfirmed !== undefined) {
+      spotter.officialsConfirmed = Math.min(4, Math.max(0, patch.officialsConfirmed));
+    }
+    if (patch.addedTime !== undefined) spotter.addedTime = patch.addedTime;
+    if (patch.pushOfflineEvent) {
+      spotter.offlineQueue = [
+        ...(spotter.offlineQueue ?? []),
+        {
+          id: `${Date.now()}`,
+          ...patch.pushOfflineEvent,
+          at: new Date().toISOString(),
+        },
+      ];
+    }
+    if (patch.popOfflineQueue && spotter.offlineQueue?.length) {
+      spotter.offlineQueue = spotter.offlineQueue.slice(0, -1);
+    }
+
+    stats.spotter = spotter;
+    await this.prisma.sbMatch.update({
+      where: { id: matchId },
+      data: { stats: stats as Prisma.InputJsonValue },
+    });
+    return this.getSpotterOps(matchId);
+  }
+
+  async createHighlight(body: {
+    matchId: string;
+    title: string;
+    youtubeUrl: string;
+    eventId?: string;
+    timelineMinute?: number;
+    thumbnailUrl?: string;
+  }) {
+    const match = await this.prisma.sbMatch.findUnique({ where: { id: body.matchId } });
+    if (!match) throw new NotFoundException("Match not found");
+    const detail =
+      body.timelineMinute != null ? `minute:${body.timelineMinute}` : undefined;
+    const highlight = await this.prisma.sbHighlight.create({
+      data: {
+        competitionId: match.competitionId,
+        matchId: body.matchId,
+        eventId: body.eventId,
+        title: body.title,
+        youtubeUrl: body.youtubeUrl,
+        isPublished: false,
+      },
+    });
+    if (body.thumbnailUrl && detail) {
+      await this.prisma.sbMatch.update({
+        where: { id: match.id },
+        data: {
+          stats: {
+            ...((match.stats as object) ?? {}),
+            highlightMeta: { [highlight.id]: { thumbnailUrl: body.thumbnailUrl, detail } },
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
+    return highlight;
+  }
+
+  exportCompetitionsCsv() {
+    return this.exportEntityCsv("competitions");
+  }
+
+  exportTeamsCsv(competitionId?: string) {
+    return this.exportEntityCsv("teams", competitionId);
+  }
+
+  private async exportEntityCsv(kind: "competitions" | "teams", competitionId?: string) {
+    if (kind === "competitions") {
+      const rows = await this.listCompetitions();
+      const header = ["name", "type", "region", "status", "logo", "isFeatured"];
+      const lines = [
+        header.join(","),
+        ...rows.map((r) =>
+          [
+            r.name,
+            r.type,
+            r.region ?? "",
+            r.status,
+            r.logoUrl ?? "",
+            r.isFeatured,
+          ]
+            .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+            .join(",")
+        ),
+      ];
+      return lines.join("\n");
+    }
+    const rows = await this.listTeams({ competitionId });
+    const header = ["name", "slug", "region", "competitionSlug", "logo"];
+    const lines = [
+      header.join(","),
+      ...rows.map((r) =>
+        [r.name, r.slug, r.region ?? "", r.competition.slug, r.logoUrl ?? ""]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ];
+    return lines.join("\n");
+  }
+
+  async importCompetitionsCsv(csv: string) {
+    const table = parseCsv(csv);
+    if (table.length < 2) throw new BadRequestException("CSV must include header and rows");
+    const header = table[0].map((h) => h.toLowerCase());
+    const nameIdx = header.indexOf("name");
+    const typeIdx = header.indexOf("type");
+    const regionIdx = header.indexOf("region");
+    const statusIdx = header.indexOf("status");
+    const featuredIdx = header.indexOf("isfeatured");
+    if (nameIdx < 0) throw new BadRequestException("CSV must include name column");
+
+    let imported = 0;
+    for (const row of table.slice(1)) {
+      const name = row[nameIdx];
+      if (!name) continue;
+      const slug = slugify(name);
+      const type = typeIdx >= 0 ? row[typeIdx] || "tournament" : "tournament";
+      const region = regionIdx >= 0 ? row[regionIdx] : "Nigeria";
+      const status = statusIdx >= 0 ? row[statusIdx] : "upcoming";
+      const isFeatured = featuredIdx >= 0 && row[featuredIdx]?.toLowerCase() === "true";
+      const isPublished = status !== "draft";
+
+      await this.prisma.sbCompetition.upsert({
+        where: { slug },
+        create: {
+          slug,
+          name,
+          season: new Date().getFullYear().toString(),
+          type,
+          country: region || "Nigeria",
+          isPublished,
+          description: isFeatured ? "[featured]" : null,
+        },
+        update: {
+          name,
+          type,
+          country: region || "Nigeria",
+          isPublished,
+          description: isFeatured ? "[featured]" : undefined,
+        },
+      });
+      imported++;
+    }
+    return { imported };
+  }
+
+  listCompetitionTemplates() {
+    return this.competitionEngine.listTemplates();
+  }
+
+  previewCompetitionTemplate(formatType: string) {
+    return this.competitionEngine.previewTemplate(formatType as never);
+  }
+
+  createCompetitionFromTemplate(input: CreateCompetitionFromTemplateInput) {
+    return this.competitionEngine.createFromTemplate(input);
+  }
+
+  groupStandings(competitionId: string) {
+    return this.competitionEngine.groupStandings(competitionId);
+  }
+
+  async listMatchEvents(matchId: string) {
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: {
+        events: {
+          orderBy: { minute: "asc" },
+          include: {
+            team: { select: { id: true, name: true } },
+            player: { select: { id: true, slug: true, displayName: true } },
+            assistPlayer: { select: { id: true, slug: true, displayName: true } },
+          },
+        },
+      },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+    return match.events;
+  }
+
+  addMatchEvent(matchId: string, dto: CreateMatchEventDto) {
+    return this.scoreboard.addEvent(matchId, dto);
+  }
+
+  async deleteMatchEvent(matchId: string, eventId: string) {
+    const event = await this.prisma.sbMatchEvent.findFirst({
+      where: { id: eventId, matchId },
+    });
+    if (!event) throw new NotFoundException("Event not found");
+    await this.prisma.sbMatchEvent.delete({ where: { id: eventId } });
+    return { ok: true };
+  }
+
+  async exportCompetitionSquad(competitionId: string, format: "json" | "csv" = "json") {
+    const comp = await this.prisma.sbCompetition.findUnique({
+      where: { id: competitionId },
+      include: {
+        teams: {
+          orderBy: { name: "asc" },
+          include: {
+            squad: {
+              orderBy: [{ shirtNumber: "asc" }, { displayName: "asc" }],
+              include: {
+                player: {
+                  select: {
+                    id: true,
+                    slug: true,
+                    displayName: true,
+                    normalizedName: true,
+                    positionPrimary: true,
+                    careerGoals: true,
+                    careerAssists: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!comp) throw new NotFoundException("Competition not found");
+
+    const rows = comp.teams.flatMap((team) =>
+      team.squad.map((s) => ({
+        competitionSlug: comp.slug,
+        competitionName: comp.name,
+        teamId: team.id,
+        teamName: normalizeClubName(team.name),
+        teamSlug: team.slug,
+        squadId: s.id,
+        shirtNumber: s.shirtNumber,
+        displayName: s.displayName,
+        position: s.position,
+        playerId: s.playerId,
+        playerSlug: s.player?.slug ?? null,
+        normalizedName: s.player?.normalizedName ?? null,
+        careerGoals: s.player?.careerGoals ?? 0,
+        careerAssists: s.player?.careerAssists ?? 0,
+      }))
+    );
+
+    if (format === "json") {
+      return { format: "json", competitionId, rows };
+    }
+
+    const header = [
+      "competitionSlug",
+      "teamSlug",
+      "shirtNumber",
+      "displayName",
+      "position",
+      "playerId",
+      "playerSlug",
+      "normalizedName",
+    ];
+    const lines = [
+      header.join(","),
+      ...rows.map((r) =>
+        [
+          r.competitionSlug,
+          r.teamSlug,
+          r.shirtNumber ?? "",
+          r.displayName,
+          r.position ?? "",
+          r.playerId ?? "",
+          r.playerSlug ?? "",
+          r.normalizedName ?? "",
+        ]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ];
+    return { format: "csv", competitionId, csv: lines.join("\n") };
+  }
+
+  async importSquadCsv(teamId: string, csv: string) {
+    const team = await this.prisma.sbTeam.findUnique({
+      where: { id: teamId },
+      include: { competition: true },
+    });
+    if (!team) throw new NotFoundException("Team not found");
+
+    const table = parseCsv(csv);
+    if (table.length < 2) throw new BadRequestException("CSV must include header and rows");
+    const header = table[0].map((h) => h.toLowerCase());
+    const nameIdx = header.indexOf("displayname") >= 0 ? header.indexOf("displayname") : header.indexOf("name");
+    const posIdx = header.indexOf("position");
+    const numIdx = header.indexOf("shirtnumber") >= 0 ? header.indexOf("shirtnumber") : header.indexOf("number");
+    if (nameIdx < 0) throw new BadRequestException("CSV must include displayName or name column");
+
+    let imported = 0;
+    for (const row of table.slice(1)) {
+      const displayName = row[nameIdx];
+      if (!displayName) continue;
+      const position = posIdx >= 0 ? row[posIdx] : null;
+      const shirtNumber = numIdx >= 0 && row[numIdx] ? Number(row[numIdx]) : null;
+      const player = await this.playerDirectory.resolveOrCreatePlayer(displayName, position);
+
+      const existing = await this.prisma.sbTeamSquad.findFirst({
+        where: { teamId, displayName: { equals: displayName, mode: "insensitive" } },
+      });
+      if (existing) {
+        await this.prisma.sbTeamSquad.update({
+          where: { id: existing.id },
+          data: {
+            playerId: player.id,
+            position: position ?? existing.position,
+            shirtNumber: shirtNumber ?? existing.shirtNumber,
+          },
+        });
+      } else {
+        await this.prisma.sbTeamSquad.create({
+          data: {
+            teamId,
+            displayName,
+            position,
+            shirtNumber: Number.isFinite(shirtNumber) ? shirtNumber : null,
+            playerId: player.id,
+          },
+        });
+      }
+      imported++;
+    }
+    return { imported, teamId, competitionId: team.competitionId };
+  }
+
+  async importTeamsCsv(csv: string, competitionId: string) {
+    const comp = await this.prisma.sbCompetition.findUnique({ where: { id: competitionId } });
+    if (!comp) throw new NotFoundException("Competition not found");
+    const table = parseCsv(csv);
+    const header = table[0].map((h) => h.toLowerCase());
+    const nameIdx = header.indexOf("name");
+    if (nameIdx < 0) throw new BadRequestException("CSV must include name column");
+    const slugIdx = header.indexOf("slug");
+    const regionIdx = header.indexOf("region");
+    const logoIdx = header.indexOf("logo");
+
+    let imported = 0;
+    for (const row of table.slice(1)) {
+      const rawName = row[nameIdx];
+      if (!rawName) continue;
+      const name = normalizeClubName(rawName);
+      const slug = slugIdx >= 0 && row[slugIdx] ? row[slugIdx] : slugify(name);
+      await this.prisma.sbTeam.upsert({
+        where: { competitionId_slug: { competitionId, slug } },
+        create: {
+          competitionId,
+          slug,
+          name,
+          city: regionIdx >= 0 ? row[regionIdx] : null,
+          logoUrl: logoIdx >= 0 ? row[logoIdx] : null,
+        },
+        update: {
+          name,
+          city: regionIdx >= 0 ? row[regionIdx] : undefined,
+          logoUrl: logoIdx >= 0 ? row[logoIdx] : undefined,
+        },
+      });
+      imported++;
+    }
+    return { imported };
+  }
+}

@@ -1,7 +1,11 @@
 import { useCallback, useState } from "react";
 import { apiGet, type PlayerRow } from "../../../api/client";
+import { AdPlacement } from "../../../components/AdPlacement";
+import { useAdSlot } from "../../../context/AdConfigContext";
 
 export function TacticalSearchPage() {
+  const adInterval = 8;
+  const inlineAd = useAdSlot("scoutingDirectoryInline");
   const [position, setPosition] = useState("");
   const [minGegenpress, setMinGegenpress] = useState("");
   const [rows, setRows] = useState<PlayerRow[]>([]);
@@ -57,15 +61,27 @@ export function TacticalSearchPage() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((p) => (
-            <tr key={p.id}>
-              <td>{p.displayName}</td>
-              <td>{p.positionPrimary}</td>
-              <td>{p.overallRating ?? "—"}</td>
-              <td>{p.tacticalScores?.gegenpressScore ?? "—"}</td>
-              <td>{p.tacticalScores?.tikiTakaScore ?? "—"}</td>
-            </tr>
-          ))}
+          {rows.flatMap((p, idx) => {
+            const items = [
+              <tr key={p.id}>
+                <td>{p.displayName}</td>
+                <td>{p.positionPrimary}</td>
+                <td>{p.overallRating ?? "—"}</td>
+                <td>{p.tacticalScores?.gegenpressScore ?? "—"}</td>
+                <td>{p.tacticalScores?.tikiTakaScore ?? "—"}</td>
+              </tr>,
+            ];
+            if (inlineAd && (idx + 1) % adInterval === 0 && idx < rows.length - 1) {
+              items.push(
+                <tr key={`scouting-inline-ad-${idx}`} className="sip-table-ad-row">
+                  <td colSpan={5}>
+                    <AdPlacement slotKey="scoutingDirectoryInline" />
+                  </td>
+                </tr>
+              );
+            }
+            return items;
+          })}
         </tbody>
       </table>
     </div>

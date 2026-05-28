@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import {
   playerToLegacyMeta,
+  normalizeClubName,
   runCalibration,
   type MatchMetricsRow,
   type PlayerCalibrationMeta,
@@ -71,21 +72,20 @@ export class AdminCalibrationService {
       nationality: info.nationality || "",
       height_ft: info.heightFt || "",
       weight_kg: info.weightKg ?? "",
-      current_club: info.currentClub || "",
+      current_club: info.currentClub ? normalizeClubName(info.currentClub) : "",
       photo_url: info.photoUrl || "",
       video_url: info.videoUrl || "",
     };
   }
 
   private legacyMetricsToRow(m: LegacyMatchMetricsDto): MatchMetricsRow {
-    const accelerations = m.accelerations ?? 0;
     return {
       minutesPlayed: m.duration ?? 0,
       ballTouches: m.ball_touches ?? 0,
       totalDistanceMiles: m.total_distance ?? 0,
       sprintDistanceYards: m.sprint_distance ?? 0,
-      firstStepAccelerations: Math.round(accelerations * 0.4),
-      intenseAccelerations: Math.round(accelerations * 0.6) || accelerations,
+      firstStepAccelerations: m.first_step_accelerations ?? 0,
+      intenseAccelerations: m.intense_accelerations ?? 0,
       kickingPowerMph: m.kicking_power ?? 0,
       topSpeedMph: m.top_speed ?? 0,
       sprints: m.sprints ?? 0,
@@ -102,26 +102,41 @@ export class AdminCalibrationService {
   }
 
   private rowToLegacyMetrics(m: MatchMetricsRow): LegacyMatchMetricsDto {
-    const accelerations = m.firstStepAccelerations + m.intenseAccelerations;
     return {
       duration: m.minutesPlayed,
-      ball_touches: m.ballTouches,
       total_distance: m.totalDistanceMiles,
       sprint_distance: m.sprintDistanceYards,
-      accelerations,
-      decelerations: Math.max(5, Math.round(accelerations * 0.85)),
-      top_speed: m.topSpeedMph ?? 0,
       sprints: m.sprints,
+      top_speed: m.topSpeedMph ?? 0,
+      first_step_accelerations: m.firstStepAccelerations,
+      intense_accelerations: m.intenseAccelerations,
       intense_turns: m.intenseTurns,
       avg_turn_entry: m.avgTurnEntrySpeedMph ?? 0,
       avg_turn_exit: m.avgTurnExitSpeedMph ?? 0,
+      turn_efficiency: 0,
       left_turns: m.leftTurns,
       right_turns: m.rightTurns,
       back_turns: m.backTurns,
-      kicking_power: m.kickingPowerMph ?? 0,
+      ball_touches: m.ballTouches,
+      possession_duration_seconds: 0,
+      one_touch_possessions_percentage: 0,
+      multi_touch_possessions__percentage: 0,
+      quick_release_score: 0,
       distance_with_ball: m.distanceWithBallYards,
       top_speed_with_ball: m.topSpeedWithBallMph ?? 0,
       intense_turns_with_ball: m.intenseTurnsWithBall,
+      kicking_power: m.kickingPowerMph ?? 0,
+      release_inside_foot_percentage: 0,
+      release_laces_percentage: 0,
+      release_other_footzone_percentage: 0,
+      left_foot_touch_percentage: 0,
+      left_foot_release_percentage: 0,
+      left_foot_receive_percentage: 0,
+      left_foot_kicking_power_mph: 0,
+      right_foot_touch_percentage: 0,
+      right_foot_release_percentage: 0,
+      right_foot_receive_percentage: 0,
+      right_foot_kicking_power_mph: 0,
     };
   }
 
@@ -278,7 +293,7 @@ export class AdminCalibrationService {
         nationality: player.nationality,
         heightFt,
         weightKg: player.weightKg,
-        currentClub: player.city,
+        currentClub: player.city ? normalizeClubName(player.city) : null,
         photoUrl: player.playerPhotoUrl,
         videoUrl: player.videoUrl,
         overallRating: player.overallRating,
@@ -352,9 +367,9 @@ export class AdminCalibrationService {
       await this.prisma.player.update({
         where: { id: playerId },
         data: {
-          overallRating: result.calibratedSummary.overall_rating,
-          offensiveRating: result.calibratedSummary.offensive_score,
-          defensiveRating: result.calibratedSummary.defensive_score,
+          overallRating: result.rawSummary.overall_rating,
+          offensiveRating: result.rawSummary.offensive_score,
+          defensiveRating: result.rawSummary.defensive_score,
           displayName: options.playerInfo?.fullName ?? player.displayName,
           positionPrimary: options.playerInfo?.position ?? player.positionPrimary,
           nationality: options.playerInfo?.nationality ?? player.nationality,
@@ -365,7 +380,9 @@ export class AdminCalibrationService {
             ? this.parseHeightFt(options.playerInfo.heightFt)
             : player.heightCm,
           weightKg: options.playerInfo?.weightKg ?? player.weightKg,
-          city: options.playerInfo?.currentClub ?? player.city,
+          city: options.playerInfo?.currentClub
+            ? normalizeClubName(options.playerInfo.currentClub)
+            : player.city,
           playerPhotoUrl: options.playerInfo?.photoUrl ?? player.playerPhotoUrl,
           videoUrl: options.playerInfo?.videoUrl ?? player.videoUrl,
           ratingAttributes: this.toJson(result.calibrated),
@@ -382,9 +399,9 @@ export class AdminCalibrationService {
               displayName: options.playerInfo?.fullName ?? player.displayName,
               position: options.playerInfo?.position ?? player.positionPrimary,
               ageGroup: player.ageGroup,
-              overallRating: result.calibratedSummary.overall_rating,
-              offensiveRating: result.calibratedSummary.offensive_score,
-              defensiveRating: result.calibratedSummary.defensive_score,
+              overallRating: result.rawSummary.overall_rating,
+              offensiveRating: result.rawSummary.offensive_score,
+              defensiveRating: result.rawSummary.defensive_score,
             }),
         },
       });
@@ -445,13 +462,13 @@ export class AdminCalibrationService {
         ageGroup,
         heightCm: this.parseHeightFt(playerInfo.heightFt),
         weightKg: playerInfo.weightKg,
-        city: playerInfo.currentClub,
+        city: playerInfo.currentClub ? normalizeClubName(playerInfo.currentClub) : undefined,
         playerPhotoUrl: playerInfo.photoUrl,
         videoUrl: playerInfo.videoUrl,
         slug: slugifyDisplayName(playerInfo.fullName.trim()),
-        overallRating: result.calibratedSummary.overall_rating,
-        offensiveRating: result.calibratedSummary.offensive_score,
-        defensiveRating: result.calibratedSummary.defensive_score,
+        overallRating: result.rawSummary.overall_rating,
+        offensiveRating: result.rawSummary.offensive_score,
+        defensiveRating: result.rawSummary.defensive_score,
         ratingAttributes: this.toJson(result.calibrated),
         benchmarkMetadata: this.toJson(this.buildBenchmarkMetadata(result)),
         mediaItems: this.toJson(
@@ -461,9 +478,9 @@ export class AdminCalibrationService {
           displayName: playerInfo.fullName.trim(),
           position: playerInfo.position,
           ageGroup,
-          overallRating: result.calibratedSummary.overall_rating,
-          offensiveRating: result.calibratedSummary.offensive_score,
-          defensiveRating: result.calibratedSummary.defensive_score,
+          overallRating: result.rawSummary.overall_rating,
+          offensiveRating: result.rawSummary.offensive_score,
+          defensiveRating: result.rawSummary.defensive_score,
         }),
         isPublic: false,
         isFeatured: false,

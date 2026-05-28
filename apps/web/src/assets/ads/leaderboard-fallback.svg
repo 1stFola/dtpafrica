@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="728" height="90" viewBox="0 0 728 90" fill="none">
+  <rect width="728" height="90" rx="14" fill="#0F172A"/>
+  <rect x="1" y="1" width="726" height="88" rx="13" stroke="#334155"/>
+  <text x="36" y="39" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="12" letter-spacing="0.12em">SPONSORED</text>
+  <text x="36" y="63" fill="#F1F5F9" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">Partner Spotlight</text>
+  <rect x="560" y="27" width="132" height="36" rx="18" fill="#2563EB"/>
+  <text x="626" y="50" text-anchor="middle" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="700">Learn More</text>
+</svg>

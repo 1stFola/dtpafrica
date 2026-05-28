@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from "class-validator";
 
 export class CreateMatchEventDto {
   @IsString()
@@ -33,4 +33,9 @@ export class CreateMatchEventDto {
   @IsOptional()
   @IsString()
   detail?: string;
+
+  /** Canonical timeline payload (source, spotterDeviceId, notes, etc.). */
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }

@@ -9,9 +9,11 @@ import { AdminAcademiesPage } from "./pages/AdminAcademiesPage";
 import { AdminCalibrationPage } from "./pages/AdminCalibrationPage";
 import { AdminContentPage } from "./pages/AdminContentPage";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
+import { AdminAdsPage } from "./pages/AdminAdsPage";
 import { AdminHomepagePage } from "./pages/AdminHomepagePage";
 import { AdminInboxPage } from "./pages/AdminInboxPage";
 import { AdminPlayersPage } from "./pages/AdminPlayersPage";
+import { AdminScoreboardApp } from "./scoreboard/AdminScoreboardApp";
 
 export function AdminApp() {
   return (
@@ -25,11 +27,13 @@ export function AdminApp() {
             <Route path="players" element={<AdminPlayersPage />} />
             <Route path="calibration" element={<AdminCalibrationPage />} />
             <Route path="homepage" element={<AdminHomepagePage />} />
+            <Route path="ads" element={<AdminAdsPage />} />
             <Route path="academies" element={<AdminAcademiesPage />} />
             <Route path="content" element={<AdminContentPage />} />
             <Route path="blog" element={<AdminBlogListPage />} />
             <Route path="blog/new" element={<AdminBlogEditPage />} />
             <Route path="blog/:id" element={<AdminBlogEditPage />} />
+            <Route path="scoreboard/*" element={<AdminScoreboardApp />} />
           </Route>
         </Route>
       </Routes>

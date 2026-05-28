@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   adminApi,
   type AdminPlayerRow,
+  type CalibrationBenchmarkProfile,
   type CalibrationRunResult,
 } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -42,8 +43,76 @@ const CAL_ATTRS = [
   "team_play",
 ] as const;
 
-function benchName(b: Record<string, unknown>): string {
-  return String(b.full_name ?? "—");
+interface CalibrationInputState {
+  playerInfo: PlayerInfoForm;
+  metrics: LegacyMetricsForm;
+}
+
+interface CalibrationBenchmarkOutput {
+  nearestBenchmark: CalibrationBenchmarkProfile | null;
+  alternativeBenchmarks: CalibrationBenchmarkProfile[];
+  poolSize: number;
+}
+
+const METRIC_GROUPS: { title: string; keys: readonly (keyof LegacyMetricsForm)[] }[] = [
+  {
+    title: "Physical Load",
+    keys: [
+      "duration",
+      "total_distance",
+      "sprint_distance",
+      "sprints",
+      "top_speed",
+      "first_step_accelerations",
+      "intense_accelerations",
+    ],
+  },
+  {
+    title: "Turn Dynamics",
+    keys: [
+      "intense_turns",
+      "avg_turn_entry",
+      "avg_turn_exit",
+      "turn_efficiency",
+      "left_turns",
+      "right_turns",
+      "back_turns",
+    ],
+  },
+  {
+    title: "Possession & Release",
+    keys: [
+      "ball_touches",
+      "possession_duration_seconds",
+      "one_touch_possessions_percentage",
+      "multi_touch_possessions__percentage",
+      "quick_release_score",
+    ],
+  },
+  {
+    title: "On-Ball & Striking",
+    keys: ["distance_with_ball", "top_speed_with_ball", "intense_turns_with_ball", "kicking_power"],
+  },
+  {
+    title: "Biometric Foot Distribution",
+    keys: [
+      "release_inside_foot_percentage",
+      "release_laces_percentage",
+      "release_other_footzone_percentage",
+      "left_foot_touch_percentage",
+      "left_foot_release_percentage",
+      "left_foot_receive_percentage",
+      "left_foot_kicking_power_mph",
+      "right_foot_touch_percentage",
+      "right_foot_release_percentage",
+      "right_foot_receive_percentage",
+      "right_foot_kicking_power_mph",
+    ],
+  },
+];
+
+function benchName(b: CalibrationBenchmarkProfile): string {
+  return String(b.full_name ?? "Unknown Player");
 }
 
 export function AdminCalibrationPage() {
@@ -56,6 +125,7 @@ export function AdminCalibrationPage() {
   const [playerInfo, setPlayerInfo] = useState<PlayerInfoForm>(emptyPlayerInfo);
   const [metrics, setMetrics] = useState<LegacyMetricsForm>(emptyLegacyMetrics);
   const [result, setResult] = useState<CalibrationRunResult | null>(null);
+  const [hasGenerated, setHasGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [csvStatus, setCsvStatus] = useState(CSV_HEADER_HINT);
@@ -81,6 +151,7 @@ export function AdminCalibrationPage() {
       setPlayerInfo(contextToPlayerInfo(ctx.player));
       setMetrics(ctx.metrics ? legacyMetricsFromApi(ctx.metrics) : emptyLegacyMetrics());
       setResult(null);
+      setHasGenerated(false);
     } catch (e) {
       setMessage(String(e));
     }
@@ -104,6 +175,11 @@ export function AdminCalibrationPage() {
     metrics: legacyMetricsFromForm(metrics),
   });
 
+  const inputState: CalibrationInputState = useMemo(
+    () => ({ playerInfo, metrics }),
+    [playerInfo, metrics]
+  );
+
   const generate = async () => {
     if (!playerInfo.full_name.trim()) {
       setMessage("Enter the player's full name.");
@@ -122,6 +198,7 @@ export function AdminCalibrationPage() {
         playerId: playerId || undefined,
       });
       setResult(out);
+      setHasGenerated(true);
     } catch (e) {
       setMessage(String(e));
     } finally {
@@ -150,10 +227,6 @@ export function AdminCalibrationPage() {
   };
 
   const createPlayer = async () => {
-    if (!result) {
-      setMessage("Generate ratings first.");
-      return;
-    }
     setLoading(true);
     setMessage(null);
     try {
@@ -178,6 +251,7 @@ export function AdminCalibrationPage() {
     setPlayerInfo(emptyPlayerInfo());
     setMetrics(emptyLegacyMetrics());
     setResult(null);
+    setHasGenerated(false);
     setMessage(null);
     setCsvStatus(CSV_HEADER_HINT);
     if (csvRef.current) csvRef.current.value = "";
@@ -205,16 +279,75 @@ export function AdminCalibrationPage() {
     reader.readAsText(file);
   };
 
-  const nearest = result?.nearestBenchmark ?? null;
-  const alts = result?.alternativeBenchmarks ?? [];
+  const exportCsv = () => {
+    const headers = LEGACY_METRIC_FIELDS.map((f) => f.key).join(",");
+    const row = LEGACY_METRIC_FIELDS.map((f) => inputState.metrics[f.key] ?? "").join(",");
+    const csv = `${headers}\n${row}\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${inputState.playerInfo.full_name || "calibration"}-metrics.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const createOrSave = async () => {
+    if (playerId) {
+      await saveRatings();
+      return;
+    }
+    await createPlayer();
+  };
+
+  const benchmarkOutput: CalibrationBenchmarkOutput = {
+    nearestBenchmark: result?.nearestBenchmark ?? null,
+    alternativeBenchmarks: result?.alternativeBenchmarks ?? [],
+    poolSize: result?.filterInfo.poolSize ?? 0,
+  };
+
+  const summaryMetrics = [
+    {
+      label: "Offensive",
+      raw: result?.rawSummary.offensive_score ?? 0,
+      calibrated: result?.calibratedSummary.offensive_score ?? 0,
+    },
+    {
+      label: "Defensive",
+      raw: result?.rawSummary.defensive_score ?? 0,
+      calibrated: result?.calibratedSummary.defensive_score ?? 0,
+    },
+    {
+      label: "Overall",
+      raw: result?.rawSummary.overall_rating ?? 0,
+      calibrated: result?.calibratedSummary.overall_rating ?? 0,
+    },
+  ] as const;
+
+  const benchmarkClusters = [
+    { key: "pace", label: "Pace" },
+    { key: "passing", label: "Passing" },
+    { key: "dribbling", label: "Dribbling" },
+    { key: "finishing", label: "Finishing" },
+    { key: "offensive_score", label: "Offensive" },
+    { key: "defensive_score", label: "Defensive" },
+  ] as const;
+
+  const metricFieldByKey = useMemo(
+    () =>
+      Object.fromEntries(
+        LEGACY_METRIC_FIELDS.map((field) => [field.key, field] as const)
+      ) as Record<keyof LegacyMetricsForm, (typeof LEGACY_METRIC_FIELDS)[number]>,
+    []
+  );
 
   return (
     <div className="admin-page admin-calibration">
       <header className="page-header">
-        <h1>DirectToPro Calibration Engine</h1>
+        <h1>DirectToPro Calibration Engine V3</h1>
         <p className="muted">
-          Upload match performance CSV or enter player info + tracking data. Missing on-ball
-          fields are estimated by the engine.
+          Upload match performance CSV or enter player + tracking inputs. Optional on-ball fields
+          are auto-estimated by the existing calibration pipeline when omitted.
         </p>
       </header>
 
@@ -233,13 +366,13 @@ export function AdminCalibrationPage() {
         </label>
       </div>
 
-      <div className="admin-calibration__grid">
-        <div className="admin-calibration__stack">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 admin-calibration-v3__layout">
+        <div className="lg:col-span-5 admin-calibration__stack">
           <section className="admin-calibration__panel">
-            <h2>Player info</h2>
+            <h2>Player identity + scouting context</h2>
             <p className="muted admin-calibration__hint">
-              Match Performance Data CSV fills metrics only — enter player details below or load
-              an existing profile.
+              CSV import fills tracking metrics only. Identity context is entered below or loaded
+              from an existing profile.
             </p>
             <div className="admin-calibration__fields">
               {PLAYER_FIELDS.map((f) => (
@@ -295,26 +428,29 @@ export function AdminCalibrationPage() {
               </label>
               <p className="muted admin-calibration__csv-hint">{csvStatus}</p>
             </div>
-            <div className="admin-calibration__fields">
-              {LEGACY_METRIC_FIELDS.map((f) => (
-                <label
-                  key={f.key}
-                  className={
-                    f.full
-                      ? "admin-calibration__field admin-calibration__field--full"
-                      : "admin-calibration__field"
-                  }
-                >
-                  <span>{f.label}</span>
-                  <input
-                    type="number"
-                    step={f.step ?? "1"}
-                    value={metrics[f.key]}
-                    onChange={(e) =>
-                      setMetrics((prev) => ({ ...prev, [f.key]: e.target.value }))
-                    }
-                  />
-                </label>
+            <div className="admin-calibration-v3__metric-groups">
+              {METRIC_GROUPS.map((group) => (
+                <fieldset key={group.title} className="admin-calibration-v3__metric-group">
+                  <legend>{group.title}</legend>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {group.keys.map((key) => {
+                      const field = metricFieldByKey[key];
+                      return (
+                        <label key={key} className="admin-calibration__field">
+                          <span>{field.label}</span>
+                          <input
+                            type="number"
+                            step={field.step ?? "1"}
+                            value={metrics[key]}
+                            onChange={(e) =>
+                              setMetrics((prev) => ({ ...prev, [key]: e.target.value }))
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
               ))}
             </div>
           </section>
@@ -326,82 +462,106 @@ export function AdminCalibrationPage() {
               disabled={loading}
               onClick={generate}
             >
-              Generate ratings
+              Generate &amp; Calibrate
             </button>
             <button
               type="button"
               className="dtp-btn dtp-btn--secondary"
-              disabled={loading || !playerId}
-              onClick={saveRatings}
+              disabled={loading}
+              onClick={exportCsv}
             >
-              Save to existing player
+              Export CSV
             </button>
             <button
               type="button"
               className="dtp-btn dtp-btn--secondary"
-              disabled={loading || !result}
-              onClick={createPlayer}
+              disabled={loading}
+              onClick={createOrSave}
             >
-              Create player
+              Create Player / Save
             </button>
             <button type="button" className="admin-logout" disabled={loading} onClick={clearAll}>
-              Clear all
+              Clear All
             </button>
           </div>
           {message && <p className="admin-calibration__message">{message}</p>}
         </div>
 
-        <section className="admin-calibration__panel admin-calibration__results">
+        <section className="lg:col-span-7 admin-calibration__panel admin-calibration__results">
           {!result ? (
             <p className="muted admin-calibration__empty">
-              Enter player info and match data, then click <strong>Generate ratings</strong>.
+              Enter player info and match data, then click{" "}
+              <strong>Generate &amp; Calibrate</strong>.
             </p>
           ) : (
             <>
-              <h2>
-                {result.displayName} · {result.positionPrimary}
-              </h2>
-
-              <div className="admin-calibration__summary admin-calibration__summary--6">
-                {[
-                  { label: "Raw OFF", value: result.rawSummary.offensive_score },
-                  { label: "Raw DEF", value: result.rawSummary.defensive_score },
-                  { label: "Raw OVR", value: result.rawSummary.overall_rating },
-                  { label: "Cal OFF", value: result.calibratedSummary.offensive_score },
-                  { label: "Cal DEF", value: result.calibratedSummary.defensive_score },
-                  { label: "Cal OVR", value: result.calibratedSummary.overall_rating },
-                ].map((item) => (
-                  <div key={item.label} className="admin-calibration__mini">
-                    <div className="admin-calibration__kicker">{item.label}</div>
-                    <strong>{item.value}</strong>
-                  </div>
-                ))}
+              <div className="admin-calibration-v3__summary-banner">
+                <h2>
+                  {result.displayName} · {result.positionPrimary}
+                </h2>
+                <div className="admin-calibration-v3__summary-grid">
+                  {summaryMetrics.map((item) => (
+                    <div key={item.label} className="admin-calibration__mini">
+                      <div className="admin-calibration__kicker">{item.label}</div>
+                      <strong>{item.calibrated}</strong>
+                      <small className="muted">Raw {item.raw}</small>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {nearest && (
-                <div className="admin-calibration__benchmark">
-                  <h3>Nearest pro benchmark</h3>
-                  <p>
-                    <strong>{benchName(nearest)}</strong>
-                    {" · "}
-                    {String(nearest.archetype ?? "")}
-                    {" · "}
-                    Similarity {String(nearest.__similarity ?? "—")}%
-                  </p>
+              {hasGenerated && benchmarkOutput.nearestBenchmark && (
+                <div className="admin-calibration-v3__benchmark-card">
+                  <h3>Nearest Real Player Benchmark Profile</h3>
                   <p className="muted">
-                    Pool: {result.filterInfo.poolSize} early-pro profiles. On-ball gaps are filled
-                    by the engine when CSV omits advanced fields.
+                    Similarity is realism-adjusted with a penalty layer so calibration stays
+                    grounded in plausible development pathways.
                   </p>
-                  {alts.length > 0 && (
-                    <ul className="admin-calibration__alts">
-                      {alts.map((alt, i) => (
-                        <li key={i}>
-                          {benchName(alt)} · {String(alt.archetype ?? "")} ·{" "}
-                          {String(alt.__similarity ?? "—")}%
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <div className="admin-calibration-v3__benchmark-head">
+                    <strong>{benchName(benchmarkOutput.nearestBenchmark)}</strong>
+                    <p className="muted">
+                      {result.positionPrimary} •{" "}
+                      {String(benchmarkOutput.nearestBenchmark.development_stage ?? "EARLY_PRO")} •
+                      Overall{" "}
+                      {String(benchmarkOutput.nearestBenchmark.overall_rating ?? "—")} • Similarity{" "}
+                      {String(benchmarkOutput.nearestBenchmark.__similarity ?? "—")}%
+                    </p>
+                  </div>
+                  <p className="admin-calibration-v3__disclaimer">
+                    This benchmark profile is shown at the player's early professional development
+                    stage, not peak career stage.
+                  </p>
+                  <div className="admin-calibration-v3__cluster-grid">
+                    {benchmarkClusters.map((cluster) => {
+                      const value = Number(benchmarkOutput.nearestBenchmark?.[cluster.key] ?? 0);
+                      return (
+                        <div key={cluster.key} className="admin-calibration-v3__cluster-row">
+                          <div className="admin-calibration-v3__cluster-head">
+                            <span>{cluster.label}</span>
+                            <strong>{value || "—"}</strong>
+                          </div>
+                          <div className="profile-progress">
+                            <span style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="admin-calibration-v3__filter-bar">
+                    Active Filters: {inputState.playerInfo.benchmark_region || "Global"} •{" "}
+                    {inputState.playerInfo.benchmark_age_band || "Auto"} • Pool:{" "}
+                    {benchmarkOutput.poolSize} players
+                  </div>
+                  <p className="admin-calibration-v3__alt-title">Alternative Similar Players</p>
+                  <ul className="admin-calibration-v3__alt-list">
+                    {benchmarkOutput.alternativeBenchmarks.map((alt, i) => (
+                      <li key={`${benchName(alt)}-${i}`}>
+                        <span>{benchName(alt)}</span>
+                        <span>{String(alt.archetype ?? "Benchmark archetype")}</span>
+                        <strong>{String(alt.__similarity ?? "—")}%</strong>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 

@@ -18,27 +18,43 @@ export type PlayerInfoForm = {
 /** Legacy CSV / V3 form field names for match performance data. */
 export type LegacyMetricsForm = {
   duration: string;
-  ball_touches: string;
   total_distance: string;
   sprint_distance: string;
-  accelerations: string;
-  decelerations: string;
-  top_speed: string;
   sprints: string;
+  top_speed: string;
+  first_step_accelerations: string;
+  intense_accelerations: string;
   intense_turns: string;
   avg_turn_entry: string;
   avg_turn_exit: string;
+  turn_efficiency: string;
   left_turns: string;
   right_turns: string;
   back_turns: string;
-  kicking_power: string;
+  ball_touches: string;
+  possession_duration_seconds: string;
+  one_touch_possessions_percentage: string;
+  multi_touch_possessions__percentage: string;
+  quick_release_score: string;
   distance_with_ball: string;
   top_speed_with_ball: string;
   intense_turns_with_ball: string;
+  kicking_power: string;
+  release_inside_foot_percentage: string;
+  release_laces_percentage: string;
+  release_other_footzone_percentage: string;
+  left_foot_touch_percentage: string;
+  left_foot_release_percentage: string;
+  left_foot_receive_percentage: string;
+  left_foot_kicking_power_mph: string;
+  right_foot_touch_percentage: string;
+  right_foot_release_percentage: string;
+  right_foot_receive_percentage: string;
+  right_foot_kicking_power_mph: string;
 };
 
 export const CSV_HEADER_HINT =
-  "duration, ball_touches, total_distance, sprint_distance, accelerations, decelerations, top_speed, sprints, intense_turns, avg_turn_entry, avg_turn_exit, left_turns, right_turns, back_turns, kicking_power, distance_with_ball, top_speed_with_ball, intense_turns_with_ball";
+  "duration, total_distance, sprint_distance, sprints, top_speed, first_step_accelerations, intense_accelerations, intense_turns, avg_turn_entry, avg_turn_exit, turn_efficiency, left_turns, right_turns, back_turns, ball_touches, possession_duration_seconds, one_touch_possessions_percentage, multi_touch_possessions__percentage, quick_release_score, distance_with_ball, top_speed_with_ball, intense_turns_with_ball, kicking_power, release_inside_foot_percentage, release_laces_percentage, release_other_footzone_percentage, left_foot_touch_percentage, left_foot_release_percentage, left_foot_receive_percentage, left_foot_kicking_power_mph, right_foot_touch_percentage, right_foot_release_percentage, right_foot_receive_percentage, right_foot_kicking_power_mph";
 
 export const POSITIONS = ["ST", "WINGER", "AM", "CM", "CDM", "FB", "CB"] as const;
 export const GENDERS = ["Male", "Female"] as const;
@@ -90,24 +106,76 @@ export const LEGACY_METRIC_FIELDS: {
   step?: string;
   full?: boolean;
 }[] = [
-  { key: "duration", label: "Duration (min)" },
-  { key: "ball_touches", label: "Ball possessions" },
-  { key: "total_distance", label: "Total distance (mi)", step: "0.01" },
-  { key: "sprint_distance", label: "Sprint distance (yd)" },
-  { key: "accelerations", label: "Accelerations" },
-  { key: "decelerations", label: "Decelerations" },
-  { key: "top_speed", label: "Top speed (mph)", step: "0.1" },
+  { key: "duration", label: "Duration" },
+  { key: "total_distance", label: "Total distance", step: "0.01" },
+  { key: "sprint_distance", label: "Sprint distance", step: "0.01" },
   { key: "sprints", label: "Sprints" },
+  { key: "top_speed", label: "Top speed", step: "0.1" },
+  { key: "first_step_accelerations", label: "First-step accelerations" },
+  { key: "intense_accelerations", label: "Intense accelerations" },
   { key: "intense_turns", label: "Intense turns" },
-  { key: "avg_turn_entry", label: "Avg turn entry (mph)", step: "0.1" },
-  { key: "avg_turn_exit", label: "Avg turn exit (mph)", step: "0.1" },
+  { key: "avg_turn_entry", label: "Average turn entry", step: "0.1" },
+  { key: "avg_turn_exit", label: "Average turn exit", step: "0.1" },
+  { key: "turn_efficiency", label: "Turn efficiency", step: "0.01" },
   { key: "left_turns", label: "Left turns" },
   { key: "right_turns", label: "Right turns" },
   { key: "back_turns", label: "Back turns" },
-  { key: "kicking_power", label: "Kicking power (mph)", step: "0.1" },
-  { key: "distance_with_ball", label: "Distance with ball (yd)" },
-  { key: "top_speed_with_ball", label: "Top speed with ball (mph)", step: "0.1" },
-  { key: "intense_turns_with_ball", label: "Intense turns with ball", full: true },
+  { key: "ball_touches", label: "Ball possessions" },
+  { key: "possession_duration_seconds", label: "Possession duration seconds", step: "0.1" },
+  {
+    key: "one_touch_possessions_percentage",
+    label: "One-touch possessions percentage",
+    step: "0.1",
+  },
+  {
+    key: "multi_touch_possessions__percentage",
+    label: "Multi-touch possessions percentage",
+    step: "0.1",
+  },
+  { key: "quick_release_score", label: "Quick release score", step: "0.1" },
+  { key: "distance_with_ball", label: "Distance with ball", step: "0.01" },
+  { key: "top_speed_with_ball", label: "Top speed with ball", step: "0.1" },
+  { key: "intense_turns_with_ball", label: "Intense turns with ball" },
+  { key: "kicking_power", label: "Kicking power", step: "0.1" },
+  {
+    key: "release_inside_foot_percentage",
+    label: "Release inside-foot percentage",
+    step: "0.1",
+  },
+  { key: "release_laces_percentage", label: "Release laces percentage", step: "0.1" },
+  {
+    key: "release_other_footzone_percentage",
+    label: "Release other-footzone percentage",
+    step: "0.1",
+  },
+  { key: "left_foot_touch_percentage", label: "Left-foot touch percentage", step: "0.1" },
+  {
+    key: "left_foot_release_percentage",
+    label: "Left-foot release percentage",
+    step: "0.1",
+  },
+  {
+    key: "left_foot_receive_percentage",
+    label: "Left-foot receive percentage",
+    step: "0.1",
+  },
+  { key: "left_foot_kicking_power_mph", label: "Left-foot kicking power mph", step: "0.1" },
+  { key: "right_foot_touch_percentage", label: "Right-foot touch percentage", step: "0.1" },
+  {
+    key: "right_foot_release_percentage",
+    label: "Right-foot release percentage",
+    step: "0.1",
+  },
+  {
+    key: "right_foot_receive_percentage",
+    label: "Right-foot receive percentage",
+    step: "0.1",
+  },
+  {
+    key: "right_foot_kicking_power_mph",
+    label: "Right-foot kicking power mph",
+    step: "0.1",
+  },
 ];
 
 export function emptyPlayerInfo(): PlayerInfoForm {
@@ -151,14 +219,13 @@ export function parseCalibrationCsv(text: string): Record<string, string> | null
 
 export function legacyMetricsToApi(form: LegacyMetricsForm): CalibrationMetrics {
   const n = (k: keyof LegacyMetricsForm) => Number(form[k]) || 0;
-  const accelerations = n("accelerations");
   return {
     minutesPlayed: n("duration"),
     ballTouches: n("ball_touches"),
     totalDistanceMiles: n("total_distance"),
     sprintDistanceYards: n("sprint_distance"),
-    firstStepAccelerations: Math.round(accelerations * 0.4),
-    intenseAccelerations: Math.round(accelerations * 0.6) || accelerations,
+    firstStepAccelerations: n("first_step_accelerations"),
+    intenseAccelerations: n("intense_accelerations"),
     kickingPowerMph: n("kicking_power"),
     topSpeedMph: n("top_speed"),
     sprints: n("sprints"),
@@ -175,26 +242,41 @@ export function legacyMetricsToApi(form: LegacyMetricsForm): CalibrationMetrics 
 }
 
 export function apiMetricsToLegacy(m: CalibrationMetrics): LegacyMetricsForm {
-  const accelerations = m.firstStepAccelerations + m.intenseAccelerations;
   return {
     duration: String(m.minutesPlayed ?? ""),
     ball_touches: String(m.ballTouches ?? ""),
     total_distance: String(m.totalDistanceMiles ?? ""),
     sprint_distance: String(m.sprintDistanceYards ?? ""),
-    accelerations: String(accelerations || ""),
-    decelerations: String(Math.max(5, Math.round(accelerations * 0.85)) || ""),
-    top_speed: String(m.topSpeedMph ?? ""),
     sprints: String(m.sprints ?? ""),
+    top_speed: String(m.topSpeedMph ?? ""),
+    first_step_accelerations: String(m.firstStepAccelerations ?? ""),
+    intense_accelerations: String(m.intenseAccelerations ?? ""),
     intense_turns: String(m.intenseTurns ?? ""),
     avg_turn_entry: String(m.avgTurnEntrySpeedMph ?? ""),
     avg_turn_exit: String(m.avgTurnExitSpeedMph ?? ""),
+    turn_efficiency: "",
     left_turns: String(m.leftTurns ?? ""),
     right_turns: String(m.rightTurns ?? ""),
     back_turns: String(m.backTurns ?? ""),
-    kicking_power: String(m.kickingPowerMph ?? ""),
+    possession_duration_seconds: "",
+    one_touch_possessions_percentage: "",
+    multi_touch_possessions__percentage: "",
+    quick_release_score: "",
     distance_with_ball: String(m.distanceWithBallYards ?? ""),
     top_speed_with_ball: String(m.topSpeedWithBallMph ?? ""),
     intense_turns_with_ball: String(m.intenseTurnsWithBall ?? ""),
+    kicking_power: String(m.kickingPowerMph ?? ""),
+    release_inside_foot_percentage: "",
+    release_laces_percentage: "",
+    release_other_footzone_percentage: "",
+    left_foot_touch_percentage: "",
+    left_foot_release_percentage: "",
+    left_foot_receive_percentage: "",
+    left_foot_kicking_power_mph: "",
+    right_foot_touch_percentage: "",
+    right_foot_release_percentage: "",
+    right_foot_receive_percentage: "",
+    right_foot_kicking_power_mph: "",
   };
 }
 

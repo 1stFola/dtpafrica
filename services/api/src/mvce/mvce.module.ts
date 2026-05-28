@@ -5,5 +5,6 @@ import { MvceService } from "./mvce.service";
 @Module({
   controllers: [MvceController],
   providers: [MvceService],
+  exports: [MvceService],
 })
 export class MvceModule {}

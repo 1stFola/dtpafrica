@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { ModuleAdRails } from "../../components/ModuleAdRails";
 
 const links = [
   { to: "/scouting", end: true, label: "Overview" },
@@ -31,7 +32,9 @@ export function ScoutingLayout() {
           ))}
         </nav>
       </header>
-      <Outlet />
+      <ModuleAdRails topSlot="scoutingTop" leftSlot="scoutingLeft" rightSlot="scoutingRight">
+        <Outlet />
+      </ModuleAdRails>
     </div>
   );
 }

@@ -25,6 +25,7 @@ model Player {
   videoUrl          String?  @map("video_url")
   biography         String?  @db.Text
   slug              String?  @unique
+  academyId         String?  @map("academy_id")
   city              String?
   state             String?
   isFeatured        Boolean  @default(false) @map("is_featured")
@@ -40,9 +41,16 @@ model Player {
   benchmarkMetadata Json?    @map("benchmark_metadata")
   mediaItems        Json?    @map("media_items")
   scoutingSummary   String?  @map("scouting_summary") @db.Text
+  normalizedName    String?  @unique @map("normalized_name")
+  careerGoals       Int      @default(0) @map("career_goals")
+  careerAssists     Int      @default(0) @map("career_assists")
+  careerAppearances Int      @default(0) @map("career_appearances")
+  careerMinutes     Int      @default(0) @map("career_minutes")
+  careerCleanSheets Int      @default(0) @map("career_clean_sheets")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
+  academy            Academy? @relation(fields: [academyId], references: [id], onDelete: SetNull)
   matchMetrics       PlayerMatchMetrics[]
   aggregatedMetrics  PlayerAggregatedMetrics[]
   tacticalScores     TacticalScores?
@@ -51,8 +59,10 @@ model Player {
   scoreboardSquad    SbTeamSquad[]
   scoreboardEvents   SbMatchEvent[] @relation("SbEventPlayer")
   scoreboardAssists  SbMatchEvent[] @relation("SbEventAssistPlayer")
+  competitionStats   SbPlayerCompetitionStats[]
   mvceValuations     MvceValuationRun[]
 
+  @@index([academyId])
   @@index([positionPrimary])
   @@index([ageGroup])
   @@index([overallRating])
@@ -87,6 +97,8 @@ model Academy {
   isPublished Boolean  @default(true) @map("is_published")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  players     Player[]
 
   @@map("academies")
 }
@@ -288,22 +300,66 @@ model TacticalBenchmark {
 // —— ScoreBoard (operational football data; separate from SIP `matches`) ——
 
 model SbCompetition {
-  id          String   @id @default(uuid())
-  slug        String   @unique
-  name        String
-  season      String
-  type        String   @default("tournament")
-  country     String?  @default("Nigeria")
-  description String?  @db.Text
-  isPublished Boolean  @default(true) @map("is_published")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  name         String
+  season       String
+  type         String   @default("tournament")
+  formatType   String?  @map("format_type")
+  formatConfig Json?    @map("format_config")
+  country      String?  @default("Nigeria")
+  description  String?  @db.Text
+  isPublished  Boolean  @default(true) @map("is_published")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   teams   SbTeam[]
   matches SbMatch[]
   highlights SbHighlight[]
+  stages  SbCompetitionStage[]
+  playerStats SbPlayerCompetitionStats[]
 
+  standingsSnapshot Json? @map("standings_snapshot")
+  standingsUpdatedAt DateTime? @map("standings_updated_at")
+
+  @@index([formatType])
   @@map("sb_competitions")
+}
+
+model SbPlayerCompetitionStats {
+  id            String @id @default(uuid())
+  competitionId String @map("competition_id")
+  playerId      String @map("player_id")
+  goals         Int    @default(0)
+  assists       Int    @default(0)
+  appearances   Int    @default(0)
+  minutesPlayed Int    @default(0) @map("minutes_played")
+  cleanSheets   Int    @default(0) @map("clean_sheets")
+
+  competition SbCompetition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  player      Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([competitionId, playerId])
+  @@index([competitionId, goals])
+  @@map("sb_player_competition_stats")
+}
+
+model SbCompetitionStage {
+  id            String   @id @default(uuid())
+  competitionId String   @map("competition_id")
+  key           String
+  name          String
+  stageType     String   @map("stage_type")
+  sortOrder     Int      @default(0) @map("sort_order")
+  config        Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  competition SbCompetition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  matches     SbMatch[]
+
+  @@unique([competitionId, key])
+  @@map("sb_competition_stages")
 }
 
 model SbTeam {
@@ -312,6 +368,7 @@ model SbTeam {
   slug          String
   name          String
   shortName     String?  @map("short_name")
+  groupKey      String?  @map("group_key")
   logoUrl       String?  @map("logo_url")
   city          String?
   createdAt     DateTime @default(now()) @map("created_at")
@@ -346,6 +403,7 @@ model SbTeamSquad {
 model SbMatch {
   id            String    @id @default(uuid())
   competitionId String    @map("competition_id")
+  stageId       String?   @map("stage_id")
   homeTeamId    String    @map("home_team_id")
   awayTeamId    String    @map("away_team_id")
   status        String    @default("scheduled")
@@ -355,6 +413,9 @@ model SbMatch {
   kickoffAt     DateTime? @map("kickoff_at")
   venue         String?
   roundLabel    String?   @map("round_label")
+  stageKey      String?   @map("stage_key")
+  matchday      Int?
+  meta          Json?
   stats         Json?
   isPublished   Boolean   @default(true) @map("is_published")
   sipMatchId    String?   @map("sip_match_id")
@@ -365,6 +426,7 @@ model SbMatch {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   competition SbCompetition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  stage       SbCompetitionStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
   homeTeam    SbTeam        @relation("SbHomeTeam", fields: [homeTeamId], references: [id])
   awayTeam    SbTeam        @relation("SbAwayTeam", fields: [awayTeamId], references: [id])
   events      SbMatchEvent[]
@@ -372,6 +434,8 @@ model SbMatch {
   ingestAudits SbSipIngestAudit[]
 
   @@index([competitionId, status])
+  @@index([stageKey])
+  @@index([stageId])
   @@index([sipIngestStatus])
   @@index([kickoffAt])
   @@map("sb_matches")
@@ -402,6 +466,7 @@ model SbMatchEvent {
   type        String
   minute      Int
   detail      String?
+  metadata    Json?
   createdAt   DateTime @default(now()) @map("created_at")
 
   match  SbMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)

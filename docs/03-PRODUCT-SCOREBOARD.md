@@ -87,15 +87,19 @@ Already implemented:
 - Highlights list linked back to matches and timeline events.
 - Supervisor/operator flow with admin guard, event tagging, score/status updates, and SIP ingest.
 
-Deferred from the legacy spec:
+Partially migrated into the unified admin CMS (see [10-SCOREBOARD-PHASE-1-IMPLEMENTED.md](./10-SCOREBOARD-PHASE-1-IMPLEMENTED.md)):
 
-- Offline-first spotter tablet and sync queue.
-- Full lineup lock, substitution workflow, and roster-submission approval.
+- `/admin/scoreboard/*` — entity lists, CSV seeders, matchday roster, highlights upload, match-center supervisor hooks.
+- `/spotter-tablet` — React tablet UI (lineup lock, pitch tagging, offline queue counter); full offline sync still deferred.
+
+Still deferred:
+
+- Offline-first spotter sync/conflict resolution.
+- Roster-submission approval workflow.
 - Standings pending-QA/publication states.
-- Entity management CRUD and partner export/API console.
+- Full entity CRUD forms (create/edit competition/team in UI).
+- Partner export/API console.
 - WebSocket/SSE live push.
-
-These remain product-valid, but they need workflow and permission design before implementation.
 
 ## Integration with other modules
 

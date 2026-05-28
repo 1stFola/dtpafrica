@@ -45,20 +45,30 @@ export function CompetitionPage() {
   const [teams, setTeams] = useState<SbTeamWithSquad[]>([]);
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
+  const [standingsGroups, setStandingsGroups] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<CompetitionTab>("standings");
+  const [loading, setLoading] = useState(true);
 
   usePageTitle(name || "Competition");
 
   useEffect(() => {
     if (!slug) return;
-    fetchCompetition(slug).then((c) => {
-      setName(c.name);
-      setSeason(c.season);
-      setCompetitionType(c.type);
-      setTeams(c.teams);
-      fetchMatches({ competitionId: c.id }).then(setMatches);
-      fetchStandings(c.id).then((s) => setStandings(s.rows));
-    });
+    setLoading(true);
+    fetchCompetition(slug)
+      .then((c) => {
+        setName(c.name);
+        setSeason(c.season);
+        setCompetitionType(c.type);
+        setTeams(c.teams);
+        return Promise.all([
+          fetchMatches({ competitionId: c.id }).then(setMatches),
+          fetchStandings(c.id).then((s) => {
+            setStandings(s.rows);
+            setStandingsGroups(s.groups ?? []);
+          }),
+        ]);
+      })
+      .finally(() => setLoading(false));
   }, [slug]);
 
   const groupedMatches = groupMatchesByMatchday(matches);
@@ -89,40 +99,69 @@ export function CompetitionPage() {
       {activeTab === "standings" && (
         <section className="sb-section">
           <h2>Standings</h2>
-          <table className="sip-table sb-standings-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Team</th>
-                <th>P</th>
-                <th>W</th>
-                <th>D</th>
-                <th>L</th>
-                <th>GF</th>
-                <th>GA</th>
-                <th>GD</th>
-                <th>Pts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {standings.map((row, i) => (
-                <tr key={row.teamId}>
-                  <td>{i + 1}</td>
-                  <td>{row.teamName}</td>
-                  <td>{row.played}</td>
-                  <td>{row.won}</td>
-                  <td>{row.drawn}</td>
-                  <td>{row.lost}</td>
-                  <td>{row.goalsFor}</td>
-                  <td>{row.goalsAgainst}</td>
-                  <td>{row.goalDifference}</td>
-                  <td>
-                    <strong>{row.points}</strong>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {loading ? (
+            <div className="sb-standings-skeleton" aria-busy="true">
+              <div className="admin-sb-skeleton admin-sb-skeleton--table" />
+            </div>
+          ) : standings.length === 0 ? (
+            <p className="sb-empty muted">Standings appear once group matches are completed.</p>
+          ) : null}
+          {!loading &&
+            (standingsGroups.length ? standingsGroups : [""]).map((groupKey) => {
+            const rows = groupKey
+              ? standings.filter((r) => r.groupKey === groupKey)
+              : standings;
+            return (
+              <div key={groupKey || "all"} className="sb-standings-group">
+                {groupKey && <h3>Group {groupKey}</h3>}
+                <table className="sip-table sb-standings-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Team</th>
+                      <th>P</th>
+                      <th>W</th>
+                      <th>D</th>
+                      <th>L</th>
+                      <th>GF</th>
+                      <th>GA</th>
+                      <th>GD</th>
+                      <th>Form</th>
+                      <th>Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={row.teamId}>
+                        <td>{row.rank ?? 0}</td>
+                        <td>{row.teamName}</td>
+                        <td>{row.played}</td>
+                        <td>{row.won}</td>
+                        <td>{row.drawn}</td>
+                        <td>{row.lost}</td>
+                        <td>{row.goalsFor}</td>
+                        <td>{row.goalsAgainst}</td>
+                        <td>{row.goalDifference}</td>
+                        <td className="sb-form-cell">
+                          <span className="sb-form-badges" aria-label={`Form ${(row.form ?? []).join(" ")}`}>
+                            {(row.form ?? []).map((f, i) => (
+                              <span key={`${row.teamId}-f-${i}`} className={`sb-form-badge sb-form-badge--${f.toLowerCase()}`}>
+                                {f}
+                              </span>
+                            ))}
+                            {(row.form ?? []).length === 0 && "—"}
+                          </span>
+                        </td>
+                        <td>
+                          <strong>{row.points}</strong>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
         </section>
       )}
 

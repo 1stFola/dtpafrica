@@ -8,9 +8,11 @@ const links = [
   { to: "/admin/players", label: "Players" },
   { to: "/admin/calibration", label: "Calibration" },
   { to: "/admin/homepage", label: "Homepage" },
+  { to: "/admin/ads", label: "Ads" },
   { to: "/admin/academies", label: "Academies" },
   { to: "/admin/content", label: "Content" },
   { to: "/admin/blog", label: "Blog" },
+  { to: "/admin/scoreboard", label: "ScoreBoard" },
 ];
 
 export function AdminLayout() {

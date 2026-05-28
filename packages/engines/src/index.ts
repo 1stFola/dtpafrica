@@ -19,3 +19,12 @@ export * from "./calibration/map-metrics";
 export * from "./calibration/pipeline";
 export { loadLegacyCalibration } from "./calibration/load-legacy";
 export { getCalibrationAttributeKeys } from "./calibration/pipeline";
+export * from "./scoreboard/competition-types";
+export * from "./scoreboard/competition-templates";
+export * from "./scoreboard/generate-fixtures";
+export * from "./scoreboard/group-standings";
+export { normalizeClubName } from "./scoreboard/normalize-club-name";
+export {
+  normalizePlayerName,
+  playerLookupKey,
+} from "./scoreboard/normalize-player-name";

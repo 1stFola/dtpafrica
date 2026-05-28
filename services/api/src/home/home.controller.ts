@@ -1,11 +1,15 @@
 import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { AdsConfigService } from "../ads/ads-config.service";
 import { ContactDto } from "./dto/contact.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
 import { HomeService } from "./home.service";
 
 @Controller("home")
 export class HomeController {
-  constructor(@Inject(HomeService) private readonly home: HomeService) {}
+  constructor(
+    @Inject(HomeService) private readonly home: HomeService,
+    @Inject(AdsConfigService) private readonly ads: AdsConfigService
+  ) {}
 
   @Get("featured-players")
   featuredPlayers(@Query("limit") limit?: string) {
@@ -50,5 +54,10 @@ export class HomeController {
   @Get("content")
   staticContent(@Query("keys") keys?: string) {
     return this.home.staticContent(keys);
+  }
+
+  @Get("ads")
+  adsConfig() {
+    return this.ads.getConfig();
   }
 }

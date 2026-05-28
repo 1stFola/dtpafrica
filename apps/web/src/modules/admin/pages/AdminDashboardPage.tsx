@@ -66,6 +66,10 @@ export function AdminDashboardPage() {
           <h3>Homepage</h3>
           <p>Announcements, events, videos, and wins wall copy</p>
         </Link>
+        <Link to="/admin/ads" className="sip-card">
+          <h3>Ad placements</h3>
+          <p>Enable slots, sponsor URLs, and fallback creatives</p>
+        </Link>
         <Link to="/admin/academies" className="sip-card">
           <h3>Academies</h3>
           <p>Create and publish partner academy listings</p>
@@ -77,6 +81,10 @@ export function AdminDashboardPage() {
         <Link to="/admin/content" className="sip-card">
           <h3>Static content</h3>
           <p>Edit reusable marketing copy</p>
+        </Link>
+        <Link to="/admin/scoreboard" className="sip-card">
+          <h3>ScoreBoard ops</h3>
+          <p>Entities, rosters, highlights, match center, spotter tablet</p>
         </Link>
       </div>
     </div>

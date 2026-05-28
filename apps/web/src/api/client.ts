@@ -84,6 +84,12 @@ export type PublicPlayerProfile = FeaturedPlayer & {
   scoutingIntelligence?: {
     tacticalScores: Record<string, number> | null;
     topTacticalScores: { label: string; value: number }[];
+    tacticalFit?: { label: string; score: number } | null;
+    philosophyMatch?: {
+      philosophy: string;
+      formation: string;
+      score: number;
+    } | null;
     positionFit: PublicPositionFit | null;
     philosophyFits: {
       formation: string;

@@ -34,6 +34,10 @@ export function AcademyPage() {
                 Visit website
               </a>
             )}
+            <br />
+            <Link to={`/academy/${a.slug}/dashboard`} className="text-link">
+              Open academy dashboard
+            </Link>
           </article>
         ))}
       </div>

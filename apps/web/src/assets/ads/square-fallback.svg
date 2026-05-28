@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="250" viewBox="0 0 300 250" fill="none">
+  <rect width="300" height="250" rx="18" fill="#0F172A"/>
+  <rect x="1" y="1" width="298" height="248" rx="17" stroke="#334155"/>
+  <text x="24" y="38" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="11" letter-spacing="0.12em">ADVERTISER</text>
+  <text x="24" y="84" fill="#F1F5F9" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700">Scout</text>
+  <text x="24" y="118" fill="#F1F5F9" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700">Smarter</text>
+  <text x="24" y="152" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="14">Data-backed player insights</text>
+  <rect x="24" y="182" width="130" height="34" rx="17" fill="#2563EB"/>
+  <text x="89" y="204" text-anchor="middle" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="12" font-weight="700">Visit Sponsor</text>
+</svg>

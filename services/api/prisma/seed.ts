@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { ADS_CONFIG_KEY, DEFAULT_AD_SLOTS } from "../src/ads/ads.constants";
 import { seedMvce } from "./seed-mvce";
 import { seedScoreboard } from "./seed-scoreboard";
 
@@ -219,9 +220,11 @@ Parents and guardians can register minors with consent workflows built for youth
     },
   });
 
-  await prisma.academy.upsert({
+  const dtpAcademy = await prisma.academy.upsert({
     where: { slug: "dtp-lagos-hub" },
-    update: {},
+    update: {
+      isPublished: true,
+    },
     create: {
       slug: "dtp-lagos-hub",
       name: "DTP Lagos Development Hub",
@@ -231,6 +234,11 @@ Parents and guardians can register minors with consent workflows built for youth
         "Flagship development centre for U15–U19 talent with weekly tactical review and video analysis.",
       websiteUrl: "https://www.dtp.africa",
     },
+  });
+
+  await prisma.player.update({
+    where: { id: player.id },
+    data: { academyId: dtpAcademy.id },
   });
 
   await prisma.academy.upsert({
@@ -374,6 +382,16 @@ Parents and guardians can register minors with consent workflows built for youth
       create: row,
     });
   }
+
+  await prisma.staticContent.upsert({
+    where: { key: ADS_CONFIG_KEY },
+    update: { value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }) },
+    create: {
+      key: ADS_CONFIG_KEY,
+      value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }),
+    },
+  });
+  console.log("Ads config seeded (demo placehold.co creatives at ads.config)");
 
   await seedScoreboard(prisma, player.id);
   await seedMvce(prisma, player.id);

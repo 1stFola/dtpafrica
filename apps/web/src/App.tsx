@@ -11,9 +11,11 @@ import { FeaturedPlayersPage } from "./modules/directopro/pages/FeaturedPlayersP
 import { PlayerProfilePage } from "./modules/directopro/pages/PlayerProfilePage";
 import { RegisterPage } from "./modules/directopro/pages/RegisterPage";
 import { ScoreboardApp } from "./modules/scoreboard/ScoreboardApp";
+import { SpotterTabletPage } from "./modules/scoreboard/pages/SpotterTabletPage";
 import { ScoutingApp } from "./modules/scouting/ScoutingApp";
 import { ValuationApp } from "./modules/valuation/ValuationApp";
 import { AdminApp } from "./modules/admin/AdminApp";
+import { AcademyDashboardApp } from "./modules/academy/AcademyDashboardApp";
 
 export default function App() {
   return (
@@ -35,6 +37,8 @@ export default function App() {
         <Route path="scoreboard/*" element={<ScoreboardApp />} />
         <Route path="valuation/*" element={<ValuationApp />} />
         <Route path="admin/*" element={<AdminApp />} />
+        <Route path="spotter-tablet" element={<SpotterTabletPage />} />
+        <Route path="academy/:slug/dashboard/*" element={<AcademyDashboardApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -4,10 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { normalizeClubName } from "@dtp/engines";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
 import { ContactDto } from "./dto/contact.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
+import { PlayerProfileIntelligenceService } from "./player-profile-intelligence.service";
 import { slugifyDisplayName } from "./slug";
 
 const UUID_RE =
@@ -28,7 +31,11 @@ type ScoreboardEventRow = Prisma.SbMatchEventGetPayload<{
 
 @Injectable()
 export class HomeService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PlayerProfileIntelligenceService)
+    private readonly profileIntelligence: PlayerProfileIntelligenceService
+  ) {}
 
   featuredPlayers(limit = 24) {
     return this.prisma.player.findMany({
@@ -47,8 +54,18 @@ export class HomeService {
       where.slug = slugOrId;
     }
 
-    const player = await this.prisma.player.findFirst({
+    const initial = await this.prisma.player.findFirst({
       where,
+      select: { id: true },
+    });
+    if (!initial) {
+      throw new NotFoundException("Player profile not found");
+    }
+
+    await this.profileIntelligence.ensureForPublicProfile(initial.id);
+
+    const player = await this.prisma.player.findFirst({
+      where: { id: initial.id },
       select: this.publicProfileSelect(),
     });
     if (!player) {
@@ -278,7 +295,7 @@ export class HomeService {
       tacticalScores: true,
       positionFit: true,
       philosophyFitRows: {
-        orderBy: [{ confidenceScore: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ philosophyFitScore: "desc" }, { updatedAt: "desc" }],
         take: 5,
       },
       aggregatedMetrics: {
@@ -369,6 +386,20 @@ export class HomeService {
         ].sort((a, b) => b.value - a.value)
       : [];
 
+    const philosophyFits = [...args.philosophyFitRows]
+      .sort((a, b) => b.philosophyFitScore - a.philosophyFitScore)
+      .map((fit) => ({
+        formation: fit.formation,
+        philosophy: fit.philosophy,
+        positionSlot: fit.positionSlot,
+        philosophyFitScore: fit.philosophyFitScore,
+        positionFitScore: fit.positionFitScore,
+        confidenceScore: fit.confidenceScore,
+      }));
+
+    const topTactical = primaryScores[0];
+    const bestPhilosophy = philosophyFits[0];
+
     return {
       tacticalScores: tactical
         ? {
@@ -392,15 +423,18 @@ export class HomeService {
           }
         : null,
       topTacticalScores: primaryScores.slice(0, 4),
+      tacticalFit: topTactical
+        ? { label: topTactical.label, score: Math.round(topTactical.value) }
+        : null,
+      philosophyMatch: bestPhilosophy
+        ? {
+            philosophy: bestPhilosophy.philosophy,
+            formation: bestPhilosophy.formation,
+            score: Math.round(bestPhilosophy.philosophyFitScore),
+          }
+        : null,
       positionFit: args.positionFit,
-      philosophyFits: args.philosophyFitRows.map((fit) => ({
-        formation: fit.formation,
-        philosophy: fit.philosophy,
-        positionSlot: fit.positionSlot,
-        philosophyFitScore: fit.philosophyFitScore,
-        positionFitScore: fit.positionFitScore,
-        confidenceScore: fit.confidenceScore,
-      })),
+      philosophyFits,
       aggregateMetrics: args.aggregatedMetrics[0]
         ? {
             season: args.aggregatedMetrics[0].season,
@@ -419,7 +453,7 @@ export class HomeService {
   ) {
     const teams = squadRows.map((row) => ({
       teamId: row.team.id,
-      teamName: row.team.name,
+      teamName: normalizeClubName(row.team.name),
       teamSlug: row.team.slug,
       shortName: row.team.shortName,
       shirtNumber: row.shirtNumber,
@@ -470,13 +504,13 @@ export class HomeService {
           status: match.status,
           homeTeam: {
             id: match.homeTeam.id,
-            name: match.homeTeam.name,
+            name: normalizeClubName(match.homeTeam.name),
             slug: match.homeTeam.slug,
             shortName: match.homeTeam.shortName,
           },
           awayTeam: {
             id: match.awayTeam.id,
-            name: match.awayTeam.name,
+            name: normalizeClubName(match.awayTeam.name),
             slug: match.awayTeam.slug,
             shortName: match.awayTeam.shortName,
           },
@@ -502,7 +536,7 @@ export class HomeService {
         team: event.team
           ? {
               id: event.team.id,
-              name: event.team.name,
+              name: normalizeClubName(event.team.name),
               slug: event.team.slug,
               shortName: event.team.shortName,
             }
@@ -514,8 +548,8 @@ export class HomeService {
           season: match.competition.season,
           kickoffAt: match.kickoffAt,
           roundLabel: match.roundLabel,
-          homeTeam: match.homeTeam.name,
-          awayTeam: match.awayTeam.name,
+          homeTeam: normalizeClubName(match.homeTeam.name),
+          awayTeam: normalizeClubName(match.awayTeam.name),
           score: { home: match.homeScore, away: match.awayScore },
         },
       };
@@ -527,7 +561,7 @@ export class HomeService {
       return bTime - aTime;
     });
 
-    return {
+    return presentScoreboardPayload({
       teams,
       appearances,
       events,
@@ -540,7 +574,7 @@ export class HomeService {
         yellowCards: events.filter((event) => event.type === "yellow_card").length,
         redCards: events.filter((event) => event.type === "red_card").length,
       },
-    };
+    });
   }
 
   private buildValuationSnapshot(

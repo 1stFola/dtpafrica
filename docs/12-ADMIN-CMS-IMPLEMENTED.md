@@ -34,6 +34,7 @@ ADMIN_API_KEY=dtp-dev-admin-change-me
 - `GET /admin/blog`, `POST /admin/blog`, `PUT /admin/blog/:id`,
   `PATCH /admin/blog/:id/publish`, and `DELETE /admin/blog/:id` manage posts.
 - `GET /admin/content` and `PUT /admin/content/:key` manage reusable copy.
+- `GET /admin/ads` and `PATCH /admin/ads` manage sponsor slot placements (stored as `ads.config`).
 
 ## Web (`/admin`)
 
@@ -43,8 +44,9 @@ ADMIN_API_KEY=dtp-dev-admin-change-me
   contact messages.
 - `/admin/players`: search/filter, approve/reject, featured/public toggles,
   rating visibility, profile/calibration links, and CSV export.
-- `/admin/calibration`: create or update player calibration from structured
-  metrics.
+- `/admin/calibration`: DirectToPro Calibration Engine V3 dashboard with
+  split-screen identity + metrics intake, CSV import/export, tactical-fit fields,
+  Generate & Calibrate flow, and nearest real-player benchmark profiling.
 - `/admin/homepage`: managed homepage hero, announcements, event sales card,
   featured video link, and wins wall logos.
 - `/admin/academies`: create, edit, publish/unpublish, and delete partner
@@ -52,6 +54,11 @@ ADMIN_API_KEY=dtp-dev-admin-change-me
 - `/admin/blog`, `/admin/blog/new`, `/admin/blog/:id`: create, edit, publish,
   draft, and delete posts.
 - `/admin/content`: edit arbitrary static content keys.
+- `/admin/ads`: enable/disable ad slots, URLs, formats, and fallback images (see [13-ADMIN-ADS.md](./13-ADMIN-ADS.md)).
+- `/admin/scoreboard/*`: ScoreBoard ops hub (entities, roster, highlights, match center). See [10-SCOREBOARD-PHASE-1-IMPLEMENTED.md](./10-SCOREBOARD-PHASE-1-IMPLEMENTED.md).
+- `/spotter-tablet`: stadium spotter UI (outside admin shell; requires admin API key in session).
+
+ScoreBoard admin API: `/api/v1/admin/scoreboard/*` (stats, competitions/teams/players lists, CSV seed import/export, matchday roster, highlights create, spotter ops).
 
 ## Public impact
 
@@ -59,6 +66,7 @@ ADMIN_API_KEY=dtp-dev-admin-change-me
 - **Blog published** → `/blog` and `/blog/:slug`
 - **Academy published** → `/academy`
 - **Static content** → homepage hero and reusable marketing copy from `/home/content`
+- **Ad placements** → sponsor slots from `/home/ads` (config key `ads.config`)
 - **Homepage managed sections** → announcement, event sales, featured video, and
   wins wall render on `/` when their `*.enabled` keys are set to `true`
 - **Registration approved** → player can be marked public when ready

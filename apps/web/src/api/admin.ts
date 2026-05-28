@@ -97,23 +97,39 @@ export type CalibrationMetrics = {
 
 export type LegacyMatchMetrics = {
   duration?: number;
-  ball_touches?: number;
   total_distance?: number;
   sprint_distance?: number;
-  accelerations?: number;
-  decelerations?: number;
-  top_speed?: number;
   sprints?: number;
+  top_speed?: number;
+  first_step_accelerations?: number;
+  intense_accelerations?: number;
   intense_turns?: number;
   avg_turn_entry?: number;
   avg_turn_exit?: number;
+  turn_efficiency?: number;
   left_turns?: number;
   right_turns?: number;
   back_turns?: number;
-  kicking_power?: number;
+  ball_touches?: number;
+  possession_duration_seconds?: number;
+  one_touch_possessions_percentage?: number;
+  multi_touch_possessions__percentage?: number;
+  quick_release_score?: number;
   distance_with_ball?: number;
   top_speed_with_ball?: number;
   intense_turns_with_ball?: number;
+  kicking_power?: number;
+  release_inside_foot_percentage?: number;
+  release_laces_percentage?: number;
+  release_other_footzone_percentage?: number;
+  left_foot_touch_percentage?: number;
+  left_foot_release_percentage?: number;
+  left_foot_receive_percentage?: number;
+  left_foot_kicking_power_mph?: number;
+  right_foot_touch_percentage?: number;
+  right_foot_release_percentage?: number;
+  right_foot_receive_percentage?: number;
+  right_foot_kicking_power_mph?: number;
 };
 
 export type CalibrationPlayerInfo = {
@@ -129,6 +145,22 @@ export type CalibrationPlayerInfo = {
   currentClub?: string;
   photoUrl?: string;
   videoUrl?: string;
+};
+
+export type CalibrationBenchmarkProfile = {
+  full_name?: string;
+  archetype?: string;
+  development_stage?: string;
+  age?: number;
+  overall_rating?: number;
+  __similarity?: number;
+  pace?: number;
+  passing?: number;
+  dribbling?: number;
+  finishing?: number;
+  offensive_score?: number;
+  defensive_score?: number;
+  [key: string]: unknown;
 };
 
 export type CalibrationContext = {
@@ -155,8 +187,8 @@ export type CalibrationRunResult = {
     defensive_score: number;
     overall_rating: number;
   };
-  nearestBenchmark: Record<string, unknown>;
-  alternativeBenchmarks: Record<string, unknown>[];
+  nearestBenchmark: CalibrationBenchmarkProfile;
+  alternativeBenchmarks: CalibrationBenchmarkProfile[];
   filterInfo: { poolSize: number };
 };
 
@@ -176,6 +208,27 @@ export type AdminStaticContent = {
   key: string;
   value: string;
   updatedAt: string;
+};
+
+export type AdminAdBannerFormat = "leaderboard" | "square" | "mobile-banner" | "inline";
+
+import type { AdSlotKey } from "../config/adConfig";
+
+export type AdminAdSlotKey = AdSlotKey;
+
+export type AdminAdSlotConfig = {
+  enabled: boolean;
+  slotId: string;
+  format: AdminAdBannerFormat;
+  fallbackImageUrl: string;
+  destinationUrl: string;
+  label?: string;
+  placementNotes?: string;
+};
+
+export type AdminAdsConfig = {
+  slots: Record<AdminAdSlotKey, AdminAdSlotConfig>;
+  updatedAt: string | null;
 };
 
 export type AdminContactMessage = {
@@ -304,6 +357,12 @@ export const adminApi = {
     adminFetch<AdminStaticContent>(`/admin/content/${encodeURIComponent(key)}`, {
       method: "PUT",
       body: JSON.stringify({ value }),
+    }),
+  adsGet: () => adminFetch<AdminAdsConfig>("/admin/ads"),
+  adsPatch: (slots: Record<AdminAdSlotKey, AdminAdSlotConfig>) =>
+    adminFetch<AdminAdsConfig>("/admin/ads", {
+      method: "PATCH",
+      body: JSON.stringify({ slots }),
     }),
   calibrationContext: (playerId: string) =>
     adminFetch<CalibrationContext>(`/admin/calibration/players/${playerId}`),

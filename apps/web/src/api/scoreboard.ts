@@ -133,6 +133,9 @@ export type StandingRow = {
   goalsAgainst: number;
   goalDifference: number;
   points: number;
+  groupKey?: string;
+  rank?: number;
+  form?: Array<"W" | "D" | "L">;
 };
 
 export type SbHighlight = {
@@ -212,6 +215,8 @@ export function fetchStandings(competitionId: string) {
   return apiGet<{
     competitionName: string;
     season: string;
+    formatType?: string | null;
+    groups?: string[];
     rows: StandingRow[];
   }>(`/scoreboard/standings/${competitionId}`);
 }
@@ -279,6 +284,7 @@ export function postMatchEvent(
     assistPlayerId?: string;
     assistLabel?: string;
     detail?: string;
+    metadata?: Record<string, unknown>;
   }
 ) {
   return apiAdminPost<SbMatchEvent>(`/scoreboard/matches/${matchId}/events`, body);

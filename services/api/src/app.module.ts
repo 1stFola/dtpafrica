@@ -10,6 +10,7 @@ import { MvceModule } from "./mvce/mvce.module";
 import { ScoreboardModule } from "./scoreboard/scoreboard.module";
 import { ScoutingModule } from "./scouting/scouting.module";
 import { SipModule } from "./sip/sip.module";
+import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.module";
 
 @Module({
   controllers: [HealthController],
@@ -24,6 +25,7 @@ import { SipModule } from "./sip/sip.module";
     ScoreboardModule,
     MvceModule,
     BenchmarksModule,
+    AcademyDashboardModule,
   ],
 })
 export class AppModule {}

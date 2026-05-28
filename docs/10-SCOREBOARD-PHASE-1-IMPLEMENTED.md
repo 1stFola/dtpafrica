@@ -63,6 +63,20 @@ pnpm dev
 
 Open http://localhost:5173/scoreboard
 
+## Admin ScoreBoard ops (`/admin/scoreboard`)
+
+Migrated from legacy Trickle pages (removed from repo; see [03-PRODUCT-SCOREBOARD.md](./03-PRODUCT-SCOREBOARD.md)):
+
+| Legacy page | New route |
+|-------------|-----------|
+| `admin-entities.html` | `/admin/scoreboard/entities` |
+| `admin-roster.html` | `/admin/scoreboard/roster` |
+| `admin-content.html` (highlights) | `/admin/scoreboard/highlights` |
+| `admin-supervisor.html` (partial) | `/admin/scoreboard/match-center` + `/scoreboard/supervisor` |
+| `spotter-tablet.html` | `/spotter-tablet` |
+
+API prefix: `/api/v1/admin/scoreboard/*` (requires `x-admin-api-key`). Matchday rosters and spotter lineup lock are stored in `SbMatch.stats` JSON until dedicated tables exist.
+
 ## Legacy Gap Map
 
 Implemented in this greenfield architecture:
@@ -77,7 +91,7 @@ Deferred deliberately:
 - Offline-first spotter tablet and sync queue: useful, but larger than this additive pass and needs a real offline conflict model.
 - Full lineup lock/substitution engine: current rosters support public lineups; match-specific starters should wait for operator workflow requirements.
 - Standings QA/pending approval workflow: standings are computed from finished matches now; QA states need admin publishing rules.
-- Entity management and roster submission: admin CRUD is broader product work; current seed/API expose public roster data.
+- Entity management and roster submission: **skeleton shipped** under `/admin/scoreboard` (list/filter, CSV seed, roster save); full CRUD forms and approval workflows still deferred.
 - Export/API partner console and PDF output: no existing scaffold; defer until partner feed requirements are known.
 - WebSocket/SSE live push: polling remains adequate for the current greenfield demo.
 

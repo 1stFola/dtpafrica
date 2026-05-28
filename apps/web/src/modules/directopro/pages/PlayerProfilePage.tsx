@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Button } from "@dtp/ui";
 import { apiGet, type PublicPlayerProfile } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { BenchmarkPlaystyleComparison } from "../components/PlaystyleComparisonModal";
 
 type ProfileTab =
   | "attributes"
@@ -69,15 +70,6 @@ function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function isNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function numberFrom(record: Record<string, unknown> | null | undefined, key: string) {
-  const value = record?.[key];
-  return isNumber(value) ? value : null;
-}
-
 function buildAttributeFallback(player: PublicPlayerProfile) {
   const overall = player.overallRating ?? 62;
   const offensive = player.offensiveRating ?? overall;
@@ -124,10 +116,6 @@ function ratingTier(rating?: number | null) {
 function starText(rating?: number | null) {
   const stars = rating == null ? 0 : Math.max(0, Math.min(5, Math.round(rating / 20)));
   return "★".repeat(stars) + "☆".repeat(5 - stars);
-}
-
-function benchmarkName(benchmark: Record<string, unknown> | null | undefined) {
-  return String(benchmark?.full_name ?? benchmark?.playerName ?? "Benchmark profile");
 }
 
 function formatDate(value?: string | null) {
@@ -222,6 +210,18 @@ export function PlayerProfilePage() {
     { label: "Overall", value: player.overallRating ?? "Pending" },
     { label: "Attack", value: player.offensiveRating ?? "Pending" },
     { label: "Defense", value: player.defensiveRating ?? "Pending" },
+    {
+      label: "Tactical fit",
+      value: scouting?.tacticalFit
+        ? `${scouting.tacticalFit.score} · ${scouting.tacticalFit.label}`
+        : "Pending",
+    },
+    {
+      label: "Philosophy match",
+      value: scouting?.philosophyMatch
+        ? `${scouting.philosophyMatch.score}% · ${scouting.philosophyMatch.philosophy}`
+        : "Pending",
+    },
     {
       label: "Position fit",
       value: player.positionFit
@@ -407,7 +407,13 @@ export function PlayerProfilePage() {
             </article>
           </div>
 
-          <BenchmarkComparison benchmark={benchmark} attributes={attributes} />
+          <BenchmarkPlaystyleComparison
+            playerName={player.displayName}
+            playerAge={player.age}
+            playerRating={player.overallRating}
+            benchmark={benchmark}
+            attributes={attributes}
+          />
         </section>
       )}
 
@@ -607,19 +613,25 @@ function ScoutingIntelligenceSection({
 }: {
   scouting: PublicPlayerProfile["scoutingIntelligence"];
 }) {
-  if (
-    !scouting ||
-    (scouting.topTacticalScores.length === 0 &&
-      !scouting.positionFit &&
-      scouting.philosophyFits.length === 0 &&
-      !scouting.aggregateMetrics)
-  ) {
+  const hasSnapshot =
+    scouting &&
+    (scouting.tacticalFit ||
+      scouting.philosophyMatch ||
+      scouting.topTacticalScores.length > 0 ||
+      scouting.positionFit ||
+      scouting.philosophyFits.length > 0 ||
+      scouting.aggregateMetrics);
+
+  if (!hasSnapshot) {
     return (
       <section className="profile-section">
         <h2>Scouting Intelligence</h2>
         <div className="profile-empty-state">
           <strong>No SIP scouting snapshot yet.</strong>
-          <p>Run SIP recalculation or ingest ScoreBoard events to populate tactical scores.</p>
+          <p>
+            Match metrics, calibration imports, or ScoreBoard ingest are required before tactical
+            fit and philosophy matching can be computed.
+          </p>
         </div>
       </section>
     );
@@ -638,6 +650,25 @@ function ScoutingIntelligenceSection({
             {scouting.aggregateMetrics.matchesPlayed === 1 ? "" : "es"}
           </span>
         )}
+      </div>
+
+      <div className="profile-facts profile-facts--wide">
+        <div>
+          <span>Tactical fit</span>
+          <strong>
+            {scouting.tacticalFit
+              ? `${scouting.tacticalFit.score} · ${scouting.tacticalFit.label}`
+              : "Pending"}
+          </strong>
+        </div>
+        <div>
+          <span>Philosophy matching</span>
+          <strong>
+            {scouting.philosophyMatch
+              ? `${scouting.philosophyMatch.score}% · ${scouting.philosophyMatch.philosophy}`
+              : "Pending"}
+          </strong>
+        </div>
       </div>
 
       {scouting.topTacticalScores.length > 0 && (
@@ -785,54 +816,6 @@ function ValuationSection({
         </article>
       </div>
     </section>
-  );
-}
-
-function BenchmarkComparison({
-  benchmark,
-  attributes,
-}: {
-  benchmark: Record<string, unknown> | null;
-  attributes: Record<string, number>;
-}) {
-  if (!benchmark) {
-    return (
-      <article className="profile-panel profile-benchmark">
-        <h3>Benchmark comparison</h3>
-        <p className="muted">
-          Benchmark comparison will appear after calibration saves nearest-pro metadata for this
-          player.
-        </p>
-      </article>
-    );
-  }
-
-  return (
-    <article className="profile-panel profile-benchmark">
-      <div className="profile-section-heading">
-        <div>
-          <h3>Benchmark comparison</h3>
-          <p className="muted">
-            Compared with {benchmarkName(benchmark)}
-            {benchmark.archetype ? ` · ${String(benchmark.archetype)}` : ""}
-            {benchmark.__similarity ? ` · ${String(benchmark.__similarity)}% similarity` : ""}
-          </p>
-        </div>
-      </div>
-      <div className="profile-benchmark-grid">
-        {ATTRIBUTE_GROUPS.flatMap((group) => group.keys).map((key) => {
-          const playerScore = clampScore(attributes[key]);
-          const benchmarkScore = numberFrom(benchmark, key);
-          return (
-            <div key={key} className="profile-benchmark-row">
-              <span>{ATTRIBUTE_LABELS[key]}</span>
-              <strong>{playerScore}</strong>
-              <em>{benchmarkScore == null ? "N/A" : clampScore(benchmarkScore)}</em>
-            </div>
-          );
-        })}
-      </div>
-    </article>
   );
 }
 

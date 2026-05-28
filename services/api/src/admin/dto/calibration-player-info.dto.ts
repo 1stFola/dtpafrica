@@ -59,10 +59,6 @@ export class LegacyMatchMetricsDto {
 
   @IsOptional()
   @IsNumber()
-  ball_touches?: number;
-
-  @IsOptional()
-  @IsNumber()
   total_distance?: number;
 
   @IsOptional()
@@ -71,11 +67,7 @@ export class LegacyMatchMetricsDto {
 
   @IsOptional()
   @IsNumber()
-  accelerations?: number;
-
-  @IsOptional()
-  @IsNumber()
-  decelerations?: number;
+  sprints?: number;
 
   @IsOptional()
   @IsNumber()
@@ -83,7 +75,11 @@ export class LegacyMatchMetricsDto {
 
   @IsOptional()
   @IsNumber()
-  sprints?: number;
+  first_step_accelerations?: number;
+
+  @IsOptional()
+  @IsNumber()
+  intense_accelerations?: number;
 
   @IsOptional()
   @IsNumber()
@@ -99,6 +95,10 @@ export class LegacyMatchMetricsDto {
 
   @IsOptional()
   @IsNumber()
+  turn_efficiency?: number;
+
+  @IsOptional()
+  @IsNumber()
   left_turns?: number;
 
   @IsOptional()
@@ -111,7 +111,23 @@ export class LegacyMatchMetricsDto {
 
   @IsOptional()
   @IsNumber()
-  kicking_power?: number;
+  ball_touches?: number;
+
+  @IsOptional()
+  @IsNumber()
+  possession_duration_seconds?: number;
+
+  @IsOptional()
+  @IsNumber()
+  one_touch_possessions_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  multi_touch_possessions__percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  quick_release_score?: number;
 
   @IsOptional()
   @IsNumber()
@@ -124,4 +140,52 @@ export class LegacyMatchMetricsDto {
   @IsOptional()
   @IsNumber()
   intense_turns_with_ball?: number;
+
+  @IsOptional()
+  @IsNumber()
+  kicking_power?: number;
+
+  @IsOptional()
+  @IsNumber()
+  release_inside_foot_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  release_laces_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  release_other_footzone_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  left_foot_touch_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  left_foot_release_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  left_foot_receive_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  left_foot_kicking_power_mph?: number;
+
+  @IsOptional()
+  @IsNumber()
+  right_foot_touch_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  right_foot_release_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  right_foot_receive_percentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  right_foot_kicking_power_mph?: number;
 }

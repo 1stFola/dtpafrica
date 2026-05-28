@@ -12,11 +12,15 @@ import {
 import { AdminApiKeyGuard } from "../admin/guards/admin-api-key.guard";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
+import { CompetitionEngineService } from "./competition-engine.service";
 import { ScoreboardService } from "./scoreboard.service";
 
 @Controller("scoreboard")
 export class ScoreboardController {
-  constructor(@Inject(ScoreboardService) private readonly sb: ScoreboardService) {}
+  constructor(
+    @Inject(ScoreboardService) private readonly sb: ScoreboardService,
+    @Inject(CompetitionEngineService) private readonly competitionEngine: CompetitionEngineService
+  ) {}
 
   @Get("competitions")
   competitions() {
@@ -54,6 +58,11 @@ export class ScoreboardController {
   @Get("standings/:competitionId")
   standings(@Param("competitionId") competitionId: string) {
     return this.sb.standings(competitionId);
+  }
+
+  @Get("competitions/:competitionId/standings/groups")
+  groupStandings(@Param("competitionId") competitionId: string) {
+    return this.competitionEngine.groupStandings(competitionId);
   }
 
   @Get("highlights")

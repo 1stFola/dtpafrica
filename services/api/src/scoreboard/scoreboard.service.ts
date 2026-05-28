@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -9,6 +10,10 @@ import { PrismaService } from "../prisma/prisma.service";
 import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
+import { computeGroupStandings, normalizeClubName } from "@dtp/engines";
+import { presentScoreboardPayload } from "./present-scoreboard";
+import { assertMatchReadyForLiveEvents } from "./roster-guard";
+import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
 import { computeStandings } from "./standings";
 
 const MATCH_INCLUDE = {
@@ -113,7 +118,9 @@ export class ScoreboardService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SipRecalculationService)
-    private readonly sipRecalc: SipRecalculationService
+    private readonly sipRecalc: SipRecalculationService,
+    @Inject(ScoreboardLifecycleService)
+    private readonly lifecycle: ScoreboardLifecycleService
   ) {}
 
   competitions() {
@@ -155,7 +162,7 @@ export class ScoreboardService {
       },
     });
     if (!comp) throw new NotFoundException("Competition not found");
-    return comp;
+    return presentScoreboardPayload(comp);
   }
 
   async teamById(id: string) {
@@ -198,7 +205,7 @@ export class ScoreboardService {
       .sort((a, b) => (b.kickoffAt?.getTime() ?? 0) - (a.kickoffAt?.getTime() ?? 0))
       .slice(0, 12);
     const { homeMatches, awayMatches, ...rest } = team;
-    return { ...rest, matches };
+    return presentScoreboardPayload({ ...rest, matches });
   }
 
   async search(query: string) {
@@ -258,10 +265,10 @@ export class ScoreboardService {
       }),
     ]);
 
-    return { query: q, competitions, teams, matches, players };
+    return presentScoreboardPayload({ query: q, competitions, teams, matches, players });
   }
 
-  listMatches(query: {
+  async listMatches(query: {
     status?: string;
     competitionId?: string;
     publicOnly?: boolean;
@@ -280,7 +287,7 @@ export class ScoreboardService {
       where.status = query.status;
     }
 
-    return this.prisma.sbMatch.findMany({
+    const rows = await this.prisma.sbMatch.findMany({
       where,
       orderBy: [{ kickoffAt: "desc" }],
       include: {
@@ -290,6 +297,7 @@ export class ScoreboardService {
         _count: { select: { events: true } },
       },
     });
+    return presentScoreboardPayload(rows);
   }
 
   async matchById(id: string, publicOnly = true) {
@@ -303,7 +311,7 @@ export class ScoreboardService {
       include: MATCH_INCLUDE,
     });
     if (!match) throw new NotFoundException("Match not found");
-    return match;
+    return presentScoreboardPayload(match);
   }
 
   async standings(competitionId: string) {
@@ -313,30 +321,59 @@ export class ScoreboardService {
     });
     if (!competition) throw new NotFoundException("Competition not found");
 
+    const groupFormats = new Set(["JAGABAN_CUP_STANDARD", "HYBRID_CHAMPIONS_LEAGUE"]);
+    const useGroups =
+      groupFormats.has(competition.formatType ?? "") ||
+      competition.teams.some((t) => t.groupKey);
+
     const finished = await this.prisma.sbMatch.findMany({
       where: {
         competitionId,
         status: "finished",
         isPublished: true,
+        ...(useGroups && competition.formatType === "JAGABAN_CUP_STANDARD"
+          ? { stageKey: { startsWith: "group_" } }
+          : {}),
       },
       select: {
         homeTeamId: true,
         awayTeamId: true,
         homeScore: true,
         awayScore: true,
+        kickoffAt: true,
       },
     });
 
-    return {
+    const normalizedTeams = competition.teams.map((t) => ({
+      id: t.id,
+      name: normalizeClubName(t.name),
+      shortName: t.shortName,
+      groupKey: t.groupKey,
+    }));
+
+    if (useGroups) {
+      const groupRows = computeGroupStandings(normalizedTeams, finished);
+      return presentScoreboardPayload({
+        competitionId,
+        competitionName: competition.name,
+        season: competition.season,
+        formatType: competition.formatType,
+        groups: [...new Set(groupRows.map((r) => r.groupKey))].sort(),
+        rows: groupRows,
+      });
+    }
+
+    return presentScoreboardPayload({
       competitionId,
       competitionName: competition.name,
       season: competition.season,
-      rows: computeStandings(competition.teams, finished),
-    };
+      formatType: competition.formatType,
+      rows: computeStandings(normalizedTeams, finished),
+    });
   }
 
-  highlights(competitionId?: string) {
-    return this.prisma.sbHighlight.findMany({
+  async highlights(competitionId?: string) {
+    const rows = await this.prisma.sbHighlight.findMany({
       where: {
         isPublished: true,
         ...(competitionId ? { competitionId } : {}),
@@ -350,33 +387,39 @@ export class ScoreboardService {
         event: true,
       },
     });
+    return presentScoreboardPayload(rows);
   }
 
   async addEvent(matchId: string, dto: CreateMatchEventDto) {
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },
-      include: { homeTeam: true, awayTeam: true },
+      include: { homeTeam: true, awayTeam: true, competition: true },
     });
     if (!match) throw new NotFoundException("Match not found");
+    const rosterCheck = assertMatchReadyForLiveEvents(
+      (match.stats ?? {}) as Parameters<typeof assertMatchReadyForLiveEvents>[0],
+      match.homeTeamId,
+      match.awayTeamId
+    );
+    if (!rosterCheck.ok) {
+      throw new ForbiddenException(rosterCheck.reason);
+    }
     if (!EVENT_TYPES.has(dto.type)) {
       throw new BadRequestException("Invalid event type");
     }
     if (dto.teamId && ![match.homeTeamId, match.awayTeamId].includes(dto.teamId)) {
       throw new BadRequestException("Event team must belong to the match");
     }
-    if (dto.playerId) {
-      const player = await this.prisma.player.findUnique({
-        where: { id: dto.playerId },
-        select: { id: true },
+    const linkedPlayerIds = [dto.playerId, dto.assistPlayerId].filter(
+      (id): id is string => Boolean(id)
+    );
+    if (linkedPlayerIds.length) {
+      const found = await this.prisma.player.count({
+        where: { id: { in: linkedPlayerIds } },
       });
-      if (!player) throw new BadRequestException("Event player was not found");
-    }
-    if (dto.assistPlayerId) {
-      const player = await this.prisma.player.findUnique({
-        where: { id: dto.assistPlayerId },
-        select: { id: true },
-      });
-      if (!player) throw new BadRequestException("Assist player was not found");
+      if (found !== linkedPlayerIds.length) {
+        throw new BadRequestException("One or more linked players were not found");
+      }
     }
 
     const eventData = {
@@ -389,35 +432,45 @@ export class ScoreboardService {
       playerLabel: dto.playerLabel?.trim() || undefined,
       assistLabel: dto.assistLabel?.trim() || undefined,
       detail: dto.detail?.trim() || undefined,
+      metadata: dto.metadata as Prisma.InputJsonValue | undefined,
     };
     const duplicate = await this.prisma.sbMatchEvent.findFirst({
-      where: eventData,
+      where: {
+        matchId,
+        type: dto.type,
+        minute: dto.minute,
+        teamId: dto.teamId ?? null,
+        playerId: dto.playerId ?? null,
+        assistPlayerId: dto.assistPlayerId ?? null,
+      },
     });
     if (duplicate) {
       return { ...duplicate, duplicate: true };
     }
 
-    const event = await this.prisma.sbMatchEvent.create({
-      data: eventData,
+    const event = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.sbMatchEvent.create({ data: eventData });
+      if (dto.type === "goal" && dto.teamId) {
+        const homeGoal = dto.teamId === match.homeTeamId;
+        const awayGoal = dto.teamId === match.awayTeamId;
+        if (homeGoal || awayGoal) {
+          await tx.sbMatch.update({
+            where: { id: matchId },
+            data: {
+              homeScore: homeGoal ? match.homeScore + 1 : match.homeScore,
+              awayScore: awayGoal ? match.awayScore + 1 : match.awayScore,
+              minute: dto.minute,
+            },
+          });
+        }
+      }
+      return created;
     });
 
-    if (dto.type === "goal" && dto.teamId) {
-      const homeGoal = dto.teamId === match.homeTeamId;
-      const awayGoal = dto.teamId === match.awayTeamId;
-      if (homeGoal || awayGoal) {
-        await this.prisma.sbMatch.update({
-          where: { id: matchId },
-          data: {
-            homeScore: homeGoal ? match.homeScore + 1 : match.homeScore,
-            awayScore: awayGoal ? match.awayScore + 1 : match.awayScore,
-            minute: dto.minute,
-          },
-        });
-      }
-    }
+    await this.lifecycle.applyMatchEventToPlayerStats(event, match.competitionId);
 
     if (dto.playerId) {
-      await this.ingestSipMetricsFromMatch(matchId);
+      void this.ingestSipMetricsFromMatch(matchId).catch(() => undefined);
     }
 
     return event;
@@ -428,6 +481,17 @@ export class ScoreboardService {
       where: { id: matchId },
     });
     if (!match) throw new NotFoundException("Match not found");
+
+    if (dto.status === "live" || dto.status === "halftime") {
+      const rosterCheck = assertMatchReadyForLiveEvents(
+        (match.stats ?? {}) as Parameters<typeof assertMatchReadyForLiveEvents>[0],
+        match.homeTeamId,
+        match.awayTeamId
+      );
+      if (!rosterCheck.ok) {
+        throw new ForbiddenException(rosterCheck.reason);
+      }
+    }
 
     if (
       dto.status &&
@@ -453,11 +517,15 @@ export class ScoreboardService {
       await this.ingestSipMetricsFromMatch(matchId);
     }
 
-    return updated;
+    if (dto.status === "finished" && match.status !== "finished") {
+      await this.lifecycle.onMatchFinished(matchId);
+    }
+
+    return presentScoreboardPayload(updated);
   }
 
-  supervisorFeed() {
-    return this.prisma.sbMatch.findMany({
+  async supervisorFeed() {
+    const rows = await this.prisma.sbMatch.findMany({
       where: { status: { in: LIVE_STATUSES } },
       orderBy: { kickoffAt: "asc" },
       include: {
@@ -467,6 +535,7 @@ export class ScoreboardService {
         events: { orderBy: { minute: "desc" }, take: 5 },
       },
     });
+    return presentScoreboardPayload(rows);
   }
 
   async ingestSipMetricsFromMatch(matchId: string) {
