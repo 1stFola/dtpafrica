@@ -63,6 +63,11 @@ export class AdminScoreboardController {
     return this.sb.groupStandings(competitionId);
   }
 
+  @Get("competitions/picker")
+  competitionPicker() {
+    return this.sb.listCompetitionPicker();
+  }
+
   @Get("competitions")
   competitions(
     @Query("status") status?: string,

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@dtp/ui";
-import { apiGet } from "../../../api/client";
+import { apiGet, isAbortError } from "../../../api/client";
 import { generateValuation } from "../../../api/mvce";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
@@ -17,17 +17,27 @@ export function GenerateValuationPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    apiGet<PlayerOption[]>("/home/featured-players")
-      .then((rows) =>
+    const controller = new AbortController();
+    let cancelled = false;
+    apiGet<PlayerOption[]>("/home/featured-players", controller.signal)
+      .then((rows) => {
+        if (cancelled) return;
         setPlayers(
           rows.map((r) => ({
             id: r.id,
             displayName: r.displayName,
             positionPrimary: r.positionPrimary,
           }))
-        )
-      )
-      .catch(() => setPlayers([{ id: SEED_ID, displayName: "ALLI O. SANNI", positionPrimary: "AM" }]));
+        );
+      })
+      .catch((e) => {
+        if (cancelled || isAbortError(e)) return;
+        setPlayers([{ id: SEED_ID, displayName: "ALLI O. SANNI", positionPrimary: "AM" }]);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, []);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -130,7 +140,11 @@ export function GenerateValuationPage() {
           </label>
         </fieldset>
 
-        {error && <p className="form-error">{error}</p>}
+        {error && (
+          <p className="dtp-error-banner" role="alert">
+            {error}
+          </p>
+        )}
 
         <Button type="submit" disabled={loading}>
           {loading ? "Calculating…" : "Generate valuation"}

@@ -9,8 +9,15 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_PREFIX}${path}`);
+/** True when an error originates from an aborted fetch (component unmount / stale request). */
+export function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof DOMException && error.name === "AbortError"
+  ) || (error instanceof Error && error.name === "AbortError");
+}
+
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${API_PREFIX}${path}`, signal ? { signal } : undefined);
   if (!res.ok) {
     const text = await res.text();
     throw new ApiError(text || res.statusText, res.status);

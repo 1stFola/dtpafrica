@@ -1,39 +1,55 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { NavLink, Outlet, useOutletContext } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
 import { adminScoreboardApi } from "../../../api/admin-scoreboard";
 import type { AdminSbStats } from "./types";
 
 const subLinks = [
-  { to: "/admin/scoreboard", end: true, label: "Overview" },
-  { to: "/admin/scoreboard/entities", label: "Master records" },
-  { to: "/admin/scoreboard/roster", label: "Matchday roster" },
-  { to: "/admin/scoreboard/highlights", label: "Highlights" },
-  { to: "/admin/scoreboard/match-center", label: "Match center" },
+  { to: "/admin/scoreboard", end: true, label: "Overview", icon: "◆" },
+  { to: "/admin/scoreboard/entities", label: "Master records", icon: "▦" },
+  { to: "/admin/scoreboard/roster", label: "Matchday roster", icon: "☰" },
+  { to: "/admin/scoreboard/match-center", label: "Match center", icon: "⏱" },
+  { to: "/admin/scoreboard/highlights", label: "Highlights", icon: "▶" },
 ];
+
+export type AdminScoreboardOutletContext = {
+  stats: AdminSbStats | null;
+  refreshStats: () => Promise<void>;
+};
+
+export function useAdminScoreboardContext() {
+  return useOutletContext<AdminScoreboardOutletContext>();
+}
 
 export function AdminScoreboardLayout() {
   const [stats, setStats] = useState<AdminSbStats | null>(null);
 
-  useEffect(() => {
-    adminScoreboardApi.stats().then(setStats).catch(() => {});
+  const refreshStats = useCallback(() => {
+    return adminScoreboardApi.stats().then(setStats);
   }, []);
+
+  useEffect(() => {
+    refreshStats().catch(() => {});
+  }, [refreshStats]);
 
   return (
     <div className="admin-page admin-scoreboard">
-      <header className="admin-page-header">
+      <header className="admin-page-header admin-sb-shell-header">
         <div>
+          <nav className="admin-sb-breadcrumbs" aria-label="Breadcrumb">
+            <NavLink to="/admin">Admin</NavLink>
+            <span className="admin-sb-breadcrumbs__sep">/</span>
+            <span>ScoreBoard</span>
+          </nav>
           <h1>ScoreBoard operations</h1>
-          <p className="muted">
-            Entity management, roster submission, highlights, and supervisor hooks
-            (migrated from legacy <code>admin-entities.html</code>,{" "}
-            <code>admin-roster.html</code>, <code>admin-content.html</code>).
+          <p className="muted admin-sb-shell-tagline">
+            Competitions, rosters, live match control, and highlights
           </p>
         </div>
         {stats && (
-          <div className="admin-sb-badges" aria-label="Live entity counts">
-            <span className="admin-sb-badge">{stats.competitions} competitions</span>
+          <div className="admin-sb-badges" aria-label="Entity counts">
+            <span className="admin-sb-badge">{stats.competitions} comps</span>
             <span className="admin-sb-badge">{stats.teams} teams</span>
-            <span className="admin-sb-badge">{stats.squadRows} squad rows</span>
+            <span className="admin-sb-badge">{stats.matches} matches</span>
             <span className="admin-sb-badge admin-sb-badge--live">
               {stats.liveMatches} live
             </span>
@@ -41,28 +57,39 @@ export function AdminScoreboardLayout() {
         )}
       </header>
 
-      <nav className="admin-sb-subnav" aria-label="ScoreBoard admin">
-        {subLinks.map((l) => (
-          <NavLink
-            key={l.to}
-            to={l.to}
-            end={l.end}
-            className={({ isActive }) =>
-              isActive ? "admin-sb-subnav-link active" : "admin-sb-subnav-link"
-            }
-          >
-            {l.label}
-          </NavLink>
-        ))}
-        <a href="/scoreboard/supervisor" className="admin-sb-subnav-link external">
-          Public supervisor ↗
-        </a>
-        <a href="/spotter-tablet" className="admin-sb-subnav-link external">
-          Spotter tablet ↗
-        </a>
-      </nav>
+      <div className="admin-sb-shell">
+        <aside className="admin-sb-sidebar" aria-label="ScoreBoard sections">
+          <nav className="admin-sb-sidebar-nav">
+            {subLinks.map((l) => (
+              <NavLink
+                key={l.to}
+                to={l.to}
+                end={l.end}
+                className={({ isActive }) =>
+                  isActive ? "admin-sb-sidebar-link active" : "admin-sb-sidebar-link"
+                }
+              >
+                <span className="admin-sb-sidebar-link__icon" aria-hidden="true">
+                  {l.icon}
+                </span>
+                {l.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="admin-sb-sidebar-external">
+            <a href="/scoreboard/supervisor" className="admin-sb-sidebar-link external">
+              Supervisor ↗
+            </a>
+            <a href="/spotter-tablet" className="admin-sb-sidebar-link external">
+              Spotter tablet ↗
+            </a>
+          </div>
+        </aside>
 
-      <Outlet context={{ stats, refreshStats: () => adminScoreboardApi.stats().then(setStats) }} />
+        <div className="admin-sb-shell-main">
+          <Outlet context={{ stats, refreshStats }} />
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import type { SbMatchListItem } from "../../../../api/scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
+import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
+import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 import {
   isGoalkeeper,
@@ -132,19 +134,23 @@ export function AdminScoreboardRosterPage() {
       setMessage("Matchday roster saved — player IDs linked to master directory");
       loadRoster();
     } catch (e) {
-      setMessage(String(e));
+      setMessage(formatAdminScoreboardError(e));
     } finally {
       setSaving(false);
     }
   };
 
-  const renderRosterList = (list: MatchdayRosterSlot[], title: string) => (
-    <div className="admin-sb-roster-panel">
+  const renderRosterList = (
+    list: MatchdayRosterSlot[],
+    title: string,
+    variant: "xi" | "bench"
+  ) => (
+    <div className={`admin-sb-roster-panel admin-sb-roster-panel--${variant}`}>
       <h3>
         {title}{" "}
         <span className="admin-sb-roster-count">
           ({list.length}
-          {title.startsWith("Starting") ? "/11" : ""})
+          {variant === "xi" ? "/11" : ""})
         </span>
       </h3>
       {list.length === 0 ? (
@@ -191,10 +197,11 @@ export function AdminScoreboardRosterPage() {
 
   return (
     <section className="admin-sb-section">
-      <p className="admin-sb-lead muted">
-        Build 11 starters plus bench for each side, then lock lineups on the spotter tablet
-        before live tagging.
-      </p>
+      <AdminSbPageHeader
+        title="Matchday roster"
+        description="Build 11 starters plus bench for each side, then lock lineups on the spotter tablet."
+        crumbs={[{ label: "Roster" }]}
+      />
 
       <div className="admin-filters admin-filters--with-action">
         <select value={matchId} onChange={(e) => setMatchId(e.target.value)} aria-label="Match">
@@ -266,10 +273,10 @@ export function AdminScoreboardRosterPage() {
               </ul>
             )}
           </div>
-          <div className="admin-sb-roster-selected">
-            {renderRosterList(xi, "Starting XI")}
-            {renderRosterList(subs, "Substitutes")}
-          </div>
+        <div className="admin-sb-roster-selected admin-sb-roster-columns">
+          {renderRosterList(xi, "Starting XI", "xi")}
+          {renderRosterList(subs, "Substitutes", "bench")}
+        </div>
         </div>
       )}
     </section>

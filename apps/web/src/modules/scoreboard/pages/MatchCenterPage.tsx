@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchMatch, type SbMatchDetail, type SbTeamWithSquad } from "../../../api/scoreboard";
+import { isAbortError } from "../../../api/client";
 import { EventTimeline } from "../components/EventTimeline";
 import { MatchStatsBars } from "../components/MatchStatsBars";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -52,6 +53,7 @@ export function MatchCenterPage() {
   const { id } = useParams<{ id: string }>();
   const [match, setMatch] = useState<SbMatchDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   usePageTitle(
     match ? `${match.homeTeam.shortName ?? match.homeTeam.name} vs ${match.awayTeam.shortName ?? match.awayTeam.name}` : "Match"
@@ -59,28 +61,65 @@ export function MatchCenterPage() {
 
   useEffect(() => {
     if (!id) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
     const load = () =>
-      fetchMatch(id)
-        .then(setMatch)
-        .catch((e) => setError(String(e)));
+      fetchMatch(id, controller.signal)
+        .then((data) => {
+          if (cancelled) return;
+          setMatch(data);
+          setLoading(false);
+          // Stop polling once the match is over — avoids endless background fetches.
+          if (data.status === "finished" && timer) {
+            clearInterval(timer);
+            timer = undefined;
+          }
+        })
+        .catch((e) => {
+          if (cancelled || isAbortError(e)) return;
+          setError(String(e));
+          setLoading(false);
+        });
+
+    setMatch(null);
+    setError(null);
+    setLoading(true);
     load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    timer = setInterval(load, 15000);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer) clearInterval(timer);
+    };
   }, [id]);
 
   if (error) {
     return (
       <div className="sb-page">
-        <p className="form-error">{error}</p>
-        <Link to="/scoreboard">Back</Link>
+        <p className="dtp-error-banner" role="alert">
+          {error}
+        </p>
+        <Link to="/scoreboard" className="back-link">
+          ← Back to ScoreBoard
+        </Link>
       </div>
     );
   }
 
-  if (!match) {
+  if (loading || !match) {
     return (
-      <div className="sb-page">
-        <p className="muted">Loading match…</p>
+      <div className="sb-page" aria-busy="true">
+        <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "12rem" }} />
+        <div className="sb-match-center-score" style={{ borderStyle: "dashed" }}>
+          <span className="dtp-skeleton" style={{ height: "3rem" }} />
+          <span className="dtp-skeleton" style={{ height: "1.5rem", width: "4rem", margin: "0 auto" }} />
+          <span className="dtp-skeleton" style={{ height: "3rem" }} />
+        </div>
+        <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1.5rem" }} />
+        <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1rem" }} />
       </div>
     );
   }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@dtp/ui";
-import { apiGet, type PublicPlayerProfile } from "../../../api/client";
+import { apiGet, isAbortError, type PublicPlayerProfile } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { BenchmarkPlaystyleComparison } from "../components/PlaystyleComparisonModal";
 
@@ -170,26 +170,49 @@ export function PlayerProfilePage() {
 
   useEffect(() => {
     if (!slugOrId) return;
+    const controller = new AbortController();
+    let cancelled = false;
     setPlayer(null);
     setError(null);
-    apiGet<PublicPlayerProfile>(`/home/players/${slugOrId}`)
-      .then(setPlayer)
-      .catch((e) => setError(String(e)));
+    apiGet<PublicPlayerProfile>(`/home/players/${slugOrId}`, controller.signal)
+      .then((data) => {
+        if (!cancelled) setPlayer(data);
+      })
+      .catch((e) => {
+        if (!cancelled && !isAbortError(e)) setError(String(e));
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [slugOrId]);
 
   if (error) {
     return (
       <div className="home-page">
-        <p className="form-error">{error}</p>
-        <Link to="/featured-players">Back to featured players</Link>
+        <p className="dtp-error-banner" role="alert">
+          {error}
+        </p>
+        <Link to="/featured-players" className="back-link">
+          ← Back to featured players
+        </Link>
       </div>
     );
   }
 
   if (!player) {
     return (
-      <div className="home-page">
-        <p className="muted">Loading profile…</p>
+      <div className="home-page profile-page" aria-busy="true">
+        <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "10rem" }} />
+        <div className="profile-hero" style={{ marginTop: "1.5rem" }}>
+          <span className="dtp-skeleton" style={{ width: 96, height: 96, borderRadius: "50%" }} />
+          <div className="profile-hero__body" style={{ width: "100%" }}>
+            <span className="dtp-skeleton" style={{ height: "2rem", width: "60%", marginBottom: "0.75rem" }} />
+            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "40%" }} />
+            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "30%" }} />
+          </div>
+        </div>
+        <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "2rem" }} />
       </div>
     );
   }

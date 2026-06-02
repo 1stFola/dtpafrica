@@ -5,6 +5,7 @@ import {
   type SbSearchResult,
 } from "../../../api/scoreboard";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { MatchCard } from "../components/MatchCard";
 
 export function BrowsePage() {
@@ -13,19 +14,47 @@ export function BrowsePage() {
   const initialQuery = searchParams.get("q") ?? "";
   const [query, setQuery] = useState(initialQuery);
   const [result, setResult] = useState<SbSearchResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const debouncedQuery = useDebouncedValue(query, 350);
 
   useEffect(() => {
-    if (initialQuery.trim().length < 2) {
+    const trimmed = debouncedQuery.trim();
+    // Keep the URL in sync (replace, so typing doesn't flood history).
+    setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
+
+    if (trimmed.length < 2) {
       setResult(null);
+      setError(null);
+      setLoading(false);
       return;
     }
-    searchScoreboard(initialQuery).then(setResult).catch(() => setResult(null));
-  }, [initialQuery]);
+
+    let active = true;
+    setLoading(true);
+    setError(null);
+    searchScoreboard(trimmed)
+      .then((data) => {
+        if (active) setResult(data);
+      })
+      .catch((e) => {
+        if (active) {
+          setResult(null);
+          setError(String(e));
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // setSearchParams identity is stable from react-router.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const next = query.trim();
-    setSearchParams(next ? { q: next } : {});
   };
 
   return (
@@ -35,23 +64,34 @@ export function BrowsePage() {
         <p className="muted">Search competitions, teams, matches, and linked public players.</p>
       </header>
 
-      <form className="sb-search-form" onSubmit={onSubmit}>
+      <form className="sb-search-form" onSubmit={onSubmit} role="search">
         <label>
           Search
           <input
+            type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Jagaban, Lagos, midfielder..."
+            aria-label="Search competitions, teams, matches, and players"
           />
         </label>
-        <button type="submit" className="dtp-btn dtp-btn--primary">
-          Search
+        <button type="submit" className="dtp-btn dtp-btn--primary" disabled={loading}>
+          {loading ? "Searching…" : "Search"}
         </button>
       </form>
 
-      {!result ? (
-        <p className="muted">Enter at least two characters to search the ScoreBoard graph.</p>
-      ) : (
+      {error && (
+        <p className="dtp-error-banner" role="alert">
+          {error}
+        </p>
+      )}
+
+      {!result && !error ? (
+        <div className="dtp-empty-state">
+          <p className="dtp-empty-state__title">Search the ScoreBoard graph</p>
+          <p>Enter at least two characters to find competitions, teams, matches, and players.</p>
+        </div>
+      ) : !result ? null : (
         <div className="sb-browse-results">
           <section className="sb-section">
             <h2>Competitions</h2>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@dtp/ui";
 
 const ATTRIBUTE_GROUPS = [
@@ -107,6 +107,7 @@ function PlaystyleComparisonModal({
   attributes,
 }: PlaystyleComparisonModalProps) {
   const titleId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const benchLabel = benchmarkName(benchmark);
   const similarity = similarityPercent(benchmark) ?? "—";
   const playerOverall = playerRating != null ? clampScore(playerRating) : "—";
@@ -131,6 +132,16 @@ function PlaystyleComparisonModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  // Move focus into the dialog on open, and restore it to the trigger on close.
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    return () => {
+      previouslyFocused?.focus?.();
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return (
@@ -148,6 +159,7 @@ function PlaystyleComparisonModal({
       >
         <button
           type="button"
+          ref={closeButtonRef}
           className="playstyle-modal__close"
           onClick={onClose}
           aria-label="Close playstyle comparison"

@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
+import { useDebouncedValue } from "../../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
+import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
+import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
+import { AdminSbTableShell } from "../components/AdminSbTableShell";
 import { CreateCompetitionModal } from "../components/CreateCompetitionModal";
 import { CsvDropzone } from "../components/CsvDropzone";
 import { StatusBadge } from "../components/StatusBadge";
+import { useAdminScoreboardContext } from "../AdminScoreboardLayout";
 import {
   COMPETITION_STATUSES,
   COMPETITION_TYPES,
@@ -17,10 +22,12 @@ type Tab = "competitions" | "teams" | "players" | "seeders";
 
 export function AdminScoreboardEntitiesPage() {
   usePageTitle("Admin — ScoreBoard entities");
+  const { refreshStats } = useAdminScoreboardContext();
   const [tab, setTab] = useState<Tab>("competitions");
   const [competitions, setCompetitions] = useState<AdminSbCompetition[]>([]);
   const [teams, setTeams] = useState<AdminSbTeam[]>([]);
   const [players, setPlayers] = useState<AdminSbPlayerDirectoryRow[]>([]);
+  const [picker, setPicker] = useState<Array<{ id: string; name: string }>>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [q, setQ] = useState("");
@@ -29,50 +36,112 @@ export function AdminScoreboardEntitiesPage() {
   const [seedCompId, setSeedCompId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [loading, setLoading] = useState<Record<Tab, boolean>>({
+    competitions: false,
+    teams: false,
+    players: false,
+    seeders: false,
+  });
+  const loadedRef = useRef<Record<Tab, boolean>>({
+    competitions: false,
+    teams: false,
+    players: false,
+    seeders: false,
+  });
 
-  const loadCompetitions = useCallback(() => {
-    adminScoreboardApi
-      .competitions({
+  const debouncedQ = useDebouncedValue(q);
+  const debouncedTeamQ = useDebouncedValue(teamQ);
+  const debouncedPlayerQ = useDebouncedValue(playerQ);
+
+  const loadCompetitions = useCallback(async () => {
+    setLoading((s) => ({ ...s, competitions: true }));
+    try {
+      const rows = await adminScoreboardApi.competitions({
         status: statusFilter || undefined,
         type: typeFilter || undefined,
-        q: q || undefined,
-      })
-      .then(setCompetitions)
-      .catch(() => {});
-  }, [statusFilter, typeFilter, q]);
+        q: debouncedQ || undefined,
+      });
+      setCompetitions(rows);
+      loadedRef.current.competitions = true;
+    } catch {
+      setCompetitions([]);
+    } finally {
+      setLoading((s) => ({ ...s, competitions: false }));
+    }
+  }, [statusFilter, typeFilter, debouncedQ]);
 
-  const loadTeams = useCallback(() => {
-    adminScoreboardApi.teams({ q: teamQ || undefined }).then(setTeams).catch(() => {});
-  }, [teamQ]);
+  const loadTeams = useCallback(async () => {
+    setLoading((s) => ({ ...s, teams: true }));
+    try {
+      const rows = await adminScoreboardApi.teams({ q: debouncedTeamQ || undefined });
+      setTeams(rows);
+      loadedRef.current.teams = true;
+    } catch {
+      setTeams([]);
+    } finally {
+      setLoading((s) => ({ ...s, teams: false }));
+    }
+  }, [debouncedTeamQ]);
 
-  const loadPlayers = useCallback(() => {
-    adminScoreboardApi.players(playerQ || undefined).then(setPlayers).catch(() => {});
-  }, [playerQ]);
+  const loadPlayers = useCallback(async () => {
+    setLoading((s) => ({ ...s, players: true }));
+    try {
+      const rows = await adminScoreboardApi.players(debouncedPlayerQ || undefined);
+      setPlayers(rows);
+      loadedRef.current.players = true;
+    } catch {
+      setPlayers([]);
+    } finally {
+      setLoading((s) => ({ ...s, players: false }));
+    }
+  }, [debouncedPlayerQ]);
+
+  const loadPicker = useCallback(async () => {
+    setLoading((s) => ({ ...s, seeders: true }));
+    try {
+      const rows = await adminScoreboardApi.competitionPicker();
+      setPicker(rows);
+      if (rows[0] && !seedCompId) setSeedCompId(rows[0].id);
+      loadedRef.current.seeders = true;
+    } finally {
+      setLoading((s) => ({ ...s, seeders: false }));
+    }
+  }, [seedCompId]);
 
   useEffect(() => {
-    if (tab === "competitions") loadCompetitions();
+    if (tab === "competitions") void loadCompetitions();
   }, [tab, loadCompetitions]);
 
   useEffect(() => {
-    if (tab === "teams") loadTeams();
+    if (tab === "teams") void loadTeams();
   }, [tab, loadTeams]);
 
   useEffect(() => {
-    if (tab === "players") loadPlayers();
+    if (tab === "players") void loadPlayers();
   }, [tab, loadPlayers]);
 
   useEffect(() => {
-    adminScoreboardApi.competitions().then((rows) => {
-      setCompetitions(rows);
-      if (rows[0]) setSeedCompId(rows[0].id);
-    });
-  }, []);
+    if (tab === "seeders" && !loadedRef.current.seeders) void loadPicker();
+  }, [tab, loadPicker]);
 
   const playerPath = (slug: string | null, displayName: string) =>
     slug ? `/player/${slug}` : `/player/${encodeURIComponent(displayName.toLowerCase().replace(/\s+/g, "-"))}`;
 
   return (
     <section className="admin-sb-section">
+      <AdminSbPageHeader
+        title="Master records"
+        description="Competitions, clubs, player directory, and CSV import/export tools."
+        crumbs={[{ label: "Entities" }]}
+        actions={
+          tab === "competitions" ? (
+            <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+              Create competition
+            </button>
+          ) : undefined
+        }
+      />
+
       <div className="admin-sb-tabs" role="tablist">
         {(
           [
@@ -95,30 +164,38 @@ export function AdminScoreboardEntitiesPage() {
         ))}
       </div>
 
-      {message && <p className="admin-sb-msg">{message}</p>}
+      {message && (
+        <p className="admin-sb-msg" role="status">
+          {message}
+        </p>
+      )}
 
       <CreateCompetitionModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={() => {
           setMessage("Competition created");
-          loadCompetitions();
+          loadedRef.current.competitions = false;
+          void loadCompetitions();
+          void refreshStats();
         }}
       />
 
       {tab === "competitions" && (
         <>
           <div className="admin-filters admin-filters--with-action">
-            <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-              Create competition
-            </button>
             <input
               type="search"
-              placeholder="Search competitions…"
+              placeholder="Search name, slug, region…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              aria-label="Search competitions"
             />
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Filter by status"
+            >
               <option value="">All statuses</option>
               {COMPETITION_STATUSES.map((s) => (
                 <option key={s} value={s}>
@@ -126,7 +203,11 @@ export function AdminScoreboardEntitiesPage() {
                 </option>
               ))}
             </select>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              aria-label="Filter by type"
+            >
               <option value="">All types</option>
               {COMPETITION_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -135,8 +216,14 @@ export function AdminScoreboardEntitiesPage() {
               ))}
             </select>
           </div>
-          <div className="admin-table-wrap">
-            <table className="admin-table">
+          <AdminSbTableShell
+            loading={loading.competitions}
+            empty={!loading.competitions && competitions.length === 0}
+            emptyTitle="No competitions match your filters"
+            emptyHint="Create a competition or adjust search filters."
+            columns={6}
+          >
+            <table className="admin-table admin-sb-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -152,7 +239,9 @@ export function AdminScoreboardEntitiesPage() {
                   <tr key={c.id}>
                     <td>{c.name}</td>
                     <td>{c.type}</td>
-                    <td>{c.formatType ?? "—"}</td>
+                    <td>
+                      <code className="admin-sb-code">{c.formatType ?? "—"}</code>
+                    </td>
                     <td>{c.region ?? "—"}</td>
                     <td>{c.teamsCount}</td>
                     <td>
@@ -162,7 +251,7 @@ export function AdminScoreboardEntitiesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </AdminSbTableShell>
         </>
       )}
 
@@ -174,10 +263,16 @@ export function AdminScoreboardEntitiesPage() {
               placeholder="Search clubs…"
               value={teamQ}
               onChange={(e) => setTeamQ(e.target.value)}
+              aria-label="Search teams"
             />
           </div>
-          <div className="admin-table-wrap">
-            <table className="admin-table">
+          <AdminSbTableShell
+            loading={loading.teams}
+            empty={!loading.teams && teams.length === 0}
+            emptyTitle="No teams found"
+            columns={4}
+          >
+            <table className="admin-table admin-sb-table">
               <thead>
                 <tr>
                   <th>Club</th>
@@ -197,7 +292,7 @@ export function AdminScoreboardEntitiesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </AdminSbTableShell>
         </>
       )}
 
@@ -206,13 +301,20 @@ export function AdminScoreboardEntitiesPage() {
           <div className="admin-filters">
             <input
               type="search"
-              placeholder="Quick-search master directory…"
+              placeholder="Search players in scoreboard squads…"
               value={playerQ}
               onChange={(e) => setPlayerQ(e.target.value)}
+              aria-label="Search players"
             />
           </div>
-          <div className="admin-table-wrap">
-            <table className="admin-table">
+          <AdminSbTableShell
+            loading={loading.players}
+            empty={!loading.players && players.length === 0}
+            emptyTitle="No players in directory"
+            emptyHint="Import squad CSV per team or link players when saving rosters."
+            columns={4}
+          >
+            <table className="admin-table admin-sb-table">
               <thead>
                 <tr>
                   <th>Player</th>
@@ -226,17 +328,19 @@ export function AdminScoreboardEntitiesPage() {
                   <tr key={p.playerId ?? p.slug ?? p.displayName}>
                     <td>{p.displayName}</td>
                     <td>{p.positionPrimary ?? "—"}</td>
-                    <td>{p.teams.map((t) => t.teamName).join(", ")}</td>
+                    <td className="admin-sb-clubs-cell">
+                      {p.teams.map((t) => t.teamName).join(", ")}
+                    </td>
                     <td>
                       <Link to={playerPath(p.slug, p.displayName)} className="text-link">
-                        Open profile
+                        Profile
                       </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </AdminSbTableShell>
         </>
       )}
 
@@ -244,32 +348,45 @@ export function AdminScoreboardEntitiesPage() {
         <div className="admin-sb-seed-grid">
           <CsvDropzone
             label="Competitions"
-            hint="Headers: name, type, region, status, logo, isFeatured"
+            hint='Headers: name, type, region, status, isFeatured'
             onExport={async () => (await adminScoreboardApi.exportCompetitionsCsv()).csv}
             onImport={async (csv) => {
-              const r = await adminScoreboardApi.importCompetitionsCsv(csv);
-              setMessage(`Imported ${r.imported} competitions`);
-              loadCompetitions();
+              try {
+                const r = await adminScoreboardApi.importCompetitionsCsv(csv);
+                setMessage(`Imported ${r.imported} competition(s)`);
+                loadedRef.current.competitions = false;
+                void refreshStats();
+              } catch (e) {
+                throw new Error(formatAdminScoreboardError(e));
+              }
             }}
           />
           <CsvDropzone
             label="Teams"
-            hint="Headers: name, slug, region, competitionSlug, logo — select competition below"
+            hint="Headers: name, slug, region — pick competition below"
             onExport={async () =>
               (await adminScoreboardApi.exportTeamsCsv(seedCompId || undefined)).csv
             }
             onImport={async (csv) => {
-              if (!seedCompId) throw new Error("Select a competition for team import");
-              const r = await adminScoreboardApi.importTeamsCsv(csv, seedCompId);
-              setMessage(`Imported ${r.imported} teams`);
-              loadTeams();
+              if (!seedCompId) throw new Error("Select a competition before importing teams");
+              try {
+                const r = await adminScoreboardApi.importTeamsCsv(csv, seedCompId);
+                setMessage(`Imported ${r.imported} team(s)`);
+                void refreshStats();
+              } catch (e) {
+                throw new Error(formatAdminScoreboardError(e));
+              }
             }}
           />
-          <label className="admin-sb-field">
-            Team import competition
-            <select value={seedCompId} onChange={(e) => setSeedCompId(e.target.value)}>
+          <label className="admin-sb-field admin-sb-panel">
+            <span>Team import competition</span>
+            <select
+              value={seedCompId}
+              onChange={(e) => setSeedCompId(e.target.value)}
+              disabled={loading.seeders}
+            >
               <option value="">Select…</option>
-              {competitions.map((c) => (
+              {picker.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -277,15 +394,15 @@ export function AdminScoreboardEntitiesPage() {
             </select>
           </label>
           {seedCompId && (
-            <div className="admin-sb-export-actions">
+            <div className="admin-sb-export-actions admin-sb-panel">
+              <p className="muted admin-sb-export-hint">
+                Export full squad directory for Calibration Engine V3
+              </p>
               <button
                 type="button"
                 className="admin-inline-button"
                 onClick={async () => {
-                  const r = await adminScoreboardApi.exportCompetitionSquad(
-                    seedCompId,
-                    "json"
-                  );
+                  const r = await adminScoreboardApi.exportCompetitionSquad(seedCompId, "json");
                   const blob = new Blob([JSON.stringify(r.rows ?? r, null, 2)], {
                     type: "application/json",
                   });
@@ -295,19 +412,16 @@ export function AdminScoreboardEntitiesPage() {
                   a.download = `squad-${seedCompId}.json`;
                   a.click();
                   URL.revokeObjectURL(url);
-                  setMessage("Squad directory exported (JSON) for Calibration Engine V3");
+                  setMessage("Squad directory exported (JSON)");
                 }}
               >
-                Export squad directory (JSON)
+                Export JSON
               </button>
               <button
                 type="button"
                 className="admin-inline-button"
                 onClick={async () => {
-                  const r = await adminScoreboardApi.exportCompetitionSquad(
-                    seedCompId,
-                    "csv"
-                  );
+                  const r = await adminScoreboardApi.exportCompetitionSquad(seedCompId, "csv");
                   const blob = new Blob([r.csv ?? ""], { type: "text/csv" });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a");
@@ -318,7 +432,7 @@ export function AdminScoreboardEntitiesPage() {
                   setMessage("Squad directory exported (CSV)");
                 }}
               >
-                Export squad directory (CSV)
+                Export CSV
               </button>
             </div>
           )}

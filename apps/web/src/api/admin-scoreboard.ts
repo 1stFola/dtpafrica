@@ -71,6 +71,11 @@ export const adminScoreboardApi = {
       }>;
     }>(`/admin/scoreboard/competitions/${competitionId}/standings/groups`),
 
+  competitionPicker: () =>
+    sbFetch<Array<{ id: string; name: string; slug: string; season: string }>>(
+      "/admin/scoreboard/competitions/picker"
+    ),
+
   competitions: (params?: { status?: string; type?: string; q?: string }) => {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);

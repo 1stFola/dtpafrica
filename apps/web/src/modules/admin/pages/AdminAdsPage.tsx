@@ -109,13 +109,20 @@ export function AdminAdsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     adminApi
       .adsGet()
       .then((config: AdminAdsConfig) => {
+        if (cancelled) return;
         setSlots(mergeLoadedSlots(config.slots));
         setUpdatedAt(config.updatedAt);
       })
-      .catch((e) => setMessage(String(e)));
+      .catch((e) => {
+        if (!cancelled) setMessage(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const updateSlot = (key: AdminAdSlotKey, patch: Partial<AdminAdSlotConfig>) => {
@@ -145,9 +152,19 @@ export function AdminAdsPage() {
 
   if (!slots) {
     return (
-      <div className="admin-page">
+      <div className="admin-page" aria-busy="true">
         <h1>Ad placements</h1>
-        <p className="muted">{message ?? "Loading ad configuration…"}</p>
+        {message ? (
+          <p className="dtp-error-banner" role="alert">
+            {message}
+          </p>
+        ) : (
+          <>
+            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "60%" }} />
+            <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1rem" }} />
+            <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1rem" }} />
+          </>
+        )}
       </div>
     );
   }
@@ -196,7 +213,16 @@ export function AdminAdsPage() {
         )}
       </header>
 
-      {message && <p className="muted">{message}</p>}
+      {message &&
+        (message.startsWith("Could not") ? (
+          <p className="dtp-error-banner" role="alert">
+            {message}
+          </p>
+        ) : (
+          <p className="dtp-status-badge dtp-status-badge--success" role="status">
+            {message}
+          </p>
+        ))}
 
       <form className="admin-homepage-form" onSubmit={save}>
         {AD_SLOT_KEYS.map((key) => {
@@ -210,7 +236,16 @@ export function AdminAdsPage() {
               : null;
           return (
             <section key={key} className="admin-content-form">
-              <h2>{meta.title}</h2>
+              <div className="admin-ads-slot-header">
+                <h2>{meta.title}</h2>
+                <span
+                  className={`dtp-status-badge ${
+                    slot.enabled ? "dtp-status-badge--success" : "dtp-status-badge--neutral"
+                  }`}
+                >
+                  {slot.enabled ? "Enabled" : "Disabled"}
+                </span>
+              </div>
               <p className="muted admin-field-help">{meta.placementNotes}</p>
               <div className="admin-ad-size-spec" role="note">
                 <strong>Creative size:</strong> {sizeSpec.recommendedPx} px ·{" "}

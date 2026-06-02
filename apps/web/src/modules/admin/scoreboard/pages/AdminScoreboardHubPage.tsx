@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
+import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 
 const cards: Array<{
   to: string;
@@ -17,7 +18,7 @@ const cards: Array<{
   {
     to: "/admin/scoreboard/roster",
     title: "Matchday roster",
-    desc: "Submit XI + bench per team. Links to player profiles on save.",
+    desc: "Submit XI + bench per team. Player IDs link to the master directory on save.",
     tag: "Pre-match",
   },
   {
@@ -35,7 +36,7 @@ const cards: Array<{
   {
     to: "/spotter-tablet",
     title: "Stadium spotter",
-    desc: "Tablet-first pitch tagging. Lock lineups before live events.",
+    desc: "Tablet-first pitch tagging. Lock lineups after admin rosters are saved.",
     tag: "Field",
     external: true,
   },
@@ -46,10 +47,11 @@ export function AdminScoreboardHubPage() {
 
   return (
     <section className="admin-sb-section">
-      <p className="admin-sb-lead muted">
-        Competition lifecycle: roster → lock lineups → live events → full time → standings
-        and career stats.
-      </p>
+      <AdminSbPageHeader
+        title="Overview"
+        description="Competition lifecycle: roster → lock lineups → live events → full time → standings and career stats."
+        crumbs={[{ label: "Overview" }]}
+      />
       <div className="admin-sb-hub-grid">
         {cards.map((c) => (
           <Link

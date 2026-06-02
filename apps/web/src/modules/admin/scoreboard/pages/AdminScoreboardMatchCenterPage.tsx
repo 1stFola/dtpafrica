@@ -10,6 +10,8 @@ import {
 } from "../../../../api/scoreboard";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
+import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
+import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 
 type TimelineEvent = Awaited<
@@ -83,7 +85,7 @@ export function AdminScoreboardMatchCenterPage() {
       refresh();
       loadTimeline(selected.id);
     } catch (e) {
-      setMessage(String(e));
+      setMessage(formatAdminScoreboardError(e));
     } finally {
       setBusy(false);
     }
@@ -96,16 +98,17 @@ export function AdminScoreboardMatchCenterPage() {
       setMessage("Event removed");
       loadTimeline(selected.id);
     } catch (e) {
-      setMessage(String(e));
+      setMessage(formatAdminScoreboardError(e));
     }
   };
 
   return (
     <section className="admin-sb-section">
-      <p className="admin-sb-lead muted">
-        Canonical match timeline (<code>SbMatchEvent</code>). Full time triggers standings
-        cache and career stat updates for group-stage fixtures.
-      </p>
+      <AdminSbPageHeader
+        title="Match center"
+        description="Canonical timeline and live match controls. Full time updates standings for group-stage fixtures."
+        crumbs={[{ label: "Match center" }]}
+      />
 
       <div className="admin-sb-supervisor-hook">
         <span

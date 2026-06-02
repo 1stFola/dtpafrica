@@ -11,11 +11,24 @@ export function FeaturedPlayersPage() {
   usePageTitle("Featured players");
   const [players, setPlayers] = useState<FeaturedPlayer[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
     apiGet<FeaturedPlayer[]>("/home/featured-players")
-      .then(setPlayers)
-      .catch((e) => setError(String(e)));
+      .then((data) => {
+        if (active) setPlayers(data);
+      })
+      .catch((e) => {
+        if (active) setError(String(e));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -26,9 +39,27 @@ export function FeaturedPlayersPage() {
           Verified profiles with ratings and tactical summaries from the Scouting Intelligence Platform.
         </p>
       </header>
-      {error && <p className="form-error">{error}</p>}
-      {players.length === 0 && !error && (
-        <p className="muted">No featured players published yet.</p>
+      {error && (
+        <p className="dtp-error-banner" role="alert">
+          {error}
+        </p>
+      )}
+      {loading && (
+        <div className="player-grid" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, idx) => (
+            <div key={idx} className="dtp-player-card" style={{ padding: "1rem" }}>
+              <span className="dtp-skeleton" style={{ width: 64, height: 64, borderRadius: "50%", marginBottom: "0.75rem" }} />
+              <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "70%" }} />
+              <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "45%" }} />
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && players.length === 0 && !error && (
+        <div className="dtp-empty-state">
+          <p className="dtp-empty-state__title">No featured players yet</p>
+          <p>Verified player profiles will appear here once published.</p>
+        </div>
       )}
       <div className="player-grid">
         {players.flatMap((p, idx) => {

@@ -17,6 +17,16 @@ export function AdminDashboardPage() {
       <p className="muted">
         Publish players, manage homepage content, and triage contact messages.
       </p>
+      {!stats && (
+        <div className="admin-stat-grid" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, idx) => (
+            <div key={idx} className="admin-stat">
+              <span className="dtp-skeleton" style={{ width: "3rem", height: "1.75rem" }} />
+              <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "60%", marginBottom: 0 }} />
+            </div>
+          ))}
+        </div>
+      )}
       {stats && (
         <div className="admin-stat-grid">
           <div className="admin-stat">

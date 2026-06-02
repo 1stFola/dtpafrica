@@ -5,6 +5,7 @@ import {
   type SbMatchListItem,
   type SbTeamDetail,
 } from "../../../api/scoreboard";
+import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { MatchCard } from "../components/MatchCard";
 
@@ -27,9 +28,21 @@ export function TeamPage() {
 
   useEffect(() => {
     if (!id) return;
-    fetchTeam(id)
-      .then(setTeam)
-      .catch((err) => setError(String(err)));
+    const controller = new AbortController();
+    let cancelled = false;
+    setTeam(null);
+    setError(null);
+    fetchTeam(id, controller.signal)
+      .then((data) => {
+        if (!cancelled) setTeam(data);
+      })
+      .catch((err) => {
+        if (!cancelled && !isAbortError(err)) setError(String(err));
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [id]);
 
   const finishedForm = useMemo(
@@ -44,9 +57,11 @@ export function TeamPage() {
   if (error) {
     return (
       <div className="sb-page">
-        <p className="form-error">{error}</p>
-        <Link to="/scoreboard/browse" className="text-link">
-          Back to browse
+        <p className="dtp-error-banner" role="alert">
+          {error}
+        </p>
+        <Link to="/scoreboard/browse" className="back-link">
+          ← Back to browse
         </Link>
       </div>
     );
@@ -54,8 +69,11 @@ export function TeamPage() {
 
   if (!team) {
     return (
-      <div className="sb-page">
-        <p className="muted">Loading team...</p>
+      <div className="sb-page" aria-busy="true">
+        <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "10rem" }} />
+        <span className="dtp-skeleton" style={{ height: "2.5rem", width: "16rem", margin: "1rem 0" }} />
+        <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1rem" }} />
+        <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1rem" }} />
       </div>
     );
   }

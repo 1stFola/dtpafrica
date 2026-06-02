@@ -1,14 +1,33 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchValuedPlayers, type ValuedPlayerRow } from "../../../api/mvce";
+import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
 export function ValuationHubPage() {
   usePageTitle("Valuation");
   const [players, setPlayers] = useState<ValuedPlayerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchValuedPlayers().then(setPlayers).catch(() => {});
+    const controller = new AbortController();
+    let cancelled = false;
+    setLoading(true);
+    fetchValuedPlayers(controller.signal)
+      .then((rows) => {
+        if (!cancelled) setPlayers(rows);
+      })
+      .catch((e) => {
+        if (!cancelled && !isAbortError(e)) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, []);
 
   return (
@@ -26,8 +45,27 @@ export function ValuationHubPage() {
 
       <section className="sb-section">
         <h2>Recent valuations</h2>
-        {players.length === 0 ? (
-          <p className="muted">No valuations yet. Generate one for a seed player.</p>
+        {error && (
+          <p className="dtp-error-banner" role="alert">
+            {error}
+          </p>
+        )}
+        {loading ? (
+          <ul className="mvce-player-list" aria-busy="true">
+            {Array.from({ length: 5 }).map((_, idx) => (
+              <li key={idx} style={{ padding: "1rem", borderBottom: "1px solid var(--color-border)" }}>
+                <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "40%", marginBottom: 0 }} />
+              </li>
+            ))}
+          </ul>
+        ) : players.length === 0 ? (
+          <div className="dtp-empty-state">
+            <p className="dtp-empty-state__title">No valuations yet</p>
+            <p>Generate an MVCE valuation for a seed player to populate this list.</p>
+            <Link to="/valuation/generate" className="text-link">
+              Generate a valuation
+            </Link>
+          </div>
         ) : (
           <ul className="mvce-player-list">
             {players.map((p) => {

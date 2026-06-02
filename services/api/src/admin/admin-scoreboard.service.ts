@@ -126,8 +126,16 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+function csvError(label: string, detail: string): BadRequestException {
+  return new BadRequestException(`${label}: ${detail}`);
+}
+
 @Injectable()
 export class AdminScoreboardService {
+  private statsCache: { at: number; payload: Awaited<ReturnType<AdminScoreboardService["fetchStats"]>> } | null =
+    null;
+  private readonly statsTtlMs = 30_000;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ScoreboardService) private readonly scoreboard: ScoreboardService,
@@ -138,6 +146,16 @@ export class AdminScoreboardService {
   ) {}
 
   async stats() {
+    const now = Date.now();
+    if (this.statsCache && now - this.statsCache.at < this.statsTtlMs) {
+      return this.statsCache.payload;
+    }
+    const payload = await this.fetchStats();
+    this.statsCache = { at: now, payload };
+    return payload;
+  }
+
+  private async fetchStats() {
     const [competitions, teams, squadRows, matches, highlights, liveMatches] =
       await Promise.all([
         this.prisma.sbCompetition.count(),
@@ -159,20 +177,53 @@ export class AdminScoreboardService {
     };
   }
 
-  async listCompetitions(filters?: { status?: string; type?: string; q?: string }) {
-    const rows = await this.prisma.sbCompetition.findMany({
-      include: {
-        _count: { select: { teams: true, matches: true } },
-        matches: { select: { status: true } },
-      },
+  /** Lightweight list for seeders / dropdowns (no match status derivation). */
+  listCompetitionPicker() {
+    return this.prisma.sbCompetition.findMany({
+      select: { id: true, name: true, slug: true, season: true },
       orderBy: { name: "asc" },
     });
+  }
+
+  async listCompetitions(filters?: { status?: string; type?: string; q?: string }) {
+    const where: Prisma.SbCompetitionWhereInput = {};
+    if (filters?.q?.trim()) {
+      const q = filters.q.trim();
+      where.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { slug: { contains: q, mode: "insensitive" } },
+        { country: { contains: q, mode: "insensitive" } },
+      ];
+    }
+    if (filters?.type?.trim()) {
+      where.type = { equals: filters.type.trim(), mode: "insensitive" };
+    }
+
+    const rows = await this.prisma.sbCompetition.findMany({
+      where,
+      include: { _count: { select: { teams: true, matches: true } } },
+      orderBy: { name: "asc" },
+    });
+
+    const compIds = rows.map((c) => c.id);
+    const statusByComp = new Map<string, string[]>();
+    if (compIds.length) {
+      const statusRows = await this.prisma.sbMatch.findMany({
+        where: { competitionId: { in: compIds } },
+        select: { competitionId: true, status: true },
+      });
+      for (const row of statusRows) {
+        const list = statusByComp.get(row.competitionId) ?? [];
+        list.push(row.status);
+        statusByComp.set(row.competitionId, list);
+      }
+    }
 
     return rows
       .map((c) => {
         const status = deriveCompetitionStatus(
           c.isPublished,
-          c.matches.map((m) => m.status)
+          statusByComp.get(c.id) ?? []
         );
         return {
           id: c.id,
@@ -190,57 +241,52 @@ export class AdminScoreboardService {
           logoUrl: null as string | null,
         };
       })
-      .filter((c) => {
-        if (filters?.status && c.status !== filters.status) return false;
-        if (filters?.type && c.type.toLowerCase() !== filters.type.toLowerCase())
-          return false;
-        if (filters?.q) {
-          const needle = filters.q.toLowerCase();
-          if (
-            !c.name.toLowerCase().includes(needle) &&
-            !c.slug.includes(needle) &&
-            !(c.region ?? "").toLowerCase().includes(needle)
-          ) {
-            return false;
-          }
-        }
-        return true;
-      });
+      .filter((c) => !filters?.status || c.status === filters.status);
   }
 
   async listTeams(filters?: { q?: string; competitionId?: string }) {
+    const where: Prisma.SbTeamWhereInput = {};
+    if (filters?.competitionId) where.competitionId = filters.competitionId;
+    if (filters?.q?.trim()) {
+      const q = filters.q.trim();
+      where.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { slug: { contains: q, mode: "insensitive" } },
+        { city: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
     const rows = await this.prisma.sbTeam.findMany({
-      where: filters?.competitionId ? { competitionId: filters.competitionId } : undefined,
+      where,
       include: {
         competition: { select: { id: true, name: true, slug: true } },
         _count: { select: { squad: true } },
       },
       orderBy: { name: "asc" },
     });
-    return rows
-      .filter((t) => {
-        if (!filters?.q) return true;
-        const needle = filters.q.toLowerCase();
-        return (
-          t.name.toLowerCase().includes(needle) ||
-          t.slug.includes(needle) ||
-          (t.city ?? "").toLowerCase().includes(needle)
-        );
-      })
-      .map((t) => ({
-        id: t.id,
-        slug: t.slug,
-        name: normalizeClubName(t.name),
-        shortName: t.shortName,
-        region: t.city,
-        logoUrl: t.logoUrl,
-        competition: t.competition,
-        squadCount: t._count.squad,
-      }));
+    return rows.map((t) => ({
+      id: t.id,
+      slug: t.slug,
+      name: normalizeClubName(t.name),
+      shortName: t.shortName,
+      region: t.city,
+      logoUrl: t.logoUrl,
+      competition: t.competition,
+      squadCount: t._count.squad,
+    }));
   }
 
   async listScoreboardPlayers(q?: string) {
+    const needle = q?.trim();
     const squad = await this.prisma.sbTeamSquad.findMany({
+      where: needle
+        ? {
+            OR: [
+              { displayName: { contains: needle, mode: "insensitive" } },
+              { player: { displayName: { contains: needle, mode: "insensitive" } } },
+            ],
+          }
+        : undefined,
       include: {
         team: {
           select: {
@@ -263,6 +309,7 @@ export class AdminScoreboardService {
         },
       },
       orderBy: { displayName: "asc" },
+      take: needle ? 500 : undefined,
     });
 
     const byPlayer = new Map<
@@ -295,16 +342,7 @@ export class AdminScoreboardService {
       byPlayer.set(key, existing);
     }
 
-    let list = [...byPlayer.values()];
-    if (q) {
-      const needle = q.toLowerCase();
-      list = list.filter(
-        (p) =>
-          p.displayName.toLowerCase().includes(needle) ||
-          (p.slug ?? "").includes(needle)
-      );
-    }
-    return list;
+    return [...byPlayer.values()];
   }
 
   async listMatches(competitionId?: string) {
@@ -576,14 +614,18 @@ export class AdminScoreboardService {
 
   async importCompetitionsCsv(csv: string) {
     const table = parseCsv(csv);
-    if (table.length < 2) throw new BadRequestException("CSV must include header and rows");
+    if (table.length < 2) {
+      throw csvError("Competition import", "file must include a header row and at least one data row");
+    }
     const header = table[0].map((h) => h.toLowerCase());
     const nameIdx = header.indexOf("name");
     const typeIdx = header.indexOf("type");
     const regionIdx = header.indexOf("region");
     const statusIdx = header.indexOf("status");
     const featuredIdx = header.indexOf("isfeatured");
-    if (nameIdx < 0) throw new BadRequestException("CSV must include name column");
+    if (nameIdx < 0) {
+      throw csvError("Competition import", 'missing required column "name"');
+    }
 
     let imported = 0;
     for (const row of table.slice(1)) {
@@ -757,12 +799,16 @@ export class AdminScoreboardService {
     if (!team) throw new NotFoundException("Team not found");
 
     const table = parseCsv(csv);
-    if (table.length < 2) throw new BadRequestException("CSV must include header and rows");
+    if (table.length < 2) {
+      throw csvError("Squad import", "file must include a header row and at least one data row");
+    }
     const header = table[0].map((h) => h.toLowerCase());
     const nameIdx = header.indexOf("displayname") >= 0 ? header.indexOf("displayname") : header.indexOf("name");
     const posIdx = header.indexOf("position");
     const numIdx = header.indexOf("shirtnumber") >= 0 ? header.indexOf("shirtnumber") : header.indexOf("number");
-    if (nameIdx < 0) throw new BadRequestException("CSV must include displayName or name column");
+    if (nameIdx < 0) {
+      throw csvError("Squad import", 'missing required column "displayName" or "name"');
+    }
 
     let imported = 0;
     for (const row of table.slice(1)) {
@@ -804,9 +850,14 @@ export class AdminScoreboardService {
     const comp = await this.prisma.sbCompetition.findUnique({ where: { id: competitionId } });
     if (!comp) throw new NotFoundException("Competition not found");
     const table = parseCsv(csv);
+    if (table.length < 2) {
+      throw csvError("Team import", "file must include a header row and at least one data row");
+    }
     const header = table[0].map((h) => h.toLowerCase());
     const nameIdx = header.indexOf("name");
-    if (nameIdx < 0) throw new BadRequestException("CSV must include name column");
+    if (nameIdx < 0) {
+      throw csvError("Team import", 'missing required column "name"');
+    }
     const slugIdx = header.indexOf("slug");
     const regionIdx = header.indexOf("region");
     const logoIdx = header.indexOf("logo");

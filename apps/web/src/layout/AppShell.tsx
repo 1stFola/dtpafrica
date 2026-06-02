@@ -5,6 +5,9 @@ import { DtpLogo } from "@dtp/ui";
 export function AppShell() {
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <header className="app-header">
         <NavLink to="/" className="brand">
           <DtpLogo />
@@ -23,7 +26,7 @@ export function AppShell() {
         </nav>
       </header>
       <div className="app-body app-body--no-rail">
-        <main className="app-main">
+        <main className="app-main" id="main-content">
           <Outlet />
         </main>
       </div>

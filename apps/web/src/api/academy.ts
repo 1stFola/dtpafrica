@@ -159,6 +159,6 @@ export type AcademyDashboard = {
   media: AcademyMediaItem[];
 };
 
-export function fetchAcademyDashboard(slug: string) {
-  return apiGet<AcademyDashboard>(`/academy/${encodeURIComponent(slug)}/dashboard`);
+export function fetchAcademyDashboard(slug: string, signal?: AbortSignal) {
+  return apiGet<AcademyDashboard>(`/academy/${encodeURIComponent(slug)}/dashboard`, signal);
 }

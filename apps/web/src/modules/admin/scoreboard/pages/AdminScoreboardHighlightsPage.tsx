@@ -2,14 +2,21 @@ import { FormEvent, useEffect, useState } from "react";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import type { SbMatchListItem } from "../../../../api/scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
+import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
+import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 
 export function AdminScoreboardHighlightsPage() {
   usePageTitle("Admin — Match highlights");
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    adminScoreboardApi.matches().then(setMatches).catch(() => {});
+    adminScoreboardApi
+      .matches()
+      .then(setMatches)
+      .catch(() => setMatches([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -33,21 +40,23 @@ export function AdminScoreboardHighlightsPage() {
       setMessage("Highlight queued (unpublished until reviewed)");
       e.currentTarget.reset();
     } catch (err) {
-      setMessage(String(err));
+      setMessage(formatAdminScoreboardError(err));
     }
   };
 
   return (
     <section className="admin-sb-section">
-      <p className="admin-sb-lead muted">
-        Attach YouTube highlights to matches with timeline minutes for ScoreBoard playback.
-      </p>
+      <AdminSbPageHeader
+        title="Match highlights"
+        description="Attach YouTube clips with timeline minutes for ScoreBoard playback."
+        crumbs={[{ label: "Highlights" }]}
+      />
 
       <form className="admin-blog-form admin-sb-highlight-form admin-sb-panel" onSubmit={onSubmit}>
         <label>
           Match reference
-          <select name="matchId" required>
-            <option value="">Select match…</option>
+          <select name="matchId" required disabled={loading}>
+            <option value="">{loading ? "Loading matches…" : "Select match…"}</option>
             {matches.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.homeTeam.name} vs {m.awayTeam.name} — {m.competition.name}

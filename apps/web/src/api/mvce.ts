@@ -52,8 +52,8 @@ export type ValuedPlayerRow = {
   }[];
 };
 
-export function fetchValuedPlayers() {
-  return apiGet<ValuedPlayerRow[]>("/mvce/players");
+export function fetchValuedPlayers(signal?: AbortSignal) {
+  return apiGet<ValuedPlayerRow[]>("/mvce/players", signal);
 }
 
 export function fetchValuationReport(playerId: string) {

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 
 type Props = {
   label: string;
@@ -20,7 +21,7 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
       await onImport(csv);
       setMessage(`Imported ${file.name}`);
     } catch (e) {
-      setMessage(String(e));
+      setMessage(formatAdminScoreboardError(e));
     } finally {
       setBusy(false);
     }
@@ -41,7 +42,7 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
       URL.revokeObjectURL(url);
       setMessage("Export downloaded");
     } catch (e) {
-      setMessage(String(e));
+      setMessage(formatAdminScoreboardError(e));
     } finally {
       setBusy(false);
     }

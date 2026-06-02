@@ -184,41 +184,45 @@ export function fetchCompetitions() {
   return apiGet<SbCompetition[]>("/scoreboard/competitions");
 }
 
-export function fetchCompetition(slug: string) {
+export function fetchCompetition(slug: string, signal?: AbortSignal) {
   return apiGet<SbCompetition & { teams: SbTeamWithSquad[] }>(
-    `/scoreboard/competitions/${slug}`
+    `/scoreboard/competitions/${slug}`,
+    signal
   );
 }
 
-export function fetchTeam(id: string) {
-  return apiGet<SbTeamDetail>(`/scoreboard/teams/${id}`);
+export function fetchTeam(id: string, signal?: AbortSignal) {
+  return apiGet<SbTeamDetail>(`/scoreboard/teams/${id}`, signal);
 }
 
-export function searchScoreboard(query: string) {
+export function searchScoreboard(query: string, signal?: AbortSignal) {
   const q = new URLSearchParams({ q: query });
-  return apiGet<SbSearchResult>(`/scoreboard/search?${q.toString()}`);
+  return apiGet<SbSearchResult>(`/scoreboard/search?${q.toString()}`, signal);
 }
 
-export function fetchMatches(params?: { status?: string; competitionId?: string }) {
+export function fetchMatches(
+  params?: { status?: string; competitionId?: string },
+  signal?: AbortSignal
+) {
   const q = new URLSearchParams();
   if (params?.status) q.set("status", params.status);
   if (params?.competitionId) q.set("competitionId", params.competitionId);
   const qs = q.toString();
-  return apiGet<SbMatchListItem[]>(`/scoreboard/matches${qs ? `?${qs}` : ""}`);
+  return apiGet<SbMatchListItem[]>(`/scoreboard/matches${qs ? `?${qs}` : ""}`, signal);
 }
 
-export function fetchMatch(id: string) {
-  return apiGet<SbMatchDetail>(`/scoreboard/matches/${id}`);
+export function fetchMatch(id: string, signal?: AbortSignal) {
+  return apiGet<SbMatchDetail>(`/scoreboard/matches/${id}`, signal);
 }
 
-export function fetchStandings(competitionId: string) {
+export function fetchStandings(competitionId: string, signal?: AbortSignal) {
   return apiGet<{
     competitionName: string;
     season: string;
     formatType?: string | null;
     groups?: string[];
     rows: StandingRow[];
-  }>(`/scoreboard/standings/${competitionId}`);
+  }>(`/scoreboard/standings/${competitionId}`, signal);
 }
 
 export function fetchHighlights(competitionId?: string) {

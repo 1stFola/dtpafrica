@@ -7,6 +7,7 @@ import {
   type AcademyMediaItem,
   type AcademySquadPlayer,
 } from "../../api/academy";
+import { isAbortError } from "../../api/client";
 import { usePageTitle } from "../../hooks/usePageTitle";
 
 const navItems = [
@@ -76,11 +77,21 @@ export function AcademyDashboardApp() {
   usePageTitle(data ? `${data.academy.name} Dashboard` : "Academy Dashboard");
 
   useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
     setData(null);
     setError(null);
-    fetchAcademyDashboard(slug)
-      .then(setData)
-      .catch((err) => setError(String(err)));
+    fetchAcademyDashboard(slug, controller.signal)
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch((err) => {
+        if (!cancelled && !isAbortError(err)) setError(String(err));
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [slug]);
 
   const section = useMemo<DashboardSection>(() => {
@@ -92,18 +103,34 @@ export function AcademyDashboardApp() {
   if (error) {
     return (
       <div className="academy-dashboard">
-        <p className="form-error">{error}</p>
-        <Link to="/academy" className="text-link">
-          Back to academies
-        </Link>
+        <div>
+          <p className="dtp-error-banner" role="alert">
+            {error}
+          </p>
+          <Link to="/academy" className="text-link">
+            ← Back to academies
+          </Link>
+        </div>
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="academy-dashboard">
-        <p className="muted">Loading academy intelligence...</p>
+      <div className="academy-dashboard" aria-busy="true">
+        <aside className="academy-sidebar">
+          <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "70%" }} />
+          <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "90%" }} />
+          <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "80%" }} />
+        </aside>
+        <main className="academy-main">
+          <div className="dtp-skeleton" style={{ height: "9rem", borderRadius: "28px" }} />
+          <div className="academy-kpi-grid" style={{ marginTop: "1.25rem" }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="dtp-skeleton" style={{ height: "8rem", borderRadius: "22px" }} />
+            ))}
+          </div>
+        </main>
       </div>
     );
   }

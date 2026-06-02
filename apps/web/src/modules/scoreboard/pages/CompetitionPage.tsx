@@ -9,6 +9,7 @@ import {
   type StandingRow,
 } from "../../../api/scoreboard";
 import { MatchCard } from "../components/MatchCard";
+import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
 type CompetitionTab = "standings" | "teams" | "matches";
@@ -48,27 +49,46 @@ export function CompetitionPage() {
   const [standingsGroups, setStandingsGroups] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<CompetitionTab>("standings");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   usePageTitle(name || "Competition");
 
   useEffect(() => {
     if (!slug) return;
+    const controller = new AbortController();
+    let cancelled = false;
     setLoading(true);
-    fetchCompetition(slug)
+    setError(null);
+    fetchCompetition(slug, controller.signal)
       .then((c) => {
+        if (cancelled) return null;
         setName(c.name);
         setSeason(c.season);
         setCompetitionType(c.type);
         setTeams(c.teams);
+        // Matches + standings depend on the competition id, so they run in
+        // parallel after the single competition fetch resolves (no extra waterfall).
         return Promise.all([
-          fetchMatches({ competitionId: c.id }).then(setMatches),
-          fetchStandings(c.id).then((s) => {
+          fetchMatches({ competitionId: c.id }, controller.signal).then((m) => {
+            if (!cancelled) setMatches(m);
+          }),
+          fetchStandings(c.id, controller.signal).then((s) => {
+            if (cancelled) return;
             setStandings(s.rows);
             setStandingsGroups(s.groups ?? []);
           }),
         ]);
       })
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!cancelled && !isAbortError(e)) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [slug]);
 
   const groupedMatches = groupMatchesByMatchday(matches);
@@ -76,12 +96,18 @@ export function CompetitionPage() {
   return (
     <div className="sb-page">
       <header className="page-header">
-        <h1>{name}</h1>
+        <h1>{name || (loading ? "Loading competition…" : "Competition")}</h1>
         <p className="muted">
           {season}
           {competitionType ? ` - ${competitionType}` : ""}
         </p>
       </header>
+
+      {error && (
+        <p className="dtp-error-banner" role="alert">
+          {error}
+        </p>
+      )}
 
       <nav className="sb-tabs" aria-label="Competition sections">
         {(["standings", "teams", "matches"] as CompetitionTab[]).map((tab) => (
@@ -101,10 +127,13 @@ export function CompetitionPage() {
           <h2>Standings</h2>
           {loading ? (
             <div className="sb-standings-skeleton" aria-busy="true">
-              <div className="admin-sb-skeleton admin-sb-skeleton--table" />
+              <span className="dtp-skeleton" style={{ height: "14rem", width: "100%" }} />
             </div>
           ) : standings.length === 0 ? (
-            <p className="sb-empty muted">Standings appear once group matches are completed.</p>
+            <div className="dtp-empty-state sb-empty">
+              <p className="dtp-empty-state__title">No standings yet</p>
+              <p>Standings appear once group matches are completed.</p>
+            </div>
           ) : null}
           {!loading &&
             (standingsGroups.length ? standingsGroups : [""]).map((groupKey) => {
@@ -168,6 +197,12 @@ export function CompetitionPage() {
       {activeTab === "teams" && (
         <section className="sb-section">
           <h2>Teams & squads</h2>
+          {!loading && teams.length === 0 && (
+            <div className="dtp-empty-state">
+              <p className="dtp-empty-state__title">No teams registered</p>
+              <p>Teams appear here once they are added to this competition.</p>
+            </div>
+          )}
           <div className="sb-team-grid">
             {teams.map((team) => (
               <article key={team.id} className="sb-team-card">
@@ -230,6 +265,12 @@ export function CompetitionPage() {
       {activeTab === "matches" && (
         <section className="sb-section">
           <h2>Matchdays</h2>
+          {!loading && groupedMatches.length === 0 && (
+            <div className="dtp-empty-state">
+              <p className="dtp-empty-state__title">No matches scheduled</p>
+              <p>Fixtures will appear here once matchdays are published.</p>
+            </div>
+          )}
           {groupedMatches.map((group) => (
             <div key={group.label} className="sb-matchday-group">
               <div className="section-heading">
