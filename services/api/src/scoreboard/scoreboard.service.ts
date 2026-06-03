@@ -11,7 +11,14 @@ import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
 import { computeGroupStandings, normalizeClubName } from "@dtp/engines";
+import {
+  buildSkeletonProfile,
+  presentProfileStats,
+  type SkeletonProfileQuery,
+} from "../home/player-profile.presenter";
+import { resolvePlayerBySlugOrId } from "../players/player-resolve";
 import { presentScoreboardPayload } from "./present-scoreboard";
+import { CompetitionEngineService } from "./competition-engine.service";
 import { assertMatchReadyForLiveEvents } from "./roster-guard";
 import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
 import { computeStandings } from "./standings";
@@ -94,6 +101,25 @@ const MATCH_INCLUDE = {
   },
 } satisfies Prisma.SbMatchInclude;
 
+/** Public team profile match rows — goal events power cards + scorer stats. */
+const TEAM_MATCH_LIST_INCLUDE = {
+  homeTeam: true,
+  awayTeam: true,
+  competition: true,
+  events: {
+    where: { type: { in: ["goal", "own_goal"] } },
+    orderBy: { minute: "asc" as const },
+    select: {
+      id: true,
+      minute: true,
+      type: true,
+      teamId: true,
+      playerLabel: true,
+      player: { select: { displayName: true, slug: true } },
+    },
+  },
+} satisfies Prisma.SbMatchInclude;
+
 const LIVE_STATUSES = ["live", "halftime"];
 const SCOREBOARD_EXTERNAL_REF_PREFIX = "scoreboard:";
 const EVENT_TYPES = new Set([
@@ -120,17 +146,238 @@ export class ScoreboardService {
     @Inject(SipRecalculationService)
     private readonly sipRecalc: SipRecalculationService,
     @Inject(ScoreboardLifecycleService)
-    private readonly lifecycle: ScoreboardLifecycleService
+    private readonly lifecycle: ScoreboardLifecycleService,
+    @Inject(CompetitionEngineService)
+    private readonly competitionEngine: CompetitionEngineService
   ) {}
 
-  competitions() {
-    return this.prisma.sbCompetition.findMany({
+  async competitions() {
+    const rows = await this.prisma.sbCompetition.findMany({
       where: { isPublished: true },
       orderBy: { name: "asc" },
       include: {
         _count: { select: { teams: true, matches: true } },
       },
     });
+    return presentScoreboardPayload(rows);
+  }
+
+  /**
+   * All teams that belong to a published competition, with their competition,
+   * squad size, and match counts. Powers the public "Featured Teams" grid on
+   * the Deep Browse page. Names are normalized to official club spellings.
+   */
+  async teams() {
+    const rows = await this.prisma.sbTeam.findMany({
+      where: { competition: { isPublished: true } },
+      orderBy: { name: "asc" },
+      include: {
+        competition: true,
+        _count: { select: { squad: true, homeMatches: true, awayMatches: true } },
+      },
+    });
+    return presentScoreboardPayload(rows);
+  }
+
+  /** Landing hub: aggregate stats + recent published matches with goal events. */
+  async overview() {
+    const stats = await this.stats();
+    const recentMatches = await this.prisma.sbMatch.findMany({
+      where: { isPublished: true, competition: { isPublished: true } },
+      orderBy: [{ kickoffAt: "desc" }],
+      take: 12,
+      include: {
+        homeTeam: true,
+        awayTeam: true,
+        competition: true,
+        events: {
+          where: { type: { in: ["goal", "own_goal"] } },
+          orderBy: { minute: "asc" },
+          select: {
+            id: true,
+            minute: true,
+            type: true,
+            teamId: true,
+            playerLabel: true,
+            player: { select: { displayName: true, slug: true } },
+          },
+        },
+      },
+    });
+    return presentScoreboardPayload({ stats, recentMatches });
+  }
+
+  /**
+   * Premium competition hub: meta, group standings (A/B when applicable),
+   * and competition top scorers from persisted stats.
+   */
+  async competitionHub(competitionId: string) {
+    const competition = await this.prisma.sbCompetition.findFirst({
+      where: { id: competitionId, isPublished: true },
+      include: {
+        teams: { orderBy: { name: "asc" } },
+        _count: { select: { teams: true, matches: true } },
+      },
+    });
+    if (!competition) throw new NotFoundException("Competition not found");
+
+    const standingsPayload = await this.competitionEngine.groupStandings(competitionId);
+    const rows = (standingsPayload as { rows?: Array<{ groupKey: string }> }).rows ?? [];
+    const groupKeys = [...new Set(rows.map((r) => r.groupKey))].sort();
+    const groups: Record<string, typeof rows> = {};
+    for (const key of groupKeys) {
+      const label = key.replace(/^group_/i, "").toUpperCase() || key;
+      groups[label] = rows.filter((r) => r.groupKey === key);
+    }
+
+    const topScorers = await this.prisma.sbPlayerCompetitionStats.findMany({
+      where: {
+        competitionId,
+        goals: { gt: 0 },
+        player: { isPublic: true },
+      },
+      orderBy: [{ goals: "desc" }, { assists: "desc" }],
+      take: 10,
+      include: {
+        player: {
+          select: {
+            id: true,
+            slug: true,
+            displayName: true,
+            positionPrimary: true,
+            playerPhotoUrl: true,
+            scoreboardSquad: {
+              where: { team: { competitionId } },
+              take: 1,
+              include: { team: true },
+            },
+          },
+        },
+      },
+    });
+
+    const scorerRows = topScorers.map((row) => ({
+      playerId: row.playerId,
+      slug: row.player.slug,
+      displayName: row.player.displayName,
+      positionPrimary: row.player.positionPrimary,
+      playerPhotoUrl: row.player.playerPhotoUrl,
+      goals: row.goals,
+      assists: row.assists,
+      team: row.player.scoreboardSquad[0]?.team
+        ? presentScoreboardPayload(row.player.scoreboardSquad[0].team)
+        : null,
+    }));
+
+    return presentScoreboardPayload({
+      meta: {
+        id: competition.id,
+        slug: competition.slug,
+        name: competition.name,
+        season: competition.season,
+        type: competition.type,
+        formatType: competition.formatType,
+        country: competition.country,
+        description: competition.description,
+        teamCount: competition._count.teams,
+        matchCount: competition._count.matches,
+        standingsUpdatedAt: competition.standingsUpdatedAt,
+      },
+      groups,
+      topScorers: scorerRows,
+    });
+  }
+
+  /** Public scoreboard player card (slug/name); skeleton when not published. */
+  async playerProfile(slugOrId: string, query: SkeletonProfileQuery = {}) {
+    const resolved = await resolvePlayerBySlugOrId(this.prisma, slugOrId);
+    if (!resolved || !resolved.isPublic) {
+      return buildSkeletonProfile(slugOrId, query, resolved ?? undefined);
+    }
+
+    const player = await this.prisma.player.findUnique({
+      where: { id: resolved.id },
+      select: {
+        id: true,
+        slug: true,
+        displayName: true,
+        positionPrimary: true,
+        positionSecondary: true,
+        playerPhotoUrl: true,
+        overallRating: true,
+        isPublic: true,
+        careerGoals: true,
+        careerAssists: true,
+        careerAppearances: true,
+        careerMinutes: true,
+        careerCleanSheets: true,
+        scoreboardSquad: {
+          take: 1,
+          orderBy: { team: { name: "asc" } },
+          include: {
+            team: {
+              include: { competition: true },
+            },
+          },
+        },
+      },
+    });
+    if (!player) {
+      return buildSkeletonProfile(slugOrId, query);
+    }
+
+    const role = query.role?.trim().toUpperCase() || player.positionPrimary;
+    const squadTeam = player.scoreboardSquad[0]?.team;
+
+    return presentScoreboardPayload({
+      isSkeleton: false,
+      id: player.id,
+      slug: player.slug,
+      displayName: player.displayName,
+      positionPrimary: player.positionPrimary,
+      positionSecondary: player.positionSecondary,
+      playerPhotoUrl: player.playerPhotoUrl,
+      overallRating: player.overallRating,
+      club:
+        query.club?.trim() ||
+        (squadTeam ? normalizeClubName(squadTeam.name) : null),
+      competition:
+        query.competition?.trim() || squadTeam?.competition.name || null,
+      role,
+      stats: presentProfileStats(player, role),
+    });
+  }
+
+  /**
+   * Lightweight public aggregate counts that power the landing-page metrics
+   * banner. Everything is scoped to published competitions so the figures match
+   * what the public can actually browse.
+   */
+  async stats() {
+    const publishedComp = { competition: { isPublished: true } } as const;
+    const [competitions, teams, matches, squadEntries, linkedPlayers] =
+      await this.prisma.$transaction([
+        this.prisma.sbCompetition.count({ where: { isPublished: true } }),
+        this.prisma.sbTeam.count({ where: publishedComp }),
+        this.prisma.sbMatch.count({
+          where: { isPublished: true, ...publishedComp },
+        }),
+        this.prisma.sbTeamSquad.count({ where: { team: publishedComp } }),
+        this.prisma.player.count({
+          where: {
+            scoreboardSquad: { some: { team: publishedComp } },
+          },
+        }),
+      ]);
+
+    return {
+      competitions,
+      teams,
+      matches,
+      // Total roster rows tracked across published competitions. Falls back to
+      // the count of linked public players if no roster rows exist yet.
+      playersTracked: squadEntries || linkedPlayers,
+    };
   }
 
   async competitionBySlug(slug: string) {
@@ -190,12 +437,12 @@ export class ScoreboardService {
         homeMatches: {
           where: { isPublished: true },
           orderBy: { kickoffAt: "desc" },
-          include: { homeTeam: true, awayTeam: true, competition: true },
+          include: TEAM_MATCH_LIST_INCLUDE,
         },
         awayMatches: {
           where: { isPublished: true },
           orderBy: { kickoffAt: "desc" },
-          include: { homeTeam: true, awayTeam: true, competition: true },
+          include: TEAM_MATCH_LIST_INCLUDE,
         },
       },
     });
@@ -250,7 +497,11 @@ export class ScoreboardService {
         where: {
           isPublic: true,
           scoreboardSquad: { some: { team: { competition: { isPublished: true } } } },
-          OR: [{ displayName: contains }, { positionPrimary: contains }],
+          OR: [
+            { displayName: contains },
+            { slug: contains },
+            { positionPrimary: contains },
+          ],
         },
         take: 8,
         select: {
@@ -295,6 +546,19 @@ export class ScoreboardService {
         awayTeam: true,
         competition: true,
         _count: { select: { events: true } },
+        // Goal events power the scorer snippet on Match Center cards.
+        events: {
+          where: { type: { in: ["goal", "own_goal"] } },
+          orderBy: { minute: "asc" },
+          select: {
+            id: true,
+            minute: true,
+            type: true,
+            teamId: true,
+            playerLabel: true,
+            player: { select: { displayName: true, slug: true } },
+          },
+        },
       },
     });
     return presentScoreboardPayload(rows);

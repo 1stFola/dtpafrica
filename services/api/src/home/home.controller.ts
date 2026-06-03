@@ -17,8 +17,13 @@ export class HomeController {
   }
 
   @Get("players/:slugOrId")
-  publicPlayer(@Param("slugOrId") slugOrId: string) {
-    return this.home.publicPlayer(slugOrId);
+  publicPlayer(
+    @Param("slugOrId") slugOrId: string,
+    @Query("club") club?: string,
+    @Query("competition") competition?: string,
+    @Query("role") role?: string
+  ) {
+    return this.home.publicPlayer(slugOrId, { club, competition, role });
   }
 
   @Post("register")

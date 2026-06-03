@@ -1,9 +1,10 @@
+import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
+
+/** @deprecated Prefer `slugifyPlayerName` from `../players/player-slug`. */
 export function slugifyDisplayName(displayName: string, idSuffix?: string): string {
-  const base = displayName
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (!idSuffix) return base || "player";
+  const base = slugifyPlayerName(displayName);
+  if (!idSuffix) return base;
   return `${base}-${idSuffix.slice(0, 8)}`;
 }
+
+export { resolveUniquePlayerSlug };

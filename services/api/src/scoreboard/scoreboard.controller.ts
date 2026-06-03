@@ -22,9 +22,39 @@ export class ScoreboardController {
     @Inject(CompetitionEngineService) private readonly competitionEngine: CompetitionEngineService
   ) {}
 
+  @Get("overview")
+  overview() {
+    return this.sb.overview();
+  }
+
   @Get("competitions")
   competitions() {
     return this.sb.competitions();
+  }
+
+  @Get("competitions/:competitionId/hub")
+  competitionHub(@Param("competitionId") competitionId: string) {
+    return this.sb.competitionHub(competitionId);
+  }
+
+  @Get("stats")
+  stats() {
+    return this.sb.stats();
+  }
+
+  @Get("teams")
+  teams() {
+    return this.sb.teams();
+  }
+
+  @Get("players/:slugOrId/profile")
+  playerProfile(
+    @Param("slugOrId") slugOrId: string,
+    @Query("club") club?: string,
+    @Query("competition") competition?: string,
+    @Query("role") role?: string
+  ) {
+    return this.sb.playerProfile(slugOrId, { club, competition, role });
   }
 
   @Get("competitions/:slug")

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useAdminToast } from "../components/AdminToast";
+import { PlayerSlugPreview } from "../components/PlayerSlugPreview";
+import { ClubNameField } from "../components/ClubNameField";
+import { adminScoreboardApi } from "../../../api/admin-scoreboard";
 import {
   adminApi,
   type AdminPlayerRow,
@@ -117,10 +121,12 @@ function benchName(b: CalibrationBenchmarkProfile): string {
 
 export function AdminCalibrationPage() {
   usePageTitle("Admin — Calibration");
+  const toast = useAdminToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const csvRef = useRef<HTMLInputElement>(null);
 
   const [players, setPlayers] = useState<AdminPlayerRow[]>([]);
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
   const [playerId, setPlayerId] = useState(searchParams.get("playerId") ?? "");
   const [playerInfo, setPlayerInfo] = useState<PlayerInfoForm>(emptyPlayerInfo);
   const [metrics, setMetrics] = useState<LegacyMetricsForm>(emptyLegacyMetrics);
@@ -136,6 +142,7 @@ export function AdminCalibrationPage() {
 
   useEffect(() => {
     loadPlayers();
+    adminScoreboardApi.teams().then((rows) => setTeams(rows)).catch(() => {});
   }, [loadPlayers]);
 
   useEffect(() => {
@@ -153,9 +160,9 @@ export function AdminCalibrationPage() {
       setResult(null);
       setHasGenerated(false);
     } catch (e) {
-      setMessage(String(e));
+      toast.error(String(e));
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     if (playerId) loadPlayer(playerId);
@@ -200,7 +207,7 @@ export function AdminCalibrationPage() {
       setResult(out);
       setHasGenerated(true);
     } catch (e) {
-      setMessage(String(e));
+      toast.error(String(e));
     } finally {
       setLoading(false);
     }
@@ -217,10 +224,10 @@ export function AdminCalibrationPage() {
       const body = buildPayload();
       const out = await adminApi.calibratePlayer(playerId, { ...body, save: true });
       setResult(out);
-      setMessage("Calibrated ratings saved to player profile.");
+      toast.success("Calibrated ratings saved to player profile.");
       loadPlayers();
     } catch (e) {
-      setMessage(String(e));
+      toast.error(String(e));
     } finally {
       setLoading(false);
     }
@@ -235,10 +242,10 @@ export function AdminCalibrationPage() {
       setResult(out);
       setPlayerId(out.player.id);
       setSearchParams({ playerId: out.player.id });
-      setMessage(`Player "${out.player.displayName}" created with calibrated ratings.`);
+      toast.success(`Player "${out.player.displayName}" created with calibrated ratings.`);
       loadPlayers();
     } catch (e) {
-      setMessage(String(e));
+      toast.error(String(e));
     } finally {
       setLoading(false);
     }
@@ -375,42 +382,100 @@ export function AdminCalibrationPage() {
               from an existing profile.
             </p>
             <div className="admin-calibration__fields">
-              {PLAYER_FIELDS.map((f) => (
-                <label
-                  key={f.key}
-                  className={
-                    f.full
-                      ? "admin-calibration__field admin-calibration__field--full"
-                      : "admin-calibration__field"
-                  }
-                >
-                  <span>{f.label}</span>
-                  {f.type === "select" ? (
-                    <select
-                      value={playerInfo[f.key]}
-                      onChange={(e) =>
-                        setPlayerInfo((prev) => ({ ...prev, [f.key]: e.target.value }))
-                      }
+              {PLAYER_FIELDS.map((f) => {
+                if (f.key === "full_name") {
+                  return (
+                    <div
+                      key={f.key}
+                      className="admin-calibration__field admin-calibration__field--full"
                     >
-                      <option value="">Select {f.label}</option>
-                      {f.options?.map((o) => (
-                        <option key={o} value={o}>
-                          {o}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type={f.type}
-                      placeholder={f.placeholder}
-                      value={playerInfo[f.key]}
-                      onChange={(e) =>
-                        setPlayerInfo((prev) => ({ ...prev, [f.key]: e.target.value }))
-                      }
-                    />
-                  )}
-                </label>
-              ))}
+                      <label>
+                        <span>{f.label}</span>
+                        <input
+                          type="text"
+                          placeholder={f.placeholder}
+                          value={playerInfo.full_name}
+                          onChange={(e) =>
+                            setPlayerInfo((prev) => ({ ...prev, full_name: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <PlayerSlugPreview
+                        displayName={playerInfo.full_name}
+                        excludeId={playerId || undefined}
+                        currentSlug={players.find((p) => p.id === playerId)?.slug}
+                      />
+                    </div>
+                  );
+                }
+
+                if (f.key === "current_club") {
+                  return (
+                    <div key={f.key} className="admin-calibration__field admin-calibration__field--full">
+                      <label>
+                        <span>Current club (from directory)</span>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            const name = e.target.value;
+                            if (name) setPlayerInfo((prev) => ({ ...prev, current_club: name }));
+                          }}
+                        >
+                          <option value="">Pick registered team…</option>
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.name}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <ClubNameField
+                        label="Or type club name"
+                        value={playerInfo.current_club}
+                        onChange={(v) => setPlayerInfo((prev) => ({ ...prev, current_club: v }))}
+                        placeholder="FC Bethel Sporting"
+                      />
+                    </div>
+                  );
+                }
+
+                return (
+                  <label
+                    key={f.key}
+                    className={
+                      f.full
+                        ? "admin-calibration__field admin-calibration__field--full"
+                        : "admin-calibration__field"
+                    }
+                  >
+                    <span>{f.label}</span>
+                    {f.type === "select" ? (
+                      <select
+                        value={playerInfo[f.key]}
+                        onChange={(e) =>
+                          setPlayerInfo((prev) => ({ ...prev, [f.key]: e.target.value }))
+                        }
+                      >
+                        <option value="">Select {f.label}</option>
+                        {f.options?.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={f.type}
+                        placeholder={f.placeholder}
+                        value={playerInfo[f.key]}
+                        onChange={(e) =>
+                          setPlayerInfo((prev) => ({ ...prev, [f.key]: e.target.value }))
+                        }
+                      />
+                    )}
+                  </label>
+                );
+              })}
             </div>
           </section>
 

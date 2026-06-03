@@ -44,13 +44,40 @@ export type SbCompetition = {
   _count?: { teams: number; matches: number };
 };
 
+export type SbMatchdayRosterSlot = {
+  squadId: string;
+  role?: "xi" | "sub";
+};
+
+export type SbMatchdayRoster = {
+  teamId: string;
+  xi: SbMatchdayRosterSlot[];
+  subs: SbMatchdayRosterSlot[];
+};
+
 export type SbMatchStats = {
   possession?: { home: number; away: number };
+  saves?: { home: number | null; away: number | null };
   shots?: { home: number; away: number };
   shotsOnTarget?: { home: number; away: number };
   corners?: { home: number; away: number };
   fouls?: { home: number; away: number };
   xg?: { home: number; away: number };
+  narrative?: string | null;
+  matchdayRosters?: Record<string, SbMatchdayRoster>;
+  spotter?: {
+    lineupsLocked?: boolean;
+    formation?: { home: string; away: string };
+  };
+};
+
+export type SbMatchGoal = {
+  id: string;
+  minute: number;
+  type: string;
+  teamId: string | null;
+  playerLabel: string | null;
+  player: { displayName: string; slug: string | null } | null;
 };
 
 export type SbMatchListItem = {
@@ -66,11 +93,27 @@ export type SbMatchListItem = {
   kickoffAt: string | null;
   venue: string | null;
   roundLabel: string | null;
+  /** Engine stage key, e.g. "group_a", "third_place", "grand_final". */
+  stageKey?: string | null;
+  matchday?: number | null;
+  /** Knockout extras such as penalty shootout outcome. */
+  meta?: {
+    penaltyShootout?: { home: number; away: number; winner: "home" | "away" };
+    regulationScore?: { home: number; away: number };
+  } | null;
   stats: SbMatchStats | null;
   homeTeam: SbTeamRef;
   awayTeam: SbTeamRef;
   competition: { id: string; name: string; slug: string };
+  events?: SbMatchGoal[];
   _count?: { events: number };
+};
+
+export type SbStats = {
+  competitions: number;
+  teams: number;
+  matches: number;
+  playersTracked: number;
 };
 
 export type SbMatchEvent = {
@@ -142,6 +185,7 @@ export type SbHighlight = {
   id: string;
   title: string;
   youtubeUrl: string;
+  duration?: string | null;
   publishedAt: string;
   match?: {
     id: string;
@@ -180,8 +224,90 @@ export type SbSearchResult = {
   }>;
 };
 
+export type SbTeamListItem = SbTeamRef & {
+  groupKey?: string | null;
+  competition: { id: string; name: string; slug: string; season: string };
+  _count?: { squad: number; homeMatches: number; awayMatches: number };
+};
+
 export function fetchCompetitions() {
   return apiGet<SbCompetition[]>("/scoreboard/competitions");
+}
+
+export function fetchTeams(signal?: AbortSignal) {
+  return apiGet<SbTeamListItem[]>("/scoreboard/teams", signal);
+}
+
+export function fetchScoreboardStats(signal?: AbortSignal) {
+  return apiGet<SbStats>("/scoreboard/stats", signal);
+}
+
+export type SbOverview = {
+  stats: SbStats;
+  recentMatches: SbMatchListItem[];
+};
+
+export type SbCompetitionHubTopScorer = {
+  playerId: string;
+  slug: string;
+  displayName: string;
+  positionPrimary: string;
+  playerPhotoUrl: string | null;
+  goals: number;
+  assists: number;
+  team: SbTeamRef | null;
+};
+
+export type SbCompetitionHub = {
+  meta: {
+    id: string;
+    slug: string;
+    name: string;
+    season: string;
+    type: string;
+    formatType: string | null;
+    country: string | null;
+    description: string | null;
+    teamCount: number;
+    matchCount: number;
+    standingsUpdatedAt: string | null;
+  };
+  groups: Record<string, StandingRow[]>;
+  topScorers: SbCompetitionHubTopScorer[];
+};
+
+export function fetchScoreboardOverview(signal?: AbortSignal) {
+  return apiGet<SbOverview>("/scoreboard/overview", signal);
+}
+
+export function fetchCompetitionHub(competitionId: string, signal?: AbortSignal) {
+  return apiGet<SbCompetitionHub>(
+    `/scoreboard/competitions/${competitionId}/hub`,
+    signal
+  );
+}
+
+/** Extract a YouTube video id from common URL shapes (watch, youtu.be, embed). */
+export function youtubeVideoId(url: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("youtu.be")) {
+      return u.pathname.slice(1) || null;
+    }
+    if (u.pathname.startsWith("/embed/")) {
+      return u.pathname.split("/embed/")[1]?.split("/")[0] ?? null;
+    }
+    return u.searchParams.get("v");
+  } catch {
+    return null;
+  }
+}
+
+/** Best-effort thumbnail for a highlight video URL. */
+export function youtubeThumbnail(url: string): string | null {
+  const id = youtubeVideoId(url);
+  return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null;
 }
 
 export function fetchCompetition(slug: string, signal?: AbortSignal) {

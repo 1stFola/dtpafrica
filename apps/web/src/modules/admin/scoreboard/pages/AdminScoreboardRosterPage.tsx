@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import type { SbMatchListItem } from "../../../../api/scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
+import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
@@ -36,7 +37,9 @@ function toSlot(
 
 export function AdminScoreboardRosterPage() {
   usePageTitle("Admin — Matchday roster");
+  const toast = useAdminToast();
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(true);
   const [matchId, setMatchId] = useState("");
   const [teamId, setTeamId] = useState("");
   const [directory, setDirectory] = useState<
@@ -51,7 +54,6 @@ export function AdminScoreboardRosterPage() {
   >([]);
   const [xi, setXi] = useState<MatchdayRosterSlot[]>([]);
   const [subs, setSubs] = useState<MatchdayRosterSlot[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [readiness, setReadiness] = useState<
@@ -59,13 +61,18 @@ export function AdminScoreboardRosterPage() {
   >(null);
 
   useEffect(() => {
-    adminScoreboardApi.matches().then((rows) => {
-      setMatches(rows);
-      if (rows[0]) {
-        setMatchId(rows[0].id);
-        setTeamId(rows[0].homeTeam.id);
-      }
-    });
+    setMatchesLoading(true);
+    adminScoreboardApi
+      .matches()
+      .then((rows) => {
+        setMatches(rows);
+        if (rows[0]) {
+          setMatchId(rows[0].id);
+          setTeamId(rows[0].homeTeam.id);
+        }
+      })
+      .catch(() => setMatches([]))
+      .finally(() => setMatchesLoading(false));
   }, []);
 
   const selectedMatch = matches.find((m) => m.id === matchId);
@@ -101,12 +108,15 @@ export function AdminScoreboardRosterPage() {
   const addPlayer = (row: (typeof directory)[0], role: "xi" | "sub") => {
     if (inRoster(row.squadId)) return;
     const slot = toSlot(row, role);
+    if (!isGoalkeeper(row.position)) {
+      delete slot.cleanSheets;
+    }
     if (role === "xi" && xi.length >= 11) {
-      setMessage("Starting XI is full (11)");
+      toast.error("Starting XI is full (11)");
       return;
     }
     if (xi.length + subs.length >= 20) {
-      setMessage("Matchday roster is full (20)");
+      toast.error("Matchday roster is full (20)");
       return;
     }
     if (role === "xi") setXi([...xi, slot]);
@@ -126,15 +136,27 @@ export function AdminScoreboardRosterPage() {
     );
   };
 
+  const stripNonGkCleanSheets = (list: MatchdayRosterSlot[]) =>
+    list.map((p) => {
+      if (isGoalkeeper(p.position)) return p;
+      const { cleanSheets: _cs, ...rest } = p;
+      return rest;
+    });
+
   const save = async () => {
     if (!matchId || !teamId) return;
     setSaving(true);
+    const payload = {
+      teamId,
+      xi: stripNonGkCleanSheets(xi),
+      subs: stripNonGkCleanSheets(subs),
+    };
     try {
-      await adminScoreboardApi.saveRoster(matchId, { teamId, xi, subs });
-      setMessage("Matchday roster saved — player IDs linked to master directory");
+      await adminScoreboardApi.saveRoster(matchId, payload);
+      toast.success("Matchday roster saved — player IDs linked to master directory");
       loadRoster();
     } catch (e) {
-      setMessage(formatAdminScoreboardError(e));
+      toast.error(formatAdminScoreboardError(e));
     } finally {
       setSaving(false);
     }
@@ -203,30 +225,53 @@ export function AdminScoreboardRosterPage() {
         crumbs={[{ label: "Roster" }]}
       />
 
-      <div className="admin-filters admin-filters--with-action">
-        <select value={matchId} onChange={(e) => setMatchId(e.target.value)} aria-label="Match">
-          {matches.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.homeTeam.name} vs {m.awayTeam.name} ({m.status})
-            </option>
-          ))}
-        </select>
-        {selectedMatch && (
-          <select value={teamId} onChange={(e) => setTeamId(e.target.value)} aria-label="Team">
-            <option value={selectedMatch.homeTeam.id}>{selectedMatch.homeTeam.name}</option>
-            <option value={selectedMatch.awayTeam.id}>{selectedMatch.awayTeam.name}</option>
-          </select>
-        )}
-        <button
-          type="button"
-          className="admin-inline-button"
-          onClick={save}
-          disabled={saving || loading}
-        >
-          {saving ? "Saving…" : "Save roster"}
-        </button>
+      <div className="admin-sb-sticky-bar">
+        <div className="admin-filters admin-filters--with-action">
+          {matchesLoading ? (
+            <span className="admin-sb-skeleton admin-sb-skeleton--bar" aria-busy="true" />
+          ) : matches.length === 0 ? null : (
+            <>
+              <select value={matchId} onChange={(e) => setMatchId(e.target.value)} aria-label="Match">
+                {matches.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.homeTeam.name} vs {m.awayTeam.name} ({m.status})
+                  </option>
+                ))}
+              </select>
+              {selectedMatch && (
+                <select value={teamId} onChange={(e) => setTeamId(e.target.value)} aria-label="Team">
+                  <option value={selectedMatch.homeTeam.id}>{selectedMatch.homeTeam.name}</option>
+                  <option value={selectedMatch.awayTeam.id}>{selectedMatch.awayTeam.name}</option>
+                </select>
+              )}
+            </>
+          )}
+          <button
+            type="button"
+            className="admin-inline-button admin-inline-button--primary"
+            onClick={save}
+            disabled={saving || loading || matchesLoading || !matchId}
+          >
+            {saving ? "Saving…" : "Save roster"}
+          </button>
+        </div>
       </div>
 
+      {matchesLoading ? (
+        <div className="admin-sb-roster-split admin-sb-roster-split--loading" aria-busy="true">
+          <div className="admin-sb-skeleton admin-sb-skeleton--panel" />
+          <div className="admin-sb-skeleton admin-sb-skeleton--panel" />
+        </div>
+      ) : matches.length === 0 ? (
+        <div className="admin-sb-empty-state dtp-empty-state">
+          <p className="admin-sb-empty-state__title dtp-empty-state__title">No fixtures scheduled</p>
+          <p className="muted">
+            Create a competition with fixtures in Master records, then return here to build matchday
+            rosters.
+          </p>
+        </div>
+      ) : (
+        <>
       {selectedMatch && (
         <RosterReadinessBar
           readiness={readiness}
@@ -234,8 +279,6 @@ export function AdminScoreboardRosterPage() {
           awayLabel={selectedMatch.awayTeam.name}
         />
       )}
-
-      {message && <p className="admin-sb-msg">{message}</p>}
 
       {loading ? (
         <div className="admin-sb-roster-split admin-sb-roster-split--loading">
@@ -278,6 +321,8 @@ export function AdminScoreboardRosterPage() {
           {renderRosterList(subs, "Substitutes", "bench")}
         </div>
         </div>
+      )}
+        </>
       )}
     </section>
   );

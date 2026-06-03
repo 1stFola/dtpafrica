@@ -18,6 +18,9 @@ import {
   type MatchdayRosterPayload,
 } from "./admin-scoreboard.service";
 import { CreateAdminHighlightDto } from "./dto/create-admin-highlight.dto";
+import { CreateLandingHighlightDto } from "./dto/create-landing-highlight.dto";
+import { PublishHighlightDto } from "./dto/publish-highlight.dto";
+import { UpdateAdminHighlightDto } from "./dto/update-admin-highlight.dto";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
 import {
   CreateCompetitionFromTemplateDto,
@@ -138,6 +141,37 @@ export class AdminScoreboardController {
   @Post("highlights")
   createHighlight(@Body() dto: CreateAdminHighlightDto) {
     return this.sb.createHighlight(dto);
+  }
+
+  @Get("highlights")
+  listHighlights() {
+    return this.sb.listAdminHighlights();
+  }
+
+  @Post("highlights/landing")
+  createLandingHighlight(@Body() dto: CreateLandingHighlightDto) {
+    return this.sb.createLandingHighlight(dto);
+  }
+
+  @Patch("highlights/:id")
+  updateHighlight(@Param("id") id: string, @Body() dto: UpdateAdminHighlightDto) {
+    return this.sb.updateHighlight(id, dto);
+  }
+
+  /** PUT alias for clients expecting RESTful update verb. */
+  @Put("highlights/:id")
+  updateHighlightPut(@Param("id") id: string, @Body() dto: UpdateAdminHighlightDto) {
+    return this.sb.updateHighlight(id, dto);
+  }
+
+  @Patch("highlights/:id/publish")
+  publishHighlight(@Param("id") id: string, @Body() dto: PublishHighlightDto) {
+    return this.sb.setHighlightPublished(id, dto.isPublished);
+  }
+
+  @Delete("highlights/:id")
+  deleteHighlight(@Param("id") id: string) {
+    return this.sb.deleteHighlight(id);
   }
 
   @Get("competitions/:competitionId/squad/export")

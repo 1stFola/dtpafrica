@@ -56,7 +56,7 @@ export type LegacyMetricsForm = {
 export const CSV_HEADER_HINT =
   "duration, total_distance, sprint_distance, sprints, top_speed, first_step_accelerations, intense_accelerations, intense_turns, avg_turn_entry, avg_turn_exit, turn_efficiency, left_turns, right_turns, back_turns, ball_touches, possession_duration_seconds, one_touch_possessions_percentage, multi_touch_possessions__percentage, quick_release_score, distance_with_ball, top_speed_with_ball, intense_turns_with_ball, kicking_power, release_inside_foot_percentage, release_laces_percentage, release_other_footzone_percentage, left_foot_touch_percentage, left_foot_release_percentage, left_foot_receive_percentage, left_foot_kicking_power_mph, right_foot_touch_percentage, right_foot_release_percentage, right_foot_receive_percentage, right_foot_kicking_power_mph";
 
-export const POSITIONS = ["ST", "WINGER", "AM", "CM", "CDM", "FB", "CB"] as const;
+export const POSITIONS = ["GK", "ST", "WINGER", "AM", "CM", "CDM", "FB", "CB"] as const;
 export const GENDERS = ["Male", "Female"] as const;
 export const BENCHMARK_REGIONS = [
   "Global",

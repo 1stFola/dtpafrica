@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi, type AdminPlayerRow } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminToast } from "../components/AdminToast";
+import { PlayerSlugPreview } from "../components/PlayerSlugPreview";
 
 function csvCell(value: unknown) {
   const text = value == null ? "" : String(value);
@@ -10,11 +12,14 @@ function csvCell(value: unknown) {
 
 export function AdminPlayersPage() {
   usePageTitle("Admin — Players");
+  const toast = useAdminToast();
   const [rows, setRows] = useState<AdminPlayerRow[]>([]);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
   const [calibratingId, setCalibratingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   const load = useCallback(() => {
     adminApi.players(q || undefined, status || undefined).then(setRows).catch(() => {});
@@ -28,27 +33,48 @@ export function AdminPlayersPage() {
     id: string,
     patch: Partial<Pick<AdminPlayerRow, "isFeatured" | "isPublic" | "registrationStatus">>
   ) => {
-    setMessage(null);
     try {
       await adminApi.updatePlayer(id, patch);
-      setMessage("Saved");
+      toast.success("Saved");
       load();
     } catch (e) {
-      setMessage(String(e));
+      toast.error(String(e));
+    }
+  };
+
+  const startEditName = (p: AdminPlayerRow) => {
+    setEditingId(p.id);
+    setEditName(p.displayName);
+  };
+
+  const saveDisplayName = async (id: string) => {
+    if (!editName.trim()) {
+      toast.error("Display name is required");
+      return;
+    }
+    setSavingName(true);
+    try {
+      await adminApi.updatePlayer(id, { displayName: editName.trim() });
+      toast.success("Player name and slug updated");
+      setEditingId(null);
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSavingName(false);
     }
   };
 
   const recalibrate = async (id: string) => {
-    setMessage(null);
     setCalibratingId(id);
     try {
       const result = await adminApi.calibratePlayer(id);
-      setMessage(
+      toast.success(
         `Recalibrated ${result.displayName}: OVR ${result.calibratedSummary.overall_rating}`
       );
       load();
     } catch (e) {
-      setMessage(String(e));
+      toast.error(String(e));
     } finally {
       setCalibratingId(null);
     }
@@ -103,7 +129,7 @@ export function AdminPlayersPage() {
       <header className="page-header">
         <h1>Players</h1>
         <p className="muted">
-          Toggle featured and public visibility. Recalibrate ratings from stored match metrics.
+          Toggle featured and public visibility. Edit display names with live slug preview.
         </p>
       </header>
 
@@ -132,8 +158,6 @@ export function AdminPlayersPage() {
         </button>
       </div>
 
-      {message && <p className="muted">{message}</p>}
-
       <div className="admin-table-wrap">
         <table className="sip-table admin-table">
           <thead>
@@ -150,12 +174,54 @@ export function AdminPlayersPage() {
             {rows.map((p) => (
               <tr key={p.id}>
                 <td>
-                  <strong>{p.displayName}</strong>
-                  <br />
-                  <span className="muted">
-                    {p.positionPrimary}
-                    {p.slug ? ` · /player/${p.slug}` : ""}
-                  </span>
+                  {editingId === p.id ? (
+                    <div className="admin-player-edit">
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        aria-label="Display name"
+                      />
+                      <PlayerSlugPreview
+                        displayName={editName}
+                        excludeId={p.id}
+                        currentSlug={p.slug}
+                      />
+                      <div className="admin-player-edit__actions">
+                        <button
+                          type="button"
+                          className="dtp-btn dtp-btn--secondary admin-btn-sm"
+                          disabled={savingName}
+                          onClick={() => saveDisplayName(p.id)}
+                        >
+                          {savingName ? "…" : "Save name"}
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-link"
+                          onClick={() => setEditingId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <strong>{p.displayName}</strong>
+                      <br />
+                      <span className="muted">
+                        {p.positionPrimary}
+                        {p.slug ? ` · /player/${p.slug}` : ""}
+                      </span>
+                      <br />
+                      <button
+                        type="button"
+                        className="admin-link admin-btn-sm"
+                        onClick={() => startEditName(p)}
+                      >
+                        Edit name
+                      </button>
+                    </>
+                  )}
                 </td>
                 <td>
                   <strong>{p.overallRating ?? "—"}</strong>

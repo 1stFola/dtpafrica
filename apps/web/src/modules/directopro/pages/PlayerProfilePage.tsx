@@ -1,9 +1,27 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@dtp/ui";
-import { apiGet, isAbortError, type PublicPlayerProfile } from "../../../api/client";
+import {
+  apiGet,
+  isAbortError,
+  type PlayerSkeletonProfile,
+  type PublicPlayerProfile,
+} from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { BenchmarkPlaystyleComparison } from "../components/PlaystyleComparisonModal";
+
+/**
+ * Navigation context a linking surface (e.g. Top Scorers, squad rows) can pass
+ * via router `state` so a not-yet-seeded player still renders a populated
+ * "Premium Skeleton Profile" instead of an error. All fields are optional.
+ */
+export type PlayerProfileLinkState = {
+  displayName?: string;
+  club?: string;
+  competition?: string;
+  /** Normalized role token; only "GK" unlocks the Clean Sheets metric. */
+  role?: string;
+};
 
 type ProfileTab =
   | "attributes"
@@ -68,6 +86,27 @@ const ATTRIBUTE_LABELS: Record<string, string> = {
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+/** Turn a route slug/name param into a readable display name ("ahmed-adesanu" → "Ahmed Adesanu"). */
+function deslugifyName(value: string): string {
+  const cleaned = value.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "Player";
+  return cleaned
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/** First letters of the first two words ("Ahmed Adesanu" → "AA"). */
+function initialsFromName(name: string): string {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+  return initials || "?";
 }
 
 function buildAttributeFallback(player: PublicPlayerProfile) {
@@ -161,31 +200,62 @@ function buildMediaItems(player: PublicPlayerProfile): ProfileMediaItem[] {
 
 export function PlayerProfilePage() {
   const { slugOrId } = useParams<{ slugOrId: string }>();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [player, setPlayer] = useState<PublicPlayerProfile | null>(null);
+  const [skeleton, setSkeleton] = useState<PlayerSkeletonProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>("attributes");
   const [shareStatus, setShareStatus] = useState<string | null>(null);
 
-  usePageTitle(player?.displayName);
+  // Known context from the click/URL (router state preferred, query params as fallback).
+  const linkState = (location.state ?? null) as PlayerProfileLinkState | null;
+  const knownName =
+    linkState?.displayName?.trim() ||
+    searchParams.get("name")?.trim() ||
+    (slugOrId ? deslugifyName(slugOrId) : "Player");
+  const knownClub =
+    linkState?.club?.trim() || searchParams.get("club")?.trim() || null;
+  const knownCompetition =
+    linkState?.competition?.trim() || searchParams.get("competition")?.trim() || null;
+  const knownRole =
+    (linkState?.role ?? searchParams.get("role"))?.trim().toUpperCase() || null;
+
+  usePageTitle(player?.displayName ?? skeleton?.displayName ?? knownName);
 
   useEffect(() => {
     if (!slugOrId) return;
     const controller = new AbortController();
     let cancelled = false;
     setPlayer(null);
+    setSkeleton(null);
     setError(null);
-    apiGet<PublicPlayerProfile>(`/home/players/${slugOrId}`, controller.signal)
+    const qs = new URLSearchParams();
+    if (knownClub) qs.set("club", knownClub);
+    if (knownCompetition) qs.set("competition", knownCompetition);
+    if (knownRole) qs.set("role", knownRole);
+    const query = qs.toString();
+    apiGet<PublicPlayerProfile | PlayerSkeletonProfile>(
+      `/home/players/${slugOrId}${query ? `?${query}` : ""}`,
+      controller.signal
+    )
       .then((data) => {
-        if (!cancelled) setPlayer(data);
+        if (cancelled) return;
+        if (data.isSkeleton) {
+          setSkeleton(data);
+        } else {
+          setPlayer(data);
+        }
       })
       .catch((e) => {
-        if (!cancelled && !isAbortError(e)) setError(String(e));
+        if (cancelled || isAbortError(e)) return;
+        setError(String(e));
       });
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [slugOrId]);
+  }, [slugOrId, knownClub, knownCompetition, knownRole]);
 
   if (error) {
     return (
@@ -197,6 +267,18 @@ export function PlayerProfilePage() {
           ← Back to featured players
         </Link>
       </div>
+    );
+  }
+
+  if (skeleton) {
+    return (
+      <PremiumSkeletonProfile
+        name={skeleton.displayName}
+        club={skeleton.club ?? knownClub}
+        competition={skeleton.competition ?? knownCompetition}
+        role={skeleton.role ?? knownRole}
+        stats={skeleton.stats}
+      />
     );
   }
 
@@ -512,6 +594,111 @@ export function PlayerProfilePage() {
           items={otherMediaItems}
         />
       )}
+    </div>
+  );
+}
+
+const PENDING_SYNC_CAPTION =
+  "Profile Pending Synchronization — Performance data and tournament history for this athlete are currently being verified by the DTP Africa scouting network.";
+
+/**
+ * High-fidelity fallback for a player routed by name/slug whose full record
+ * isn't seeded yet. Renders any known navigation context (name, club,
+ * competition, role) and premium animated placeholders for everything else.
+ */
+function PremiumSkeletonProfile({
+  name,
+  club,
+  competition,
+  role,
+  stats,
+}: {
+  name: string;
+  club: string | null;
+  competition: string | null;
+  role: string | null;
+  stats?: { cleanSheets?: number };
+}) {
+  const isGoalkeeper = role === "GK";
+  const metrics: { label: string; hint: string }[] = [
+    { label: "Goals", hint: "Match-verified tally" },
+    { label: "Assists", hint: "Creative output" },
+    { label: "Matches Played", hint: "Tournament appearances" },
+  ];
+  if (isGoalkeeper || stats?.cleanSheets != null) {
+    metrics.push({ label: "Clean Sheets", hint: "Shutout record" });
+  }
+
+  return (
+    <div className="home-page profile-page profile-pending" aria-busy="true">
+      <Link to="/featured-players" className="back-link">
+        ← Featured players
+      </Link>
+
+      <div className="profile-pending-notice" role="status">
+        <span className="profile-pending-notice__dot" aria-hidden="true" />
+        <span>
+          <strong>Profile pending synchronization.</strong> We&apos;re verifying this
+          athlete&apos;s record with the DTP Africa scouting network.
+        </span>
+      </div>
+
+      <div className="profile-hero">
+        <div
+          className="profile-avatar profile-avatar--pending"
+          aria-hidden="true"
+        >
+          <span className="profile-avatar__initials">{initialsFromName(name)}</span>
+        </div>
+        <div className="profile-hero__body">
+          <h1>{name}</h1>
+          <div className="profile-pending-badges">
+            {club && <span className="profile-pending-badge">{club}</span>}
+            {competition && (
+              <span className="profile-pending-badge profile-pending-badge--soft">
+                {competition}
+              </span>
+            )}
+            <span className="profile-pending-badge profile-pending-badge--status">
+              Verifying
+            </span>
+          </div>
+          <div className="profile-pending-herolines" aria-hidden="true">
+            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "42%" }} />
+            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "28%" }} />
+          </div>
+        </div>
+      </div>
+
+      <section className="profile-section">
+        <div className="profile-section-heading">
+          <div>
+            <span className="profile-section__eyebrow">Core performance</span>
+            <h2>Season metrics</h2>
+          </div>
+          <span className="profile-data-note">Awaiting sync</span>
+        </div>
+        <div className="profile-metric-grid">
+          {metrics.map((metric) => (
+            <article key={metric.label} className="profile-metric-card">
+              <span className="profile-metric-card__label">{metric.label}</span>
+              <span
+                className="dtp-skeleton profile-metric-card__bar"
+                aria-label={`${metric.label} pending`}
+              />
+              <span className="profile-metric-card__hint">{metric.hint}</span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="profile-section">
+        <h2>Tournament history</h2>
+        <div className="profile-pending-empty">
+          <span className="profile-pending-empty__glow" aria-hidden="true" />
+          <p className="profile-pending-empty__caption">{PENDING_SYNC_CAPTION}</p>
+        </div>
+      </section>
     </div>
   );
 }

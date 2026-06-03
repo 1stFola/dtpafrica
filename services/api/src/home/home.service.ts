@@ -7,14 +7,17 @@ import {
 import { normalizeClubName } from "@dtp/engines";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolvePlayerBySlugOrId } from "../players/player-resolve";
+import { resolveUniquePlayerSlug } from "../players/player-slug";
 import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
 import { ContactDto } from "./dto/contact.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
+import {
+  buildSkeletonProfile,
+  presentProfileStats,
+  type SkeletonProfileQuery,
+} from "./player-profile.presenter";
 import { PlayerProfileIntelligenceService } from "./player-profile-intelligence.service";
-import { slugifyDisplayName } from "./slug";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const SCOREBOARD_HISTORY_EVENT_LIMIT = 50;
 
@@ -46,30 +49,27 @@ export class HomeService {
     });
   }
 
-  async publicPlayer(slugOrId: string) {
-    const where: Prisma.PlayerWhereInput = { isPublic: true };
-    if (UUID_RE.test(slugOrId)) {
-      where.id = slugOrId;
-    } else {
-      where.slug = slugOrId;
+  async publicPlayer(slugOrId: string, query: SkeletonProfileQuery = {}) {
+    const resolved = await resolvePlayerBySlugOrId(this.prisma, slugOrId);
+    if (!resolved || !resolved.isPublic) {
+      return buildSkeletonProfile(slugOrId, query, resolved ?? undefined);
     }
 
-    const initial = await this.prisma.player.findFirst({
-      where,
-      select: { id: true },
-    });
-    if (!initial) {
-      throw new NotFoundException("Player profile not found");
-    }
-
-    await this.profileIntelligence.ensureForPublicProfile(initial.id);
+    await this.profileIntelligence.ensureForPublicProfile(resolved.id);
 
     const player = await this.prisma.player.findFirst({
-      where: { id: initial.id },
-      select: this.publicProfileSelect(),
+      where: { id: resolved.id },
+      select: {
+        ...this.publicProfileSelect(),
+        careerGoals: true,
+        careerAssists: true,
+        careerAppearances: true,
+        careerMinutes: true,
+        careerCleanSheets: true,
+      },
     });
     if (!player) {
-      throw new NotFoundException("Player profile not found");
+      return buildSkeletonProfile(slugOrId, query);
     }
 
     const {
@@ -80,10 +80,39 @@ export class HomeService {
       scoreboardSquad,
       scoreboardEvents,
       mvceValuations,
+      careerGoals,
+      careerAssists,
+      careerAppearances,
+      careerMinutes,
+      careerCleanSheets,
       ...profile
     } = player;
+
+    const role = query.role?.trim().toUpperCase() || profile.positionPrimary;
+    const latestClub = scoreboardSquad[0]?.team.name
+      ? normalizeClubName(scoreboardSquad[0].team.name)
+      : null;
+
     return {
+      isSkeleton: false as const,
       ...profile,
+      club: query.club?.trim() || latestClub,
+      competition:
+        query.competition?.trim() ||
+        scoreboardSquad[0]?.team.competition.name ||
+        null,
+      role,
+      stats: presentProfileStats(
+        {
+          careerGoals,
+          careerAssists,
+          careerAppearances,
+          careerMinutes,
+          careerCleanSheets,
+          positionPrimary: profile.positionPrimary,
+        },
+        role
+      ),
       ratingAttributes: profile.ratingAttributes ?? null,
       benchmarkMetadata: profile.benchmarkMetadata ?? null,
       mediaItems:
@@ -146,6 +175,7 @@ export class HomeService {
               : "Senior"
         : undefined;
 
+    const slug = await resolveUniquePlayerSlug(this.prisma, displayName);
     const player = await this.prisma.player.create({
       data: {
         firstName: dto.firstName,
@@ -167,24 +197,19 @@ export class HomeService {
         isPublic: false,
         isFeatured: false,
         registrationStatus: "pending",
-        slug: slugifyDisplayName(displayName),
+        slug,
       },
       select: {
         id: true,
         displayName: true,
         registrationStatus: true,
+        slug: true,
       },
-    });
-
-    const uniqueSlug = slugifyDisplayName(displayName, player.id);
-    await this.prisma.player.update({
-      where: { id: player.id },
-      data: { slug: uniqueSlug },
     });
 
     return {
       ...player,
-      slug: uniqueSlug,
+      slug: player.slug,
       message:
         "Registration received. Our team will review your profile and contact you.",
     };

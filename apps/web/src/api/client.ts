@@ -38,6 +38,33 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type PublicProfileStats = {
+  goals: number;
+  assists: number;
+  appearances: number;
+  minutes: number;
+  cleanSheets?: number;
+};
+
+export type PlayerSkeletonProfile = {
+  isSkeleton: true;
+  id: string | null;
+  slug: string;
+  displayName: string;
+  positionPrimary: string;
+  club: string | null;
+  competition: string | null;
+  role: string | null;
+  stats: PublicProfileStats;
+  scoutingSummary: null;
+  scoreboardHistory: null;
+  scoutingIntelligence: null;
+  valuation: null;
+  tacticalSummary: null;
+  positionFit: null;
+  mediaItems: [];
+};
+
 export type FeaturedPlayer = {
   id: string;
   slug: string | null;
@@ -60,6 +87,11 @@ export type PublicPositionFit = {
 };
 
 export type PublicPlayerProfile = FeaturedPlayer & {
+  isSkeleton?: false;
+  stats?: PublicProfileStats;
+  club?: string | null;
+  competition?: string | null;
+  role?: string | null;
   biography?: string | null;
   videoUrl?: string | null;
   dominantFoot?: string | null;

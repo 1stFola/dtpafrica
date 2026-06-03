@@ -12,6 +12,24 @@ import type {
 } from "../modules/admin/scoreboard/types";
 import type { SbMatchListItem } from "./scoreboard";
 
+export type AdminHighlightRow = {
+  id: string;
+  title: string;
+  youtubeUrl: string;
+  duration: string | null;
+  competitionId: string | null;
+  matchId: string | null;
+  isPublished: boolean;
+  publishedAt: string;
+  createdAt: string;
+  competition: { id: string; name: string; slug: string } | null;
+  match: {
+    id: string;
+    homeTeam: { name: string };
+    awayTeam: { name: string };
+  } | null;
+};
+
 async function sbFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const key = getAdminApiKey();
   const res = await fetch(`/api/v1${path}`, {
@@ -226,5 +244,58 @@ export const adminScoreboardApi = {
     sbFetch<{ id: string }>("/admin/scoreboard/highlights", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+
+  listHighlights: () => sbFetch<AdminHighlightRow[]>("/admin/scoreboard/highlights"),
+
+  createLandingHighlight: (body: {
+    title: string;
+    youtubeUrl: string;
+    duration: string;
+    competitionId: string;
+  }) =>
+    sbFetch<AdminHighlightRow>("/admin/scoreboard/highlights/landing", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateHighlight: (
+    id: string,
+    body: {
+      title?: string;
+      youtubeUrl?: string;
+      duration?: string;
+      competitionId?: string;
+    }
+  ) =>
+    sbFetch<AdminHighlightRow>(`/admin/scoreboard/highlights/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  /** PUT alias — same handler as PATCH update. */
+  replaceHighlight: (
+    id: string,
+    body: {
+      title?: string;
+      youtubeUrl?: string;
+      duration?: string;
+      competitionId?: string;
+    }
+  ) =>
+    sbFetch<AdminHighlightRow>(`/admin/scoreboard/highlights/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  publishHighlight: (id: string, isPublished: boolean) =>
+    sbFetch<AdminHighlightRow>(`/admin/scoreboard/highlights/${id}/publish`, {
+      method: "PATCH",
+      body: JSON.stringify({ isPublished }),
+    }),
+
+  deleteHighlight: (id: string) =>
+    sbFetch<{ ok: boolean }>(`/admin/scoreboard/highlights/${id}`, {
+      method: "DELETE",
     }),
 };

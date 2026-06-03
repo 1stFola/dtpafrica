@@ -10,6 +10,7 @@ import {
 } from "../../../../api/scoreboard";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
+import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
@@ -20,6 +21,7 @@ type TimelineEvent = Awaited<
 
 export function AdminScoreboardMatchCenterPage() {
   usePageTitle("Admin — ScoreBoard match center");
+  const toast = useAdminToast();
   const [live, setLive] = useState<SbMatchListItem[]>([]);
   const [all, setAll] = useState<SbMatchListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -27,8 +29,8 @@ export function AdminScoreboardMatchCenterPage() {
   const [readiness, setReadiness] = useState<
     Awaited<ReturnType<typeof adminScoreboardApi.getSpotter>>["rosterReadiness"] | null
   >(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [supervisorOk, setSupervisorOk] = useState<boolean | null>(null);
+  const [matchesLoading, setMatchesLoading] = useState(true);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -40,7 +42,12 @@ export function AdminScoreboardMatchCenterPage() {
         if (rows.length && !selectedId) setSelectedId(rows[0].id);
       })
       .catch(() => setSupervisorOk(false));
-    adminScoreboardApi.matches().then(setAll).catch(() => {});
+    setMatchesLoading(true);
+    adminScoreboardApi
+      .matches()
+      .then(setAll)
+      .catch(() => setAll([]))
+      .finally(() => setMatchesLoading(false));
   }, [selectedId]);
 
   const loadTimeline = useCallback((matchId: string) => {
@@ -81,11 +88,11 @@ export function AdminScoreboardMatchCenterPage() {
         teamId: selected.homeTeam.id,
         metadata: { source: "admin-match-center" },
       });
-      setMessage(`${EVENT_LABELS[type] ?? type} tagged`);
+      toast.success(`${EVENT_LABELS[type] ?? type} tagged`);
       refresh();
       loadTimeline(selected.id);
     } catch (e) {
-      setMessage(formatAdminScoreboardError(e));
+      toast.error(formatAdminScoreboardError(e));
     } finally {
       setBusy(false);
     }
@@ -95,11 +102,20 @@ export function AdminScoreboardMatchCenterPage() {
     if (!selected) return;
     try {
       await adminScoreboardApi.deleteMatchEvent(selected.id, eventId);
-      setMessage("Event removed");
+      toast.success("Event removed");
       loadTimeline(selected.id);
     } catch (e) {
-      setMessage(formatAdminScoreboardError(e));
+      toast.error(formatAdminScoreboardError(e));
     }
+  };
+
+  const matchOptions = [...new Map([...live, ...all].map((m) => [m.id, m])).values()];
+
+  const matchStatusClass = (status: string) => {
+    if (status === "live") return "admin-sb-status--live";
+    if (status === "halftime") return "admin-sb-status--halftime";
+    if (status === "finished") return "admin-sb-status--finished";
+    return "admin-sb-status--upcoming";
   };
 
   return (
@@ -110,7 +126,7 @@ export function AdminScoreboardMatchCenterPage() {
         crumbs={[{ label: "Match center" }]}
       />
 
-      <div className="admin-sb-supervisor-hook">
+      <div className="admin-sb-supervisor-hook admin-sb-panel">
         <span
           className={
             supervisorOk === null
@@ -128,26 +144,46 @@ export function AdminScoreboardMatchCenterPage() {
         <Link to="/admin/scoreboard/roster" className="text-link">
           Rosters
         </Link>
-        <Link to="/spotter-tablet" className="text-link">
-          Spotter tablet
-        </Link>
+        <a href="/spotter-tablet" className="text-link">
+          Spotter tablet ↗
+        </a>
       </div>
 
-      <div className="admin-filters">
-        <select
-          value={selected?.id ?? ""}
-          onChange={(e) => setSelectedId(e.target.value)}
-          aria-label="Select match"
-        >
-          {[...new Map([...live, ...all].map((m) => [m.id, m])).values()].map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.homeTeam.name} vs {m.awayTeam.name} ({m.status})
-            </option>
-          ))}
-        </select>
+      <div className="admin-sb-sticky-bar">
+        <div className="admin-filters">
+          {matchesLoading ? (
+            <span className="admin-sb-skeleton admin-sb-skeleton--bar" aria-busy="true" />
+          ) : (
+            <select
+              value={selected?.id ?? ""}
+              onChange={(e) => setSelectedId(e.target.value)}
+              aria-label="Select match"
+              disabled={matchOptions.length === 0}
+            >
+              {matchOptions.length === 0 ? (
+                <option value="">No matches available</option>
+              ) : (
+                matchOptions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.homeTeam.name} vs {m.awayTeam.name} ({m.status})
+                  </option>
+                ))
+              )}
+            </select>
+          )}
+        </div>
       </div>
 
-      {selected && (
+      {matchesLoading ? (
+        <div className="admin-sb-skeleton admin-sb-skeleton--panel admin-sb-match-panel-skeleton" aria-busy="true" />
+      ) : !selected ? (
+        <div className="admin-sb-empty-state dtp-empty-state">
+          <p className="admin-sb-empty-state__title dtp-empty-state__title">No matches to control</p>
+          <p className="muted">
+            Schedule fixtures from Master records, build rosters, then return here for live ops.
+          </p>
+        </div>
+      ) : (
         <>
           <RosterReadinessBar
             readiness={readiness}
@@ -168,8 +204,8 @@ export function AdminScoreboardMatchCenterPage() {
                 </h3>
                 <p className="muted">
                   Min {selected.minute ?? "—"} · SIP {selected.sipIngestStatus} ·{" "}
-                  <span className={`admin-sb-status admin-sb-status--${selected.status === "live" ? "active" : "upcoming"}`}>
-                    {selected.status}
+                  <span className={`admin-sb-status ${matchStatusClass(selected.status)}`}>
+                    {selected.status === "live" ? "LIVE" : selected.status}
                   </span>
                 </p>
               </div>
@@ -195,7 +231,7 @@ export function AdminScoreboardMatchCenterPage() {
                 className="admin-inline-button admin-inline-button--primary"
                 onClick={() =>
                   patchMatch(selected.id, { status: "finished" }).then(() => {
-                    setMessage("Full time — stats and standings processing");
+                    toast.success("Full time — stats and standings processing");
                     refresh();
                     loadTimeline(selected.id);
                   })
@@ -207,7 +243,7 @@ export function AdminScoreboardMatchCenterPage() {
                 type="button"
                 className="admin-inline-button"
                 onClick={() =>
-                  ingestMatchSip(selected.id).then(() => setMessage("SIP ingest queued"))
+                  ingestMatchSip(selected.id).then(() => toast.success("SIP ingest queued"))
                 }
               >
                 SIP ingest
@@ -244,7 +280,15 @@ export function AdminScoreboardMatchCenterPage() {
                   ))}
                 </ul>
               ) : timeline.length === 0 ? (
-                <p className="admin-sb-empty muted">No events recorded for this match yet.</p>
+                <div className="admin-sb-empty-state dtp-empty-state admin-sb-empty-state--compact">
+                  <p className="admin-sb-empty-state__title dtp-empty-state__title">
+                    No events recorded yet
+                  </p>
+                  <p className="muted">
+                    Tag goals, cards, and subs using the quick-event chips above once rosters are
+                    locked.
+                  </p>
+                </div>
               ) : (
                 <ul className="admin-sb-timeline-list">
                   {timeline.map((ev) => (
@@ -272,7 +316,6 @@ export function AdminScoreboardMatchCenterPage() {
           </div>
         </>
       )}
-      {message && <p className="admin-sb-msg" role="status">{message}</p>}
     </section>
   );
 }

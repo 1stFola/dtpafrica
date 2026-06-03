@@ -103,6 +103,14 @@ export class AdminController {
     });
   }
 
+  @Get("players/slug-preview")
+  previewPlayerSlug(
+    @Query("name") name?: string,
+    @Query("excludeId") excludeId?: string
+  ) {
+    return this.players.previewSlug(name ?? "", excludeId);
+  }
+
   @Patch("players/:id")
   updatePlayer(@Param("id") id: string, @Body() dto: UpdatePlayerAdminDto) {
     return this.players.update(id, dto);

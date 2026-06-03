@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom";
 import { AdminAuthProvider } from "./AdminAuthContext";
+import { AdminToastProvider } from "./components/AdminToast";
 import { AdminRequireAuth } from "./AdminRequireAuth";
 import { AdminLayout } from "./AdminLayout";
 import { AdminLoginPage } from "./pages/AdminLoginPage";
@@ -18,7 +19,8 @@ import { AdminScoreboardApp } from "./scoreboard/AdminScoreboardApp";
 export function AdminApp() {
   return (
     <AdminAuthProvider>
-      <Routes>
+      <AdminToastProvider>
+        <Routes>
         <Route path="login" element={<AdminLoginPage />} />
         <Route element={<AdminRequireAuth />}>
           <Route element={<AdminLayout />}>
@@ -37,6 +39,7 @@ export function AdminApp() {
           </Route>
         </Route>
       </Routes>
+      </AdminToastProvider>
     </AdminAuthProvider>
   );
 }

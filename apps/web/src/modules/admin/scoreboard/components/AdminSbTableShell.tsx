@@ -37,8 +37,8 @@ export function AdminSbTableShell({
 
   if (empty) {
     return (
-      <div className="admin-sb-empty-state">
-        <p className="admin-sb-empty-state__title">{emptyTitle}</p>
+      <div className="admin-sb-empty-state dtp-empty-state">
+        <p className="admin-sb-empty-state__title dtp-empty-state__title">{emptyTitle}</p>
         {emptyHint && <p className="muted">{emptyHint}</p>}
       </div>
     );

@@ -9,11 +9,9 @@ import { useAdSlot } from "../../context/AdConfigContext";
 
 const links = [
   { to: "/scoreboard", end: true, label: "Overview" },
-  { to: "/scoreboard/live", label: "Live" },
-  { to: "/scoreboard/browse", label: "Browse" },
-  { to: "/scoreboard/competition/jagaban-cup-2026", label: "Jagaban Cup" },
+  { to: "/scoreboard/browse", label: "Competitions" },
   { to: "/scoreboard/highlights", label: "Highlights" },
-  { to: "/scoreboard/supervisor", label: "Supervisor" },
+  { to: "/scoreboard/live", label: "Live" },
 ];
 
 export function ScoreboardLayout() {
@@ -22,8 +20,10 @@ export function ScoreboardLayout() {
   return (
     <div className="scoreboard-module">
       <header className="scoreboard-header">
-        <h1>ScoreBoard</h1>
-        <p className="muted">Live matches, standings, highlights, and operator tools</p>
+        <div className="scoreboard-brand">
+          <span className="scoreboard-brand__mark">ScoreBoard</span>
+          <span className="scoreboard-brand__tag">by DTP Africa</span>
+        </div>
         <LiveScoreRibbon />
         {mobileAd && (
           <div className="ad-placement ad-placement--scoreboard ad-placement--scoreboard-header-mobile">
@@ -37,14 +37,14 @@ export function ScoreboardLayout() {
             />
           </div>
         )}
-        <nav className="scouting-subnav" aria-label="ScoreBoard">
+        <nav className="sb-subnav" aria-label="ScoreBoard">
           {links.map((l) => (
             <NavLink
               key={l.to}
               to={l.to}
               end={l.end}
               className={({ isActive }) =>
-                isActive ? "subnav-link active" : "subnav-link"
+                isActive ? "sb-subnav__link active" : "sb-subnav__link"
               }
             >
               {l.label}

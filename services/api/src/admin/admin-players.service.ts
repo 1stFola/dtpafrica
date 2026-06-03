@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { slugifyDisplayName } from "../home/slug";
+import { resolveUniquePlayerSlug, previewPlayerSlug } from "../players/player-slug";
 import { UpdatePlayerAdminDto } from "./dto/update-player-admin.dto";
 
 @Injectable()
@@ -43,13 +43,22 @@ export class AdminPlayersService {
     });
   }
 
+  previewSlug(displayName: string, excludeId?: string) {
+    if (!displayName?.trim()) {
+      return { slug: "", available: false };
+    }
+    return previewPlayerSlug(this.prisma, displayName.trim(), excludeId);
+  }
+
   async update(id: string, dto: UpdatePlayerAdminDto) {
     const existing = await this.prisma.player.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Player not found");
 
     let slug = dto.slug;
     if (slug === undefined && dto.displayName && dto.displayName !== existing.displayName) {
-      slug = slugifyDisplayName(dto.displayName, id);
+      slug = await resolveUniquePlayerSlug(this.prisma, dto.displayName, id);
+    } else if (!existing.slug && !slug) {
+      slug = await resolveUniquePlayerSlug(this.prisma, existing.displayName, id);
     }
 
     return this.prisma.player.update({

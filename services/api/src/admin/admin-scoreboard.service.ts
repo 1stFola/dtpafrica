@@ -446,7 +446,19 @@ export class AdminScoreboardService {
 
     const xi = await Promise.all(payload.xi.map(linkSlot));
     const subs = await Promise.all(payload.subs.map(linkSlot));
-    return { ...payload, xi, subs };
+    const stripCleanSheets = (slot: MatchdayRosterSlot) => {
+      const pos = squadById.get(slot.squadId)?.position ?? slot.position;
+      if (!pos || !pos.toUpperCase().includes("GK")) {
+        const { cleanSheets: _cs, ...rest } = slot;
+        return rest;
+      }
+      return slot;
+    };
+    return {
+      ...payload,
+      xi: xi.map(stripCleanSheets),
+      subs: subs.map(stripCleanSheets),
+    };
   }
 
   async getSpotterOps(matchId: string) {
@@ -568,6 +580,99 @@ export class AdminScoreboardService {
       });
     }
     return highlight;
+  }
+
+  private highlightInclude = {
+    competition: { select: { id: true, name: true, slug: true } },
+    match: {
+      select: {
+        id: true,
+        homeTeam: { select: { name: true } },
+        awayTeam: { select: { name: true } },
+      },
+    },
+  } as const;
+
+  async listAdminHighlights() {
+    return this.prisma.sbHighlight.findMany({
+      orderBy: [{ createdAt: "desc" }],
+      include: this.highlightInclude,
+    });
+  }
+
+  async createLandingHighlight(body: {
+    title: string;
+    youtubeUrl: string;
+    duration: string;
+    competitionId: string;
+  }) {
+    const competition = await this.prisma.sbCompetition.findUnique({
+      where: { id: body.competitionId },
+    });
+    if (!competition) throw new BadRequestException("Competition not found");
+
+    return this.prisma.sbHighlight.create({
+      data: {
+        title: body.title.trim(),
+        youtubeUrl: body.youtubeUrl.trim(),
+        duration: body.duration.trim(),
+        competitionId: body.competitionId,
+        isPublished: false,
+      },
+      include: this.highlightInclude,
+    });
+  }
+
+  async updateHighlight(
+    id: string,
+    body: {
+      title?: string;
+      youtubeUrl?: string;
+      duration?: string;
+      competitionId?: string;
+    }
+  ) {
+    const existing = await this.prisma.sbHighlight.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Highlight not found");
+
+    if (body.competitionId) {
+      const competition = await this.prisma.sbCompetition.findUnique({
+        where: { id: body.competitionId },
+      });
+      if (!competition) throw new BadRequestException("Competition not found");
+    }
+
+    return this.prisma.sbHighlight.update({
+      where: { id },
+      data: {
+        title: body.title?.trim(),
+        youtubeUrl: body.youtubeUrl?.trim(),
+        duration: body.duration?.trim(),
+        competitionId: body.competitionId,
+      },
+      include: this.highlightInclude,
+    });
+  }
+
+  async setHighlightPublished(id: string, isPublished: boolean) {
+    const existing = await this.prisma.sbHighlight.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Highlight not found");
+
+    return this.prisma.sbHighlight.update({
+      where: { id },
+      data: {
+        isPublished,
+        publishedAt: isPublished ? new Date() : existing.publishedAt,
+      },
+      include: this.highlightInclude,
+    });
+  }
+
+  async deleteHighlight(id: string) {
+    const existing = await this.prisma.sbHighlight.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Highlight not found");
+    await this.prisma.sbHighlight.delete({ where: { id } });
+    return { ok: true };
   }
 
   exportCompetitionsCsv() {

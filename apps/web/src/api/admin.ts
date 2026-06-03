@@ -277,7 +277,14 @@ export const adminApi = {
     const qs = params.toString();
     return adminFetch<AdminPlayerRow[]>(`/admin/players${qs ? `?${qs}` : ""}`);
   },
-  updatePlayer: (id: string, body: Partial<AdminPlayerRow>) =>
+  previewPlayerSlug: (name: string, excludeId?: string) => {
+    const params = new URLSearchParams({ name });
+    if (excludeId) params.set("excludeId", excludeId);
+    return adminFetch<{ slug: string; available: boolean }>(
+      `/admin/players/slug-preview?${params.toString()}`
+    );
+  },
+  updatePlayer: (id: string, body: Partial<AdminPlayerRow> & { displayName?: string }) =>
     adminFetch(`/admin/players/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),

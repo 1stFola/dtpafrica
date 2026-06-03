@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
+import { ClubNameLinesField } from "../../components/ClubNameField";
 import type {
   CompetitionFormat,
   CompetitionTemplatePreview,
@@ -178,15 +179,17 @@ export function CreateCompetitionModal({ open, onClose, onCreated }: Props) {
             <input required value={season} onChange={(e) => setSeason(e.target.value)} />
           </label>
 
-          <label className="admin-sb-field">
-            Teams (one per line, optional <code>| A</code> group suffix)
-            <textarea
-              rows={6}
-              value={teamNames}
-              onChange={(e) => setTeamNames(e.target.value)}
-              placeholder={"SGFC Athletics | A\n36 Lions FC | A\n…"}
-            />
-          </label>
+          <ClubNameLinesField
+            label={
+              <>
+                Teams (one per line, optional <code>| A</code> group suffix)
+              </>
+            }
+            value={teamNames}
+            onChange={setTeamNames}
+            placeholder={"SGFC Athletics | A\n36 Lions FC | A\n…"}
+            rows={6}
+          />
 
           <label className="admin-sb-check">
             <input

@@ -13,7 +13,7 @@ import {
 } from "@dtp/engines";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { slugifyDisplayName } from "../home/slug";
+import { resolveUniquePlayerSlug } from "../players/player-slug";
 import { CalibrationMetricsDto } from "./dto/calibration-metrics.dto";
 import {
   CalibrationPlayerInfoDto,
@@ -450,6 +450,10 @@ export class AdminCalibrationService {
                 ? "U23"
                 : "Senior";
 
+    const slug = await resolveUniquePlayerSlug(
+      this.prisma,
+      playerInfo.fullName.trim()
+    );
     const player = await this.prisma.player.create({
       data: {
         firstName,
@@ -465,7 +469,7 @@ export class AdminCalibrationService {
         city: playerInfo.currentClub ? normalizeClubName(playerInfo.currentClub) : undefined,
         playerPhotoUrl: playerInfo.photoUrl,
         videoUrl: playerInfo.videoUrl,
-        slug: slugifyDisplayName(playerInfo.fullName.trim()),
+        slug,
         overallRating: result.rawSummary.overall_rating,
         offensiveRating: result.rawSummary.offensive_score,
         defensiveRating: result.rawSummary.defensive_score,

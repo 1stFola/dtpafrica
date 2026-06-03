@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 
 type Props = {
@@ -9,19 +10,18 @@ type Props = {
 };
 
 export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
+  const toast = useAdminToast();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const handleFile = async (file: File) => {
     setBusy(true);
-    setMessage(null);
     try {
       const csv = await file.text();
       await onImport(csv);
-      setMessage(`Imported ${file.name}`);
+      toast.success(`Imported ${file.name}`);
     } catch (e) {
-      setMessage(formatAdminScoreboardError(e));
+      toast.error(formatAdminScoreboardError(e));
     } finally {
       setBusy(false);
     }
@@ -29,7 +29,6 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
 
   const exportCsv = async () => {
     setBusy(true);
-    setMessage(null);
     try {
       const csv = await onExport();
       const url = URL.createObjectURL(
@@ -40,9 +39,9 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
       a.download = `${label.toLowerCase().replace(/\s+/g, "-")}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      setMessage("Export downloaded");
+      toast.success("Export downloaded");
     } catch (e) {
-      setMessage(formatAdminScoreboardError(e));
+      toast.error(formatAdminScoreboardError(e));
     } finally {
       setBusy(false);
     }
@@ -50,7 +49,7 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
 
   return (
     <div
-      className="admin-sb-dropzone"
+      className="admin-sb-dropzone admin-sb-panel"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -84,7 +83,6 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
           e.target.value = "";
         }}
       />
-      {message && <p className="admin-sb-dropzone-msg">{message}</p>}
     </div>
   );
 }

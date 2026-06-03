@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolveUniquePlayerSlug } from "./player-slug";
 import { CreatePlayerDto } from "./dto/create-player.dto";
 
 @Injectable()
@@ -28,13 +29,15 @@ export class PlayersService {
     return player;
   }
 
-  create(dto: CreatePlayerDto) {
+  async create(dto: CreatePlayerDto) {
     const displayName = dto.displayName ?? `${dto.firstName} ${dto.lastName}`.trim();
+    const slug = await resolveUniquePlayerSlug(this.prisma, displayName);
     return this.prisma.player.create({
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
         displayName,
+        slug,
         positionPrimary: dto.positionPrimary,
         positionSecondary: dto.positionSecondary,
         nationality: dto.nationality,

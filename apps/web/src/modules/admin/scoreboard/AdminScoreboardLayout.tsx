@@ -8,7 +8,8 @@ const subLinks = [
   { to: "/admin/scoreboard/entities", label: "Master records", icon: "▦" },
   { to: "/admin/scoreboard/roster", label: "Matchday roster", icon: "☰" },
   { to: "/admin/scoreboard/match-center", label: "Match center", icon: "⏱" },
-  { to: "/admin/scoreboard/highlights", label: "Highlights", icon: "▶" },
+  { to: "/admin/scoreboard/highlights-manager", label: "Latest videos", icon: "▶" },
+  { to: "/admin/scoreboard/highlights", label: "Match clips", icon: "⎘" },
 ];
 
 export type AdminScoreboardOutletContext = {
@@ -22,13 +23,18 @@ export function useAdminScoreboardContext() {
 
 export function AdminScoreboardLayout() {
   const [stats, setStats] = useState<AdminSbStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const refreshStats = useCallback(() => {
-    return adminScoreboardApi.stats().then(setStats);
+    setStatsLoading(true);
+    return adminScoreboardApi
+      .stats()
+      .then(setStats)
+      .finally(() => setStatsLoading(false));
   }, []);
 
   useEffect(() => {
-    refreshStats().catch(() => {});
+    refreshStats().catch(() => setStatsLoading(false));
   }, [refreshStats]);
 
   return (
@@ -45,16 +51,26 @@ export function AdminScoreboardLayout() {
             Competitions, rosters, live match control, and highlights
           </p>
         </div>
-        {stats && (
-          <div className="admin-sb-badges" aria-label="Entity counts">
-            <span className="admin-sb-badge">{stats.competitions} comps</span>
-            <span className="admin-sb-badge">{stats.teams} teams</span>
-            <span className="admin-sb-badge">{stats.matches} matches</span>
-            <span className="admin-sb-badge admin-sb-badge--live">
-              {stats.liveMatches} live
-            </span>
-          </div>
-        )}
+        <div className="admin-sb-badges" aria-label="Entity counts" aria-busy={statsLoading}>
+          {statsLoading ? (
+            <>
+              {[1, 2, 3, 4].map((i) => (
+                <span key={i} className="admin-sb-badge admin-sb-badge--skeleton">
+                  <span className="admin-sb-skeleton admin-sb-skeleton--badge" />
+                </span>
+              ))}
+            </>
+          ) : stats ? (
+            <>
+              <span className="admin-sb-badge">{stats.competitions} comps</span>
+              <span className="admin-sb-badge">{stats.teams} teams</span>
+              <span className="admin-sb-badge">{stats.matches} matches</span>
+              <span className="admin-sb-badge admin-sb-badge--live">
+                {stats.liveMatches} live
+              </span>
+            </>
+          ) : null}
+        </div>
       </header>
 
       <div className="admin-sb-shell">

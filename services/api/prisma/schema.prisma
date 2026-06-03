@@ -24,7 +24,7 @@ model Player {
   playerPhotoUrl    String?  @map("player_photo_url")
   videoUrl          String?  @map("video_url")
   biography         String?  @db.Text
-  slug              String?  @unique
+  slug              String   @unique
   academyId         String?  @map("academy_id")
   city              String?
   state             String?
@@ -67,6 +67,7 @@ model Player {
   @@index([ageGroup])
   @@index([overallRating])
   @@index([isFeatured, isPublic])
+  @@index([slug])
   @@map("players")
 }
 
@@ -488,6 +489,7 @@ model SbHighlight {
   eventId       String?  @map("event_id")
   title         String
   youtubeUrl    String   @map("youtube_url")
+  duration      String?  @map("duration")
   isPublished   Boolean  @default(true) @map("is_published")
   publishedAt   DateTime @default(now()) @map("published_at")
   createdAt     DateTime @default(now()) @map("created_at")
