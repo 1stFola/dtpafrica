@@ -1,0 +1,95 @@
+---
+# Provision the app instance: clone repo, write env, build & run containers
+
+# ── Retrieve all secrets from AWS Secrets Manager ────────────────────────────
+
+- name: Fetch database credentials from Secrets Manager
+  community.aws.aws_secret:
+    name: "{{ secrets_manager_db_secret_name }}"
+    region: "{{ aws_region }}"
+  register: db_secret_raw
+  no_log: true
+
+- name: Fetch app secrets from Secrets Manager
+  community.aws.aws_secret:
+    name: "{{ secrets_manager_app_secret_name }}"
+    region: "{{ aws_region }}"
+  register: app_secret_raw
+  no_log: true
+
+- name: Parse credential JSON objects
+  ansible.builtin.set_fact:
+    db_creds: "{{ db_secret_raw.secret | from_json }}"
+    app_creds: "{{ app_secret_raw.secret | from_json }}"
+  no_log: true
+
+# ── App directory ─────────────────────────────────────────────────────────────
+
+- name: Create app directory
+  ansible.builtin.file:
+    path: /opt/dtp-app
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0750"
+
+# ── Deploy repo ───────────────────────────────────────────────────────────────
+
+- name: Clone / update repository
+  ansible.builtin.git:
+    repo: "{{ git_repo_url }}"
+    dest: /opt/dtp-app/repo
+    version: "{{ git_branch | default('main') }}"
+    force: true
+  become: true
+  become_user: ubuntu
+
+# ── Write .env and docker-compose ─────────────────────────────────────────────
+
+- name: Write production .env file
+  ansible.builtin.template:
+    src: .env.prod.j2
+    dest: /opt/dtp-app/repo/infra/.env.prod
+    owner: ubuntu
+    group: ubuntu
+    mode: "0600"
+  no_log: true  # contains secrets
+
+- name: Write production docker-compose override
+  ansible.builtin.template:
+    src: docker-compose.prod.yml.j2
+    dest: /opt/dtp-app/repo/infra/docker-compose.prod.yml
+    owner: ubuntu
+    group: ubuntu
+    mode: "0640"
+
+# ── UFW: allow HTTP and HTTPS ─────────────────────────────────────────────────
+
+- name: Allow HTTP
+  community.general.ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+
+- name: Allow HTTPS
+  community.general.ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+
+# ── Pull images and (re)start services ───────────────────────────────────────
+
+- name: Build and start app containers
+  community.docker.docker_compose_v2:
+    project_src: /opt/dtp-app/repo
+    files:
+      - infra/docker-compose.prod.yml
+    env_files:
+      - infra/.env.prod
+    build: always
+    state: present
+    pull: never
+  become: true
+  become_user: ubuntu
+  environment:
+    DOCKER_BUILDKIT: "1"

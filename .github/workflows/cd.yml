@@ -1,0 +1,215 @@
+name: CD — Deploy to Staging
+
+# Triggers only on a successful CI run against main.
+# This means CI (typecheck, build, compose-validate) must pass before any deploy.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+
+  # Allow manual re-deploy without a new commit
+  workflow_dispatch:
+    inputs:
+      skip_terraform:
+        description: "Skip Terraform apply (infra already up)"
+        required: false
+        default: "false"
+
+jobs:
+  # ── Guard: only run if the triggering CI workflow succeeded ────────────────
+  check_ci:
+    name: Check CI status
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - run: echo "CI passed — proceeding with deploy"
+
+  # ── Terraform: create / update AWS infrastructure ─────────────────────────
+  terraform:
+    name: Terraform apply
+    needs: check_ci
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+
+    outputs:
+      app_public_ip:  ${{ steps.tf_outputs.outputs.app_public_ip }}
+      db_private_ip:  ${{ steps.tf_outputs.outputs.db_private_ip }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+          terraform_wrapper: false   # wrapper interferes with output capture
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: |
+          terraform plan \
+            -var="key_pair_name=${{ secrets.EC2_KEY_PAIR_NAME }}" \
+            -out=tfplan
+        env:
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform apply
+        if: github.event.inputs.skip_terraform != 'true'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Capture Terraform outputs
+        id: tf_outputs
+        run: |
+          echo "app_public_ip=$(terraform output -raw app_public_ip)" >> "$GITHUB_OUTPUT"
+          echo "db_private_ip=$(terraform output -raw db_private_ip)"  >> "$GITHUB_OUTPUT"
+
+  # ── Ansible: provision DB instance ────────────────────────────────────────
+  provision_db:
+    name: Ansible — provision DB
+    needs: terraform
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/ansible
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (needed by community.aws for Secrets Manager)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Install Ansible + collections
+        run: |
+          pip install --quiet ansible boto3 botocore
+          ansible-galaxy collection install -r requirements.yml --force
+
+      - name: Write SSH private key
+        run: |
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/dtp-staging.pem
+          chmod 600 ~/.ssh/dtp-staging.pem
+
+      - name: Generate Ansible inventory
+        run: |
+          cat > inventory.ini << 'EOF'
+          [app]
+          ${{ needs.terraform.outputs.app_public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem
+
+          [db]
+          ${{ needs.terraform.outputs.db_private_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem ansible_ssh_common_args='-o ProxyJump=ubuntu@${{ needs.terraform.outputs.app_public_ip }} -o StrictHostKeyChecking=no'
+
+          [all:vars]
+          db_private_ip=${{ needs.terraform.outputs.db_private_ip }}
+          EOF
+
+      - name: Wait for DB instance SSH
+        run: |
+          # The DB is in a private subnet — we reach it through the app instance
+          timeout 180 bash -c \
+            "until ssh -o StrictHostKeyChecking=no \
+                       -o ProxyJump=ubuntu@${{ needs.terraform.outputs.app_public_ip }} \
+                       -i ~/.ssh/dtp-staging.pem \
+                       ubuntu@${{ needs.terraform.outputs.db_private_ip }} \
+                       'echo ready'; do sleep 10; done"
+
+      - name: Run DB playbook
+        run: |
+          ansible-playbook playbook-db.yml \
+            -e aws_region=${{ secrets.AWS_REGION }} \
+            -e vpc_cidr=10.0.0.0/16 \
+            -e secrets_manager_db_secret_name=dtp/staging/db
+
+  # ── Ansible: provision App instance ───────────────────────────────────────
+  provision_app:
+    name: Ansible — provision App
+    needs: [terraform, provision_db]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/ansible
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Install Ansible + collections
+        run: |
+          pip install --quiet ansible boto3 botocore
+          ansible-galaxy collection install -r requirements.yml --force
+
+      - name: Write SSH private key
+        run: |
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/dtp-staging.pem
+          chmod 600 ~/.ssh/dtp-staging.pem
+
+      - name: Generate Ansible inventory
+        run: |
+          cat > inventory.ini << 'EOF'
+          [app]
+          ${{ needs.terraform.outputs.app_public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem
+
+          [db]
+          ${{ needs.terraform.outputs.db_private_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem ansible_ssh_common_args='-o ProxyJump=ubuntu@${{ needs.terraform.outputs.app_public_ip }} -o StrictHostKeyChecking=no'
+
+          [all:vars]
+          db_private_ip=${{ needs.terraform.outputs.db_private_ip }}
+          EOF
+
+      - name: Wait for App instance SSH
+        run: |
+          timeout 180 bash -c \
+            "until ssh -o StrictHostKeyChecking=no \
+                       -i ~/.ssh/dtp-staging.pem \
+                       ubuntu@${{ needs.terraform.outputs.app_public_ip }} \
+                       'echo ready'; do sleep 10; done"
+
+      - name: Run App playbook
+        run: |
+          ansible-playbook playbook-app.yml \
+            -e aws_region=${{ secrets.AWS_REGION }} \
+            -e secrets_manager_db_secret_name=dtp/staging/db \
+            -e secrets_manager_app_secret_name=dtp/staging/app \
+            -e db_private_ip=${{ needs.terraform.outputs.db_private_ip }} \
+            -e git_repo_url=${{ secrets.GIT_REPO_URL }} \
+            -e git_branch=main
+
+      - name: Smoke test — health check
+        run: |
+          echo "Waiting 30s for containers to stabilise..."
+          sleep 30
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            http://${{ needs.terraform.outputs.app_public_ip }}/api/v1/health)
+          if [ "$HTTP" != "200" ]; then
+            echo "Health check failed — got HTTP $HTTP"
+            exit 1
+          fi
+          echo "Health check passed (HTTP $HTTP)"

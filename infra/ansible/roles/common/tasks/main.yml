@@ -1,0 +1,50 @@
+---
+# Common hardening and packages applied to every instance
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Upgrade all packages
+  ansible.builtin.apt:
+    upgrade: dist
+    autoremove: true
+
+- name: Install common utilities
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - git
+      - unzip
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - ufw
+      - fail2ban
+      - python3-pip
+      - python3-boto3   # needed by Ansible AWS lookups
+    state: present
+
+- name: Set timezone to UTC
+  community.general.timezone:
+    name: UTC
+
+- name: Enable and start fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    enabled: true
+    state: started
+
+- name: Allow SSH through UFW
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+
+- name: Enable UFW (default deny incoming)
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
