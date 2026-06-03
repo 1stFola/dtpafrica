@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { PRODUCT_MODULES } from "@dtp/domain";
-import { DtpLogo } from "@dtp/ui";
+import { BrandLogo } from "../components/BrandLogo";
 
 export function AppShell() {
   return (
@@ -10,8 +10,7 @@ export function AppShell() {
       </a>
       <header className="app-header">
         <NavLink to="/" className="brand">
-          <DtpLogo />
-          <span>DirectToPro Africa</span>
+          <BrandLogo variant="white-horizontal" size="header" />
         </NavLink>
         <nav className="app-nav" aria-label="Main">
           {PRODUCT_MODULES.map((mod) => (
@@ -31,6 +30,9 @@ export function AppShell() {
         </main>
       </div>
       <footer className="app-footer">
+        <NavLink to="/" className="app-footer__brand">
+          <BrandLogo variant="white-horizontal" size="footer" />
+        </NavLink>
         <nav className="footer-nav" aria-label="Footer">
           <NavLink to="/about">About</NavLink>
           <NavLink to="/blog">Blog</NavLink>

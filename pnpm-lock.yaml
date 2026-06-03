@@ -13,6 +13,9 @@ importers:
       '@dtp/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@dtp/engines':
+        specifier: workspace:*
+        version: link:../../packages/engines
       '@dtp/ui':
         specifier: workspace:*
         version: link:../../packages/ui

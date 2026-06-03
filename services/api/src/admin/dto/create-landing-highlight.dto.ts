@@ -1,12 +1,13 @@
-import { IsOptional, IsString, IsUrl, Matches } from "class-validator";
+import { IsString, Matches } from "class-validator";
 import { HIGHLIGHT_DURATION_REGEX } from "./highlight-duration";
+import { IsVideoMediaUrl } from "../validators/is-video-media-url.validator";
 
 /** Landing-page highlight (competition-scoped video card). */
 export class CreateLandingHighlightDto {
   @IsString()
   title!: string;
 
-  @IsUrl()
+  @IsVideoMediaUrl()
   youtubeUrl!: string;
 
   @IsString()

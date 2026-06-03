@@ -18,12 +18,19 @@ type AdConfigContextValue = {
 
 const AdConfigContext = createContext<AdConfigContextValue | null>(null);
 
+function toBannerProps(slot: AdBannerProps & { enabled: boolean }): AdBannerProps | null {
+  if (!slot.enabled) return null;
+  const { enabled: _enabled, ...banner } = slot;
+  return banner;
+}
+
 function resolveSlot(
   key: AdSlotKey,
   remote: PublicAdsConfig["slots"][AdSlotKey] | undefined
 ): AdBannerProps | null {
   const defaults = defaultAdConfig[key];
-  if (remote && remote.enabled === false) return null;
+  const enabled = remote?.enabled ?? defaults.enabled;
+  if (!enabled) return null;
 
   return {
     slotId: defaults.slotId,
@@ -72,7 +79,7 @@ export function AdConfigProvider({ children }: { children: ReactNode }) {
 export function useAdSlot(key: AdSlotKey): AdBannerProps | null {
   const ctx = useContext(AdConfigContext);
   if (!ctx) {
-    return defaultAdConfig[key];
+    return toBannerProps(defaultAdConfig[key]);
   }
   return ctx.getSlot(key);
 }

@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { BrandLogo } from "../../components/BrandLogo";
 import { LiveScoreRibbon } from "./components/LiveScoreRibbon";
 import { AdBanner } from "../../components/AdBanner";
 import { ModuleAdRails } from "../../components/ModuleAdRails";
@@ -22,7 +23,9 @@ export function ScoreboardLayout() {
       <header className="scoreboard-header">
         <div className="scoreboard-brand">
           <span className="scoreboard-brand__mark">ScoreBoard</span>
-          <span className="scoreboard-brand__tag">by DTP Africa</span>
+          <NavLink to="/" className="scoreboard-brand__partner">
+            <BrandLogo variant="white-horizontal" size="scoreboard" />
+          </NavLink>
         </div>
         <LiveScoreRibbon />
         {mobileAd && (

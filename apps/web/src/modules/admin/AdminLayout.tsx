@@ -1,44 +1,34 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { Link } from "react-router-dom";
+import { NavLink, Outlet, Link, useLocation } from "react-router-dom";
+import { BrandLogo } from "../../components/BrandLogo";
 import { useAdminAuth } from "./AdminAuthContext";
 
 const links = [
-  { to: "/admin", end: true, label: "Dashboard" },
-  { to: "/admin/inbox", label: "Inbox" },
-  { to: "/admin/players", label: "Players" },
-  { to: "/admin/calibration", label: "Calibration" },
-  { to: "/admin/homepage", label: "Homepage" },
-  { to: "/admin/ads", label: "Ads" },
-  { to: "/admin/academies", label: "Academies" },
-  { to: "/admin/content", label: "Content" },
-  { to: "/admin/blog", label: "Blog" },
-  { to: "/admin/scoreboard", label: "ScoreBoard" },
+  { to: "/admin", end: true, label: "Dashboard", icon: "◆" },
+  { to: "/admin/inbox", label: "Inbox", icon: "✉" },
+  { to: "/admin/players", label: "Players", icon: "⚽" },
+  { to: "/admin/calibration", label: "Calibration", icon: "◎" },
+  { to: "/admin/homepage", label: "Homepage", icon: "⌂" },
+  { to: "/admin/ads", label: "Ads", icon: "▣" },
+  { to: "/admin/academies", label: "Academies", icon: "▦" },
+  { to: "/admin/content", label: "Content", icon: "⎘" },
+  { to: "/admin/blog", label: "Blog", icon: "✎" },
+  { to: "/admin/scoreboard", label: "ScoreBoard", icon: "⏱" },
 ];
 
 export function AdminLayout() {
   const { logout } = useAdminAuth();
+  const location = useLocation();
+  const isScoreboard = location.pathname.startsWith("/admin/scoreboard");
 
   return (
     <div className="admin-shell">
       <header className="admin-topbar">
         <div className="admin-topbar__brand">
-          <Link to="/admin">DTP Admin</Link>
+          <Link to="/admin" className="admin-topbar__brand-link">
+            <BrandLogo variant="white-horizontal" size="admin" />
+          </Link>
           <span className="admin-badge">CMS</span>
         </div>
-        <nav className="admin-nav" aria-label="Admin">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end={l.end}
-              className={({ isActive }) =>
-                isActive ? "admin-nav-link active" : "admin-nav-link"
-              }
-            >
-              {l.label}
-            </NavLink>
-          ))}
-        </nav>
         <div className="admin-topbar__actions">
           <Link to="/" className="text-link">
             View site
@@ -48,9 +38,34 @@ export function AdminLayout() {
           </button>
         </div>
       </header>
-      <main className="admin-main">
-        <Outlet />
-      </main>
+
+      <div className={`admin-cms-shell ${isScoreboard ? "admin-cms-shell--full" : ""}`}>
+        {!isScoreboard && (
+          <aside className="admin-sb-sidebar admin-cms-sidebar" aria-label="Admin sections">
+            <nav className="admin-sb-sidebar-nav">
+              {links.map((l) => (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  end={l.end}
+                  className={({ isActive }) =>
+                    isActive ? "admin-sb-sidebar-link active" : "admin-sb-sidebar-link"
+                  }
+                >
+                  <span className="admin-sb-sidebar-link__icon" aria-hidden="true">
+                    {l.icon}
+                  </span>
+                  {l.label}
+                </NavLink>
+              ))}
+            </nav>
+          </aside>
+        )}
+
+        <main className="admin-cms-main">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

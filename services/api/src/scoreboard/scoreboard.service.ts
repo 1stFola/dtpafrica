@@ -17,6 +17,7 @@ import {
   type SkeletonProfileQuery,
 } from "../home/player-profile.presenter";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
+import { presentHighlight, presentMatchDetail } from "./present-media";
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
 import { assertMatchReadyForLiveEvents } from "./roster-guard";
@@ -179,7 +180,11 @@ export class ScoreboardService {
     return presentScoreboardPayload(rows);
   }
 
-  /** Landing hub: aggregate stats + recent published matches with goal events. */
+  /**
+   * Landing hub: aggregate stats + recent published matches with goal events.
+   * No response caching — each request reads fresh match rows and goal events from
+   * the database so admin match-center writes appear immediately on the homepage widget.
+   */
   async overview() {
     const stats = await this.stats();
     const recentMatches = await this.prisma.sbMatch.findMany({
@@ -575,7 +580,7 @@ export class ScoreboardService {
       include: MATCH_INCLUDE,
     });
     if (!match) throw new NotFoundException("Match not found");
-    return presentScoreboardPayload(match);
+    return presentMatchDetail(presentScoreboardPayload(match));
   }
 
   async standings(competitionId: string) {
@@ -651,7 +656,7 @@ export class ScoreboardService {
         event: true,
       },
     });
-    return presentScoreboardPayload(rows);
+    return presentScoreboardPayload(rows.map((row) => presentHighlight(row)));
   }
 
   async addEvent(matchId: string, dto: CreateMatchEventDto) {

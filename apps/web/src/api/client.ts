@@ -70,6 +70,8 @@ export type FeaturedPlayer = {
   slug: string | null;
   displayName: string;
   positionPrimary: string;
+  positionFull?: string | null;
+  philosophies?: { name: string; score: number }[];
   positionSecondary?: string | null;
   nationality?: string | null;
   ageGroup?: string | null;
@@ -77,6 +79,19 @@ export type FeaturedPlayer = {
   overallRating?: number | null;
   offensiveRating?: number | null;
   defensiveRating?: number | null;
+  careerGoals?: number | null;
+  careerAssists?: number | null;
+  careerCleanSheets?: number | null;
+  interceptions?: number | null;
+};
+
+export type HomeVideoHighlight = {
+  id: string;
+  playerName: string;
+  title: string;
+  description?: string;
+  youtubeUrl: string;
+  sortOrder: number;
 };
 
 export type PublicPositionFit = {

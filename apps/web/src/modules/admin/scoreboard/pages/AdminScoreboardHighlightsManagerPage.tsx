@@ -10,6 +10,8 @@ import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { AdminSbTableShell } from "../components/AdminSbTableShell";
 import { StatusBadge } from "../components/StatusBadge";
+import { MediaUrlFieldHint } from "../../../../components/MediaUrlFieldHint";
+import { MediaUrlPreview } from "../../../../components/MediaUrlPreview";
 
 type FormState = {
   title: string;
@@ -168,8 +170,10 @@ export function AdminScoreboardHighlightsManagerPage() {
             type="url"
             value={form.youtubeUrl}
             onChange={(e) => setForm((f) => ({ ...f, youtubeUrl: e.target.value }))}
-            placeholder="https://youtube.com/watch?v=…"
+            placeholder="YouTube or Google Drive /file/d/…/view"
           />
+          <MediaUrlFieldHint kind="video" />
+          <MediaUrlPreview url={form.youtubeUrl} kind="video" />
         </label>
         <label className="admin-sb-field">
           <span>Duration (MM:SS)</span>

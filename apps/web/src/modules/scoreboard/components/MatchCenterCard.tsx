@@ -31,7 +31,13 @@ function scorerName(goal: SbMatchGoal): string {
   return goal.player?.displayName ?? goal.playerLabel ?? "Unknown";
 }
 
-export function MatchCenterCard({ match }: { match: SbMatchListItem }) {
+export function MatchCenterCard({
+  match,
+  compact = false,
+}: {
+  match: SbMatchListItem;
+  compact?: boolean;
+}) {
   const kind = statusKind(match.status);
   const live = kind === "live" || kind === "ht";
   const goals = match.events ?? [];
@@ -40,7 +46,11 @@ export function MatchCenterCard({ match }: { match: SbMatchListItem }) {
   const hasScore = match.status !== "scheduled";
 
   return (
-    <Link to={`/scoreboard/match/${match.id}`} className="sb-mc-card" data-status={kind}>
+    <Link
+      to={`/scoreboard/match/${match.id}`}
+      className={`sb-mc-card${compact ? " sb-mc-card--compact" : ""}`}
+      data-status={kind}
+    >
       <div className="sb-mc-card__head">
         <span className="sb-mc-tag">{match.competition.name}</span>
         <span className={`sb-mc-status sb-mc-status--${kind}`}>
@@ -73,7 +83,7 @@ export function MatchCenterCard({ match }: { match: SbMatchListItem }) {
         </div>
       </div>
 
-      {(homeGoals.length > 0 || awayGoals.length > 0) && (
+      {!compact && (homeGoals.length > 0 || awayGoals.length > 0) && (
         <div className="sb-mc-card__timeline">
           <ul className="sb-mc-scorers">
             {homeGoals.map((g) => (
@@ -96,9 +106,25 @@ export function MatchCenterCard({ match }: { match: SbMatchListItem }) {
         </div>
       )}
 
+      {compact && (homeGoals.length > 0 || awayGoals.length > 0) && (
+        <div className="sb-mc-card__mini-timeline" aria-label="Goal scorers">
+          {[...goals]
+            .sort((a, b) => a.minute - b.minute)
+            .slice(0, 4)
+            .map((g) => (
+              <span key={g.id} className="sb-mc-card__mini-goal">
+                {g.minute}&apos; {scorerName(g)}
+              </span>
+            ))}
+          {goals.length > 4 && (
+            <span className="sb-mc-card__mini-more">+{goals.length - 4}</span>
+          )}
+        </div>
+      )}
+
       <div className="sb-mc-card__foot">
         {match.roundLabel && <span>{match.roundLabel}</span>}
-        {match.venue && <span>{match.venue}</span>}
+        {!compact && match.venue && <span>{match.venue}</span>}
         {kind === "scheduled" && match.kickoffAt && (
           <span>
             {new Date(match.kickoffAt).toLocaleString(undefined, {

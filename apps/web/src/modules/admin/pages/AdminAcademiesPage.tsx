@@ -5,6 +5,9 @@ import {
   type AdminAcademyInput,
 } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminToast } from "../components/AdminToast";
+import { AdminPageHeader } from "../components/AdminPageHeader";
+import { AdminTableShell } from "../components/AdminTableShell";
 
 const emptyDraft: AdminAcademyInput = {
   name: "",
@@ -32,14 +35,24 @@ function toDraft(academy: AdminAcademy): AdminAcademyInput {
 
 export function AdminAcademiesPage() {
   usePageTitle("Admin — Academies");
+  const toast = useAdminToast();
   const [rows, setRows] = useState<AdminAcademy[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AdminAcademyInput>(emptyDraft);
-  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
-    adminApi.academyList().then(setRows).catch((e) => setMessage(String(e)));
-  }, []);
+    setLoading(true);
+    adminApi
+      .academyList()
+      .then(setRows)
+      .catch((e) => {
+        toast.error(String(e));
+        setRows([]);
+      })
+      .finally(() => setLoading(false));
+  }, [toast]);
 
   useEffect(() => {
     load();
@@ -48,28 +61,28 @@ export function AdminAcademiesPage() {
   const select = (academy: AdminAcademy) => {
     setSelectedId(academy.id);
     setDraft(toDraft(academy));
-    setMessage(null);
   };
 
   const startNew = () => {
     setSelectedId(null);
     setDraft(emptyDraft);
-    setMessage(null);
   };
 
   const save = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setMessage(null);
+    setSaving(true);
     try {
       const saved = selectedId
         ? await adminApi.academyUpdate(selectedId, draft)
         : await adminApi.academyCreate(draft);
       setSelectedId(saved.id);
       setDraft(toDraft(saved));
-      setMessage("Saved");
+      toast.success("Academy saved");
       load();
     } catch (err) {
-      setMessage(String(err));
+      toast.error(String(err));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -79,84 +92,96 @@ export function AdminAcademiesPage() {
       await adminApi.academyDelete(selectedId);
       setSelectedId(null);
       setDraft(emptyDraft);
-      setMessage("Deleted");
+      toast.success("Academy deleted");
       load();
     } catch (err) {
-      setMessage(String(err));
+      toast.error(String(err));
     }
   };
 
   return (
-    <div className="admin-page">
-      <header className="page-header admin-page-header">
-        <div>
-          <h1>Academies</h1>
-          <p className="muted">Manage public partner academies shown on the marketing site.</p>
-        </div>
-        <button type="button" className="dtp-btn dtp-btn--primary" onClick={startNew}>
-          New academy
-        </button>
-      </header>
-
-      {message && <p className="muted">{message}</p>}
+    <section className="admin-page admin-sb-section">
+      <AdminPageHeader
+        title="Academies"
+        description="Manage public partner academies shown on the marketing site."
+        crumbs={[{ label: "Academies" }]}
+        actions={
+          <button
+            type="button"
+            className="admin-inline-button admin-inline-button--primary"
+            onClick={startNew}
+          >
+            New academy
+          </button>
+        }
+      />
 
       <div className="admin-content-grid">
-        <div className="admin-table-wrap">
-          <table className="sip-table admin-table">
-            <thead>
-              <tr>
-                <th>Academy</th>
-                <th>Location</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((academy) => (
-                <tr
-                  key={academy.id}
-                  className={academy.id === selectedId ? "admin-row-active" : undefined}
-                  onClick={() => select(academy)}
-                >
-                  <td>
-                    <strong>{academy.name}</strong>
-                    <br />
-                    <span className="muted">/{academy.slug}</span>
-                  </td>
-                  <td>{[academy.city, academy.country].filter(Boolean).join(", ") || "—"}</td>
-                  <td>
-                    <span
-                      className={
-                        academy.isPublished ? "admin-pill admin-pill--live" : "admin-pill"
-                      }
-                    >
-                      {academy.isPublished ? "published" : "draft"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
+        <div className="admin-sb-content-panel">
+          <AdminTableShell
+            loading={loading}
+            empty={!loading && rows.length === 0}
+            emptyTitle="No academies yet"
+            emptyHint="Create the first partner academy using the form."
+            columns={3}
+          >
+            <table className="admin-table admin-sb-table admin-table--clickable">
+              <thead>
                 <tr>
-                  <td colSpan={3} className="muted">
-                    No academies yet. Create the first partner academy.
-                  </td>
+                  <th>Academy</th>
+                  <th>Location</th>
+                  <th>Status</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((academy) => (
+                  <tr
+                    key={academy.id}
+                    className={
+                      academy.id === selectedId ? "admin-sb-row--active" : undefined
+                    }
+                    onClick={() => select(academy)}
+                  >
+                    <td>
+                      <strong>{academy.name}</strong>
+                      <br />
+                      <span className="muted">/{academy.slug}</span>
+                    </td>
+                    <td>
+                      {[academy.city, academy.country].filter(Boolean).join(", ") || "—"}
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          academy.isPublished
+                            ? "admin-sb-status admin-sb-status--active"
+                            : "admin-sb-status admin-sb-status--draft"
+                        }
+                      >
+                        {academy.isPublished ? "published" : "draft"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </AdminTableShell>
         </div>
 
-        <form className="home-form admin-content-form" onSubmit={save}>
-          <h2>{selectedId ? "Edit academy" : "New academy"}</h2>
-          <label>
-            Name
+        <form className="admin-content-form admin-sb-panel" onSubmit={save}>
+          <h2 className="admin-sb-form-heading">
+            {selectedId ? "Edit academy" : "New academy"}
+          </h2>
+          <label className="admin-sb-field">
+            <span>Name</span>
             <input
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
               required
             />
           </label>
-          <label>
-            Slug
+          <label className="admin-sb-field">
+            <span>Slug</span>
             <input
               value={draft.slug ?? ""}
               onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
@@ -164,56 +189,58 @@ export function AdminAcademiesPage() {
             />
           </label>
           <div className="admin-form-row">
-            <label>
-              City
+            <label className="admin-sb-field">
+              <span>City</span>
               <input
                 value={draft.city ?? ""}
                 onChange={(e) => setDraft({ ...draft, city: e.target.value })}
               />
             </label>
-            <label>
-              Country
+            <label className="admin-sb-field">
+              <span>Country</span>
               <input
                 value={draft.country ?? ""}
                 onChange={(e) => setDraft({ ...draft, country: e.target.value })}
               />
             </label>
           </div>
-          <label>
-            Description
+          <label className="admin-sb-field admin-sb-field--wide">
+            <span>Description</span>
             <textarea
               rows={4}
               value={draft.description ?? ""}
               onChange={(e) => setDraft({ ...draft, description: e.target.value })}
             />
           </label>
-          <label>
-            Logo URL
+          <label className="admin-sb-field">
+            <span>Logo URL</span>
             <input
               value={draft.logoUrl ?? ""}
               onChange={(e) => setDraft({ ...draft, logoUrl: e.target.value })}
             />
           </label>
-          <label>
-            Website URL
+          <label className="admin-sb-field">
+            <span>Website URL</span>
             <input
               value={draft.websiteUrl ?? ""}
               onChange={(e) => setDraft({ ...draft, websiteUrl: e.target.value })}
             />
           </label>
-          <label className="admin-checkbox-label">
+          <label className="admin-sb-check">
             <input
               type="checkbox"
               checked={draft.isPublished ?? true}
-              onChange={(e) =>
-                setDraft({ ...draft, isPublished: e.target.checked })
-              }
+              onChange={(e) => setDraft({ ...draft, isPublished: e.target.checked })}
             />
             Published
           </label>
-          <div className="admin-table__actions">
-            <button type="submit" className="dtp-btn dtp-btn--primary">
-              Save academy
+          <div className="admin-sb-form-actions">
+            <button
+              type="submit"
+              className="admin-inline-button admin-inline-button--primary"
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save academy"}
             </button>
             {selectedId && (
               <button type="button" className="admin-link-danger" onClick={remove}>
@@ -223,6 +250,6 @@ export function AdminAcademiesPage() {
           </div>
         </form>
       </div>
-    </div>
+    </section>
   );
 }

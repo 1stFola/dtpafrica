@@ -24,6 +24,7 @@ export default function App() {
         <Route element={<MarketingLayout />}>
           <Route index element={<HomePage />} />
           <Route path="featured-players" element={<FeaturedPlayersPage />} />
+          <Route path="players/:slugOrId" element={<PlayerProfilePage />} />
           <Route path="player/:slugOrId" element={<PlayerProfilePage />} />
           <Route path="register" element={<RegisterPage />} />
           <Route path="academy" element={<AcademyPage />} />

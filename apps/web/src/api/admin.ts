@@ -62,6 +62,8 @@ export type AdminPlayerRow = {
   id: string;
   displayName: string;
   positionPrimary: string;
+  positionFull: string | null;
+  playingPhilosophies: string[] | null;
   slug: string | null;
   isFeatured: boolean;
   isPublic: boolean;
@@ -284,7 +286,13 @@ export const adminApi = {
       `/admin/players/slug-preview?${params.toString()}`
     );
   },
-  updatePlayer: (id: string, body: Partial<AdminPlayerRow> & { displayName?: string }) =>
+  updatePlayer: (
+    id: string,
+    body: Partial<AdminPlayerRow> & {
+      displayName?: string;
+      playingPhilosophies?: string[];
+    }
+  ) =>
     adminFetch(`/admin/players/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),

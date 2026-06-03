@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Button, PlayerCard } from "@dtp/ui";
-import { apiGet, type FeaturedPlayer } from "../../api/client";
+import { apiGet } from "../../api/client";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { HomeFeaturesSection } from "./components/home/HomeFeaturesSection";
 
 type WinsWallLogo = {
   name?: string;
@@ -69,13 +69,9 @@ function HomeCta({ href, label }: { href?: string; label?: string }) {
 
 export function HomePage() {
   usePageTitle();
-  const [featured, setFeatured] = useState<FeaturedPlayer[]>([]);
   const [content, setContent] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    apiGet<FeaturedPlayer[]>("/home/featured-players?limit=3")
-      .then(setFeatured)
-      .catch(() => {});
     apiGet<Record<string, string>>(`/home/content?keys=${HOME_CONTENT_KEYS.join(",")}`)
       .then(setContent)
       .catch(() => {});
@@ -83,26 +79,37 @@ export function HomePage() {
 
   const winsWallLogos = parseWinsWallLogos(content["home.winsWall.logos"]);
 
-  return (
-    <section className="hero">
-      <p className="eyebrow">
-        {content["home.eyebrow"] ?? "From the Streets to the Stadium"}
-      </p>
-      <h1>{content["home.headline"] ?? "Global stage for local talent"}</h1>
-      <p className="lead">
-        {content["home.lead"] ??
-          "DirectToPro Africa connects grassroots football talent to scouts, academies, and clubs through verified data, tactical intelligence, and market-value insight."}
-      </p>
-      <div className="hero-actions">
-        <Button as={Link} to="/register">
-          {content["home.primaryCta"] ?? "Register talent"}
-        </Button>
-        <Button variant="secondary" as={Link} to="/featured-players">
-          {content["home.secondaryCta"] ?? "Featured players"}
-        </Button>
-      </div>
+  const primaryHref = "/register";
+  const secondaryHref = "/featured-players";
 
-      {(isEnabled(content["home.announcement.enabled"]) ||
+  return (
+    <>
+    <section className="home-hero hero">
+      <div className="home-hero__bg" aria-hidden="true" />
+      <div className="home-hero__overlay" aria-hidden="true" />
+      <div className="home-hero__content">
+        <p className="eyebrow home-hero__eyebrow">
+          {content["home.eyebrow"] ?? "From the Streets to the Stadium"}
+        </p>
+        <h1 className="hero-glow home-hero__title">
+          {content["home.headline"] ?? "Global stage for local talent"}
+        </h1>
+        <p className="lead home-hero__lead">
+          {content["home.lead"] ??
+            "DirectToPro Africa connects grassroots football talent to scouts, academies, and clubs through verified data, tactical intelligence, and market-value insight."}
+        </p>
+        <div className="hero-actions home-hero__actions">
+          <Link to={primaryHref} className="home-hero__btn home-hero__btn--primary">
+            {content["home.primaryCta"] ?? "Register talent"}
+          </Link>
+          <Link to={secondaryHref} className="home-hero__btn home-hero__btn--secondary">
+            {content["home.secondaryCta"] ?? "Featured players"}
+          </Link>
+        </div>
+      </div>
+    </section>
+
+    {(isEnabled(content["home.announcement.enabled"]) ||
         isEnabled(content["home.event.enabled"]) ||
         isEnabled(content["home.featuredVideo.enabled"])) && (
         <div className="home-managed-grid">
@@ -148,21 +155,7 @@ export function HomePage() {
         </div>
       )}
 
-      {featured.length > 0 && (
-        <section className="home-featured-preview">
-          <div className="section-heading">
-            <h2>Featured talent</h2>
-            <Link to="/featured-players" className="text-link">
-              View all
-            </Link>
-          </div>
-          <div className="player-grid player-grid--compact">
-            {featured.map((p) => (
-              <PlayerCard key={p.id} player={p} />
-            ))}
-          </div>
-        </section>
-      )}
+      <HomeFeaturesSection />
 
       {isEnabled(content["home.winsWall.enabled"]) && winsWallLogos.length > 0 && (
         <section className="home-wins-wall">
@@ -195,21 +188,6 @@ export function HomePage() {
           </div>
         </section>
       )}
-
-      <div className="module-grid">
-        <Link to="/scouting" className="module-card">
-          <h3>Scouting Intelligence</h3>
-          <p>Tactical fit, Strong XI, philosophy matching</p>
-        </Link>
-        <Link to="/scoreboard" className="module-card">
-          <h3>ScoreBoard</h3>
-          <p>Live match data, competitions, highlights</p>
-        </Link>
-        <Link to="/valuation" className="module-card">
-          <h3>Market Value Engine</h3>
-          <p>Confidence bands and valuation readiness</p>
-        </Link>
-      </div>
-    </section>
+    </>
   );
 }

@@ -20,7 +20,9 @@ model Player {
   weightKg          Float?   @map("weight_kg")
   dominantFoot      String?  @map("dominant_foot")
   positionPrimary   String   @map("position_primary")
+  positionFull      String?  @map("position_full")
   positionSecondary String?  @map("position_secondary")
+  playingPhilosophies Json?  @map("playing_philosophies")
   playerPhotoUrl    String?  @map("player_photo_url")
   videoUrl          String?  @map("video_url")
   biography         String?  @db.Text

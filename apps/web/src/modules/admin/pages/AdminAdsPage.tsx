@@ -8,6 +8,8 @@ import {
 import { AD_SLOT_KEYS, defaultAdConfig } from "../../../config/adConfig";
 import { AD_FORMAT_SPECS, AD_SLOT_SIZE_SPECS } from "../../../config/adFormatSpecs";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminToast } from "../components/AdminToast";
+import { AdminPageHeader } from "../components/AdminPageHeader";
 
 const SLOT_META: Record<
   AdminAdSlotKey,
@@ -87,7 +89,7 @@ function mergeLoadedSlots(
     const remote = fromApi[key];
     const fallback = defaultAdConfig[key];
     merged[key] = {
-      enabled: remote?.enabled ?? true,
+      enabled: remote?.enabled ?? false,
       slotId: remote?.slotId ?? fallback.slotId,
       format: remote?.format ?? fallback.format,
       fallbackImageUrl: remote?.fallbackImageUrl ?? "",
@@ -101,11 +103,11 @@ function mergeLoadedSlots(
 
 export function AdminAdsPage() {
   usePageTitle("Admin — Ads");
+  const toast = useAdminToast();
   const [slots, setSlots] = useState<Record<AdminAdSlotKey, AdminAdSlotConfig> | null>(
     null
   );
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -118,12 +120,12 @@ export function AdminAdsPage() {
         setUpdatedAt(config.updatedAt);
       })
       .catch((e) => {
-        if (!cancelled) setMessage(String(e));
+        if (!cancelled) toast.error(String(e));
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [toast]);
 
   const updateSlot = (key: AdminAdSlotKey, patch: Partial<AdminAdSlotConfig>) => {
     setSlots((prev) => {
@@ -136,15 +138,14 @@ export function AdminAdsPage() {
     e.preventDefault();
     if (!slots) return;
     setSaving(true);
-    setMessage(null);
     try {
       const payload = mergeLoadedSlots(slots);
       const saved = await adminApi.adsPatch(payload);
       setSlots(mergeLoadedSlots(saved.slots));
       setUpdatedAt(saved.updatedAt);
-      setMessage("Ad placements saved. Public site picks up changes on next load.");
+      toast.success("Ad placements saved. Public site picks up changes on next load.");
     } catch (err) {
-      setMessage(`Could not save: ${String(err)}`);
+      toast.error(`Could not save: ${String(err)}`);
     } finally {
       setSaving(false);
     }
@@ -152,32 +153,31 @@ export function AdminAdsPage() {
 
   if (!slots) {
     return (
-      <div className="admin-page" aria-busy="true">
-        <h1>Ad placements</h1>
-        {message ? (
-          <p className="dtp-error-banner" role="alert">
-            {message}
-          </p>
-        ) : (
-          <>
-            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "60%" }} />
-            <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1rem" }} />
-            <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "1rem" }} />
-          </>
-        )}
-      </div>
+      <section className="admin-page admin-sb-section" aria-busy="true">
+        <AdminPageHeader
+          title="Ad placements"
+          description="Enable sponsor slots, set click-through URLs, and fallback image URLs."
+          crumbs={[{ label: "Ads" }]}
+        />
+        <div className="admin-cms-form-skeleton">
+          <span className="admin-sb-skeleton admin-sb-skeleton--bar" />
+          <div className="admin-sb-skeleton admin-sb-skeleton--panel" />
+          <div className="admin-sb-skeleton admin-sb-skeleton--panel" />
+        </div>
+      </section>
     );
   }
 
   return (
-    <div className="admin-page">
-      <header className="page-header">
-        <h1>Ad placements</h1>
-        <p className="muted">
-          Enable or disable sponsor slots, set click-through URLs, and fallback image URLs.
-          Upload creatives at the recommended IAB sizes below. Demo images use placehold.co.
-        </p>
-        <table className="sip-table admin-table admin-ads-size-table">
+    <section className="admin-page admin-sb-section">
+      <AdminPageHeader
+        title="Ad placements"
+        description="Enable or disable sponsor slots, set click-through URLs, and fallback image URLs. Upload creatives at the recommended IAB sizes below."
+        crumbs={[{ label: "Ads" }]}
+      />
+
+      <div className="admin-sb-content-panel admin-ads-size-panel">
+        <table className="admin-table admin-sb-table">
           <thead>
             <tr>
               <th>Format</th>
@@ -207,22 +207,11 @@ export function AdminAdsPage() {
           </tbody>
         </table>
         {updatedAt && (
-          <p className="muted admin-field-help">
+          <p className="muted admin-field-help admin-ads-size-panel__meta">
             Last saved: {new Date(updatedAt).toLocaleString()}
           </p>
         )}
-      </header>
-
-      {message &&
-        (message.startsWith("Could not") ? (
-          <p className="dtp-error-banner" role="alert">
-            {message}
-          </p>
-        ) : (
-          <p className="dtp-status-badge dtp-status-badge--success" role="status">
-            {message}
-          </p>
-        ))}
+      </div>
 
       <form className="admin-homepage-form" onSubmit={save}>
         {AD_SLOT_KEYS.map((key) => {
@@ -235,13 +224,15 @@ export function AdminAdsPage() {
               ? "Rendered in side rails at ~240×480 px (portrait display)."
               : null;
           return (
-            <section key={key} className="admin-content-form">
+            <section key={key} className="admin-content-form admin-sb-panel">
               <div className="admin-ads-slot-header">
-                <h2>{meta.title}</h2>
+                <h2 className="admin-sb-form-heading">{meta.title}</h2>
                 <span
-                  className={`dtp-status-badge ${
-                    slot.enabled ? "dtp-status-badge--success" : "dtp-status-badge--neutral"
-                  }`}
+                  className={
+                    slot.enabled
+                      ? "admin-sb-status admin-sb-status--active"
+                      : "admin-sb-status admin-sb-status--draft"
+                  }
                 >
                   {slot.enabled ? "Enabled" : "Disabled"}
                 </span>
@@ -250,8 +241,8 @@ export function AdminAdsPage() {
               <div className="admin-ad-size-spec" role="note">
                 <strong>Creative size:</strong> {sizeSpec.recommendedPx} px ·{" "}
                 <strong>IAB:</strong> {sizeSpec.iabName} · <strong>Format:</strong>{" "}
-                <code>{slot.format}</code> · <strong>Max width:</strong> {sizeSpec.maxWidthPx}{" "}
-                px (aspect {formatSpec.aspectRatio})
+                <code className="admin-sb-code">{slot.format}</code> · <strong>Max width:</strong>{" "}
+                {sizeSpec.maxWidthPx} px (aspect {formatSpec.aspectRatio})
                 {railRenderHint && (
                   <>
                     {" "}
@@ -260,10 +251,12 @@ export function AdminAdsPage() {
                 )}
               </div>
               <p className="muted admin-field-help">
-                Slot id: <code>{slot.slotId}</code> · Key: <code>{key}</code>
+                Slot id: <code className="admin-sb-code">{slot.slotId}</code> · Key:{" "}
+                <code className="admin-sb-code">{key}</code>
               </p>
 
-              <label className="admin-checkbox-label">
+              <div className="admin-sb-highlight-form">
+              <label className="admin-sb-check">
                 <input
                   type="checkbox"
                   checked={slot.enabled}
@@ -272,8 +265,8 @@ export function AdminAdsPage() {
                 Enabled
               </label>
 
-              <label>
-                Format
+              <label className="admin-sb-field">
+                <span>Format</span>
                 <select
                   value={slot.format}
                   onChange={(e) =>
@@ -293,8 +286,8 @@ export function AdminAdsPage() {
                 </select>
               </label>
 
-              <label>
-                Destination URL
+              <label className="admin-sb-field admin-sb-field--wide">
+                <span>Destination URL</span>
                 <input
                   type="url"
                   value={slot.destinationUrl}
@@ -303,8 +296,8 @@ export function AdminAdsPage() {
                 />
               </label>
 
-              <label>
-                Fallback image URL
+              <label className="admin-sb-field admin-sb-field--wide">
+                <span>Fallback image URL</span>
                 <input
                   type="url"
                   value={slot.fallbackImageUrl}
@@ -316,7 +309,7 @@ export function AdminAdsPage() {
                 </span>
               </label>
               {slot.fallbackImageUrl && (
-                <div className="admin-ad-preview">
+                <div className="admin-ad-preview admin-sb-field--wide">
                   <img
                     src={slot.fallbackImageUrl}
                     alt={`Preview ${meta.title}`}
@@ -327,8 +320,8 @@ export function AdminAdsPage() {
                 </div>
               )}
 
-              <label>
-                Label (optional)
+              <label className="admin-sb-field">
+                <span>Label (optional)</span>
                 <input
                   value={slot.label ?? ""}
                   onChange={(e) => updateSlot(key, { label: e.target.value })}
@@ -336,22 +329,29 @@ export function AdminAdsPage() {
                 />
               </label>
 
-              <label>
-                Placement notes (admin only)
+              <label className="admin-sb-field admin-sb-field--wide">
+                <span>Placement notes (admin only)</span>
                 <textarea
                   rows={2}
                   value={slot.placementNotes ?? ""}
                   onChange={(e) => updateSlot(key, { placementNotes: e.target.value })}
                 />
               </label>
+              </div>
             </section>
           );
         })}
 
-        <button type="submit" className="dtp-btn dtp-btn--primary" disabled={saving}>
-          {saving ? "Saving…" : "Save ad placements"}
-        </button>
+        <div className="admin-sb-sticky-actions">
+          <button
+            type="submit"
+            className="admin-inline-button admin-inline-button--primary"
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save ad placements"}
+          </button>
+        </div>
       </form>
-    </div>
+    </section>
   );
 }

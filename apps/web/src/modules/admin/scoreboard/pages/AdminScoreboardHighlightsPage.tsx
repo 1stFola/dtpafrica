@@ -6,12 +6,16 @@ import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
+import { MediaUrlFieldHint } from "../../../../components/MediaUrlFieldHint";
+import { MediaUrlPreview } from "../../../../components/MediaUrlPreview";
 
 export function AdminScoreboardHighlightsPage() {
   usePageTitle("Admin — Match highlights");
   const toast = useAdminToast();
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
 
   useEffect(() => {
     adminScoreboardApi
@@ -93,12 +97,29 @@ export function AdminScoreboardHighlightsPage() {
           <input name="timelineMinute" type="number" min={0} max={130} placeholder="23" />
         </label>
         <label className="admin-sb-field">
-          <span>Video URL (YouTube)</span>
-          <input name="youtubeUrl" type="url" required placeholder="https://youtube.com/..." />
+          <span>Video URL</span>
+          <input
+            name="youtubeUrl"
+            type="url"
+            required
+            value={videoUrl}
+            onChange={(e) => setVideoUrl(e.target.value)}
+            placeholder="YouTube or Google Drive /file/d/…/view"
+          />
+          <MediaUrlFieldHint kind="video" />
+          <MediaUrlPreview url={videoUrl} kind="video" />
         </label>
         <label className="admin-sb-field admin-sb-field--wide">
-          <span>Thumbnail URL</span>
-          <input name="thumbnailUrl" type="url" placeholder="https://…/thumb.jpg" />
+          <span>Thumbnail URL (optional)</span>
+          <input
+            name="thumbnailUrl"
+            type="url"
+            value={thumbnailUrl}
+            onChange={(e) => setThumbnailUrl(e.target.value)}
+            placeholder="Google Photos or https://… image"
+          />
+          <MediaUrlFieldHint kind="image" />
+          <MediaUrlPreview url={thumbnailUrl} kind="image" />
         </label>
         <div className="admin-sb-form-actions">
           <button type="submit" className="admin-inline-button admin-inline-button--primary">

@@ -19,6 +19,8 @@ export function presentSbTeam<T extends Named>(team: T): T {
 /** Deep-normalize team names and `teamName` fields in API payloads. */
 export function presentScoreboardPayload<T>(value: T): T {
   if (value === null || value === undefined) return value;
+  // Dates are objects; Object.entries(date) is empty and would become `{}` in JSON.
+  if (value instanceof Date) return value;
 
   if (Array.isArray(value)) {
     return value.map((item) => presentScoreboardPayload(item)) as T;

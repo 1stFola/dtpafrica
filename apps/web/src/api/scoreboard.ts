@@ -143,11 +143,14 @@ export type SbMatchEvent = {
   highlights?: SbHighlight[];
 };
 
+export type SbMatchPhoto = { url: string; caption: string | null };
+
 export type SbMatchDetail = Omit<SbMatchListItem, "homeTeam" | "awayTeam"> & {
   homeTeam: SbTeamWithSquad;
   awayTeam: SbTeamWithSquad;
   events: SbMatchEvent[];
   highlights: SbHighlight[];
+  photos?: SbMatchPhoto[];
 };
 
 export type SipIngestResult = {
@@ -181,10 +184,15 @@ export type StandingRow = {
   form?: Array<"W" | "D" | "L">;
 };
 
+export type VideoMediaType = "youtube" | "google_drive" | "external";
+
 export type SbHighlight = {
   id: string;
   title: string;
   youtubeUrl: string;
+  mediaType?: VideoMediaType;
+  videoEmbedUrl?: string | null;
+  thumbnailUrl?: string | null;
   duration?: string | null;
   publishedAt: string;
   match?: {
@@ -287,28 +295,11 @@ export function fetchCompetitionHub(competitionId: string, signal?: AbortSignal)
   );
 }
 
-/** Extract a YouTube video id from common URL shapes (watch, youtu.be, embed). */
-export function youtubeVideoId(url: string): string | null {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes("youtu.be")) {
-      return u.pathname.slice(1) || null;
-    }
-    if (u.pathname.startsWith("/embed/")) {
-      return u.pathname.split("/embed/")[1]?.split("/")[0] ?? null;
-    }
-    return u.searchParams.get("v");
-  } catch {
-    return null;
-  }
-}
-
-/** Best-effort thumbnail for a highlight video URL. */
-export function youtubeThumbnail(url: string): string | null {
-  const id = youtubeVideoId(url);
-  return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null;
-}
+export {
+  highlightThumbnailUrl,
+  youtubeThumbnail,
+  youtubeVideoId,
+} from "../utils/media-url";
 
 export function fetchCompetition(slug: string, signal?: AbortSignal) {
   return apiGet<SbCompetition & { teams: SbTeamWithSquad[] }>(
