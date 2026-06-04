@@ -4,6 +4,9 @@ name: CD — Deploy to Staging
 # Automatic: fires after CI passes on main
 # Manual:    GitHub Actions UI → "Run workflow"
 on:
+  pull_request:
+    branches: 
+      - dev
   workflow_run:
     workflows: ["CI"]
     branches: [main, dev]
