@@ -10,6 +10,7 @@ import { MvceModule } from "./mvce/mvce.module";
 import { ScoreboardModule } from "./scoreboard/scoreboard.module";
 import { ScoutingModule } from "./scouting/scouting.module";
 import { SipModule } from "./sip/sip.module";
+import { AcademyAuthModule } from "./academy-auth/academy-auth.module";
 import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.module";
 
 @Module({
@@ -25,6 +26,7 @@ import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.mo
     ScoreboardModule,
     MvceModule,
     BenchmarksModule,
+    AcademyAuthModule,
     AcademyDashboardModule,
   ],
 })

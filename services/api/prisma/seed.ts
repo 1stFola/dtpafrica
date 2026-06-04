@@ -434,6 +434,7 @@ Parents and guardians can register minors with consent workflows built for youth
   console.log("Seed complete. Player id:", player.id);
   console.log("Public profile: /player/alli-o-sanni");
   console.log("ScoreBoard: /scoreboard/competition/jagaban-cup-2026");
+  console.log("ScoreBoard: /scoreboard/competition/ex-internationals-cup-2026");
   console.log("MVCE: /valuation/player/" + player.id);
   console.log("Run: POST /api/v1/sip/players/" + player.id + "/recalculate");
 }

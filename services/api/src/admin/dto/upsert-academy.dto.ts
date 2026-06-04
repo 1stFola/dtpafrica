@@ -32,4 +32,12 @@ export class UpsertAcademyDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @IsOptional()
+  @IsString()
+  loginUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  password?: string;
 }

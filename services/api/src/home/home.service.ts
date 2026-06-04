@@ -22,6 +22,10 @@ import {
   type SkeletonProfileQuery,
 } from "./player-profile.presenter";
 import { PlayerProfileIntelligenceService } from "./player-profile-intelligence.service";
+import {
+  buildSeedByTeamSlug,
+  presentAcademyListing,
+} from "../academy/academy-directory.util";
 
 const SCOREBOARD_HISTORY_EVENT_LIMIT = 50;
 const HOMEPAGE_VIDEO_HIGHLIGHTS_KEY = "homepage.video-highlights";
@@ -325,11 +329,17 @@ export class HomeService {
     return post;
   }
 
-  listAcademies() {
-    return this.prisma.academy.findMany({
+  async listAcademies() {
+    const comp = await this.prisma.sbCompetition.findUnique({
+      where: { slug: "ex-internationals-cup-2026" },
+      include: { teams: true },
+    });
+    const seedByTeamSlug = buildSeedByTeamSlug(comp?.teams ?? []);
+    const rows = await this.prisma.academy.findMany({
       where: { isPublished: true },
       orderBy: { name: "asc" },
     });
+    return rows.map((row) => presentAcademyListing(row, seedByTeamSlug));
   }
 
   async academyBySlug(slug: string) {

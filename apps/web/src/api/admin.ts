@@ -254,6 +254,7 @@ export type AdminAcademy = {
   description: string | null;
   logoUrl: string | null;
   websiteUrl: string | null;
+  loginUsername: string | null;
   isPublished: boolean;
   createdAt: string;
   updatedAt: string;
@@ -268,6 +269,9 @@ export type AdminAcademyInput = {
   logoUrl?: string;
   websiteUrl?: string;
   isPublished?: boolean;
+  loginUsername?: string;
+  /** Plain text; hashed server-side. Leave blank on edit to keep existing password. */
+  password?: string;
 };
 
 export const adminApi = {

@@ -89,17 +89,19 @@ model BlogPost {
 }
 
 model Academy {
-  id          String   @id @default(uuid())
-  slug        String   @unique
-  name        String
-  city        String?
-  country     String?
-  description String?  @db.Text
-  logoUrl     String?  @map("logo_url")
-  websiteUrl  String?  @map("website_url")
-  isPublished Boolean  @default(true) @map("is_published")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  slug          String   @unique
+  name          String
+  city          String?
+  country       String?
+  description   String?  @db.Text
+  logoUrl       String?  @map("logo_url")
+  websiteUrl    String?  @map("website_url")
+  loginUsername String?  @unique @map("login_username")
+  passwordHash  String?  @map("password_hash")
+  isPublished   Boolean  @default(true) @map("is_published")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   players     Player[]
 

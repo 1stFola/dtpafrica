@@ -15,7 +15,7 @@ import { SpotterTabletPage } from "./modules/scoreboard/pages/SpotterTabletPage"
 import { ScoutingApp } from "./modules/scouting/ScoutingApp";
 import { ValuationApp } from "./modules/valuation/ValuationApp";
 import { AdminApp } from "./modules/admin/AdminApp";
-import { AcademyDashboardApp } from "./modules/academy/AcademyDashboardApp";
+import { AcademyApp } from "./modules/academy/AcademyApp";
 
 export default function App() {
   return (
@@ -27,7 +27,7 @@ export default function App() {
           <Route path="players/:slugOrId" element={<PlayerProfilePage />} />
           <Route path="player/:slugOrId" element={<PlayerProfilePage />} />
           <Route path="register" element={<RegisterPage />} />
-          <Route path="academy" element={<AcademyPage />} />
+          <Route path="partners/academies" element={<AcademyPage />} />
           <Route path="blog" element={<BlogPage />} />
           <Route path="blog/:slug" element={<BlogPostPage />} />
           <Route path="about" element={<AboutPage />} />
@@ -39,7 +39,7 @@ export default function App() {
         <Route path="valuation/*" element={<ValuationApp />} />
         <Route path="admin/*" element={<AdminApp />} />
         <Route path="spotter-tablet" element={<SpotterTabletPage />} />
-        <Route path="academy/:slug/dashboard/*" element={<AcademyDashboardApp />} />
+        <Route path="academy/*" element={<AcademyApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

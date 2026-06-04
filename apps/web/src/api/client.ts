@@ -261,6 +261,10 @@ export type Academy = {
   description: string | null;
   logoUrl: string | null;
   websiteUrl: string | null;
+  loginUsername?: string | null;
+  teamSlug?: string | null;
+  seed?: number | null;
+  badges?: string[];
 };
 
 export type RegisterResponse = {

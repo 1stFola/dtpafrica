@@ -8,6 +8,8 @@ export type SbTeamRef = {
   slug?: string;
   city?: string | null;
   logoUrl?: string | null;
+  /** Knockout draw seed (stored in groupKey for cup formats). */
+  groupKey?: string | null;
 };
 
 export type SbSquadPlayer = {
@@ -39,9 +41,15 @@ export type SbCompetition = {
   name: string;
   season: string;
   type: string;
+  formatType?: string | null;
+  formatConfig?: Record<string, unknown> | null;
   country: string | null;
   description: string | null;
   _count?: { teams: number; matches: number };
+};
+
+export type SbCompetitionHubTeam = SbTeamRef & {
+  seed: number | null;
 };
 
 export type SbMatchdayRosterSlot = {
@@ -274,12 +282,15 @@ export type SbCompetitionHub = {
     season: string;
     type: string;
     formatType: string | null;
+    formatConfig?: Record<string, unknown> | null;
+    bracketImageUrl?: string | null;
     country: string | null;
     description: string | null;
     teamCount: number;
     matchCount: number;
     standingsUpdatedAt: string | null;
   };
+  teams?: SbCompetitionHubTeam[];
   groups: Record<string, StandingRow[]>;
   topScorers: SbCompetitionHubTopScorer[];
 };

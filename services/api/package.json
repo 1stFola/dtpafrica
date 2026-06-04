@@ -11,15 +11,17 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
-    "db:push": "prisma db push",
+    "db:push": "prisma db push --accept-data-loss",
     "calibrate": "pnpm --filter @dtp/engines build && tsx scripts/run-calibration.ts"
   },
   "dependencies": {
     "@dtp/engines": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/jwt": "^10.2.0",
     "@nestjs/platform-express": "^10.4.15",
     "@prisma/client": "^6.1.0",
+    "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "reflect-metadata": "^0.2.2",
@@ -29,6 +31,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.10.1",
     "prisma": "^6.1.0",
     "tsx": "^4.19.2",

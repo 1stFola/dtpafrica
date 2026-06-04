@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AcademyAuthModule } from "../academy-auth/academy-auth.module";
 import { AdsModule } from "../ads/ads.module";
 import { ScoreboardModule } from "../scoreboard/scoreboard.module";
 import { AdminAcademiesService } from "./admin-academies.service";
@@ -12,7 +13,7 @@ import { AdminScoreboardController } from "./admin-scoreboard.controller";
 import { AdminScoreboardService } from "./admin-scoreboard.service";
 
 @Module({
-  imports: [AdsModule, ScoreboardModule],
+  imports: [AcademyAuthModule, AdsModule, ScoreboardModule],
   controllers: [AdminController, AdminScoreboardController],
   providers: [
     AdminPlayersService,

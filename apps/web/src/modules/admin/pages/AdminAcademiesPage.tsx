@@ -1,13 +1,22 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   adminApi,
   type AdminAcademy,
   type AdminAcademyInput,
 } from "../../../api/admin";
+import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminToast } from "../components/AdminToast";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { AdminTableShell } from "../components/AdminTableShell";
+
+function generateRandomPassword(length = 12) {
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+}
 
 const emptyDraft: AdminAcademyInput = {
   name: "",
@@ -17,6 +26,8 @@ const emptyDraft: AdminAcademyInput = {
   description: "",
   logoUrl: "",
   websiteUrl: "",
+  loginUsername: "",
+  password: "",
   isPublished: true,
 };
 
@@ -29,18 +40,53 @@ function toDraft(academy: AdminAcademy): AdminAcademyInput {
     description: academy.description ?? "",
     logoUrl: academy.logoUrl ?? "",
     websiteUrl: academy.websiteUrl ?? "",
+    loginUsername: academy.loginUsername ?? "",
+    password: "",
     isPublished: academy.isPublished,
   };
+}
+
+type QuickFilter = "" | "ex-intl" | "has-login" | "no-login";
+
+function academySearchHaystack(academy: AdminAcademy): string {
+  return [
+    academy.name,
+    academy.city,
+    academy.country,
+    academy.loginUsername,
+    academy.slug,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function matchesQuickFilter(academy: AdminAcademy, chip: QuickFilter): boolean {
+  if (chip === "ex-intl") return academy.slug.startsWith("ex-intl-");
+  if (chip === "has-login") return Boolean(academy.loginUsername?.trim());
+  if (chip === "no-login") return !academy.loginUsername?.trim();
+  return true;
+}
+
+function academyInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
 export function AdminAcademiesPage() {
   usePageTitle("Admin — Academies");
   const toast = useAdminToast();
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<AdminAcademy[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AdminAcademyInput>(emptyDraft);
   const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("");
+  const debouncedSearch = useDebouncedValue(searchQuery, 200);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -58,6 +104,24 @@ export function AdminAcademiesPage() {
     load();
   }, [load]);
 
+  const filteredRows = useMemo(() => {
+    const needle = debouncedSearch.trim().toLowerCase();
+    return rows.filter((academy) => {
+      if (!matchesQuickFilter(academy, quickFilter)) return false;
+      if (!needle) return true;
+      return academySearchHaystack(academy).includes(needle);
+    });
+  }, [rows, debouncedSearch, quickFilter]);
+
+  const listEmpty = !loading && filteredRows.length === 0;
+  const hasFilters = Boolean(debouncedSearch.trim() || quickFilter);
+  const listEmptyTitle = hasFilters
+    ? "No academies match your filters"
+    : "No academies yet";
+  const listEmptyHint = hasFilters
+    ? "Try a different search term or clear the quick filters."
+    : "Create the first partner academy using the form.";
+
   const select = (academy: AdminAcademy) => {
     setSelectedId(academy.id);
     setDraft(toDraft(academy));
@@ -66,6 +130,32 @@ export function AdminAcademiesPage() {
   const startNew = () => {
     setSelectedId(null);
     setDraft(emptyDraft);
+  };
+
+  const copyPassword = async () => {
+    const password = draft.password?.trim();
+    if (!password) return;
+    try {
+      await navigator.clipboard.writeText(password);
+      toast.success("Password copied");
+    } catch {
+      const input = passwordInputRef.current;
+      if (input) {
+        input.type = "text";
+        input.focus();
+        input.select();
+        try {
+          document.execCommand("copy");
+          toast.success("Password copied");
+        } catch {
+          toast.error("Could not copy — select the password manually");
+        } finally {
+          input.type = "password";
+        }
+      } else {
+        toast.error("Could not copy — select the password manually");
+      }
+    }
   };
 
   const save = async (e: FormEvent<HTMLFormElement>) => {
@@ -99,11 +189,15 @@ export function AdminAcademiesPage() {
     }
   };
 
+  const toggleQuickFilter = (chip: QuickFilter) => {
+    setQuickFilter((prev) => (prev === chip ? "" : chip));
+  };
+
   return (
-    <section className="admin-page admin-sb-section">
+    <section className="admin-page admin-sb-section admin-academies-page">
       <AdminPageHeader
         title="Academies"
-        description="Manage public partner academies shown on the marketing site."
+        description="Manage partner academies, club portal logins, and the authenticated directory."
         crumbs={[{ label: "Academies" }]}
         actions={
           <button
@@ -116,59 +210,155 @@ export function AdminAcademiesPage() {
         }
       />
 
-      <div className="admin-content-grid">
-        <div className="admin-sb-content-panel">
+      <div className="admin-content-grid admin-academies-grid">
+        <div className="admin-sb-content-panel admin-academies-list-panel">
+          <div className="admin-academies-toolbar">
+            <div className="admin-academies-search-wrap">
+              <input
+                type="search"
+                className="admin-academies-search"
+                placeholder="Search name, city, username, slug…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Filter academies"
+              />
+              {!loading && rows.length > 0 && (
+                <span className="admin-academies-count muted" aria-live="polite">
+                  {filteredRows.length === rows.length
+                    ? `${rows.length} academ${rows.length === 1 ? "y" : "ies"}`
+                    : `${filteredRows.length} of ${rows.length}`}
+                </span>
+              )}
+            </div>
+            <div className="admin-academies-chips" role="group" aria-label="Quick filters">
+              <button
+                type="button"
+                className={
+                  quickFilter === "ex-intl"
+                    ? "admin-academies-chip admin-academies-chip--active"
+                    : "admin-academies-chip"
+                }
+                onClick={() => toggleQuickFilter("ex-intl")}
+                aria-pressed={quickFilter === "ex-intl"}
+              >
+                Ex Internationals
+              </button>
+              <button
+                type="button"
+                className={
+                  quickFilter === "has-login"
+                    ? "admin-academies-chip admin-academies-chip--active"
+                    : "admin-academies-chip"
+                }
+                onClick={() => toggleQuickFilter("has-login")}
+                aria-pressed={quickFilter === "has-login"}
+              >
+                Has login
+              </button>
+              <button
+                type="button"
+                className={
+                  quickFilter === "no-login"
+                    ? "admin-academies-chip admin-academies-chip--active"
+                    : "admin-academies-chip"
+                }
+                onClick={() => toggleQuickFilter("no-login")}
+                aria-pressed={quickFilter === "no-login"}
+              >
+                No login
+              </button>
+            </div>
+          </div>
+
           <AdminTableShell
             loading={loading}
-            empty={!loading && rows.length === 0}
-            emptyTitle="No academies yet"
-            emptyHint="Create the first partner academy using the form."
-            columns={3}
+            empty={listEmpty}
+            emptyTitle={listEmptyTitle}
+            emptyHint={listEmptyHint}
+            columns={4}
           >
-            <table className="admin-table admin-sb-table admin-table--clickable">
+            <table className="admin-table admin-sb-table admin-table--clickable admin-academies-table">
               <thead>
                 <tr>
                   <th>Academy</th>
                   <th>Location</th>
+                  <th>Login</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((academy) => (
-                  <tr
-                    key={academy.id}
-                    className={
-                      academy.id === selectedId ? "admin-sb-row--active" : undefined
-                    }
-                    onClick={() => select(academy)}
-                  >
-                    <td>
-                      <strong>{academy.name}</strong>
-                      <br />
-                      <span className="muted">/{academy.slug}</span>
-                    </td>
-                    <td>
-                      {[academy.city, academy.country].filter(Boolean).join(", ") || "—"}
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          academy.isPublished
-                            ? "admin-sb-status admin-sb-status--active"
-                            : "admin-sb-status admin-sb-status--draft"
-                        }
-                      >
-                        {academy.isPublished ? "published" : "draft"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {filteredRows.map((academy) => {
+                  const location = [academy.city, academy.country]
+                    .filter(Boolean)
+                    .join(", ");
+                  const hasLogin = Boolean(academy.loginUsername?.trim());
+                  return (
+                    <tr
+                      key={academy.id}
+                      className={
+                        academy.id === selectedId
+                          ? "admin-sb-row--active admin-academies-row--active"
+                          : "admin-academies-row"
+                      }
+                      onClick={() => select(academy)}
+                    >
+                      <td>
+                        <div className="admin-academies-row__academy">
+                          <span className="admin-academies-row__logo" aria-hidden>
+                            {academy.logoUrl ? (
+                              <img src={academy.logoUrl} alt="" />
+                            ) : (
+                              <span className="admin-academies-row__initials">
+                                {academyInitials(academy.name)}
+                              </span>
+                            )}
+                          </span>
+                          <span className="admin-academies-row__text">
+                            <strong>{academy.name}</strong>
+                            <span className="admin-academies-row__slug muted">
+                              /{academy.slug}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        {location ? (
+                          <span className="admin-academies-row__location">{location}</span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {hasLogin ? (
+                          <span className="admin-academies-badge admin-academies-badge--login">
+                            @{academy.loginUsername}
+                          </span>
+                        ) : (
+                          <span className="admin-academies-badge admin-academies-badge--muted">
+                            No login
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className={
+                            academy.isPublished
+                              ? "admin-sb-status admin-sb-status--active"
+                              : "admin-sb-status admin-sb-status--draft"
+                          }
+                        >
+                          {academy.isPublished ? "Published" : "Draft"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </AdminTableShell>
         </div>
 
-        <form className="admin-content-form admin-sb-panel" onSubmit={save}>
+        <form className="admin-content-form admin-sb-panel admin-academies-form" onSubmit={save}>
           <h2 className="admin-sb-form-heading">
             {selectedId ? "Edit academy" : "New academy"}
           </h2>
@@ -226,6 +416,60 @@ export function AdminAcademiesPage() {
               onChange={(e) => setDraft({ ...draft, websiteUrl: e.target.value })}
             />
           </label>
+          <h3 className="admin-sb-form-subheading">Club portal login</h3>
+          <p className="admin-sb-hint muted">
+            Usernames must be unique. Leave password blank when editing to keep the
+            current hash. Legacy academies without credentials cannot sign in at{" "}
+            <code>/academy</code> until you set both fields.
+          </p>
+          <label className="admin-sb-field">
+            <span>Login username</span>
+            <input
+              value={draft.loginUsername ?? ""}
+              onChange={(e) =>
+                setDraft({ ...draft, loginUsername: e.target.value })
+              }
+              placeholder="e.g. fc-ekpo"
+              autoComplete="off"
+            />
+          </label>
+          <label className="admin-sb-field">
+            <span>Password</span>
+            <div className="admin-academies-password-row">
+              <input
+                ref={passwordInputRef}
+                type="password"
+                value={draft.password ?? ""}
+                onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+                placeholder={selectedId ? "Leave blank to keep existing" : "Required for login"}
+                autoComplete="new-password"
+              />
+              {draft.password ? (
+                <button
+                  type="button"
+                  className="admin-academies-copy-btn admin-inline-button"
+                  onClick={() => void copyPassword()}
+                  title="Copy password"
+                  aria-label="Copy password"
+                >
+                  Copy
+                </button>
+              ) : null}
+            </div>
+          </label>
+          <div className="admin-academies-password-actions">
+            <button
+              type="button"
+              className="admin-inline-button"
+              onClick={() => {
+                const next = generateRandomPassword();
+                setDraft({ ...draft, password: next });
+                toast.success("Random password generated");
+              }}
+            >
+              Generate random password
+            </button>
+          </div>
           <label className="admin-sb-check">
             <input
               type="checkbox"
