@@ -116,17 +116,21 @@ fi
 POSTGRES_USER="${POSTGRES_USER:-dtp}"
 POSTGRES_DB="${POSTGRES_DB:-dtp_africa}"
 
-# Prompt for anything still missing
+# Prompt for anything still missing — no defaults, values must be supplied explicitly
 if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
-  echo -n "Enter POSTGRES_PASSWORD (leave blank to use 'dtp' for dev): "
+  echo -n "Enter POSTGRES_PASSWORD: "
   read -rs POSTGRES_PASSWORD; echo
-  POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-dtp}"
+  if [[ -z "$POSTGRES_PASSWORD" ]]; then
+    error "POSTGRES_PASSWORD is required. Set it as an env var or enter it at the prompt."
+  fi
 fi
 
 if [[ -z "${ADMIN_API_KEY:-}" ]]; then
-  echo -n "Enter ADMIN_API_KEY (leave blank to use 'dtp-dev-admin-1' for dev): "
+  echo -n "Enter ADMIN_API_KEY: "
   read -rs ADMIN_API_KEY; echo
-  ADMIN_API_KEY="${ADMIN_API_KEY:-dtp-dev-admin-1}"
+  if [[ -z "$ADMIN_API_KEY" ]]; then
+    error "ADMIN_API_KEY is required. Set it as an env var or enter it at the prompt."
+  fi
 fi
 
 # Repo URL — auto-detect from git remote if inside a repo, otherwise prompt
