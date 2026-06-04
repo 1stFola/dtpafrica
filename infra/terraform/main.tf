@@ -8,14 +8,8 @@ terraform {
     }
   }
 
-  # Remote state — create the S3 bucket once manually then uncomment.
-  # backend "s3" {
-  #   bucket         = "dtp-terraform-state"
-  #   key            = "staging/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "dtp-terraform-locks"
-  #   encrypt        = true
-  # }
+  # State is stored in GitHub Actions cache between runs (see cd.yml).
+  # No S3 bucket or DynamoDB table needed.
 }
 
 provider "aws" {

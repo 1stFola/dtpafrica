@@ -1,8 +1,6 @@
 name: CD — Deploy to Staging
 
 # ── Triggers ──────────────────────────────────────────────────────────────────
-# Automatic: fires on every push to dev or main
-# Manual:    GitHub Actions UI → "Run workflow"
 on:
   push:
     branches:
@@ -24,13 +22,13 @@ on:
         type: choice
         options: ["false", "true"]
 
-# ── Concurrency: cancel any in-progress deploy on the same branch ─────────────
+# Cancel any in-progress deploy so pushes don't stack up
 concurrency:
   group: deploy-staging
   cancel-in-progress: true
 
 jobs:
-  # ── Job 1: Terraform — provision AWS infrastructure ────────────────────────
+  # ── Job 1: Terraform ────────────────────────────────────────────────────────
   terraform:
     name: Terraform apply
     runs-on: ubuntu-latest
@@ -56,7 +54,21 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.8.5"
-          terraform_wrapper: false   # must be false to capture raw outputs
+          terraform_wrapper: false
+
+      # ── State management ──────────────────────────────────────────────────
+      # The state file is stored in GitHub Actions cache between runs.
+      # This means Terraform knows what it already built and will update
+      # existing resources instead of creating duplicates.
+      - name: Restore Terraform state from cache
+        id: cache_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: infra/terraform/terraform.tfstate
+          key: terraform-state-staging
+          # restore-keys allows a partial match so the first run still works
+          restore-keys: |
+            terraform-state-staging
 
       - name: Terraform init
         run: terraform init
@@ -72,8 +84,17 @@ jobs:
             -out=tfplan
 
       - name: Terraform apply
-        if: ${{ github.event.inputs.skip_terraform != 'true' }}
+        if: github.event.inputs.skip_terraform != 'true'
         run: terraform apply -auto-approve tfplan
+
+      # Save state immediately after apply so the next run sees current infra.
+      # Uses always() so state is saved even if a later step fails.
+      - name: Save Terraform state to cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: infra/terraform/terraform.tfstate
+          key: terraform-state-staging
 
       - name: Capture outputs
         id: tf_out
@@ -88,11 +109,11 @@ jobs:
           echo "  SSH     : $(terraform output -raw ssh_command)"
           echo "============================================"
 
-  # ── Job 2: Ansible — configure server and deploy app ──────────────────────
+  # ── Job 2: Ansible ──────────────────────────────────────────────────────────
   deploy:
     name: Ansible deploy
     needs: terraform
-    if: ${{ github.event.inputs.skip_deploy != 'true' }}
+    if: github.event.inputs.skip_deploy != 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -103,7 +124,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        # Needed so Ansible can call Secrets Manager from inside the runner
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -126,17 +146,13 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/dtp-staging.pem
           chmod 600 ~/.ssh/dtp-staging.pem
-          # Verify key is readable (does not print content)
           ssh-keygen -l -f ~/.ssh/dtp-staging.pem
 
       - name: Write Ansible inventory
         run: |
           cat > inventory.ini <<EOF
           [server]
-          ${{ needs.terraform.outputs.server_public_ip }} \
-            ansible_user=ubuntu \
-            ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem \
-            ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ConnectTimeout=10'
+          ${{ needs.terraform.outputs.server_public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ConnectTimeout=10'
 
           [all:vars]
           server_public_ip=${{ needs.terraform.outputs.server_public_ip }}
@@ -154,7 +170,7 @@ jobs:
               ubuntu@${{ needs.terraform.outputs.server_public_ip }} \
               "echo SSH_READY" 2>/dev/null | grep -q SSH_READY
             do
-              echo "  not ready yet — retrying in 10s"
+              echo "  not ready yet - retrying in 10s"
               sleep 10
             done
           '
@@ -169,7 +185,6 @@ jobs:
             -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
             -e "git_branch=main"
         env:
-          # Ansible uses these env vars to call AWS APIs directly
           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
@@ -177,7 +192,6 @@ jobs:
 
       - name: Verify deployment (external health check)
         run: |
-          echo "Running external health check..."
           HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
             --max-time 10 \
             "http://${{ needs.terraform.outputs.server_public_ip }}/api/v1/health" \
@@ -185,16 +199,15 @@ jobs:
           if [ "$HTTP" = "200" ]; then
             echo "Health check passed (HTTP $HTTP)"
           else
-            echo "Health check failed — got HTTP $HTTP"
+            echo "Health check failed - got HTTP $HTTP"
             exit 1
           fi
 
       - name: Deployment summary
         run: |
           echo ""
-          echo "╔══════════════════════════════════════════════╗"
-          echo "║         Deployment complete                  ║"
-          echo "╠══════════════════════════════════════════════╣"
-          echo "║  App   : http://${{ needs.terraform.outputs.server_public_ip }}"
-          echo "║  Health: http://${{ needs.terraform.outputs.server_public_ip }}/api/v1/health"
-          echo "╚══════════════════════════════════════════════╝"
+          echo "========================================"
+          echo "  Deployment complete"
+          echo "  App:    http://${{ needs.terraform.outputs.server_public_ip }}"
+          echo "  Health: http://${{ needs.terraform.outputs.server_public_ip }}/api/v1/health"
+          echo "========================================"
