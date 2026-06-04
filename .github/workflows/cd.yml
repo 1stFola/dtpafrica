@@ -176,6 +176,16 @@ jobs:
           '
           echo "SSH is up"
 
+      - name: Wait for cloud-init to complete (boot finalisation)
+        run: |
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            -i ~/.ssh/dtp-staging.pem \
+            ubuntu@${{ needs.terraform.outputs.server_public_ip }} \
+            "cloud-init status --wait || true"
+          echo "cloud-init done"
+
       - name: Run Ansible playbook
         run: |
           ansible-playbook playbook.yml \

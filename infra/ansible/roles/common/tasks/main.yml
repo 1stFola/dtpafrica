@@ -6,6 +6,15 @@
     update_cache: true
     cache_valid_time: 3600
 
+- name: Wait for any automatic apt operations to finish
+  ansible.builtin.shell: |
+    while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1; do
+      echo "Waiting for apt lock..."
+      sleep 5
+    done
+  changed_when: false
+  timeout: 300
+
 - name: Upgrade all packages
   ansible.builtin.apt:
     upgrade: dist
