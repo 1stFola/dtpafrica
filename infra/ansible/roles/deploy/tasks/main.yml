@@ -4,9 +4,6 @@
 #          env file generation, Prisma setup, Docker Compose stack
 
 # ── 1. Retrieve secrets from AWS Secrets Manager via AWS CLI ──────────────────
-# Using the AWS CLI instead of the amazon.aws collection avoids version
-# compatibility issues. The CLI is always present on the Ansible control node
-# and the AWS_* env vars are already set by the CD workflow.
 
 - name: Fetch DB credentials from Secrets Manager
   ansible.builtin.command: >
@@ -17,7 +14,7 @@
     --output text
   register: db_secret_raw
   changed_when: false
-  no_log: true
+  no_log: false  # temporarily show errors for debugging
 
 - name: Fetch app secrets from Secrets Manager
   ansible.builtin.command: >
@@ -28,7 +25,7 @@
     --output text
   register: app_secret_raw
   changed_when: false
-  no_log: true
+  no_log: false  # temporarily show errors for debugging
 
 - name: Parse credential JSON
   ansible.builtin.set_fact:
