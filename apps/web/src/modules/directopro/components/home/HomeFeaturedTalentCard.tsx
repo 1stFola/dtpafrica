@@ -12,6 +12,10 @@ function formatStat(value: number | null | undefined): string {
   return value != null ? String(value) : "—";
 }
 
+function hasCapturedMinutes(value: number | null | undefined): value is number {
+  return value != null && value > 0;
+}
+
 function ratingTone(rating: number): string {
   if (rating >= 85) return "home-talent-card__rating--elite";
   if (rating >= 75) return "home-talent-card__rating--ready";
@@ -28,12 +32,53 @@ export function HomeFeaturedTalentCard({ player }: HomeFeaturedTalentCardProps) 
     player.positionFull
   );
   const philosophies = player.philosophies ?? [];
+  const minutesPlayed = player.minutesPlayed;
+
+  const philosophyPills =
+    philosophies.length > 0 ? (
+      <ul className="home-talent-card__philosophies" aria-label="Top playing philosophies">
+        {philosophies.map((p) => (
+          <li key={p.name} className="home-talent-card__philosophy-pill">
+            <span className="home-talent-card__philosophy-label">{p.name}</span>
+            <span className="home-talent-card__philosophy-score">{p.score}%</span>
+          </li>
+        ))}
+      </ul>
+    ) : null;
+
+  const minutesStat = hasCapturedMinutes(minutesPlayed) ? (
+    <div
+      className="home-talent-card__minutes"
+      title="Total captured minutes played"
+      aria-label={`Total captured minutes played: ${minutesPlayed.toLocaleString()}`}
+    >
+      <span className="home-talent-card__minutes-value" aria-hidden="true">
+        {minutesPlayed.toLocaleString()}
+      </span>
+      <span className="home-talent-card__minutes-label">Mins played</span>
+    </div>
+  ) : null;
+
+  const footerStats =
+    philosophyPills || minutesStat ? (
+      <div className="home-talent-card__footer">
+        {philosophyPills}
+        {minutesStat}
+      </div>
+    ) : (
+      <p className="home-talent-card__philosophies-empty muted">Philosophies pending</p>
+    );
 
   const body = (
     <>
       <div className="home-talent-card__banner">
         {player.playerPhotoUrl ? (
-          <img src={player.playerPhotoUrl} alt="" className="home-talent-card__banner-img" />
+          <img
+            src={player.playerPhotoUrl}
+            alt=""
+            className="home-talent-card__banner-img"
+            loading="lazy"
+          />
         ) : (
           <span className="home-talent-card__banner-fallback" aria-hidden>
             {initial}
@@ -65,28 +110,10 @@ export function HomeFeaturedTalentCard({ player }: HomeFeaturedTalentCardProps) 
               <dt>Clean Sheets</dt>
               <dd>{formatStat(player.careerCleanSheets)}</dd>
             </dl>
-            {philosophies.length > 0 && (
-              <ul className="home-talent-card__philosophies" aria-label="Top playing philosophies">
-                {philosophies.map((p) => (
-                  <li key={p.name} className="home-talent-card__philosophy-pill">
-                    <span className="home-talent-card__philosophy-label">{p.name}</span>
-                    <span className="home-talent-card__philosophy-score">{p.score}%</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {footerStats}
           </div>
-        ) : philosophies.length > 0 ? (
-          <ul className="home-talent-card__philosophies" aria-label="Top playing philosophies">
-            {philosophies.map((p) => (
-              <li key={p.name} className="home-talent-card__philosophy-pill">
-                <span className="home-talent-card__philosophy-label">{p.name}</span>
-                <span className="home-talent-card__philosophy-score">{p.score}%</span>
-              </li>
-            ))}
-          </ul>
         ) : (
-          <p className="home-talent-card__philosophies-empty muted">Philosophies pending</p>
+          footerStats
         )}
       </div>
     </>

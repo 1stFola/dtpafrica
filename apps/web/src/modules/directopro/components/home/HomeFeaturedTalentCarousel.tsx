@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, type FeaturedPlayer } from "../../../../api/client";
 import { HomeFeaturedTalentCard } from "./HomeFeaturedTalentCard";
 
+const TALENT_SKELETON_COUNT = 8;
+
 export function HomeFeaturedTalentCarousel() {
-  const trackRef = useRef<HTMLDivElement>(null);
   const [players, setPlayers] = useState<FeaturedPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -30,14 +31,6 @@ export function HomeFeaturedTalentCarousel() {
     };
   }, []);
 
-  function scrollTrack(direction: -1 | 1) {
-    const track = trackRef.current;
-    if (!track) return;
-    const card = track.querySelector<HTMLElement>(".home-talent-card");
-    const delta = (card?.offsetWidth ?? 280) + 16;
-    track.scrollBy({ left: direction * delta, behavior: "smooth" });
-  }
-
   return (
     <section
       className="home-features-block home-features-block--talent"
@@ -52,24 +45,6 @@ export function HomeFeaturedTalentCarousel() {
           </p>
         </div>
         <div className="home-features-block__actions">
-          <div className="home-features-carousel-nav" aria-label="Carousel controls">
-            <button
-              type="button"
-              className="home-features-carousel-btn"
-              onClick={() => scrollTrack(-1)}
-              aria-label="Scroll talent cards left"
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              className="home-features-carousel-btn"
-              onClick={() => scrollTrack(1)}
-              aria-label="Scroll talent cards right"
-            >
-              →
-            </button>
-          </div>
           <Link to="/featured-players" className="home-features-link">
             View all talent →
           </Link>
@@ -77,8 +52,8 @@ export function HomeFeaturedTalentCarousel() {
       </div>
 
       {loading && (
-        <div className="home-features-carousel" aria-busy="true" aria-hidden="true">
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="home-features-talent-grid" aria-busy="true" aria-hidden="true">
+          {Array.from({ length: TALENT_SKELETON_COUNT }).map((_, i) => (
             <div key={i} className="dtp-skeleton home-talent-card-skeleton" />
           ))}
         </div>
@@ -102,7 +77,7 @@ export function HomeFeaturedTalentCarousel() {
       )}
 
       {!loading && !error && players.length > 0 && (
-        <div ref={trackRef} className="home-features-carousel" tabIndex={0}>
+        <div className="home-features-talent-grid">
           {players.map((p) => (
             <HomeFeaturedTalentCard key={p.id} player={p} />
           ))}

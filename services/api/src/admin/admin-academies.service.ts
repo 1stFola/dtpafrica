@@ -24,6 +24,11 @@ function cleanUsername(value?: string) {
   return trimmed ? trimmed : null;
 }
 
+function parseMaxPlayers(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return null;
+  return value;
+}
+
 @Injectable()
 export class AdminAcademiesService {
   constructor(
@@ -63,11 +68,16 @@ export class AdminAcademiesService {
       data: {
         name: dto.name.trim(),
         slug: clean(dto.slug) ?? slugify(dto.name),
+        contactPerson: clean(dto.contactPerson),
+        email: clean(dto.email),
+        phone: clean(dto.phone),
         city: clean(dto.city),
         country: clean(dto.country),
         description: clean(dto.description),
         logoUrl: clean(dto.logoUrl),
         websiteUrl: clean(dto.websiteUrl),
+        subscriptionTier: clean(dto.subscriptionTier),
+        maxPlayers: parseMaxPlayers(dto.maxPlayers),
         isPublished: dto.isPublished ?? true,
         ...(loginUsername != null ? { loginUsername } : {}),
         ...(passwordHash != null ? { passwordHash } : {}),
@@ -85,11 +95,16 @@ export class AdminAcademiesService {
       data: {
         name: dto.name.trim(),
         slug: clean(dto.slug) ?? (dto.name !== existing.name ? slugify(dto.name) : existing.slug),
+        contactPerson: clean(dto.contactPerson),
+        email: clean(dto.email),
+        phone: clean(dto.phone),
         city: clean(dto.city),
         country: clean(dto.country),
         description: clean(dto.description),
         logoUrl: clean(dto.logoUrl),
         websiteUrl: clean(dto.websiteUrl),
+        subscriptionTier: clean(dto.subscriptionTier),
+        maxPlayers: parseMaxPlayers(dto.maxPlayers),
         isPublished: dto.isPublished ?? existing.isPublished,
         ...(dto.loginUsername !== undefined
           ? { loginUsername: loginUsername ?? null }

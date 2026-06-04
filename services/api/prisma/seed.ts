@@ -2,6 +2,8 @@ import { PrismaClient } from "@prisma/client";
 import { ADS_CONFIG_KEY, DEFAULT_AD_SLOTS } from "../src/ads/ads.constants";
 import { seedMvce } from "./seed-mvce";
 import { seedScoreboard } from "./seed-scoreboard";
+import { seedLegacyAcademies } from "./seed-legacy-academies";
+import { seedLegacyPlayers } from "./seed-legacy-players";
 
 const prisma = new PrismaClient();
 
@@ -80,6 +82,10 @@ async function main() {
       overallRating: 79,
       offensiveRating: 82,
       defensiveRating: 73,
+      careerGoals: 4,
+      careerAssists: 6,
+      careerAppearances: 11,
+      careerMinutes: 847,
       ratingAttributes: SEED_RATING_ATTRIBUTES,
       benchmarkMetadata: SEED_BENCHMARK_METADATA,
       mediaItems: SEED_MEDIA_ITEMS,
@@ -110,6 +116,10 @@ async function main() {
       overallRating: 79,
       offensiveRating: 82,
       defensiveRating: 73,
+      careerGoals: 4,
+      careerAssists: 6,
+      careerAppearances: 11,
+      careerMinutes: 847,
       ratingAttributes: SEED_RATING_ATTRIBUTES,
       benchmarkMetadata: SEED_BENCHMARK_METADATA,
       mediaItems: SEED_MEDIA_ITEMS,
@@ -430,6 +440,17 @@ Parents and guardians can register minors with consent workflows built for youth
 
   await seedScoreboard(prisma, player.id);
   await seedMvce(prisma, player.id);
+
+  const legacyAcademyCount = await seedLegacyAcademies(prisma);
+  console.log("Legacy academies seeded:", legacyAcademyCount);
+
+  const legacyPlayers = await seedLegacyPlayers(prisma);
+  console.log("Legacy players seeded:", legacyPlayers.playerCount);
+  console.log("Legacy players linked to academies:", legacyPlayers.academyLinkCount);
+  console.log(
+    "Sample profiles:",
+    legacyPlayers.sampleSlugs.map((s) => `/players/${s}`).join(", ")
+  );
 
   console.log("Seed complete. Player id:", player.id);
   console.log("Public profile: /player/alli-o-sanni");

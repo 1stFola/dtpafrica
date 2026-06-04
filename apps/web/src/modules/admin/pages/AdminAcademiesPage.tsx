@@ -21,11 +21,16 @@ function generateRandomPassword(length = 12) {
 const emptyDraft: AdminAcademyInput = {
   name: "",
   slug: "",
+  contactPerson: "",
+  email: "",
+  phone: "",
   city: "",
   country: "",
   description: "",
   logoUrl: "",
   websiteUrl: "",
+  subscriptionTier: "",
+  maxPlayers: "",
   loginUsername: "",
   password: "",
   isPublished: true,
@@ -35,11 +40,16 @@ function toDraft(academy: AdminAcademy): AdminAcademyInput {
   return {
     name: academy.name,
     slug: academy.slug,
+    contactPerson: academy.contactPerson ?? "",
+    email: academy.email ?? "",
+    phone: academy.phone ?? "",
     city: academy.city ?? "",
     country: academy.country ?? "",
     description: academy.description ?? "",
     logoUrl: academy.logoUrl ?? "",
     websiteUrl: academy.websiteUrl ?? "",
+    subscriptionTier: academy.subscriptionTier ?? "",
+    maxPlayers: academy.maxPlayers ?? "",
     loginUsername: academy.loginUsername ?? "",
     password: "",
     isPublished: academy.isPublished,
@@ -162,9 +172,15 @@ export function AdminAcademiesPage() {
     e.preventDefault();
     setSaving(true);
     try {
+      const body: AdminAcademyInput = {
+        ...draft,
+        subscriptionTier:
+          draft.subscriptionTier === "" ? undefined : draft.subscriptionTier,
+        maxPlayers: draft.maxPlayers === "" ? undefined : draft.maxPlayers,
+      };
       const saved = selectedId
-        ? await adminApi.academyUpdate(selectedId, draft)
-        : await adminApi.academyCreate(draft);
+        ? await adminApi.academyUpdate(selectedId, body)
+        : await adminApi.academyCreate(body);
       setSelectedId(saved.id);
       setDraft(toDraft(saved));
       toast.success("Academy saved");
@@ -394,6 +410,64 @@ export function AdminAcademiesPage() {
               />
             </label>
           </div>
+          <div className="admin-form-row">
+            <label className="admin-sb-field">
+              <span>Contact person</span>
+              <input
+                value={draft.contactPerson ?? ""}
+                onChange={(e) =>
+                  setDraft({ ...draft, contactPerson: e.target.value })
+                }
+              />
+            </label>
+            <label className="admin-sb-field">
+              <span>Email</span>
+              <input
+                type="email"
+                value={draft.email ?? ""}
+                onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+              />
+            </label>
+          </div>
+          <div className="admin-form-row">
+            <label className="admin-sb-field">
+              <span>Phone</span>
+              <input
+                value={draft.phone ?? ""}
+                onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+              />
+            </label>
+            <label className="admin-sb-field">
+              <span>Max players</span>
+              <input
+                type="number"
+                min={1}
+                value={draft.maxPlayers ?? ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    maxPlayers: e.target.value === "" ? "" : Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+          <label className="admin-sb-field">
+            <span>Subscription tier</span>
+            <select
+              value={draft.subscriptionTier ?? ""}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  subscriptionTier: e.target.value as AdminAcademyInput["subscriptionTier"],
+                })
+              }
+            >
+              <option value="">Not set</option>
+              <option value="Basic">Basic</option>
+              <option value="Premium">Premium</option>
+            </select>
+          </label>
           <label className="admin-sb-field admin-sb-field--wide">
             <span>Description</span>
             <textarea

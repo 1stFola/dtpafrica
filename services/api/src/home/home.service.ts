@@ -82,22 +82,35 @@ export class HomeService {
         aggregatedMetrics: {
           where: { season: "rolling" },
           take: 1,
-          select: { derivedMetrics: true },
+          select: { derivedMetrics: true, minutesPlayed: true },
         },
       },
     });
 
-    return rows.map(({ aggregatedMetrics, tacticalScores, playingPhilosophies, positionFull, ...player }) => ({
-      ...player,
-      positionFull: resolvePositionFull(player.positionPrimary, positionFull),
-      philosophies: resolveTopPhilosophies({
-        playingPhilosophies,
+    return rows.map(
+      ({
+        aggregatedMetrics,
         tacticalScores,
-      }),
-      interceptions: this.extractInterceptions(
-        aggregatedMetrics[0]?.derivedMetrics ?? null
-      ),
-    }));
+        playingPhilosophies,
+        positionFull,
+        careerMinutes,
+        ...player
+      }) => ({
+        ...player,
+        positionFull: resolvePositionFull(player.positionPrimary, positionFull),
+        philosophies: resolveTopPhilosophies({
+          playingPhilosophies,
+          tacticalScores,
+        }),
+        interceptions: this.extractInterceptions(
+          aggregatedMetrics[0]?.derivedMetrics ?? null
+        ),
+        minutesPlayed: this.resolveMinutesPlayed(
+          careerMinutes,
+          aggregatedMetrics[0]?.minutesPlayed
+        ),
+      })
+    );
   }
 
   async videoHighlights(): Promise<HomeVideoHighlight[]> {
@@ -174,6 +187,10 @@ export class HomeService {
     return {
       isSkeleton: false as const,
       ...profile,
+      minutesPlayed: this.resolveMinutesPlayed(
+        careerMinutes,
+        aggregatedMetrics[0]?.minutesPlayed
+      ),
       club: query.club?.trim() || latestClub,
       competition:
         query.competition?.trim() ||
@@ -401,8 +418,22 @@ export class HomeService {
       defensiveRating: true,
       careerGoals: true,
       careerAssists: true,
+      careerMinutes: true,
       careerCleanSheets: true,
     } satisfies Prisma.PlayerSelect;
+  }
+
+  /** Career minutes first; rolling SIP aggregate as fallback. */
+  private resolveMinutesPlayed(
+    careerMinutes: number,
+    aggregatedMinutes?: number | null
+  ): number | null {
+    if (careerMinutes > 0) return careerMinutes;
+    const rolling =
+      aggregatedMinutes != null && Number.isFinite(aggregatedMinutes)
+        ? Math.round(aggregatedMinutes)
+        : 0;
+    return rolling > 0 ? rolling : null;
   }
 
   private publicProfileSelect() {
@@ -416,6 +447,7 @@ export class HomeService {
       city: true,
       state: true,
       dominantFoot: true,
+      heightCm: true,
       positionPrimary: true,
       positionSecondary: true,
       playerPhotoUrl: true,

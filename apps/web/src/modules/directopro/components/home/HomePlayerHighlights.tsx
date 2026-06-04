@@ -1,19 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { apiGet, type HomeVideoHighlight } from "../../../../api/client";
 import { youtubeThumbnail } from "../../../../api/scoreboard";
+import { videoEmbedUrl } from "../../../../utils/media-url";
 
-function HighlightVideoCard({ highlight }: { highlight: HomeVideoHighlight }) {
+function embedAutoplayUrl(youtubeUrl: string): string | null {
+  const base = videoEmbedUrl(youtubeUrl);
+  if (!base) return null;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}autoplay=1`;
+}
+
+type HighlightVideoCardProps = {
+  highlight: HomeVideoHighlight;
+  onPlay: (id: string) => void;
+};
+
+function HighlightVideoCard({ highlight, onPlay }: HighlightVideoCardProps) {
   const thumb = youtubeThumbnail(highlight.youtubeUrl);
 
   return (
-    <a
-      href={highlight.youtubeUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="home-hl-card"
-      aria-label={`Watch: ${highlight.title}`}
-    >
-      <div className="home-hl-card__media">
+    <article className="home-hl-card">
+      <button
+        type="button"
+        className="home-hl-card__media"
+        onClick={() => onPlay(highlight.id)}
+        aria-label={`Play: ${highlight.title}`}
+      >
         {thumb ? (
           <img src={thumb} alt="" loading="lazy" className="home-hl-card__thumb" />
         ) : (
@@ -24,7 +36,7 @@ function HighlightVideoCard({ highlight }: { highlight: HomeVideoHighlight }) {
             <path d="M8 5v14l11-7z" />
           </svg>
         </span>
-      </div>
+      </button>
       <div className="home-hl-card__meta">
         <span className="home-hl-card__tag">{highlight.playerName}</span>
         <h3 className="home-hl-card__title">{highlight.title}</h3>
@@ -32,7 +44,94 @@ function HighlightVideoCard({ highlight }: { highlight: HomeVideoHighlight }) {
           <p className="home-hl-card__desc">{highlight.description}</p>
         )}
       </div>
-    </a>
+    </article>
+  );
+}
+
+type HomeHighlightVideoModalProps = {
+  highlight: HomeVideoHighlight;
+  onClose: () => void;
+};
+
+function HomeHighlightVideoModal({ highlight, onClose }: HomeHighlightVideoModalProps) {
+  const titleId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const embedSrc = embedAutoplayUrl(highlight.youtubeUrl);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    return () => {
+      previouslyFocused?.focus?.();
+    };
+  }, []);
+
+  return (
+    <div
+      className="home-highlights-modal-backdrop"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        className="home-highlights-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          ref={closeButtonRef}
+          className="home-highlights-modal__close"
+          onClick={onClose}
+          aria-label="Close video"
+        >
+          ×
+        </button>
+
+        {embedSrc ? (
+          <div className="home-highlights-modal__player">
+            <iframe
+              src={embedSrc}
+              title={highlight.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="home-highlights-modal__iframe"
+            />
+          </div>
+        ) : (
+          <p className="home-highlights-modal__unavailable muted">
+            This clip cannot be played inline.
+          </p>
+        )}
+
+        <div className="home-highlights-modal__meta">
+          <span className="home-highlights-modal__tag">{highlight.playerName}</span>
+          <h2 id={titleId} className="home-highlights-modal__title">
+            {highlight.title}
+          </h2>
+          {highlight.description?.trim() && (
+            <p className="home-highlights-modal__desc">{highlight.description}</p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -41,6 +140,17 @@ export function HomePlayerHighlights() {
   const [highlights, setHighlights] = useState<HomeVideoHighlight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const activeHighlight = highlights.find((h) => h.id === activeId) ?? null;
+
+  const handlePlay = useCallback((id: string) => {
+    setActiveId(id);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    setActiveId(null);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -134,9 +244,13 @@ export function HomePlayerHighlights() {
       {!loading && !error && highlights.length > 0 && (
         <div ref={trackRef} className="home-features-carousel" tabIndex={0}>
           {highlights.map((h) => (
-            <HighlightVideoCard key={h.id} highlight={h} />
+            <HighlightVideoCard key={h.id} highlight={h} onPlay={handlePlay} />
           ))}
         </div>
+      )}
+
+      {activeHighlight && (
+        <HomeHighlightVideoModal highlight={activeHighlight} onClose={handleClose} />
       )}
     </section>
   );

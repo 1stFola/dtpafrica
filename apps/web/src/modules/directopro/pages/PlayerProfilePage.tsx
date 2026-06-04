@@ -8,7 +8,14 @@ import {
   type PublicPlayerProfile,
 } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { isGoalkeeper } from "../../../utils/position";
+import { resolvePositionFullLabel } from "../../../utils/positionLabels";
 import { BenchmarkPlaystyleComparison } from "../components/PlaystyleComparisonModal";
+import {
+  PlayerCategoryRadar,
+  type CategoryScore,
+} from "../components/playerProfile/PlayerCategoryRadar";
+import { PlayerPitchGraphic } from "../components/playerProfile/PlayerPitchGraphic";
 
 /**
  * Navigation context a linking surface (e.g. Top Scorers, squad rows) can pass
@@ -23,17 +30,12 @@ export type PlayerProfileLinkState = {
   role?: string;
 };
 
-type ProfileTab =
-  | "attributes"
-  | "scoreboard"
-  | "scouting"
-  | "valuation"
-  | "videos"
-  | "photos"
-  | "media";
+type ProfileTab = "overview" | "scoreboard" | "scouting" | "media";
 type ProfileMediaItem = NonNullable<PublicPlayerProfile["mediaItems"]>[number] & {
   url: string;
 };
+type PlaystyleBadge = { icon: string; title: string; description: string };
+type CareerStatBox = { label: string; value: string };
 
 const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
   goal: "Goal",
@@ -83,6 +85,8 @@ const ATTRIBUTE_LABELS: Record<string, string> = {
   positioning: "Positioning",
   team_play: "Team play",
 };
+
+const ALL_ATTRIBUTE_KEYS = ATTRIBUTE_GROUPS.flatMap((group) => group.keys);
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -152,13 +156,244 @@ function ratingTier(rating?: number | null) {
   return "Emerging";
 }
 
-function starText(rating?: number | null) {
-  const stars = rating == null ? 0 : Math.max(0, Math.min(5, Math.round(rating / 20)));
-  return "★".repeat(stars) + "☆".repeat(5 - stars);
+function isGkProfile(player: Pick<PublicPlayerProfile, "role" | "positionPrimary">): boolean {
+  return isGoalkeeper(player.role) || isGoalkeeper(player.positionPrimary);
+}
+
+function attributeTierClass(score: number): string {
+  if (score >= 80) return "player-profile-attr--elite";
+  if (score >= 70) return "player-profile-attr--silver";
+  if (score >= 60) return "player-profile-attr--developing";
+  return "player-profile-attr--base";
+}
+
+function ratingBadgeTone(rating?: number | null): string {
+  if (rating == null) return "player-profile-rating-badge--muted";
+  if (rating >= 85) return "player-profile-rating-badge--elite";
+  if (rating >= 75) return "player-profile-rating-badge--ready";
+  return "player-profile-rating-badge--standard";
+}
+
+type BioFact = { label: string; value: string; highlight?: boolean };
+
+function averageAttributeScores(values: number[]) {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function buildCategoryScores(
+  player: PublicPlayerProfile,
+  attributes: ReturnType<typeof buildAttributeMap>
+): CategoryScore[] {
+  const overall = player.overallRating ?? 62;
+  const att = clampScore(player.offensiveRating ?? overall);
+  const def = clampScore(player.defensiveRating ?? overall);
+  const technicalKeys = [
+    "dribbling",
+    "ball_control",
+    "passing",
+    "finishing",
+    "technique",
+    "first_touch",
+  ] as const;
+  const tec = clampScore(
+    averageAttributeScores(technicalKeys.map((key) => attributes[key]))
+  );
+  const creativeKeys = ["vision", "passing", "decision_making", "technique"] as const;
+  const cre = clampScore(
+    averageAttributeScores(creativeKeys.map((key) => attributes[key]))
+  );
+  const tactical = player.tacticalSummary;
+  const tac = tactical
+    ? clampScore(
+        averageAttributeScores([
+          tactical.gegenpressScore,
+          tactical.tikiTakaScore,
+          tactical.counterAttackScore,
+          tactical.wingerScore,
+          tactical.totalFootballScore,
+        ])
+      )
+    : clampScore(
+        averageAttributeScores([
+          attributes.positioning,
+          attributes.work_rate,
+          attributes.decision_making,
+        ])
+      );
+
+  return [
+    { key: "att", label: "ATT", score: att },
+    { key: "tec", label: "TEC", score: tec },
+    { key: "tac", label: "TAC", score: tac },
+    { key: "def", label: "DEF", score: def },
+    { key: "cre", label: "CRE", score: cre },
+  ];
+}
+
+function isDuplicateScoutingCopy(
+  biography: string | null | undefined,
+  scoutingSummary: string | null | undefined
+): boolean {
+  const bio = biography?.trim();
+  const summary = scoutingSummary?.trim();
+  if (!bio || !summary) return false;
+  return bio === summary;
+}
+
+function resolveShirtNumber(player: PublicPlayerProfile): number | null {
+  const teams = player.scoreboardHistory?.teams ?? [];
+  for (const team of teams) {
+    if (team.shirtNumber != null) return team.shirtNumber;
+  }
+  return null;
+}
+
+function buildBioFacts(
+  player: PublicPlayerProfile,
+  valuation: PublicPlayerProfile["valuation"]
+): BioFact[] {
+  const facts: BioFact[] = [];
+  if (player.club) facts.push({ label: "Club", value: player.club });
+  if (player.nationality) facts.push({ label: "Nationality", value: player.nationality });
+  if (player.age != null) {
+    facts.push({ label: "Age", value: String(player.age) });
+  } else if (player.ageGroup) {
+    facts.push({ label: "Squad", value: player.ageGroup });
+  }
+  if (player.heightCm != null && player.heightCm >= 100 && player.heightCm <= 230) {
+    facts.push({ label: "Height", value: `${player.heightCm} cm` });
+  }
+  if (player.dominantFoot) facts.push({ label: "Preferred foot", value: player.dominantFoot });
+  facts.push({ label: "Position", value: player.positionPrimary });
+  const shirt = resolveShirtNumber(player);
+  if (shirt != null) facts.push({ label: "Shirt number", value: String(shirt) });
+  if (valuation?.marketValueLabel) {
+    facts.push({
+      label: "Player value",
+      value: valuation.marketValueLabel,
+      highlight: true,
+    });
+  } else if (
+    valuation &&
+    (valuation.marketValueMinEur != null || valuation.marketValueMaxEur != null)
+  ) {
+    facts.push({
+      label: "Player value",
+      value: formatCurrencyRange(
+        valuation.marketValueMinEur,
+        valuation.marketValueMaxEur
+      ),
+      highlight: true,
+    });
+  }
+  return facts;
+}
+
+function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
+  const badges: PlaystyleBadge[] = [];
+  const seen = new Set<string>();
+  const push = (icon: string, title: string, description: string) => {
+    const key = title.trim().toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    badges.push({ icon, title, description });
+  };
+
+  for (const philosophy of player.philosophies ?? []) {
+    push(
+      "◆",
+      philosophy.name,
+      `${philosophy.score}% philosophy alignment from calibrated SIP scoring.`
+    );
+  }
+
+  for (const fit of player.scoutingIntelligence?.philosophyFits ?? []) {
+    push(
+      "◆",
+      fit.philosophy,
+      `${Math.round(fit.philosophyFitScore)} fit in ${fit.formation}${
+        fit.positionSlot ? ` · ${fit.positionSlot}` : ""
+      }.`
+    );
+  }
+
+  for (const score of player.scoutingIntelligence?.topTacticalScores ?? []) {
+    push(
+      "⚡",
+      score.label,
+      `Tactical score ${Math.round(score.value)} — standout system trait.`
+    );
+  }
+
+  const tactical = player.tacticalSummary;
+  if (tactical) {
+    const tacticalTraits = [
+      { label: "Gegenpress", value: tactical.gegenpressScore },
+      { label: "Tiki-taka", value: tactical.tikiTakaScore },
+      { label: "Counter attack", value: tactical.counterAttackScore },
+      { label: "Winger play", value: tactical.wingerScore },
+      { label: "Total football", value: tactical.totalFootballScore },
+    ]
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 2);
+    for (const trait of tacticalTraits) {
+      if (trait.value >= 55) {
+        push("◎", trait.label, `SIP tactical index ${Math.round(trait.value)}.`);
+      }
+    }
+  }
+
+  const benchmark = player.benchmarkMetadata?.nearest;
+  if (benchmark && typeof benchmark === "object" && "name" in benchmark) {
+    push("★", "Benchmark comp", `Nearest comp: ${String(benchmark.name)}.`);
+  }
+
+  if (badges.length === 0) {
+    push(
+      "◎",
+      "Versatile profile",
+      "Playstyle badges populate once SIP tactical and philosophy data sync."
+    );
+  }
+
+  return badges.slice(0, 6);
+}
+
+function buildCareerStatBoxes(
+  player: PublicPlayerProfile,
+  minutesPlayed: number | null,
+  isGk: boolean
+): CareerStatBox[] {
+  const boxes: CareerStatBox[] = [
+    { label: "Appearances", value: String(player.stats?.appearances ?? 0) },
+    { label: "Goals", value: String(player.stats?.goals ?? 0) },
+    { label: "Assists", value: String(player.stats?.assists ?? 0) },
+    { label: "Minutes played", value: formatMinutesPlayed(minutesPlayed) },
+  ];
+  if (isGk) {
+    boxes.push({ label: "Clean sheets", value: String(player.stats?.cleanSheets ?? 0) });
+  }
+  return boxes;
 }
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleDateString() : "Date pending";
+}
+
+function resolveProfileMinutes(player: PublicPlayerProfile): number | null {
+  const top = player.minutesPlayed;
+  if (top != null && top > 0) return top;
+  const career = player.stats?.minutes;
+  if (career != null && career > 0) return career;
+  const rolling = player.scoutingIntelligence?.aggregateMetrics?.minutesPlayed;
+  if (rolling != null && rolling > 0) return Math.round(rolling);
+  return null;
+}
+
+function formatMinutesPlayed(value: number | null | undefined): string {
+  if (value == null || value <= 0) return "—";
+  return value.toLocaleString();
 }
 
 function formatCurrencyRange(min?: number | null, max?: number | null) {
@@ -205,7 +440,7 @@ export function PlayerProfilePage() {
   const [player, setPlayer] = useState<PublicPlayerProfile | null>(null);
   const [skeleton, setSkeleton] = useState<PlayerSkeletonProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ProfileTab>("attributes");
+  const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [shareStatus, setShareStatus] = useState<string | null>(null);
 
   // Known context from the click/URL (router state preferred, query params as fallback).
@@ -284,15 +519,10 @@ export function PlayerProfilePage() {
 
   if (!player) {
     return (
-      <div className="home-page profile-page" aria-busy="true">
+      <div className="home-page profile-page player-profile" aria-busy="true">
         <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "10rem" }} />
-        <div className="profile-hero" style={{ marginTop: "1.5rem" }}>
-          <span className="dtp-skeleton" style={{ width: 96, height: 96, borderRadius: "50%" }} />
-          <div className="profile-hero__body" style={{ width: "100%" }}>
-            <span className="dtp-skeleton" style={{ height: "2rem", width: "60%", marginBottom: "0.75rem" }} />
-            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "40%" }} />
-            <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "30%" }} />
-          </div>
+        <div className="player-profile-banner player-profile-banner--loading" style={{ marginTop: "1.5rem" }}>
+          <span className="dtp-skeleton" style={{ width: "100%", height: 220, borderRadius: "var(--radius-lg)" }} />
         </div>
         <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "2rem" }} />
       </div>
@@ -311,34 +541,14 @@ export function PlayerProfilePage() {
   const scoreboard = player.scoreboardHistory;
   const scouting = player.scoutingIntelligence;
   const valuation = player.valuation;
-  const quickFacts = [
-    { label: "Overall", value: player.overallRating ?? "Pending" },
-    { label: "Attack", value: player.offensiveRating ?? "Pending" },
-    { label: "Defense", value: player.defensiveRating ?? "Pending" },
-    {
-      label: "Tactical fit",
-      value: scouting?.tacticalFit
-        ? `${scouting.tacticalFit.score} · ${scouting.tacticalFit.label}`
-        : "Pending",
-    },
-    {
-      label: "Philosophy match",
-      value: scouting?.philosophyMatch
-        ? `${scouting.philosophyMatch.score}% · ${scouting.philosophyMatch.philosophy}`
-        : "Pending",
-    },
-    {
-      label: "Position fit",
-      value: player.positionFit
-        ? `${Math.round(player.positionFit.confidence)}%`
-        : "Pending",
-    },
-    { label: "ScoreBoard apps", value: scoreboard?.aggregates.appearances ?? 0 },
-    {
-      label: "MVCE value",
-      value: valuation?.marketValueLabel ?? "Pending",
-    },
-  ];
+  const minutesPlayed = resolveProfileMinutes(player);
+  const isGk = isGkProfile(player);
+  const careerStatBoxes = buildCareerStatBoxes(player, minutesPlayed, isGk);
+  const playstyleBadges = buildPlaystyleBadges(player);
+  const positionLabel = resolvePositionFullLabel(
+    player.positionPrimary,
+    player.positionFull
+  );
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
     player.ageGroup ? `${player.ageGroup} pathway candidate` : "Open age-band profile",
@@ -348,17 +558,20 @@ export function PlayerProfilePage() {
       : "ScoreBoard history pending",
   ];
 
+  const categoryScores = buildCategoryScores(player, attributes);
+  const bioFacts = buildBioFacts(player, valuation);
+
   const tabs: { id: ProfileTab; label: string }[] = [
-    { id: "attributes", label: "Attributes" },
+    { id: "overview", label: "Overview" },
+    { id: "scouting", label: "Scouting Details" },
+    { id: "scoreboard", label: "ScoreBoard Metrics" },
     {
-      id: "scoreboard",
-      label: `ScoreBoard (${scoreboard?.aggregates.appearances ?? 0})`,
+      id: "media",
+      label:
+        mediaItems.length > 0
+          ? `Media (Video, Photos, Publications) (${mediaItems.length})`
+          : "Media (Video, Photos, Publications)",
     },
-    { id: "scouting", label: "Scouting" },
-    { id: "valuation", label: "Valuation" },
-    { id: "videos", label: `Videos (${videoItems.length})` },
-    { id: "photos", label: `Photos (${photoItems.length})` },
-    { id: "media", label: `Media (${otherMediaItems.length})` },
   ];
 
   const copyShareLink = async () => {
@@ -372,83 +585,42 @@ export function PlayerProfilePage() {
   };
 
   return (
-    <div className="home-page profile-page">
+    <div className="home-page profile-page player-profile">
       <Link to="/featured-players" className="back-link">
         ← Featured players
       </Link>
-      <div className="profile-notice" role="status">
-        Verified public DirectToPro profile. Ratings combine match data, calibration, and scout
-        review where available.
-      </div>
-      <div className="profile-hero">
-        <div className="profile-avatar">
-          {player.playerPhotoUrl ? (
-            <img src={player.playerPhotoUrl} alt="" />
-          ) : (
-            <span>{player.displayName.charAt(0)}</span>
-          )}
-        </div>
-        <div className="profile-hero__body">
-          <h1>{player.displayName}</h1>
-          <p className="profile-meta">
-            {player.positionPrimary}
-            {player.positionSecondary ? ` / ${player.positionSecondary}` : ""}
-            {player.nationality ? ` · ${player.nationality}` : ""}
-            {player.ageGroup ? ` · ${player.ageGroup}` : ""}
-            {player.age ? ` · Age ${player.age}` : ""}
-            {player.city ? ` · ${player.city}` : ""}
+
+      <PlayerCardBanner
+        player={player}
+        positionLabel={positionLabel}
+        tierLabel={ratingTier(player.overallRating)}
+        bioFacts={bioFacts}
+        categoryScores={categoryScores}
+        onShare={copyShareLink}
+        shareStatus={shareStatus}
+      />
+
+      {player.biography &&
+        !isDuplicateScoutingCopy(player.biography, player.scoutingSummary) && (
+          <p className="player-profile-bio">{player.biography}</p>
+        )}
+
+      <section className="player-profile-scout-strip" aria-label="Scouting summary">
+        <div className="player-profile-scout-strip__summary">
+          <h2 className="player-profile-heading">Scouting summary</h2>
+          <p className="player-profile-scout-strip__text">
+            {player.scoutingSummary ?? "Scouting summary pending calibration review."}
           </p>
-          <div className="profile-stars" aria-label={`${player.overallRating ?? 0} rating`}>
-            <span>{starText(player.overallRating)}</span>
-            <strong>{ratingTier(player.overallRating)}</strong>
-          </div>
-          {player.overallRating != null && (
-            <div className="rating-pills">
-              <span className="rating-pill">Overall {player.overallRating}</span>
-              {player.offensiveRating != null && (
-                <span className="rating-pill">OFF {player.offensiveRating}</span>
-              )}
-              {player.defensiveRating != null && (
-                <span className="rating-pill">DEF {player.defensiveRating}</span>
-              )}
-            </div>
-          )}
-          <div className="profile-actions">
-            <Button type="button" variant="secondary" onClick={copyShareLink}>
-              Share profile
-            </Button>
-            <Button as={Link} to="/scouting" variant="secondary">
-              Open scouting tools
-            </Button>
-          </div>
-          {shareStatus && <p className="profile-share-status">{shareStatus}</p>}
         </div>
-      </div>
-
-      {player.biography && <p className="profile-bio">{player.biography}</p>}
-
-      <section className="profile-section profile-summary-card">
-        <div>
-          <span className="profile-section__eyebrow">Scouting summary</span>
-          <h2>Current read</h2>
-          <p>{player.scoutingSummary}</p>
-        </div>
-        <div className="profile-facts">
-          {quickFacts.map((fact) => (
-            <div key={fact.label}>
-              <span>{fact.label}</span>
-              <strong>{fact.value}</strong>
-            </div>
-          ))}
-        </div>
+        <PlaystyleBadgesSection badges={playstyleBadges} />
       </section>
 
-      <nav className="profile-tabs" aria-label="Player profile sections">
+      <nav className="player-profile-tabs" aria-label="Player profile sections">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
-            className={tab.id === activeTab ? "active" : ""}
+            className={tab.id === activeTab ? "player-profile-tabs__btn active" : "player-profile-tabs__btn"}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.label}
@@ -456,142 +628,122 @@ export function PlayerProfilePage() {
         ))}
       </nav>
 
-      {activeTab === "attributes" && (
-        <section className="profile-section">
-          <div className="profile-section-heading">
-            <div>
-              <span className="profile-section__eyebrow">Rating attributes</span>
-              <h2>18-point profile</h2>
-            </div>
-            <span className="profile-data-note">
-              {player.ratingAttributes ? "Calibrated" : "Derived fallback"}
-            </span>
-          </div>
-
-          <div className="profile-attribute-grid">
-            {ATTRIBUTE_GROUPS.map((group) => (
-              <article key={group.title} className="profile-attribute-card">
-                <h3>{group.title}</h3>
-                {group.keys.map((key) => {
-                  const score = clampScore(attributes[key]);
-                  return (
-                    <div key={key} className="profile-attribute">
-                      <div className="profile-attribute__head">
-                        <span>{ATTRIBUTE_LABELS[key]}</span>
-                        <strong>{score}</strong>
-                      </div>
-                      <div className="profile-progress" aria-hidden>
-                        <span style={{ width: `${score}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </article>
-            ))}
-          </div>
-
-          <div className="profile-detail-grid">
-            <article className="profile-panel">
-              <h3>Profile highlights</h3>
-              <ul className="profile-list">
-                {highlights.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-            <article className="profile-panel">
-              <h3>Performance metrics</h3>
-              <div className="profile-metric-list">
-                <span>Dominant foot</span>
-                <strong>{player.dominantFoot ?? "Pending"}</strong>
-                <span>Primary role</span>
-                <strong>{player.positionFit?.primaryPositionFit ?? player.positionPrimary}</strong>
-                <span>Secondary role</span>
-                <strong>{player.positionFit?.secondaryPositionFit ?? "Pending"}</strong>
+      {activeTab === "overview" && (
+        <>
+          <section className="profile-section">
+            <div className="profile-section-heading">
+              <div>
+                <span className="player-profile-eyebrow">Rating attributes</span>
+                <h2 className="player-profile-heading">18-point profile</h2>
               </div>
-            </article>
-          </div>
+              <span className="profile-data-note">
+                {player.ratingAttributes ? "Calibrated" : "Derived fallback"}
+              </span>
+            </div>
 
-          <BenchmarkPlaystyleComparison
-            playerName={player.displayName}
-            playerAge={player.age}
-            playerRating={player.overallRating}
-            benchmark={benchmark}
-            attributes={attributes}
-          />
-        </section>
-      )}
+            <PlayerAttributeMicroGrid attributes={attributes} />
 
-      {activeTab === "attributes" && tactical && (
-        <section className="profile-section">
-          <h2>Tactical snapshot</h2>
-          <div className="tactical-grid">
-            <div>
-              <span className="label">Gegenpress</span>
-              <strong>{Math.round(tactical.gegenpressScore)}</strong>
+            <div className="profile-detail-grid">
+              <article className="profile-panel player-profile-panel">
+                <h3 className="player-profile-subheading">Profile highlights</h3>
+                <ul className="profile-list">
+                  {highlights.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+              <article className="profile-panel player-profile-panel">
+                <h3 className="player-profile-subheading">Performance metrics</h3>
+                <div className="profile-metric-list">
+                  <span>Minutes played</span>
+                  <strong>{formatMinutesPlayed(minutesPlayed)}</strong>
+                  {player.positionFit?.secondaryPositionFit && (
+                    <>
+                      <span>Secondary role</span>
+                      <strong>{player.positionFit.secondaryPositionFit}</strong>
+                    </>
+                  )}
+                  {isGk && (
+                    <>
+                      <span>Clean sheets</span>
+                      <strong>{player.stats?.cleanSheets ?? 0}</strong>
+                    </>
+                  )}
+                </div>
+              </article>
             </div>
-            <div>
-              <span className="label">Tiki-taka</span>
-              <strong>{Math.round(tactical.tikiTakaScore)}</strong>
-            </div>
-            <div>
-              <span className="label">Counter</span>
-              <strong>{Math.round(tactical.counterAttackScore)}</strong>
-            </div>
-            <div>
-              <span className="label">Winger</span>
-              <strong>{Math.round(tactical.wingerScore)}</strong>
-            </div>
-          </div>
-        </section>
-      )}
 
-      {activeTab === "attributes" && player.positionFit && (
-        <section className="profile-section">
-          <h2>Position fit</h2>
-          <p>
-            Primary {player.positionFit.primaryPositionFit}
-            {player.positionFit.secondaryPositionFit
-              ? ` · Secondary ${player.positionFit.secondaryPositionFit}`
-              : ""}
-          </p>
-        </section>
+            <BenchmarkPlaystyleComparison
+              playerName={player.displayName}
+              playerAge={player.age}
+              playerRating={player.overallRating}
+              benchmark={benchmark}
+              attributes={attributes}
+            />
+          </section>
+
+          {tactical && (
+            <section className="profile-section">
+              <span className="player-profile-eyebrow">Tactical snapshot</span>
+              <h2 className="player-profile-heading">System fit</h2>
+              <div className="tactical-grid player-profile-tactical-grid">
+                <div className="player-profile-tactical-cell">
+                  <span className="label">Gegenpress</span>
+                  <strong>{Math.round(tactical.gegenpressScore)}</strong>
+                </div>
+                <div className="player-profile-tactical-cell">
+                  <span className="label">Tiki-taka</span>
+                  <strong>{Math.round(tactical.tikiTakaScore)}</strong>
+                </div>
+                <div className="player-profile-tactical-cell">
+                  <span className="label">Counter</span>
+                  <strong>{Math.round(tactical.counterAttackScore)}</strong>
+                </div>
+                <div className="player-profile-tactical-cell">
+                  <span className="label">Winger</span>
+                  <strong>{Math.round(tactical.wingerScore)}</strong>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {player.positionFit && (
+            <section className="profile-section">
+              <span className="player-profile-eyebrow">Position intelligence</span>
+              <h2 className="player-profile-heading">Role fit</h2>
+              <p className="player-profile-muted">
+                Primary {player.positionFit.primaryPositionFit}
+                {player.positionFit.secondaryPositionFit
+                  ? ` · Secondary ${player.positionFit.secondaryPositionFit}`
+                  : ""}
+                {player.positionFit.confidence
+                  ? ` · ${Math.round(player.positionFit.confidence)}% confidence`
+                  : ""}
+              </p>
+            </section>
+          )}
+        </>
       )}
 
       {activeTab === "scoreboard" && (
-        <ScoreboardHistorySection history={scoreboard} />
+        <>
+          <CareerStatBoxesSection stats={careerStatBoxes} />
+          <ScoreboardHistorySection history={scoreboard} />
+        </>
       )}
 
       {activeTab === "scouting" && (
-        <ScoutingIntelligenceSection scouting={scouting} />
-      )}
-
-      {activeTab === "valuation" && (
-        <ValuationSection valuation={valuation} playerId={player.id} />
-      )}
-
-      {activeTab === "videos" && (
-        <MediaSection
-          title="Videos"
-          empty="No public video has been attached to this profile yet."
-          items={videoItems}
-        />
-      )}
-
-      {activeTab === "photos" && (
-        <MediaSection
-          title="Photos"
-          empty="No public photo gallery has been attached to this profile yet."
-          items={photoItems}
-          gallery
-        />
+        <>
+          <ScoutingIntelligenceSection scouting={scouting} />
+          <ValuationSection valuation={valuation} playerId={player.id} />
+        </>
       )}
 
       {activeTab === "media" && (
-        <MediaSection
-          title="Media"
-          empty="Articles, interviews, and third-party media will appear here when published."
-          items={otherMediaItems}
+        <CombinedMediaSection
+          videoItems={videoItems}
+          photoItems={photoItems}
+          otherMediaItems={otherMediaItems}
         />
       )}
     </div>
@@ -600,6 +752,274 @@ export function PlayerProfilePage() {
 
 const PENDING_SYNC_CAPTION =
   "Profile Pending Synchronization — Performance data and tournament history for this athlete are currently being verified by the DTP Africa scouting network.";
+
+function PlayerCardBanner({
+  player,
+  positionLabel,
+  tierLabel,
+  bioFacts,
+  categoryScores,
+  onShare,
+  shareStatus,
+}: {
+  player: PublicPlayerProfile;
+  positionLabel: string;
+  tierLabel: string;
+  bioFacts: BioFact[];
+  categoryScores: CategoryScore[];
+  onShare: () => void;
+  shareStatus: string | null;
+}) {
+  return (
+    <header className="player-profile-banner" aria-label={`${player.displayName} profile card`}>
+      <div className="player-profile-banner__top">
+        <div className="player-profile-banner__hero">
+          <div className="player-profile-banner__portrait">
+            {player.playerPhotoUrl ? (
+              <img
+                src={player.playerPhotoUrl}
+                alt=""
+                className="player-profile-banner__photo"
+              />
+            ) : (
+              <span className="player-profile-banner__fallback" aria-hidden="true">
+                {initialsFromName(player.displayName)}
+              </span>
+            )}
+          </div>
+
+          <div className="player-profile-banner__identity">
+            <span className="player-profile-eyebrow">DirectToPro verified</span>
+            <h1 className="player-profile-banner__name">{player.displayName}</h1>
+            <p className="player-profile-banner__role">
+              {positionLabel}
+              {player.positionSecondary ? ` · ${player.positionSecondary}` : ""}
+              {player.competition ? ` · ${player.competition}` : ""}
+            </p>
+            <p className="player-profile-banner__tier">{tierLabel} tier</p>
+          </div>
+        </div>
+
+        <aside
+          className="player-profile-banner__toolbar"
+          aria-label="Ratings and profile actions"
+        >
+          <div className="player-profile-banner__ratings" aria-label="Core ratings">
+            <div
+              className={`player-profile-rating-badge player-profile-rating-badge--overall ${ratingBadgeTone(
+                player.overallRating
+              )}`}
+            >
+              <span className="player-profile-rating-badge__value">
+                {player.overallRating ?? "—"}
+              </span>
+              <span className="player-profile-rating-badge__label">Overall</span>
+            </div>
+            <div
+              className={`player-profile-rating-badge player-profile-rating-badge--attack ${ratingBadgeTone(
+                player.offensiveRating
+              )}`}
+            >
+              <span className="player-profile-rating-badge__value">
+                {player.offensiveRating ?? "—"}
+              </span>
+              <span className="player-profile-rating-badge__label">Attack</span>
+            </div>
+            <div
+              className={`player-profile-rating-badge player-profile-rating-badge--defense ${ratingBadgeTone(
+                player.defensiveRating
+              )}`}
+            >
+              <span className="player-profile-rating-badge__value">
+                {player.defensiveRating ?? "—"}
+              </span>
+              <span className="player-profile-rating-badge__label">Defense</span>
+            </div>
+          </div>
+          <div className="player-profile-banner__toolbar-actions">
+            <Button type="button" variant="secondary" onClick={onShare}>
+              Share profile
+            </Button>
+            {shareStatus && (
+              <p className="profile-share-status player-profile-banner__share-status">
+                {shareStatus}
+              </p>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      <div className="player-profile-banner__insights">
+        <PlayerBioGrid facts={bioFacts} />
+        <PlayerPitchGraphic
+          positionPrimary={player.positionPrimary}
+          role={player.role}
+          positionFull={player.positionFull}
+        />
+        <PlayerCategoryRadar scores={categoryScores} />
+      </div>
+    </header>
+  );
+}
+
+function PlayerBioGrid({ facts }: { facts: BioFact[] }) {
+  if (facts.length === 0) {
+    return (
+      <div className="player-profile-banner__bio">
+        <p className="player-profile-muted">Profile details pending calibration.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="player-profile-banner__bio" aria-label="Player details">
+      <ul className="player-profile-banner__bio-grid">
+        {facts.map((fact) => (
+          <li
+            key={`${fact.label}-${fact.value}`}
+            className={
+              fact.highlight
+                ? "player-profile-banner__bio-cell player-profile-banner__bio-cell--highlight"
+                : "player-profile-banner__bio-cell"
+            }
+          >
+            <strong className="player-profile-banner__bio-value">{fact.value}</strong>
+            <span className="player-profile-banner__bio-label">{fact.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PlaystyleBadgesSection({ badges }: { badges: PlaystyleBadge[] }) {
+  return (
+    <div className="player-profile-playstyles">
+      <span className="player-profile-eyebrow">Playstyle badges</span>
+      <h3 className="player-profile-subheading">Specialties</h3>
+      <ul className="player-profile-playstyles__grid">
+        {badges.map((badge) => (
+          <li key={badge.title} className="player-profile-playstyle">
+            <span className="player-profile-playstyle__icon" aria-hidden="true">
+              {badge.icon}
+            </span>
+            <div>
+              <strong className="player-profile-playstyle__title">{badge.title}</strong>
+              <p className="player-profile-playstyle__desc">{badge.description}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PlayerAttributeMicroGrid({
+  attributes,
+}: {
+  attributes: ReturnType<typeof buildAttributeMap>;
+}) {
+  return (
+    <div className="player-profile-attr-grid">
+      {ALL_ATTRIBUTE_KEYS.map((key) => {
+        const score = clampScore(attributes[key]);
+        return (
+          <article
+            key={key}
+            className={`player-profile-attr ${attributeTierClass(score)}`}
+          >
+            <div className="player-profile-attr__head">
+              <span className="player-profile-attr__label">{ATTRIBUTE_LABELS[key]}</span>
+              <strong className="player-profile-attr__score">{score}</strong>
+            </div>
+            <div className="player-profile-attr__track" aria-hidden="true">
+              <span className="player-profile-attr__fill" style={{ width: `${score}%` }} />
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function CareerStatBoxesSection({ stats }: { stats: CareerStatBox[] }) {
+  return (
+    <section className="profile-section" aria-label="Career totals">
+      <div className="profile-section-heading">
+        <div>
+          <span className="player-profile-eyebrow">ScoreBoard metrics</span>
+          <h2 className="player-profile-heading">Career totals</h2>
+        </div>
+      </div>
+      <div className="player-profile-stat-grid">
+        {stats.map((stat) => (
+          <article key={stat.label} className="player-profile-stat-box">
+            <span className="player-profile-stat-box__label">{stat.label}</span>
+            <strong className="player-profile-stat-box__value">{stat.value}</strong>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CombinedMediaSection({
+  videoItems,
+  photoItems,
+  otherMediaItems,
+}: {
+  videoItems: ProfileMediaItem[];
+  photoItems: ProfileMediaItem[];
+  otherMediaItems: ProfileMediaItem[];
+}) {
+  const hasAny =
+    videoItems.length > 0 || photoItems.length > 0 || otherMediaItems.length > 0;
+
+  if (!hasAny) {
+    return (
+      <section className="profile-section">
+        <span className="player-profile-eyebrow">Media</span>
+        <h2 className="player-profile-heading">Media (Video, Photos, Publications)</h2>
+        <div className="profile-empty-state">
+          <strong>No public media has been attached to this profile yet.</strong>
+          <p>Public media can be added through admin profile management or calibration imports.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="profile-section player-profile-media">
+      <span className="player-profile-eyebrow">Media</span>
+      <h2 className="player-profile-heading">Media (Video, Photos, Publications)</h2>
+      {videoItems.length > 0 && (
+        <MediaSection
+          title="Video"
+          empty=""
+          items={videoItems}
+          embedded
+        />
+      )}
+      {photoItems.length > 0 && (
+        <MediaSection
+          title="Photos"
+          empty=""
+          items={photoItems}
+          gallery
+          embedded
+        />
+      )}
+      {otherMediaItems.length > 0 && (
+        <MediaSection
+          title="Publications"
+          empty=""
+          items={otherMediaItems}
+          embedded
+        />
+      )}
+    </section>
+  );
+}
 
 /**
  * High-fidelity fallback for a player routed by name/slug whose full record
@@ -611,7 +1031,6 @@ function PremiumSkeletonProfile({
   club,
   competition,
   role,
-  stats,
 }: {
   name: string;
   club: string | null;
@@ -619,18 +1038,19 @@ function PremiumSkeletonProfile({
   role: string | null;
   stats?: { cleanSheets?: number };
 }) {
-  const isGoalkeeper = role === "GK";
+  const isGk = isGoalkeeper(role);
   const metrics: { label: string; hint: string }[] = [
     { label: "Goals", hint: "Match-verified tally" },
     { label: "Assists", hint: "Creative output" },
     { label: "Matches Played", hint: "Tournament appearances" },
+    { label: "Minutes Played", hint: "Verified pitch time" },
   ];
-  if (isGoalkeeper || stats?.cleanSheets != null) {
+  if (isGk) {
     metrics.push({ label: "Clean Sheets", hint: "Shutout record" });
   }
 
   return (
-    <div className="home-page profile-page profile-pending" aria-busy="true">
+    <div className="home-page profile-page profile-pending player-profile" aria-busy="true">
       <Link to="/featured-players" className="back-link">
         ← Featured players
       </Link>
@@ -858,6 +1278,11 @@ function ScoutingIntelligenceSection({
           <span className="profile-data-note">
             {scouting.aggregateMetrics.matchesPlayed} SIP match
             {scouting.aggregateMetrics.matchesPlayed === 1 ? "" : "es"}
+            {scouting.aggregateMetrics.minutesPlayed > 0
+              ? ` · ${formatMinutesPlayed(
+                  Math.round(scouting.aggregateMetrics.minutesPlayed)
+                )} min`
+              : ""}
           </span>
         )}
       </div>
@@ -879,6 +1304,14 @@ function ScoutingIntelligenceSection({
               : "Pending"}
           </strong>
         </div>
+        {scouting.aggregateMetrics && scouting.aggregateMetrics.minutesPlayed > 0 && (
+          <div>
+            <span>Rolling minutes</span>
+            <strong>
+              {formatMinutesPlayed(Math.round(scouting.aggregateMetrics.minutesPlayed))}
+            </strong>
+          </div>
+        )}
       </div>
 
       {scouting.topTacticalScores.length > 0 && (
@@ -1034,20 +1467,26 @@ function MediaSection({
   empty,
   items,
   gallery = false,
+  embedded = false,
 }: {
   title: string;
   empty: string;
   items: ProfileMediaItem[];
   gallery?: boolean;
+  embedded?: boolean;
 }) {
+  const sectionClass = embedded ? "player-profile-media-block" : "profile-section";
+
   return (
-    <section className="profile-section">
-      <h2>{title}</h2>
+    <div className={sectionClass}>
+      <h3 className="player-profile-subheading">{title}</h3>
       {items.length === 0 ? (
-        <div className="profile-empty-state">
-          <strong>{empty}</strong>
-          <p>Public media can be added through admin profile management or calibration imports.</p>
-        </div>
+        empty ? (
+          <div className="profile-empty-state">
+            <strong>{empty}</strong>
+            <p>Public media can be added through admin profile management or calibration imports.</p>
+          </div>
+        ) : null
       ) : (
         <div className={gallery ? "profile-media-grid profile-media-grid--photos" : "profile-media-grid"}>
           {items.map((item) => (
@@ -1056,7 +1495,7 @@ function MediaSection({
               href={item.url}
               target="_blank"
               rel="noreferrer"
-              className="profile-media-card"
+              className="profile-media-card player-profile-media-card"
             >
               {gallery ? (
                 <img src={item.thumbnailUrl ?? item.url} alt={item.title ?? "Player media"} />
@@ -1069,6 +1508,6 @@ function MediaSection({
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }

@@ -82,6 +82,7 @@ export type FeaturedPlayer = {
   careerGoals?: number | null;
   careerAssists?: number | null;
   careerCleanSheets?: number | null;
+  minutesPlayed?: number | null;
   interceptions?: number | null;
 };
 
@@ -110,6 +111,7 @@ export type PublicPlayerProfile = FeaturedPlayer & {
   biography?: string | null;
   videoUrl?: string | null;
   dominantFoot?: string | null;
+  heightCm?: number | null;
   city?: string | null;
   state?: string | null;
   age?: number | null;
