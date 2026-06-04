@@ -3,26 +3,37 @@
 # Handles: secrets retrieval, Node/pnpm install, repo clone,
 #          env file generation, Prisma setup, Docker Compose stack
 
-# ── 1. Retrieve secrets from AWS Secrets Manager ──────────────────────────────
+# ── 1. Retrieve secrets from AWS Secrets Manager via AWS CLI ──────────────────
+# Using the AWS CLI instead of the amazon.aws collection avoids version
+# compatibility issues. The CLI is always present on the Ansible control node
+# and the AWS_* env vars are already set by the CD workflow.
 
 - name: Fetch DB credentials from Secrets Manager
-  amazon.aws.aws_secret:
-    name: "{{ secrets_manager_db_secret_name }}"
-    region: "{{ aws_region }}"
+  ansible.builtin.command: >
+    aws secretsmanager get-secret-value
+    --secret-id "{{ secrets_manager_db_secret_name }}"
+    --region "{{ aws_region }}"
+    --query SecretString
+    --output text
   register: db_secret_raw
+  changed_when: false
   no_log: true
 
 - name: Fetch app secrets from Secrets Manager
-  amazon.aws.aws_secret:
-    name: "{{ secrets_manager_app_secret_name }}"
-    region: "{{ aws_region }}"
+  ansible.builtin.command: >
+    aws secretsmanager get-secret-value
+    --secret-id "{{ secrets_manager_app_secret_name }}"
+    --region "{{ aws_region }}"
+    --query SecretString
+    --output text
   register: app_secret_raw
+  changed_when: false
   no_log: true
 
 - name: Parse credential JSON
   ansible.builtin.set_fact:
-    db_creds:  "{{ db_secret_raw.secret  | from_json }}"
-    app_creds: "{{ app_secret_raw.secret | from_json }}"
+    db_creds:  "{{ db_secret_raw.stdout  | from_json }}"
+    app_creds: "{{ app_secret_raw.stdout | from_json }}"
   no_log: true
 
 # ── 2. Install Node.js (via NodeSource) ───────────────────────────────────────

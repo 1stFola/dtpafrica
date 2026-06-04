@@ -113,9 +113,10 @@ jobs:
       - name: Install Ansible + Python AWS libraries
         run: |
           pip install --quiet \
-            ansible==10.* \
+            "ansible-core==2.16.*" \
             boto3 \
-            botocore
+            botocore \
+            awscli
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r requirements.yml --force
