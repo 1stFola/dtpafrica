@@ -5,7 +5,7 @@ name: CD — Deploy to Staging
 on:
   workflow_run:
     workflows: ["CI"]
-    branches: [main]
+    branches: [main, dev]
     types: [completed]
 
   # Allow manual re-deploy without a new commit
