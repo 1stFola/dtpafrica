@@ -4,7 +4,7 @@
 
 resource "aws_security_group" "server" {
   name        = "${var.project}-${var.environment}-sg"
-  description = "DTP server — HTTP/HTTPS public, SSH restricted"
+  description = "DTP server - HTTP/HTTPS public, SSH restricted"
   vpc_id      = aws_vpc.main.id
 
   # HTTP — public web traffic
