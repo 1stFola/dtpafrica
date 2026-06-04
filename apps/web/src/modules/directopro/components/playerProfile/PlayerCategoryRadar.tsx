@@ -13,11 +13,11 @@ const LABEL_LAYOUT: {
   dx: number;
   dy: number;
 }[] = [
-  { anchor: "middle", dx: 0, dy: -3.2 },
-  { anchor: "start", dx: 2.8, dy: -1.2 },
-  { anchor: "start", dx: 2.8, dy: 1.4 },
-  { anchor: "end", dx: -2.8, dy: 1.4 },
-  { anchor: "end", dx: -2.8, dy: -1.2 },
+  { anchor: "middle", dx: 0, dy: -4.2 },
+  { anchor: "start", dx: 3.4, dy: -1.6 },
+  { anchor: "start", dx: 3.4, dy: 1.8 },
+  { anchor: "end", dx: -3.4, dy: 1.8 },
+  { anchor: "end", dx: -3.4, dy: -1.6 },
 ];
 
 function radarVertex(angleDeg: number, radiusPct: number, progress: number) {
@@ -122,7 +122,7 @@ export function PlayerCategoryRadar({ scores }: Props) {
     <div className="player-profile-cat-radar" aria-label="Attribute category overview">
       <svg
         className="player-profile-cat-radar__chart"
-        viewBox="-4 -4 108 108"
+        viewBox="-12 -12 124 124"
         role="img"
         aria-hidden="true"
       >
@@ -213,7 +213,7 @@ export function PlayerCategoryRadar({ scores }: Props) {
               <tspan className="player-profile-cat-radar__label-name">{item.label}</tspan>
               <tspan
                 x={x}
-                dy="1.05em"
+                dy="1.12em"
                 className="player-profile-cat-radar__label-score"
               >
                 {item.score}
