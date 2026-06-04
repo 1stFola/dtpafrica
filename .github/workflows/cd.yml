@@ -1,16 +1,13 @@
 name: CD — Deploy to Staging
 
 # ── Triggers ──────────────────────────────────────────────────────────────────
-# Automatic: fires after CI passes on main
+# Automatic: fires on every push to dev or main
 # Manual:    GitHub Actions UI → "Run workflow"
 on:
-  pull_request:
-    branches: 
+  push:
+    branches:
+      - main
       - dev
-  workflow_run:
-    workflows: ["CI"]
-    branches: [main, dev]
-    types: [completed]
 
   workflow_dispatch:
     inputs:
@@ -33,21 +30,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Guard: only run when CI succeeded (ignored for manual triggers) ────────
-  check_ci:
-    name: Check CI result
-    runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
-    steps:
-      - name: CI passed
-        run: echo "CI check passed — proceeding with deployment"
-
   # ── Job 1: Terraform — provision AWS infrastructure ────────────────────────
   terraform:
     name: Terraform apply
-    needs: check_ci
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -87,7 +72,7 @@ jobs:
             -out=tfplan
 
       - name: Terraform apply
-        if: inputs.skip_terraform != 'true'
+        if: ${{ github.event.inputs.skip_terraform != 'true' }}
         run: terraform apply -auto-approve tfplan
 
       - name: Capture outputs
@@ -107,7 +92,7 @@ jobs:
   deploy:
     name: Ansible deploy
     needs: terraform
-    if: inputs.skip_deploy != 'true'
+    if: ${{ github.event.inputs.skip_deploy != 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
