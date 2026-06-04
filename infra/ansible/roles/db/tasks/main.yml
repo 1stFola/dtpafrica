@@ -32,7 +32,7 @@
 # ── Retrieve secrets from AWS Secrets Manager ─────────────────────────────────
 
 - name: Fetch database credentials from Secrets Manager
-  community.aws.aws_secret:
+  amazon.aws.aws_secret:
     name: "{{ secrets_manager_db_secret_name }}"
     region: "{{ aws_region }}"
   register: db_secret_raw
