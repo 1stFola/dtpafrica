@@ -12368,3 +12368,424 @@ a.dbx-comp-card:hover {
 .admin-academies-password-actions {
   margin: -0.35rem 0 0.5rem;
 }
+
+/* ============================================================
+   Public mobile polish (≤640px / ≤480px)
+   Shared layout, homepage, scoreboard, academy, partners
+   ============================================================ */
+
+@media (max-width: 640px) {
+  .app-shell {
+    overflow-x: clip;
+  }
+
+  .app-main {
+    padding: 1.25rem 1rem;
+  }
+
+  .app-header {
+    height: auto;
+    min-height: var(--header-h);
+    padding: 0.5rem 1rem;
+  }
+
+  .app-nav {
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.55rem 0.85rem;
+  }
+
+  .footer-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .marketing-module,
+  .scoreboard-module,
+  .dbx-page,
+  .sbc-page,
+  .sbm-page,
+  .sbt-page {
+    overflow-x: clip;
+    min-width: 0;
+  }
+
+  .marketing-subnav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0.35rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .marketing-subnav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .subnav-link {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.55rem 0.9rem;
+  }
+
+  /* Homepage */
+  .home-hero {
+    margin: -1.25rem -1rem 0;
+    padding-top: clamp(2.25rem, 10vw, 3.5rem);
+    padding-bottom: clamp(1.75rem, 8vw, 2.5rem);
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .home-hero__btn {
+    width: 100%;
+  }
+
+  .home-features {
+    gap: 2.5rem;
+    margin-top: 2rem;
+  }
+
+  .home-features-block__head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+  }
+
+  .home-features-block__actions {
+    align-items: stretch;
+  }
+
+  .home-features-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .home-features-mc-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-features-carousel-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .home-features-chip {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+  }
+
+  .home-managed-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-wins-wall__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-features-teasers {
+    grid-template-columns: 1fr;
+  }
+
+  .home-highlights-modal {
+    width: 100%;
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
+
+  .home-highlights-modal__close {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Scoreboard hub + browse */
+  .sb-subnav {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .sb-subnav__link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.55rem 1rem;
+  }
+
+  .sb-mc-grid,
+  .sb-hl-grid,
+  .sb-comp-grid,
+  .dbx-comp-grid,
+  .dbx-team-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sb-match-center-score {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 1.15rem;
+  }
+
+  .sb-match-center-team strong {
+    font-size: 2rem;
+  }
+
+  .dbx-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .dbx-segmented::-webkit-scrollbar {
+    display: none;
+  }
+
+  .dbx-segmented__btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dbx-search__btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .dbx-ticker__item {
+    padding: 0.55rem 0.85rem;
+    font-size: 0.78rem;
+  }
+
+  /* Competition dashboard */
+  .sbc-standings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sbc-standings-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sbc-standings-table {
+    min-width: 300px;
+  }
+
+  .sbc-team-cell__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sbc-tabs {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .sbc-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sbc-tabs .dbx-segmented__btn {
+    flex-shrink: 0;
+    min-height: 44px;
+  }
+
+  .sbc-matchday__head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .sbc-history__place-label {
+    min-width: 0;
+  }
+
+  .sbc-bracket__figure {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sbc-bracket__visual {
+    min-width: 0;
+  }
+
+  .sbm-photo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Academy portal */
+  .academy-login-field input {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.65rem 0.85rem;
+    font-size: 1rem;
+  }
+
+  .academy-login-submit.dtp-btn {
+    width: 100%;
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .academy-sidebar__nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .academy-sidebar__logout {
+    min-height: 44px;
+  }
+
+  .academy-dir-page {
+    padding: 1.25rem 1rem 2.5rem;
+  }
+
+  .academy-dir-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .academy-dir-header__actions {
+    width: 100%;
+  }
+
+  .academy-dir-search {
+    max-width: none;
+    flex: 1 1 100%;
+  }
+
+  .academy-dir-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .academy-dir-card__cta {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.55rem 0.95rem;
+  }
+
+  /* Partners academies */
+  .partners-academies-page {
+    padding: 1.15rem 1rem 2rem;
+  }
+
+  .partners-academies-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .partners-academies-search {
+    max-width: none;
+    flex: 1 1 100%;
+  }
+
+  .partners-academies-chip {
+    min-height: 44px;
+    padding: 0.5rem 0.85rem;
+  }
+
+  .partners-academies-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .partners-academies-card__cta {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.55rem 0.95rem;
+  }
+
+  /* Public media */
+  .marketing-module img,
+  .scoreboard-module img,
+  .partners-academies-page img,
+  .academy-dir-page img,
+  .academy-login-page img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-main {
+    padding: 1rem 0.85rem;
+  }
+
+  .home-hero {
+    margin-left: -0.85rem;
+    margin-right: -0.85rem;
+  }
+
+  .home-features-talent-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-wins-wall__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-talent-card__banner {
+    height: 152px;
+  }
+
+  .home-hl-card {
+    flex: 0 0 min(100%, 92vw);
+  }
+
+  .sbc-standings-table {
+    font-size: 0.78rem;
+    min-width: 280px;
+  }
+
+  .sbc-standings-table th,
+  .sbc-standings-table td {
+    padding: 0.45rem 0.3rem;
+  }
+
+  .sbc-hero__title {
+    font-size: clamp(1.45rem, 7vw, 1.9rem);
+  }
+
+  .dbx-ticker__badge {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.66rem;
+  }
+
+  .academy-login-page {
+    padding: 1.25rem 0.85rem;
+  }
+
+  .academy-login-card {
+    padding: 1.5rem 1.15rem;
+  }
+
+  .partners-academies-hero h1 {
+    font-size: clamp(1.35rem, 6.5vw, 1.75rem);
+  }
+}
