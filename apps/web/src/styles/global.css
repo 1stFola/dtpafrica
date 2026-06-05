@@ -4159,6 +4159,36 @@ a {
   margin-bottom: 1.5rem;
 }
 
+.app-footer__social {
+  margin-bottom: 0.75rem;
+}
+
+.app-footer__social-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.app-footer__social-links {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.app-footer__social-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+  transition: color 0.15s ease;
+}
+
+.app-footer__social-links a:hover {
+  color: var(--color-text);
+}
+
 .footer-nav {
   display: flex;
   flex-wrap: wrap;
