@@ -22,21 +22,14 @@
     # ── AWS ───────────────────────────────────────────────────────────────────
     aws_region: "us-east-1"
 
-    # Names of the secrets in AWS Secrets Manager.
-    # Secret dtp/staging/db  must contain: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
-    # Secret dtp/staging/app must contain: ADMIN_API_KEY
-    secrets_manager_db_secret_name:  "dtp/staging/db"
-    secrets_manager_app_secret_name: "dtp/staging/app"
-
     # ── Repository ────────────────────────────────────────────────────────────
-    # Replace with your actual repo URL before running
     git_repo_url: "git@github.com:YOUR_ORG/YOUR_REPO.git"
     git_branch:   "main"
     app_dir:      "/opt/dtp-app"
 
     # ── Runtime versions ─────────────────────────────────────────────────────
-    node_version: "20"        # NodeSource major version
-    pnpm_version: "9.15.0"   # must match packageManager in package.json
+    node_version: "20"
+    pnpm_version: "9.15.0"
 
   roles:
     - common

@@ -186,14 +186,41 @@ jobs:
             "cloud-init status --wait || true"
           echo "cloud-init done"
 
+      - name: Fetch secrets from AWS Secrets Manager
+        id: secrets
+        run: |
+          DB_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id dtp/staging/db \
+            --region ${{ secrets.AWS_REGION }} \
+            --query SecretString \
+            --output text)
+
+          APP_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id dtp/staging/app \
+            --region ${{ secrets.AWS_REGION }} \
+            --query SecretString \
+            --output text)
+
+          # Parse individual values
+          echo "POSTGRES_USER=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_USER"])')" >> "$GITHUB_OUTPUT"
+          echo "POSTGRES_DB=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')" >> "$GITHUB_OUTPUT"
+          echo "ADMIN_API_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')" >> "$GITHUB_OUTPUT"
+
+          # Mask all secret values so they never appear in logs
+          POSTGRES_PASSWORD=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_PASSWORD"])')
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_OUTPUT"
+
       - name: Run Ansible playbook
         run: |
           ansible-playbook playbook.yml \
             -e "aws_region=${{ secrets.AWS_REGION }}" \
-            -e "secrets_manager_db_secret_name=dtp/staging/db" \
-            -e "secrets_manager_app_secret_name=dtp/staging/app" \
             -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
-            -e "git_branch=main"
+            -e "git_branch=main" \
+            -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
+            -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
+            -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
+            -e "admin_api_key=${{ steps.secrets.outputs.ADMIN_API_KEY }}"
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

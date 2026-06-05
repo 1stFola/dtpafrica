@@ -1,36 +1,18 @@
 ---
 # deploy role — runs on the single DTP server
-# Handles: secrets retrieval, Node/pnpm install, repo clone,
-#          env file generation, Prisma setup, Docker Compose stack
 
-# ── 1. Retrieve secrets from AWS Secrets Manager via AWS CLI ──────────────────
+# ── 1. Set credentials from vars passed in by the CD workflow ─────────────────
+# Secrets are fetched on the GitHub Actions runner (where AWS CLI is available)
+# and passed as extra vars. The EC2 instance never needs AWS credentials.
 
-- name: Fetch DB credentials from Secrets Manager
-  ansible.builtin.command: >
-    aws secretsmanager get-secret-value
-    --secret-id "{{ secrets_manager_db_secret_name }}"
-    --region "{{ aws_region }}"
-    --query SecretString
-    --output text
-  register: db_secret_raw
-  changed_when: false
-  no_log: false  # temporarily show errors for debugging
-
-- name: Fetch app secrets from Secrets Manager
-  ansible.builtin.command: >
-    aws secretsmanager get-secret-value
-    --secret-id "{{ secrets_manager_app_secret_name }}"
-    --region "{{ aws_region }}"
-    --query SecretString
-    --output text
-  register: app_secret_raw
-  changed_when: false
-  no_log: false  # temporarily show errors for debugging
-
-- name: Parse credential JSON
+- name: Set credential facts
   ansible.builtin.set_fact:
-    db_creds:  "{{ db_secret_raw.stdout  | from_json }}"
-    app_creds: "{{ app_secret_raw.stdout | from_json }}"
+    db_creds:
+      POSTGRES_USER:     "{{ postgres_user }}"
+      POSTGRES_PASSWORD: "{{ postgres_password }}"
+      POSTGRES_DB:       "{{ postgres_db }}"
+    app_creds:
+      ADMIN_API_KEY: "{{ admin_api_key }}"
   no_log: true
 
 # ── 2. Install Node.js (via NodeSource) ───────────────────────────────────────
