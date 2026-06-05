@@ -172,7 +172,7 @@ jobs:
             git rm -rf . >/dev/null 2>&1 || true
           fi
 
-          cp "$STATE_FILE" ./terraform.tfstate
+          # The state file is already in place — just stage and commit it
           git add --force terraform.tfstate
           git diff --cached --quiet && echo "State unchanged" && exit 0
           git commit -m "chore: update terraform state [run ${{ github.run_id }}]"
