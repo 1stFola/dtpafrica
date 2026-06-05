@@ -2,7 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const links = [
   { to: "/featured-players", label: "Featured players" },
-  { to: "/academy", label: "Academies" },
+  { to: "/partners/academies", label: "Academies" },
   { to: "/blog", label: "Blog" },
   { to: "/about", label: "About" },
   { to: "/contact", label: "Contact" },

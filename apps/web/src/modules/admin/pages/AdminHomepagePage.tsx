@@ -1,6 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { adminApi } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminToast } from "../components/AdminToast";
+import { AdminPageHeader } from "../components/AdminPageHeader";
 
 type Field = {
   key: string;
@@ -70,81 +73,100 @@ const fields = sections.flatMap((section) => section.fields);
 
 export function AdminHomepagePage() {
   usePageTitle("Admin — Homepage");
+  const toast = useAdminToast();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     adminApi
       .contentList()
-      .then((rows) =>
-        setValues(Object.fromEntries(rows.map((row) => [row.key, row.value])))
-      )
-      .catch((e) => setMessage(String(e)));
-  }, []);
+      .then((rows) => setValues(Object.fromEntries(rows.map((row) => [row.key, row.value]))))
+      .catch((e) => toast.error(String(e)))
+      .finally(() => setLoading(false));
+  }, [toast]);
 
   const save = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
-    setMessage(null);
     try {
       JSON.parse(values["home.winsWall.logos"] || "[]");
       await Promise.all(
         fields.map((field) => adminApi.contentUpsert(field.key, values[field.key] ?? ""))
       );
-      setMessage("Homepage content saved");
+      toast.success("Homepage content saved");
     } catch (err) {
-      setMessage(`Could not save: ${String(err)}`);
+      toast.error(`Could not save: ${String(err)}`);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="admin-page">
-      <header className="page-header">
-        <h1>Homepage</h1>
-        <p className="muted">
-          Manage current-platform equivalents for legacy announcements, event sales,
-          featured video, and wins wall content.
-        </p>
-      </header>
+    <section className="admin-page admin-sb-section">
+      <AdminPageHeader
+        title="Homepage"
+        description="Manage announcements, event sales, featured video, wins wall, and video highlights."
+        crumbs={[{ label: "Homepage" }]}
+        actions={
+          <Link to="/admin/homepage/video-highlights" className="text-link">
+            Video highlights manager →
+          </Link>
+        }
+      />
 
-      {message && <p className="muted">{message}</p>}
+      {loading ? (
+        <div className="admin-cms-form-skeleton" aria-busy="true">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="admin-sb-skeleton admin-sb-skeleton--panel" />
+          ))}
+        </div>
+      ) : (
+        <form className="admin-homepage-form" onSubmit={save}>
+          {sections.map((section) => (
+            <section key={section.title} className="admin-content-form admin-sb-panel">
+              <h2 className="admin-sb-form-heading">{section.title}</h2>
+              <div className="admin-sb-highlight-form">
+                {section.fields.map((field) => (
+                  <label
+                    key={field.key}
+                    className={`admin-sb-field ${field.multiline ? "admin-sb-field--wide" : ""}`}
+                  >
+                    <span>{field.label}</span>
+                    {field.multiline ? (
+                      <textarea
+                        rows={field.key === "home.winsWall.logos" ? 6 : 3}
+                        value={values[field.key] ?? ""}
+                        onChange={(e) =>
+                          setValues({ ...values, [field.key]: e.target.value })
+                        }
+                      />
+                    ) : (
+                      <input
+                        value={values[field.key] ?? ""}
+                        onChange={(e) =>
+                          setValues({ ...values, [field.key]: e.target.value })
+                        }
+                      />
+                    )}
+                    {field.help && <span className="muted admin-field-help">{field.help}</span>}
+                  </label>
+                ))}
+              </div>
+            </section>
+          ))}
 
-      <form className="admin-homepage-form" onSubmit={save}>
-        {sections.map((section) => (
-          <section key={section.title} className="admin-content-form">
-            <h2>{section.title}</h2>
-            {section.fields.map((field) => (
-              <label key={field.key}>
-                {field.label}
-                {field.multiline ? (
-                  <textarea
-                    rows={field.key === "home.winsWall.logos" ? 6 : 3}
-                    value={values[field.key] ?? ""}
-                    onChange={(e) =>
-                      setValues({ ...values, [field.key]: e.target.value })
-                    }
-                  />
-                ) : (
-                  <input
-                    value={values[field.key] ?? ""}
-                    onChange={(e) =>
-                      setValues({ ...values, [field.key]: e.target.value })
-                    }
-                  />
-                )}
-                {field.help && <span className="muted admin-field-help">{field.help}</span>}
-              </label>
-            ))}
-          </section>
-        ))}
-
-        <button type="submit" className="dtp-btn dtp-btn--primary" disabled={saving}>
-          {saving ? "Saving…" : "Save homepage"}
-        </button>
-      </form>
-    </div>
+          <div className="admin-sb-sticky-actions">
+            <button
+              type="submit"
+              className="admin-inline-button admin-inline-button--primary"
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save homepage"}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }

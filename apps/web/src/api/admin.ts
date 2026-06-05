@@ -62,6 +62,8 @@ export type AdminPlayerRow = {
   id: string;
   displayName: string;
   positionPrimary: string;
+  positionFull: string | null;
+  playingPhilosophies: string[] | null;
   slug: string | null;
   isFeatured: boolean;
   isPublic: boolean;
@@ -247,11 +249,17 @@ export type AdminAcademy = {
   id: string;
   slug: string;
   name: string;
+  contactPerson: string | null;
+  email: string | null;
+  phone: string | null;
   city: string | null;
   country: string | null;
   description: string | null;
   logoUrl: string | null;
   websiteUrl: string | null;
+  subscriptionTier: "Premium" | "Basic" | null;
+  maxPlayers: number | null;
+  loginUsername: string | null;
   isPublished: boolean;
   createdAt: string;
   updatedAt: string;
@@ -260,12 +268,20 @@ export type AdminAcademy = {
 export type AdminAcademyInput = {
   name: string;
   slug?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
   city?: string;
   country?: string;
   description?: string;
   logoUrl?: string;
   websiteUrl?: string;
+  subscriptionTier?: "Premium" | "Basic" | "";
+  maxPlayers?: number | "";
   isPublished?: boolean;
+  loginUsername?: string;
+  /** Plain text; hashed server-side. Leave blank on edit to keep existing password. */
+  password?: string;
 };
 
 export const adminApi = {
@@ -284,7 +300,13 @@ export const adminApi = {
       `/admin/players/slug-preview?${params.toString()}`
     );
   },
-  updatePlayer: (id: string, body: Partial<AdminPlayerRow> & { displayName?: string }) =>
+  updatePlayer: (
+    id: string,
+    body: Partial<AdminPlayerRow> & {
+      displayName?: string;
+      playingPhilosophies?: string[];
+    }
+  ) =>
     adminFetch(`/admin/players/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),

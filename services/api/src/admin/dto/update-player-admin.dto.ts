@@ -1,4 +1,11 @@
-import { IsBoolean, IsOptional, IsString, IsIn } from "class-validator";
+import {
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsIn,
+  ArrayMaxSize,
+} from "class-validator";
 
 export class UpdatePlayerAdminDto {
   @IsOptional()
@@ -29,4 +36,18 @@ export class UpdatePlayerAdminDto {
   @IsOptional()
   @IsString()
   displayName?: string;
+
+  @IsOptional()
+  @IsString()
+  positionPrimary?: string;
+
+  @IsOptional()
+  @IsString()
+  positionFull?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2)
+  @IsString({ each: true })
+  playingPhilosophies?: string[];
 }

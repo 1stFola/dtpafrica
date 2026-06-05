@@ -7,6 +7,7 @@ export * from "./sip/position-fit-engine";
 export * from "./sip/pipeline";
 export * from "./sip/formations";
 export * from "./sip/philosophies";
+export * from "./position-labels";
 export * from "./sip/philosophy-fit-engine";
 export * from "./sip/strong-xi-engine";
 export * from "./sip/comparison-engine";
@@ -28,3 +29,4 @@ export {
   normalizePlayerName,
   playerLookupKey,
 } from "./scoreboard/normalize-player-name";
+export * from "./media-url";

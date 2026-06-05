@@ -1,0 +1,95 @@
+---
+# Provision and run PostgreSQL 16 in Docker on the dedicated DB instance
+
+# ── EBS data volume setup ─────────────────────────────────────────────────────
+
+- name: Check if EBS data volume has a filesystem
+  ansible.builtin.command: blkid /dev/xvdf
+  register: blkid_result
+  failed_when: false
+  changed_when: false
+
+- name: Format EBS data volume (only if blank)
+  ansible.builtin.command: mkfs.ext4 /dev/xvdf
+  when: blkid_result.rc != 0
+
+- name: Create Postgres data directory
+  ansible.builtin.file:
+    path: /data/postgres
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Mount EBS data volume
+  ansible.posix.mount:
+    path: /data/postgres
+    src: /dev/xvdf
+    fstype: ext4
+    opts: defaults,nofail
+    state: mounted
+
+# ── Retrieve secrets from AWS Secrets Manager ─────────────────────────────────
+
+- name: Fetch database credentials from Secrets Manager
+  amazon.aws.aws_secret:
+    name: "{{ secrets_manager_db_secret_name }}"
+    region: "{{ aws_region }}"
+  register: db_secret_raw
+  no_log: true
+
+- name: Parse credentials JSON
+  ansible.builtin.set_fact:
+    db_creds: "{{ db_secret_raw.secret | from_json }}"
+  no_log: true
+
+# ── Docker Compose for Postgres ───────────────────────────────────────────────
+
+- name: Create app directory for DB compose
+  ansible.builtin.file:
+    path: /opt/dtp-db
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0750"
+
+- name: Write Postgres docker-compose file
+  ansible.builtin.template:
+    src: docker-compose.db.yml.j2
+    dest: /opt/dtp-db/docker-compose.yml
+    owner: ubuntu
+    group: ubuntu
+    mode: "0640"
+  no_log: true  # contains credentials
+
+- name: Write Postgres env file
+  ansible.builtin.template:
+    src: .env.db.j2
+    dest: /opt/dtp-db/.env
+    owner: ubuntu
+    group: ubuntu
+    mode: "0600"
+  no_log: true  # contains credentials
+
+- name: Pull Postgres image
+  community.docker.docker_compose_v2_pull:
+    project_src: /opt/dtp-db
+  become: true
+  become_user: ubuntu
+
+- name: Start Postgres container
+  community.docker.docker_compose_v2:
+    project_src: /opt/dtp-db
+    state: present
+    pull: never
+  become: true
+  become_user: ubuntu
+
+# ── UFW: allow Postgres only from VPC ────────────────────────────────────────
+
+- name: Allow Postgres from VPC CIDR
+  community.general.ufw:
+    rule: allow
+    port: "5432"
+    proto: tcp
+    src: "{{ vpc_cidr }}"

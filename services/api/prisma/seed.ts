@@ -2,6 +2,8 @@ import { PrismaClient } from "@prisma/client";
 import { ADS_CONFIG_KEY, DEFAULT_AD_SLOTS } from "../src/ads/ads.constants";
 import { seedMvce } from "./seed-mvce";
 import { seedScoreboard } from "./seed-scoreboard";
+import { seedLegacyAcademies } from "./seed-legacy-academies";
+import { seedLegacyPlayers } from "./seed-legacy-players";
 
 const prisma = new PrismaClient();
 
@@ -69,6 +71,8 @@ async function main() {
     where: { id: SEED_PLAYER_ID },
     update: {
       slug: "alli-o-sanni",
+      positionFull: "ATTACKING MIDFIELDER",
+      playingPhilosophies: ["Tiki-Taka", "Total Football"],
       isFeatured: true,
       isPublic: true,
       registrationStatus: "approved",
@@ -78,6 +82,10 @@ async function main() {
       overallRating: 79,
       offensiveRating: 82,
       defensiveRating: 73,
+      careerGoals: 4,
+      careerAssists: 6,
+      careerAppearances: 11,
+      careerMinutes: 847,
       ratingAttributes: SEED_RATING_ATTRIBUTES,
       benchmarkMetadata: SEED_BENCHMARK_METADATA,
       mediaItems: SEED_MEDIA_ITEMS,
@@ -91,6 +99,8 @@ async function main() {
       displayName: "ALLI O. SANNI",
       slug: "alli-o-sanni",
       positionPrimary: "AM",
+      positionFull: "ATTACKING MIDFIELDER",
+      playingPhilosophies: ["Tiki-Taka", "Total Football"],
       nationality: "Nigerian",
       city: "Lagos",
       state: "Lagos",
@@ -106,6 +116,10 @@ async function main() {
       overallRating: 79,
       offensiveRating: 82,
       defensiveRating: 73,
+      careerGoals: 4,
+      careerAssists: 6,
+      careerAppearances: 11,
+      careerMinutes: 847,
       ratingAttributes: SEED_RATING_ATTRIBUTES,
       benchmarkMetadata: SEED_BENCHMARK_METADATA,
       mediaItems: SEED_MEDIA_ITEMS,
@@ -356,6 +370,36 @@ Parents and guardians can register minors with consent workflows built for youth
         '[{"name":"DTP Lagos Hub","imageUrl":"","href":"/academy"}]',
     },
     {
+      key: "homepage.video-highlights",
+      value: JSON.stringify(
+        [
+          {
+            id: "hl-sikiru-defending-prowess",
+            playerName: "YUSUFF SIKIRU",
+            title: "Defending Prowess",
+            youtubeUrl: "https://youtu.be/YmRafZN6FYk",
+            sortOrder: 0,
+          },
+          {
+            id: "hl-emmanuel-strong-defense",
+            playerName: "OLUGBE EMMANUEL",
+            title: "Strong Defense Ability",
+            youtubeUrl: "https://youtu.be/znTjvLeagsw",
+            sortOrder: 1,
+          },
+          {
+            id: "hl-sikiru-great-defensive",
+            playerName: "YUSUFF SIKIRU",
+            title: "Great defensive ability",
+            youtubeUrl: "https://youtu.be/01_IXNYUMac",
+            sortOrder: 2,
+          },
+        ],
+        null,
+        2
+      ),
+    },
+    {
       key: "about.mission",
       value:
         "Connect African grassroots football talent to global opportunity through verified data, transparent ratings, and trusted scouting tools.",
@@ -383,6 +427,7 @@ Parents and guardians can register minors with consent workflows built for youth
     });
   }
 
+  // Re-seed overwrites ads.config so every slot returns to enabled: false (admin re-enables as needed).
   await prisma.staticContent.upsert({
     where: { key: ADS_CONFIG_KEY },
     update: { value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }) },
@@ -391,14 +436,26 @@ Parents and guardians can register minors with consent workflows built for youth
       value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }),
     },
   });
-  console.log("Ads config seeded (demo placehold.co creatives at ads.config)");
+  console.log("Ads config seeded (all slots disabled by default at ads.config)");
 
   await seedScoreboard(prisma, player.id);
   await seedMvce(prisma, player.id);
 
+  const legacyAcademyCount = await seedLegacyAcademies(prisma);
+  console.log("Legacy academies seeded:", legacyAcademyCount);
+
+  const legacyPlayers = await seedLegacyPlayers(prisma);
+  console.log("Legacy players seeded:", legacyPlayers.playerCount);
+  console.log("Legacy players linked to academies:", legacyPlayers.academyLinkCount);
+  console.log(
+    "Sample profiles:",
+    legacyPlayers.sampleSlugs.map((s) => `/players/${s}`).join(", ")
+  );
+
   console.log("Seed complete. Player id:", player.id);
   console.log("Public profile: /player/alli-o-sanni");
   console.log("ScoreBoard: /scoreboard/competition/jagaban-cup-2026");
+  console.log("ScoreBoard: /scoreboard/competition/ex-internationals-cup-2026");
   console.log("MVCE: /valuation/player/" + player.id);
   console.log("Run: POST /api/v1/sip/players/" + player.id + "/recalculate");
 }

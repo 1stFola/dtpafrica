@@ -56,8 +56,11 @@ export const AD_SLOT_KEYS: AdSlotKey[] = [
   "valuationRight",
 ];
 
-export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
+export type AdSlotFallbackConfig = AdBannerProps & { enabled: boolean };
+
+export const defaultAdConfig: Record<AdSlotKey, AdSlotFallbackConfig> = {
   scoreboardLeaderboardDesktop: {
+    enabled: false,
     slotId: "scoreboard-leaderboard-desktop",
     format: "leaderboard",
     fallbackImageUrl: MOCK.leaderboardBlue,
@@ -65,6 +68,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Legacy · Header desktop (unused)",
   },
   scoreboardLeaderboardMobile: {
+    enabled: false,
     slotId: "scoreboard-leaderboard-mobile",
     format: "mobile-banner",
     fallbackImageUrl: MOCK.mobile,
@@ -72,6 +76,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Scoreboard mobile",
   },
   scoreboardTop: {
+    enabled: false,
     slotId: "scoreboard-top",
     format: "leaderboard",
     fallbackImageUrl: MOCK.scoreboardTop,
@@ -79,6 +84,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · ScoreBoard top",
   },
   scoreboardLeft: {
+    enabled: false,
     slotId: "scoreboard-left",
     format: "square",
     fallbackImageUrl: MOCK.scoreboardLeft,
@@ -86,6 +92,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · ScoreBoard left",
   },
   scoreboardRight: {
+    enabled: false,
     slotId: "scoreboard-right",
     format: "square",
     fallbackImageUrl: MOCK.scoreboardRight,
@@ -93,6 +100,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · ScoreBoard right",
   },
   matchCenterInline: {
+    enabled: false,
     slotId: "match-center-inline",
     format: "inline",
     fallbackImageUrl: MOCK.leaderboardPurple,
@@ -100,6 +108,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Match center",
   },
   featuredPlayersInline: {
+    enabled: false,
     slotId: "featured-players-inline",
     format: "inline",
     fallbackImageUrl: MOCK.leaderboardGreen,
@@ -107,6 +116,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Featured players",
   },
   scoutingTop: {
+    enabled: false,
     slotId: "scouting-top",
     format: "leaderboard",
     fallbackImageUrl: MOCK.scoutingTop,
@@ -114,6 +124,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Scouting top",
   },
   scoutingLeft: {
+    enabled: false,
     slotId: "scouting-left",
     format: "square",
     fallbackImageUrl: MOCK.scoutingLeft,
@@ -121,6 +132,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Scouting left",
   },
   scoutingRight: {
+    enabled: false,
     slotId: "scouting-right",
     format: "square",
     fallbackImageUrl: MOCK.scoutingRight,
@@ -128,6 +140,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Scouting right",
   },
   scoutingDirectoryInline: {
+    enabled: false,
     slotId: "scouting-directory-inline",
     format: "inline",
     fallbackImageUrl: MOCK.leaderboardAmber,
@@ -135,6 +148,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Scouting directory",
   },
   valuationTop: {
+    enabled: false,
     slotId: "valuation-top",
     format: "leaderboard",
     fallbackImageUrl: MOCK.valuationTop,
@@ -142,6 +156,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Valuation top",
   },
   valuationLeft: {
+    enabled: false,
     slotId: "valuation-left",
     format: "square",
     fallbackImageUrl: MOCK.valuationLeft,
@@ -149,6 +164,7 @@ export const defaultAdConfig: Record<AdSlotKey, AdBannerProps> = {
     label: "Demo · Valuation left",
   },
   valuationRight: {
+    enabled: false,
     slotId: "valuation-right",
     format: "square",
     fallbackImageUrl: MOCK.valuationRight,

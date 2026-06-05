@@ -129,7 +129,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
       "Deprecated: desktop uses scoreboardTop below subnav. Enable only for custom layouts.",
   },
   scoreboardLeaderboardMobile: {
-    enabled: true,
+    enabled: false,
     slotId: "scoreboard-leaderboard-mobile",
     format: "mobile-banner",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.mobileBanner320x50,
@@ -139,7 +139,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
       "Upload 320×50 px (IAB Mobile Banner). ScoreBoard header; shown below 760px.",
   },
   matchCenterInline: {
-    enabled: true,
+    enabled: false,
     slotId: "match-center-inline",
     format: "inline",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.leaderboard728x90Purple,
@@ -149,7 +149,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
       "Upload 728×90 px (same frame as Leaderboard). Match center page below score header.",
   },
   featuredPlayersInline: {
-    enabled: true,
+    enabled: false,
     slotId: "featured-players-inline",
     format: "inline",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.leaderboard728x90Green,
@@ -159,7 +159,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
       "Upload 728×90 px. Inserted every 8 cards on /featured-players.",
   },
   scoutingDirectoryInline: {
-    enabled: true,
+    enabled: false,
     slotId: "scouting-directory-inline",
     format: "inline",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.leaderboard728x90Amber,
@@ -169,7 +169,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
       "Upload 728×90 px. Inserted every 8 rows on tactical search.",
   },
   scoreboardTop: {
-    enabled: true,
+    enabled: false,
     slotId: "scoreboard-top",
     format: "leaderboard",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.scoreboardTop728x90,
@@ -178,7 +178,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.scoreboardTop.placementNotes,
   },
   scoreboardLeft: {
-    enabled: true,
+    enabled: false,
     slotId: "scoreboard-left",
     format: "square",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.scoreboardLeft300x600,
@@ -187,7 +187,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.scoreboardLeft.placementNotes,
   },
   scoreboardRight: {
-    enabled: true,
+    enabled: false,
     slotId: "scoreboard-right",
     format: "square",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.scoreboardRight300x600,
@@ -196,7 +196,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.scoreboardRight.placementNotes,
   },
   scoutingTop: {
-    enabled: true,
+    enabled: false,
     slotId: "scouting-top",
     format: "leaderboard",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.scoutingTop728x90,
@@ -205,7 +205,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.scoutingTop.placementNotes,
   },
   scoutingLeft: {
-    enabled: true,
+    enabled: false,
     slotId: "scouting-left",
     format: "square",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.scoutingLeft300x600,
@@ -214,7 +214,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.scoutingLeft.placementNotes,
   },
   scoutingRight: {
-    enabled: true,
+    enabled: false,
     slotId: "scouting-right",
     format: "square",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.scoutingRight300x600,
@@ -223,7 +223,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.scoutingRight.placementNotes,
   },
   valuationTop: {
-    enabled: true,
+    enabled: false,
     slotId: "valuation-top",
     format: "leaderboard",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.valuationTop728x90,
@@ -232,7 +232,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.valuationTop.placementNotes,
   },
   valuationLeft: {
-    enabled: true,
+    enabled: false,
     slotId: "valuation-left",
     format: "square",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.valuationLeft300x600,
@@ -241,7 +241,7 @@ export const DEFAULT_AD_SLOTS: Record<AdSlotKey, AdSlotConfig> = {
     placementNotes: AD_SLOT_META.valuationLeft.placementNotes,
   },
   valuationRight: {
-    enabled: true,
+    enabled: false,
     slotId: "valuation-right",
     format: "square",
     fallbackImageUrl: MOCK_AD_IMAGE_URLS.valuationRight300x600,

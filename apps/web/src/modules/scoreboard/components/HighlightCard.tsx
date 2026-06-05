@@ -1,7 +1,16 @@
-import { type SbHighlight, youtubeThumbnail } from "../../../api/scoreboard";
+import { type SbHighlight } from "../../../api/scoreboard";
+import { MediaVideoEmbed } from "../../../components/MediaVideoEmbed";
+import { highlightThumbnailUrl } from "../../../utils/media-url";
 
-export function HighlightCard({ highlight }: { highlight: SbHighlight }) {
-  const thumb = youtubeThumbnail(highlight.youtubeUrl);
+type Props = {
+  highlight: SbHighlight;
+  /** When true, embed video inline (match center tab). */
+  inlinePlayer?: boolean;
+};
+
+export function HighlightCard({ highlight, inlinePlayer }: Props) {
+  const thumb =
+    highlight.thumbnailUrl ?? highlightThumbnailUrl(highlight.youtubeUrl);
   const tag = highlight.competition?.name ?? null;
   const matchup = highlight.match
     ? `${highlight.match.homeTeam.name} vs. ${highlight.match.awayTeam.name}`
@@ -16,6 +25,26 @@ export function HighlightCard({ highlight }: { highlight: SbHighlight }) {
         })
       : null;
 
+  if (inlinePlayer) {
+    return (
+      <article className="sb-hl-card sb-hl-card--inline">
+        <MediaVideoEmbed
+          url={highlight.youtubeUrl}
+          title={highlight.title}
+          mediaType={highlight.mediaType}
+          embedUrl={highlight.videoEmbedUrl}
+        />
+        <div className="sb-hl-card__meta">
+          {(tag || matchup) && (
+            <span className="sb-hl-card__tag">{tag ?? matchup}</span>
+          )}
+          <h3 className="sb-hl-card__title">{highlight.title}</h3>
+          {published && <span className="muted">{published}</span>}
+        </div>
+      </article>
+    );
+  }
+
   return (
     <a
       href={highlight.youtubeUrl}
@@ -26,7 +55,7 @@ export function HighlightCard({ highlight }: { highlight: SbHighlight }) {
     >
       <div className="sb-hl-card__media">
         {thumb ? (
-          <img src={thumb} alt="" loading="lazy" className="sb-hl-card__thumb" />
+          <img src={thumb} alt="" loading="lazy" className="sb-hl-card__thumb" referrerPolicy="no-referrer" />
         ) : (
           <div className="sb-hl-card__thumb sb-hl-card__thumb--fallback" aria-hidden="true" />
         )}

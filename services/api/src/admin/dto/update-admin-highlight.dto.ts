@@ -1,5 +1,6 @@
-import { IsOptional, IsString, IsUrl, Matches } from "class-validator";
+import { IsOptional, IsString, Matches } from "class-validator";
 import { HIGHLIGHT_DURATION_REGEX } from "./highlight-duration";
+import { IsVideoMediaUrl } from "../validators/is-video-media-url.validator";
 
 export class UpdateAdminHighlightDto {
   @IsOptional()
@@ -7,7 +8,7 @@ export class UpdateAdminHighlightDto {
   title?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsVideoMediaUrl()
   youtubeUrl?: string;
 
   @IsOptional()

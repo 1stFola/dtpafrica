@@ -17,6 +17,7 @@ import {
   type SkeletonProfileQuery,
 } from "../home/player-profile.presenter";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
+import { presentHighlight, presentMatchDetail } from "./present-media";
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
 import { assertMatchReadyForLiveEvents } from "./roster-guard";
@@ -179,7 +180,11 @@ export class ScoreboardService {
     return presentScoreboardPayload(rows);
   }
 
-  /** Landing hub: aggregate stats + recent published matches with goal events. */
+  /**
+   * Landing hub: aggregate stats + recent published matches with goal events.
+   * No response caching — each request reads fresh match rows and goal events from
+   * the database so admin match-center writes appear immediately on the homepage widget.
+   */
   async overview() {
     const stats = await this.stats();
     const recentMatches = await this.prisma.sbMatch.findMany({
@@ -207,19 +212,28 @@ export class ScoreboardService {
     return presentScoreboardPayload({ stats, recentMatches });
   }
 
-  /**
-   * Premium competition hub: meta, group standings (A/B when applicable),
-   * and competition top scorers from persisted stats.
-   */
-  async competitionHub(competitionId: string) {
+  private async resolvePublishedCompetition(competitionIdOrSlug: string) {
     const competition = await this.prisma.sbCompetition.findFirst({
-      where: { id: competitionId, isPublished: true },
+      where: {
+        isPublished: true,
+        OR: [{ id: competitionIdOrSlug }, { slug: competitionIdOrSlug }],
+      },
       include: {
-        teams: { orderBy: { name: "asc" } },
+        teams: true,
         _count: { select: { teams: true, matches: true } },
       },
     });
     if (!competition) throw new NotFoundException("Competition not found");
+    return competition;
+  }
+
+  /**
+   * Premium competition hub: meta, group standings (A/B when applicable),
+   * and competition top scorers from persisted stats.
+   */
+  async competitionHub(competitionIdOrSlug: string) {
+    const competition = await this.resolvePublishedCompetition(competitionIdOrSlug);
+    const competitionId = competition.id;
 
     const standingsPayload = await this.competitionEngine.groupStandings(competitionId);
     const rows = (standingsPayload as { rows?: Array<{ groupKey: string }> }).rows ?? [];
@@ -269,6 +283,21 @@ export class ScoreboardService {
         : null,
     }));
 
+    const formatConfig =
+      competition.formatConfig && typeof competition.formatConfig === "object"
+        ? (competition.formatConfig as Record<string, unknown>)
+        : null;
+
+    const teams = [...competition.teams]
+      .map((team) => {
+        const seed = team.groupKey ? Number(team.groupKey) : null;
+        return {
+          ...presentScoreboardPayload(team),
+          seed: Number.isFinite(seed) ? seed : null,
+        };
+      })
+      .sort((a, b) => (a.seed ?? 99) - (b.seed ?? 99));
+
     return presentScoreboardPayload({
       meta: {
         id: competition.id,
@@ -277,12 +306,18 @@ export class ScoreboardService {
         season: competition.season,
         type: competition.type,
         formatType: competition.formatType,
+        formatConfig,
         country: competition.country,
         description: competition.description,
         teamCount: competition._count.teams,
         matchCount: competition._count.matches,
         standingsUpdatedAt: competition.standingsUpdatedAt,
+        bracketImageUrl:
+          (formatConfig?.bracketImageUrl as string | undefined) ??
+          (formatConfig?.bannerUrl as string | undefined) ??
+          null,
       },
+      teams,
       groups,
       topScorers: scorerRows,
     });
@@ -575,7 +610,7 @@ export class ScoreboardService {
       include: MATCH_INCLUDE,
     });
     if (!match) throw new NotFoundException("Match not found");
-    return presentScoreboardPayload(match);
+    return presentMatchDetail(presentScoreboardPayload(match));
   }
 
   async standings(competitionId: string) {
@@ -651,7 +686,7 @@ export class ScoreboardService {
         event: true,
       },
     });
-    return presentScoreboardPayload(rows);
+    return presentScoreboardPayload(rows.map((row) => presentHighlight(row)));
   }
 
   async addEvent(matchId: string, dto: CreateMatchEventDto) {

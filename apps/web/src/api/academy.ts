@@ -160,5 +160,8 @@ export type AcademyDashboard = {
 };
 
 export function fetchAcademyDashboard(slug: string, signal?: AbortSignal) {
-  return apiGet<AcademyDashboard>(`/academy/${encodeURIComponent(slug)}/dashboard`, signal);
+  return apiGet<AcademyDashboard>(
+    `/academy/${encodeURIComponent(slug)}/dashboard`,
+    signal
+  );
 }

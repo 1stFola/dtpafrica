@@ -20,7 +20,9 @@ model Player {
   weightKg          Float?   @map("weight_kg")
   dominantFoot      String?  @map("dominant_foot")
   positionPrimary   String   @map("position_primary")
+  positionFull      String?  @map("position_full")
   positionSecondary String?  @map("position_secondary")
+  playingPhilosophies Json?  @map("playing_philosophies")
   playerPhotoUrl    String?  @map("player_photo_url")
   videoUrl          String?  @map("video_url")
   biography         String?  @db.Text
@@ -87,17 +89,24 @@ model BlogPost {
 }
 
 model Academy {
-  id          String   @id @default(uuid())
-  slug        String   @unique
-  name        String
-  city        String?
-  country     String?
-  description String?  @db.Text
-  logoUrl     String?  @map("logo_url")
-  websiteUrl  String?  @map("website_url")
-  isPublished Boolean  @default(true) @map("is_published")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  slug             String   @unique
+  name             String
+  contactPerson    String?  @map("contact_person")
+  email            String?
+  phone            String?
+  city             String?
+  country          String?
+  description      String?  @db.Text
+  logoUrl          String?  @map("logo_url")
+  websiteUrl       String?  @map("website_url")
+  loginUsername    String?  @unique @map("login_username")
+  passwordHash     String?  @map("password_hash")
+  subscriptionTier String?  @map("subscription_tier")
+  maxPlayers       Int?     @map("max_players")
+  isPublished      Boolean  @default(true) @map("is_published")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   players     Player[]
 

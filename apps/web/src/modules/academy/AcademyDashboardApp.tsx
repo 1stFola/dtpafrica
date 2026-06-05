@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, NavLink, useLocation, useParams } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   fetchAcademyDashboard,
   type AcademyDashboard,
@@ -9,12 +9,13 @@ import {
 } from "../../api/academy";
 import { isAbortError } from "../../api/client";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useAcademyAuth } from "./AcademyAuthContext";
 
 const navItems = [
   { id: "overview", label: "Dashboard" },
-  { id: "squad", label: "Squad" },
-  { id: "fixtures", label: "Fixtures" },
+  { id: "players", label: "Players" },
   { id: "development", label: "Development" },
+  { id: "matches", label: "Matches" },
   { id: "philosophy", label: "Playing Philosophy" },
   { id: "valuation", label: "Market Valuation" },
   { id: "media", label: "Media Library" },
@@ -22,6 +23,11 @@ const navItems = [
 ] as const;
 
 type DashboardSection = (typeof navItems)[number]["id"];
+
+const legacySectionRedirects: Record<string, DashboardSection> = {
+  squad: "players",
+  fixtures: "matches",
+};
 
 function formatDate(value?: string | null) {
   if (!value) return "Date pending";
@@ -56,6 +62,17 @@ function titleCase(value: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function academyInitials(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "AC";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+}
+
 function uniqueOptions(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort();
 }
@@ -68,9 +85,64 @@ function mediaHref(item: AcademyMediaItem) {
   return item.url;
 }
 
+function AcademyHeroBanner({
+  academy,
+  playerCount,
+  mode,
+}: {
+  academy: AcademyDashboard["academy"];
+  playerCount: number;
+  mode: string;
+}) {
+  const initials = academyInitials(academy.name);
+  const hasLogo = Boolean(academy.logoUrl?.trim());
+
+  return (
+    <section
+      className={`academy-hero${hasLogo ? " academy-hero--branded" : " academy-hero--initials"}`}
+      style={
+        hasLogo
+          ? ({ ["--academy-hero-bg" as string]: `url("${academy.logoUrl}")` })
+          : undefined
+      }
+      aria-label={`${academy.name} command centre`}
+    >
+      <div className="academy-hero__backdrop" aria-hidden="true">
+        {!hasLogo && <span className="academy-hero__initials">{initials}</span>}
+      </div>
+      <div className="academy-hero__overlay" aria-hidden="true" />
+      <div className="academy-hero__body">
+        <div className="academy-hero__content">
+          {hasLogo && (
+            <span className="academy-hero__crest" aria-hidden="true">
+              <img src={academy.logoUrl!} alt="" />
+            </span>
+          )}
+          <div>
+            <p className="eyebrow">Academy command centre</p>
+            <h1>{academy.name}</h1>
+            <p>
+              Which players are improving, valuable, tactically useful, and ready for
+              exposure?
+            </p>
+          </div>
+        </div>
+        <div className="academy-hero__meta">
+          <span>{mode.replace(/_/g, " ")}</span>
+          <strong>
+            {playerCount} {playerCount === 1 ? "player" : "players"}
+          </strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function AcademyDashboardApp() {
   const { slug = "dtp-lagos-hub" } = useParams<{ slug: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAcademyAuth();
   const [data, setData] = useState<AcademyDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,10 +166,20 @@ export function AcademyDashboardApp() {
     };
   }, [slug]);
 
+  useEffect(() => {
+    const tail = location.pathname.split(`/academy/${slug}/dashboard`)[1] ?? "";
+    const segment = tail.split("/").filter(Boolean)[0];
+    const target = legacySectionRedirects[segment];
+    if (target) {
+      navigate(`/academy/${slug}/dashboard/${target}`, { replace: true });
+    }
+  }, [location.pathname, slug, navigate]);
+
   const section = useMemo<DashboardSection>(() => {
     const tail = location.pathname.split(`/academy/${slug}/dashboard`)[1] ?? "";
     const segment = tail.split("/").filter(Boolean)[0];
-    return navItems.find((item) => item.id === segment)?.id ?? "overview";
+    const resolved = legacySectionRedirects[segment] ?? segment;
+    return navItems.find((item) => item.id === resolved)?.id ?? "overview";
   }, [location.pathname, slug]);
 
   if (error) {
@@ -137,18 +219,32 @@ export function AcademyDashboardApp() {
 
   const basePath = `/academy/${data.academy.slug}/dashboard`;
 
+  const handleLogout = () => {
+    logout();
+    navigate("/academy/login", { replace: true });
+  };
+
   return (
     <div className="academy-dashboard">
       <aside className="academy-sidebar">
-        <Link to="/academy" className="academy-sidebar__brand">
-          <span className="academy-sidebar__crest">
-            {data.academy.logoUrl ? <img src={data.academy.logoUrl} alt="" /> : "DTP"}
-          </span>
-          <span>
-            <strong>{data.academy.name}</strong>
-            <small>{[data.academy.city, data.academy.country].filter(Boolean).join(", ")}</small>
-          </span>
-        </Link>
+        <div className="academy-sidebar__top">
+          <Link to="/academy" className="academy-sidebar__brand">
+            <span className="academy-sidebar__crest">
+              {data.academy.logoUrl ? <img src={data.academy.logoUrl} alt="" /> : "DTP"}
+            </span>
+            <span>
+              <strong>{data.academy.name}</strong>
+              <small>{[data.academy.city, data.academy.country].filter(Boolean).join(", ")}</small>
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="academy-sidebar__logout"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
         <nav className="academy-sidebar__nav" aria-label="Academy dashboard">
           {navItems.map((item) => {
             const to = item.id === "overview" ? basePath : `${basePath}/${item.id}`;
@@ -169,24 +265,11 @@ export function AcademyDashboardApp() {
       </aside>
 
       <main className="academy-main">
-        <section className="academy-hero">
-          <div>
-            <p className="eyebrow">Academy command centre</p>
-            <h1>{data.academy.name}</h1>
-            <p>
-              Which players are improving, valuable, tactically useful, and ready for
-              exposure?
-            </p>
-          </div>
-          <div className="academy-hero__meta">
-            <span>{data.scope.mode.replace(/_/g, " ")}</span>
-            <strong>{data.squad.length} players</strong>
-          </div>
-        </section>
+        <AcademyHeroBanner academy={data.academy} playerCount={data.squad.length} mode={data.scope.mode} />
 
         {section === "overview" && <OverviewSection data={data} />}
-        {section === "squad" && <SquadSection players={data.squad} />}
-        {section === "fixtures" && <FixturesSection fixtures={data.fixtures} />}
+        {section === "players" && <PlayersSection players={data.squad} />}
+        {section === "matches" && <MatchesSection fixtures={data.fixtures} />}
         {section === "development" && <DevelopmentSection data={data} />}
         {section === "philosophy" && <PhilosophySection data={data} />}
         {section === "valuation" && <ValuationSection data={data} />}
@@ -214,8 +297,8 @@ function OverviewSection({ data }: { data: AcademyDashboard }) {
         <section className="academy-panel">
           <div className="academy-panel__header">
             <h2>High-potential watchlist</h2>
-            <Link to="squad" className="text-link">
-              View squad
+            <Link to="players" className="text-link">
+              View players
             </Link>
           </div>
           <div className="academy-player-card-grid">
@@ -336,7 +419,7 @@ function InsightCard({
   );
 }
 
-function SquadSection({ players }: { players: AcademySquadPlayer[] }) {
+function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
   const [ageGroup, setAgeGroup] = useState("all");
   const [position, setPosition] = useState("all");
   const [foot, setFoot] = useState("all");
@@ -359,7 +442,7 @@ function SquadSection({ players }: { players: AcademySquadPlayer[] }) {
     <section className="academy-panel academy-panel--wide">
       <div className="academy-panel__header">
         <div>
-          <h2>Squad intelligence</h2>
+          <h2>Player intelligence</h2>
           <p>Filter by football traits and jump into the unified player profile.</p>
         </div>
       </div>
@@ -454,12 +537,12 @@ function FilterSelect({
   );
 }
 
-function FixturesSection({ fixtures }: { fixtures: AcademyFixture[] }) {
+function MatchesSection({ fixtures }: { fixtures: AcademyFixture[] }) {
   return (
     <section className="academy-panel academy-panel--wide">
       <div className="academy-panel__header">
         <div>
-          <h2>Fixtures and match history</h2>
+          <h2>Matches and match history</h2>
           <p>Derived from linked ScoreBoard teams.</p>
         </div>
       </div>
@@ -651,7 +734,7 @@ function SettingsSection({ data }: { data: AcademyDashboard }) {
         <InsightCard
           label="Data source"
           value={`${data.scope.linkedScoreboardTeamIds.length} ScoreBoard teams`}
-          detail="Fixtures are inferred from teams containing academy-linked players."
+          detail="Matches are inferred from teams containing academy-linked players."
         />
         <InsightCard
           label="Next controls"

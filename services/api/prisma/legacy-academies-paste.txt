@@ -1,0 +1,18 @@
+<user_query>
+Legacy academies Trickle export (reconstructed from seed-legacy-academies.ts for version control; replace with raw export when available).
+
+	name	contact_person	email	country	login_username	password	subscription_tier	max_players	logo_url
+	AYICRIP-NELIS FA	Chris Ibe	1stfola@gmail.com	Nigeria	AYICRIP-NELIS	AYICRIP-NELISadmin	Premium	20	https://ayicripnelisfa.org/wp-content/uploads/2023/01/Ayicrip-Nelis.jpeg
+	IGANMU TIGER FC	Fola Sanni	1stfola@gmail.com	Nigeria	Iganmu	Iganmuadmin	Basic	30	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR4f7bORj-IqKayq_rog5YFnmyCP0SevgLoKw&s
+	EMILOJU FC	MR EMILOJU	directtoproafrica@gmail.com	Nigeria	EMILOJUFC	EMILOJUFCBO$$	Premium	18	https://app.trickle.so/storage/public/images/usr_154548bd30000001/93f3f690-6692-4087-bf80-cb6d2a551576.jpeg
+	EVOLUTION UNITED FC	DTP Africa	directtoproafrica@gmail.com	Nigeria	EVOLUTIONFC	EVOLUTIONFCBoss	Basic	10	https://app.trickle.so/storage/public/images/usr_154548bd30000001/2aa8d009-9c61-43f8-a2b3-1870bf8faf4e.jpeg
+	OJODU CITY FC	DTP Africa	directtoproafrica@gmail.com	Nigeria	OJODUCITYFC	OJODU@123	Basic	10	https://app.trickle.so/storage/public/images/usr_154548bd30000001/b46e4472-7d33-44de-bd9f-0aa50b3bd324.jpeg
+	SMART CITY FC	DTP Africa	directtoproafrica@gmail.com	Nigeria	SMARTCITYFC	SMARTCITYBO$$	Basic	10	https://app.trickle.so/storage/public/images/usr_154548bd30000001/ea7b2489-200b-4d1d-9b40-7269df6f4ef0.png
+	VIDO 99 FC	DTP Africa	directtoproafrica@gmail.com	Nigeria	VIDO99FC	VIDO99FC@1	Basic	10	https://app.trickle.so/storage/public/images/usr_154548bd30000001/29096a99-dcd6-496f-8665-e1109d01d6dd.jpeg
+	FC BETHEL SPORTING	DTP Africa	directtoproafrica@gmail.com	Nigeria	FCBETHEL	FCBETHELSPORTING	Basic	10	https://app.trickle.so/storage/public/images/usr_154548bd30000001/67c1b936-a88b-4f98-9ae0-ff1c467d729e.jpeg
+	OLUGBANI FC	DTP Africa	directtoproafrica@gmail.com	Nigeria	OLUGBANIFC	OLUGBANIFC@	Premium	20	https://cdn.thenationonlineng.net/wp-content/uploads/2024/05/15023011/Apapa-Iganmu-Local.jpg
+	ATHLETIC CLUB	DTP Africa	directtoproafrica@gmail.com	Nigeria	ATHLETICCLUB	ATHLETIC@@	Premium	10	https://lh3.googleusercontent.com/pw/AP1GczO_xOtfLrVwYx1LwGZrq1XEOwH7DQOiITrfIRpXMiaaiR5wR54_Lx5QTRRdeF6PIt0em_3x3ddD7g7f4zVrtVAQpGAvYm8BQHCpef_NmC3Sy50No0hkRBAVdTHTTmKhUW8GIOyS2ot3Ke2DtaiSCeFN=w317-h374-s-no-gm?authuser=0
+	OLYMPIC LAGOS	DTP Africa	directtoproafrica@gmail.com	Nigeria	OLYMPICLAGOS	OLYMPICdtp	Premium	10	https://app.trickle.so/storage/public/images/usr_154548bd30000001/6896df9d-fa5e-4a5c-a700-f99270ebef14.png
+	GOALGETTERS FA	DTP Africa	directtoproafrica@gmail.com	Nigeria	GOALGETTERSFA	GOALGETTERS@DTP	Premium	15	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTf0eo-nadpS99FW-txoZQfV-NouduU89re-Q&s
+	MAGIC STARS FC	DTP Africa	directtoproafrica@gmail.com	Nigeria	MAGICSTARSFC	MAGICSTARS@	Premium	15	https://magicstarsfc.com/wp-content/uploads/2025/06/cropped-cropped-logo-2-1-scaled-1-1.png
+</user_query>

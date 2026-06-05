@@ -1,4 +1,6 @@
-import { IsInt, IsOptional, IsString, IsUrl, Min } from "class-validator";
+import { IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsImageMediaUrl } from "../validators/is-image-media-url.validator";
+import { IsVideoMediaUrl } from "../validators/is-video-media-url.validator";
 
 export class CreateAdminHighlightDto {
   @IsString()
@@ -7,7 +9,7 @@ export class CreateAdminHighlightDto {
   @IsString()
   title!: string;
 
-  @IsUrl()
+  @IsVideoMediaUrl()
   youtubeUrl!: string;
 
   @IsOptional()
@@ -20,6 +22,6 @@ export class CreateAdminHighlightDto {
   timelineMinute?: number;
 
   @IsOptional()
-  @IsString()
+  @IsImageMediaUrl()
   thumbnailUrl?: string;
 }

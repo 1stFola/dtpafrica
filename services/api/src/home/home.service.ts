@@ -5,6 +5,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { normalizeClubName } from "@dtp/engines";
+import {
+  resolvePositionFull,
+  resolveTopPhilosophies,
+} from "../players/player-home-profile";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
@@ -18,8 +22,22 @@ import {
   type SkeletonProfileQuery,
 } from "./player-profile.presenter";
 import { PlayerProfileIntelligenceService } from "./player-profile-intelligence.service";
+import {
+  buildSeedByTeamSlug,
+  presentAcademyListing,
+} from "../academy/academy-directory.util";
 
 const SCOREBOARD_HISTORY_EVENT_LIMIT = 50;
+const HOMEPAGE_VIDEO_HIGHLIGHTS_KEY = "homepage.video-highlights";
+
+export type HomeVideoHighlight = {
+  id: string;
+  playerName: string;
+  title: string;
+  description?: string;
+  youtubeUrl: string;
+  sortOrder: number;
+};
 
 type ScoreboardSquadRow = Prisma.SbTeamSquadGetPayload<{
   include: { team: { include: { competition: true } } };
@@ -40,13 +58,86 @@ export class HomeService {
     private readonly profileIntelligence: PlayerProfileIntelligenceService
   ) {}
 
-  featuredPlayers(limit = 24) {
-    return this.prisma.player.findMany({
+  async featuredPlayers(limit = 24) {
+    const rows = await this.prisma.player.findMany({
       where: { isFeatured: true, isPublic: true },
       take: Math.min(limit, 50),
       orderBy: [{ overallRating: "desc" }, { updatedAt: "desc" }],
-      select: this.publicPlayerSelect(),
+      select: {
+        ...this.publicPlayerSelect(),
+        positionFull: true,
+        playingPhilosophies: true,
+        tacticalScores: {
+          select: {
+            gegenpressScore: true,
+            tikiTakaScore: true,
+            counterAttackScore: true,
+            totalFootballScore: true,
+            highLineScore: true,
+            lowBlockScore: true,
+            wingerScore: true,
+            directPlayScore: true,
+          },
+        },
+        aggregatedMetrics: {
+          where: { season: "rolling" },
+          take: 1,
+          select: { derivedMetrics: true, minutesPlayed: true },
+        },
+      },
     });
+
+    return rows.map(
+      ({
+        aggregatedMetrics,
+        tacticalScores,
+        playingPhilosophies,
+        positionFull,
+        careerMinutes,
+        ...player
+      }) => ({
+        ...player,
+        positionFull: resolvePositionFull(player.positionPrimary, positionFull),
+        philosophies: resolveTopPhilosophies({
+          playingPhilosophies,
+          tacticalScores,
+        }),
+        interceptions: this.extractInterceptions(
+          aggregatedMetrics[0]?.derivedMetrics ?? null
+        ),
+        minutesPlayed: this.resolveMinutesPlayed(
+          careerMinutes,
+          aggregatedMetrics[0]?.minutesPlayed
+        ),
+      })
+    );
+  }
+
+  async videoHighlights(): Promise<HomeVideoHighlight[]> {
+    const row = await this.prisma.staticContent.findUnique({
+      where: { key: HOMEPAGE_VIDEO_HIGHLIGHTS_KEY },
+    });
+    if (!row?.value) return [];
+
+    try {
+      const parsed = JSON.parse(row.value) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter(
+          (item): item is HomeVideoHighlight =>
+            item != null &&
+            typeof item === "object" &&
+            typeof (item as HomeVideoHighlight).id === "string" &&
+            typeof (item as HomeVideoHighlight).playerName === "string" &&
+            typeof (item as HomeVideoHighlight).title === "string" &&
+            typeof (item as HomeVideoHighlight).youtubeUrl === "string" &&
+            ((item as HomeVideoHighlight).description == null ||
+              typeof (item as HomeVideoHighlight).description === "string")
+        )
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    } catch {
+      return [];
+    }
   }
 
   async publicPlayer(slugOrId: string, query: SkeletonProfileQuery = {}) {
@@ -96,6 +187,10 @@ export class HomeService {
     return {
       isSkeleton: false as const,
       ...profile,
+      minutesPlayed: this.resolveMinutesPlayed(
+        careerMinutes,
+        aggregatedMetrics[0]?.minutesPlayed
+      ),
       club: query.club?.trim() || latestClub,
       competition:
         query.competition?.trim() ||
@@ -251,11 +346,17 @@ export class HomeService {
     return post;
   }
 
-  listAcademies() {
-    return this.prisma.academy.findMany({
+  async listAcademies() {
+    const comp = await this.prisma.sbCompetition.findUnique({
+      where: { slug: "ex-internationals-cup-2026" },
+      include: { teams: true },
+    });
+    const seedByTeamSlug = buildSeedByTeamSlug(comp?.teams ?? []);
+    const rows = await this.prisma.academy.findMany({
       where: { isPublished: true },
       orderBy: { name: "asc" },
     });
+    return rows.map((row) => presentAcademyListing(row, seedByTeamSlug));
   }
 
   async academyBySlug(slug: string) {
@@ -278,6 +379,30 @@ export class HomeService {
     return Object.fromEntries(rows.map((r) => [r.key, r.value]));
   }
 
+  private extractInterceptions(derivedMetrics: Prisma.JsonValue): number | null {
+    if (
+      !derivedMetrics ||
+      typeof derivedMetrics !== "object" ||
+      Array.isArray(derivedMetrics)
+    ) {
+      return null;
+    }
+
+    const metrics = derivedMetrics as Record<string, unknown>;
+    for (const key of [
+      "interceptions",
+      "interceptionsTotal",
+      "total_interceptions",
+    ]) {
+      const value = metrics[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return Math.round(value);
+      }
+    }
+
+    return null;
+  }
+
   private publicPlayerSelect() {
     return {
       id: true,
@@ -291,7 +416,24 @@ export class HomeService {
       overallRating: true,
       offensiveRating: true,
       defensiveRating: true,
+      careerGoals: true,
+      careerAssists: true,
+      careerMinutes: true,
+      careerCleanSheets: true,
     } satisfies Prisma.PlayerSelect;
+  }
+
+  /** Career minutes first; rolling SIP aggregate as fallback. */
+  private resolveMinutesPlayed(
+    careerMinutes: number,
+    aggregatedMinutes?: number | null
+  ): number | null {
+    if (careerMinutes > 0) return careerMinutes;
+    const rolling =
+      aggregatedMinutes != null && Number.isFinite(aggregatedMinutes)
+        ? Math.round(aggregatedMinutes)
+        : 0;
+    return rolling > 0 ? rolling : null;
   }
 
   private publicProfileSelect() {
@@ -305,6 +447,7 @@ export class HomeService {
       city: true,
       state: true,
       dominantFoot: true,
+      heightCm: true,
       positionPrimary: true,
       positionSecondary: true,
       playerPhotoUrl: true,
