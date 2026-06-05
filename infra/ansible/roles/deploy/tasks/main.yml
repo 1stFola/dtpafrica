@@ -229,7 +229,29 @@
     host: localhost
     timeout: 120
 
-- name: Wait for API health check to return 200 (up to 120s)
+- name: Show container status and API logs
+  ansible.builtin.shell: |
+    echo "=== CONTAINER STATUS ==="
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml ps -a
+    echo ""
+    echo "=== API LOGS ==="
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --tail=80 api
+    echo ""
+    echo "=== WEB LOGS ==="
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --tail=20 web
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  changed_when: false
+  failed_when: false
+  register: container_logs
+
+- name: Print container logs
+  ansible.builtin.debug:
+    msg: "{{ container_logs.stdout_lines }}"
+
+- name: Wait for API health check to return 200 (up to 400s)
   ansible.builtin.uri:
     url:            "http://localhost/api/v1/health"
     status_code:    200
@@ -238,6 +260,29 @@
   until:    health.status == 200
   retries:  40
   delay:    10
+  ignore_errors: true
+
+- name: Show final container logs if health check failed
+  ansible.builtin.shell: |
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --tail=100 api
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  changed_when: false
+  failed_when: false
+  when: health.status is not defined or health.status != 200
+  register: final_logs
+
+- name: Print final logs
+  ansible.builtin.debug:
+    msg: "{{ final_logs.stdout_lines }}"
+  when: final_logs is not skipped
+
+- name: Fail if health check did not pass
+  ansible.builtin.fail:
+    msg: "API health check failed after 400s — check logs above for the root cause"
+  when: health.status is not defined or health.status != 200
 
 - name: Deployment smoke test passed
   ansible.builtin.debug:
