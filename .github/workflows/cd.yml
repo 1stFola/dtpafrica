@@ -91,28 +91,49 @@ jobs:
             exit 0
           fi
 
-          # Extract instance ID from state file
-          INSTANCE_ID=$(grep -o '"id": "i-[a-z0-9]*"' terraform.tfstate | head -1 | grep -o 'i-[a-z0-9]*' || echo "")
+          # Use terraform state to get the instance ID cleanly
+          INSTANCE_ID=$(terraform state show aws_instance.server 2>/dev/null \
+            | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
 
           if [ -z "$INSTANCE_ID" ]; then
-            echo "No instance ID in state — skipping"
+            echo "No instance in state — skipping"
             exit 0
           fi
 
-          echo "Checking EC2 instance: $INSTANCE_ID"
-          STATE=$(aws ec2 describe-instances \
+          echo "Found instance in state: $INSTANCE_ID"
+
+          INSTANCE_STATE=$(aws ec2 describe-instances \
             --instance-ids "$INSTANCE_ID" \
             --query 'Reservations[0].Instances[0].State.Name' \
             --output text 2>/dev/null || echo "not-found")
 
-          echo "Instance state: $STATE"
+          echo "AWS reports instance state: $INSTANCE_STATE"
 
-          if [ "$STATE" = "terminated" ] || [ "$STATE" = "not-found" ]; then
-            echo "Instance is gone — tainting aws_instance.server and aws_eip.server so Terraform recreates them"
-            terraform taint aws_instance.server || true
-            terraform taint aws_eip.server      || true
+          if [ "$INSTANCE_STATE" = "terminated" ] || [ "$INSTANCE_STATE" = "not-found" ] || [ "$INSTANCE_STATE" = "None" ]; then
+            echo "Instance no longer exists in AWS — removing stale resources from state so Terraform recreates them"
+            terraform state rm aws_instance.server || true
+            terraform state rm aws_eip.server      || true
+            terraform state rm aws_subnet.public   || true
+            # VPC and other network resources are checked separately
+            VPC_ID=$(terraform state show aws_vpc.main 2>/dev/null \
+              | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
+            if [ -n "$VPC_ID" ]; then
+              VPC_STATE=$(aws ec2 describe-vpcs \
+                --vpc-ids "$VPC_ID" \
+                --query 'Vpcs[0].VpcId' \
+                --output text 2>/dev/null || echo "not-found")
+              if [ "$VPC_STATE" = "not-found" ] || [ "$VPC_STATE" = "None" ] || [ -z "$VPC_STATE" ]; then
+                echo "VPC also gone — clearing all network state"
+                terraform state rm aws_vpc.main                   || true
+                terraform state rm aws_internet_gateway.main      || true
+                terraform state rm aws_route_table.public         || true
+                terraform state rm aws_route_table_association.public || true
+                terraform state rm aws_security_group.server      || true
+              fi
+            fi
+            echo "Stale state cleared — Terraform will create fresh resources"
           else
-            echo "Instance is $STATE — Terraform will reuse it"
+            echo "Instance is $INSTANCE_STATE — Terraform will reuse existing infrastructure"
           fi
 
       - name: Terraform validate
