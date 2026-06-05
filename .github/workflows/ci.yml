@@ -38,14 +38,14 @@ jobs:
       - name: Validate Prisma schema
         run: pnpm --filter @dtp/api exec prisma validate
 
-      - name: Typecheck workspace
-        run: pnpm typecheck
-
       - name: Build engines
         run: pnpm --filter @dtp/engines build
 
       - name: Build UI package
         run: pnpm --filter @dtp/ui build
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
 
       - name: Build API
         run: pnpm --filter @dtp/api build
