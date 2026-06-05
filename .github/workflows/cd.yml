@@ -21,12 +21,10 @@ on:
         type: choice
         options: ["false", "true"]
 
-# Only one deploy at a time — prevents state corruption
 concurrency:
   group: deploy-staging
-  cancel-in-progress: false  # don't cancel — let it finish to avoid partial state
+  cancel-in-progress: false
 
-# Grant GITHUB_TOKEN permission to push the state branch
 permissions:
   contents: write
 
@@ -47,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0  # full history needed to create/switch branches
+          fetch-depth: 0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -62,78 +60,66 @@ jobs:
           terraform_version: "1.8.5"
           terraform_wrapper: false
 
-      # ── Restore state from the terraform-state branch ─────────────────────
-      # The state file is committed to a dedicated orphan branch in this repo.
-      # This is the simplest durable state store — no S3, no extra services.
-      - name: Fetch Terraform state from state branch
+      - name: Restore Terraform state from state branch
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name  "github-actions[bot]"
-
-          # Fetch the state branch (it may not exist on first run)
           if git fetch origin terraform-state 2>/dev/null; then
-            # Copy state file into the working directory if it exists
-            git show origin/terraform-state:terraform.tfstate \
-              > terraform.tfstate 2>/dev/null && \
-              echo "State restored — Terraform will update existing infrastructure" || \
-              echo "State branch exists but no state file yet — first apply"
+            git show origin/terraform-state:terraform.tfstate > terraform.tfstate 2>/dev/null \
+              && echo "State restored" \
+              || echo "No state file on branch yet"
           else
-            echo "No state branch yet — this is the first run, creating infrastructure fresh"
+            echo "No state branch — first run"
           fi
 
       - name: Terraform init
         run: terraform init
 
-      - name: Check if EC2 instance still exists (taint if terminated)
+      - name: Reconcile state with real AWS resources
         run: |
           if [ ! -f terraform.tfstate ]; then
-            echo "No state file — skipping instance check"
+            echo "No state — skipping reconcile"
             exit 0
           fi
 
-          # Use terraform state to get the instance ID cleanly
           INSTANCE_ID=$(terraform state show aws_instance.server 2>/dev/null \
             | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
 
           if [ -z "$INSTANCE_ID" ]; then
-            echo "No instance in state — skipping"
+            echo "No instance in state"
             exit 0
           fi
 
-          echo "Found instance in state: $INSTANCE_ID"
+          echo "Instance in state: $INSTANCE_ID"
 
           INSTANCE_STATE=$(aws ec2 describe-instances \
             --instance-ids "$INSTANCE_ID" \
             --query 'Reservations[0].Instances[0].State.Name' \
             --output text 2>/dev/null || echo "not-found")
 
-          echo "AWS reports instance state: $INSTANCE_STATE"
+          echo "AWS instance state: $INSTANCE_STATE"
 
           if [ "$INSTANCE_STATE" = "terminated" ] || [ "$INSTANCE_STATE" = "not-found" ] || [ "$INSTANCE_STATE" = "None" ]; then
-            echo "Instance no longer exists in AWS — removing stale resources from state so Terraform recreates them"
-            terraform state rm aws_instance.server || true
-            terraform state rm aws_eip.server      || true
-            terraform state rm aws_subnet.public   || true
-            # VPC and other network resources are checked separately
+            echo "Instance gone — clearing stale state so Terraform rebuilds"
+            terraform state rm aws_eip.server                     || true
+            terraform state rm aws_instance.server                || true
             VPC_ID=$(terraform state show aws_vpc.main 2>/dev/null \
               | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
             if [ -n "$VPC_ID" ]; then
-              VPC_STATE=$(aws ec2 describe-vpcs \
-                --vpc-ids "$VPC_ID" \
-                --query 'Vpcs[0].VpcId' \
-                --output text 2>/dev/null || echo "not-found")
-              if [ "$VPC_STATE" = "not-found" ] || [ "$VPC_STATE" = "None" ] || [ -z "$VPC_STATE" ]; then
+              VPC_EXISTS=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+                --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "not-found")
+              if [ "$VPC_EXISTS" = "not-found" ] || [ -z "$VPC_EXISTS" ] || [ "$VPC_EXISTS" = "None" ]; then
                 echo "VPC also gone — clearing all network state"
-                terraform state rm aws_vpc.main                   || true
-                terraform state rm aws_internet_gateway.main      || true
-                terraform state rm aws_route_table.public         || true
                 terraform state rm aws_route_table_association.public || true
-                terraform state rm aws_security_group.server      || true
+                terraform state rm aws_route_table.public             || true
+                terraform state rm aws_internet_gateway.main          || true
+                terraform state rm aws_subnet.public                  || true
+                terraform state rm aws_security_group.server          || true
+                terraform state rm aws_vpc.main                       || true
               fi
             fi
-            echo "Stale state cleared — Terraform will create fresh resources"
           else
-            echo "Instance is $INSTANCE_STATE — Terraform will reuse existing infrastructure"
+            echo "Instance is $INSTANCE_STATE — reusing existing infrastructure"
           fi
 
       - name: Terraform validate
@@ -150,24 +136,35 @@ jobs:
         if: github.event.inputs.skip_terraform != 'true'
         run: terraform apply -auto-approve tfplan
 
-      # ── Persist updated state back to state branch ────────────────────────
-      # Runs even if a later step fails so state is never lost mid-apply.
-      - name: Commit Terraform state back to state branch
-        if: always()
-        working-directory: infra/terraform
+      # Capture outputs BEFORE switching branches for state commit
+      - name: Capture Terraform outputs
+        id: tf_out
         run: |
-          if [ ! -f terraform.tfstate ]; then
-            echo "No state file to commit — skipping"
+          IP=$(terraform output -raw server_public_ip)
+          echo "server_public_ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "Captured IP: $IP"
+
+      - name: Print access details
+        run: |
+          echo "  App URL : $(terraform output -raw app_url)"
+          echo "  Health  : $(terraform output -raw health_check_url)"
+          echo "  SSH     : $(terraform output -raw ssh_command)"
+
+      # Save state AFTER capturing outputs so branch switch doesn't affect outputs
+      - name: Commit Terraform state to state branch
+        if: always()
+        run: |
+          STATE_FILE="${{ github.workspace }}/infra/terraform/terraform.tfstate"
+          if [ ! -f "$STATE_FILE" ]; then
+            echo "No state file — skipping"
             exit 0
           fi
 
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name  "github-actions[bot]"
 
-          # Fetch or create the state branch
           git fetch origin terraform-state 2>/dev/null || true
 
-          # Switch to state branch (create orphan if it doesn't exist yet)
           if git ls-remote --exit-code origin terraform-state >/dev/null 2>&1; then
             git checkout terraform-state
           else
@@ -175,26 +172,12 @@ jobs:
             git rm -rf . >/dev/null 2>&1 || true
           fi
 
-          # Copy the state file in and commit
-          cp ${{ github.workspace }}/infra/terraform/terraform.tfstate ./terraform.tfstate 2>/dev/null || true
+          cp "$STATE_FILE" ./terraform.tfstate
           git add --force terraform.tfstate
-          git diff --cached --quiet && echo "State unchanged — nothing to commit" && exit 0
+          git diff --cached --quiet && echo "State unchanged" && exit 0
           git commit -m "chore: update terraform state [run ${{ github.run_id }}]"
           git push origin terraform-state
-          echo "State committed to terraform-state branch successfully"
-
-      - name: Capture Terraform outputs
-        id: tf_out
-        run: |
-          echo "server_public_ip=$(terraform output -raw server_public_ip)" >> "$GITHUB_OUTPUT"
-
-      - name: Print access details
-        run: |
-          echo "============================================"
-          echo "  App URL : $(terraform output -raw app_url)"
-          echo "  Health  : $(terraform output -raw health_check_url)"
-          echo "  SSH     : $(terraform output -raw ssh_command)"
-          echo "============================================"
+          echo "State saved to terraform-state branch"
 
   # ── Job 2: Ansible ────────────────────────────────────────────────────────
   deploy:
@@ -217,13 +200,35 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
+      # Always resolve the IP fresh from AWS — never trust a stale value
+      - name: Resolve server IP from AWS
+        id: resolve_ip
+        run: |
+          # Try the terraform job output first
+          IP="${{ needs.terraform.outputs.server_public_ip }}"
+
+          # If empty or looks wrong, query AWS directly for the EIP
+          if [ -z "$IP" ] || [ "$IP" = "" ]; then
+            echo "Job output empty — querying AWS for Elastic IP"
+            IP=$(aws ec2 describe-addresses \
+              --filters "Name=tag:Name,Values=dtp-staging-eip" \
+              --query 'Addresses[0].PublicIp' \
+              --output text 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$IP" ] || [ "$IP" = "None" ]; then
+            echo "Could not resolve server IP — aborting"
+            exit 1
+          fi
+
+          echo "Server IP: $IP"
+          echo "server_ip=$IP" >> "$GITHUB_OUTPUT"
+
       - name: Install Ansible + Python AWS libraries
         run: |
           pip install --quiet \
             "ansible-core==2.16.*" \
-            boto3 \
-            botocore \
-            awscli
+            boto3 botocore awscli
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r requirements.yml --force
@@ -239,37 +244,37 @@ jobs:
         run: |
           cat > inventory.ini <<EOF
           [server]
-          ${{ needs.terraform.outputs.server_public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ConnectTimeout=10'
+          ${{ steps.resolve_ip.outputs.server_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ConnectTimeout=10'
 
           [all:vars]
-          server_public_ip=${{ needs.terraform.outputs.server_public_ip }}
+          server_public_ip=${{ steps.resolve_ip.outputs.server_ip }}
           EOF
+          cat inventory.ini
 
       - name: Wait for SSH (up to 3 minutes)
         run: |
-          echo "Waiting for SSH on ${{ needs.terraform.outputs.server_public_ip }}..."
-          timeout 180 bash -c '
+          IP="${{ steps.resolve_ip.outputs.server_ip }}"
+          echo "Waiting for SSH on $IP..."
+          timeout 180 bash -c "
             until ssh \
               -o StrictHostKeyChecking=no \
               -o ConnectTimeout=5 \
               -o BatchMode=yes \
               -i ~/.ssh/dtp-staging.pem \
-              ubuntu@${{ needs.terraform.outputs.server_public_ip }} \
-              "echo SSH_READY" 2>/dev/null | grep -q SSH_READY
+              ubuntu@$IP \
+              'echo SSH_READY' 2>/dev/null | grep -q SSH_READY
             do
-              echo "  not ready yet - retrying in 10s"
+              echo '  not ready yet - retrying in 10s'
               sleep 10
             done
-          '
-          echo "SSH is up"
+          "
+          echo "SSH is up on $IP"
 
       - name: Wait for cloud-init to complete
         run: |
-          ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            -i ~/.ssh/dtp-staging.pem \
-            ubuntu@${{ needs.terraform.outputs.server_public_ip }} \
+          IP="${{ steps.resolve_ip.outputs.server_ip }}"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            -i ~/.ssh/dtp-staging.pem ubuntu@$IP \
             "cloud-init status --wait || true"
           echo "cloud-init done"
 
@@ -279,18 +284,16 @@ jobs:
           DB_SECRET=$(aws secretsmanager get-secret-value \
             --secret-id dtp/staging/db \
             --region ${{ secrets.AWS_REGION }} \
-            --query SecretString \
-            --output text)
+            --query SecretString --output text)
 
           APP_SECRET=$(aws secretsmanager get-secret-value \
             --secret-id dtp/staging/app \
             --region ${{ secrets.AWS_REGION }} \
-            --query SecretString \
-            --output text)
+            --query SecretString --output text)
 
-          echo "POSTGRES_USER=$(echo $DB_SECRET   | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_USER"])')"   >> "$GITHUB_OUTPUT"
-          echo "POSTGRES_DB=$(echo $DB_SECRET     | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')"     >> "$GITHUB_OUTPUT"
-          echo "ADMIN_API_KEY=$(echo $APP_SECRET  | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')"   >> "$GITHUB_OUTPUT"
+          echo "POSTGRES_USER=$(echo $DB_SECRET  | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_USER"])')"  >> "$GITHUB_OUTPUT"
+          echo "POSTGRES_DB=$(echo $DB_SECRET    | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')"    >> "$GITHUB_OUTPUT"
+          echo "ADMIN_API_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')"  >> "$GITHUB_OUTPUT"
 
           POSTGRES_PASSWORD=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_PASSWORD"])')
           echo "::add-mask::$POSTGRES_PASSWORD"
@@ -298,7 +301,7 @@ jobs:
 
       - name: Run Ansible playbook
         run: |
-          ansible-playbook -vvv playbook.yml \
+          ansible-playbook playbook.yml \
             -e "aws_region=${{ secrets.AWS_REGION }}" \
             -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
             -e "git_branch=main" \
@@ -314,21 +317,21 @@ jobs:
 
       - name: Verify deployment
         run: |
-          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
-            --max-time 10 \
-            "http://${{ needs.terraform.outputs.server_public_ip }}/api/v1/health" \
-            || echo "000")
+          IP="${{ steps.resolve_ip.outputs.server_ip }}"
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
+            "http://$IP/api/v1/health" || echo "000")
           if [ "$HTTP" = "200" ]; then
             echo "Health check passed (HTTP $HTTP)"
           else
-            echo "Health check failed - got HTTP $HTTP"
+            echo "Health check failed — got HTTP $HTTP"
             exit 1
           fi
 
       - name: Deployment summary
         run: |
+          IP="${{ steps.resolve_ip.outputs.server_ip }}"
           echo "========================================"
           echo "  Deployment complete"
-          echo "  App:    http://${{ needs.terraform.outputs.server_public_ip }}"
-          echo "  Health: http://${{ needs.terraform.outputs.server_public_ip }}/api/v1/health"
+          echo "  App:    http://$IP"
+          echo "  Health: http://$IP/api/v1/health"
           echo "========================================"
