@@ -208,6 +208,21 @@
 
 # ── 13. Smoke test ────────────────────────────────────────────────────────────
 
+- name: Show container status before health check
+  ansible.builtin.shell: |
+    cd {{ app_dir }}/repo
+    echo "=== Container status ==="
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml ps
+    echo ""
+    echo "=== API logs (last 50 lines) ==="
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --tail=50 api
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  changed_when: false
+  failed_when: false
+
 - name: Wait for web (nginx) to be up on port 80 (up to 120s)
   ansible.builtin.wait_for:
     port: 80
@@ -221,8 +236,8 @@
     return_content: false
   register: health
   until:    health.status == 200
-  retries:  24
-  delay:    5
+  retries:  40
+  delay:    10
 
 - name: Deployment smoke test passed
   ansible.builtin.debug:
