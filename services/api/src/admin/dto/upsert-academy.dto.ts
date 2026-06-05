@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, MinLength } from "class-validator";
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Min, MinLength } from "class-validator";
 
 export class UpsertAcademyDto {
   @IsString()
@@ -8,6 +8,18 @@ export class UpsertAcademyDto {
   @IsOptional()
   @IsString()
   slug?: string;
+
+  @IsOptional()
+  @IsString()
+  contactPerson?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
 
   @IsOptional()
   @IsString()
@@ -30,6 +42,23 @@ export class UpsertAcademyDto {
   websiteUrl?: string;
 
   @IsOptional()
+  @IsIn(["Premium", "Basic"])
+  subscriptionTier?: "Premium" | "Basic";
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxPlayers?: number;
+
+  @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @IsOptional()
+  @IsString()
+  loginUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  password?: string;
 }

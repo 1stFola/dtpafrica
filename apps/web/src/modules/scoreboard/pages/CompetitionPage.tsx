@@ -30,6 +30,9 @@ const COMPETITION_DESCRIPTION =
 const JAGABAN_FORMAT_COPY =
   "The top team from each group advances directly to the Grand Finale. The second-placed teams face off in the Third-Place Playoff to determine the bronze medal winner.";
 
+const KNOCKOUT_FORMAT_COPY =
+  "Single-elimination knockout: winners advance through Round of 16, quarter-finals, semi-finals, and the final. All Round of 32 ties are seeded (1v2, 3v4, … 31v32).";
+
 const KNOCKOUT_STATUSES = new Set(["finished"]);
 const LIVE_STATUSES = new Set(["live", "halftime"]);
 
@@ -45,6 +48,7 @@ function slugifyName(value: string): string {
 
 function fixtureSectionLabel(match: SbMatchListItem): string {
   const stage = match.stageKey ?? "";
+  if (stage === "r32" || match.roundLabel === "Round of 32") return "Round of 32";
   if (stage === "third_place") return "Third-Place Playoff";
   if (stage === "grand_final") return "Grand Finale";
   if (match.matchday != null) return `Day ${match.matchday}`;
@@ -63,6 +67,7 @@ function isKnockoutSection(label: string): boolean {
 function fixtureSortKey(match: SbMatchListItem): number {
   const stage = match.stageKey ?? "";
   if (stage.startsWith("group_")) return (match.matchday ?? 0) * 10;
+  if (stage === "r32") return 100 + (match.matchday ?? 0);
   if (stage === "third_place") return 9000;
   if (stage === "grand_final") return 9100;
   return 5000 + (match.matchday ?? 0);
@@ -525,6 +530,25 @@ function HistoryMilestoneItem({ milestone }: { milestone: HistoryMilestone }) {
   );
 }
 
+function KnockoutBracketSection({ imageUrl }: { imageUrl: string }) {
+  return (
+    <section className="sbc-block sbc-bracket" aria-labelledby="sbc-bracket-title">
+      <h2 id="sbc-bracket-title" className="sbc-block__title">
+        Knockout Bracket
+      </h2>
+      <figure className="sbc-bracket__figure">
+        <img
+          src={imageUrl}
+          alt="Ex Internationals Cup Knockout Draw"
+          className="sbc-bracket__visual"
+          loading="lazy"
+          decoding="async"
+        />
+      </figure>
+    </section>
+  );
+}
+
 function NarrativeHighlight({ match }: { match: SbMatchListItem }) {
   const narrative = matchNarrative(match);
   if (!narrative) return null;
@@ -546,6 +570,7 @@ export function CompetitionPage() {
   const [name, setName] = useState("");
   const [season, setSeason] = useState("");
   const [formatType, setFormatType] = useState<string | null>(null);
+  const [bracketImageUrl, setBracketImageUrl] = useState<string | null>(null);
   const [teams, setTeams] = useState<SbTeamWithSquad[]>([]);
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
@@ -567,8 +592,16 @@ export function CompetitionPage() {
         if (cancelled) return null;
         setName(c.name);
         setSeason(c.season);
-        setFormatType(c.type);
+        setFormatType(c.formatType ?? c.type);
         setTeams(c.teams);
+        const cfg = c.formatConfig as Record<string, unknown> | null | undefined;
+        const bracketFromConfig =
+          (typeof cfg?.bracketImageUrl === "string" && cfg.bracketImageUrl) ||
+          (typeof cfg?.bannerUrl === "string" && cfg.bannerUrl) ||
+          (slug === "ex-internationals-cup-2026"
+            ? "/scoreboard/ex-internationals-cup-2026-bracket.png"
+            : null);
+        setBracketImageUrl(bracketFromConfig);
         return Promise.all([
           fetchMatches({ competitionId: c.id }, controller.signal).then((m) => {
             if (!cancelled) setMatches(m);
@@ -610,6 +643,9 @@ export function CompetitionPage() {
   );
   const isGroupFormat =
     formatType === "JAGABAN_CUP_STANDARD" || standingsGroups.length > 0;
+  const isKnockoutFormat =
+    formatType === "KNOCKOUT_CUP" || slug === "ex-internationals-cup-2026";
+  const showKnockoutBracket = Boolean(bracketImageUrl && isKnockoutFormat);
 
   const groups = standingsGroups.length ? standingsGroups : isGroupFormat ? [] : [""];
 
@@ -675,10 +711,28 @@ export function CompetitionPage() {
         </div>
       )}
 
-      <section className="sbc-block">
-        <h2 className="sbc-block__title">Standings</h2>
-        {renderStandings()}
-      </section>
+      {isKnockoutFormat && (
+        <div className="sbc-alert" role="note">
+          <span className="sbc-alert__icon" aria-hidden="true">
+            🏆
+          </span>
+          <div>
+            <p className="sbc-alert__title">Knockout Format</p>
+            <p className="sbc-alert__body">{KNOCKOUT_FORMAT_COPY}</p>
+          </div>
+        </div>
+      )}
+
+      {showKnockoutBracket && bracketImageUrl && (
+        <KnockoutBracketSection imageUrl={bracketImageUrl} />
+      )}
+
+      {!isKnockoutFormat && (
+        <section className="sbc-block">
+          <h2 className="sbc-block__title">Standings</h2>
+          {renderStandings()}
+        </section>
+      )}
 
       {!loading && placements && (
         <section className="sbc-block">

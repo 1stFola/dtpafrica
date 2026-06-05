@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Inject,
+  Param,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { AdsConfigService } from "../ads/ads-config.service";
 import { ContactDto } from "./dto/contact.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
@@ -12,8 +21,14 @@ export class HomeController {
   ) {}
 
   @Get("featured-players")
+  @Header("Cache-Control", "no-store")
   featuredPlayers(@Query("limit") limit?: string) {
     return this.home.featuredPlayers(limit != null ? Number(limit) : 24);
+  }
+
+  @Get("video-highlights")
+  videoHighlights() {
+    return this.home.videoHighlights();
   }
 
   @Get("players/:slugOrId")

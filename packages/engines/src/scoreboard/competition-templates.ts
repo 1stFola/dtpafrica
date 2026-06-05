@@ -99,6 +99,7 @@ export const COMPETITION_TEMPLATES: Record<CompetitionFormat, CompetitionTemplat
     category: "cup",
     implementationStatus: "complete",
     stages: [
+      { key: "r32", name: "Round of 32", type: "knockout", sortOrder: 0, knockoutRound: "R32" },
       { key: "r16", name: "Round of 16", type: "knockout", sortOrder: 1, knockoutRound: "R16" },
       { key: "qf", name: "Quarter-Finals", type: "knockout", sortOrder: 2, knockoutRound: "QF" },
       { key: "sf", name: "Semi-Finals", type: "knockout", sortOrder: 3, knockoutRound: "SF" },

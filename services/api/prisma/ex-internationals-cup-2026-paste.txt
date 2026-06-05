@@ -1,0 +1,81 @@
+<user_query>
+Ex Internationals Cup 2026 source paste (reconstructed from seed-ex-internationals-cup-2026.ts for version control; replace with raw export when available).
+
+
+# teams
+competition_slug	seed	team_id	slug	name	short_name	academy_id	logo_url
+ex-internationals-cup-2026	1	00000000-0000-4000-8e1c-000000000001	fc-ekpo	FC EKPO	EKP	00000000-0000-4000-8ead-000000000001	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSb1dt3V4dazvKZLN6mksSGj58fT2QGH0oSGA&s
+ex-internationals-cup-2026	2	00000000-0000-4000-8e1c-000000000002	fc-ipaye	FC IPAYE	IPY	00000000-0000-4000-8ead-000000000002	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ8ifimMzTNFIDFhvD3LoZw0xorRNI1XREpKg&s
+ex-internationals-cup-2026	3	00000000-0000-4000-8e1c-000000000003	fc-amoo	FC AMOO	AMO	00000000-0000-4000-8ead-000000000003	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQYTkAPAM4zlIdtxmuHOI4DHJQdXaea-R21bg&s
+ex-internationals-cup-2026	4	00000000-0000-4000-8e1c-000000000004	fc-ogunlade	FC OGUNLADE	OGL	00000000-0000-4000-8ead-000000000004	https://www.sports247.ng/wp-content/uploads/2023/12/Akeem-Ogunlade.jpg
+ex-internationals-cup-2026	5	00000000-0000-4000-8e1c-000000000005	fc-agali	FC AGALI	AGL	00000000-0000-4000-8ead-000000000005	https://media.gettyimages.com/id/965817/photo/portrait-of-victor-agali-of-nigeria-before-the-international-friendly-match-against-japan-played.jpg?s=612x612&w=gi&k=20&c=XEQNjqwZxLNk6YOjOZctSM46gSZaKVvAwvjzhgc8h8M=
+ex-internationals-cup-2026	6	00000000-0000-4000-8e1c-000000000006	fc-oloyede	FC OLOYEDE	OLY	00000000-0000-4000-8ead-000000000006	https://independent.ng/wp-content/uploads/Oloyede-22.jpg
+ex-internationals-cup-2026	7	00000000-0000-4000-8e1c-000000000007	fc-ayila	FC AYILA	AYL	00000000-0000-4000-8ead-000000000007	https://media.gettyimages.com/id/101681823/photo/johannesburg-south-africa-yussuf-ayila-of-nigeria-poses-during-the-official-fifa-world-cup.jpg?s=612x612&w=gi&k=20&c=-sa2gY6mkIY7BxG4Q76PYYyP-c60jS_VgIo54aqVXFw=
+ex-internationals-cup-2026	8	00000000-0000-4000-8e1c-000000000008	fc-aloy	FC ALOY	ALY	00000000-0000-4000-8ead-000000000008	https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjI5zMRCZuAnDhnpG8kPxOkNH2dAf5j6KVJT2c4RL6ejPnZqW5jKXHFnX7TRQSlL1agKYH-o-043j5xmcmGvglDLIt74vUa5ak8fVwuXCw8WUzhRAELmCPOBKJm0H1gvolUHDmK77qKMuc/s1600/Alloy+Agu.jpg
+ex-internationals-cup-2026	9	00000000-0000-4000-8e1c-000000000009	fc-poto	FC POTO	POT	00000000-0000-4000-8ead-000000000009	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRQeMNs0hAIkOir5mzFr11PYImHcfno4PQoWg&s
+ex-internationals-cup-2026	10	00000000-0000-4000-8e1c-000000000010	fc-odiaka	FC ODIAKA	ODK	00000000-0000-4000-8ead-000000000010	https://cdn.vanguardngr.com/wp-content/uploads/2019/02/Odiaka-2-e1551211646614.jpg
+ex-internationals-cup-2026	11	00000000-0000-4000-8e1c-000000000011	fc-giwa	FC GIWA	GIW	00000000-0000-4000-8ead-000000000011	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQDZf6YkkI973h2ouFeMtfnVS8wfPoR49OKkA&s
+ex-internationals-cup-2026	12	00000000-0000-4000-8e1c-000000000012	fc-temile	FC TEMILE	TEM	00000000-0000-4000-8ead-000000000012	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQeF8VHdpEC2iYjJNCe7Q5pAyMJerSdPrjrug&s
+ex-internationals-cup-2026	13	00000000-0000-4000-8e1c-000000000013	fc-akanni	FC AKANNI	AKN	00000000-0000-4000-8ead-000000000013	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTwgehzwz5veXE2Lgfa_UJBQwdAQAtHn_o6jg&s
+ex-internationals-cup-2026	14	00000000-0000-4000-8e1c-000000000014	fc-dominic	FC DOMINIC	DOM	00000000-0000-4000-8ead-000000000014	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQBScgOi4Xi9A91c4y9KUpvXo_fDYu0h5qPUg&s
+ex-internationals-cup-2026	15	00000000-0000-4000-8e1c-000000000015	fc-babington	FC BABINGTON	BAB	00000000-0000-4000-8ead-000000000015	https://www.shutterstock.com/editorial/image-editorial/M9z4g252Mdz8Yf36ODQxNw==/michael-babatunde-nigeria-1500w-3869935ha.jpg
+ex-internationals-cup-2026	16	00000000-0000-4000-8e1c-000000000016	fc-dosu	FC DOSU	DOS	00000000-0000-4000-8ead-000000000016	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSvFawgY08K0X2PgTd022P3fX1pj3NY8yFg3w&s
+ex-internationals-cup-2026	17	00000000-0000-4000-8e1c-000000000017	fc-disu	FC DISU	DIS	00000000-0000-4000-8ead-000000000017	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRS5YPgT7O-fJGb0NqQPjDXQP5tBldlRiJCMg&s
+ex-internationals-cup-2026	18	00000000-0000-4000-8e1c-000000000018	fc-enegwea	FC ENEGWEA	ENG	00000000-0000-4000-8ead-000000000018	https://c8.alamy.com/comp/G8JBP4/international-soccer-nigeria-v-cameroon-enegwae-taiwo-nigeria-G8JBP4.jpg
+ex-internationals-cup-2026	19	00000000-0000-4000-8e1c-000000000019	fc-odini	FC ODINI	ODN	00000000-0000-4000-8ead-000000000019	https://www.sports247.ng/wp-content/uploads/2024/03/Festus-Odini-sports247.jpeg
+ex-internationals-cup-2026	20	00000000-0000-4000-8e1c-000000000020	fc-ikpeba	FC IKPEBA	IKP	00000000-0000-4000-8ead-000000000020	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQDeudWR_qRSN4ivC1yAo_VATbhLA7O_ysn4A&s
+ex-internationals-cup-2026	21	00000000-0000-4000-8e1c-000000000021	fc-edema	FC EDEMA	EDE	00000000-0000-4000-8ead-000000000021	
+ex-internationals-cup-2026	22	00000000-0000-4000-8e1c-000000000022	fc-nieketien	FC NIEKETIEN	NIE	00000000-0000-4000-8ead-000000000022	https://www.sports247.ng/wp-content/uploads/2024/06/WhatsApp-Image-2024-06-01-at-6.20.13-PM.jpeg
+ex-internationals-cup-2026	23	00000000-0000-4000-8e1c-000000000023	fc-udeze	FC UDEZE	UDZ	00000000-0000-4000-8ead-000000000023	https://media.gettyimages.com/id/51514162/photo/portrait-of-nigerian-defender-ifeanyi-udeze-taken.jpg?s=612x612&w=gi&k=20&c=sXID760h4k-DQzEoZcK6ytDIFt4PMUqSu1JsZgrTdek=
+ex-internationals-cup-2026	24	00000000-0000-4000-8e1c-000000000024	fc-ugbade	FC UGBADE	UGB	00000000-0000-4000-8ead-000000000024	https://www.sports247.ng/wp-content/uploads/2025/04/IMG-20250425-WA0009.jpg
+ex-internationals-cup-2026	25	00000000-0000-4000-8e1c-000000000025	fc-atine	FC ATINE	ATN	00000000-0000-4000-8ead-000000000025	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSBVcB8_GpFLJJY8TKI-4lMOMgmO4r3dOw4Lg&s
+ex-internationals-cup-2026	26	00000000-0000-4000-8e1c-000000000026	fc-obafemi	FC OBAFEMI	OBA	00000000-0000-4000-8ead-000000000026	https://www.ethiosports.com/wp-content/uploads/2013/03/Obafemi-Martins-Nigeria.jpg
+ex-internationals-cup-2026	27	00000000-0000-4000-8e1c-000000000027	fc-oguntuase	FC OGUNTUASE	OGT	00000000-0000-4000-8ead-000000000027	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSw5j4CoYXkykk1AzeXCklfCFLHkkFsYGw05A&s
+ex-internationals-cup-2026	28	00000000-0000-4000-8e1c-000000000028	fc-omoruyi	FC OMORUYI	OMO	00000000-0000-4000-8ead-000000000028	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRC020opy2tlOGj1lN1wtiZAUipcuLq7tgprQ&s
+ex-internationals-cup-2026	29	00000000-0000-4000-8e1c-000000000029	fc-aiyegbeni	FC AIYEGBENI	AIY	00000000-0000-4000-8ead-000000000029	https://media.gettyimages.com/id/101681662/photo/johannesburg-south-africa-yakubu-aiyegbeni-of-nigeria-poses-during-the-official-fifa-world-cup.jpg?s=612x612&w=gi&k=20&c=WW1jNr8Id69ZcNj_pkUUejl2hQe0qx96GPMp2dkGkD0=
+ex-internationals-cup-2026	30	00000000-0000-4000-8e1c-000000000030	fc-elaho	FC ELAHO	ELA	00000000-0000-4000-8ead-000000000030	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSaYShRHhRRea2sq54jHvsM5T8wAiWKIsLsgA&s
+ex-internationals-cup-2026	31	00000000-0000-4000-8e1c-000000000031	fc-okpara	FC OKPARA	OKP	00000000-0000-4000-8ead-000000000031	https://media.gettyimages.com/id/78983754/photo/2000-olympic-games-sydney-australia-men-s-football-australia-2-v-nigeria-3-16th-september.jpg?s=612x612&w=gi&k=20&c=WqXiGSvINbf8vIzm2KjmXX8YtJwa7q3Ojq7wJdWJiBU=
+ex-internationals-cup-2026	32	00000000-0000-4000-8e1c-000000000032	fc-agbai	FC AGBAI	AGB	00000000-0000-4000-8ead-000000000032	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSqIoZRxgcGxQy8f8sIXDYrAlZQCnpDt_HJdA&s
+
+# fixtures
+competition_slug	match_id	home_slug	away_slug	kickoff_at	venue	matchday
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000101	fc-ekpo	fc-ipaye	2026-06-08T15:00:00+01:00	Eleja Pry Sch, Igbogbo, Ikorodu	1
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000102	fc-agali	fc-oloyede	2026-06-08T08:00:00+01:00	Agali Field, Imeke Village, Aradagun, Badagry	1
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000103	fc-giwa	fc-temile	2026-06-08T08:00:00+01:00	Mobolaji Johnson Arena, Onikan	1
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000104	fc-babington	fc-dosu	2026-06-08T16:00:00+01:00	Mobolaji Johnson Arena, Onikan	1
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000105	fc-oguntuase	fc-omoruyi	2026-06-08T15:00:00+01:00	CMS Grammar School, Bariga	1
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000106	fc-amoo	fc-ogunlade	2026-06-09T10:00:00+01:00	Main Bowl, National Stadium	2
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000107	fc-edema	fc-nieketien	2026-06-09T16:00:00+01:00	Maracana Sports Complex, Ajegunle	2
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000108	fc-akanni	fc-dominic	2026-06-10T13:00:00+01:00	Mobolaji Johnson Arena, Onikan	3
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000109	fc-odini	fc-ikpeba	2026-06-10T07:00:00+01:00	Alade Stadium, Ayobo-Ipaja	3
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010a	fc-poto	fc-odiaka	2026-06-11T16:00:00+01:00	FHA Field, Festac	4
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010b	fc-atine	fc-obafemi	2026-06-11T09:30:00+01:00	Abesan Estate Mini Stadium	4
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010c	fc-okpara	fc-agbai	2026-06-11T15:00:00+01:00	Gospel City Field, Command Road, Ipaja	4
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010d	fc-ayila	fc-aloy	2026-06-12T10:00:00+01:00	Landmark Sports Complex, Agric Ikorodu	5
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010e	fc-udeze	fc-ugbade	2026-06-12T16:00:00+01:00	Maracana Sports Complex, Ajegunle	5
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010f	fc-aiyegbeni	fc-elaho	2026-06-12T09:00:00+01:00	Legacy Pitch, National Stadium	5
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000110	fc-disu	fc-enegwea	2026-06-14T14:00:00+01:00	Landmark Sports Complex, Agric Ikorodu	6
+
+# bracket_layout_json
+{
+  left: [
+    [1, 2],
+    [3, 4],
+    [5, 6],
+    [7, 8],
+    [9, 10],
+    [11, 12],
+    [13, 14],
+    [15, 16],
+  ],
+  right: [
+    [17, 18],
+    [19, 20],
+    [21, 22],
+    [23, 24],
+    [25, 26],
+    [27, 28],
+    [29, 30],
+    [31, 32],
+  ],
+}

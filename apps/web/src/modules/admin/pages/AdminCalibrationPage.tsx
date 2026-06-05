@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAdminToast } from "../components/AdminToast";
+import { AdminPageHeader } from "../components/AdminPageHeader";
 import { PlayerSlugPreview } from "../components/PlayerSlugPreview";
 import { ClubNameField } from "../components/ClubNameField";
 import { adminScoreboardApi } from "../../../api/admin-scoreboard";
@@ -349,33 +350,33 @@ export function AdminCalibrationPage() {
   );
 
   return (
-    <div className="admin-page admin-calibration">
-      <header className="page-header">
-        <h1>DirectToPro Calibration Engine V3</h1>
-        <p className="muted">
-          Upload match performance CSV or enter player + tracking inputs. Optional on-ball fields
-          are auto-estimated by the existing calibration pipeline when omitted.
-        </p>
-      </header>
+    <section className="admin-page admin-sb-section admin-calibration">
+      <AdminPageHeader
+        title="Calibration Engine V3"
+        description="Upload match performance CSV or enter player + tracking inputs. Optional on-ball fields are auto-estimated when omitted."
+        crumbs={[{ label: "Calibration" }]}
+      />
 
-      <div className="admin-calibration__toolbar">
-        <label className="admin-calibration__select">
-          <span>Load existing player (optional)</span>
-          <select value={playerId} onChange={(e) => onSelectPlayer(e.target.value)}>
-            <option value="">New entry / manual…</option>
-            {players.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.displayName} ({p.positionPrimary})
-                {p.overallRating != null ? ` · OVR ${p.overallRating}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="admin-sb-sticky-bar">
+        <div className="admin-calibration__toolbar">
+          <label className="admin-sb-field admin-calibration__select">
+            <span>Load existing player (optional)</span>
+            <select value={playerId} onChange={(e) => onSelectPlayer(e.target.value)}>
+              <option value="">New entry / manual…</option>
+              {players.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName} ({p.positionPrimary})
+                  {p.overallRating != null ? ` · OVR ${p.overallRating}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 admin-calibration-v3__layout">
         <div className="lg:col-span-5 admin-calibration__stack">
-          <section className="admin-calibration__panel">
+          <section className="admin-calibration__panel admin-sb-panel">
             <h2>Player identity + scouting context</h2>
             <p className="muted admin-calibration__hint">
               CSV import fills tracking metrics only. Identity context is entered below or loaded
@@ -479,7 +480,7 @@ export function AdminCalibrationPage() {
             </div>
           </section>
 
-          <section className="admin-calibration__panel">
+          <section className="admin-calibration__panel admin-sb-panel">
             <h2>Match performance data</h2>
             <div className="admin-calibration__csv">
               <label className="admin-calibration__csv-upload">
@@ -520,10 +521,10 @@ export function AdminCalibrationPage() {
             </div>
           </section>
 
-          <div className="admin-calibration__actions admin-calibration__actions--wide">
+          <div className="admin-sb-sticky-actions admin-calibration__actions admin-calibration__actions--wide">
             <button
               type="button"
-              className="dtp-btn dtp-btn--primary"
+              className="admin-inline-button admin-inline-button--primary"
               disabled={loading}
               onClick={generate}
             >
@@ -531,7 +532,7 @@ export function AdminCalibrationPage() {
             </button>
             <button
               type="button"
-              className="dtp-btn dtp-btn--secondary"
+              className="admin-inline-button"
               disabled={loading}
               onClick={exportCsv}
             >
@@ -539,25 +540,29 @@ export function AdminCalibrationPage() {
             </button>
             <button
               type="button"
-              className="dtp-btn dtp-btn--secondary"
+              className="admin-inline-button"
               disabled={loading}
               onClick={createOrSave}
             >
               Create Player / Save
             </button>
-            <button type="button" className="admin-logout" disabled={loading} onClick={clearAll}>
+            <button type="button" className="admin-link-danger" disabled={loading} onClick={clearAll}>
               Clear All
             </button>
           </div>
-          {message && <p className="admin-calibration__message">{message}</p>}
+          {message && <p className="dtp-error-banner admin-calibration__message" role="alert">{message}</p>}
         </div>
 
-        <section className="lg:col-span-7 admin-calibration__panel admin-calibration__results">
+        <section className="lg:col-span-7 admin-calibration__panel admin-calibration__results admin-sb-panel">
           {!result ? (
-            <p className="muted admin-calibration__empty">
-              Enter player info and match data, then click{" "}
-              <strong>Generate &amp; Calibrate</strong>.
-            </p>
+            <div className="admin-sb-empty-state dtp-empty-state">
+              <p className="admin-sb-empty-state__title dtp-empty-state__title">
+                No calibration results yet
+              </p>
+              <p className="muted">
+                Enter player info and match data, then click <strong>Generate &amp; Calibrate</strong>.
+              </p>
+            </div>
           ) : (
             <>
               <div className="admin-calibration-v3__summary-banner">
@@ -630,8 +635,8 @@ export function AdminCalibrationPage() {
                 </div>
               )}
 
-              <div className="admin-table-wrap">
-                <table className="sip-table admin-calibration__table">
+              <div className="admin-table-wrap admin-sb-table-wrap">
+                <table className="admin-table admin-sb-table admin-calibration__table">
                   <thead>
                     <tr>
                       <th>Attribute</th>
@@ -672,6 +677,6 @@ export function AdminCalibrationPage() {
           )}
         </section>
       </div>
-    </div>
+    </section>
   );
 }

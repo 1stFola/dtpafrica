@@ -1,0 +1,81 @@
+<user_query>
+Jagaban Cup 2026 source paste (reconstructed from seed-jagaban-cup-2026.ts for version control; replace with raw Trickle/export when available).
+
+
+# teams
+competition_slug	group_key	slug	name	short_name	city	logo_url
+jagaban-cup-2026	A	sgfc-athletics	SGFC Athletics SC	SGFC	Lagos	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTBZU0CsIuq_Oh7tqhPA1zo8eXf27LQ0SN9P99eGQx0eCPTcixCo9cIAGatr1_TYgg_h3ioDD20DFsmXBDoJy0NAGw&s&ec=121630540
+jagaban-cup-2026	A	36-lions-fc	36 Lion FC	36L	Lagos	https://36lionfc.com/wp-content/uploads/2021/10/Untitled-design-25.png
+jagaban-cup-2026	A	fc-bethel	FC Bethel Sporting	BTH	Lagos	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT7GCH_ePTnUUA1_bbT2_QgnPAiHDfI6o95_Q&s
+jagaban-cup-2026	A	klassisc-fc	Klassisch FA	KLA	Lagos	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJ5bYL-YkWg1DkeMyKLUlME-qIDSNkrYerdQ&s
+jagaban-cup-2026	B	ikorodu-city-fc	Ikorodu City FC	IKC	Ikorodu	https://www.ikoroducityfc.com/wp-content/uploads/2024/07/ikd-logo.png
+jagaban-cup-2026	B	smart-city-fc	Smart City FC	SMC	Lagos	https://smartcityfc.com.ng/wp-content/uploads/2026/02/download.png
+jagaban-cup-2026	B	mavlon-fc	Mavlon FC	MAV	Lagos	https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSNMw_9BsRdd0ICTeIfU_QvLp5dMNqTUpBd8A&s
+jagaban-cup-2026	B	broad-city-fc	Broad City FC	BRC	Lagos	https://static.wixstatic.com/media/f54d0c_e63c8669ed3248fd8e5866263926fc60~mv2.png/v1/fill/w_120,h_222,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/989a161b-b1d5-45ad-92ad-a91344061fb8.png
+
+# squad
+competition_slug	team_slug	display_name	position	shirt_number
+jagaban-cup-2026	sgfc-athletics	Micheal Hunsa	FW	9
+jagaban-cup-2026	sgfc-athletics	Igaga	GK	1
+jagaban-cup-2026	sgfc-athletics	Abdulmartin	MF	6
+jagaban-cup-2026	sgfc-athletics	Faisal Umar	GK	22
+jagaban-cup-2026	36-lions-fc	Uche Emeribe	FW	11
+jagaban-cup-2026	36-lions-fc	Azuka Alatan	FW	7
+jagaban-cup-2026	36-lions-fc	Okwuosa Chukwudi	MF	10
+jagaban-cup-2026	36-lions-fc	Gbadamosi Sulieman	GK	1
+jagaban-cup-2026	36-lions-fc	Nonso	DF	4
+jagaban-cup-2026	36-lions-fc	Stephen Uche	MF	8
+jagaban-cup-2026	36-lions-fc	Soumah Mohamed	MF	14
+jagaban-cup-2026	fc-bethel	Amos Akinsipe	DF	5
+jagaban-cup-2026	fc-bethel	Tijani Ridwan	FW	9
+jagaban-cup-2026	fc-bethel	Ebuka Emmanuel	FW	11
+jagaban-cup-2026	fc-bethel	Ezekiel Victor	FW	19
+jagaban-cup-2026	fc-bethel	Muhammed Adeiza	MF	8
+jagaban-cup-2026	fc-bethel	Dagogo Ifubara	MF	6
+jagaban-cup-2026	klassisc-fc	Charles Obani	FW	9
+jagaban-cup-2026	klassisc-fc	Buhari Saeed	FW	11
+jagaban-cup-2026	klassisc-fc	Uche	GK	1
+jagaban-cup-2026	ikorodu-city-fc	Farouk Salami	FW	10
+jagaban-cup-2026	ikorodu-city-fc	Hassan Haddi	MF	8
+jagaban-cup-2026	ikorodu-city-fc	Ali Moses	FW	9
+jagaban-cup-2026	ikorodu-city-fc	Aderemi Adeoye	DF	5
+jagaban-cup-2026	ikorodu-city-fc	Nasiru Sulaimon	FW	7
+jagaban-cup-2026	ikorodu-city-fc	Awal Abdulkareem	FW	17
+jagaban-cup-2026	ikorodu-city-fc	Oladeji	GK	1
+jagaban-cup-2026	smart-city-fc	Daniel Adetunji	DF	3
+jagaban-cup-2026	smart-city-fc	Tominwa Awojobi	FW	11
+jagaban-cup-2026	smart-city-fc	Uche Jaguar	MF	10
+jagaban-cup-2026	smart-city-fc	Muiz Lawal	FW	9
+jagaban-cup-2026	smart-city-fc	Ayomide Bakare	FW	7
+jagaban-cup-2026	smart-city-fc	Hanif Sanusi	MF	6
+jagaban-cup-2026	smart-city-fc	Hassan Haddi	AM	10
+jagaban-cup-2026	smart-city-fc	Warith Olaoye	MF	8
+jagaban-cup-2026	smart-city-fc	Godwin	GK	1
+jagaban-cup-2026	mavlon-fc	Quadri Adewale	DF	4
+jagaban-cup-2026	mavlon-fc	Ifeanyi Onyene	FW	9
+jagaban-cup-2026	mavlon-fc	Kufre	GK	1
+jagaban-cup-2026	broad-city-fc	Ayomide Bakare	FW	11
+jagaban-cup-2026	broad-city-fc	Noah Idris	FW	9
+jagaban-cup-2026	broad-city-fc	Ahmed Adesanu	MF	7
+jagaban-cup-2026	broad-city-fc	Uche Ezugwu	FW	10
+jagaban-cup-2026	broad-city-fc	Christopher Jeremiah	FW	14
+jagaban-cup-2026	broad-city-fc	Emmanuel Udeogu	MF	6
+jagaban-cup-2026	broad-city-fc	Solomon Agbalaka	FW	19
+jagaban-cup-2026	broad-city-fc	Muiz Lawal	FW	20
+
+# fixtures
+competition_slug	match_id	home_slug	away_slug	stage_key	matchday	round_label	kickoff_at	venue	home_score	away_score	events_json
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000101	sgfc-athletics	36-lions-fc	group_a	1	Group A · DAY 1	2026-05-20T09:00:00Z	Legacy Pitch - Surulere Lagos	1	3	[{"type":"goal","minute":15,"teamSlug":"36-lions-fc","playerLabel":"Uche Emeribe"},{"type":"goal","minute":26,"teamSlug":"36-lions-fc","playerLabel":"Azuka Alatan"},{"type":"goal","minute":42,"teamSlug":"36-lions-fc","playerLabel":"Okwuosa Chukwudi"},{"type":"goal","minute":59,"teamSlug":"sgfc-athletics","playerLabel":"Micheal Hunsa"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000102	ikorodu-city-fc	smart-city-fc	group_b	1	Group B · DAY 1	2026-05-20T11:30:00Z	Legacy Pitch - Surulere Lagos	3	2	[{"type":"yellow_card","minute":10,"teamSlug":"smart-city-fc","playerLabel":"Daniel Adetunji","detail":"Foul"},{"type":"goal","minute":29,"teamSlug":"ikorodu-city-fc","playerLabel":"Farouk Salami"},{"type":"goal","minute":31,"teamSlug":"ikorodu-city-fc","playerLabel":"Hassan Haddi"},{"type":"goal","minute":41,"teamSlug":"ikorodu-city-fc","playerLabel":"Ali Moses"},{"type":"goal","minute":48,"teamSlug":"smart-city-fc","playerLabel":"Tominwa Awojobi","assistLabel":"Uche Jaguar"},{"type":"goal","minute":52,"teamSlug":"smart-city-fc","playerLabel":"Muiz Lawal"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000103	fc-bethel	klassisc-fc	group_a	1	Group A · DAY 1	2026-05-20T14:00:00Z	Legacy Pitch - Surulere Lagos	0	1	[{"type":"yellow_card","minute":8,"teamSlug":"fc-bethel","playerLabel":"Amos Akinsipe","detail":"Foul"},{"type":"goal","minute":25,"teamSlug":"klassisc-fc","playerLabel":"Charles Obani","detail":"penalty"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000104	mavlon-fc	broad-city-fc	group_b	1	Group B · DAY 1	2026-05-20T16:30:00Z	Legacy Pitch - Surulere Lagos	1	4	[{"type":"goal","minute":12,"teamSlug":"broad-city-fc","playerLabel":"Ayomide Bakare"},{"type":"goal","minute":15,"teamSlug":"broad-city-fc","playerLabel":"Noah Idris"},{"type":"goal","minute":17,"teamSlug":"broad-city-fc","playerLabel":"Ahmed Adesanu"},{"type":"goal","minute":23,"teamSlug":"broad-city-fc","playerLabel":"Uche Ezugwu","assistLabel":"Ahmed Adesanu"},{"type":"goal","minute":25,"teamSlug":"broad-city-fc","playerLabel":"Christopher Jeremiah","assistLabel":"Uche Ezugwu"},{"type":"yellow_card","minute":42,"teamSlug":"mavlon-fc","playerLabel":"Quadri Adewale","detail":"Foul"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000201	sgfc-athletics	fc-bethel	group_a	2	Group A · DAY 2	2026-05-21T09:00:00Z	Legacy Pitch - Surulere Lagos	0	1	[{"type":"goal","minute":6,"teamSlug":"fc-bethel","playerLabel":"Tijani Ridwan"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000202	smart-city-fc	mavlon-fc	group_b	2	Group B · DAY 2	2026-05-21T11:30:00Z	Legacy Pitch - Surulere Lagos	0	1	[{"type":"goal","minute":40,"teamSlug":"mavlon-fc","playerLabel":"Ifeanyi Onyene"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000203	klassisc-fc	36-lions-fc	group_a	2	Group A · DAY 2	2026-05-21T14:00:00Z	Legacy Pitch - Surulere Lagos	0	0	[{"type":"yellow_card","minute":19,"teamSlug":"klassisc-fc","playerLabel":"Nonso","detail":"Foul"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000204	broad-city-fc	ikorodu-city-fc	group_b	2	Group B · DAY 2	2026-05-21T16:30:00Z	Legacy Pitch - Surulere Lagos	1	0	[{"type":"goal","minute":15,"teamSlug":"broad-city-fc","playerLabel":"Emmanuel Udeogu"},{"type":"red_card","minute":57,"teamSlug":"ikorodu-city-fc","playerLabel":"Aderemi Adeoye","detail":"second yellow"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000301	36-lions-fc	fc-bethel	group_a	3	Group A · DAY 3	2026-05-22T09:00:00Z	Legacy Pitch - Surulere Lagos	0	1	[{"type":"goal","minute":30,"teamSlug":"fc-bethel","playerLabel":"Ebuka Emmanuel"},{"type":"yellow_card","minute":42,"teamSlug":"36-lions-fc","playerLabel":"Stephen Uche","detail":"Foul"},{"type":"yellow_card","minute":59,"teamSlug":"36-lions-fc","playerLabel":"Soumah Mohamed","detail":"Foul"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000302	ikorodu-city-fc	mavlon-fc	group_b	3	Group B · DAY 3	2026-05-22T11:30:00Z	Legacy Pitch - Surulere Lagos	2	0	[{"type":"goal","minute":50,"teamSlug":"ikorodu-city-fc","playerLabel":"Nasiru Sulaimon"},{"type":"goal","minute":58,"teamSlug":"ikorodu-city-fc","playerLabel":"Awal Abdulkareem","detail":"penalty"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000303	sgfc-athletics	klassisc-fc	group_a	3	Group A · DAY 3	2026-05-22T14:00:00Z	Legacy Pitch - Surulere Lagos	0	1	[{"type":"goal","minute":21,"teamSlug":"klassisc-fc","playerLabel":"Buhari Saeed","assistLabel":"Charles Obani"},{"type":"yellow_card","minute":49,"teamSlug":"sgfc-athletics","playerLabel":"Abdulmartin","detail":"Foul"},{"type":"red_card","minute":58,"teamSlug":"sgfc-athletics","playerLabel":"Faisal Umar","detail":"GK — second bookable offence"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000304	smart-city-fc	broad-city-fc	group_b	3	Group B · DAY 3	2026-05-22T16:30:00Z	Legacy Pitch - Surulere Lagos	2	1	[{"type":"goal","minute":6,"teamSlug":"smart-city-fc","playerLabel":"Ayomide Bakare","assistLabel":"Hanif Sanusi"},{"type":"goal","minute":30,"teamSlug":"smart-city-fc","playerLabel":"Hassan Haddi","assistLabel":"Warith Olaoye"},{"type":"goal","minute":50,"teamSlug":"broad-city-fc","playerLabel":"Muiz Lawal"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000401	fc-bethel	ikorodu-city-fc	third_place	1	Third-Place Playoff	2026-05-24T14:00:00Z	Legacy Pitch - Surulere Lagos	2	0	[{"type":"goal","minute":35,"teamSlug":"fc-bethel","playerLabel":"Ezekiel Victor","assistLabel":"Muhammed Adeiza"},{"type":"goal","minute":53,"teamSlug":"fc-bethel","playerLabel":"Dagogo Ifubara"}]
+jagaban-cup-2026	00000000-0000-4000-8jc0-000000000402	broad-city-fc	klassisc-fc	grand_final	1	Grand Finale	2026-05-25T16:00:00Z	Legacy Pitch - Surulere Lagos	1	0	[{"type":"goal","minute":42,"teamSlug":"broad-city-fc","playerLabel":"Solomon Agbalaka","assistLabel":"Ahmed Adesanu"}]

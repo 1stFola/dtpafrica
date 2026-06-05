@@ -70,6 +70,8 @@ export type FeaturedPlayer = {
   slug: string | null;
   displayName: string;
   positionPrimary: string;
+  positionFull?: string | null;
+  philosophies?: { name: string; score: number }[];
   positionSecondary?: string | null;
   nationality?: string | null;
   ageGroup?: string | null;
@@ -77,6 +79,20 @@ export type FeaturedPlayer = {
   overallRating?: number | null;
   offensiveRating?: number | null;
   defensiveRating?: number | null;
+  careerGoals?: number | null;
+  careerAssists?: number | null;
+  careerCleanSheets?: number | null;
+  minutesPlayed?: number | null;
+  interceptions?: number | null;
+};
+
+export type HomeVideoHighlight = {
+  id: string;
+  playerName: string;
+  title: string;
+  description?: string;
+  youtubeUrl: string;
+  sortOrder: number;
 };
 
 export type PublicPositionFit = {
@@ -95,6 +111,7 @@ export type PublicPlayerProfile = FeaturedPlayer & {
   biography?: string | null;
   videoUrl?: string | null;
   dominantFoot?: string | null;
+  heightCm?: number | null;
   city?: string | null;
   state?: string | null;
   age?: number | null;
@@ -246,6 +263,10 @@ export type Academy = {
   description: string | null;
   logoUrl: string | null;
   websiteUrl: string | null;
+  loginUsername?: string | null;
+  teamSlug?: string | null;
+  seed?: number | null;
+  badges?: string[];
 };
 
 export type RegisterResponse = {

@@ -64,6 +64,7 @@ export function buildSkeletonProfile(
     slug: partial?.slug ?? slugOrId,
     displayName,
     positionPrimary: role ?? "—",
+    minutesPlayed: null,
     club,
     competition,
     role,

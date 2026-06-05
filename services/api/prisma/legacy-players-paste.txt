@@ -1,0 +1,3778 @@
+<user_query>
+I need you to load these legacy player profiles into the database and map them to their respective academies. The following contains relevant and unrelevant information for your player creation. Use, what's necessary and ignore what's not, e.g sponsor_name, sponsor_logo etc.
+
+	sponsor_name	sponsor_logo	full_name	gender	date_of_birth	age	nationality	position	height_cm	weight_kg	current_club	league_name	dominant_foot	overall_rating	offensive_score	defensive_score	featured	active	scouting_summary	academy_id	strength	composure	stamina	displayOrder	technique	league_tier	finishing	acceleration	team_play	player_id	dribbling	video_url	height_ft_in	first_touch	positioning	ball_control	photo_url	weight_lbs	pace	video_url_2	video_url_3	decision_making	vision	work_rate	media_articles	sprint_speed	passing	agility	photo_description	photo_url_1763952686349	photo_desc_1763952867165	photo_desc_1763952686349	photo_url_1763952867165	video_desc_5	video_url_6	video_url_7	video_desc_4	video_url_4	video_desc_2	video_url_5	video_desc_8	video_desc_7	video_url_8	video_desc_6	photo_url_1762185090738	photo_url_1762183216325	scouting_summary john doe	video_url_1	video_desc_1	benchmark_name	benchmark_archetype	benchmark_region	benchmark_age_band	benchmark_similarity	benchmark_overall_rating	benchmark_attributes	benchmark_image_url	benchmark_nationality	benchmark_date_of_birth	photo_url_1774627367159	photo_desc_1774627367159	photo_url_1774627375592	photo_desc_1774627375592	photo_url_1774627423007	photo_desc_1774627423007	photo_url_1774644524971	photo_desc_1774644524971	photo_url_1774644562532	photo_desc_1774644562532	photo_url_1774645029843	photo_desc_1774645029843	photo_url_1774645033371	photo_desc_1774645033371	photo_url_1774646414916	photo_desc_1774646414916	photo_url_1775152292798	photo_desc_1775152292798	photo_url_1775152303910	photo_desc_1775152303910	photo_url_1775152322326	photo_desc_1775152322326
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Olasunkanmi A. Dayo
+Male
+2007-06-11
+18
+Nigerian
+Midfielder (MF)
+175
+66
+NARA CLUB
+Japan League (JL3)
+Left
+81
+76
+71
+		
+A phenom. Possesses electrifying pace, sublime dribbling, and a cold-blooded finish. Puts up staggering goal and assist numbers in a top-flight league. Displays a psychological maturity and big-game mentality that marks him as a future Ballon d'Or contender.
+52
+57
+68
+1
+63
+D3
+48
+62
+66
+2
+56
+https://www.youtube.com/watch?v=pvFy2YJsrZ0
+"5'8"""
+61
+58
+62
+https://app.trickle.so/storage/public/images/usr_154548bd30000001/23bda6b5-d6c0-4449-8180-1a4d9a8900bc.jpeg
+145
+58
+https://www.youtube.com/watch?v=CosG13seo3o
+https://www.youtube.com/watch?v=hlKIyJx8slk
+62
+59
+70
+[{"title":"Transfer News","url":"https://www.transfermarkt.com/dayo-olasunkanmi/profil/spieler/1473856","source":"TransferMarket.com","date":"Oct 2025","exerpt":" Dayo Olasunkanmi Transferred to Nara Club, Japan"},{"title":"Scout News","url":"https://www.instagram.com/p/DQE2uZRiKuy/","source":"bolajibale_footballtalk22 - Instagram","date":"Oct 2025","excerpt":"Transferred to Nara Club, Japan"}]
+55
+65
+60
+Passport Photo
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Yusuff O. Sikiru
+Male
+2004-05-13
+21
+Nigerian
+Center Back (CB)
+188
+75
+ESPOIR FC DE SAVALOU
+Celtis Championnats Ligue 1
+Right
+61
+49
+65
+		
+Explosive defender, fearless 1v1, presses aggressively, strong decision-making ability, still raw.
+72
+59
+65
+3
+50
+D1
+35
+48
+49
+3
+42
+https://www.youtube.com/watch?v=YmRafZN6FYk
+"6'2"""
+53
+69
+55
+https://images2.imgbox.com/0c/ea/iFfsHlBI_o.jpeg
+165
+52
+https://www.youtube.com/watch?v=j9N7g86z9Sw
+https://www.youtube.com/watch?v=g0ExXVftFbQ
+68
+54
+66
+[]
+50
+54
+45
+Passport Photo
+https://www.youtube.com/watch?v=01_IXNYUMac
+Skillfully Confident
+Skillfully Confident
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Zidane Sanni
+Male
+2016-06-17
+9
+Nigerian
+CDM
+40
+AYICRIP-NELIS FA
+Ayicrip
+Right
+50
+		
+Technically sound with a clean first touch and reliable short passing. Understands basic positional responsibilities. Needs to develop physical presence, game intelligence under pressure, and consistency in defensive contributions
+2
+https://i.imgur.com/OiLAvVO.mp4
+https://images2.imgbox.com/19/13/Wyj5XfPa_o.png
+[]
+https://lh3.googleusercontent.com/gg/AIJ2gl_79WRcGvq6xoN-8nRSVYTxDPFtSxvyT12NF7smFwjigs15gNs4h9XPwKYBBSVe56xV5aXMxIor3OZZnQjLUAeuxwb1tHEuGFx2gy6Zwl_958GmI5Y7ogXg6HRyRMpm70Edz9faKFROyDwoH2CW6pcgK7ZAGRv9DLN_f2G2EdCwJULE-V--=s1024-rj
+Game Day
+Training
+https://lh3.googleusercontent.com/gg/AIJ2gl-AZNYG5rdy67HmZ80TNttvNS1k2vsbXkkyYgiAQYEFWdIMkxWBVcZ85poyoc39wrBZybz_n3lCincuMlCCiqm7bWQGDOcYici9YhNu_UC2ZAEbqYWr91KnZmHc4u-kj2UxOHCyE3q6TMZdISroKH__HZheAu-u2_LZZwBLpw8TIqJ8ZYXV=s1024-rj
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Toyosi Sanni A.
+Female
+2012-01-08
+13
+Nigerian
+RW
+160
+AYICRIP-NELIS
+Ayicrip
+Both
+45
+		
+Good female player
+[]
+	
+simplerafrica.com
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+HOPE JOHN
+Male
+2008-03-24
+18
+NIGERIAN
+CENTRAL DEFENSIVE MIDFIELDER
+5'6
+67
+VIDO 99 FC
+Right
+60
+48
+68
+		
+A complete midfielder in the making. Combines relentless defensive work with incisive forward passing and an ability to arrive in the box. A manager's dream on the pitch, showing leadership and controlling the game's tempo.
+70
+64
+46
+29
+17
+51
+60
+53
+5'6
+79
+99
+48
+https://lh3.googleusercontent.com/pw/AP1GczMNpO3nlF2kJh5_eUFGTJjZcQttfdzCqI-socT0CnwJtZjszxDIRaKpB9c_y4U6UQx8ZowddtQE5gWlKa2vBz11tDFe7zN64ng0442wFWdFYcrTJRQ=w2400
+72
+97
+70
+54
+[]
+60
+37
+81
+	
+OLUGBE EMMANUEL
+Male
+2005-10-14
+20
+Nigeria
+CENTRAL BACK
+0
+80
+EMILOJU FC
+Right
+62
+51
+70
+		
+A solid, no-nonsense defender who can be trusted as a squad player in a senior side. Strong in the tackle and organizes the line adequately. Has the elite recovery pace and ball-playing composure to start for a top-side, very dependable and professional.
+74
+71
+64
+58
+50
+51
+72
+68
+5'7
+72
+62
+72
+https://lh3.googleusercontent.com/pw/AP1GczOLStdD-9CT_Sjrz-6Be7oqh6Mw4rxjhBXAOcNYTyG37cVUWFLv4nmp7yaBR67HGrFtqUiWV2_zTGUDz92ZizSCqsLqbcu6XWY-Q6Ngg0m6-qn-69B43gxQS5x3IjBv2SXqa4VQtu5Suv0vqeTAWO0v=w450-h619-s-no-gm?authuser=0
+66
+75
+65
+62
+[{"title":"Transfer Market","url":"https://www.transfermarkt.us/emmanuel-olugbe/profil/spieler/1250936","source":"","date":"","excerpt":""},{"title":"Flashscore","url":"https://www.flashscore.com/player/olugbe-emmanuel/6m0DQEXL/","source":"","date":"","excerpt":""},{"title":"FOTMOB","url":"https://www.flashscore.com/player/olugbe-emmanuel/6m0DQEXL/","source":"","date":"","excerpt":""},{"title":"Sogndal IL","url":"https://www.sofascore.com/football/player/emmanuel-olugbe/1832844","source":"","date":"","excerpt":""}]
+47
+70
+46
+https://youtu.be/znTjvLeagsw
+Defensive Highlight
+Virgil van Dijk
+Leader CB
+Europe
+Senior
+27
+89
+{"pace":72,"acceleration":68,"sprint_speed":75,"stamina":82,"strength":93,"agility":68,"dribbling":70,"ball_control":80,"passing":80,"finishing":50,"technique":76,"first_touch":80,"vision":74,"composure":92,"decision_making":92,"work_rate":82,"positioning":95,"team_play":86}
+https://cdn.sofifa.net/players/203/376/25_120.png
+https://lh3.googleusercontent.com/pw/AP1GczPzYqVgwzmsTXTQ7uWHuvIyW4QffD-aC8Fgr45UjDE4BiB9CTz2cTsHKeNcJnzyHBzRprggHpHdNpI7mw9hmdgOXn-N9DchV6UIuwudsMq61ydqvkF4dzEQN8bnyqMWK1neyQgierexWQ7Ln_4ZUfin=w419-h633-s-no-gm?authuser=0
+https://lh3.googleusercontent.com/pw/AP1GczNQ4IaPJicAP7I2Cun5Sbz5tr-8RynHSg7BnWxzdgKI2z20i1tLODcidxWQ2ChmFc5T1bTO-jbUbvNb_002wLJEXc9X9anPEJ-z7_t9PHKWoF9tSfR_DSjYL3ZX7cO207zVsn6dm8FTtHAvF5GNreGL=w957-h633-s-no-gm?authuser=0
+https://lh3.googleusercontent.com/pw/AP1GczNGoHex-MQsSpCN8W_VuWoPGMCMBhinS1aSWlWswhVeYK5XHsxTUkEFHCvpdjYsM3NQuKJ-FLnwvJKK7DjPEJ43OuENxS0f_6stE4r_OxGuMm30Hqjf59ueVu9K3HAOHcjcFtTpWUVYDApg-ggpgZ2p=w956-h633-s-no-gm?authuser=0
+	
+AKINSIPE AMOS
+Male
+2008-05-23
+17
+NIGERIAN
+DEFENSIVE MIDFIELDER
+0
+59
+FC BETHEL SPORTING
+Right
+62
+63
+60
+		
+A complete midfielder in the making. Combines relentless defensive work with incisive forward passing and an ability to arrive in the box. A manager's dream on the pitch, showing leadership and controlling the game's tempo.
+53
+56
+65
+69
+70
+56
+63
+58
+5'8
+62
+64
+66
+https://lh3.googleusercontent.com/pw/AP1GczNOJkw7_ZcsAlBN0V5JHPl-cewacQankibr2eAcZA3TDYRaDUjCXNzWu_DQPw8xIoX-pUnvIKqzomfkEDyt2zGu3vxPl4Z7vkvyxOGijqWkEOJikOI=w2400
+61
+59
+66
+62
+[]
+65
+83
+53
+Wilfred Ndidi
+Destroyer
+Africa
+Senior
+52
+81
+{"pace":73,"acceleration":70,"sprint_speed":74,"stamina":88,"strength":89,"agility":70,"dribbling":74,"ball_control":76,"passing":78,"finishing":60,"technique":78,"first_touch":80,"vision":76,"composure":84,"decision_making":87,"work_rate":88,"positioning":90,"team_play":84}
+https://img.a.transfermarkt.technology/portrait/big/274839-1765193511.jpg?lm=1
+	
+OGUNDEJI ELIJAH
+Male
+2007-10-07
+18
+Nigeria
+ATTACKING MIDFIELDER
+60
+EMILOJU FC
+Right
+63
+59
+68
+		
+The definition of a squad player. Fills in multiple midfield roles, follows tactical instructions, and rarely gives possession away cheaply. Opportunities exist to enhance his attributes (vision, dynamism, goal threat) to command a starting spot at the highest level but is a valuable asset.
+71
+47
+70
+53
+56
+77
+56
+45
+5'6
+32
+76
+45
+https://lh3.googleusercontent.com/pw/AP1GczMjviap-786XkdDbDfcMXXejRKGLCXP2UgKqpdCUd5CF7ytABrva9mtw3NgRUAm9Gh7x0dAEP-oEuGTZLmLI7GD2vXMqLYGQesfOTRwejagzPEZyogYIZxbGOhrl-4X76dupUVq-wV3jtQJV_6y3VlS=w202-h294-s-no-gm?authuser=0
+59
+70
+61
+63
+[]
+51
+76
+62
+Florian Wirtz
+Playmaker
+42
+74
+{"pace":74,"acceleration":75,"sprint_speed":73,"stamina":78,"strength":62,"agility":82,"dribbling":82,"ball_control":83,"passing":82,"finishing":74,"technique":81,"first_touch":80,"vision":79,"composure":75,"decision_making":74,"work_rate":78,"positioning":71,"team_play":78}
+https://cdn.sofifa.net/players/256/630/25_120.png
+Germany
+2003-05-03
+https://lh3.googleusercontent.com/pw/AP1GczNQ073tBxtNHyr-RgiKcfQzCzu3jcCqdW6BzQHEnok9obqJJqL1niXPMWoj5L5vXmHoDB6d57d5CEIw4yDmfzO2qUJQADK4Y1AJxW8kScohgPMZIYE0WPDPQaJ-Ge5QvLoy1WzeJfXYkqOSuKHTFZUG=w748-h633-s-no-gm?authuser=0
+https://lh3.googleusercontent.com/pw/AP1GczPnFCzrJM7-0tJqXf2ADU_GCrf-hkKNfNhAIq0Xdvv1jnhlrucbKjmeQ6M3lbZhkxlRtvvcT-L8xO4hjaA3IfIWUYpGCEHNUdRa0HELlj4rqwFitdizpDiE5KXHZNxpGMvYKonEHbAaCGGJvt6x2jkI=w827-h633-s-no-gm?authuser=0
+	
+UMA BARTHOLOMEW
+Male
+2008-08-25
+17
+Nigeria
+STRIKER
+188
+70
+EMILOJU FC
+Right
+57
+49
+67
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+73
+40
+69
+42
+47
+76
+44
+25
+18
+72
+26
+https://lh3.googleusercontent.com/pw/AP1GczMPcrWWEDBFir7vt5W3AYdI4QcTF_BhUTc9x09-DM2yXcJxbyKFkvcZVLO2pKN7IRhvBPNoKiYw3RAbqCJohUq7HRzdmGk9dEmJHgyCU3DFumSjLD4pzuFwiSo0GvE2qGRew6OxaqnEP_WF_UJxT1J2=w186-h188-s-no-gm?authuser=0
+51
+60
+41
+60
+[]
+51
+58
+53
+Erling Haaland
+Power Finisher
+25
+81
+{"pace":80,"acceleration":73,"sprint_speed":82,"stamina":84,"strength":89,"agility":67,"dribbling":72,"ball_control":74,"passing":62,"finishing":87,"technique":76,"first_touch":75,"vision":60,"composure":74,"decision_making":71,"work_rate":76,"positioning":80,"team_play":62}
+https://cdn.sofifa.net/players/239/085/25_120.png
+Norway
+2000-07-21
+https://lh3.googleusercontent.com/pw/AP1GczPr1LTWjt1eGbyIGUc2qj6ydPg4EOML6q6dAG5RiwEsSZEksZD1gpzbZSRweyng4jiweCPCDMo_Bs7hvOon1Ju2Nk86JY6MPhFrO9AbS8nhvO3G5uum50kVbKdDE0QXixymr7BuXhKVN2-wLuY3Iqya=w942-h633-s-no-gm?authuser=0
+	
+BADA MUHAMMED
+Male
+2006-06-14
+19
+Nigeria
+LEFT WINGER
+168
+66
+EMILOJU FC
+Right
+59
+53
+68
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+76
+44
+68
+44
+53
+78
+45
+26
+5'6
+21
+73
+28
+https://lh3.googleusercontent.com/pw/AP1GczPHUENmNPlKBTXyr_wxYSy11W1HFDCjveKA1aseNb9Q7PeZIauT7MTZZobA-dHRiEyZ5XajxPVQvyNQqfbg3fhLgHE4Mx2SEchbscZR4l298EH1-MXMdn1AgYpBP6opmitsGNmfgL703oMt4_B9QyoK=w290-h385-s-no-gm?authuser=0
+60
+59
+41
+60
+[]
+67
+58
+51
+Mohamed Salah
+Wide Finisher
+24
+78
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":70,"agility":84,"dribbling":80,"ball_control":79,"passing":72,"finishing":80,"technique":78,"first_touch":76,"vision":68,"composure":74,"decision_making":72,"work_rate":78,"positioning":72,"team_play":70}
+https://cdn.sofifa.net/players/209/331/25_120.png
+Egypt
+1992-06-15
+https://lh3.googleusercontent.com/pw/AP1GczOgWDl6R1jLEymCoCpL2LsJvnKyp6PfhzJP8MlEPjbuF9QgHcI0JLnguhuSHb-bDRVuXSYQqDaWGZN3mpHDQqpWtq7FKo2xtrz18kctXbjb3__Q7NTrIpUgXwrwqrBkiGKat8tY964TpO6WeLw7SDSW=w419-h633-s-no-gm?authuser=0
+https://lh3.googleusercontent.com/pw/AP1GczOa0jXfN3fL864rb5hIBT2h4Xs9TzrQNAD46wdip7d3tKePoqTOHKaHuDbA6s3QEHxdTybAUcUlb4Be5cuDLdQcQSkufjObfka5MnVMPKB1fcvtMDhX70P_64-O6fplXceXWfKjHGvQkSRjB-TKAjOe=w956-h633-s-no-gm?authuser=0
+	
+ADEAGA JAMIU
+Male
+2009-06-12
+16
+Nigeria
+RIGHT BACK
+168
+66
+EMILOJU FC
+Right
+66
+69
+61
+		
+A first-team ready defender with the mentality of a veteran. Fearless in 1v1 duels, aggressive in the press, and boasts strong decision-making. Still raw in terms of positional nuance but has all the tools to become a top-level starter.
+65
+51
+62
+58
+66
+74
+60
+59
+5'6
+31
+76
+48
+https://lh3.googleusercontent.com/pw/AP1GczPBgOvWyZ6Q2F23iPZdPP1yYfSidF3BpblG_SsamCAWmaIf1VhLEte3Hp4-OtP9hRCqzbrRxh0-wr8yy09zt0KmDKDFCZsBVzoBjPozxvNSvuml1Fhn6Q908oEolaSDbnT7uCE884wfuYVkSOmO0Hlc=w266-h302-s-no-gm?authuser=0
+76
+73
+66
+57
+[]
+69
+81
+59
+Achraf Hakimi
+Overlapping FB
+54
+77
+{"pace":90,"acceleration":88,"sprint_speed":89,"stamina":84,"strength":70,"agility":82,"dribbling":75,"ball_control":75,"passing":72,"finishing":62,"technique":72,"first_touch":71,"vision":66,"composure":66,"decision_making":68,"work_rate":86,"positioning":68,"team_play":73}
+https://cdn.sofifa.net/players/235/212/25_120.png
+Morocco
+1998-11-04
+	
+FAWAS ORIYOMI
+Male
+2010-03-25
+15
+Nigeria
+CENTRAL MIDFIELDER
+170
+62
+EVOLUTION UNITED FC
+Right
+66
+64
+69
+		
+A complete midfielder in the making. Combines relentless defensive work with incisive forward passing and an ability to arrive in the box. A manager's dream on the pitch, showing leadership and controlling the game's tempo.
+70
+54
+70
+56
+60
+71
+66
+53
+35
+80
+49
+https://lh3.googleusercontent.com/pw/AP1GczPm6ub526uSJyyFHc1p6_3BjC7prlW7i7CqBeSv13gD3jJFnmKujObEIKB96mw4xI3uE_-axDQn5y6SsQ-KojwV5Olmp3na2zb50ZViYT9XJHgKGvI=w2400
+63
+76
+70
+66
+[]
+58
+84
+56
+Jude Bellingham
+Box-to-Box
+53
+79
+{"pace":80,"acceleration":79,"sprint_speed":80,"stamina":88,"strength":76,"agility":78,"dribbling":76,"ball_control":77,"passing":74,"finishing":70,"technique":77,"first_touch":74,"vision":68,"composure":70,"decision_making":70,"work_rate":88,"positioning":72,"team_play":74}
+https://cdn.sofifa.net/players/252/371/25_120.png
+England
+2003-06-29
+	
+SULEIMON SHEU
+Male
+2009-06-28
+16
+Nigeria
+LEFT WINGER
+170
+60
+EVOLUTION UNITED FC
+Right
+26
+28
+23
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+26
+42
+26
+24
+21
+9
+35
+24
+5'7
+26
+59
+31
+https://lh3.googleusercontent.com/pw/AP1GczNUDaQQCCzZXv_2AzG1C_bsNGBP76urZBKmangQzCIV6t3YZzwsNa-E2LyViTJGNypeMv3bQDo0Bl827Rc8Wz0JOPEY6En4TXE-yhRf7T3mC4DyHJ0=w2400
+8
+52
+36
+16
+[]
+2
+53
+36
+Bukayo Saka
+Creative Winger
+1
+76
+{"pace":84,"acceleration":85,"sprint_speed":83,"stamina":80,"strength":64,"agility":86,"dribbling":81,"ball_control":81,"passing":76,"finishing":71,"technique":79,"first_touch":78,"vision":73,"composure":70,"decision_making":68,"work_rate":80,"positioning":68,"team_play":74}
+https://cdn.sofifa.net/players/246/669/25_120.png
+England
+2001-09-05
+	
+ABDULWAHEED MUHAMMED
+Male
+2010-08-09
+15
+Nigeria
+STRIKER
+168
+55
+EVOLUTION UNITED FC
+Right
+73
+77
+68
+		
+A first-team ready player with exceptional maturity. Shows leadership qualities and game-changing ability. Already competing at senior level with outstanding results.
+72
+47
+69
+63
+74
+98
+56
+61
+5'6
+27
+76
+46
+https://lh3.googleusercontent.com/pw/AP1GczNnEg6ys-XordP_q6WBTAoe_rgotI0vb2gEQmAQPzQQo8AnYDQIAa9ZvV4Ngwa0iXAa_Vb7VVXhY54SxRlruKJfPFTivs-hxgNhfpCXjKcwAwO2Fzo=w2400
+95
+70
+60
+63
+[]
+92
+76
+69
+Victor Osimhen
+Explosive 9
+59
+77
+{"pace":88,"acceleration":86,"sprint_speed":89,"stamina":71,"strength":75,"agility":78,"dribbling":77,"ball_control":76,"passing":62,"finishing":81,"technique":76,"first_touch":74,"vision":62,"composure":68,"decision_making":66,"work_rate":74,"positioning":75,"team_play":62}
+https://upload.wikimedia.org/wikipedia/commons/3/34/Victor-osimhen-nigeria-2024-3-4.jpg
+Nigeria
+1998-12-29
+	
+OKON TITUS
+Male
+2008-01-04
+18
+Nigeria
+RIGHT BACK
+170
+56
+OJODU CITY FC
+Right
+74
+74
+74
+		
+An elite, modern defender who is already one of the best in the league. Exceptional recovery pace coupled with intelligent positioning. Comfortable initiating attacks from the back under intense pressure. A cornerstone player for any team.
+78
+76
+73
+69
+71
+84
+77
+70
+5'7
+71
+85
+79
+https://lh3.googleusercontent.com/pw/AP1GczPSLg11_anD1MAJJHhVNoRaykugQw1ifeCDWGsA2ouSLqNehxXAk85x5571jEf4Byf_jfPt4obs_i3FFjKbZ4czzBXjp8_huuBCtQhNBsS2nYROW9g=w2400
+68
+82
+80
+72
+[]
+65
+88
+79
+Achraf Hakimi
+Overlapping FB
+69
+77
+{"pace":90,"acceleration":88,"sprint_speed":89,"stamina":84,"strength":70,"agility":82,"dribbling":75,"ball_control":75,"passing":72,"finishing":62,"technique":72,"first_touch":71,"vision":66,"composure":66,"decision_making":68,"work_rate":86,"positioning":68,"team_play":73}
+https://cdn.sofifa.net/players/235/212/25_120.png
+Morocco
+1998-11-04
+	
+LUKMON ADIGUN
+Male
+2007-01-17
+19
+Nigeria
+CENTRAL MIDFIELDER
+170
+55
+OJODU CITY FC
+Right
+50
+51
+49
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+45
+52
+55
+44
+44
+25
+55
+45
+5'7
+34
+74
+44
+https://lh3.googleusercontent.com/pw/AP1GczO2kGCL500i74m-M4XqJUu2PaYQzjrJouLW3gcWfSMKA3_4aC1Ub9ynJ-7_Jspeji9DuRLY9rjnDSFxVhupQo_ebeOTP0W4ha_FpL40Qp2ySFMskPs=w2400
+39
+70
+59
+47
+[]
+30
+74
+42
+Bruno Guimarães
+Controller
+21
+73
+{"pace":71,"acceleration":72,"sprint_speed":72,"stamina":83,"strength":64,"agility":80,"dribbling":78,"ball_control":81,"passing":83,"finishing":64,"technique":80,"first_touch":80,"vision":79,"composure":76,"decision_making":78,"work_rate":80,"positioning":72,"team_play":80}
+data:image/jpeg;base64,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
+Brazil
+1997-11-16
+	
+KAKA AMEER
+Male
+2006-02-10
+20
+Nigeria
+RIGHT WINGER
+60
+OJODU CITY FC
+Right
+37
+40
+35
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+34
+53
+37
+35
+33
+8
+57
+43
+5'6
+31
+72
+42
+https://lh3.googleusercontent.com/pw/AP1GczPSThox1aHlKWOKzcI0ERT80lXd38mCXiwvrD9Nu9x8Y78Y3MGmUB4ReFJp-Qzh42bwZGBntCbNvrPoRZiPLAzFK4rNdnQwRwU42DE6PNji94dnJ8U=w2400
+10
+59
+69
+33
+[]
+2
+83
+24
+Bukayo Saka
+Creative Winger
+1
+76
+{"pace":84,"acceleration":85,"sprint_speed":83,"stamina":80,"strength":64,"agility":86,"dribbling":81,"ball_control":81,"passing":76,"finishing":71,"technique":79,"first_touch":78,"vision":73,"composure":70,"decision_making":68,"work_rate":80,"positioning":68,"team_play":74}
+https://cdn.sofifa.net/players/246/669/25_120.png
+England
+2001-09-05
+	
+SAMUEL UZOMA
+Male
+2009-06-30
+16
+Nigeria
+STRIKER
+185
+57
+OJODU CITY FC
+Right
+66
+58
+77
+		
+A dynamic and direct attacker who is a constant menace to opposing backlines. Combines raw pace with intelligent off-the-ball runs and a powerful shot. Already a key contributor at the senior level with a sky-high ceiling.
+75
+43
+82
+48
+55
+82
+48
+32
+6'1
+25
+77
+33
+https://lh3.googleusercontent.com/pw/AP1GczPAz3BY77dqk-gbKz_ajsD938E14gUCDKDNqufZx0oJLbPzdCs-KMqwoLzBXrXGgr1HSYmQ-9z7Q-cP8Y39c4dMXbGXJj4HM3yzNaJVFtsb_7nnaAY=w2400
+67
+64
+44
+73
+[]
+69
+61
+59
+Erling Haaland
+Power Finisher
+40
+81
+{"pace":80,"acceleration":73,"sprint_speed":82,"stamina":84,"strength":89,"agility":67,"dribbling":72,"ball_control":74,"passing":62,"finishing":87,"technique":76,"first_touch":75,"vision":60,"composure":74,"decision_making":71,"work_rate":76,"positioning":80,"team_play":62}
+https://cdn.sofifa.net/players/239/085/25_120.png
+Norway
+2000-07-21
+	
+DAPO AKINTOLA
+Male
+2005-02-11
+21
+Nigeria
+LEFT BACK
+50
+SMART CITY FC
+Left
+57
+63
+49
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+61
+64
+45
+58
+61
+52
+65
+59
+5'6
+54
+73
+65
+https://lh3.googleusercontent.com/pw/AP1GczPiqs4E1WCqBsf_mEJL0EjLICRwPegJx3G60a-VqSIQ2lktKs4gYsvGT3ojdjGHCEyYxFV8g80-mJEaPqMy2Fbd4t5BfDYVOJJ25krtjWKPc9VQX1s=w2400
+57
+78
+73
+42
+[]
+54
+86
+62
+Achraf Hakimi
+Overlapping FB
+43
+77
+{"pace":90,"acceleration":88,"sprint_speed":89,"stamina":84,"strength":70,"agility":82,"dribbling":75,"ball_control":75,"passing":72,"finishing":62,"technique":72,"first_touch":71,"vision":66,"composure":66,"decision_making":68,"work_rate":86,"positioning":68,"team_play":73}
+https://cdn.sofifa.net/players/235/212/25_120.png
+Morocco
+1998-11-04
+	
+FUAD IBRAHIM
+Male
+2005-02-11
+21
+Nigeria
+WINGER
+168
+52
+SMART CITY FC
+Right
+32
+32
+31
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+33
+44
+34
+28
+26
+10
+42
+29
+5'6
+24
+65
+32
+https://lh3.googleusercontent.com/pw/AP1GczOPXPHKIpz_mUdDczQhp_oc2vZQLkAHs1_Avjg9nvu4wYdWHm56fXwwRnsIRdZYaViolnhN6Z38iT-tpI7Bw9kzznnJAwSQKRxtbtFmq5ybC_dsdWk=w2400
+8
+56
+48
+26
+[]
+2
+64
+30
+Bukayo Saka
+Creative Winger
+1
+76
+{"pace":84,"acceleration":85,"sprint_speed":83,"stamina":80,"strength":64,"agility":86,"dribbling":81,"ball_control":81,"passing":76,"finishing":71,"technique":79,"first_touch":78,"vision":73,"composure":70,"decision_making":68,"work_rate":80,"positioning":68,"team_play":74}
+https://cdn.sofifa.net/players/246/669/25_120.png
+England
+2001-09-05
+	
+MUBARAK MUSTAPHA
+Male
+2006-03-15
+20
+Nigeria
+ATTACKING MIDFIELDER
+47
+SMART CITY FC
+Right
+68
+69
+68
+		
+The definition of a squad player. Fills in multiple midfield roles, follows tactical instructions, and rarely gives possession away cheaply. Lacks the standout attributes (vision, dynamism, goal threat) to command a starting spot at the highest level but is a valuable asset.
+73
+46
+69
+61
+68
+93
+54
+55
+5'6
+27
+75
+44
+https://lh3.googleusercontent.com/pw/AP1GczPBjTzgjRW2lcOVrsmDS0WVDV5YWc-mBW-A-Rh8ht1Dw0DzHFSXKjumH85Jbx9-9cIbPigaCh6VRGwjMLWDynKfwRedY7i1tmmfGwle-_Ctbqqy0pc=w2400
+77
+69
+58
+62
+[]
+67
+74
+67
+Mohammed Kudus
+Dribbling Creator
+47
+74
+{"pace":78,"acceleration":80,"sprint_speed":76,"stamina":76,"strength":63,"agility":88,"dribbling":84,"ball_control":83,"passing":75,"finishing":74,"technique":81,"first_touch":80,"vision":75,"composure":72,"decision_making":70,"work_rate":74,"positioning":70,"team_play":73}
+https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/266599.png&w=350&h=254
+Ghana
+2000-08-02
+	
+DONALD OBIAJULU
+Male
+2007-10-18
+18
+Nigeria
+STRIKER
+59
+SMART CITY FC
+Right
+62
+66
+58
+		
+A useful attacking option who can impact games off the bench. Possesses one or two strong attributes (e.g., speed, strength in hold-up play). Output can be inconsistent, and struggles to be a focal point against organized, physical defenses.
+62
+56
+58
+54
+61
+62
+63
+55
+6'7
+41
+76
+54
+https://lh3.googleusercontent.com/pw/AP1GczMxsKYzTqojDK8_uUCFpLJHf2TOCQiBQRhGPGpjkL8oSzIeBh1zNjw78OgLYpmcmghWF8ydlQ1QowCAPA7t6bc5bKTXDyxwvL2b9V0RVcDW-52lqUc=w2400
+70
+76
+70
+54
+[]
+73
+84
+57
+Harry Kane
+Complete Forward
+57
+77
+{"pace":70,"acceleration":66,"sprint_speed":73,"stamina":79,"strength":78,"agility":68,"dribbling":74,"ball_control":77,"passing":78,"finishing":83,"technique":80,"first_touch":79,"vision":75,"composure":76,"decision_making":75,"work_rate":75,"positioning":80,"team_play":73}
+https://cdn.sofifa.net/players/202/126/25_120.png
+England
+1993-07-28
+	
+WISDOM TARLEY
+Male
+2007-09-19
+18
+Nigeria
+ATTACKING MIDFIELDER
+54
+SMART CITY FC
+Right
+74
+72
+76
+		
+A bona fide star and the engine room of his team. Possesses a unique blend of technical security, tactical intelligence, and physical endurance. Consistently tops performance metrics in both defensive and offensive categories.
+82
+55
+75
+69
+75
+91
+66
+63
+5'6
+39
+81
+55
+https://lh3.googleusercontent.com/pw/AP1GczPq00YtCcrSrt757LQgsKsui-Aqcm3uSlWnwjQ_O91nVY9yfShb_2xIcqQRTXsunehk-92Bx4XfSdpk9omLBsWPZCq8eJSSdUbRrc2Zq5Q6Mx4KDc4=w2400
+69
+76
+71
+71
+[]
+52
+85
+69
+Florian Wirtz
+Playmaker
+58
+74
+{"pace":74,"acceleration":75,"sprint_speed":73,"stamina":78,"strength":62,"agility":82,"dribbling":82,"ball_control":83,"passing":82,"finishing":74,"technique":81,"first_touch":80,"vision":79,"composure":75,"decision_making":74,"work_rate":78,"positioning":71,"team_play":78}
+https://cdn.sofifa.net/players/256/630/25_120.png
+Germany
+2003-05-03
+	
+AJIHA KEHINDE
+Male
+2008-05-19
+17
+Nigeria
+LEFT WING FORWARD
+54
+SMART CITY FC
+Right
+62
+64
+60
+		
+A useful attacking option who can impact games off the bench. Possesses one or two strong attributes (e.g., speed, strength in hold-up play). Output can be inconsistent, and struggles to be a focal point against organized, physical defenses.
+65
+44
+62
+55
+64
+67
+44
+44
+5'6
+25
+71
+37
+https://lh3.googleusercontent.com/pw/AP1GczMbbwbcwnwXHZG39KOgBEgkSAId2vXiJOdxD6WQeYZ8pRhJAs7TpASVQURAX6Py3tlHzoN3wrSAjqv11YlfYaHa8oSmapP9P4hg-luopIQypeJAl2I=w2400
+76
+62
+43
+53
+[]
+73
+61
+57
+Mohamed Salah
+Wide Finisher
+37
+78
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":70,"agility":84,"dribbling":80,"ball_control":79,"passing":72,"finishing":80,"technique":78,"first_touch":76,"vision":68,"composure":74,"decision_making":72,"work_rate":78,"positioning":72,"team_play":70}
+https://cdn.sofifa.net/players/209/331/25_120.png
+Egypt
+1992-06-15
+	
+JOSEPH ISAAC
+Male
+2009-01-22
+17
+Nigeria
+STRIKER
+73
+VIDO 99 FC
+Right
+66
+69
+62
+		
+A dynamic and direct attacker who is a constant menace to opposing backlines. Combines raw pace with intelligent off-the-ball runs and a powerful shot. Already a key contributor at the senior level with a sky-high ceiling.
+73
+75
+56
+65
+66
+83
+73
+67
+6'1
+70
+78
+77
+https://lh3.googleusercontent.com/pw/AP1GczO9yiefn428sSqNPdDdPo7gXbwZKd6Jq0VMbiexc6f7o4HNEmCtMGX1I1FjOLTqrp2Dw5c4sWwf_f7SNZEBD4_lepZg3CPfBsDXukC1LuSyCr5Vgps=w2400
+63
+82
+79
+56
+[]
+58
+88
+79
+Harry Kane
+Complete Forward
+70
+77
+{"pace":70,"acceleration":66,"sprint_speed":73,"stamina":79,"strength":78,"agility":68,"dribbling":74,"ball_control":77,"passing":78,"finishing":83,"technique":80,"first_touch":79,"vision":75,"composure":76,"decision_making":75,"work_rate":75,"positioning":80,"team_play":73}
+https://cdn.sofifa.net/players/202/126/25_120.png
+England
+1993-07-28
+	
+BODE EMMANUEL
+Male
+2008-08-29
+17
+Nigeria
+CENTRAL DEFENSIVE MIDFIELDER
+67
+VIDO 99 FC
+Right
+62
+57
+68
+		
+The definition of a squad player. Fills in multiple midfield roles, follows tactical instructions, and rarely gives possession away cheaply. Lacks the standout attributes (vision, dynamism, goal threat) to command a starting spot at the highest level but is a valuable asset.
+73
+53
+68
+57
+57
+80
+60
+54
+5'6
+40
+77
+53
+https://lh3.googleusercontent.com/pw/AP1GczPPF3cHJ9gBSF8sADdeAL9U25VflTSw35y4mmHgILVHIF9keVpvBqyst7a89a1MWqhraodsF90fqWeabI5_0_NhtdrlTpssjOlNlo7hG295eXohNfE=w2400
+39
+73
+65
+63
+[]
+19
+79
+69
+Wilfred Ndidi
+Destroyer
+50
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+data:image/jpeg;base64,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
+Nigeria
+1996-12-16
+	
+HOPE JOHN
+Male
+2008-03-24
+17
+Nigeria
+CENTRAL DEFENSIVE MIDFIELDER
+67
+VIDO 99 FC
+Right
+51
+51
+52
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+59
+45
+53
+39
+47
+49
+45
+28
+5'6
+22
+70
+30
+https://lh3.googleusercontent.com/pw/AP1GczMNpO3nlF2kJh5_eUFGTJjZcQttfdzCqI-socT0CnwJtZjszxDIRaKpB9c_y4U6UQx8ZowddtQE5gWlKa2vBz11tDFe7zN64ng0442wFWdFYcrTJRQ=w2400
+58
+64
+43
+45
+[]
+67
+60
+43
+Wilfred Ndidi
+Destroyer
+35
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+data:image/jpeg;base64,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
+Nigeria
+1996-12-16
+	
+JOEL EMMANUEL
+Male
+2008-01-27
+18
+Nigeria
+WINGER
+56
+VIDO 99 FC
+Right
+69
+72
+65
+		
+A useful attacking option who can impact games off the bench. Possesses one or two strong attributes (e.g., speed, strength in hold-up play). Output can be inconsistent, and struggles to be a focal point against organized, physical defenses.
+75
+57
+62
+71
+74
+83
+62
+66
+5'6
+48
+76
+63
+https://lh3.googleusercontent.com/pw/AP1GczOjDFg-lwIdvzqqk9tRAioK5joHr7cnp5xyjwJMrFQ6_1F1rztmb-RmZ_jUuT23Dlf_H1FsSk3JoD7dYKwcbpzcaUrkXeQQYiRJbDPBSscPe6hW3nk=w2400
+71
+75
+70
+57
+[]
+56
+84
+76
+Mohamed Salah
+Wide Finisher
+62
+78
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":70,"agility":84,"dribbling":80,"ball_control":79,"passing":72,"finishing":80,"technique":78,"first_touch":76,"vision":68,"composure":74,"decision_making":72,"work_rate":78,"positioning":72,"team_play":70}
+https://cdn.sofifa.net/players/209/331/25_120.png
+Egypt
+1992-06-15
+	
+EZEKIEL OSHINFOWOKAN
+Male
+2009-11-14
+16
+Nigeria
+CENTRAL DEFENSIVE MIDFIELDER
+51
+VIDO 99 FC
+Right
+72
+70
+74
+		
+A first-team ready player with exceptional maturity. Shows leadership qualities and game-changing ability. Already competing at senior level with outstanding results.
+75
+56
+76
+60
+68
+88
+67
+58
+5'5
+39
+81
+53
+https://lh3.googleusercontent.com/pw/AP1GczMVKlO2DD3rJeT3cuJHGYA7xAp_OcLTzc3ndWY0hdpbOuFKhhrEgf7uZm7TmsFMdXrYiPDk9AXg5lzL0vpEGzetAt7p8dRldMeq_uNI17SL1ANmGpE=w2400
+74
+77
+70
+72
+[]
+74
+84
+66
+Wilfred Ndidi
+Destroyer
+68
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+data:image/jpeg;base64,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
+Nigeria
+1996-12-16
+	
+AKINOLA JELEEL
+Male
+2010-10-24
+15
+NIGERIA
+LEFT WINGER FORWARD
+61
+OLUGBANI FC
+Left
+66
+69
+62
+		
+A dynamic and direct attacker who is a constant menace to opposing backlines. Combines raw pace with intelligent off-the-ball runs and a powerful shot. Already a key contributor at the senior level with a sky-high ceiling.
+74
+45
+59
+62
+70
+95
+46
+51
+5'9
+26
+70
+40
+https://lh3.googleusercontent.com/pw/AP1GczMhHY7Z1JKTqbu9YU-p-iS4QtFi24ybhXNrjN37TV-ZP0jOtC-CEN1COM9IfjndtaB4A0ZWI_BPNfWEobYgpQd82J8-ezoaDVee2zl-MY5_FOF1Uz5h2uGKpN4xPjM9U5rVuGzhC_gSONHkdFGSN0GV=w432-h523-s-no-gm?authuser=0
+83
+63
+46
+52
+[]
+75
+63
+68
+Mohamed Salah
+Wide Finisher
+44
+78
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":70,"agility":84,"dribbling":80,"ball_control":79,"passing":72,"finishing":80,"technique":78,"first_touch":76,"vision":68,"composure":74,"decision_making":72,"work_rate":78,"positioning":72,"team_play":70}
+https://cdn.sofifa.net/players/209/331/25_120.png
+Egypt
+1992-06-15
+	
+BABALOLA IBRAHIM
+Male
+2006-10-29
+19
+NIGERIA
+CENTRAL BACK
+183
+79
+OLUGBANI FC
+Right
+60
+55
+68
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+75
+41
+69
+46
+54
+81
+42
+26
+6
+22
+71
+29
+https://lh3.googleusercontent.com/pw/AP1GczNHyCByKhfjASuVMfz4t24n9QQfr2ldXXOEqA_coAIK8NS_-YENPN2k45R-gO6O4B1w4yj1KuhOEnmA7Plrh40i9frz4aNqmoLSviUJGyaF4aW88a7ctW1fUHR7Hw-Hcgf_mvYnITDwm2l-TZokvwUR=w448-h564-s-no-gm?authuser=0
+68
+60
+38
+59
+[]
+75
+55
+57
+Kim Min-jae
+Stopper
+43
+73
+{"pace":74,"acceleration":70,"sprint_speed":75,"stamina":76,"strength":91,"agility":64,"dribbling":60,"ball_control":70,"passing":68,"finishing":44,"technique":66,"first_touch":68,"vision":60,"composure":74,"decision_making":76,"work_rate":78,"positioning":80,"team_play":72}
+https://encrypted-tbn2.gstatic.com/licensed-image?q=tbn:ANd9GcQysuIWXqclcbHKUkp5Cl5IVOIMw4J5fTZ-oJrkqXL7SYyxZOxpSVv53ULwr4GBExEhCmL-tgNtjXPsDz8
+South Korea
+1996-11-15
+	
+EDIDIONG SAMSON
+Male
+2011-04-11
+14
+NIGERIA
+RIGHT BACK
+71
+OLUGBANI FC
+Right
+52
+46
+59
+		
+Physically competent and reliable in youth-level matches. Reads the game well enough to intercept passes and makes simple, effective clearances. Good engine for getting up and down the flank (if full-back). Must improve aerial dominance and concentration over 90 minutes to transition to senior football.
+64
+41
+61
+41
+44
+58
+42
+26
+5'9
+21
+70
+29
+https://lh3.googleusercontent.com/pw/AP1GczONcyuK8en0gCwhtog2G6j5hsUOv5Pg7p0y7MUihVk5_xIQlYESSATzbW3teh0ptv3uKuhsCRnrWelUgeD07Od4FsdBJjMdvpO3Nk7Vd3ju-HvihlQ-EDeLv8SOQsh5SOaYkwmb4q1riYCzwVgIqxSj=w417-h542-s-no-gm?authuser=0
+45
+61
+40
+52
+[]
+42
+57
+50
+Achraf Hakimi
+Overlapping FB
+16
+77
+{"pace":90,"acceleration":88,"sprint_speed":89,"stamina":84,"strength":70,"agility":82,"dribbling":75,"ball_control":75,"passing":72,"finishing":62,"technique":72,"first_touch":71,"vision":66,"composure":66,"decision_making":68,"work_rate":86,"positioning":68,"team_play":73}
+https://cdn.sofifa.net/players/235/212/25_120.png
+Morocco
+1998-11-04
+	
+OLUWATOBI AYOMIDE
+Male
+2011-02-12
+15
+NIGERIA
+RIGHT WINGER
+168
+65
+OLUGBANI FC
+Right
+29
+30
+27
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+28
+45
+32
+26
+24
+5
+37
+26
+5'6
+28
+63
+33
+https://lh3.googleusercontent.com/pw/AP1GczPaY-H5xs9-nSHGq_gFw_AIFtDCS7Y0jLsxc-SyRgbwXmFb_b6_58WDHDGNx-4yufWIXhUFBNT9OKVxucipwB_AAc44JlaMJAgWa2W4P7_GjYDVDU-3xYJYHVwYrZLea1USQb_kimo68Ut8ENaR3fos=w347-h411-s-no-gm?authuser=0
+6
+53
+41
+22
+[]
+2
+57
+33
+Bukayo Saka
+Creative Winger
+1
+76
+{"pace":84,"acceleration":85,"sprint_speed":83,"stamina":80,"strength":64,"agility":86,"dribbling":81,"ball_control":81,"passing":76,"finishing":71,"technique":79,"first_touch":78,"vision":73,"composure":70,"decision_making":68,"work_rate":80,"positioning":68,"team_play":74}
+https://cdn.sofifa.net/players/246/669/25_120.png
+England
+2001-09-05
+	
+OKOCHA MIRACLE
+Male
+2009-12-24
+16
+NIGERIA
+CENTRAL MIDFIELDER
+71
+OLUGBANI FC
+Right
+33
+36
+28
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+49
+35
+17
+43
+44
+49
+35
+35
+5'6
+23
+32
+32
+https://lh3.googleusercontent.com/pw/AP1GczNaS-jhKQ5IVA1jZMjNNmm1dZ8ApdP_ARNhVSWJN18fdpsmV26ks2CLLiSMR8AQfvBLklXxuS8GZwgG1YCoY1ruDMur8nMgu43sS6T9JJ76Qhp7UOr1tWtwayyJ-EdzH6PfFuQNTTjr5K6gdb0sn5At=w392-h490-s-no-gm?authuser=0
+32
+51
+35
+19
+[]
+25
+48
+50
+Bruno Guimarães
+Controller
+1
+73
+{"pace":71,"acceleration":72,"sprint_speed":72,"stamina":83,"strength":64,"agility":80,"dribbling":78,"ball_control":81,"passing":83,"finishing":64,"technique":80,"first_touch":80,"vision":79,"composure":76,"decision_making":78,"work_rate":80,"positioning":72,"team_play":80}
+https://images.ctfassets.net/9ec6988xevcz/6Miq89IitsmOFW7hE7qE4A/7c7f158ad8526458eae59d1e7a70c4ce/Bruno_Guimara%C3%8C_es_Home_2400.png?w=1200&h=630&fit=fill&f=face
+Brazil
+1997-11-16
+	
+ALLI SANNI
+Male
+2008-04-11
+17
+NIGERIA
+ATTACKING MIDFIELDER
+65
+DTP FC
+Right
+63
+59
+68
+		
+The definition of a squad player. Fills in multiple midfield roles, follows tactical instructions, and rarely gives possession away cheaply. Opportunities exist to enhance his attributes (vision, dynamism, goal threat) to command a starting spot at the highest level but is a valuable asset.
+71
+47
+70
+53
+56
+77
+56
+45
+https://www.youtube.com/watch?v=nK2Yz7-euTY&t=8s&pp=ygUKU0FOTkkgQUxMSQ%3D%3D
+5'6
+32
+76
+45
+https://images2.imgbox.com/00/29/vt6STcf7_o.jpeg
+59
+70
+61
+63
+[]
+51
+76
+62
+https://www.youtube.com/watch?v=nK2Yz7-euTY&t=8s&pp=ygUKU0FOTkkgQUxMSQ%3D%3D
+James Maddison
+Attacking 10
+46
+72
+{"pace":75,"acceleration":76,"sprint_speed":74,"stamina":74,"strength":60,"agility":80,"dribbling":78,"ball_control":80,"passing":79,"finishing":76,"technique":79,"first_touch":78,"vision":75,"composure":73,"decision_making":70,"work_rate":74,"positioning":72,"team_play":72}
+https://b.fssta.com/uploads/application/soccer/headshots/22747.png
+England
+1996-11-23
+Alli Sanni
+https://app.trickle.so/storage/public/images/usr_154548bd30000001/cf9c28fd-4ff3-483e-9125-f96c4918dc6e.jpeg
+Alli Sanni
+https://app.trickle.so/storage/public/images/usr_154548bd30000001/e8b5d1e1-b0ba-4c28-a278-6d9b10a47078.jpeg
+Alli Sanni
+https://app.trickle.so/storage/public/images/usr_154548bd30000001/ae15e25f-d961-468d-9b3b-9808cbfe0367.jpeg
+	
+SOLOMON FRIDAY
+Male
+2005-07-30
+20
+NIGERIA
+CENTRAL DEFENSIVE MIDFIELDER
+183
+71
+FC BETHEL SPORTING
+Right
+67
+67
+68
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+74
+53
+67
+62
+66
+89
+61
+58
+6
+35
+78
+51
+https://lh3.googleusercontent.com/pw/AP1GczMOGAAOl2E8366GfmJ-qGx65Oi5LY1s3YfwIqK3UK0cD7-s2_XLnsYjauhmP5LLQU3st07at54IWAu8ZgFys-fyJCW48Y8W3thpVaDdYpbItp209ppcSyM9U0d8wpjcrveV8jhFfMVaF8LW2QAlTbdX=w590-h633-s-no-gm?authuser=0
+66
+73
+65
+63
+[]
+57
+80
+67
+Wilfred Ndidi
+Destroyer
+63
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTW5HYq2L-gLvVHRakDKW2WPPxVHT7Zk9Uqcg&s
+Nigeria
+1996-12-16
+	
+OLUWATOBI FARINDE
+Male
+2009-10-13
+16
+NIGERIA
+LEFT BACK
+69
+FC BETHEL SPORTING
+Left
+64
+62
+65
+		
+A first-team ready defender with the mentality of a veteran. Fearless in 1v1 duels, aggressive in the press, and boasts strong decision-making. Still raw in terms of positional nuance but has all the tools to become a top-level starter.
+75
+45
+64
+57
+63
+87
+49
+45
+5'9
+26
+73
+38
+https://lh3.googleusercontent.com/pw/AP1GczO6xYWmC_OlYau8vqD3OVfGNxsStEm8j3xNSISPw-ArktbrRmkxrLNcwjYUV1L_7NR0IQ2mIHC6XkyaNbKRmtyTjYOrzIbX78BOG4Yx-8m7GlFaUnyiWTckvriQKq5ciUIcxMBd0Pif_WFM2X8TfE76=w462-h604-s-no-gm?authuser=0
+68
+65
+49
+57
+[]
+56
+65
+64
+Jules Koundé
+Power Fullback
+49
+77
+{"pace":86,"acceleration":84,"sprint_speed":87,"stamina":83,"strength":78,"agility":76,"dribbling":69,"ball_control":72,"passing":70,"finishing":60,"technique":70,"first_touch":69,"vision":62,"composure":64,"decision_making":68,"work_rate":84,"positioning":71,"team_play":71}
+https://s.yimg.com/os/en/football_espana_articles_993/d886dc07f114d0a9da269ebaeb782c43
+France
+1998-11-12
+	
+ANOWIA SAMUEL
+Male
+2006-09-06
+19
+NIGERIA
+CENTRAL BACK
+73
+FC BETHEL SPORTING
+Right
+59
+55
+63
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+72
+49
+61
+56
+56
+82
+53
+50
+6'2
+30
+74
+44
+https://lh3.googleusercontent.com/pw/AP1GczM_0gM2cE7OJlDy3yTIGu2GpEH5vZfkcArEB5I47TkyhPjyyIv3Hn9AoSll56NxR7iXqvoY5FGtzz9QjmV2EevibehwT-T4zo9FQxT78ScZuvExrwQjelLmtwTtQKJ7h1i1TQVZ2m_vxv9ZzS9QbKff=w762-h633-s-no-gm?authuser=0
+41
+68
+55
+56
+[]
+18
+71
+65
+Jonathan Tah
+Leader CB
+42
+71
+{"pace":67,"acceleration":64,"sprint_speed":71,"stamina":78,"strength":88,"agility":64,"dribbling":62,"ball_control":72,"passing":72,"finishing":42,"technique":68,"first_touch":70,"vision":62,"composure":76,"decision_making":78,"work_rate":78,"positioning":80,"team_play":74}
+https://assets.dfb.de/uploads/000/325/932/custom_style_1_Jonathan_Tah_Profil.jpg?1762266112
+Germany
+1996-02-11
+	
+CHIJIOKE GODWIN
+Male
+2008-08-28
+17
+NIGERIA
+RIGHT BACK
+170
+66
+FC BETHEL SPORTING
+Right
+59
+52
+70
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+73
+45
+72
+46
+50
+78
+49
+32
+24
+75
+32
+https://lh3.googleusercontent.com/pw/AP1GczOgch8vMMe8mtNstyk5BTjdfDHkhzpYfkBT6dePKO1Y1pddLV7-Rksb6GDZRSxkCFA3aTmNsGgg0RESTTZSZrY9I3DgCWjtlmHGnjwA5buD3A0pwN-fb05WXExCeV6HpFH4jmTFpzYy5eT7YX40o0h5=w575-h633-s-no-gm?authuser=0
+49
+64
+44
+64
+[]
+42
+61
+57
+Jules Koundé
+Power Fullback
+35
+77
+{"pace":86,"acceleration":84,"sprint_speed":87,"stamina":83,"strength":78,"agility":76,"dribbling":69,"ball_control":72,"passing":70,"finishing":60,"technique":70,"first_touch":69,"vision":62,"composure":64,"decision_making":68,"work_rate":84,"positioning":71,"team_play":71}
+https://s.yimg.com/os/en/football_espana_articles_993/d886dc07f114d0a9da269ebaeb782c43
+France
+1998-11-12
+	
+UTHMAN MUBARAK
+Male
+2008-08-14
+17
+NIGERIA
+WINGER
+173
+66
+ATHLETIC CLUB
+Left
+55
+56
+55
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+71
+45
+50
+49
+57
+73
+43
+32
+5'8
+24
+68
+33
+https://lh3.googleusercontent.com/pw/AP1GczP4doDL1bK_0v9vtcE9tTxW1Fn1a1mVTF42kz9QxiUciFjSPw07VVlPHZdD89kX0VTxO4xf1aUGMIHpH5fXwoHgR_tv9kPURjHDcNURsnTg_f24xiu4ElDpKoTbLIDS85IEB6mPdhbk5I2z8_LUP17i=w474-h632-s-no-gm?authuser=0
+65
+57
+43
+43
+[]
+73
+60
+52
+Bryan Mbeumo
+Wide Finisher
+27
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://static.wikia.nocookie.net/the-football-database/images/8/88/Bryan_Mbeumo.1.png/revision/latest?cb=20250104170442
+Cameroon
+1999-08-07
+	
+ATERE ISMAIL
+Male
+2009-07-28
+16
+NIGERIA
+CENTRAL MIDFIELDER
+66
+ATHLETIC CLUB
+Right
+65
+64
+66
+		
+A complete midfielder in the making. Combines relentless defensive work with incisive forward passing and an ability to arrive in the box. A manager's dream on the pitch, showing leadership and controlling the game's tempo.
+74
+55
+65
+60
+63
+85
+61
+55
+5'6
+42
+76
+55
+https://lh3.googleusercontent.com/pw/AP1GczOfU8xK-QfCsZ-lztwrC-wT72t5uXkOjK2J6RAKMRk8O_kKnZOQf4krxlP7F21YsKSDpA0ky-_R80AhjJ_K9PEGEDTMsMiCdGWQeGEG8zXGJ9h6sZJtN-j8NxnmjPV83rJ0TXP9clUGVC0r356LI7BL=w474-h632-s-no-gm?authuser=0
+63
+74
+66
+60
+[]
+51
+80
+70
+Declan Rice
+Box-to-Box
+57
+79
+{"pace":80,"acceleration":79,"sprint_speed":80,"stamina":88,"strength":79,"agility":78,"dribbling":74,"ball_control":77,"passing":76,"finishing":70,"technique":75,"first_touch":74,"vision":68,"composure":68,"decision_making":70,"work_rate":88,"positioning":70,"team_play":74}
+https://i.namu.wiki/i/Z6eUr2z-MqzCdipmMhDMoNfTdjbOvjmTNXpZXQK2WycMhlxjpRhqHvJCzmM-gHc-BGAJm7dz3ySXPVJbqBvaqQ.webp
+England
+1999-01-14
+	
+OKUBADEJO TOHEEB
+Male
+2008-06-15
+17
+NIGERIA
+CENTRAL MIDFIELDER
+168
+61
+ATHLETIC CLUB
+Right
+51
+46
+59
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+65
+44
+60
+43
+44
+71
+44
+33
+24
+71
+32
+https://lh3.googleusercontent.com/pw/AP1GczPTa1uHIrCgrBmjNvQ3Z5DcV2dlNs1kCcDy2P2m55MIulhpVl-mMZIGutWnbm7TnWwTs-5iX1YXd3vS8d3DU5FgymuccWHF2lsQDIu9Cbc2dCJAV4xG23O_vP8Y-zAToQfmzTthdl7uknzvDnrn9p40=w474-h632-s-no-gm?authuser=0
+34
+62
+42
+52
+[]
+27
+59
+56
+Mattéo Guendouzi
+Dynamic 8
+18
+77
+{"pace":78,"acceleration":79,"sprint_speed":77,"stamina":86,"strength":68,"agility":81,"dribbling":76,"ball_control":78,"passing":77,"finishing":68,"technique":76,"first_touch":75,"vision":70,"composure":70,"decision_making":71,"work_rate":88,"positioning":70,"team_play":76}
+https://www.arsenal.com/sites/default/files/styles/desktop_16x9/public/images/Guendouzi_1100x693.jpg?auto=webp&itok=gGMRI77_
+France
+1999-04-14
+	
+LEGBE TAMARAEMI
+Male
+2007-02-23
+19
+NIGERIA
+WINGER
+61
+ATHLETIC CLUB
+Left
+58
+58
+58
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+72
+48
+53
+58
+59
+83
+53
+51
+5'6
+33
+71
+48
+https://lh3.googleusercontent.com/pw/AP1GczMQpjo9Pl_Xe_y-hrLk6mIyMaQqopBu0TK8R3jYSw8j7f3wqjzAjGUl3APD1Zh1UFx4rRRrgSOIPWVJYQXaC74r907WDp46IcHyEK0cguvDyJKV6lfbsCZiPQi9QR9gCli18jg6lVBPkX5ntVw9_b8c=w510-h596-s-no-gm?authuser=0
+51
+69
+60
+48
+[]
+37
+75
+68
+Takefusa Kubo
+Creative Winger
+36
+75
+{"pace":84,"acceleration":85,"sprint_speed":83,"stamina":80,"strength":62,"agility":88,"dribbling":81,"ball_control":81,"passing":77,"finishing":69,"technique":79,"first_touch":78,"vision":73,"composure":70,"decision_making":68,"work_rate":78,"positioning":68,"team_play":74}
+https://b.fssta.com/uploads/application/soccer/headshots/52886.png
+Japan
+2001-06-04
+	
+AZEEZ RAZAK
+Male
+2006-10-25
+19
+NIGERIA
+RIGHT BACK
+74
+ATHLETIC CLUB
+Right
+70
+75
+65
+		
+A solid, no-nonsense defender who can be trusted as a squad player in a senior side. Strong in the tackle and organizes the line adequately. Lacks the elite recovery pace or ball-playing composure to start for a top-side, but a dependable professional.
+73
+61
+62
+69
+74
+87
+67
+70
+6'6
+46
+78
+62
+https://lh3.googleusercontent.com/pw/AP1GczMtdQjJDHzxzXEYteBU2Z2EaofsHEDEDQ23huaAes15-58X8YKxJsay4vzxnrQCfWJIwXFCrcjayxWnym6aZ3W25z8-N1VD_SyfQw-akoccdJYmMU7wnO-ALD-s93JgBbOgMEXWCvNSfnH-qX94KMUY=w474-h632-s-no-gm?authuser=0
+76
+78
+72
+59
+[]
+61
+86
+72
+Ben White
+Inverted FB
+68
+73
+{"pace":73,"acceleration":73,"sprint_speed":75,"stamina":82,"strength":66,"agility":74,"dribbling":72,"ball_control":76,"passing":82,"finishing":62,"technique":78,"first_touch":75,"vision":76,"composure":72,"decision_making":74,"work_rate":80,"positioning":71,"team_play":78}
+https://www.arsenal.com/sites/default/files/styles/large_16x9/public/images/B.WHITE_Headshot_web_xdbqzl78.png?h=ad73a5fe&auto=webp&itok=lrzd6M8v
+England
+1997-10-08
+	
+CHIMA EBUBE
+Male
+2007-12-13
+18
+NIGERIA
+ATTACKING MIDFIELDER
+196
+60
+ATHLETIC CLUB
+Right
+65
+63
+68
+		
+The definition of a squad player. Fills in multiple midfield roles, follows tactical instructions, and rarely gives possession away cheaply. Lacks the standout attributes (vision, dynamism, goal threat) to command a starting spot at the highest level but is a valuable asset.
+62
+54
+75
+53
+57
+59
+61
+51
+6'5
+42
+80
+52
+https://lh3.googleusercontent.com/pw/AP1GczO8dIf8HgG8_lEhPlIm6ozqlJlri7-x5DDIge64XISdzpKn6Mo31AkBHLmPm6IFQ2fSOw7xA87iEr9Nzq45bJ02a_kOMQRG6mKr11c_4QvXMgaPkwIqAx0ovYzMvPbfmXkUFNByiMTvEoL--HcQ4L5h=w474-h632-s-no-gm?authuser=0
+64
+74
+63
+68
+[]
+62
+77
+61
+James Maddison
+Attacking 10
+55
+72
+{"pace":75,"acceleration":76,"sprint_speed":74,"stamina":74,"strength":60,"agility":80,"dribbling":78,"ball_control":80,"passing":79,"finishing":76,"technique":79,"first_touch":78,"vision":75,"composure":73,"decision_making":70,"work_rate":74,"positioning":72,"team_play":72}
+https://b.fssta.com/uploads/application/soccer/headshots/22747.png
+England
+1996-11-23
+	
+NWAOCHA DESIRE
+Male
+2009-05-23
+16
+NIGERIA
+STRIKER
+75
+ATHLETIC CLUB
+Right
+57
+53
+62
+		
+A consistent threat in youth leagues due to strong physical attributes like pace and power. Has a proven eye for goal in clear-cut situations. Can be overly reliant on physical traits; needs to develop tactical variety in movement and improve combination play.
+68
+39
+64
+43
+50
+77
+41
+30
+5'7
+18
+70
+27
+https://lh3.googleusercontent.com/pw/AP1GczOri-JpLSsYBVZSIEzpMYrLKBFCbY-XEdWbfH70wh7z6-e4_L4uPhHI9qLZEmuyFD-GoqgjJFNZ3Xs9BWRtNWZoM1190pANAhloXU2rpxOin-2v5x8nuNtV_0sVQJRNVQwDS-pLUY7ep-_sPz4nI-84=w474-h632-s-no-gm?authuser=0
+63
+60
+38
+55
+[]
+60
+55
+55
+Dušan Vlahović
+Power Finisher
+29
+81
+{"pace":78,"acceleration":74,"sprint_speed":82,"stamina":84,"strength":88,"agility":68,"dribbling":72,"ball_control":74,"passing":62,"finishing":86,"technique":76,"first_touch":75,"vision":60,"composure":74,"decision_making":71,"work_rate":76,"positioning":80,"team_play":62}
+https://images2.minutemediacdn.com/image/upload/c_crop,x_0,y_69,w_2015,h_1133/c_fill,w_720,ar_16:9,f_auto,q_auto,g_auto/images/GettyImages/mmsport/90min_en_international_web/01jjpkxsa2yrw9twx01y.jpg
+Serbia
+2000-01-28
+	
+OLAYANJU UTHMAN
+Male
+2008-01-20
+18
+NIGERIA
+WINGER
+170
+71
+ATHLETIC CLUB
+Right
+74
+73
+75
+		
+A certified match-winner. Combines world-class physical attributes with a ruthless finishing instinct and improved link-up play. Carries the goal-scoring burden for his team and is a nightmare for any defender. On the cusp of a top European transfer.
+80
+59
+74
+72
+75
+90
+66
+67
+5'7
+54
+80
+67
+https://lh3.googleusercontent.com/pw/AP1GczN2bHd7hP9yPux4zh5x9XNlIzfRyPwm59hAU_9CjBVJQpZKw3nE9eeiGmqZVwzvIUZSNzlcgthV-JR_qgnVKHnk_LdIjF93CzbbLL2wqOXbPGVbKAJgAgYcZS0s9UQdVlj20XCEH4qYcvaNMm0bFnP9=w474-h632-s-no-gm?authuser=0
+70
+77
+73
+70
+[]
+54
+87
+82
+Bryan Mbeumo
+Wide Finisher
+67
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+YUSUF RAMADAN
+Male
+2008-01-30
+18
+NIGERIA
+DEFENSIVE MIDFIELDER
+66
+ATHLETIC CLUB
+Right
+71
+69
+72
+		
+A bona fide star and the engine room of his team. Possesses a unique blend of technical security, tactical intelligence, and physical endurance. Consistently tops performance metrics in both defensive and offensive categories.
+78
+61
+71
+63
+68
+85
+69
+60
+6
+50
+81
+62
+https://lh3.googleusercontent.com/pw/AP1GczM_XQyzG-0wykCcGrdDzH19fafcm71I_ec_TijJjWqzWh4koI7xoLasOo9BLu8X703OmA6gUYnN2Ye6ahM6xz3a1Z3YNIwK3XVEu2lkjxmbBzwVZfRCjBdmlNoTT47ccxCPjT5D9qbv3CQgUumSX8Pv=w474-h632-s-no-gm?authuser=0
+68
+79
+74
+68
+[]
+63
+87
+71
+Pierre-Emile Højbjerg
+Screening 6
+72
+73
+{"pace":66,"acceleration":64,"sprint_speed":68,"stamina":82,"strength":75,"agility":67,"dribbling":68,"ball_control":72,"passing":77,"finishing":54,"technique":72,"first_touch":73,"vision":71,"composure":73,"decision_making":76,"work_rate":82,"positioning":78,"team_play":77}
+https://b.fssta.com/uploads/application/soccer/headshots/2251.vresize.350.350.medium.1.png
+Denmark
+1995-08-05
+	
+IKOLABA SIKIRU
+Male
+2008-06-08
+17
+NIGERIA
+DEFENSIVE MIDFIELDER
+168
+66
+EMILOJU FC
+Right
+48
+42
+57
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+61
+46
+59
+43
+41
+53
+47
+33
+5'6
+27
+71
+35
+https://lh3.googleusercontent.com/pw/AP1GczMgBleEhWHV3kvtPDY-dyjcaRCVk65rjsZai8Fir8IZL2qVU5-Pa00zFZbDsFs5jHg4gIPC3TijzTbAZJDIEV52FJkvDuccB2AEWE7ZLp6m0Gt6t5zgjyA7YWBHausjcM_YFPfsxg65wBBb9AgGIVjd=w506-h633-s-no-gm?authuser=0
+23
+65
+46
+51
+[]
+10
+62
+52
+Wilfred Ndidi
+Destroyer
+25
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+https://img.a.transfermarkt.technology/portrait/big/274839-1765193511.jpg?lm=1
+Nigeria
+1996-12-16
+	
+GREATNESS BERNARD
+Male
+2007-04-30
+19
+NIGERIA
+DEFENSIVE MIDFIELDER
+72
+EMILOJU FC
+Right
+49
+50
+47
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+58
+46
+46
+49
+50
+61
+45
+43
+5'6
+29
+67
+40
+https://lh3.googleusercontent.com/pw/AP1GczMgBleEhWHV3kvtPDY-dyjcaRCVk65rjsZai8Fir8IZL2qVU5-Pa00zFZbDsFs5jHg4gIPC3TijzTbAZJDIEV52FJkvDuccB2AEWE7ZLp6m0Gt6t5zgjyA7YWBHausjcM_YFPfsxg65wBBb9AgGIVjd=w506-h633-s-no-gm?authuser=0
+39
+64
+48
+38
+[]
+25
+64
+57
+Wilfred Ndidi
+Destroyer
+34
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+https://img.a.transfermarkt.technology/portrait/big/274839-1765193511.jpg?lm=1
+Nigeria
+1996-12-16
+	
+ALARA TOHEEB
+Male
+2009-12-28
+16
+NIGERIA
+WINGER
+54
+OLYMPIC LAGOS
+Right
+72
+69
+77
+		
+A first-team ready player with exceptional maturity. Shows leadership qualities and game-changing ability. Already competing at senior level with outstanding results.
+81
+56
+78
+66
+70
+85
+66
+59
+5'6
+47
+81
+60
+https://lh3.googleusercontent.com/pw/AP1GczMyl5Pkh0sZqyUtu0zO1YSEJtXK3EliGTUzNRif-f_kUaWWfNu8O6-Ux2teZ6YO29MLHDgPS-rQNazpAEiDQktpeuGcMfhnOFV7aQKMIcx-sHdzC5Jk4Mo6GXbyXtI_E2x8AAHMZ69bkL8pSqjCi_GF=w506-h633-s-no-gm?authuser=0
+65
+77
+72
+73
+[]
+54
+86
+74
+Bryan Mbeumo
+Wide Finisher
+60
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+IMOLE AFOLABI
+Male
+2008-05-02
+18
+NIGERIA
+STRIKER
+64
+OLYMPIC LAGOS
+Right
+64
+65
+62
+		
+A useful attacking option who can impact games off the bench. Possesses one or two strong attributes (e.g., speed, strength in hold-up play). Output can be inconsistent, and struggles to be a focal point against organized, physical defenses.
+77
+43
+58
+60
+68
+90
+47
+48
+5'9
+24
+70
+39
+https://lh3.googleusercontent.com/pw/AP1GczPFaXLgHS-K-Jy4s-OwrgrU9Od4nYi9A0x6yE9h8gateTVBUy4LzaQ7DDrZWg2Jd0XLbeBhAOeuVPOsaG6ksOvHDVOC59zQvPGzXEF2Ks1d_OmOKWgYVz8j8zPJjscMq1cQ6YOUNxPBvqtBAvgJAE62=w506-h633-s-no-gm?authuser=0
+74
+64
+50
+51
+[]
+63
+67
+65
+Victor Osimhen
+Explosive 9
+47
+77
+{"pace":88,"acceleration":86,"sprint_speed":89,"stamina":71,"strength":75,"agility":78,"dribbling":77,"ball_control":76,"passing":62,"finishing":81,"technique":76,"first_touch":74,"vision":62,"composure":68,"decision_making":66,"work_rate":74,"positioning":75,"team_play":62}
+https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Victor-osimhen-nigeria-2024-3-4.jpg/250px-Victor-osimhen-nigeria-2024-3-4.jpg
+Nigeria
+1998-12-29
+	
+OLAIBI TAIWO
+Male
+2010-04-21
+16
+NIGERIA
+WINGER
+60
+OLYMPIC LAGOS
+Right
+58
+60
+56
+		
+A consistent threat in youth leagues due to strong physical attributes like pace and power. Has a proven eye for goal in clear-cut situations. Can be overly reliant on physical traits; needs to develop tactical variety in movement and improve combination play.
+69
+44
+54
+55
+63
+74
+42
+42
+5'6
+25
+68
+36
+https://lh3.googleusercontent.com/pw/AP1GczOY3hrJLqo3hUKe27-sswa8J7inO76MxaquBQge_fmv7U9oB83tj2HWul_h3G2eSHt-9YZNcS7PBO0SgNJXJ1VhsJDAcdppG70v1csf9bMnzCuZkDxKEGd277wnWLNDZqdNhdmIuaFs9aBhgfmRCz_5=w506-h633-s-no-gm?authuser=0
+67
+58
+41
+45
+[]
+55
+59
+58
+Bryan Mbeumo
+Wide Finisher
+31
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+SOLOMON BUKUNMI
+Male
+2008-12-24
+17
+NIGERIA
+CENTRAL MIDFIELDER
+69
+OLYMPIC LAGOS
+Right
+73
+71
+74
+		
+A bona fide star and the engine room of his team. Possesses a unique blend of technical security, tactical intelligence, and physical endurance. Consistently tops performance metrics in both defensive and offensive categories.
+76
+56
+76
+63
+70
+80
+67
+60
+6
+41
+82
+55
+https://lh3.googleusercontent.com/pw/AP1GczNotvOt5yzcw63x0CI7u3tGtBTWvFjsk_sYT2FdFvV9e2dqL0Yg04pFF6wq6pxBq-jlSSpz5rKjYcAdEfEw8WtrPy7z0cepG4SDagFaJW6cFojZ5eiBP83uwMUqZR76IkbXoz6tLP1NHiFi_kXnV2dg=w506-h633-s-no-gm?authuser=0
+73
+77
+72
+71
+[]
+67
+86
+65
+Declan Rice
+Box-to-Box
+66
+79
+{"pace":80,"acceleration":79,"sprint_speed":80,"stamina":88,"strength":79,"agility":78,"dribbling":74,"ball_control":77,"passing":76,"finishing":70,"technique":75,"first_touch":74,"vision":68,"composure":68,"decision_making":70,"work_rate":88,"positioning":70,"team_play":74}
+https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRqKfQ5YZdGvg6sGlqoTdIS_77UW2OH85qTew&s
+England
+1999-01-14
+	
+ASIM YUSUF
+Male
+2010-02-11
+16
+NIGERIA
+RIGHT BACK
+59
+EMILOJU FC
+Right
+74
+72
+76
+		
+A generational defensive talent. Plays with a level of composure, anticipation, and technical quality that is unparalleled for his age. Not just a great young defender, but a defender who could already start for a top UCL side. A future national team captain.
+74
+54
+80
+64
+68
+92
+64
+62
+5'6
+43
+81
+57
+https://lh3.googleusercontent.com/pw/AP1GczND5t_8tRPRqunBs67Xi2SRzLw_ncT0x4IXkHdyA29gFRQSg6OZ_9wv5IuY8k6HNRMbY2SsOZtJoM55cO-6DqFRv8tHnRAktIS2h83f8DITfW-faOz9EhZp6O4Q9_GgqcgKzQ102acL8LXSx8YGth8Q=w506-h633-s-no-gm?authuser=0
+75
+75
+68
+75
+[]
+63
+82
+75
+Jules Koundé
+Power Fullback
+70
+77
+{"pace":86,"acceleration":84,"sprint_speed":87,"stamina":83,"strength":78,"agility":76,"dribbling":69,"ball_control":72,"passing":70,"finishing":60,"technique":70,"first_touch":69,"vision":62,"composure":64,"decision_making":68,"work_rate":84,"positioning":71,"team_play":71}
+https://e-noticies.cat/filesedc/uploads/image/post/kounde-fcbarcelona_1200_800.jpg
+France
+1998-11-12
+	
+EBUBE NNABUGO
+Male
+2009-10-01
+16
+NIGERIA
+CENTRAL BACK
+80
+EMILOJU FC
+Right
+42
+39
+45
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+44
+46
+49
+36
+34
+34
+51
+37
+6'7
+26
+72
+38
+https://lh3.googleusercontent.com/pw/AP1GczNvECdB9q9X0oJnBRvr-Y_r2hmmiWMTmcKoQQl9eq7blPFro35ojLtTutyBNekxQUsQ-6UkbQpygGAoIUP4SkhsNf-C4HEUezR7OcjU9Q662V4SJ-_16QPLSe_hRp9DNfcuQwBzDN97Qn2H6k39QBso=w506-h633-s-no-gm?authuser=0
+14
+54
+62
+43
+[]
+3
+77
+36
+Jonathan Tah
+Leader CB
+14
+71
+{"pace":67,"acceleration":64,"sprint_speed":71,"stamina":78,"strength":88,"agility":64,"dribbling":62,"ball_control":72,"passing":72,"finishing":42,"technique":68,"first_touch":70,"vision":62,"composure":76,"decision_making":78,"work_rate":78,"positioning":80,"team_play":74}
+https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRyXlaMIjU9ffo--2bM2Aeu5M6zEBaXOnponQ&s
+Germany
+1996-02-11
+	
+KOREDE OGUNBULE
+Male
+2009-02-07
+17
+NIGERIA
+WINGER
+70
+EMILOJU FC
+Right
+64
+64
+66
+		
+A dynamic and direct attacker who is a constant menace to opposing backlines. Combines raw pace with intelligent off-the-ball runs and a powerful shot. Already a key contributor at the senior level with a sky-high ceiling.
+75
+43
+65
+58
+64
+90
+47
+47
+5'7
+24
+72
+38
+https://lh3.googleusercontent.com/pw/AP1GczM7K7x-MLqZ5B0a0kOwB68G2s-iBweLx-Du-JhrCQZ-22ufep5-dLUKXBBbXeFfJW4X7NJQUbYGPwY41xaVoYxJfOAVd58i30p46L-EK2czC57X7pMSufTNhBEiFZL9mcqIYmGXfuSA-Tl1lZC_r7YK=w506-h633-s-no-gm?authuser=0
+71
+64
+47
+57
+[]
+56
+64
+66
+Bryan Mbeumo
+Wide Finisher
+39
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+MICHEAL ASIEGBU
+Male
+2008-04-05
+18
+NIGERIA
+WINGER
+71
+EMILOJU FC
+Right
+74
+72
+76
+		
+A certified match-winner. Combines world-class physical attributes with a ruthless finishing instinct and improved link-up play. Carries the goal-scoring burden for his team and is a nightmare for any defender. On the cusp of a top European transfer.
+74
+54
+80
+64
+68
+92
+64
+62
+5'7
+43
+81
+57
+https://lh3.googleusercontent.com/pw/AP1GczPNM1eGSFHC3V3X0wNMGVGy3yjj8XByVQrydIrkQHLn-jd0sGM5Mej86b2UtAaYhbH_PEw2MgHqrtBz5ItfLHASx4BZLrRKE7Db0SOQ3WKQj0_uSLMrfbp10U3y2A-5udD4WwrUgUBWMc3g5wTkmk1D=w506-h633-s-no-gm?authuser=0
+75
+75
+68
+75
+[]
+63
+82
+75
+Bryan Mbeumo
+Wide Finisher
+63
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+PELUMI OLUWASANMI
+Male
+2009-06-06
+16
+NIGERIA
+CENTRAL MIDFIELDER
+58
+EMILOJU FC
+Right
+63
+56
+73
+		
+A complete midfielder in the making. Combines relentless defensive work with incisive forward passing and an ability to arrive in the box. A manager's dream on the pitch, showing leadership and controlling the game's tempo.
+74
+44
+76
+47
+53
+78
+48
+33
+5'6
+26
+76
+34
+https://lh3.googleusercontent.com/pw/AP1GczNMyejwyHI0lJD2kSZnSnb2lq_4ZXIO5V19dhWQchE4DB06HxpSYBO7MUM_eM1GcZnvvpFzgzLxmnMFbAGyvKgWYR-0Qg0L-X7cfR3z8PKmIbA55RpYM4GJ6H3BFNTTO1ZNxHAYi8WDjg3wjaJLPyzh=w506-h633-s-no-gm?authuser=0
+61
+64
+45
+68
+[]
+60
+62
+60
+Declan Rice
+Box-to-Box
+38
+79
+{"pace":80,"acceleration":79,"sprint_speed":80,"stamina":88,"strength":79,"agility":78,"dribbling":74,"ball_control":77,"passing":76,"finishing":70,"technique":75,"first_touch":74,"vision":68,"composure":68,"decision_making":70,"work_rate":88,"positioning":70,"team_play":74}
+https://i.namu.wiki/i/Z6eUr2z-MqzCdipmMhDMoNfTdjbOvjmTNXpZXQK2WycMhlxjpRhqHvJCzmM-gHc-BGAJm7dz3ySXPVJbqBvaqQ.webp
+England
+1999-01-14
+	
+ABDULLAHI ABUBAKAR
+Male
+2008-01-04
+18
+NIGERIA
+WINGER
+168
+69
+GOALGETTERS FA
+Right
+54
+62
+44
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+62
+35
+33
+62
+69
+75
+42
+60
+5'6
+32
+41
+51
+https://lh3.googleusercontent.com/pw/AP1GczOUg0SZjsffHJgitm_9OoMgEte9k3u7MMHs8PWHx0cdCZsxVK11S5_eLDbsFoOfRqW70OWLaSgVD1uV-SBonwCImvCIwefEy9C3TUcY77YgtArRMdJApiRZm8eFqoFeDAzgUsxgH0HkabGWy-q8XVga=w506-h633-s-no-gm?authuser=0
+79
+63
+55
+37
+[]
+72
+55
+65
+Bradley Barcola
+Explosive Dribbler
+38
+76
+{"pace":93,"acceleration":91,"sprint_speed":90,"stamina":78,"strength":64,"agility":88,"dribbling":84,"ball_control":81,"passing":70,"finishing":74,"technique":78,"first_touch":76,"vision":67,"composure":66,"decision_making":62,"work_rate":76,"positioning":66,"team_play":67}
+https://s.hs-data.com/gfx/person/l/606043.jpg?fallback=male
+France
+2002-09-02
+	
+ADEBISI SEGUN
+Male
+2008-12-14
+17
+NIGERIA
+CENTRAL BACK
+68
+GOALGETTERS FA
+Right
+61
+60
+63
+		
+A solid, no-nonsense defender who can be trusted as a squad player in a senior side. Strong in the tackle and organizes the line adequately. Lacks the elite recovery pace or ball-playing composure to start for a top-side, but a dependable professional.
+72
+52
+61
+51
+58
+77
+56
+42
+5'7
+31
+74
+41
+https://lh3.googleusercontent.com/pw/AP1GczN26gEJmTwLMs4qvySABGXswC55Sk9sIykRKR3zCFeMG-Jm279wE5U-Uu60I9mgPPoh4ZE9QOLHkxegkL3T8K3x4JNKftcbB9-H4H_8P22SV42DwrZn66PCi66DWHL08wQIHC2yrjrNVmhTi9BM8xSs=w506-h633-s-no-gm?authuser=0
+66
+70
+55
+56
+[]
+69
+71
+57
+Kim Min-jae
+Stopper
+58
+73
+{"pace":74,"acceleration":70,"sprint_speed":75,"stamina":76,"strength":91,"agility":64,"dribbling":60,"ball_control":70,"passing":68,"finishing":44,"technique":66,"first_touch":68,"vision":60,"composure":74,"decision_making":76,"work_rate":78,"positioning":80,"team_play":72}
+https://img.fcbayern.com/image/upload/f_auto/q_auto/ar_1:1,c_fill,g_custom,w_768/v1689695039/cms/public/images/fcbayern-com/players/spielerportraits/teaser/minjae-kim.png
+South Korea
+1996-11-15
+	
+ADEWALE LATEEF
+Male
+2008-06-08
+17
+NIGERIA
+WINGER
+66
+GOALGETTERS FA
+Right
+68
+66
+71
+		
+A useful attacking option who can impact games off the bench. Possesses one or two strong attributes (e.g., speed, strength in hold-up play). Output can be inconsistent, and struggles to be a focal point against organized, physical defenses.
+76
+43
+72
+58
+65
+88
+53
+46
+5'6
+25
+76
+40
+https://lh3.googleusercontent.com/pw/AP1GczORAImF2Ej3uaI2tNXTwKLCnMJP2JGEo2QfKrKa0BFw35IYZGHbfAB4strNEVjhIPctF42eS_r6dOQNJLmSQal6l9aTscUnwul_RrGeFY6kvHAOzf6h34K5fj7ZPsjI8sKg8KdjF7gBKKQoIWVJ9G4q=w506-h633-s-no-gm?authuser=0
+76
+67
+56
+65
+[]
+74
+72
+64
+Bryan Mbeumo
+Wide Finisher
+46
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+AGIDIOGUN DESMOND
+Male
+2009-10-22
+16
+NIGERIA
+DEFENSIVE MIDFIELDER
+62
+GOALGETTERS FA
+Right
+58
+56
+61
+		
+A functional and intelligent player who serves as a reliable link in possession. Demonstrates a good work rate and understands his role in a midfield unit. Can be a metronome but lacks the creativity or defensive bite to be a dominant force. Needs to add a specialist trait (e.g., long-range passing, ball-winning).
+64
+54
+62
+54
+54
+57
+62
+52
+5'6
+39
+77
+52
+https://lh3.googleusercontent.com/pw/AP1GczMy7-ugoeJz2s94ei8DeqZZ2pVtWK4YlT9tAho2pMqtLWCZQ0os2rbua127mcx4Rhd6oh1AtKKH4W0OidgIY6cwuOEEn_i3WsSTogfn-CikZLBr1PO3dYqEvpKF-AkP5yvOBP_U9NzXPwHa8HgwsO8v=w506-h633-s-no-gm?authuser=0
+39
+75
+68
+57
+[]
+23
+82
+57
+Casemiro
+Screening 6
+50
+72
+{"pace":63,"acceleration":64,"sprint_speed":68,"stamina":82,"strength":74,"agility":68,"dribbling":68,"ball_control":72,"passing":76,"finishing":54,"technique":72,"first_touch":73,"vision":71,"composure":75,"decision_making":78,"work_rate":82,"positioning":78,"team_play":77}
+https://assets.realmadrid.com/is/image/realmadrid/1330790408200?$Mobile$&fit=wrap&wid=312
+Brazil
+1992-02-23
+	
+ANTHONY STANLEY
+Male
+2009-09-09
+16
+NIGERIA
+RIGHT BACK
+60
+GOALGETTERS FA
+Right
+77
+73
+82
+		
+A generational defensive talent. Plays with a level of composure, anticipation, and technical quality that is unparalleled for his age. Not just a great young defender, but a defender who could already start for a top UCL side. A future national team captain.
+80
+64
+85
+68
+72
+88
+72
+66
+5'6
+55
+85
+68
+https://lh3.googleusercontent.com/pw/AP1GczOZmOpGM0Zdm7mv95YtBLLLhXkYyUyA39UbDcoozc1n_nbhUzKKaPkn5Vz0kMI7xqf1mrreB9A5-sTxaDchkFjxgxw5oSN_XTEAujh9ouVuWuNlQg6WRwbu6102TUTi3cbeG6csi-NrhrbW6oGvkbH5=w506-h633-s-no-gm?authuser=0
+69
+81
+77
+81
+[]
+59
+88
+77
+Ben White
+Inverted FB
+74
+73
+{"pace":73,"acceleration":73,"sprint_speed":75,"stamina":82,"strength":66,"agility":74,"dribbling":72,"ball_control":76,"passing":82,"finishing":62,"technique":78,"first_touch":75,"vision":76,"composure":72,"decision_making":74,"work_rate":80,"positioning":71,"team_play":78}
+https://www.arsenal.com/sites/default/files/styles/desktop_16x9/public/images/B.WHITE_Headshot_web_xdbqzl78.png?h=ad73a5fe&auto=webp&itok=QWTYDkyf
+England
+1997-10-08
+	
+BANJOKO TUMISE
+Male
+2010-04-12
+16
+NIGERIA
+CENTRAL MIDFIELDER
+57
+GOALGETTERS FA
+Right
+40
+41
+39
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+34
+50
+45
+36
+34
+15
+56
+44
+5'6
+28
+73
+41
+https://lh3.googleusercontent.com/pw/AP1GczMFgzhcFIzHiFGsk4S8iTA1PHC24vaAvdKGq4pIXOAccd_jfkWaEW9kewrjKDotYypnIosM6htGTp8xfedYfGM4mZ5F3KfZ5bEa4qkyJtCV_nGcMQfTOvLSZ25z7A2_HT9cZ4tvVkLMPR8ZM2kcB5m9=w506-h633-s-no-gm?authuser=0
+14
+63
+65
+39
+[]
+3
+80
+30
+Pascal Groß
+Controller
+1
+73
+{"pace":68,"acceleration":72,"sprint_speed":72,"stamina":83,"strength":62,"agility":80,"dribbling":78,"ball_control":81,"passing":85,"finishing":64,"technique":80,"first_touch":80,"vision":81,"composure":76,"decision_making":77,"work_rate":80,"positioning":72,"team_play":80}
+https://i.namu.wiki/i/yAUlmhUd-WvmJArgDy_JKsKeb7H33U-f8TnRrBFrqb3JyzTCzoIb-WpbwRbG_4WJ9SvPMpflSYnjXKbAr4JDzw.webp
+Germany
+1991-06-15
+	
+UBONG OKON
+Male
+2009-07-11
+16
+NIGERIA
+WINGER
+60
+GOALGETTERS FA
+Right
+76
+79
+71
+		
+A first-team ready player with exceptional maturity. Shows leadership qualities and game-changing ability. Already competing at senior level with outstanding results.
+81
+55
+69
+74
+82
+96
+63
+69
+5'6
+43
+78
+60
+https://lh3.googleusercontent.com/pw/AP1GczMBnhxf4C1KoFyAuBzBLfHPtdhQNtSZ2GLCu9Oh31bzlE8bCG380JmP_4AxY8-V24H-6LNeVFFW67TzJBp_wJYIqdiGmdk3MEjBcVM51ZabW0dvxZbT_ZZu6RiJQxmvEVWXvsZZSr0RFsHXdCcxBEnv=w506-h633-s-no-gm?authuser=0
+87
+75
+70
+64
+[]
+79
+84
+78
+Bryan Mbeumo
+Wide Finisher
+69
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://dynamic-crop-cdn.scoreplay.io/472/4896319/media_102559555_102166679.png?fmt=webp&f=center&w=720&h=1224
+Cameroon
+1999-08-07
+	
+CHIKA ADIELE
+Male
+2008-07-31
+17
+NIGERIA
+RIGHT BACK
+72
+MAGIC STARS FC
+Right
+63
+62
+63
+		
+A solid, no-nonsense defender who can be trusted as a squad player in a senior side. Strong in the tackle and organizes the line adequately. Lacks the elite recovery pace or ball-playing composure to start for a top-side, but a dependable professional.
+77
+44
+60
+55
+64
+87
+46
+41
+5'6
+24
+71
+36
+https://lh3.googleusercontent.com/pw/AP1GczOihZeDfoKrRHdoHK9nb6EA2nwU3LEmOoWoWeUrEHoOb74nO1Xt3htisPxnIfq7KO9sWEoBj5LZPi_q65s_SFCLNiuY5-2i0oYombt1rOltGNb2RWI1XIO0Fk1cyjdqLojePvW8Hgm-bHkkoKvnTkC5=w506-h633-s-no-gm?authuser=0
+72
+61
+46
+53
+[]
+69
+63
+61
+Jules Koundé
+Power Fullback
+47
+77
+{"pace":86,"acceleration":84,"sprint_speed":87,"stamina":83,"strength":78,"agility":76,"dribbling":69,"ball_control":72,"passing":70,"finishing":60,"technique":70,"first_touch":69,"vision":62,"composure":64,"decision_making":68,"work_rate":84,"positioning":71,"team_play":71}
+https://img.a.transfermarkt.technology/portrait/big/411975-1702502639.jpg?lm=1
+France
+1998-11-12
+	
+CHISOM KALU
+Male
+2008-07-31
+17
+NIGERIA
+ATTACKING MIDFIELDER
+75
+MAGIC STARS FC
+Right
+61
+57
+68
+		
+The definition of a squad player. Fills in multiple midfield roles, follows tactical instructions, and rarely gives possession away cheaply. Lacks the standout attributes (vision, dynamism, goal threat) to command a starting spot at the highest level but is a valuable asset.
+77
+44
+67
+54
+58
+82
+49
+38
+5'10
+27
+73
+37
+https://lh3.googleusercontent.com/pw/AP1GczOFCOVlWGwRyslgnHyHCP8fG9BqR1-77awa5ku8Oipx_nGBtoHjPE5cF9Va9h8KVAXve-Afp1hdsu60FVpzURmRnx9QJA6iUO3IH6z63yQqPUSePelV_FL9L6LwRqbrvMAvgZZjf1XB_hKLNMZvmKHe=w506-h633-s-no-gm?authuser=0
+57
+65
+49
+60
+[]
+45
+65
+61
+Pedro Gonçalves
+Attacking 10
+36
+73
+{"pace":74,"acceleration":76,"sprint_speed":74,"stamina":74,"strength":62,"agility":80,"dribbling":78,"ball_control":80,"passing":77,"finishing":78,"technique":79,"first_touch":78,"vision":74,"composure":74,"decision_making":70,"work_rate":74,"positioning":72,"team_play":72}
+https://img.uefa.com/imgml/TP/players/1/2026/324x324/250143328.jpg
+Portugal
+1998-06-28
+	
+ISMAEL SALISU
+Male
+2008-06-15
+17
+NIGERIA
+ATTACKING MIDFIELDER
+67
+MAGIC STARS FC
+Right
+74
+68
+83
+		
+A bona fide star and the engine room of his team. Possesses a unique blend of technical security, tactical intelligence, and physical endurance. Consistently tops performance metrics in both defensive and offensive categories.
+78
+52
+88
+59
+65
+86
+62
+50
+6
+41
+83
+52
+https://lh3.googleusercontent.com/pw/AP1GczNj1jvFIz81C7zpa2HBhwK8KtesYTkqMXfSSySGWn7Esd_3WhTXeZuSUueptN5iD8yHoyHTQeS1XnbA2GP-aVI8rCyA00laZ-vZ1SB17DSOZAH-odCc7CoTycmuLxw_XZGl6pPgG1edePpsejw8HMRY=w506-h633-s-no-gm?authuser=0
+74
+73
+63
+82
+[]
+76
+78
+70
+Morgan Gibbs-White
+Attacking 10
+58
+74
+{"pace":75,"acceleration":76,"sprint_speed":74,"stamina":74,"strength":62,"agility":80,"dribbling":78,"ball_control":80,"passing":78,"finishing":77,"technique":79,"first_touch":78,"vision":74,"composure":73,"decision_making":70,"work_rate":76,"positioning":72,"team_play":72}
+https://static01.nyt.com/athletic/uploads/wp/2024/10/08033026/morgan-gibbs-white-scaled-e1728372659793.jpg?width=1200&height=900&fit=cover
+England
+2000-01-27
+	
+ISREAL AKAMO
+Male
+2008-12-19
+17
+NIGERIA
+WINGER
+40
+MAGIC STARS FC
+Right
+69
+71
+66
+		
+A useful attacking option who can impact games off the bench. Possesses one or two strong attributes (e.g., speed, strength in hold-up play). Output can be inconsistent, and struggles to be a focal point against organized, physical defenses.
+76
+48
+64
+64
+73
+94
+50
+54
+5'9
+35
+72
+48
+https://lh3.googleusercontent.com/pw/AP1GczPv_AQuZeAGs9i3RPbfbUGEJmObb57kkpzeCeNOAT4jN365aHVu8qoe2uQDY3qmo2hdQjb4jfVSZnr7qzUJ3TvBiJnP3ch5N6H6_MhVmDoySjTr_S9u5MPJUmxx0pRdSFT5Waaxw0UTJzPL-J-BPwfe=w506-h633-s-no-gm?authuser=0
+85
+66
+52
+57
+[]
+81
+68
+73
+Bryan Mbeumo
+Wide Finisher
+55
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+JIMOH RASHEED
+Male
+2008-08-10
+17
+NIGERIA
+STRIKER
+77
+MAGIC STARS FC
+Right
+68
+65
+72
+		
+A useful attacking option who can impact games off the bench. Possesses one or two strong attributes (e.g., speed, strength in hold-up play). Output can be inconsistent, and struggles to be a focal point against organized, physical defenses.
+78
+43
+73
+57
+66
+89
+48
+43
+6'1
+24
+75
+36
+https://lh3.googleusercontent.com/pw/AP1GczMVGfFtRaXLV9oKBIoY-0XgA0EvJimYv5qp8eXt7qdLV4Fv1Xh5BuiKrCMH0faUxwkaAg3klrejswvUf7O_KqOrySB4Ch3u8gTnvwgjAfkdurUv8M8Mtb2z9mktG1kptwjc0MXDfglGLtIUGbXacFSP=w506-h633-s-no-gm?authuser=0
+77
+64
+46
+65
+[]
+72
+63
+64
+Viktor Gyökeres
+Power Finisher
+48
+81
+{"pace":81,"acceleration":76,"sprint_speed":82,"stamina":84,"strength":87,"agility":69,"dribbling":72,"ball_control":74,"passing":61,"finishing":85,"technique":76,"first_touch":75,"vision":60,"composure":74,"decision_making":71,"work_rate":76,"positioning":80,"team_play":62}
+https://img.uefa.com/imgml/TP/players/1/2026/cutoff/250105927.webp
+Sweden
+1998-06-04
+	
+QUADRI JAMAL
+Male
+2008-06-18
+17
+NIGERIA
+CENTRAL BACK
+59
+MAGIC STARS FC
+Left
+62
+62
+62
+		
+A solid, no-nonsense defender who can be trusted as a squad player in a senior side. Strong in the tackle and organizes the line adequately. Lacks the elite recovery pace or ball-playing composure to start for a top-side, but a dependable professional.
+75
+50
+58
+55
+61
+82
+58
+47
+5'10
+31
+74
+44
+https://lh3.googleusercontent.com/pw/AP1GczPKyyNfZUj-YqYN-7t5rU9aR6Wx4DXoSGazVSfcc3Xd5LcfSW8F6thXa9OuPJbxHwTj75eUz6VU_8CBqUMfiPAALajSBq10Wes3rCQteLLdrxBVM4qdnqwWKP9-K7stXgJhJIUzzb2gqpntTvFtAu0f=w506-h633-s-no-gm?authuser=0
+65
+72
+63
+54
+[]
+67
+78
+59
+Kim Min-jae
+Stopper
+58
+73
+{"pace":74,"acceleration":70,"sprint_speed":75,"stamina":76,"strength":91,"agility":64,"dribbling":60,"ball_control":70,"passing":68,"finishing":44,"technique":66,"first_touch":68,"vision":60,"composure":74,"decision_making":76,"work_rate":78,"positioning":80,"team_play":72}
+https://i.namu.wiki/i/16EvgURhGL60lzie4kEN-z_tVzwlMsvcf_kPlY3aShL4kfg9Jng2QvB_72EJGFn2l2aNHBl8FjJLxZmRGaNqFQ.webp
+South Korea
+1996-11-15
+	
+RAHEEM KAYODE
+Male
+2007-07-07
+18
+NIGERIA
+CENTRAL BACK
+45
+MAGIC STARS FC
+Right
+70
+71
+68
+		
+A solid, no-nonsense defender who can be trusted as a squad player in a senior side. Strong in the tackle and organizes the line adequately. Lacks the elite recovery pace or ball-playing composure to start for a top-side, but a dependable professional.
+78
+55
+65
+65
+72
+91
+64
+61
+5'10
+34
+78
+51
+https://lh3.googleusercontent.com/pw/AP1GczNMsg-zc2UPVzU1s9vCuVTYLhdU1yNx0sACShNOTqXhP7QG6KYgJ0rgnO3SoOu6PWDQF_qgWxWEzMzsFw3o19HI9vfSD5wvoUxB6rYKLFawUZkNl2Xk94Xh5tOyAUkX6g8gj0Lq5HjPq9JlEjbXYj3y=w506-h633-s-no-gm?authuser=0
+74
+73
+69
+62
+[]
+61
+84
+63
+Kim Min-jae
+Stopper
+61
+73
+{"pace":74,"acceleration":70,"sprint_speed":75,"stamina":76,"strength":91,"agility":64,"dribbling":60,"ball_control":70,"passing":68,"finishing":44,"technique":66,"first_touch":68,"vision":60,"composure":74,"decision_making":76,"work_rate":78,"positioning":80,"team_play":72}
+https://photos.app.goo.gl/4Fd1abeeHAB5NGeN7
+South Korea
+1996-11-15
+	
+EGUNDIPE ANUYEMI
+Male
+2006-06-24
+19
+NIGERIA
+DEFENSIVE MIDFIELDER
+63
+MAGIC STARS FC
+Right
+68
+67
+69
+		
+The definition of a squad player. Fills in multiple midfield roles, follows tactical instructions, and rarely gives possession away cheaply. Lacks the standout attributes (vision, dynamism, goal threat) to command a starting spot at the highest level but is a valuable asset.
+77
+48
+68
+56
+66
+86
+55
+45
+5'6
+30
+76
+43
+https://lh3.googleusercontent.com/pw/AP1GczPDx70s_hkdY1qxEqdeV-coe6Yx2mxezfzY8icUp9rB-62VbsDQNehm_8bawezNsTzgQpZC941LZGY2JyLlW3IggnbnKjDVxeIQ4cSCrZpexp6l-VIswhbTjDfJNQVpO-FXKBMePKg7__SeHD4Hje3c=w506-h633-s-no-gm?authuser=0
+79
+69
+58
+62
+[]
+87
+73
+63
+Wilfred Ndidi
+Destroyer
+56
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+https://img.a.transfermarkt.technology/portrait/big/274839-1765193511.jpg?lm=1
+Nigeria
+1996-12-16
+	
+CHIJIOKE OBAREZE
+Male
+2007-06-30
+18
+NIGERIA
+DEFENSIVE MIDFIELDER
+168
+62
+CHEKAS FC
+Right
+59
+58
+62
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+75
+42
+59
+48
+59
+84
+43
+32
+5'6
+21
+69
+30
+https://lh3.googleusercontent.com/pw/AP1GczPNFJfIFAvOV_FXu-tS0tvzytrCJJIzLjdRj3RkODb8Qf7Wpfk6RuiqGXSGOXXmUnOKpiVElVy_u2QmjZ2hb2f1BA7XEXStLTSOexeOp6q0JU0lenf0nKJOMU_dsXbOiZfXnWKtIxDvbxWITLv9GO8U=w506-h633-s-no-gm?authuser=0
+71
+61
+40
+51
+[]
+75
+57
+58
+Wilfred Ndidi
+Destroyer
+40
+74
+{"pace":69,"acceleration":66,"sprint_speed":70,"stamina":84,"strength":85,"agility":66,"dribbling":66,"ball_control":68,"passing":70,"finishing":52,"technique":70,"first_touch":70,"vision":64,"composure":70,"decision_making":73,"work_rate":84,"positioning":76,"team_play":72}
+https://img.a.transfermarkt.technology/portrait/big/274839-1765193511.jpg?lm=1
+Nigeria
+1996-12-16
+	
+HEZEKIAH JUSTIN
+Male
+2006-07-15
+19
+NIGERIA
+STRIKER
+69
+CHEKAS FC
+Right
+60
+56
+65
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+81
+49
+61
+58
+61
+79
+46
+39
+6
+42
+70
+48
+https://lh3.googleusercontent.com/pw/AP1GczMb-tiCzqJ_Eml1a8UsVHSZi7yG_9RV7g4GZQ-BGJFsEMgwrS_bXFOKDApAG5Tn3gr0vNWP0VCl6EHaqO9tCDaO-2gOju1Np5t1dM21q50nUlNKzmfs5n6l_AkA5r5rFsBxf1u2ZsBXm0UZAteRcAdS=w506-h633-s-no-gm?authuser=0
+53
+64
+47
+53
+[]
+42
+63
+73
+Cristiano Ronaldo
+Power Finisher
+44
+80
+{"pace":76,"acceleration":71,"sprint_speed":81,"stamina":84,"strength":86,"agility":69,"dribbling":72,"ball_control":74,"passing":62,"finishing":85,"technique":76,"first_touch":75,"vision":60,"composure":77,"decision_making":71,"work_rate":76,"positioning":82,"team_play":62}
+https://editorial.uefa.com/resources/027b-16a6e8afa2a8-7441ca4b9ac5-1000/cristiano_ronaldo_of_portugal_celebrates_after_scoring_a.jpeg
+Portugal
+1985-02-05
+	
+JAMES OKEKE
+Male
+2007-04-09
+19
+NIGERIA
+WINGER
+62
+CHEKAS FC
+Right
+74
+72
+77
+		
+A certified match-winner. Combines world-class physical attributes with a ruthless finishing instinct and improved link-up play. Carries the goal-scoring burden for his team and is a nightmare for any defender. On the cusp of a top European transfer.
+84
+46
+77
+68
+76
+93
+54
+55
+5'6
+31
+77
+46
+https://lh3.googleusercontent.com/pw/AP1GczPR5AJe9OG4su1ofH4eXGx1rFLkNt1VuQ_G5a4sV1bCs1FpC0fKqAKgXF3mSH5-Mom5boGV2YE8R_5dxeyRnsJAhX42ylHcXro44D3ViWrv2Jr282hlsbyTDbDaQ_IfUY2B0_yrytbW1ct7M2K34Rhp=w506-h633-s-no-gm?authuser=0
+79
+68
+56
+69
+[]
+68
+72
+72
+Bryan Mbeumo
+Wide Finisher
+55
+79
+{"pace":86,"acceleration":85,"sprint_speed":87,"stamina":80,"strength":72,"agility":84,"dribbling":80,"ball_control":79,"passing":73,"finishing":81,"technique":78,"first_touch":76,"vision":68,"composure":72,"decision_making":70,"work_rate":78,"positioning":72,"team_play":70}
+https://i.namu.wiki/i/sVsSu9jVJO4UFomwvS1ARtEDl4xO66u7Yf3m9vwxXVugsKfzuZOgz6A6wT30Y4tIEmiefOx1qeO6c4HQ_oG5Jg.webp
+Cameroon
+1999-08-07
+	
+MOLKADA HILARY
+Male
+2009-07-25
+16
+NIGERIA
+WINGER
+59
+CHEKAS FC
+Right
+61
+59
+64
+		
+A dynamic and direct attacker who is a constant menace to opposing backlines. Combines raw pace with intelligent off-the-ball runs and a powerful shot. Already a key contributor at the senior level with a sky-high ceiling.
+72
+51
+64
+58
+61
+84
+48
+49
+5'6
+45
+71
+53
+https://lh3.googleusercontent.com/pw/AP1GczMV55_-2tfdEO-NHcOVZs2K4bo_C2YTW9rE6r34M9K50WnYsJDaYEkdkFNUNhlchLbwqq6xAa3DUdnkV_yZxpC4gOyBrHC3bMLRKS7h2XyQ_FsmSEbE4H-8ho4M6Cfqdj4Tcq2JoKL1cCtyc3aevK8A=w506-h633-s-no-gm?authuser=0
+56
+65
+49
+56
+[]
+40
+65
+79
+Takefusa Kubo
+Creative Winger
+43
+75
+{"pace":84,"acceleration":85,"sprint_speed":83,"stamina":80,"strength":62,"agility":88,"dribbling":81,"ball_control":81,"passing":77,"finishing":69,"technique":79,"first_touch":78,"vision":73,"composure":70,"decision_making":68,"work_rate":78,"positioning":68,"team_play":74}
+https://assets.goal.com/images/v3/blt52605e5b01bd78f6/crop/MM5DINBQGA5DENBXGU5G433XMU5DKNZ2HE2Q====/GettyImages-2202171754.jpg?auto=webp&format=pjpg&width=3840&quality=60
+Japan
+2001-06-04
+	
+NWOSU HENRY
+Male
+2003-04-22
+23
+NIGERIA
+CENTRAL MIDFIELDER
+74
+CHEKAS FC
+Right
+62
+56
+69
+		
+Shows potential and is developing through structured training. Needs continued focus on technical and physical development to reach professional standards.
+75
+41
+70
+49
+56
+83
+45
+35
+5'6
+21
+73
+31
+https://lh3.googleusercontent.com/pw/AP1GczOxltDH_NrpBYH9OfWkTHhICcsd86mwgYOepbLWGiehNTqhzTcDuaZOcOujYarmWrq52hPU9PurOKroCA7V45JLcfYw54lOORO3_s6H10TbOKU8Vz99ru3coCRf4_QVpmDKfCT0JjQkg0YMUtydx6Wf=w506-h633-s-no-gm?authuser=0
+60
+62
+43
+62
+[]
+53
+60
+59
+Declan Rice
+Box-to-Box
+34
+79
+{"pace":80,"acceleration":79,"sprint_speed":80,"stamina":88,"strength":79,"agility":78,"dribbling":74,"ball_control":77,"passing":76,"finishing":70,"technique":75,"first_touch":74,"vision":68,"composure":68,"decision_making":70,"work_rate":88,"positioning":70,"team_play":74}
+https://img.uefa.com/imgml/TP/players/1/2026/324x324/250083732.jpg
+England
+1999-01-14
+	
+OLAMILEKAN JAMIU
+Male
+2007-09-09
+18
+NIGERIA
+LEFT BACK
+68
+CHEKAS FC
+Right
+67
+67
+67
+		
+A solid, no-nonsense defender who can be trusted as a squad player in a senior side. Strong in the tackle and organizes the line adequately. Lacks the elite recovery pace or ball-playing composure to start for a top-side, but a dependable professional.
+76
+67
+82
+5'6
+72
+https://lh3.googleusercontent.com/pw/AP1GczPX-JyyhapnUODPbZtW5G1UUMxuztngXw8OzZRCySJaTzKFhWD29FavDidd-zFXx6aBi0GyB27zNHfxScUsClJyfNC04x0tSFPUuHOhBnni9HwAL3p-73SkG58-TxJ0iQrFLJeC-SIXjtANN95vxKrf=w506-h633-s-no-gm?authuser=0
+61
+59
+[]
+55
+Reece James
+Power Fullback
+52
+76
+{"pace":86,"acceleration":84,"sprint_speed":86,"stamina":83,"strength":80,"agility":76,"dribbling":70,"ball_control":72,"passing":71,"finishing":60,"technique":70,"first_touch":69,"vision":62,"composure":64,"decision_making":66,"work_rate":84,"positioning":69,"team_play":71}
+https://cdn-img.zerozero.pt/img/jogadores/new/71/65/507165_reece_james_20251218141946.png
+England
+1999-12-08
+	
+OYEWOLE SAMSON
+Male
+2010-01-01
+16
+NIGERIA
+CENTRAL BACK
+77
+CHEKAS FC
+Right
+62
+64
+58
+		
+A first-team ready defender with the mentality of a veteran. Fearless in 1v1 duels, aggressive in the press, and boasts strong decision-making. Still raw in terms of positional nuance but has all the tools to become a top-level starter.
+74
+47
+53
+60
+67
+89
+49
+51
+6'8
+29
+70
+43
+https://lh3.googleusercontent.com/pw/AP1GczOfG9JDUAYCiUQj6LFknJAnXNNP5dz0tYflXg57ebiOVYQ0OLOSX27rkAT2CHREbZmg55AsSc6nZozfNWHGgIEqqjCTnQN3oGZoZdMI1CCjo_lPURX2jv6-9_I8GFw6Yl61v9LxK93jDsjjjy5IVFjB=w506-h633-s-no-gm?authuser=0
+69
+66
+51
+47
+[]
+57
+68
+66
+Kim Min-jae
+Stopper
+51
+73
+{"pace":74,"acceleration":70,"sprint_speed":75,"stamina":76,"strength":91,"agility":64,"dribbling":60,"ball_control":70,"passing":68,"finishing":44,"technique":66,"first_touch":68,"vision":60,"composure":74,"decision_making":76,"work_rate":78,"positioning":80,"team_play":72}
+https://b.fssta.com/uploads/application/soccer/headshots/57194.png
+South Korea
+1996-11-15
+	
+SEBASTIAN FRANCIS
+Male
+2009-03-24
+17
+NIGERIA
+RIGHT BACK
+59
+MAGIC STARS FC
+Right
+64
+62
+67
+		
+A first-team ready defender with the mentality of a veteran. Fearless in 1v1 duels, aggressive in the press, and boasts strong decision-making. Still raw in terms of positional nuance but has all the tools to become a top-level starter.
+73
+42
+69
+52
+61
+87
+45
+39
+5'6
+24
+72
+35
+https://lh3.googleusercontent.com/pw/AP1GczPggb9xLNGVXgKUjNg3-Zc8h6gYeFb1DoAPyS4bitun1aFdNgC--UuzPhidPavQeZDjK9zbJXH6wqZuADH1lA1cIX6Kh3PZFfekfbQkSafQwd-MLa8hJ8--rdoZzAVJTNH3hRvK8mFtcer56EGqn_Zy=w506-h633-s-no-gm?authuser=0
+75
+63
+44
+60
+[]
+74
+61
+64
+Jules Koundé
+Power Fullback
+49
+77
+{"pace":86,"acceleration":84,"sprint_speed":87,"stamina":83,"strength":78,"agility":76,"dribbling":69,"ball_control":72,"passing":70,"finishing":60,"technique":70,"first_touch":69,"vision":62,"composure":64,"decision_making":68,"work_rate":84,"positioning":71,"team_play":71}
+https://s.yimg.com/ny/api/res/1.2/B1Dds5kdUllGCFdHF1Dlqg--/YXBwaWQ9aGlnaGxhbmRlcjt3PTY0MDtoPTQ0MTtjZj13ZWJw/https://media.zenfs.com/en/football_espana_articles_993/d886dc07f114d0a9da269ebaeb782c43
+France
+1998-11-12
+	sponsor_name	sponsor_logo	full_name	gender	date_of_birth	age	nationality	position	height_cm	weight_kg	current_club	league_name	dominant_foot	overall_rating	offensive_score	defensive_score	featured	active	scouting_summary	academy_id	strength	composure	stamina	displayOrder	technique	league_tier	finishing	acceleration	team_play	player_id	dribbling	video_url	height_ft_in	first_touch	positioning	ball_control	photo_url	weight_lbs	pace	video_url_2	video_url_3	decision_making	vision	work_rate	media_articles	sprint_speed	passing	agility	photo_description	photo_url_1763952686349	photo_desc_1763952867165	photo_desc_1763952686349	photo_url_1763952867165	video_desc_5	video_url_6	video_url_7	video_desc_4	video_url_4	video_desc_2	video_url_5	video_desc_8	video_desc_7	video_url_8	video_desc_6	photo_url_1762185090738	photo_url_1762183216325	scouting_summary john doe	video_url_1	video_desc_1	benchmark_name	benchmark_archetype	benchmark_region	benchmark_age_band	benchmark_similarity	benchmark_overall_rating	benchmark_attributes	benchmark_image_url	benchmark_nationality	benchmark_date_of_birth	photo_url_1774627367159	photo_desc_1774627367159	photo_url_1774627375592	photo_desc_1774627375592	photo_url_1774627423007	photo_desc_1774627423007	photo_url_1774644524971	photo_desc_1774644524971	photo_url_1774644562532	photo_desc_1774644562532	photo_url_1774645029843	photo_desc_1774645029843	photo_url_1774645033371	photo_desc_1774645033371	photo_url_1774646414916	photo_desc_1774646414916	photo_url_1775152292798	photo_desc_1775152292798	photo_url_1775152303910	photo_desc_1775152303910	photo_url_1775152322326	photo_desc_1775152322326
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Olasunkanmi A. Dayo
+Male
+2007-06-11
+18
+Nigerian
+Midfielder (MF)
+175
+66
+NARA CLUB
+Japan League (JL3)
+Left
+81
+76
+71
+		
+A phenom. Possesses electrifying pace, sublime dribbling, and a cold-blooded finish. Puts up staggering goal and assist numbers in a top-flight league. Displays a psychological maturity and big-game mentality that marks him as a future Ballon d'Or contender.
+52
+57
+68
+1
+63
+D3
+48
+62
+66
+2
+56
+https://www.youtube.com/watch?v=pvFy2YJsrZ0
+"5'8"""
+61
+58
+62
+https://app.trickle.so/storage/public/images/usr_154548bd30000001/23bda6b5-d6c0-4449-8180-1a4d9a8900bc.jpeg
+145
+58
+https://www.youtube.com/watch?v=CosG13seo3o
+https://www.youtube.com/watch?v=hlKIyJx8slk
+62
+59
+70
+[{"title":"Transfer News","url":"https://www.transfermarkt.com/dayo-olasunkanmi/profil/spieler/1473856","source":"TransferMarket.com","date":"Oct 2025","exerpt":" Dayo Olasunkanmi Transferred to Nara Club, Japan"},{"title":"Scout News","url":"https://www.instagram.com/p/DQE2uZRiKuy/","source":"bolajibale_footballtalk22 - Instagram","date":"Oct 2025","excerpt":"Transferred to Nara Club, Japan"}]
+55
+65
+60
+Passport Photo
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Yusuff O. Sikiru
+Male
+2004-05-13
+21
+Nigerian
+Center Back (CB)
+188
+75
+ESPOIR FC DE SAVALOU
+Celtis Championnats Ligue 1
+Right
+61
+49
+65
+		
+Explosive defender, fearless 1v1, presses aggressively, strong decision-making ability, still raw.
+72
+59
+65
+3
+50
+D1
+35
+48
+49
+3
+42
+https://www.youtube.com/watch?v=YmRafZN6FYk
+"6'2"""
+53
+69
+55
+https://images2.imgbox.com/0c/ea/iFfsHlBI_o.jpeg
+165
+52
+https://www.youtube.com/watch?v=j9N7g86z9Sw
+https://www.youtube.com/watch?v=g0ExXVftFbQ
+68
+54
+66
+[]
+50
+54
+45
+Passport Photo
+https://www.youtube.com/watch?v=01_IXNYUMac
+Skillfully Confident
+Skillfully Confident
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Zidane Sanni
+Male
+2016-06-17
+9
+Nigerian
+CDM
+40
+AYICRIP-NELIS FA
+Ayicrip
+Right
+50
+		
+Technically sound with a clean first touch and reliable short passing. Understands basic positional responsibilities. Needs to develop physical presence, game intelligence under pressure, and consistency in defensive contributions
+2
+https://i.imgur.com/OiLAvVO.mp4
+https://images2.imgbox.com/19/13/Wyj5XfPa_o.png
+[]
+https://lh3.googleusercontent.com/gg/AIJ2gl_79WRcGvq6xoN-8nRSVYTxDPFtSxvyT12NF7smFwjigs15gNs4h9XPwKYBBSVe56xV5aXMxIor3OZZnQjLUAeuxwb1tHEuGFx2gy6Zwl_958GmI5Y7ogXg6HRyRMpm70Edz9faKFROyDwoH2CW6pcgK7ZAGRv9DLN_f2G2EdCwJULE-V--=s1024-rj
+Game Day
+Training
+https://lh3.googleusercontent.com/gg/AIJ2gl-AZNYG5rdy67HmZ80TNttvNS1k2vsbXkkyYgiAQYEFWdIMkxWBVcZ85poyoc39wrBZybz_n3lCincuMlCCiqm7bWQGDOcYici9YhNu_UC2ZAEbqYWr91KnZmHc4u-kj2UxOHCyE3q6TMZdISroKH__HZheAu-u2_LZZwBLpw8TIqJ8ZYXV=s1024-rj
+	
+Simpler Africa
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+Toyosi Sanni A.
+Female
+2012-01-08
+13
+Nigerian
+RW
+160
+AYICRIP-NELIS
+Ayicrip
+Both
+45
+		
+Good female player
+[]
+	
+simplerafrica.com
+https://simplerafrica.com/_next/image?url=https%3A%2F%2Fapp.trickle.so%2Fstorage%2Fpublic%2Fimages%2Fusr_154548bd30000001%2Fa45a6360-6f07-41f7-b5f6-ca0693ba1d13.png&w=48&q=75
+HOPE JOHN
+Male
+2008-03-24
+18
+NIGERIAN
+CENTRAL DEFENSIVE MIDFIELDER
+5'6
+67
+VIDO 99 FC
+Right
+60
+48
+68
+		
+A complete midfielder in the making. Combines relentless defensive work with incisive forward passing and an ability to arrive in the box. A manager's dream on the pitch, showing leadership and controlling the game's tempo.
+70
+64
+46
+29
+17
+51
+60
+53
+5'6
+79
+99
+48
+https://lh3.googleusercontent.com/pw/AP1GczMNpO3nlF2kJh5_eUFGTJjZcQttfdzCqI-socT0CnwJtZjszxDIRaKpB9c_y4U6UQx8ZowddtQE5gWlKa2vBz11tDFe7zN64ng0442wFWdFYcrTJRQ=w2400
+72
+97
+70
+54
+[]
+60
+37
+81
+</user_query>

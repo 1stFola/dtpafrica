@@ -1,8 +1,15 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { buildJagabanCupStages, normalizeClubName } from "@dtp/engines";
+import {
+  buildJagabanCupStages,
+  normalizeClubName,
+  toGoogleDrivePreviewUrl,
+  toMatchPhotoEntries,
+} from "@dtp/engines";
+import { JAGABAN_MATCH_MEDIA } from "./seed-jagaban-media-data";
 
 const COMP_SLUG = "jagaban-cup-2026";
 const COMP_ID = "00000000-0000-4000-8jc0-000000000001";
+const LEGACY_VENUE = "Legacy Pitch - Surulere Lagos";
 
 type TeamSeed = {
   slug: string;
@@ -10,6 +17,7 @@ type TeamSeed = {
   shortName: string;
   groupKey: "A" | "B";
   city?: string;
+  logoUrl: string;
 };
 
 type SquadSeed = { teamSlug: string; displayName: string; position?: string; shirtNumber?: number };
@@ -40,14 +48,76 @@ type MatchSeed = {
 };
 
 const TEAMS: TeamSeed[] = [
-  { slug: "sgfc-athletics", name: "SGFC Athletics SC", shortName: "SGFC", groupKey: "A", city: "Lagos" },
-  { slug: "36-lions-fc", name: "36 Lions FC", shortName: "36L", groupKey: "A", city: "Lagos" },
-  { slug: "fc-bethel", name: "FC Bethel Sporting", shortName: "BTH", groupKey: "A", city: "Lagos" },
-  { slug: "klassisc-fc", name: "Klassisch FA", shortName: "KLA", groupKey: "A", city: "Lagos" },
-  { slug: "ikorodu-city-fc", name: "Ikorodu City FC", shortName: "IKC", groupKey: "B", city: "Ikorodu" },
-  { slug: "smart-city-fc", name: "Smart City FC", shortName: "SMC", groupKey: "B", city: "Lagos" },
-  { slug: "mavlon-fc", name: "Mavlon FC", shortName: "MAV", groupKey: "B", city: "Lagos" },
-  { slug: "broad-city-fc", name: "Broad City FC", shortName: "BRC", groupKey: "B", city: "Lagos" },
+  {
+    slug: "sgfc-athletics",
+    name: "SGFC Athletics SC",
+    shortName: "SGFC",
+    groupKey: "A",
+    city: "Lagos",
+    logoUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTBZU0CsIuq_Oh7tqhPA1zo8eXf27LQ0SN9P99eGQx0eCPTcixCo9cIAGatr1_TYgg_h3ioDD20DFsmXBDoJy0NAGw&s&ec=121630540",
+  },
+  {
+    slug: "36-lions-fc",
+    name: "36 Lion FC",
+    shortName: "36L",
+    groupKey: "A",
+    city: "Lagos",
+    logoUrl:
+      "https://36lionfc.com/wp-content/uploads/2021/10/Untitled-design-25.png",
+  },
+  {
+    slug: "fc-bethel",
+    name: "FC Bethel Sporting",
+    shortName: "BTH",
+    groupKey: "A",
+    city: "Lagos",
+    logoUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT7GCH_ePTnUUA1_bbT2_QgnPAiHDfI6o95_Q&s",
+  },
+  {
+    slug: "klassisc-fc",
+    name: "Klassisch FA",
+    shortName: "KLA",
+    groupKey: "A",
+    city: "Lagos",
+    logoUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJ5bYL-YkWg1DkeMyKLUlME-qIDSNkrYerdQ&s",
+  },
+  {
+    slug: "ikorodu-city-fc",
+    name: "Ikorodu City FC",
+    shortName: "IKC",
+    groupKey: "B",
+    city: "Ikorodu",
+    logoUrl: "https://www.ikoroducityfc.com/wp-content/uploads/2024/07/ikd-logo.png",
+  },
+  {
+    slug: "smart-city-fc",
+    name: "Smart City FC",
+    shortName: "SMC",
+    groupKey: "B",
+    city: "Lagos",
+    logoUrl: "https://smartcityfc.com.ng/wp-content/uploads/2026/02/download.png",
+  },
+  {
+    slug: "mavlon-fc",
+    name: "Mavlon FC",
+    shortName: "MAV",
+    groupKey: "B",
+    city: "Lagos",
+    logoUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSNMw_9BsRdd0ICTeIfU_QvLp5dMNqTUpBd8A&s",
+  },
+  {
+    slug: "broad-city-fc",
+    name: "Broad City FC",
+    shortName: "BRC",
+    groupKey: "B",
+    city: "Lagos",
+    logoUrl:
+      "https://static.wixstatic.com/media/f54d0c_e63c8669ed3248fd8e5866263926fc60~mv2.png/v1/fill/w_120,h_222,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/989a161b-b1d5-45ad-92ad-a91344061fb8.png",
+  },
 ];
 
 /** Placeholder squads for event linking (display names match match events). */
@@ -139,7 +209,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 1,
     roundLabel: "Group A · DAY 1",
     kickoffAt: "2026-05-20T09:00:00Z",
-    venue: "Mobolaji Johnson Arena",
+    venue: LEGACY_VENUE,
     homeScore: 1,
     awayScore: 3,
     stats: matchStats({
@@ -168,7 +238,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 1,
     roundLabel: "Group B · DAY 1",
     kickoffAt: "2026-05-20T11:30:00Z",
-    venue: "Onikan Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 3,
     awayScore: 2,
     stats: matchStats({
@@ -203,7 +273,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 1,
     roundLabel: "Group A · DAY 1",
     kickoffAt: "2026-05-20T14:00:00Z",
-    venue: "Agege Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 0,
     awayScore: 1,
     stats: matchStats({
@@ -228,7 +298,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 1,
     roundLabel: "Group B · DAY 1",
     kickoffAt: "2026-05-20T16:30:00Z",
-    venue: "Teslim Balogun Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 1,
     awayScore: 4,
     stats: matchStats({
@@ -269,7 +339,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 2,
     roundLabel: "Group A · DAY 2",
     kickoffAt: "2026-05-21T09:00:00Z",
-    venue: "Mobolaji Johnson Arena",
+    venue: LEGACY_VENUE,
     homeScore: 0,
     awayScore: 1,
     stats: matchStats({
@@ -288,7 +358,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 2,
     roundLabel: "Group B · DAY 2",
     kickoffAt: "2026-05-21T11:30:00Z",
-    venue: "Onikan Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 0,
     awayScore: 1,
     stats: matchStats({
@@ -310,7 +380,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 2,
     roundLabel: "Group A · DAY 2",
     kickoffAt: "2026-05-21T14:00:00Z",
-    venue: "Agege Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 0,
     awayScore: 0,
     stats: matchStats({
@@ -329,7 +399,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 2,
     roundLabel: "Group B · DAY 2",
     kickoffAt: "2026-05-21T16:30:00Z",
-    venue: "Teslim Balogun Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 1,
     awayScore: 0,
     stats: matchStats({
@@ -358,7 +428,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 3,
     roundLabel: "Group A · DAY 3",
     kickoffAt: "2026-05-22T09:00:00Z",
-    venue: "Mobolaji Johnson Arena",
+    venue: LEGACY_VENUE,
     homeScore: 0,
     awayScore: 1,
     stats: matchStats({
@@ -382,7 +452,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 3,
     roundLabel: "Group B · DAY 3",
     kickoffAt: "2026-05-22T11:30:00Z",
-    venue: "Onikan Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 2,
     awayScore: 0,
     stats: matchStats({
@@ -405,7 +475,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 3,
     roundLabel: "Group A · DAY 3",
     kickoffAt: "2026-05-22T14:00:00Z",
-    venue: "Agege Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 0,
     awayScore: 1,
     stats: matchStats({
@@ -441,7 +511,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 3,
     roundLabel: "Group B · DAY 3",
     kickoffAt: "2026-05-22T16:30:00Z",
-    venue: "Teslim Balogun Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 2,
     awayScore: 1,
     stats: matchStats({
@@ -477,7 +547,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 1,
     roundLabel: "Third-Place Playoff",
     kickoffAt: "2026-05-24T14:00:00Z",
-    venue: "Teslim Balogun Stadium",
+    venue: LEGACY_VENUE,
     homeScore: 2,
     awayScore: 0,
     stats: matchStats({
@@ -511,7 +581,7 @@ const MATCHES: MatchSeed[] = [
     matchday: 1,
     roundLabel: "Grand Finale",
     kickoffAt: "2026-05-25T16:00:00Z",
-    venue: "Mobolaji Johnson Arena",
+    venue: LEGACY_VENUE,
     homeScore: 1,
     awayScore: 0,
     stats: matchStats({
@@ -638,7 +708,13 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
     const name = normalizeClubName(t.name);
     const row = await prisma.sbTeam.upsert({
       where: { competitionId_slug: { competitionId: comp.id, slug: t.slug } },
-      update: { name, shortName: t.shortName, groupKey: t.groupKey, city: t.city },
+      update: {
+        name,
+        shortName: t.shortName,
+        groupKey: t.groupKey,
+        city: t.city,
+        logoUrl: t.logoUrl,
+      },
       create: {
         competitionId: comp.id,
         slug: t.slug,
@@ -646,6 +722,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
         shortName: t.shortName,
         groupKey: t.groupKey,
         city: t.city,
+        logoUrl: t.logoUrl,
       },
     });
     teamIds[t.slug] = row.id;
@@ -717,9 +794,53 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
     }),
   ]);
 
+  await seedJagabanMatchMedia(prisma, comp.id);
+
   console.log("Jagaban Cup 2026 seeded:", COMP_SLUG);
   console.log("  matches:", matchCount, "(expected 14)");
   console.log("  events:", eventCount);
   console.log("  squad rows:", squadCount);
+  console.log("  match media blocks:", JAGABAN_MATCH_MEDIA.length);
   return comp;
+}
+
+async function seedJagabanMatchMedia(prisma: PrismaClient, competitionId: string) {
+  const matchIds = JAGABAN_MATCH_MEDIA.map((m) => m.matchId);
+  await prisma.sbHighlight.deleteMany({
+    where: { competitionId, matchId: { in: matchIds } },
+  });
+
+  for (const block of JAGABAN_MATCH_MEDIA) {
+    const match = await prisma.sbMatch.findUnique({
+      where: { id: block.matchId },
+      select: { id: true, meta: true },
+    });
+    if (!match) continue;
+
+    const existingMeta =
+      match.meta && typeof match.meta === "object" && !Array.isArray(match.meta)
+        ? (match.meta as Record<string, unknown>)
+        : {};
+    const photos = toMatchPhotoEntries(block.photos);
+
+    await prisma.sbMatch.update({
+      where: { id: block.matchId },
+      data: {
+        meta: {
+          ...existingMeta,
+          photos,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    await prisma.sbHighlight.create({
+      data: {
+        competitionId,
+        matchId: block.matchId,
+        title: block.title,
+        youtubeUrl: toGoogleDrivePreviewUrl(block.driveId),
+        isPublished: true,
+      },
+    });
+  }
 }

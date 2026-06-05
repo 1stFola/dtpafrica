@@ -1,5 +1,8 @@
+import { positionFullFromAbbreviation } from "@dtp/engines";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizePlayingPhilosophiesInput } from "../players/player-home-profile";
 import { resolveUniquePlayerSlug, previewPlayerSlug } from "../players/player-slug";
 import { UpdatePlayerAdminDto } from "./dto/update-player-admin.dto";
 
@@ -28,6 +31,8 @@ export class AdminPlayersService {
         id: true,
         displayName: true,
         positionPrimary: true,
+        positionFull: true,
+        playingPhilosophies: true,
         slug: true,
         isFeatured: true,
         isPublic: true,
@@ -61,6 +66,20 @@ export class AdminPlayersService {
       slug = await resolveUniquePlayerSlug(this.prisma, existing.displayName, id);
     }
 
+    const positionPrimary =
+      dto.positionPrimary !== undefined
+        ? dto.positionPrimary.trim().toUpperCase()
+        : undefined;
+    const positionFull =
+      dto.positionFull !== undefined
+        ? dto.positionFull.trim() || null
+        : positionPrimary !== undefined
+          ? positionFullFromAbbreviation(positionPrimary)
+          : undefined;
+    const playingPhilosophies = normalizePlayingPhilosophiesInput(
+      dto.playingPhilosophies
+    );
+
     return this.prisma.player.update({
       where: { id },
       data: {
@@ -70,6 +89,14 @@ export class AdminPlayersService {
         biography: dto.biography,
         videoUrl: dto.videoUrl,
         displayName: dto.displayName,
+        positionPrimary,
+        positionFull,
+        playingPhilosophies:
+          playingPhilosophies === undefined
+            ? undefined
+            : playingPhilosophies.length > 0
+              ? (playingPhilosophies as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
         slug,
       },
     });

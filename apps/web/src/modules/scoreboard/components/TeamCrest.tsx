@@ -23,7 +23,14 @@ export function TeamCrest({
   if (team.logoUrl) {
     return (
       <span className={`sb-crest sb-crest--${size}`}>
-        <img src={team.logoUrl} alt="" loading="lazy" width={size === "sm" ? 28 : 40} height={size === "sm" ? 28 : 40} />
+        <img
+          src={team.logoUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          width={size === "sm" ? 28 : 40}
+          height={size === "sm" ? 28 : 40}
+        />
       </span>
     );
   }

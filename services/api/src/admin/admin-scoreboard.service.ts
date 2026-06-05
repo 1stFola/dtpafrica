@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { normalizeClubName } from "@dtp/engines";
+import { normalizeVideoMediaUrl } from "../shared/media-url";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { getRosterReadiness } from "../scoreboard/roster-guard";
@@ -558,13 +559,14 @@ export class AdminScoreboardService {
     if (!match) throw new NotFoundException("Match not found");
     const detail =
       body.timelineMinute != null ? `minute:${body.timelineMinute}` : undefined;
+    const video = normalizeVideoMediaUrl(body.youtubeUrl);
     const highlight = await this.prisma.sbHighlight.create({
       data: {
         competitionId: match.competitionId,
         matchId: body.matchId,
         eventId: body.eventId,
         title: body.title,
-        youtubeUrl: body.youtubeUrl,
+        youtubeUrl: video.embedUrl ?? video.sourceUrl,
         isPublished: false,
       },
     });
@@ -611,10 +613,11 @@ export class AdminScoreboardService {
     });
     if (!competition) throw new BadRequestException("Competition not found");
 
+    const video = normalizeVideoMediaUrl(body.youtubeUrl);
     return this.prisma.sbHighlight.create({
       data: {
         title: body.title.trim(),
-        youtubeUrl: body.youtubeUrl.trim(),
+        youtubeUrl: video.embedUrl ?? video.sourceUrl,
         duration: body.duration.trim(),
         competitionId: body.competitionId,
         isPublished: false,
@@ -642,11 +645,14 @@ export class AdminScoreboardService {
       if (!competition) throw new BadRequestException("Competition not found");
     }
 
+    const storedVideoUrl = body.youtubeUrl
+      ? normalizeVideoMediaUrl(body.youtubeUrl).embedUrl ?? body.youtubeUrl.trim()
+      : undefined;
     return this.prisma.sbHighlight.update({
       where: { id },
       data: {
         title: body.title?.trim(),
-        youtubeUrl: body.youtubeUrl?.trim(),
+        youtubeUrl: storedVideoUrl,
         duration: body.duration?.trim(),
         competitionId: body.competitionId,
       },

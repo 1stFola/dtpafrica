@@ -116,7 +116,12 @@ function MatchPhotosGrid({ photos }: { photos: MatchPhoto[] }) {
     <div className="sbm-photo-grid">
       {photos.map((photo, index) => (
         <figure key={`${photo.url}-${index}`} className="sbm-photo-card">
-          <img src={photo.url} alt={photo.caption ?? "Match photo"} loading="lazy" />
+          <img
+            src={photo.url}
+            alt={photo.caption ?? "Match photo"}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
           {photo.caption && <figcaption>{photo.caption}</figcaption>}
         </figure>
       ))}
@@ -230,7 +235,11 @@ export function MatchCenterPage() {
     const text = match?.stats?.narrative;
     return typeof text === "string" && text.trim() ? text.trim() : null;
   }, [match]);
-  const matchPhotos = useMemo(() => (match ? parseMatchPhotos(match.meta) : []), [match]);
+  const matchPhotos = useMemo(() => {
+    if (!match) return [];
+    if (match.photos?.length) return match.photos;
+    return parseMatchPhotos(match.meta);
+  }, [match]);
   const squadsTabFromUrl = initialTab === "squads";
 
   if (error) {
@@ -399,7 +408,7 @@ export function MatchCenterPage() {
             {match.highlights.length > 0 ? (
               <div className="sb-hl-grid">
                 {match.highlights.map((highlight) => (
-                  <HighlightCard key={highlight.id} highlight={highlight} />
+                  <HighlightCard key={highlight.id} highlight={highlight} inlinePlayer />
                 ))}
               </div>
             ) : (

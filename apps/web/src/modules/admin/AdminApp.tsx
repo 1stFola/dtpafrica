@@ -12,6 +12,7 @@ import { AdminContentPage } from "./pages/AdminContentPage";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
 import { AdminAdsPage } from "./pages/AdminAdsPage";
 import { AdminHomepagePage } from "./pages/AdminHomepagePage";
+import { AdminHomeVideoHighlightsPage } from "./pages/AdminHomeVideoHighlightsPage";
 import { AdminInboxPage } from "./pages/AdminInboxPage";
 import { AdminPlayersPage } from "./pages/AdminPlayersPage";
 import { AdminScoreboardApp } from "./scoreboard/AdminScoreboardApp";
@@ -29,6 +30,7 @@ export function AdminApp() {
             <Route path="players" element={<AdminPlayersPage />} />
             <Route path="calibration" element={<AdminCalibrationPage />} />
             <Route path="homepage" element={<AdminHomepagePage />} />
+            <Route path="homepage/video-highlights" element={<AdminHomeVideoHighlightsPage />} />
             <Route path="ads" element={<AdminAdsPage />} />
             <Route path="academies" element={<AdminAcademiesPage />} />
             <Route path="content" element={<AdminContentPage />} />
