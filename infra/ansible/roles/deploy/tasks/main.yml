@@ -159,9 +159,9 @@
   become_user: root
 
 - name: Wait for Postgres healthcheck to pass (up to 60s)
-  ansible.builtin.command:
-    cmd: >
-      docker inspect --format='{{ "{{.State.Health.Status}}" }}'
+  ansible.builtin.shell: |
+    docker inspect \
+      --format='{{ "{{.State.Health.Status}}" }}' \
       $(docker compose -f {{ app_dir }}/repo/infra/docker-compose.staging.yml ps -q postgres)
   register: pg_health
   until: pg_health.stdout == "healthy"
