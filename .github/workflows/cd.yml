@@ -186,43 +186,30 @@ jobs:
             "cloud-init status --wait || true"
           echo "cloud-init done"
 
-      - name: Fetch secrets from AWS Parameter Store
+      - name: Fetch secrets from AWS Secrets Manager
         id: secrets
         run: |
-          POSTGRES_USER=$(aws ssm get-parameter \
-            --name "/dtp/staging/POSTGRES_USER" \
+          DB_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id dtp/staging/db \
             --region ${{ secrets.AWS_REGION }} \
-            --query Parameter.Value \
+            --query SecretString \
             --output text)
 
-          POSTGRES_PASSWORD=$(aws ssm get-parameter \
-            --name "/dtp/staging/POSTGRES_PASSWORD" \
-            --with-decryption \
+          APP_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id dtp/staging/app \
             --region ${{ secrets.AWS_REGION }} \
-            --query Parameter.Value \
+            --query SecretString \
             --output text)
 
-          POSTGRES_DB=$(aws ssm get-parameter \
-            --name "/dtp/staging/POSTGRES_DB" \
-            --region ${{ secrets.AWS_REGION }} \
-            --query Parameter.Value \
-            --output text)
-
-          ADMIN_API_KEY=$(aws ssm get-parameter \
-            --name "/dtp/staging/ADMIN_API_KEY" \
-            --with-decryption \
-            --region ${{ secrets.AWS_REGION }} \
-            --query Parameter.Value \
-            --output text)
+          # Parse individual values
+          echo "POSTGRES_USER=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_USER"])')" >> "$GITHUB_OUTPUT"
+          echo "POSTGRES_DB=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')" >> "$GITHUB_OUTPUT"
+          echo "ADMIN_API_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')" >> "$GITHUB_OUTPUT"
 
           # Mask sensitive values so they never appear in logs
+          POSTGRES_PASSWORD=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_PASSWORD"])')
           echo "::add-mask::$POSTGRES_PASSWORD"
-          echo "::add-mask::$ADMIN_API_KEY"
-
-          echo "POSTGRES_USER=$POSTGRES_USER"     >> "$GITHUB_OUTPUT"
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_OUTPUT"
-          echo "POSTGRES_DB=$POSTGRES_DB"         >> "$GITHUB_OUTPUT"
-          echo "ADMIN_API_KEY=$ADMIN_API_KEY"     >> "$GITHUB_OUTPUT"
 
       - name: Run Ansible playbook
         run: |
