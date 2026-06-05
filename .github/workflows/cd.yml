@@ -186,30 +186,43 @@ jobs:
             "cloud-init status --wait || true"
           echo "cloud-init done"
 
-      - name: Fetch secrets from AWS Secrets Manager
+      - name: Fetch secrets from AWS Parameter Store
         id: secrets
         run: |
-          DB_SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id dtp/staging/db \
+          POSTGRES_USER=$(aws ssm get-parameter \
+            --name "/dtp/staging/POSTGRES_USER" \
             --region ${{ secrets.AWS_REGION }} \
-            --query SecretString \
+            --query Parameter.Value \
             --output text)
 
-          APP_SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id dtp/staging/app \
+          POSTGRES_PASSWORD=$(aws ssm get-parameter \
+            --name "/dtp/staging/POSTGRES_PASSWORD" \
+            --with-decryption \
             --region ${{ secrets.AWS_REGION }} \
-            --query SecretString \
+            --query Parameter.Value \
             --output text)
 
-          # Parse individual values
-          echo "POSTGRES_USER=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_USER"])')" >> "$GITHUB_OUTPUT"
-          echo "POSTGRES_DB=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')" >> "$GITHUB_OUTPUT"
-          echo "ADMIN_API_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')" >> "$GITHUB_OUTPUT"
+          POSTGRES_DB=$(aws ssm get-parameter \
+            --name "/dtp/staging/POSTGRES_DB" \
+            --region ${{ secrets.AWS_REGION }} \
+            --query Parameter.Value \
+            --output text)
 
-          # Mask all secret values so they never appear in logs
-          POSTGRES_PASSWORD=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_PASSWORD"])')
+          ADMIN_API_KEY=$(aws ssm get-parameter \
+            --name "/dtp/staging/ADMIN_API_KEY" \
+            --with-decryption \
+            --region ${{ secrets.AWS_REGION }} \
+            --query Parameter.Value \
+            --output text)
+
+          # Mask sensitive values so they never appear in logs
           echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$ADMIN_API_KEY"
+
+          echo "POSTGRES_USER=$POSTGRES_USER"     >> "$GITHUB_OUTPUT"
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_OUTPUT"
+          echo "POSTGRES_DB=$POSTGRES_DB"         >> "$GITHUB_OUTPUT"
+          echo "ADMIN_API_KEY=$ADMIN_API_KEY"     >> "$GITHUB_OUTPUT"
 
       - name: Run Ansible playbook
         run: |
