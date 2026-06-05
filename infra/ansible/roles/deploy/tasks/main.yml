@@ -225,8 +225,8 @@
 
 - name: Wait for web (nginx) to be up on port 80 (up to 120s)
   ansible.builtin.wait_for:
-    port: 80
-    host: localhost
+    port:    80
+    host:    "{{ ansible_host }}"
     timeout: 120
 
 - name: Show container status and API logs
@@ -239,6 +239,9 @@
     echo ""
     echo "=== WEB LOGS ==="
     docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --tail=20 web
+    echo ""
+    echo "=== .env.staging (masked) ==="
+    cat infra/.env.staging | sed 's/PASSWORD=.*/PASSWORD=***/' | sed 's/API_KEY=.*/API_KEY=***/'
   args:
     chdir: "{{ app_dir }}/repo"
   become: true
@@ -253,7 +256,7 @@
 
 - name: Wait for API health check to return 200 (up to 400s)
   ansible.builtin.uri:
-    url:            "http://localhost/api/v1/health"
+    url:            "http://{{ ansible_host }}/api/v1/health"
     status_code:    200
     return_content: false
   register: health
