@@ -160,11 +160,13 @@
 
 - name: Wait for Postgres healthcheck to pass (up to 60s)
   ansible.builtin.shell: |
-    docker inspect \
-      --format='{{ "{{.State.Health.Status}}" }}' \
-      $(docker compose -f {{ app_dir }}/repo/infra/docker-compose.staging.yml ps -q postgres)
+    docker compose \
+      --env-file {{ app_dir }}/repo/infra/.env.staging \
+      -f {{ app_dir }}/repo/infra/docker-compose.staging.yml \
+      exec -T postgres \
+      pg_isready -U {{ db_creds.POSTGRES_USER }} -d {{ db_creds.POSTGRES_DB }}
   register: pg_health
-  until: pg_health.stdout == "healthy"
+  until: pg_health.rc == 0
   retries: 12
   delay: 5
   changed_when: false
