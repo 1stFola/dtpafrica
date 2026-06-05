@@ -84,6 +84,37 @@ jobs:
       - name: Terraform init
         run: terraform init
 
+      - name: Check if EC2 instance still exists (taint if terminated)
+        run: |
+          if [ ! -f terraform.tfstate ]; then
+            echo "No state file — skipping instance check"
+            exit 0
+          fi
+
+          # Extract instance ID from state file
+          INSTANCE_ID=$(grep -o '"id": "i-[a-z0-9]*"' terraform.tfstate | head -1 | grep -o 'i-[a-z0-9]*' || echo "")
+
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "No instance ID in state — skipping"
+            exit 0
+          fi
+
+          echo "Checking EC2 instance: $INSTANCE_ID"
+          STATE=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' \
+            --output text 2>/dev/null || echo "not-found")
+
+          echo "Instance state: $STATE"
+
+          if [ "$STATE" = "terminated" ] || [ "$STATE" = "not-found" ]; then
+            echo "Instance is gone — tainting aws_instance.server and aws_eip.server so Terraform recreates them"
+            terraform taint aws_instance.server || true
+            terraform taint aws_eip.server      || true
+          else
+            echo "Instance is $STATE — Terraform will reuse it"
+          fi
+
       - name: Terraform validate
         run: terraform validate
 
