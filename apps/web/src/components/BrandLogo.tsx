@@ -35,15 +35,19 @@ export function BrandLogo({
   className,
   ...imgProps
 }: BrandLogoProps) {
-  const classes = ["brand-logo", SIZE_CLASS[size], className].filter(Boolean).join(" ");
+  const classes = ["brand-logo", "app-brand-logo-blend", SIZE_CLASS[size], className]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <img
-      src={BRAND_SRC[variant]}
-      alt="Direct To Pro Africa"
-      className={classes}
-      decoding="async"
-      {...imgProps}
-    />
+    <span className="app-brand-logo-wrap">
+      <img
+        src={BRAND_SRC[variant]}
+        alt="Direct To Pro Africa"
+        className={classes}
+        decoding="async"
+        {...imgProps}
+      />
+    </span>
   );
 }

@@ -4,6 +4,7 @@
   --color-primary-strong: #1d4ed8;
   --color-primary-soft: rgba(37, 99, 235, 0.15);
   --color-bg: #0f172a;
+  --color-header-bg: var(--color-bg);
   --color-surface: #1e293b;
   --color-surface-2: #0f172a;
   --color-text: #f1f5f9;
@@ -223,7 +224,7 @@ a {
   align-items: center;
   justify-content: space-between;
   padding: 0 1.5rem;
-  background: var(--color-surface);
+  background: var(--color-header-bg);
   border-bottom: 1px solid var(--color-border);
   gap: 1rem;
   flex-wrap: wrap;
@@ -235,6 +236,19 @@ a {
   gap: 0.75rem;
   font-family: var(--font-display);
   font-weight: 700;
+}
+
+/* Drops solid #000 PNG backdrops on dark surfaces (white/color mark stays visible). */
+.app-brand-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+  background-color: var(--brand-logo-bg, var(--color-header-bg));
+  isolation: isolate;
+}
+
+.app-brand-logo-blend {
+  mix-blend-mode: screen;
 }
 
 .brand-logo {
@@ -838,7 +852,8 @@ a {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
+  padding: 0.75rem 0 1rem;
+  background: var(--color-header-bg);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -4168,6 +4183,10 @@ a {
   width: 100%;
 }
 
+.scoreboard-header {
+  background: var(--color-header-bg);
+}
+
 .scoreboard-header h1 {
   font-family: var(--font-display);
   margin: 0 0 0.25rem;
@@ -4213,7 +4232,7 @@ a {
   padding: 0.35rem;
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-pill);
-  background: rgba(15, 23, 42, 0.55);
+  background: color-mix(in srgb, var(--color-header-bg) 72%, transparent);
   backdrop-filter: blur(6px);
   width: fit-content;
   max-width: 100%;
@@ -4910,7 +4929,7 @@ a {
   margin: 1rem 0;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.72);
+  background: color-mix(in srgb, var(--color-header-bg) 72%, transparent);
 }
 
 .sb-live-ribbon__label {
@@ -5625,6 +5644,7 @@ a {
 }
 
 .admin-login-card {
+  --brand-logo-bg: var(--color-surface);
   width: 100%;
   max-width: 420px;
   background: var(--color-surface);
@@ -5652,7 +5672,7 @@ a {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #0c1222;
+  background: var(--color-bg);
 }
 
 .admin-topbar {
@@ -5661,7 +5681,7 @@ a {
   align-items: center;
   gap: 1rem;
   padding: 0.75rem 1.5rem;
-  background: var(--color-surface);
+  background: var(--color-header-bg);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -11513,6 +11533,7 @@ a.dbx-comp-card:hover {
 }
 
 .academy-login-card {
+  --brand-logo-bg: rgba(15, 23, 32, 0.92);
   background: rgba(15, 23, 32, 0.92);
   border: 1px solid rgba(16, 185, 129, 0.25);
   border-radius: 16px;
