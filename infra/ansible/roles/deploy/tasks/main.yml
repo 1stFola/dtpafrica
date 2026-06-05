@@ -1,0 +1,238 @@
+---
+# deploy role — runs on the single DTP server
+
+# ── 1. Set credentials from vars passed in by the CD workflow ─────────────────
+# Secrets are fetched on the GitHub Actions runner (where AWS CLI is available)
+# and passed as extra vars. The EC2 instance never needs AWS credentials.
+
+- name: Set credential facts
+  ansible.builtin.set_fact:
+    db_creds:
+      POSTGRES_USER:     "{{ postgres_user }}"
+      POSTGRES_PASSWORD: "{{ postgres_password }}"
+      POSTGRES_DB:       "{{ postgres_db }}"
+    app_creds:
+      ADMIN_API_KEY: "{{ admin_api_key }}"
+  no_log: true
+
+# ── 2. Install Node.js (via NodeSource) ───────────────────────────────────────
+
+- name: Check current Node.js version
+  ansible.builtin.command: node --version
+  register: node_check
+  failed_when: false
+  changed_when: false
+
+- name: Install Node.js {{ node_version }} LTS via NodeSource
+  when: node_check.rc != 0 or not node_check.stdout.startswith('v' + node_version)
+  block:
+    - name: Download NodeSource setup script
+      ansible.builtin.get_url:
+        url: "https://deb.nodesource.com/setup_{{ node_version }}.x"
+        dest: /tmp/nodesource_setup.sh
+        mode: "0755"
+
+    - name: Run NodeSource setup script
+      ansible.builtin.command: bash /tmp/nodesource_setup.sh
+      changed_when: true
+
+    - name: Install nodejs package
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+        update_cache: true
+
+    - name: Clean up setup script
+      ansible.builtin.file:
+        path: /tmp/nodesource_setup.sh
+        state: absent
+
+- name: Confirm Node.js version
+  ansible.builtin.command: node --version
+  register: node_version_out
+  changed_when: false
+
+- name: Log Node.js version
+  ansible.builtin.debug:
+    msg: "Node.js installed: {{ node_version_out.stdout }}"
+
+# ── 3. Install pnpm ───────────────────────────────────────────────────────────
+
+- name: Check current pnpm version
+  ansible.builtin.command: pnpm --version
+  register: pnpm_check
+  failed_when: false
+  changed_when: false
+
+- name: Install pnpm {{ pnpm_version }} globally via npm
+  ansible.builtin.command: npm install -g pnpm@{{ pnpm_version }}
+  when: pnpm_check.rc != 0 or pnpm_check.stdout != pnpm_version
+  changed_when: true
+
+- name: Confirm pnpm version
+  ansible.builtin.command: pnpm --version
+  register: pnpm_version_out
+  changed_when: false
+
+- name: Log pnpm version
+  ansible.builtin.debug:
+    msg: "pnpm installed: {{ pnpm_version_out.stdout }}"
+
+# ── 4. Create app directory ───────────────────────────────────────────────────
+
+- name: Create app directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0750"
+
+# ── 5. Clone / update repository ─────────────────────────────────────────────
+
+- name: Clone or update repository
+  ansible.builtin.git:
+    repo:    "{{ git_repo_url }}"
+    dest:    "{{ app_dir }}/repo"
+    version: "{{ git_branch }}"
+    force:   true
+  become: true
+  become_user: ubuntu
+
+# ── 6. Write environment files ────────────────────────────────────────────────
+
+- name: Write services/api/.env  (Prisma + API runtime)
+  ansible.builtin.template:
+    src:   api.env.j2
+    dest:  "{{ app_dir }}/repo/services/api/.env"
+    owner: ubuntu
+    group: ubuntu
+    mode:  "0600"
+  no_log: true
+
+- name: Write infra/.env.staging  (Docker Compose variables)
+  ansible.builtin.template:
+    src:   staging.env.j2
+    dest:  "{{ app_dir }}/repo/infra/.env.staging"
+    owner: ubuntu
+    group: ubuntu
+    mode:  "0600"
+  no_log: true
+
+# ── 7. Install Node dependencies ──────────────────────────────────────────────
+
+- name: pnpm install --frozen-lockfile
+  ansible.builtin.command:
+    cmd:   pnpm install --frozen-lockfile
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: ubuntu
+  changed_when: true
+  environment:
+    HOME: /home/ubuntu
+
+# ── 8. Generate Prisma client ─────────────────────────────────────────────────
+
+- name: Generate Prisma client
+  ansible.builtin.command:
+    cmd:   pnpm --filter @dtp/api prisma:generate
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: ubuntu
+  changed_when: true
+  environment:
+    HOME: /home/ubuntu
+
+# ── 9. Start Postgres first (needed for db:push) ─────────────────────────────
+
+- name: Start Postgres container
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}/repo"
+    files:
+      - infra/docker-compose.staging.yml
+    env_files:
+      - "{{ app_dir }}/repo/infra/.env.staging"
+    services:
+      - postgres
+    state: present
+  become: true
+  become_user: ubuntu
+
+- name: Wait for Postgres healthcheck to pass (up to 60s)
+  # Uses the healthcheck already defined in docker-compose.staging.yml
+  # so we don't need to know the exact container name.
+  ansible.builtin.command:
+    cmd: >
+      docker inspect --format='{{ "{{.State.Health.Status}}" }}'
+      $(docker compose -f {{ app_dir }}/repo/infra/docker-compose.staging.yml ps -q postgres)
+  register: pg_health
+  until: pg_health.stdout == "healthy"
+  retries: 12
+  delay: 5
+  changed_when: false
+  become: true
+  become_user: ubuntu
+
+# ── 10. Push Prisma schema (create / migrate tables) ─────────────────────────
+
+- name: Push Prisma schema to Postgres
+  ansible.builtin.command:
+    cmd:   pnpm --filter @dtp/api db:push
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: ubuntu
+  changed_when: true
+  environment:
+    HOME: /home/ubuntu
+
+# ── 11. Start full stack (api + web) ─────────────────────────────────────────
+
+- name: Build and start full application stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}/repo"
+    files:
+      - infra/docker-compose.staging.yml
+    env_files:
+      - "{{ app_dir }}/repo/infra/.env.staging"
+    build: always
+    state: present
+  become: true
+  become_user: ubuntu
+  environment:
+    DOCKER_BUILDKIT: "1"
+
+# ── 12. UFW — open HTTP and HTTPS ────────────────────────────────────────────
+
+- name: Allow HTTP
+  community.general.ufw:
+    rule:  allow
+    port:  "80"
+    proto: tcp
+
+- name: Allow HTTPS
+  community.general.ufw:
+    rule:  allow
+    port:  "443"
+    proto: tcp
+
+# ── 13. Smoke test ────────────────────────────────────────────────────────────
+
+- name: Wait for web (nginx) to be up on port 80 (up to 120s)
+  ansible.builtin.wait_for:
+    port: 80
+    host: localhost
+    timeout: 120
+
+- name: Wait for API health check to return 200 (up to 120s)
+  ansible.builtin.uri:
+    url:            "http://localhost/api/v1/health"
+    status_code:    200
+    return_content: false
+  register: health
+  until:    health.status == 200
+  retries:  24
+  delay:    5
+
+- name: Deployment smoke test passed
+  ansible.builtin.debug:
+    msg: "Application is live — health check returned HTTP 200"

@@ -1,0 +1,282 @@
+name: CD — Deploy to Staging
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+  workflow_dispatch:
+    inputs:
+      skip_terraform:
+        description: "Skip Terraform (infra already exists)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      skip_deploy:
+        description: "Skip Ansible deploy (infra check only)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+# Only one deploy at a time — prevents state corruption
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false  # don't cancel — let it finish to avoid partial state
+
+# Grant GITHUB_TOKEN permission to push the state branch
+permissions:
+  contents: write
+
+jobs:
+  # ── Job 1: Terraform ──────────────────────────────────────────────────────
+  terraform:
+    name: Terraform apply
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+
+    outputs:
+      server_public_ip: ${{ steps.tf_out.outputs.server_public_ip }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # full history needed to create/switch branches
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform 1.8.5
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+          terraform_wrapper: false
+
+      # ── Restore state from the terraform-state branch ─────────────────────
+      # The state file is committed to a dedicated orphan branch in this repo.
+      # This is the simplest durable state store — no S3, no extra services.
+      - name: Fetch Terraform state from state branch
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+
+          # Fetch the state branch (it may not exist on first run)
+          if git fetch origin terraform-state 2>/dev/null; then
+            # Copy state file into the working directory if it exists
+            git show origin/terraform-state:terraform.tfstate \
+              > terraform.tfstate 2>/dev/null && \
+              echo "State restored — Terraform will update existing infrastructure" || \
+              echo "State branch exists but no state file yet — first apply"
+          else
+            echo "No state branch yet — this is the first run, creating infrastructure fresh"
+          fi
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: |
+          terraform plan \
+            -var="key_pair_name=${{ secrets.EC2_KEY_PAIR_NAME }}" \
+            -var="aws_region=${{ secrets.AWS_REGION }}" \
+            -out=tfplan
+
+      - name: Terraform apply
+        if: github.event.inputs.skip_terraform != 'true'
+        run: terraform apply -auto-approve tfplan
+
+      # ── Persist updated state back to state branch ────────────────────────
+      # Runs even if a later step fails so state is never lost mid-apply.
+      - name: Commit Terraform state back to state branch
+        if: always()
+        working-directory: infra/terraform
+        run: |
+          if [ ! -f terraform.tfstate ]; then
+            echo "No state file to commit — skipping"
+            exit 0
+          fi
+
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+
+          # Fetch or create the state branch
+          git fetch origin terraform-state 2>/dev/null || true
+
+          # Switch to state branch (create orphan if it doesn't exist yet)
+          if git ls-remote --exit-code origin terraform-state >/dev/null 2>&1; then
+            git checkout terraform-state
+          else
+            git checkout --orphan terraform-state
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          # Copy the state file in and commit
+          cp ${{ github.workspace }}/infra/terraform/terraform.tfstate ./terraform.tfstate 2>/dev/null || true
+          git add --force terraform.tfstate
+          git diff --cached --quiet && echo "State unchanged — nothing to commit" && exit 0
+          git commit -m "chore: update terraform state [run ${{ github.run_id }}]"
+          git push origin terraform-state
+          echo "State committed to terraform-state branch successfully"
+
+      - name: Capture Terraform outputs
+        id: tf_out
+        run: |
+          echo "server_public_ip=$(terraform output -raw server_public_ip)" >> "$GITHUB_OUTPUT"
+
+      - name: Print access details
+        run: |
+          echo "============================================"
+          echo "  App URL : $(terraform output -raw app_url)"
+          echo "  Health  : $(terraform output -raw health_check_url)"
+          echo "  SSH     : $(terraform output -raw ssh_command)"
+          echo "============================================"
+
+  # ── Job 2: Ansible ────────────────────────────────────────────────────────
+  deploy:
+    name: Ansible deploy
+    needs: terraform
+    if: github.event.inputs.skip_deploy != 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/ansible
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Install Ansible + Python AWS libraries
+        run: |
+          pip install --quiet \
+            "ansible-core==2.16.*" \
+            boto3 \
+            botocore \
+            awscli
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r requirements.yml --force
+
+      - name: Write SSH private key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/dtp-staging.pem
+          chmod 600 ~/.ssh/dtp-staging.pem
+          ssh-keygen -l -f ~/.ssh/dtp-staging.pem
+
+      - name: Write Ansible inventory
+        run: |
+          cat > inventory.ini <<EOF
+          [server]
+          ${{ needs.terraform.outputs.server_public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/dtp-staging.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ConnectTimeout=10'
+
+          [all:vars]
+          server_public_ip=${{ needs.terraform.outputs.server_public_ip }}
+          EOF
+
+      - name: Wait for SSH (up to 3 minutes)
+        run: |
+          echo "Waiting for SSH on ${{ needs.terraform.outputs.server_public_ip }}..."
+          timeout 180 bash -c '
+            until ssh \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=5 \
+              -o BatchMode=yes \
+              -i ~/.ssh/dtp-staging.pem \
+              ubuntu@${{ needs.terraform.outputs.server_public_ip }} \
+              "echo SSH_READY" 2>/dev/null | grep -q SSH_READY
+            do
+              echo "  not ready yet - retrying in 10s"
+              sleep 10
+            done
+          '
+          echo "SSH is up"
+
+      - name: Wait for cloud-init to complete
+        run: |
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            -i ~/.ssh/dtp-staging.pem \
+            ubuntu@${{ needs.terraform.outputs.server_public_ip }} \
+            "cloud-init status --wait || true"
+          echo "cloud-init done"
+
+      - name: Fetch secrets from AWS Secrets Manager
+        id: secrets
+        run: |
+          DB_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id dtp/staging/db \
+            --region ${{ secrets.AWS_REGION }} \
+            --query SecretString \
+            --output text)
+
+          APP_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id dtp/staging/app \
+            --region ${{ secrets.AWS_REGION }} \
+            --query SecretString \
+            --output text)
+
+          echo "POSTGRES_USER=$(echo $DB_SECRET   | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_USER"])')"   >> "$GITHUB_OUTPUT"
+          echo "POSTGRES_DB=$(echo $DB_SECRET     | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')"     >> "$GITHUB_OUTPUT"
+          echo "ADMIN_API_KEY=$(echo $APP_SECRET  | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')"   >> "$GITHUB_OUTPUT"
+
+          POSTGRES_PASSWORD=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_PASSWORD"])')
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_OUTPUT"
+
+      - name: Run Ansible playbook
+        run: |
+          ansible-playbook playbook.yml \
+            -e "aws_region=${{ secrets.AWS_REGION }}" \
+            -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
+            -e "git_branch=main" \
+            -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
+            -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
+            -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
+            -e "admin_api_key=${{ steps.secrets.outputs.ADMIN_API_KEY }}"
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+          ANSIBLE_FORCE_COLOR:   "1"
+
+      - name: Verify deployment
+        run: |
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+            --max-time 10 \
+            "http://${{ needs.terraform.outputs.server_public_ip }}/api/v1/health" \
+            || echo "000")
+          if [ "$HTTP" = "200" ]; then
+            echo "Health check passed (HTTP $HTTP)"
+          else
+            echo "Health check failed - got HTTP $HTTP"
+            exit 1
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo "========================================"
+          echo "  Deployment complete"
+          echo "  App:    http://${{ needs.terraform.outputs.server_public_ip }}"
+          echo "  Health: http://${{ needs.terraform.outputs.server_public_ip }}/api/v1/health"
+          echo "========================================"

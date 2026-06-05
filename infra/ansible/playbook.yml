@@ -1,0 +1,37 @@
+---
+# DTP Africa — single-instance provisioning playbook
+#
+# Runs all roles against the one EC2 server:
+#   common  → OS hardening, packages, UFW, fail2ban
+#   docker  → Docker CE + Compose v2
+#   deploy  → secrets, Node 20, pnpm, repo clone, env files, containers
+#
+# Run manually:
+#   ansible-playbook -i inventory.ini playbook.yml
+#
+# Or with extra vars to override defaults:
+#   ansible-playbook -i inventory.ini playbook.yml \
+#     -e aws_region=us-east-1 \
+#     -e git_branch=main
+
+- name: Provision DTP Africa server
+  hosts: server
+  become: true
+
+  vars:
+    # ── AWS ───────────────────────────────────────────────────────────────────
+    aws_region: "us-east-1"
+
+    # ── Repository ────────────────────────────────────────────────────────────
+    git_repo_url: "git@github.com:YOUR_ORG/YOUR_REPO.git"
+    git_branch:   "main"
+    app_dir:      "/opt/dtp-app"
+
+    # ── Runtime versions ─────────────────────────────────────────────────────
+    node_version: "20"
+    pnpm_version: "9.15.0"
+
+  roles:
+    - common
+    - docker
+    - deploy

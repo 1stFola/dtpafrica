@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="50" viewBox="0 0 320 50" fill="none">
+  <rect width="320" height="50" rx="10" fill="#0F172A"/>
+  <rect x="1" y="1" width="318" height="48" rx="9" stroke="#334155"/>
+  <text x="16" y="20" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="8" letter-spacing="0.1em">SPONSORED</text>
+  <text x="16" y="35" fill="#F1F5F9" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700">Discover local academy talent</text>
+</svg>

@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dtp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dtp
+      POSTGRES_PASSWORD: dtp
+      POSTGRES_DB: dtp_africa
+    ports:
+      - "5432:5432"
+    volumes:
+      - dtp_pg_data:/var/lib/postgresql/data
+
+volumes:
+  dtp_pg_data:
