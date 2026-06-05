@@ -173,18 +173,9 @@
   become: true
   become_user: root
 
-# ── 10. Push Prisma schema (create / migrate tables) ─────────────────────────
-
-- name: Push Prisma schema to Postgres
-  ansible.builtin.command:
-    cmd:   pnpm --filter @dtp/api db:push
-    chdir: "{{ app_dir }}/repo"
-  become: true
-  become_user: ubuntu
-  changed_when: true
-  environment:
-    HOME: /home/ubuntu
-    # Read from the .env file we already wrote — Prisma picks it up automatically
+# ── 10. Start full stack — api container runs db:push automatically ───────────
+# The api.Dockerfile CMD runs: pnpm --filter @dtp/api db:push && pnpm --filter @dtp/api start
+# So migrations run inside the container where Postgres is reachable via the Docker network.
 
 # ── 11. Start full stack (api + web) ─────────────────────────────────────────
 
