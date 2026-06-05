@@ -23,8 +23,8 @@
     aws_region: "us-east-1"
 
     # ── Repository ────────────────────────────────────────────────────────────
-    git_repo_url: "git@github.com:YOUR_ORG/YOUR_REPO.git"
-    git_branch:   "main"
+    git_repo_url: "git@github.com:/1stFola/dtpafrica.git"
+    git_branch:   "dev"
     app_dir:      "/opt/dtp-app"
 
     # ── Runtime versions ─────────────────────────────────────────────────────
