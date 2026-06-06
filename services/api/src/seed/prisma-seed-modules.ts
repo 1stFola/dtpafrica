@@ -13,7 +13,7 @@ type LegacyPlayerSeedResult = {
 type SeedLegacyPlayersFn = (prisma: PrismaClient) => Promise<LegacyPlayerSeedResult>;
 
 const requireFromDist = createRequire(__filename);
-const prismaSeedDir = path.join(__dirname, "../../../prisma");
+const prismaSeedDir = path.join(__dirname, "../../prisma");
 
 function loadModule<T>(filename: string): T {
   return requireFromDist(path.join(prismaSeedDir, filename)) as T;
