@@ -18,7 +18,8 @@ FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
-RUN corepack enable
+# Install pnpm at build time so the container never downloads it at startup
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 COPY --from=builder /app /app
 
