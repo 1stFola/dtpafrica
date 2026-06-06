@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** Auto-generated from legacy-players-paste.txt — do not edit by hand. */
 export type LegacyPlayerSeedRow = {
   full_name: string;

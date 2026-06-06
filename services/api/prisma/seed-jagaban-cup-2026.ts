@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   buildJagabanCupStages,

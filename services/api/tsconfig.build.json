@@ -5,6 +5,16 @@
       "@dtp/engines": ["../../packages/engines/src/index.ts"]
     }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "prisma"]
+  "include": [
+    "src/**/*",
+    "prisma/seed-scoreboard.ts",
+    "prisma/seed-mvce.ts",
+    "prisma/seed-legacy-academies.ts",
+    "prisma/seed-legacy-players.ts",
+    "prisma/seed-legacy-players-data.ts",
+    "prisma/seed-ex-internationals-cup-2026.ts",
+    "prisma/seed-jagaban-cup-2026.ts",
+    "prisma/seed-jagaban-media-data.ts"
+  ],
+  "exclude": ["node_modules", "dist", "prisma/seed.ts"]
 }

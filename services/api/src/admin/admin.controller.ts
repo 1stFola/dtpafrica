@@ -29,6 +29,7 @@ import { UpsertAcademyDto } from "./dto/upsert-academy.dto";
 import { UpsertStaticContentDto } from "./dto/upsert-static-content.dto";
 import { UpsertBlogPostDto } from "./dto/upsert-blog-post.dto";
 import { AdminApiKeyGuard } from "./guards/admin-api-key.guard";
+import { AdminSeedService } from "./admin-seed.service";
 import { AdsConfigService } from "../ads/ads-config.service";
 import { PatchAdsConfigDto } from "../ads/dto/patch-ads-config.dto";
 
@@ -43,7 +44,8 @@ export class AdminController {
     @Inject(AdminBlogService) private readonly blog: AdminBlogService,
     @Inject(AdminContentService) private readonly content: AdminContentService,
     @Inject(AdminCalibrationService) private readonly calibration: AdminCalibrationService,
-    @Inject(AdsConfigService) private readonly ads: AdsConfigService
+    @Inject(AdsConfigService) private readonly ads: AdsConfigService,
+    @Inject(AdminSeedService) private readonly seed: AdminSeedService
   ) {}
 
   @Get("session")
@@ -256,5 +258,15 @@ export class AdminController {
   @Patch("ads")
   patchAdsConfig(@Body() dto: PatchAdsConfigDto) {
     return this.ads.updateConfig(dto);
+  }
+
+  @Get("database/seed/status")
+  getDatabaseSeedStatus() {
+    return this.seed.getStatus();
+  }
+
+  @Post("database/seed")
+  runDatabaseSeed() {
+    return this.seed.run();
   }
 }

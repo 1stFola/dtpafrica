@@ -10,6 +10,7 @@ import { AdminAcademiesPage } from "./pages/AdminAcademiesPage";
 import { AdminCalibrationPage } from "./pages/AdminCalibrationPage";
 import { AdminContentPage } from "./pages/AdminContentPage";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
+import { AdminDatabasePage } from "./pages/AdminDatabasePage";
 import { AdminAdsPage } from "./pages/AdminAdsPage";
 import { AdminHomepagePage } from "./pages/AdminHomepagePage";
 import { AdminHomeVideoHighlightsPage } from "./pages/AdminHomeVideoHighlightsPage";
@@ -34,6 +35,7 @@ export function AdminApp() {
             <Route path="ads" element={<AdminAdsPage />} />
             <Route path="academies" element={<AdminAcademiesPage />} />
             <Route path="content" element={<AdminContentPage />} />
+            <Route path="database" element={<AdminDatabasePage />} />
             <Route path="blog" element={<AdminBlogListPage />} />
             <Route path="blog/new" element={<AdminBlogEditPage />} />
             <Route path="blog/:id" element={<AdminBlogEditPage />} />

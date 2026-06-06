@@ -265,6 +265,36 @@ export type AdminAcademy = {
   updatedAt: string;
 };
 
+export type AdminSeedPhaseError = {
+  phase: string;
+  message: string;
+};
+
+export type AdminSeedResult = {
+  ok: boolean;
+  durationMs: number;
+  seedPlayerId: string;
+  counts: {
+    players: number;
+    academies: number;
+    competitions: number;
+    blogPosts: number;
+    legacyPlayers: number;
+    legacyAcademies: number;
+    legacyAcademyLinks: number;
+    staticContentKeys: number;
+  };
+  legacySampleSlugs: string[];
+  errors: AdminSeedPhaseError[];
+  completedAt: string;
+};
+
+export type AdminSeedStatus = {
+  running: boolean;
+  startedAt: string | null;
+  lastRun: AdminSeedResult | null;
+};
+
 export type AdminAcademyInput = {
   name: string;
   slug?: string;
@@ -420,4 +450,8 @@ export const adminApi = {
       method: "POST",
       body: JSON.stringify(body ?? { save: true }),
     }),
+  databaseSeedStatus: () =>
+    adminFetch<AdminSeedStatus>("/admin/database/seed/status"),
+  runDatabaseSeed: () =>
+    adminFetch<AdminSeedResult>("/admin/database/seed", { method: "POST" }),
 };

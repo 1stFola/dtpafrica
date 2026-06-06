@@ -11,6 +11,7 @@ import { AdminInboxService } from "./admin-inbox.service";
 import { AdminPlayersService } from "./admin-players.service";
 import { AdminScoreboardController } from "./admin-scoreboard.controller";
 import { AdminScoreboardService } from "./admin-scoreboard.service";
+import { AdminSeedService } from "./admin-seed.service";
 
 @Module({
   imports: [AcademyAuthModule, AdsModule, ScoreboardModule],
@@ -23,6 +24,7 @@ import { AdminScoreboardService } from "./admin-scoreboard.service";
     AdminContentService,
     AdminCalibrationService,
     AdminScoreboardService,
+    AdminSeedService,
   ],
 })
 export class AdminModule {}
