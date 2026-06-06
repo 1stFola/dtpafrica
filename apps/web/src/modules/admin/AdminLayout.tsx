@@ -11,6 +11,7 @@ const links = [
   { to: "/admin/ads", label: "Ads", icon: "▣" },
   { to: "/admin/academies", label: "Academies", icon: "▦" },
   { to: "/admin/content", label: "Content", icon: "⎘" },
+  { to: "/admin/database", label: "Database", icon: "⛁" },
   { to: "/admin/blog", label: "Blog", icon: "✎" },
   { to: "/admin/scoreboard", label: "ScoreBoard", icon: "⏱" },
 ];
