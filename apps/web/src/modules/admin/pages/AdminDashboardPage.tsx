@@ -48,6 +48,12 @@ const cards: Array<{ to: string; title: string; desc: string; tag: string }> = [
     tag: "CMS",
   },
   {
+    to: "/admin/database",
+    title: "Database seed",
+    desc: "Pull bundled seed data into the live database",
+    tag: "Ops",
+  },
+  {
     to: "/admin/scoreboard",
     title: "ScoreBoard ops",
     desc: "Entities, rosters, highlights, match center, spotter tablet",
