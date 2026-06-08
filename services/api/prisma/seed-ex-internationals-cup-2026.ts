@@ -33,6 +33,15 @@ type TeamSeed = {
   academyId: string;
 };
 
+type EventSeed = {
+  type: string;
+  minute: number;
+  teamSlug: string;
+  playerLabel: string;
+  assistLabel?: string;
+  detail?: string;
+};
+
 type MatchSeed = {
   id: string;
   homeSlug: string;
@@ -40,7 +49,39 @@ type MatchSeed = {
   kickoffAt: string;
   venue: string;
   matchday: number;
+  homeScore?: number;
+  awayScore?: number;
+  status?: "scheduled" | "finished";
+  minute?: number | null;
+  stats?: Prisma.InputJsonValue;
+  events?: EventSeed[];
 };
+
+function matchStats(opts: {
+  homePoss: number;
+  awayPoss: number;
+  homeSaves?: number | null;
+  awaySaves?: number | null;
+  homeShots?: number;
+  awayShots?: number;
+  narrative?: string;
+}): Prisma.InputJsonValue {
+  const homeShots = opts.homeShots ?? 10;
+  const awayShots = opts.awayShots ?? 10;
+  return {
+    possession: { home: opts.homePoss, away: opts.awayPoss },
+    saves: {
+      home: opts.homeSaves ?? null,
+      away: opts.awaySaves ?? null,
+    },
+    shots: { home: homeShots, away: awayShots },
+    shotsOnTarget: {
+      home: Math.max(1, Math.round(homeShots * 0.4)),
+      away: Math.max(1, Math.round(awayShots * 0.4)),
+    },
+    narrative: opts.narrative ?? null,
+  };
+}
 
 function teamId(seed: number): string {
   return `00000000-0000-4000-8e1c-${String(seed).padStart(12, "0")}`;
@@ -390,6 +431,22 @@ const MATCHES: MatchSeed[] = [
     kickoffAt: watKickoff("2026-06-08", "15:00"),
     venue: "Eleja Pry Sch, Igbogbo, Ikorodu",
     matchday: 1,
+    status: "finished",
+    minute: 90,
+    homeScore: 1,
+    awayScore: 3,
+    stats: matchStats({
+      homePoss: 48,
+      awayPoss: 52,
+      narrative:
+        "FC IPAYE advanced with a 3-1 win over FC EKPO. Sammy Udoh (34'), Anu (#16) and No. 19 struck for Ipaye before Ekpo pulled one back from the penalty spot through No. 5.",
+    }),
+    events: [
+      { type: "goal", minute: 34, teamSlug: "fc-ipaye", playerLabel: "Sammy Udoh" },
+      { type: "goal", minute: 52, teamSlug: "fc-ipaye", playerLabel: "Anu", detail: "#16" },
+      { type: "goal", minute: 68, teamSlug: "fc-ipaye", playerLabel: "No. 19" },
+      { type: "goal", minute: 82, teamSlug: "fc-ekpo", playerLabel: "No. 5", detail: "penalty" },
+    ],
   },
   {
     id: matchId(2),
@@ -414,6 +471,28 @@ const MATCHES: MatchSeed[] = [
     kickoffAt: watKickoff("2026-06-08", "16:00"),
     venue: "Mobolaji Johnson Arena, Onikan",
     matchday: 1,
+    status: "finished",
+    minute: 90,
+    homeScore: 2,
+    awayScore: 1,
+    stats: matchStats({
+      homePoss: 55,
+      awayPoss: 45,
+      narrative:
+        "FC BABINGTON came from behind to beat FC DOSU 2-1. Dosu led through a first-half strike (26') before Babington equalised (54') and won it late (77') as the Dosu goalkeeper was sent off in the 77th minute.",
+    }),
+    events: [
+      { type: "goal", minute: 26, teamSlug: "fc-dosu", playerLabel: "Player" },
+      { type: "goal", minute: 54, teamSlug: "fc-babington", playerLabel: "Player" },
+      { type: "goal", minute: 77, teamSlug: "fc-babington", playerLabel: "Player" },
+      {
+        type: "red_card",
+        minute: 77,
+        teamSlug: "fc-dosu",
+        playerLabel: "Goalkeeper",
+        detail: "straight red",
+      },
+    ],
   },
   {
     id: matchId(5),
@@ -422,6 +501,67 @@ const MATCHES: MatchSeed[] = [
     kickoffAt: watKickoff("2026-06-08", "15:00"),
     venue: "CMS Grammar School, Bariga",
     matchday: 1,
+    status: "finished",
+    minute: 90,
+    homeScore: 0,
+    awayScore: 1,
+    stats: matchStats({
+      homePoss: 50,
+      awayPoss: 50,
+      narrative:
+        "FC OMORUYI edged FC OGUNTUASE 1-0 through a late Destiny Nosa strike (84').",
+    }),
+    events: [
+      {
+        type: "substitution",
+        minute: 46,
+        teamSlug: "fc-oguntuase",
+        playerLabel: "Anuoluwapo Oluwow",
+        assistLabel: "Korede Elejoba",
+        detail: "#12 off, #17 on",
+      },
+      {
+        type: "substitution",
+        minute: 53,
+        teamSlug: "fc-omoruyi",
+        playerLabel: "Ololade Yusuf",
+        assistLabel: "Destiny",
+        detail: "#11 off, #12 on",
+      },
+      {
+        type: "substitution",
+        minute: 58,
+        teamSlug: "fc-oguntuase",
+        playerLabel: "Shodakin Sodiq",
+        assistLabel: "Luka Samuel",
+        detail: "#9 off, #8 on",
+      },
+      {
+        type: "substitution",
+        minute: 58,
+        teamSlug: "fc-oguntuase",
+        playerLabel: "Jide Oluseye",
+        assistLabel: "Baare Adeyemi",
+        detail: "#19 off, #14 on",
+      },
+      {
+        type: "substitution",
+        minute: 58,
+        teamSlug: "fc-oguntuase",
+        playerLabel: "Tunde Oladejo",
+        assistLabel: "Okanlawon Adedapo",
+        detail: "#7 off, #16 on",
+      },
+      {
+        type: "substitution",
+        minute: 61,
+        teamSlug: "fc-omoruyi",
+        playerLabel: "David Adesanya",
+        assistLabel: "Sunday Komolafe",
+        detail: "#9 off, #7 on",
+      },
+      { type: "goal", minute: 84, teamSlug: "fc-omoruyi", playerLabel: "Destiny Nosa" },
+    ],
   },
   {
     id: matchId(6),
@@ -668,7 +808,12 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
   }
 
   const r32StageId = stageByKey.get("r32");
+  let eventCount = 0;
   for (const m of MATCHES) {
+    const status = m.status ?? "scheduled";
+    const homeScore = m.homeScore ?? 0;
+    const awayScore = m.awayScore ?? 0;
+    const minute = status === "finished" ? (m.minute ?? 90) : null;
     const meta: Prisma.InputJsonValue = {
       knockoutRound: "R32",
       round: "R32",
@@ -677,10 +822,11 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
     await prisma.sbMatch.upsert({
       where: { id: m.id },
       update: {
-        homeScore: 0,
-        awayScore: 0,
-        status: "scheduled",
-        stats: null,
+        homeScore,
+        awayScore,
+        status,
+        minute,
+        stats: m.stats ?? null,
         meta,
         stageKey: "r32",
         stageId: r32StageId,
@@ -699,15 +845,33 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
         matchday: m.matchday,
         homeTeamId: teamIds[m.homeSlug],
         awayTeamId: teamIds[m.awaySlug],
-        status: "scheduled",
-        homeScore: 0,
-        awayScore: 0,
+        status,
+        homeScore,
+        awayScore,
+        minute,
         kickoffAt: new Date(m.kickoffAt),
         venue: m.venue,
         roundLabel: "Round of 32",
+        stats: m.stats ?? null,
         meta,
       },
     });
+
+    await prisma.sbMatchEvent.deleteMany({ where: { matchId: m.id } });
+    for (const ev of m.events ?? []) {
+      await prisma.sbMatchEvent.create({
+        data: {
+          matchId: m.id,
+          teamId: teamIds[ev.teamSlug],
+          type: ev.type,
+          minute: ev.minute,
+          playerLabel: ev.playerLabel,
+          assistLabel: ev.assistLabel,
+          detail: ev.detail,
+        },
+      });
+      eventCount += 1;
+    }
   }
 
   const [teamCount, matchCount] = await Promise.all([
@@ -718,6 +882,7 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
   console.log("Ex Internationals Cup 2026 seeded:", COMP_SLUG);
   console.log("  teams:", teamCount, "(expected 32)");
   console.log("  matches:", matchCount, "(expected 16 R32)");
+  console.log("  events:", eventCount);
   console.log("  academies:", academyCount);
   console.log(
     `  academy logins: username=<team-slug e.g. fc-ekpo> password=${EX_INTL_ACADEMY_SEED_PASSWORD}`
