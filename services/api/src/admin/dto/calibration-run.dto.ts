@@ -1,8 +1,11 @@
 import { Type } from "class-transformer";
 import {
   IsBoolean,
+  IsInt,
   IsOptional,
   IsUUID,
+  Max,
+  Min,
   ValidateNested,
 } from "class-validator";
 import { CalibrationMetricsDto } from "./calibration-metrics.dto";
@@ -23,6 +26,13 @@ export class CalibrationPreviewDto {
   @ValidateNested()
   @Type(() => LegacyMatchMetricsDto)
   metrics!: LegacyMatchMetricsDto;
+
+  /** Override tier-based benchmark auto-selection (0–5). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  primaryBenchmarkIndex?: number;
 }
 
 export class CalibratePlayerDto {
@@ -39,6 +49,13 @@ export class CalibratePlayerDto {
   @IsOptional()
   @IsBoolean()
   save?: boolean;
+
+  /** Override tier-based benchmark auto-selection (0–5). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  primaryBenchmarkIndex?: number;
 }
 
 export class CreateCalibratedPlayerDto {
@@ -49,6 +66,13 @@ export class CreateCalibratedPlayerDto {
   @ValidateNested()
   @Type(() => LegacyMatchMetricsDto)
   metrics!: LegacyMatchMetricsDto;
+
+  /** Override tier-based benchmark auto-selection (0–5). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  primaryBenchmarkIndex?: number;
 }
 
 /** @deprecated use LegacyMatchMetricsDto in new requests */

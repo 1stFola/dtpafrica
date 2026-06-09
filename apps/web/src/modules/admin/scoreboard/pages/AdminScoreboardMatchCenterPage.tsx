@@ -13,6 +13,7 @@ import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
+import { MatchCsvIngestModal } from "../components/MatchCsvIngestModal";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 
 type TimelineEvent = Awaited<
@@ -33,6 +34,7 @@ export function AdminScoreboardMatchCenterPage() {
   const [matchesLoading, setMatchesLoading] = useState(true);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
 
   const refresh = useCallback(() => {
     fetchSupervisorLive()
@@ -248,6 +250,13 @@ export function AdminScoreboardMatchCenterPage() {
               >
                 SIP ingest
               </button>
+              <button
+                type="button"
+                className="admin-inline-button"
+                onClick={() => setCsvModalOpen(true)}
+              >
+                CSV upload
+              </button>
             </div>
 
             <div className="admin-sb-quick-events">
@@ -314,6 +323,19 @@ export function AdminScoreboardMatchCenterPage() {
               )}
             </div>
           </div>
+
+          {csvModalOpen && (
+            <MatchCsvIngestModal
+              matchId={selected.id}
+              matchLabel={`${selected.homeTeam.name} vs ${selected.awayTeam.name}`}
+              isFinished={selected.status === "finished"}
+              onClose={() => setCsvModalOpen(false)}
+              onSuccess={() => {
+                refresh();
+                loadTimeline(selected.id);
+              }}
+            />
+          )}
         </>
       )}
     </section>

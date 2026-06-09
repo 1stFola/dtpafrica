@@ -11,6 +11,7 @@ export type LegacyCalibrationApi = {
     raw: Record<string, number>,
   ) => {
     calibrated: Record<string, number>;
+    rankedCandidates: Record<string, unknown>[];
     nearest: Record<string, unknown>;
     alternatives: Record<string, unknown>[];
     filterInfo: { poolSize: number };

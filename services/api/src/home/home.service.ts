@@ -449,6 +449,7 @@ export class HomeService {
       dominantFoot: true,
       heightCm: true,
       positionPrimary: true,
+      positionFull: true,
       positionSecondary: true,
       playerPhotoUrl: true,
       videoUrl: true,

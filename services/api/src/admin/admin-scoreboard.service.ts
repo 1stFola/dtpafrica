@@ -811,6 +811,10 @@ export class AdminScoreboardService {
     return this.scoreboard.addEvent(matchId, dto);
   }
 
+  ingestMatchTimelineCsv(matchId: string, csv: string, replace?: boolean) {
+    return this.scoreboard.ingestMatchTimelineCsv(matchId, csv, replace);
+  }
+
   async deleteMatchEvent(matchId: string, eventId: string) {
     const event = await this.prisma.sbMatchEvent.findFirst({
       where: { id: eventId, matchId },

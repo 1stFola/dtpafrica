@@ -204,4 +204,15 @@ export class AdminScoreboardController {
   ) {
     return this.sb.deleteMatchEvent(matchId, eventId);
   }
+
+  @Post("matches/:matchId/csv-ingest")
+  ingestMatchCsv(
+    @Param("matchId") matchId: string,
+    @Body() body: { csv: string; replace?: boolean }
+  ) {
+    if (!body.csv?.trim()) {
+      throw new BadRequestException("csv body field is required");
+    }
+    return this.sb.ingestMatchTimelineCsv(matchId, body.csv, body.replace);
+  }
 }

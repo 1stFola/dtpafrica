@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { selectBenchmarkFromPool } from "@dtp/engines/benchmark-selection";
 import { useAdminToast } from "../components/AdminToast";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { PlayerSlugPreview } from "../components/PlayerSlugPreview";
@@ -132,6 +133,7 @@ export function AdminCalibrationPage() {
   const [playerInfo, setPlayerInfo] = useState<PlayerInfoForm>(emptyPlayerInfo);
   const [metrics, setMetrics] = useState<LegacyMetricsForm>(emptyLegacyMetrics);
   const [result, setResult] = useState<CalibrationRunResult | null>(null);
+  const [selectedPrimaryIndex, setSelectedPrimaryIndex] = useState(0);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -159,6 +161,7 @@ export function AdminCalibrationPage() {
       setPlayerInfo(contextToPlayerInfo(ctx.player));
       setMetrics(ctx.metrics ? legacyMetricsFromApi(ctx.metrics) : emptyLegacyMetrics());
       setResult(null);
+      setSelectedPrimaryIndex(0);
       setHasGenerated(false);
     } catch (e) {
       toast.error(String(e));
@@ -206,6 +209,7 @@ export function AdminCalibrationPage() {
         playerId: playerId || undefined,
       });
       setResult(out);
+      setSelectedPrimaryIndex(out.primaryBenchmarkIndex ?? 0);
       setHasGenerated(true);
     } catch (e) {
       toast.error(String(e));
@@ -223,8 +227,13 @@ export function AdminCalibrationPage() {
     setMessage(null);
     try {
       const body = buildPayload();
-      const out = await adminApi.calibratePlayer(playerId, { ...body, save: true });
+      const out = await adminApi.calibratePlayer(playerId, {
+        ...body,
+        save: true,
+        primaryBenchmarkIndex: selectedPrimaryIndex,
+      });
       setResult(out);
+      setSelectedPrimaryIndex(out.primaryBenchmarkIndex ?? selectedPrimaryIndex);
       toast.success("Calibrated ratings saved to player profile.");
       loadPlayers();
     } catch (e) {
@@ -239,8 +248,12 @@ export function AdminCalibrationPage() {
     setMessage(null);
     try {
       const body = buildPayload();
-      const out = await adminApi.createCalibratedPlayer(body);
+      const out = await adminApi.createCalibratedPlayer({
+        ...body,
+        primaryBenchmarkIndex: selectedPrimaryIndex,
+      });
       setResult(out);
+      setSelectedPrimaryIndex(out.primaryBenchmarkIndex ?? selectedPrimaryIndex);
       setPlayerId(out.player.id);
       setSearchParams({ playerId: out.player.id });
       toast.success(`Player "${out.player.displayName}" created with calibrated ratings.`);
@@ -259,6 +272,7 @@ export function AdminCalibrationPage() {
     setPlayerInfo(emptyPlayerInfo());
     setMetrics(emptyLegacyMetrics());
     setResult(null);
+    setSelectedPrimaryIndex(0);
     setHasGenerated(false);
     setMessage(null);
     setCsvStatus(CSV_HEADER_HINT);
@@ -308,10 +322,36 @@ export function AdminCalibrationPage() {
     await createPlayer();
   };
 
+  const rankedCandidates = useMemo(
+    () => result?.rankedCandidates ?? [],
+    [result?.rankedCandidates]
+  );
+
+  const benchmarkSelection = useMemo(() => {
+    if (rankedCandidates.length === 0) {
+      return {
+        nearestBenchmark: result?.nearestBenchmark ?? null,
+        alternativeBenchmarks: result?.alternativeBenchmarks ?? [],
+      };
+    }
+    const selection = selectBenchmarkFromPool(
+      rankedCandidates as Record<string, unknown>[],
+      selectedPrimaryIndex
+    );
+    return {
+      nearestBenchmark: selection.nearest as CalibrationBenchmarkProfile,
+      alternativeBenchmarks: selection.alternativeBenchmarks as CalibrationBenchmarkProfile[],
+    };
+  }, [rankedCandidates, result?.alternativeBenchmarks, result?.nearestBenchmark, selectedPrimaryIndex]);
+
   const benchmarkOutput: CalibrationBenchmarkOutput = {
-    nearestBenchmark: result?.nearestBenchmark ?? null,
-    alternativeBenchmarks: result?.alternativeBenchmarks ?? [],
+    nearestBenchmark: benchmarkSelection.nearestBenchmark,
+    alternativeBenchmarks: benchmarkSelection.alternativeBenchmarks,
     poolSize: result?.filterInfo.poolSize ?? 0,
+  };
+
+  const setPrimaryBenchmark = (candidateIndex: number) => {
+    setSelectedPrimaryIndex(candidateIndex);
   };
 
   const summaryMetrics = [
@@ -624,13 +664,25 @@ export function AdminCalibrationPage() {
                   </div>
                   <p className="admin-calibration-v3__alt-title">Alternative Similar Players</p>
                   <ul className="admin-calibration-v3__alt-list">
-                    {benchmarkOutput.alternativeBenchmarks.map((alt, i) => (
-                      <li key={`${benchName(alt)}-${i}`}>
-                        <span>{benchName(alt)}</span>
-                        <span>{String(alt.archetype ?? "Benchmark archetype")}</span>
-                        <strong>{String(alt.__similarity ?? "—")}%</strong>
-                      </li>
-                    ))}
+                    {rankedCandidates.map((alt, i) => {
+                      if (i === selectedPrimaryIndex) return null;
+                      return (
+                        <li key={`${benchName(alt)}-${i}`}>
+                          <span>{benchName(alt)}</span>
+                          <span>{String(alt.archetype ?? "Benchmark archetype")}</span>
+                          <span className="admin-calibration-v3__alt-similarity">
+                            {String(alt.__similarity ?? "—")}%
+                          </span>
+                          <button
+                            type="button"
+                            className="admin-inline-button admin-calibration-v3__swap-btn"
+                            onClick={() => setPrimaryBenchmark(i)}
+                          >
+                            Set as Primary
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}

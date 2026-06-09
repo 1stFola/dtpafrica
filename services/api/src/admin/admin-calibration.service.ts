@@ -218,6 +218,8 @@ export class AdminCalibrationService {
     return {
       nearest: result.nearestBenchmark,
       alternatives: result.alternativeBenchmarks,
+      rankedCandidates: result.rankedCandidates,
+      primaryBenchmarkIndex: result.primaryBenchmarkIndex,
       filterInfo: result.filterInfo,
     };
   }
@@ -307,7 +309,8 @@ export class AdminCalibrationService {
   runAdhoc(
     player: CalibrationPlayerInfoDto,
     metrics: LegacyMatchMetricsDto,
-    save = false
+    save = false,
+    primaryBenchmarkIndex?: number,
   ) {
     if (!player.fullName?.trim()) {
       throw new BadRequestException("Full name is required");
@@ -317,7 +320,8 @@ export class AdminCalibrationService {
     }
     const result = runCalibration(
       this.legacyMetricsToRow(metrics),
-      this.infoToLegacyMeta(player)
+      this.infoToLegacyMeta(player),
+      { primaryBenchmarkIndex },
     );
     return this.formatResult(null, player.fullName, player.position, save, result);
   }
@@ -328,6 +332,7 @@ export class AdminCalibrationService {
       save?: boolean;
       metricsOverride?: CalibrationMetricsDto | LegacyMatchMetricsDto;
       playerInfo?: CalibrationPlayerInfoDto;
+      primaryBenchmarkIndex?: number;
     } = {}
   ) {
     const player = await this.prisma.player.findUnique({ where: { id: playerId } });
@@ -361,7 +366,9 @@ export class AdminCalibrationService {
       ? this.infoToLegacyMeta(options.playerInfo)
       : playerToLegacyMeta(player);
 
-    const result = runCalibration(metrics, meta);
+    const result = runCalibration(metrics, meta, {
+      primaryBenchmarkIndex: options.primaryBenchmarkIndex,
+    });
 
     if (options.save) {
       await this.prisma.player.update({
@@ -420,7 +427,8 @@ export class AdminCalibrationService {
 
   async createPlayerFromCalibration(
     playerInfo: CalibrationPlayerInfoDto,
-    metrics: LegacyMatchMetricsDto
+    metrics: LegacyMatchMetricsDto,
+    primaryBenchmarkIndex?: number,
   ) {
     if (!playerInfo.fullName?.trim()) {
       throw new BadRequestException("Full name is required");
@@ -430,7 +438,9 @@ export class AdminCalibrationService {
     }
 
     const metricsRow = this.legacyMetricsToRow(metrics);
-    const result = runCalibration(metricsRow, this.infoToLegacyMeta(playerInfo));
+    const result = runCalibration(metricsRow, this.infoToLegacyMeta(playerInfo), {
+      primaryBenchmarkIndex,
+    });
     const { firstName, lastName } = this.splitFullName(playerInfo.fullName);
     const dob = playerInfo.dateOfBirth ? new Date(playerInfo.dateOfBirth) : null;
     const age =
