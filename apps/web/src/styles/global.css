@@ -3598,10 +3598,9 @@ a {
 }
 
 .player-profile-scout-strip {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 1.25rem;
-  align-items: start;
   padding: 1.25rem 1.35rem;
   margin-bottom: 0.5rem;
   border: 1px solid var(--color-border);
@@ -3616,7 +3615,7 @@ a {
 
 .player-profile-playstyles {
   min-width: 0;
-  align-self: start;
+  width: 100%;
   padding: 0.85rem 0.95rem;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: var(--radius);
@@ -3627,7 +3626,6 @@ a {
 .player-profile-playstyles__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(3, minmax(0, auto));
   gap: 0.75rem;
   margin: 0;
   padding: 0;
@@ -3971,10 +3969,6 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .player-profile-scout-strip {
-    grid-template-columns: 1fr;
-  }
-
   .player-profile-attr-grid {
     grid-template-columns: 1fr;
   }
@@ -4098,6 +4092,10 @@ a {
   .player-profile-scout-strip {
     padding: 1rem;
     gap: 1rem;
+  }
+
+  .player-profile-playstyles__grid {
+    grid-template-columns: 1fr;
   }
 
   .player-profile-playstyle {
@@ -6904,11 +6902,11 @@ a {
 }
 
 .playstyle-modal__dot--player {
-  background: #2563eb;
+  background: rgba(96, 165, 250, 0.75);
 }
 
 .playstyle-modal__dot--benchmark {
-  background: #9333ea;
+  background: rgba(148, 163, 184, 0.75);
 }
 
 .playstyle-modal__group {
@@ -6957,38 +6955,50 @@ a {
 }
 
 .playstyle-dual-bar__track {
-  height: 8px;
+  height: 5px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--color-border);
+  background: rgba(51, 65, 85, 0.4);
 }
 
 .playstyle-dual-bar__fill {
   display: block;
   height: 100%;
   border-radius: inherit;
+  opacity: 0.85;
 }
 
 .playstyle-dual-bar__fill--player {
-  background: #2563eb;
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.28) 0%,
+    rgba(52, 211, 153, 0.38) 100%
+  );
 }
 
 .playstyle-dual-bar__fill--benchmark {
-  background: #9333ea;
+  background: linear-gradient(
+    90deg,
+    rgba(71, 85, 105, 0.32) 0%,
+    rgba(100, 116, 139, 0.42) 100%
+  );
 }
 
 .playstyle-dual-bar__value {
-  min-width: 2rem;
-  font-size: 0.82rem;
+  min-width: 2.15rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
   text-align: right;
 }
 
 .playstyle-dual-bar__value--player {
-  color: #60a5fa;
+  color: #e2e8f0;
 }
 
 .playstyle-dual-bar__value--benchmark {
-  color: #c084fc;
+  color: #cbd5e1;
 }
 
 .playstyle-modal__footer {

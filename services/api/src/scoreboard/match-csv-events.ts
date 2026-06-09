@@ -185,6 +185,16 @@ function bump(counts: HomeAwayCount, side: "home" | "away", n = 1) {
   counts[side] += n;
 }
 
+/**
+ * Possession % is derived from CSV `team_side` (column C), not from `possession` rows alone.
+ * Each ingested timeline row with team_side=home|away counts as one tick for that side.
+ *
+ * Counted: every parsed match event that carries team_side (goals, fouls, subs, flow rows
+ * with a side, etc.).
+ *
+ * Not counted: full_time and penalty_shootout (never enter the events list), and any row
+ * without team_side (kick_off, half_time, match_flow/pressure/score_update when side is blank).
+ */
 export function deriveMatchStatsFromCsvEvents(
   events: ParsedCsvEvent[],
   opts?: { narrative?: string | null }
@@ -221,7 +231,7 @@ export function deriveMatchStatsFromCsvEvents(
     if (csvType === "corner_kick" && side) bump(corners, side);
     if ((csvType === "foul" || csvType === "freekick") && side) bump(fouls, side);
 
-    if (csvType === "possession" && side) bump(possessionTicks, side);
+    if (side) bump(possessionTicks, side);
 
     if (
       (csvType === "score_update" || csvType === "match_flow") &&
@@ -234,10 +244,10 @@ export function deriveMatchStatsFromCsvEvents(
   const possTotal = possessionTicks.home + possessionTicks.away;
   const possession =
     possTotal > 0
-      ? {
-          home: Math.round((possessionTicks.home / possTotal) * 100),
-          away: Math.round((possessionTicks.away / possTotal) * 100),
-        }
+      ? (() => {
+          const homePct = Math.round((possessionTicks.home / possTotal) * 100);
+          return { home: homePct, away: 100 - homePct };
+        })()
       : undefined;
 
   const hasShots = shots.home + shots.away > 0;

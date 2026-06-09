@@ -56,6 +56,25 @@ ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010e	fc-udeze	fc-ugba
 ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000010f	fc-aiyegbeni	fc-elaho	2026-06-12T09:00:00+01:00	Legacy Pitch, National Stadium	5
 ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000110	fc-disu	fc-enegwea	2026-06-14T14:00:00+01:00	Landmark Sports Complex, Agric Ikorodu	6
 
+# fixtures (R32 second legs — matchday 2, leg second_leg)
+competition_slug	match_id	home_slug	away_slug	kickoff_at	venue	matchday	leg	first_leg_match_id
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000111	fc-ipaye	fc-ekpo	2026-06-11T11:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-000000000101
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000112	fc-ogunlade	fc-amoo	2026-06-12T07:30:00+01:00	Bethlehem Field, Omo-Onile, Abule-Ado	2	second_leg	00000000-0000-4000-8e1c-000000000106
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000113	fc-dosu	fc-babington	2026-06-12T08:00:00+01:00	Rehab Centre, Isheri-Berger	2	second_leg	00000000-0000-4000-8e1c-000000000104
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000114	fc-temile	fc-giwa	2026-06-12T10:00:00+01:00	Arch. Bishop Aggrey, Mushin	2	second_leg	00000000-0000-4000-8e1c-000000000103
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000115	fc-ikpeba	fc-odini	2026-06-13T11:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-000000000109
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000116	fc-ugbade	fc-udeze	2026-06-14T09:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-00000000010e
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000117	fc-elaho	fc-aiyegbeni	2026-06-14T13:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-00000000010f
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000118	fc-agbai	fc-okpara	2026-06-16T11:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-00000000010c
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000119	fc-dominic	fc-akanni	2026-06-16T13:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-000000000108
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000011a	fc-obafemi	fc-atine	2026-06-16T15:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-00000000010b
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000011b	fc-oloyede	fc-agali	2026-06-16T16:00:00+01:00	Eleja Pry Sch, Igbogbo, Ikorodu	2	second_leg	00000000-0000-4000-8e1c-000000000102
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000011c	fc-aloy	fc-ayila	2026-06-17T09:00:00+01:00	Christ Gospel Mission, Command Rd, Ikola, Ipaja	2	second_leg	00000000-0000-4000-8e1c-00000000010d
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000011d	fc-odiaka	fc-poto	2026-06-17T13:00:00+01:00	Legacy Pitch, National Stadium	2	second_leg	00000000-0000-4000-8e1c-00000000010a
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000011e	fc-nieketien	fc-edema	2026-06-17T15:00:00+01:00	Nathaniel Idowu Pitch, Unity Pry Sch, Oregie, Ajegunle	2	second_leg	00000000-0000-4000-8e1c-000000000107
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-00000000011f	fc-omoruyi	fc-oguntuase	2026-06-18T14:00:00+01:00	St. Jude Primary School, Mushin	2	second_leg	00000000-0000-4000-8e1c-000000000105
+ex-internationals-cup-2026	00000000-0000-4000-8e1c-000000000120	fc-enegwea	fc-disu	2026-06-19T16:30:00+01:00	Nathaniel Idowu Pitch, Unity Pry Sch, Oregie, Ajegunle	2	second_leg	00000000-0000-4000-8e1c-000000000110
+
 # results (matchday 1 — 2026-06-08 live)
 match_id	home_slug	away_slug	status	minute	home_score	away_score	narrative
 00000000-0000-4000-8e1c-000000000101	fc-ekpo	fc-ipaye	finished	90	1	3	FC IPAYE 3-1 FC EKPO — Sammy Udoh 34'; Anu #16 52'; No. 19 68'; Ekpo pen No. 5 82'

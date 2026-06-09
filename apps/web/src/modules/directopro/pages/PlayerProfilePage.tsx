@@ -989,7 +989,7 @@ function PlaystyleBadgesSection({ badges }: { badges: PlaystyleBadge[] }) {
     <div className="player-profile-playstyles">
       <span className="player-profile-eyebrow">Playstyle badges</span>
       <h3 className="player-profile-subheading">Specialties</h3>
-      <ul className="player-profile-playstyles__grid grid-cols-2 grid-rows-3 gap-3">
+      <ul className="player-profile-playstyles__grid">
         {badges.map((badge) => (
           <li key={badge.title} className="player-profile-playstyle">
             <span className="player-profile-playstyle__icon" aria-hidden="true">

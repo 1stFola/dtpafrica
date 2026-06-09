@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   fetchCompetition,
   fetchMatches,
@@ -23,6 +23,16 @@ const TABS: { id: CompetitionTab; label: string }[] = [
   { id: "teams", label: "Teams" },
   { id: "history", label: "History" },
 ];
+
+const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
+
+const COMPETITION_DEFAULT_TAB: Partial<Record<string, CompetitionTab>> = {
+  "ex-internationals-cup-2026": "fixtures",
+};
+
+function defaultTabForSlug(slug: string | undefined): CompetitionTab {
+  return (slug && COMPETITION_DEFAULT_TAB[slug]) || "overview";
+}
 
 const COMPETITION_DESCRIPTION =
   "Public competition hub featuring standings, participating teams, and historical archives.";
@@ -567,6 +577,8 @@ function NarrativeHighlight({ match }: { match: SbMatchListItem }) {
 
 export function CompetitionPage() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
   const [name, setName] = useState("");
   const [season, setSeason] = useState("");
   const [formatType, setFormatType] = useState<string | null>(null);
@@ -575,9 +587,42 @@ export function CompetitionPage() {
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [standingsGroups, setStandingsGroups] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<CompetitionTab>("overview");
+  const [activeTab, setActiveTab] = useState<CompetitionTab>(() => {
+    if (tabParam && TAB_IDS.has(tabParam)) return tabParam as CompetitionTab;
+    return defaultTabForSlug(slug);
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const selectTab = (tab: CompetitionTab) => {
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    const slugDefault = defaultTabForSlug(slug);
+    if (tab === slugDefault) next.set("tab", tab);
+    else if (tab === "overview") next.delete("tab");
+    else next.set("tab", tab);
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    if (!slug) return;
+    if (tabParam && TAB_IDS.has(tabParam)) {
+      setActiveTab(tabParam as CompetitionTab);
+      return;
+    }
+    const def = defaultTabForSlug(slug);
+    setActiveTab(def);
+    if (def !== "overview") {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("tab", def);
+          return next;
+        },
+        { replace: true }
+      );
+    }
+  }, [slug, tabParam, setSearchParams]);
 
   usePageTitle(name || "Competition");
 
@@ -1050,7 +1095,7 @@ export function CompetitionPage() {
             role="tab"
             aria-selected={activeTab === tab.id}
             className={activeTab === tab.id ? "dbx-segmented__btn active" : "dbx-segmented__btn"}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => selectTab(tab.id)}
           >
             {tab.label}
           </button>
