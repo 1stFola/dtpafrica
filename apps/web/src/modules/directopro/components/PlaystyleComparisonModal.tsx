@@ -219,11 +219,11 @@ function PlaystyleComparisonModal({
           <div className="playstyle-modal__legend" aria-hidden>
             <span>
               <i className="playstyle-modal__dot playstyle-modal__dot--player" />
-              Player (Blue)
+              Player
             </span>
             <span>
               <i className="playstyle-modal__dot playstyle-modal__dot--benchmark" />
-              Benchmark (Purple)
+              Benchmark
             </span>
           </div>
 
