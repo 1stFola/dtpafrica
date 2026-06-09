@@ -191,6 +191,8 @@ export type CalibrationRunResult = {
   };
   nearestBenchmark: CalibrationBenchmarkProfile;
   alternativeBenchmarks: CalibrationBenchmarkProfile[];
+  rankedCandidates: CalibrationBenchmarkProfile[];
+  primaryBenchmarkIndex: number;
   filterInfo: { poolSize: number };
 };
 
@@ -429,6 +431,7 @@ export const adminApi = {
     playerId?: string;
     player: CalibrationPlayerInfo;
     metrics: LegacyMatchMetrics;
+    primaryBenchmarkIndex?: number;
   }) =>
     adminFetch<CalibrationRunResult>("/admin/calibration/preview", {
       method: "POST",
@@ -437,6 +440,7 @@ export const adminApi = {
   createCalibratedPlayer: (body: {
     player: CalibrationPlayerInfo;
     metrics: LegacyMatchMetrics;
+    primaryBenchmarkIndex?: number;
   }) =>
     adminFetch<CalibrationRunResult & { player: { id: string; slug: string | null; displayName: string } }>(
       "/admin/calibration/players",
@@ -444,7 +448,12 @@ export const adminApi = {
     ),
   calibratePlayer: (
     id: string,
-    body?: { player?: CalibrationPlayerInfo; metrics?: LegacyMatchMetrics; save?: boolean }
+    body?: {
+      player?: CalibrationPlayerInfo;
+      metrics?: LegacyMatchMetrics;
+      save?: boolean;
+      primaryBenchmarkIndex?: number;
+    }
   ) =>
     adminFetch<CalibrationRunResult>(`/admin/players/${id}/calibrate`, {
       method: "POST",

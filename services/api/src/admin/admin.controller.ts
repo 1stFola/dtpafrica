@@ -130,14 +130,24 @@ export class AdminController {
         save: false,
         metricsOverride: body.metrics,
         playerInfo: body.player,
+        primaryBenchmarkIndex: body.primaryBenchmarkIndex,
       });
     }
-    return this.calibration.runAdhoc(body.player, body.metrics, false);
+    return this.calibration.runAdhoc(
+      body.player,
+      body.metrics,
+      false,
+      body.primaryBenchmarkIndex,
+    );
   }
 
   @Post("calibration/players")
   createCalibratedPlayer(@Body() body: CreateCalibratedPlayerDto) {
-    return this.calibration.createPlayerFromCalibration(body.player, body.metrics);
+    return this.calibration.createPlayerFromCalibration(
+      body.player,
+      body.metrics,
+      body.primaryBenchmarkIndex,
+    );
   }
 
   @Post("players/:id/calibrate")
@@ -146,6 +156,7 @@ export class AdminController {
       save: body.save !== false,
       metricsOverride: body.metrics,
       playerInfo: body.player,
+      primaryBenchmarkIndex: body.primaryBenchmarkIndex,
     });
   }
 

@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@dtp/engines/benchmark-selection": path.resolve(
+        __dirname,
+        "../../packages/engines/src/calibration/benchmark-selection.ts"
+      ),
       "@dtp/engines": path.resolve(__dirname, "../../packages/engines/src/media-url.ts"),
     },
   },

@@ -1,20 +1,40 @@
-import { resolvePitchMarker } from "./resolvePitchMarker";
+import {
+  resolvePrimaryPitchMarker,
+  resolveSecondaryPitchMarker,
+  type SecondaryPitchInput,
+} from "./resolvePitchMarker";
 
-type Props = {
-  positionPrimary?: string | null;
-  role?: string | null;
+type Props = SecondaryPitchInput & {
+  positionPrimary: string;
   positionFull?: string | null;
 };
 
-export function PlayerPitchGraphic({ positionPrimary, role, positionFull }: Props) {
-  const marker = resolvePitchMarker(positionPrimary, role, positionFull);
+export function PlayerPitchGraphic({
+  positionPrimary,
+  positionFull,
+  positionSecondary,
+  positionFitSecondary,
+  scoutingSecondaryPositionFit,
+  ratingAttributes,
+}: Props) {
+  const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull);
+  const secondaryMarker = resolveSecondaryPitchMarker(
+    {
+      positionPrimary,
+      positionSecondary,
+      positionFitSecondary,
+      scoutingSecondaryPositionFit,
+      ratingAttributes,
+    },
+    primaryMarker
+  );
+
+  const ariaLabel = secondaryMarker
+    ? `Tactical positions on pitch — primary (${Math.round(primaryMarker.x)}%, ${Math.round(primaryMarker.y)}%), secondary (${Math.round(secondaryMarker.x)}%, ${Math.round(secondaryMarker.y)}%)`
+    : `Tactical position on pitch (${Math.round(primaryMarker.x)}%, ${Math.round(primaryMarker.y)}%)`;
 
   return (
-    <div
-      className="player-profile-pitch"
-      role="img"
-      aria-label={`Tactical position on pitch (${Math.round(marker.x)}%, ${Math.round(marker.y)}%)`}
-    >
+    <div className="player-profile-pitch" role="img" aria-label={ariaLabel}>
       <svg
         className="player-profile-pitch__svg"
         viewBox="0 0 68 100"
@@ -78,10 +98,33 @@ export function PlayerPitchGraphic({ positionPrimary, role, positionFull }: Prop
       </svg>
 
       <span
-        className="player-profile-pitch__marker"
-        style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+        className="player-profile-pitch__marker player-profile-pitch__marker--primary"
+        style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
         aria-hidden="true"
       />
+      <span
+        className="player-profile-pitch__main-role-label"
+        style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
+        aria-hidden="true"
+      >
+        Main Role
+      </span>
+      {secondaryMarker && (
+        <>
+          <span
+            className="player-profile-pitch__marker player-profile-pitch__marker--secondary"
+            style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}
+            aria-hidden="true"
+          />
+          <span
+            className="player-profile-pitch__alt-role-label"
+            style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}
+            aria-hidden="true"
+          >
+            Alt. Role
+          </span>
+        </>
+      )}
     </div>
   );
 }

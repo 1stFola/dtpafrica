@@ -17,6 +17,7 @@ export * from "./mvce/comparison-engine";
 export * from "./mvce/bands";
 export * from "./mvce/multipliers";
 export * from "./calibration/map-metrics";
+export * from "./calibration/benchmark-selection";
 export * from "./calibration/pipeline";
 export { loadLegacyCalibration } from "./calibration/load-legacy";
 export { getCalibrationAttributeKeys } from "./calibration/pipeline";

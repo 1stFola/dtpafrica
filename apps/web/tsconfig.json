@@ -15,7 +15,12 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@dtp/engines/benchmark-selection": [
+        "../../packages/engines/src/calibration/benchmark-selection.ts"
+      ]
+    }
   },
   "include": ["src"]
 }

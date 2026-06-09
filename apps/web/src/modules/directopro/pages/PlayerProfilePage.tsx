@@ -34,7 +34,13 @@ type ProfileTab = "overview" | "scoreboard" | "scouting" | "media";
 type ProfileMediaItem = NonNullable<PublicPlayerProfile["mediaItems"]>[number] & {
   url: string;
 };
-type PlaystyleBadge = { icon: string; title: string; description: string };
+type PlaystyleBadge = {
+  icon: string;
+  title: string;
+  description: string;
+  fitPercent?: number | null;
+  contextLine?: string | null;
+};
 type CareerStatBox = { label: string; value: string };
 
 const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
@@ -290,40 +296,77 @@ function buildBioFacts(
   return facts;
 }
 
+const PHILOSOPHY_FORMATION_CONTEXT: Record<string, { formation: string; slot: string }> = {
+  "Tiki-Taka": { formation: "4-3-3", slot: "cm" },
+  "Tiki Taka": { formation: "4-3-3", slot: "cm" },
+  Gegenpress: { formation: "4-2-3-1", slot: "lam" },
+  "Counter attack": { formation: "5-3-2", slot: "st" },
+  "Counter Attack": { formation: "5-3-2", slot: "st" },
+  "Winger play": { formation: "4-3-3", slot: "lw" },
+  "Winger Play": { formation: "4-3-3", slot: "lw" },
+  "Total football": { formation: "4-3-3", slot: "rw" },
+  "Total Football": { formation: "4-3-3", slot: "rw" },
+};
+
+const TACTICAL_TRAIT_CONTEXT: Record<string, { formation: string; slot: string }> = {
+  Gegenpress: { formation: "4-2-3-1", slot: "lam" },
+  "Tiki-taka": { formation: "4-3-3", slot: "cm" },
+  "Counter attack": { formation: "5-3-2", slot: "st" },
+  "Winger play": { formation: "4-3-3", slot: "lw" },
+  "Total football": { formation: "4-3-3", slot: "rw" },
+};
+
+function formatFormationContext(formation: string, slot?: string | null): string {
+  const normalizedSlot = slot?.trim().toLowerCase();
+  return normalizedSlot ? `${formation} · ${normalizedSlot}` : formation;
+}
+
+function resolvePhilosophyContext(name: string, slotHint?: string | null): string {
+  const mapped = PHILOSOPHY_FORMATION_CONTEXT[name];
+  if (mapped) {
+    return formatFormationContext(mapped.formation, slotHint ?? mapped.slot);
+  }
+  return slotHint ? formatFormationContext("4-3-3", slotHint) : "4-3-3 · cm";
+}
+
 function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
   const badges: PlaystyleBadge[] = [];
   const seen = new Set<string>();
-  const push = (icon: string, title: string, description: string) => {
-    const key = title.trim().toLowerCase();
+  const push = (badge: PlaystyleBadge) => {
+    const key = badge.title.trim().toLowerCase();
     if (!key || seen.has(key)) return;
     seen.add(key);
-    badges.push({ icon, title, description });
+    badges.push(badge);
   };
 
   for (const philosophy of player.philosophies ?? []) {
-    push(
-      "◆",
-      philosophy.name,
-      `${philosophy.score}% philosophy alignment from calibrated SIP scoring.`
-    );
+    push({
+      icon: "◆",
+      title: philosophy.name,
+      fitPercent: clampScore(philosophy.score),
+      contextLine: resolvePhilosophyContext(philosophy.name, player.positionPrimary?.toLowerCase()),
+      description: "Philosophy alignment from calibrated SIP scoring.",
+    });
   }
 
   for (const fit of player.scoutingIntelligence?.philosophyFits ?? []) {
-    push(
-      "◆",
-      fit.philosophy,
-      `${Math.round(fit.philosophyFitScore)} fit in ${fit.formation}${
-        fit.positionSlot ? ` · ${fit.positionSlot}` : ""
-      }.`
-    );
+    push({
+      icon: "◆",
+      title: fit.philosophy,
+      fitPercent: clampScore(fit.philosophyFitScore),
+      contextLine: formatFormationContext(fit.formation, fit.positionSlot),
+      description: "Saved philosophy-fit row from scouting intelligence.",
+    });
   }
 
   for (const score of player.scoutingIntelligence?.topTacticalScores ?? []) {
-    push(
-      "⚡",
-      score.label,
-      `Tactical score ${Math.round(score.value)} — standout system trait.`
-    );
+    push({
+      icon: "⚡",
+      title: score.label,
+      fitPercent: clampScore(score.value),
+      contextLine: "System Trait",
+      description: "Standout tactical score from SIP calibration.",
+    });
   }
 
   const tactical = player.tacticalSummary;
@@ -339,22 +382,37 @@ function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
       .slice(0, 2);
     for (const trait of tacticalTraits) {
       if (trait.value >= 55) {
-        push("◎", trait.label, `SIP tactical index ${Math.round(trait.value)}.`);
+        const mapped = TACTICAL_TRAIT_CONTEXT[trait.label];
+        push({
+          icon: "◎",
+          title: trait.label,
+          fitPercent: clampScore(trait.value),
+          contextLine: mapped
+            ? formatFormationContext(mapped.formation, mapped.slot)
+            : "System Trait",
+          description: "SIP tactical index from rolling match metrics.",
+        });
       }
     }
   }
 
   const benchmark = player.benchmarkMetadata?.nearest;
   if (benchmark && typeof benchmark === "object" && "name" in benchmark) {
-    push("★", "Benchmark comp", `Nearest comp: ${String(benchmark.name)}.`);
+    push({
+      icon: "★",
+      title: "Benchmark comp",
+      contextLine: "System Trait",
+      description: `Nearest comp: ${String(benchmark.name)}.`,
+    });
   }
 
   if (badges.length === 0) {
-    push(
-      "◎",
-      "Versatile profile",
-      "Playstyle badges populate once SIP tactical and philosophy data sync."
-    );
+    push({
+      icon: "◎",
+      title: "Versatile profile",
+      contextLine: "4-3-3 · cm",
+      description: "Playstyle badges populate once SIP tactical and philosophy data sync.",
+    });
   }
 
   return badges.slice(0, 6);
@@ -545,10 +603,7 @@ export function PlayerProfilePage() {
   const isGk = isGkProfile(player);
   const careerStatBoxes = buildCareerStatBoxes(player, minutesPlayed, isGk);
   const playstyleBadges = buildPlaystyleBadges(player);
-  const positionLabel = resolvePositionFullLabel(
-    player.positionPrimary,
-    player.positionFull
-  );
+  const positionLabel = resolvePositionFullLabel(player.positionPrimary.trim(), null);
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
     player.ageGroup ? `${player.ageGroup} pathway candidate` : "Open age-band profile",
@@ -675,8 +730,8 @@ export function PlayerProfilePage() {
 
             <BenchmarkPlaystyleComparison
               playerName={player.displayName}
+              playerPhotoUrl={player.playerPhotoUrl}
               playerAge={player.age}
-              playerRating={player.overallRating}
               benchmark={benchmark}
               attributes={attributes}
             />
@@ -853,8 +908,13 @@ function PlayerCardBanner({
         <PlayerBioGrid facts={bioFacts} />
         <PlayerPitchGraphic
           positionPrimary={player.positionPrimary}
-          role={player.role}
           positionFull={player.positionFull}
+          positionSecondary={player.positionSecondary}
+          positionFitSecondary={player.positionFit?.secondaryPositionFit ?? null}
+          scoutingSecondaryPositionFit={
+            player.scoutingIntelligence?.positionFit?.secondaryPositionFit ?? null
+          }
+          ratingAttributes={player.ratingAttributes}
         />
         <PlayerCategoryRadar scores={categoryScores} />
       </div>
@@ -897,14 +957,22 @@ function PlaystyleBadgesSection({ badges }: { badges: PlaystyleBadge[] }) {
     <div className="player-profile-playstyles">
       <span className="player-profile-eyebrow">Playstyle badges</span>
       <h3 className="player-profile-subheading">Specialties</h3>
-      <ul className="player-profile-playstyles__grid">
+      <ul className="player-profile-playstyles__grid grid-cols-2 grid-rows-3 gap-3">
         {badges.map((badge) => (
           <li key={badge.title} className="player-profile-playstyle">
             <span className="player-profile-playstyle__icon" aria-hidden="true">
               {badge.icon}
             </span>
-            <div>
-              <strong className="player-profile-playstyle__title">{badge.title}</strong>
+            <div className="player-profile-playstyle__body">
+              <div className="player-profile-playstyle__head">
+                <strong className="player-profile-playstyle__title">{badge.title}</strong>
+                {badge.fitPercent != null && (
+                  <span className="player-profile-playstyle__fit">{badge.fitPercent}% fit</span>
+                )}
+              </div>
+              {badge.contextLine && (
+                <span className="player-profile-playstyle__context">{badge.contextLine}</span>
+              )}
               <p className="player-profile-playstyle__desc">{badge.description}</p>
             </div>
           </li>

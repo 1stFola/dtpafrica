@@ -233,6 +233,20 @@ export const adminScoreboardApi = {
       method: "DELETE",
     }),
 
+  ingestMatchCsv: (matchId: string, csv: string, replace?: boolean) =>
+    sbFetch<{
+      matchId: string;
+      status: string;
+      homeScore: number;
+      awayScore: number;
+      eventsCreated: number;
+      penaltyShootout: { home: number; away: number; winner: string } | null;
+      standingsRefresh: string;
+    }>(`/admin/scoreboard/matches/${matchId}/csv-ingest`, {
+      method: "POST",
+      body: JSON.stringify({ csv, replace }),
+    }),
+
   createHighlight: (body: {
     matchId: string;
     title: string;
