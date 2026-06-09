@@ -22,6 +22,7 @@ import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
 import { assertMatchReadyForLiveEvents } from "./roster-guard";
 import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
+import { deriveMatchStatsFromCsvEvents } from "./match-csv-events";
 import { parseMatchTimelineCsv } from "./match-csv-ingest";
 import { computeStandings } from "./standings";
 
@@ -676,8 +677,9 @@ export class ScoreboardService {
     const rows = await this.prisma.sbHighlight.findMany({
       where: {
         isPublished: true,
+        mediaType: "video",
         ...(competitionId ? { competitionId } : {}),
-      },
+      } as Prisma.SbHighlightWhereInput,
       orderBy: { publishedAt: "desc" },
       include: {
         match: {
@@ -852,13 +854,20 @@ export class ScoreboardService {
       meta.regulationScore = { home: parsed.homeScore, away: parsed.awayScore };
     }
 
+    const derivedStats = deriveMatchStatsFromCsvEvents(parsed.events, {
+      narrative: parsed.narrative,
+    });
+
     const createdEvents = await this.prisma.$transaction(async (tx) => {
       await tx.sbMatchEvent.deleteMany({ where: { matchId } });
 
       const rows = [];
       for (const ev of parsed.events) {
-        const teamId =
-          ev.teamSide === "home" ? match.homeTeamId : match.awayTeamId;
+        const teamId = ev.teamSide
+          ? ev.teamSide === "home"
+            ? match.homeTeamId
+            : match.awayTeamId
+          : null;
         const created = await tx.sbMatchEvent.create({
           data: {
             matchId,
@@ -868,15 +877,17 @@ export class ScoreboardService {
             playerLabel: ev.playerLabel,
             assistLabel: ev.assistLabel,
             detail: ev.detail,
-            metadata: { source: "csv-ingest" } as Prisma.InputJsonValue,
+            metadata: (ev.metadata ?? { source: "csv-ingest" }) as Prisma.InputJsonValue,
           },
         });
         rows.push(created);
       }
 
-      const statsPayload = wasFinished
-        ? { ...existingStats, lifecycle: undefined }
-        : existingStats;
+      const statsPayload = {
+        ...existingStats,
+        ...derivedStats,
+        ...(wasFinished ? { lifecycle: undefined } : {}),
+      };
 
       await tx.sbMatch.update({
         where: { id: matchId },

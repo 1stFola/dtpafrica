@@ -1,6 +1,11 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { adminApi, type AdminPlayerRow } from "../../../api/admin";
+import {
+  adminApi,
+  type AdminAcademy,
+  type AdminPlayerListQuery,
+  type AdminPlayerRow,
+} from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import {
   positionAbbreviationOptions,
@@ -14,7 +19,9 @@ import {
 import { useAdminToast } from "../components/AdminToast";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { AdminTableShell } from "../components/AdminTableShell";
+import { PlayerBulkEditModal } from "../components/PlayerBulkEditModal";
 import { PlayerSlugPreview } from "../components/PlayerSlugPreview";
+import { PlayerQuickEditModal } from "../components/PlayerQuickEditModal";
 
 const POSITION_OPTIONS = positionAbbreviationOptions();
 
@@ -63,9 +70,18 @@ export function AdminPlayersPage() {
   usePageTitle("Admin — Players");
   const toast = useAdminToast();
   const [rows, setRows] = useState<AdminPlayerRow[]>([]);
+  const [academies, setAcademies] = useState<AdminAcademy[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
+  const [academyId, setAcademyId] = useState("");
+  const [position, setPosition] = useState("");
+  const [featured, setFeatured] = useState<"" | "true" | "false">("");
+  const [hasMedia, setHasMedia] = useState<"" | "video" | "photo" | "any" | "none">("");
+  const [sort, setSort] = useState<"name" | "date" | "rating">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [calibratingId, setCalibratingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -73,19 +89,76 @@ export function AdminPlayersPage() {
   const [profileEditId, setProfileEditId] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [quickEditId, setQuickEditId] = useState<string | null>(null);
+  const [quickEditName, setQuickEditName] = useState("");
+
+  const listQuery = useMemo<AdminPlayerListQuery>(
+    () => ({
+      q: q || undefined,
+      status: status || undefined,
+      academyId: academyId || undefined,
+      position: position || undefined,
+      featured: featured || undefined,
+      hasMedia: hasMedia || undefined,
+      sort,
+      sortDir,
+    }),
+    [q, status, academyId, position, featured, hasMedia, sort, sortDir]
+  );
 
   const load = useCallback(() => {
     setLoading(true);
     adminApi
-      .players(q || undefined, status || undefined)
-      .then(setRows)
+      .players(listQuery)
+      .then((data) => {
+        setRows(data);
+        setSelectedIds((prev) => {
+          const next = new Set<string>();
+          for (const id of prev) {
+            if (data.some((row) => row.id === id)) next.add(id);
+          }
+          return next;
+        });
+      })
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [q, status]);
+  }, [listQuery]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    adminApi
+      .academyList()
+      .then(setAcademies)
+      .catch(() => setAcademies([]));
+  }, []);
+
+  const allVisibleSelected =
+    rows.length > 0 && rows.every((row) => selectedIds.has(row.id));
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(rows.map((row) => row.id)));
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedSlugs = rows
+    .filter((row) => selectedIds.has(row.id))
+    .map((row) => row.slug)
+    .filter((slug): slug is string => Boolean(slug));
 
   const patch = async (
     id: string,
@@ -186,6 +259,7 @@ export function AdminPlayersPage() {
       "Overall",
       "Offensive",
       "Defensive",
+      "Academy",
       "Slug",
     ];
     const lines = [
@@ -202,6 +276,7 @@ export function AdminPlayersPage() {
           p.overallRating,
           p.offensiveRating,
           p.defensiveRating,
+          p.academy?.name ?? "",
           p.slug,
         ]
           .map(csvCell)
@@ -230,7 +305,7 @@ export function AdminPlayersPage() {
       <div className="admin-sb-sticky-bar">
         <div className="admin-filters admin-filters--with-action">
           <input
-            placeholder="Search name…"
+            placeholder="Search name or slug…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             aria-label="Search players"
@@ -241,6 +316,78 @@ export function AdminPlayersPage() {
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
+          <select
+            value={academyId}
+            onChange={(e) => setAcademyId(e.target.value)}
+            aria-label="Academy"
+          >
+            <option value="">All academies</option>
+            <option value="none">No academy</option>
+            {academies.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+            aria-label="Position"
+          >
+            <option value="">All positions</option>
+            {POSITION_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={featured}
+            onChange={(e) => setFeatured(e.target.value as "" | "true" | "false")}
+            aria-label="Featured"
+          >
+            <option value="">Featured: any</option>
+            <option value="true">Featured only</option>
+            <option value="false">Not featured</option>
+          </select>
+          <select
+            value={hasMedia}
+            onChange={(e) =>
+              setHasMedia(e.target.value as "" | "video" | "photo" | "any" | "none")
+            }
+            aria-label="Media"
+          >
+            <option value="">Media: any</option>
+            <option value="video">Has video</option>
+            <option value="photo">Has photo</option>
+            <option value="any">Has video or photo</option>
+            <option value="none">No media</option>
+          </select>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as "name" | "date" | "rating")}
+            aria-label="Sort by"
+          >
+            <option value="name">Sort: name</option>
+            <option value="date">Sort: date</option>
+            <option value="rating">Sort: rating</option>
+          </select>
+          <select
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value as "asc" | "desc")}
+            aria-label="Sort direction"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+          <button
+            type="button"
+            className="admin-inline-button"
+            onClick={() => setBulkOpen(true)}
+            disabled={selectedIds.size === 0}
+          >
+            Bulk edit ({selectedIds.size})
+          </button>
           <button
             type="button"
             className="admin-inline-button"
@@ -261,11 +408,19 @@ export function AdminPlayersPage() {
           empty={!loading && rows.length === 0}
           emptyTitle="No players match your filters"
           emptyHint="Adjust search or status filters, or approve pending registrations."
-          columns={6}
+          columns={7}
         >
           <table className="admin-table admin-sb-table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    aria-label="Select all visible players"
+                    onChange={toggleSelectAll}
+                  />
+                </th>
                 <th>Player</th>
                 <th>OVR</th>
                 <th>Status</th>
@@ -284,6 +439,14 @@ export function AdminPlayersPage() {
                       : undefined
                   }
                 >
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(p.id)}
+                      aria-label={`Select ${p.displayName}`}
+                      onChange={() => toggleSelect(p.id)}
+                    />
+                  </td>
                   <td>
                     {editingId === p.id ? (
                       <div className="admin-player-edit">
@@ -324,6 +487,7 @@ export function AdminPlayersPage() {
                           {p.positionPrimary})
                           {parsePhilosophies(p.playingPhilosophies).length > 0 &&
                             ` · ${parsePhilosophies(p.playingPhilosophies).join(", ")}`}
+                          {p.academy ? ` · ${p.academy.name}` : ""}
                           {p.slug ? ` · /players/${p.slug}` : ""}
                         </span>
                         <br />
@@ -376,6 +540,16 @@ export function AdminPlayersPage() {
                     <button
                       type="button"
                       className="admin-link admin-btn-sm"
+                      onClick={() => {
+                        setQuickEditId(p.id);
+                        setQuickEditName(p.displayName);
+                      }}
+                    >
+                      Quick Edit Basic Info
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-link admin-btn-sm"
                       onClick={() =>
                         profileEditId === p.id ? cancelProfileEdit() : startProfileEdit(p)
                       }
@@ -402,7 +576,7 @@ export function AdminPlayersPage() {
                 </tr>
                 {profileEditId === p.id && profileForm && (
                   <tr key={`${p.id}-profile`} className="admin-sb-row--detail">
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <div className="admin-player-profile-panel">
                         <h4 className="admin-sb-form-heading">Homepage profile</h4>
                         <div className="admin-player-profile-panel__grid">
@@ -511,6 +685,29 @@ export function AdminPlayersPage() {
           </table>
         </AdminTableShell>
       </div>
+
+      <PlayerQuickEditModal
+        playerId={quickEditId}
+        playerName={quickEditName}
+        open={quickEditId != null}
+        onClose={() => setQuickEditId(null)}
+        onSaved={() => {
+          toast.success("Basic profile info saved");
+          load();
+        }}
+      />
+
+      <PlayerBulkEditModal
+        open={bulkOpen}
+        selectedIds={[...selectedIds]}
+        selectedSlugs={selectedSlugs}
+        onClose={() => setBulkOpen(false)}
+        onSaved={(updated) => {
+          toast.success(`Updated ${updated} players`);
+          setSelectedIds(new Set());
+          load();
+        }}
+      />
     </section>
   );
 }

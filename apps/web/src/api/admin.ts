@@ -73,7 +73,53 @@ export type AdminPlayerRow = {
   overallRating: number | null;
   offensiveRating: number | null;
   defensiveRating: number | null;
+  academyId: string | null;
+  videoUrl: string | null;
+  playerPhotoUrl: string | null;
+  academy: { id: string; name: string; slug: string } | null;
   updatedAt: string;
+  createdAt: string;
+};
+
+export type AdminPlayerListQuery = {
+  q?: string;
+  status?: string;
+  academyId?: string;
+  position?: string;
+  featured?: "true" | "false" | "";
+  hasMedia?: "video" | "photo" | "any" | "none" | "";
+  sort?: "name" | "date" | "rating";
+  sortDir?: "asc" | "desc";
+};
+
+export type BulkPlayerUpdates = {
+  academyId?: string | null;
+  isFeatured?: boolean;
+  positionPrimary?: string;
+};
+
+export type PlayerQuickEditContext = {
+  id: string;
+  displayName: string;
+  slug: string;
+  heightCm: number | null;
+  preferredFoot: string | null;
+  positionPrimary: string;
+  estimatedPlayerValue: string | null;
+  videoUrl: string | null;
+  photosUrl: string;
+  publicationsUrl: string;
+  updatedAt?: string;
+};
+
+export type PlayerQuickEditInput = {
+  heightCm: string;
+  preferredFoot: string;
+  positionPrimary: string;
+  estimatedPlayerValue: string;
+  videoUrl: string;
+  photosUrl: string;
+  publicationsUrl: string;
 };
 
 export type CalibrationMetrics = {
@@ -274,6 +320,7 @@ export type AdminSeedPhaseError = {
 
 export type AdminSeedResult = {
   ok: boolean;
+  mode: "incremental" | "full";
   durationMs: number;
   seedPlayerId: string;
   counts: {
@@ -318,13 +365,24 @@ export type AdminAcademyInput = {
 
 export const adminApi = {
   stats: () => adminFetch<AdminStats>("/admin/stats"),
-  players: (q?: string, status?: string) => {
+  players: (query: AdminPlayerListQuery = {}) => {
     const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    if (status) params.set("status", status);
+    if (query.q) params.set("q", query.q);
+    if (query.status) params.set("status", query.status);
+    if (query.academyId) params.set("academyId", query.academyId);
+    if (query.position) params.set("position", query.position);
+    if (query.featured) params.set("featured", query.featured);
+    if (query.hasMedia) params.set("hasMedia", query.hasMedia);
+    if (query.sort) params.set("sort", query.sort);
+    if (query.sortDir) params.set("sortDir", query.sortDir);
     const qs = params.toString();
     return adminFetch<AdminPlayerRow[]>(`/admin/players${qs ? `?${qs}` : ""}`);
   },
+  bulkUpdatePlayers: (ids: string[], updates: BulkPlayerUpdates) =>
+    adminFetch<{ updated: number; ids: string[] }>("/admin/players/bulk", {
+      method: "PATCH",
+      body: JSON.stringify({ ids, updates }),
+    }),
   previewPlayerSlug: (name: string, excludeId?: string) => {
     const params = new URLSearchParams({ name });
     if (excludeId) params.set("excludeId", excludeId);
@@ -340,6 +398,24 @@ export const adminApi = {
     }
   ) =>
     adminFetch(`/admin/players/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getPlayerQuickEdit: (id: string) =>
+    adminFetch<PlayerQuickEditContext>(`/admin/players/${id}/quick-edit`),
+  quickEditPlayer: (
+    id: string,
+    body: {
+      heightCm?: number;
+      preferredFoot?: string;
+      positionPrimary?: string;
+      estimatedPlayerValue?: string;
+      videoUrl?: string;
+      photosUrl?: string;
+      publicationsUrl?: string;
+    }
+  ) =>
+    adminFetch<PlayerQuickEditContext>(`/admin/players/${id}/quick-edit`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -461,6 +537,9 @@ export const adminApi = {
     }),
   databaseSeedStatus: () =>
     adminFetch<AdminSeedStatus>("/admin/database/seed/status"),
-  runDatabaseSeed: () =>
-    adminFetch<AdminSeedResult>("/admin/database/seed", { method: "POST" }),
+  runDatabaseSeed: (mode: "incremental" | "full" = "incremental") =>
+    adminFetch<AdminSeedResult>("/admin/database/seed", {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 };

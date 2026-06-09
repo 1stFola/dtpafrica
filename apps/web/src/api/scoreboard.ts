@@ -134,6 +134,12 @@ export type SbMatchEvent = {
   assistPlayerId: string | null;
   assistLabel: string | null;
   detail: string | null;
+  metadata?: {
+    csvEventType?: string;
+    flowKind?: string;
+    source?: string;
+    [key: string]: unknown;
+  } | null;
   player?: {
     id: string;
     slug: string | null;
@@ -198,7 +204,8 @@ export type SbHighlight = {
   id: string;
   title: string;
   youtubeUrl: string;
-  mediaType?: VideoMediaType;
+  highlightKind?: "video" | "photo";
+  mediaType?: VideoMediaType | "photo";
   videoEmbedUrl?: string | null;
   thumbnailUrl?: string | null;
   duration?: string | null;
@@ -436,8 +443,28 @@ export function ingestMatchSip(matchId: string) {
 export const EVENT_LABELS: Record<string, string> = {
   goal: "Goal",
   own_goal: "Own goal",
+  goal_penalty: "Penalty goal",
   yellow_card: "Yellow card",
   red_card: "Red card",
   substitution: "Substitution",
   injury: "Injury",
+  match_flow: "Match moment",
+  kick_off: "Kick-off",
+  half_time: "Half-time",
+  second_half_kickoff: "Second half",
+  added_time: "Added time",
+  score_update: "Score update",
+  pressure: "Pressure",
+  freekick: "Free kick",
+  corner_kick: "Corner",
+  save: "Save",
+  chance: "Chance",
+  close_chance: "Close chance",
+  blocked_shot: "Blocked shot",
+  throw_in: "Throw-in",
+  offside: "Offside",
+  possession: "Possession",
+  foul: "Foul",
+  clearance: "Clearance",
+  shot_off_target: "Shot off target",
 };

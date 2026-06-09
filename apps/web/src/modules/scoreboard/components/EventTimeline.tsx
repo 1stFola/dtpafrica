@@ -8,6 +8,25 @@ const EVENT_ICONS: Record<string, string> = {
   red_card: "🟥",
   substitution: "↔",
   injury: "✚",
+  match_flow: "⏱",
+  kick_off: "▶",
+  half_time: "◐",
+  second_half_kickoff: "▶",
+  added_time: "+",
+  score_update: "📋",
+  pressure: "↑",
+  freekick: "🎯",
+  corner_kick: "🚩",
+  save: "🧤",
+  chance: "◎",
+  close_chance: "◎",
+  blocked_shot: "🛡",
+  throw_in: "↗",
+  offside: "🚫",
+  possession: "◉",
+  foul: "⚠",
+  clearance: "↩",
+  shot_off_target: "○",
 };
 
 function slugifyName(value: string): string {
@@ -61,6 +80,29 @@ function teamNameForEvent(
   return undefined;
 }
 
+function resolveEventLabel(ev: SbMatchEvent): string {
+  const flowKind = ev.metadata?.flowKind ?? ev.metadata?.csvEventType;
+  if (typeof flowKind === "string" && EVENT_LABELS[flowKind]) {
+    return EVENT_LABELS[flowKind];
+  }
+  if (ev.type === "match_flow" && ev.detail) return ev.detail;
+  return EVENT_LABELS[ev.type] ?? ev.type;
+}
+
+function resolveEventIcon(ev: SbMatchEvent): string {
+  const flowKind = ev.metadata?.flowKind ?? ev.metadata?.csvEventType;
+  if (typeof flowKind === "string" && EVENT_ICONS[flowKind]) {
+    return EVENT_ICONS[flowKind];
+  }
+  return EVENT_ICONS[ev.type] ?? "•";
+}
+
+function isNarrativeEvent(ev: SbMatchEvent): boolean {
+  if (ev.type === "match_flow") return true;
+  const flowKind = ev.metadata?.flowKind ?? ev.metadata?.csvEventType;
+  return flowKind === "score_update" || flowKind === "match_flow";
+}
+
 export function EventTimeline({
   events,
   homeTeam,
@@ -88,8 +130,11 @@ export function EventTimeline({
       {sorted.map((ev) => {
         const side = eventSide(ev, homeTeam, awayTeam);
         const club = teamNameForEvent(ev, homeTeam, awayTeam);
-        const playerLabel = ev.player?.displayName ?? ev.playerLabel ?? "Unknown";
+        const playerLabel = ev.player?.displayName ?? ev.playerLabel;
         const assistLabel = ev.assistPlayer?.displayName ?? ev.assistLabel;
+        const narrative = isNarrativeEvent(ev);
+        const showDetail =
+          ev.detail && (!narrative || ev.detail !== resolveEventLabel(ev));
 
         return (
           <li
@@ -103,40 +148,44 @@ export function EventTimeline({
               <div className="sbm-event__head">
                 <span className="sbm-event__min">{ev.minute}&apos;</span>
                 <span className="sbm-event__icon" aria-hidden="true">
-                  {EVENT_ICONS[ev.type] ?? "•"}
+                  {resolveEventIcon(ev)}
                 </span>
-                <span className="sbm-event__type">{EVENT_LABELS[ev.type] ?? ev.type}</span>
-                {ev.detail && <span className="sbm-event__detail">{ev.detail}</span>}
+                <span className="sbm-event__type">{resolveEventLabel(ev)}</span>
+                {showDetail && <span className="sbm-event__detail">{ev.detail}</span>}
               </div>
-              <div className="sbm-event__body">
-                <PlayerLink
-                  slug={ev.player?.slug}
-                  label={playerLabel}
-                  club={club}
-                  competition={competition}
-                />
-                {assistLabel && (
-                  <span className="sbm-event__assist">
-                    Assist{" "}
+              {(playerLabel || assistLabel) && (
+                <div className="sbm-event__body">
+                  {playerLabel && (
                     <PlayerLink
-                      slug={ev.assistPlayer?.slug}
-                      label={assistLabel}
+                      slug={ev.player?.slug}
+                      label={playerLabel}
                       club={club}
                       competition={competition}
                     />
-                  </span>
-                )}
-                {ev.highlights && ev.highlights.length > 0 && (
-                  <a
-                    href={ev.highlights[0].youtubeUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="sbm-event__clip"
-                  >
-                    Watch clip
-                  </a>
-                )}
-              </div>
+                  )}
+                  {assistLabel && (
+                    <span className="sbm-event__assist">
+                      {ev.type === "substitution" ? "On " : "Assist "}
+                      <PlayerLink
+                        slug={ev.assistPlayer?.slug}
+                        label={assistLabel}
+                        club={club}
+                        competition={competition}
+                      />
+                    </span>
+                  )}
+                  {ev.highlights && ev.highlights.length > 0 && (
+                    <a
+                      href={ev.highlights[0].youtubeUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="sbm-event__clip"
+                    >
+                      Watch clip
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           </li>
         );

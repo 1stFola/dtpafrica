@@ -90,31 +90,11 @@ function initialsFromName(name: string) {
     .join("");
 }
 
-function ageFromDateOfBirth(dob: unknown) {
-  if (typeof dob !== "string" || !dob) return null;
-  const born = new Date(dob);
-  if (Number.isNaN(born.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - born.getFullYear();
-  const monthDelta = today.getMonth() - born.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < born.getDate())) age -= 1;
-  return age >= 0 ? age : null;
-}
-
-function formatAgeLabel(playerAge?: number | null, benchmark?: Record<string, unknown>) {
-  if (playerAge != null) return String(playerAge);
-  const benchmarkAge = ageFromDateOfBirth(benchmark?.date_of_birth);
-  if (benchmarkAge != null) return String(benchmarkAge);
-  const band = benchmark?.age_band;
-  return band ? String(band) : "N/A";
-}
-
 type PlaystyleComparisonModalProps = {
   open: boolean;
   onClose: () => void;
   playerName: string;
   playerPhotoUrl?: string | null;
-  playerAge?: number | null;
   benchmark: Record<string, unknown>;
   attributes: Record<string, number>;
 };
@@ -124,7 +104,6 @@ function PlaystyleComparisonModal({
   onClose,
   playerName,
   playerPhotoUrl,
-  playerAge,
   benchmark,
   attributes,
 }: PlaystyleComparisonModalProps) {
@@ -132,7 +111,6 @@ function PlaystyleComparisonModal({
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const benchLabel = benchmarkName(benchmark);
   const similarity = similarityPercent(benchmark) ?? "—";
-  const ageLabel = formatAgeLabel(playerAge, benchmark);
 
   useEffect(() => {
     if (!open) return;
@@ -226,8 +204,8 @@ function PlaystyleComparisonModal({
         <div className="playstyle-modal__banner">
           <h2 id={titleId}>Benchmark Similarity: {similarity}%</h2>
           <p>
-            This comparison maps <strong>{playerName}</strong>, age {ageLabel}, against the
-            early-professional benchmark profile of <strong>{benchLabel}</strong> to show how
+            This comparison maps <strong>{playerName}</strong> against the early-professional
+            benchmark profile of <strong>{benchLabel}</strong> to show how
             closely the player&apos;s calibrated attributes align at a comparable development
             stage.
           </p>
@@ -319,13 +297,11 @@ function PlaystyleComparisonModal({
 export function BenchmarkPlaystyleComparison({
   playerName,
   playerPhotoUrl,
-  playerAge,
   benchmark,
   attributes,
 }: {
   playerName: string;
   playerPhotoUrl?: string | null;
-  playerAge?: number | null;
   benchmark: Record<string, unknown> | null;
   attributes: Record<string, number>;
 }) {
@@ -377,7 +353,6 @@ export function BenchmarkPlaystyleComparison({
         onClose={close}
         playerName={playerName}
         playerPhotoUrl={playerPhotoUrl}
-        playerAge={playerAge}
         benchmark={benchmark}
         attributes={attributes}
       />
