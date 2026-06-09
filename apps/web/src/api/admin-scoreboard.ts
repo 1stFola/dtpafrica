@@ -12,10 +12,13 @@ import type {
 } from "../modules/admin/scoreboard/types";
 import type { SbMatchListItem } from "./scoreboard";
 
+export type HighlightMediaType = "video" | "photo";
+
 export type AdminHighlightRow = {
   id: string;
   title: string;
   youtubeUrl: string;
+  mediaType: HighlightMediaType;
   duration: string | null;
   competitionId: string | null;
   matchId: string | null;
@@ -250,7 +253,9 @@ export const adminScoreboardApi = {
   createHighlight: (body: {
     matchId: string;
     title: string;
-    youtubeUrl: string;
+    type?: HighlightMediaType;
+    youtubeUrl?: string;
+    imageUrl?: string;
     eventId?: string;
     timelineMinute?: number;
     thumbnailUrl?: string;
@@ -277,7 +282,9 @@ export const adminScoreboardApi = {
     id: string,
     body: {
       title?: string;
+      type?: HighlightMediaType;
       youtubeUrl?: string;
+      imageUrl?: string;
       duration?: string;
       competitionId?: string;
     }
@@ -292,7 +299,9 @@ export const adminScoreboardApi = {
     id: string,
     body: {
       title?: string;
+      type?: HighlightMediaType;
       youtubeUrl?: string;
+      imageUrl?: string;
       duration?: string;
       competitionId?: string;
     }

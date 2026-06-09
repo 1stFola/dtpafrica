@@ -3,12 +3,20 @@ import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 
-const CSV_TEMPLATE = `event_type,minute,team_side,player_name,assist_name,detail,home_score,away_score,pen_home,pen_away,pen_winner
-full_time,,,,,,2,1,,,
-goal,25,home,Charles Obani,,penalty,,,,
-yellow_card,40,away,Amos Akinsipe,,,,,,
-substitution,60,home,Player Off,Player On,,,,,
-penalty_shootout,,,,,,,,4,2,home`;
+const CSV_TEMPLATE = `event_type,minute,team_side,player_name,assist_name,detail,home_score,away_score,narrative,pen_home,pen_away,pen_winner
+full_time,,,,,,0,1,FC OMORUYI 1-0 FC OGUNTUASE — Destiny Nosa 84',,,
+kick_off,0,,,,First half begins,,,,,
+half_time,45,,,,Half-time,,,,,
+second_half_kickoff,46,,,,Second half begins,,,,,
+goal,84,away,Destiny Nosa,,,,,,,
+substitution,46,home,Anuoluwapo Oluwow,Korede Elejoba,#12 off #17 on,,,,,
+substitution,53,away,Ololade Yusuf,Destiny,#11 off #12 on,,,,,
+possession,20,home,,,Sustained spell,,,,,
+corner_kick,33,away,,,,,,,,
+foul,18,home,Shodakin Sodiq,,,,,,,
+save,72,home,Goalkeeper,,,,,,,
+yellow_card,40,away,Ololade Yusuf,,,,,,,
+score_update,84,away,,,OMORUYI lead 1-0,,,,,`;
 
 type Props = {
   matchId: string;
@@ -98,7 +106,8 @@ export function MatchCsvIngestModal({
         <div className="admin-sb-modal__body">
           <p className="muted admin-sb-modal__desc">
             Upload a historical timeline for <strong>{matchLabel}</strong>. Valid rows are
-            batch-saved, the match is finalized, and group-stage standings refresh automatically.
+            batch-saved, team stats are derived from events, the match is finalized, and group-stage
+            standings refresh automatically.
           </p>
 
           <div
@@ -112,8 +121,12 @@ export function MatchCsvIngestModal({
           >
             <strong>{fileName ?? "Drop CSV here or browse"}</strong>
             <p className="muted">
-              Required: one <code>full_time</code> row plus event rows (goals, cards, subs).
-              Optional: <code>penalty_shootout</code> row.
+              Required: one <code>full_time</code> row with <code>home_score</code> /{" "}
+              <code>away_score</code>. Event types include goals, cards, subs, shots, fouls,
+              corners, saves, possession, and flow rows (<code>kick_off</code>,{" "}
+              <code>half_time</code>, <code>score_update</code>, etc.). Optional:{" "}
+              <code>narrative</code> on the full_time row, <code>penalty_shootout</code> for
+              knockouts.
             </p>
             <div className="admin-sb-dropzone-actions">
               <button type="button" className="admin-inline-button" onClick={downloadTemplate}>

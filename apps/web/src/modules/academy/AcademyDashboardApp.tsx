@@ -88,11 +88,9 @@ function mediaHref(item: AcademyMediaItem) {
 function AcademyHeroBanner({
   academy,
   playerCount,
-  mode,
 }: {
   academy: AcademyDashboard["academy"];
   playerCount: number;
-  mode: string;
 }) {
   const initials = academyInitials(academy.name);
   const hasLogo = Boolean(academy.logoUrl?.trim());
@@ -118,20 +116,23 @@ function AcademyHeroBanner({
               <img src={academy.logoUrl!} alt="" />
             </span>
           )}
-          <div>
+          <div className="academy-hero__heading">
             <p className="eyebrow">Academy command centre</p>
             <h1>{academy.name}</h1>
-            <p>
+            <p className="academy-hero__lede">
               Which players are improving, valuable, tactically useful, and ready for
               exposure?
             </p>
           </div>
         </div>
         <div className="academy-hero__meta">
-          <span>{mode.replace(/_/g, " ")}</span>
-          <strong>
-            {playerCount} {playerCount === 1 ? "player" : "players"}
-          </strong>
+          <span className="academy-metric-chip">
+            <span className="academy-metric-chip__label">Squad size</span>
+            <strong className="academy-metric-chip__value">
+              {playerCount}
+              <small>{playerCount === 1 ? "player" : "players"}</small>
+            </strong>
+          </span>
         </div>
       </div>
     </section>
@@ -265,7 +266,7 @@ export function AcademyDashboardApp() {
       </aside>
 
       <main className="academy-main">
-        <AcademyHeroBanner academy={data.academy} playerCount={data.squad.length} mode={data.scope.mode} />
+        <AcademyHeroBanner academy={data.academy} playerCount={data.squad.length} />
 
         {section === "overview" && <OverviewSection data={data} />}
         {section === "players" && <PlayersSection players={data.squad} />}
@@ -440,13 +441,13 @@ function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
 
   return (
     <section className="academy-panel academy-panel--wide">
-      <div className="academy-panel__header">
+      <div className="academy-panel__header academy-panel__header--stacked">
         <div>
           <h2>Player intelligence</h2>
           <p>Filter by football traits and jump into the unified player profile.</p>
         </div>
       </div>
-      <div className="academy-filters">
+      <div className="academy-filters academy-filters--row">
         <FilterSelect label="Age group" value={ageGroup} options={ageGroups} onChange={setAgeGroup} />
         <FilterSelect label="Position" value={position} options={positions} onChange={setPosition} />
         <FilterSelect label="Foot" value={foot} options={feet} onChange={setFoot} />

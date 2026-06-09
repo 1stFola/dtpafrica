@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { normalizeClubName } from "@dtp/engines";
-import { normalizeVideoMediaUrl } from "../shared/media-url";
+import { isAllowedImageMediaUrl, normalizeVideoMediaUrl } from "../shared/media-url";
+import type { CreateAdminHighlightDto } from "./dto/create-admin-highlight.dto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { getRosterReadiness } from "../scoreboard/roster-guard";
@@ -547,28 +548,25 @@ export class AdminScoreboardService {
     return this.getSpotterOps(matchId);
   }
 
-  async createHighlight(body: {
-    matchId: string;
-    title: string;
-    youtubeUrl: string;
-    eventId?: string;
-    timelineMinute?: number;
-    thumbnailUrl?: string;
-  }) {
+  async createHighlight(body: CreateAdminHighlightDto) {
     const match = await this.prisma.sbMatch.findUnique({ where: { id: body.matchId } });
     if (!match) throw new NotFoundException("Match not found");
+
+    const mediaType = body.type ?? "video";
+    const storedUrl = this.resolveHighlightMediaUrl(mediaType, body);
+
     const detail =
       body.timelineMinute != null ? `minute:${body.timelineMinute}` : undefined;
-    const video = normalizeVideoMediaUrl(body.youtubeUrl);
     const highlight = await this.prisma.sbHighlight.create({
       data: {
         competitionId: match.competitionId,
         matchId: body.matchId,
         eventId: body.eventId,
         title: body.title,
-        youtubeUrl: video.embedUrl ?? video.sourceUrl,
+        youtubeUrl: storedUrl,
+        mediaType,
         isPublished: false,
-      },
+      } as Prisma.SbHighlightUncheckedCreateInput,
     });
     if (body.thumbnailUrl && detail) {
       await this.prisma.sbMatch.update({
@@ -630,7 +628,9 @@ export class AdminScoreboardService {
     id: string,
     body: {
       title?: string;
+      type?: "video" | "photo";
       youtubeUrl?: string;
+      imageUrl?: string;
       duration?: string;
       competitionId?: string;
     }
@@ -645,19 +645,45 @@ export class AdminScoreboardService {
       if (!competition) throw new BadRequestException("Competition not found");
     }
 
-    const storedVideoUrl = body.youtubeUrl
-      ? normalizeVideoMediaUrl(body.youtubeUrl).embedUrl ?? body.youtubeUrl.trim()
-      : undefined;
+    const existingMediaType =
+      (existing as { mediaType?: "video" | "photo" }).mediaType ?? "video";
+    const mediaType = body.type ?? existingMediaType;
+    const storedUrl =
+      body.youtubeUrl || body.imageUrl
+        ? this.resolveHighlightMediaUrl(mediaType, body)
+        : undefined;
+
     return this.prisma.sbHighlight.update({
       where: { id },
       data: {
         title: body.title?.trim(),
-        youtubeUrl: storedVideoUrl,
+        youtubeUrl: storedUrl,
+        mediaType: body.type,
         duration: body.duration?.trim(),
         competitionId: body.competitionId,
-      },
+      } as Prisma.SbHighlightUncheckedUpdateInput,
       include: this.highlightInclude,
     });
+  }
+
+  private resolveHighlightMediaUrl(
+    mediaType: "video" | "photo",
+    body: { youtubeUrl?: string; imageUrl?: string }
+  ) {
+    if (mediaType === "photo") {
+      const imageUrl = body.imageUrl?.trim();
+      if (!imageUrl || !isAllowedImageMediaUrl(imageUrl)) {
+        throw new BadRequestException("A valid image URL is required for photo highlights");
+      }
+      return imageUrl;
+    }
+
+    const videoUrl = body.youtubeUrl?.trim();
+    if (!videoUrl) {
+      throw new BadRequestException("A valid video URL is required for video highlights");
+    }
+    const video = normalizeVideoMediaUrl(videoUrl);
+    return video.embedUrl ?? video.sourceUrl;
   }
 
   async setHighlightPublished(id: string, isPublished: boolean) {

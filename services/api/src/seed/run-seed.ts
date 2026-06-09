@@ -6,11 +6,12 @@ import {
   seedMvce,
   seedScoreboard,
 } from "./prisma-seed-modules";
+import { isFullSeed, type SeedOptions } from "./seed-options";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
- * Re-seeding is idempotent but overwrites ads.config (all slots disabled) and
- * resets legacy academy passwords to seed values.
+ * Incremental mode (default) upserts missing seed entities without resetting
+ * admin-edited statuses. Full mode overwrites ads.config and academy passwords.
  */
 export const SEED_PLAYER_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -81,6 +82,7 @@ export type SeedPhaseError = {
 
 export type SeedResult = {
   ok: boolean;
+  mode: "incremental" | "full";
   durationMs: number;
   seedPlayerId: string;
   counts: {
@@ -103,7 +105,11 @@ type SeedPhase = {
   run: () => Promise<void>;
 };
 
-export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult> {
+export async function runDatabaseSeed(
+  prisma: PrismaClient,
+  options?: SeedOptions
+): Promise<SeedResult> {
+  const mode = isFullSeed(options) ? "full" : "incremental";
   const startedAt = Date.now();
   const errors: SeedPhaseError[] = [];
   let seedPlayerId = SEED_PLAYER_ID;
@@ -117,31 +123,37 @@ export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult>
     {
       name: "core-player",
       run: async () => {
+        const corePlayerUpdate = {
+          slug: "alli-o-sanni",
+          positionFull: "ATTACKING MIDFIELDER",
+          playingPhilosophies: ["Tiki-Taka", "Total Football"],
+          biography:
+            "Creative attacking midfielder from Lagos with elite close control and progressive passing.",
+          videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+          overallRating: 79,
+          offensiveRating: 82,
+          defensiveRating: 73,
+          careerGoals: 4,
+          careerAssists: 6,
+          careerAppearances: 11,
+          careerMinutes: 847,
+          ratingAttributes: SEED_RATING_ATTRIBUTES,
+          benchmarkMetadata: SEED_BENCHMARK_METADATA,
+          mediaItems: SEED_MEDIA_ITEMS,
+          scoutingSummary:
+            "ALLI O. SANNI profiles as a U18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
+          ...(mode === "full"
+            ? {
+                isFeatured: true,
+                isPublic: true,
+                registrationStatus: "approved",
+              }
+            : {}),
+        };
+
         const player = await prisma.player.upsert({
           where: { id: SEED_PLAYER_ID },
-          update: {
-            slug: "alli-o-sanni",
-            positionFull: "ATTACKING MIDFIELDER",
-            playingPhilosophies: ["Tiki-Taka", "Total Football"],
-            isFeatured: true,
-            isPublic: true,
-            registrationStatus: "approved",
-            biography:
-              "Creative attacking midfielder from Lagos with elite close control and progressive passing.",
-            videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            overallRating: 79,
-            offensiveRating: 82,
-            defensiveRating: 73,
-            careerGoals: 4,
-            careerAssists: 6,
-            careerAppearances: 11,
-            careerMinutes: 847,
-            ratingAttributes: SEED_RATING_ATTRIBUTES,
-            benchmarkMetadata: SEED_BENCHMARK_METADATA,
-            mediaItems: SEED_MEDIA_ITEMS,
-            scoutingSummary:
-              "ALLI O. SANNI profiles as a U18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
-          },
+          update: corePlayerUpdate,
           create: {
             id: SEED_PLAYER_ID,
             firstName: "ALLI",
@@ -295,7 +307,7 @@ Parents and guardians can register minors with consent workflows built for youth
       run: async () => {
         const dtpAcademy = await prisma.academy.upsert({
           where: { slug: "dtp-lagos-hub" },
-          update: { isPublished: true },
+          update: mode === "full" ? { isPublished: true } : {},
           create: {
             slug: "dtp-lagos-hub",
             name: "DTP Lagos Development Hub",
@@ -422,7 +434,7 @@ Parents and guardians can register minors with consent workflows built for youth
         for (const row of staticRows) {
           await prisma.staticContent.upsert({
             where: { key: row.key },
-            update: { value: row.value },
+            update: mode === "full" ? { value: row.value } : {},
             create: row,
           });
         }
@@ -433,7 +445,10 @@ Parents and guardians can register minors with consent workflows built for youth
       run: async () => {
         await prisma.staticContent.upsert({
           where: { key: ADS_CONFIG_KEY },
-          update: { value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }) },
+          update:
+            mode === "full"
+              ? { value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }) }
+              : {},
           create: {
             key: ADS_CONFIG_KEY,
             value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }),
@@ -444,7 +459,7 @@ Parents and guardians can register minors with consent workflows built for youth
     {
       name: "scoreboard",
       run: async () => {
-        await seedScoreboard(prisma, seedPlayerId);
+        await seedScoreboard(prisma, seedPlayerId, { mode });
       },
     },
     {
@@ -456,13 +471,13 @@ Parents and guardians can register minors with consent workflows built for youth
     {
       name: "legacy-academies",
       run: async () => {
-        legacyAcademyCount = await seedLegacyAcademies(prisma);
+        legacyAcademyCount = await seedLegacyAcademies(prisma, { mode });
       },
     },
     {
       name: "legacy-players",
       run: async () => {
-        const legacyResult = await seedLegacyPlayers(prisma);
+        const legacyResult = await seedLegacyPlayers(prisma, { mode });
         legacyPlayers = legacyResult.playerCount;
         legacyAcademyLinks = legacyResult.academyLinkCount;
         legacySampleSlugs = legacyResult.sampleSlugs;
@@ -492,6 +507,7 @@ Parents and guardians can register minors with consent workflows built for youth
 
   return {
     ok: errors.length === 0,
+    mode,
     durationMs,
     seedPlayerId,
     counts: {

@@ -30,7 +30,7 @@ export type PlayerProfileLinkState = {
   role?: string;
 };
 
-type ProfileTab = "overview" | "scoreboard" | "scouting" | "media";
+type ProfileTab = "overview" | "scoreboard" | "scouting" | "videos" | "photos" | "publications";
 type ProfileMediaItem = NonNullable<PublicPlayerProfile["mediaItems"]>[number] & {
   url: string;
 };
@@ -255,6 +255,13 @@ function resolveShirtNumber(player: PublicPlayerProfile): number | null {
   return null;
 }
 
+function readEstimatedPlayerValue(player: PublicPlayerProfile): string | null {
+  const meta = player.benchmarkMetadata;
+  if (!meta || typeof meta !== "object") return null;
+  const value = (meta as Record<string, unknown>).estimatedPlayerValue;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function buildBioFacts(
   player: PublicPlayerProfile,
   valuation: PublicPlayerProfile["valuation"]
@@ -274,6 +281,7 @@ function buildBioFacts(
   facts.push({ label: "Position", value: player.positionPrimary });
   const shirt = resolveShirtNumber(player);
   if (shirt != null) facts.push({ label: "Shirt number", value: String(shirt) });
+  const estimatedValue = readEstimatedPlayerValue(player);
   if (valuation?.marketValueLabel) {
     facts.push({
       label: "Player value",
@@ -290,6 +298,12 @@ function buildBioFacts(
         valuation.marketValueMinEur,
         valuation.marketValueMaxEur
       ),
+      highlight: true,
+    });
+  } else if (estimatedValue) {
+    facts.push({
+      label: "Player value",
+      value: estimatedValue,
       highlight: true,
     });
   }
@@ -592,8 +606,11 @@ export function PlayerProfilePage() {
   const mediaItems = buildMediaItems(player);
   const videoItems = mediaItems.filter((item) => item.type === "video");
   const photoItems = mediaItems.filter((item) => item.type === "photo");
-  const otherMediaItems = mediaItems.filter(
-    (item) => item.type !== "video" && item.type !== "photo"
+  const publicationItems = mediaItems.filter(
+    (item) =>
+      item.type === "article" ||
+      item.type === "publication" ||
+      (item.type !== "video" && item.type !== "photo")
   );
   const benchmark = player.benchmarkMetadata?.nearest ?? null;
   const scoreboard = player.scoreboardHistory;
@@ -621,11 +638,19 @@ export function PlayerProfilePage() {
     { id: "scouting", label: "Scouting Details" },
     { id: "scoreboard", label: "ScoreBoard Metrics" },
     {
-      id: "media",
+      id: "videos",
+      label: videoItems.length > 0 ? `Videos (${videoItems.length})` : "Videos",
+    },
+    {
+      id: "photos",
+      label: photoItems.length > 0 ? `Photos (${photoItems.length})` : "Photos",
+    },
+    {
+      id: "publications",
       label:
-        mediaItems.length > 0
-          ? `Media (Video, Photos, Publications) (${mediaItems.length})`
-          : "Media (Video, Photos, Publications)",
+        publicationItems.length > 0
+          ? `Publications (${publicationItems.length})`
+          : "Publications",
     },
   ];
 
@@ -731,7 +756,6 @@ export function PlayerProfilePage() {
             <BenchmarkPlaystyleComparison
               playerName={player.displayName}
               playerPhotoUrl={player.playerPhotoUrl}
-              playerAge={player.age}
               benchmark={benchmark}
               attributes={attributes}
             />
@@ -762,21 +786,6 @@ export function PlayerProfilePage() {
             </section>
           )}
 
-          {player.positionFit && (
-            <section className="profile-section">
-              <span className="player-profile-eyebrow">Position intelligence</span>
-              <h2 className="player-profile-heading">Role fit</h2>
-              <p className="player-profile-muted">
-                Primary {player.positionFit.primaryPositionFit}
-                {player.positionFit.secondaryPositionFit
-                  ? ` · Secondary ${player.positionFit.secondaryPositionFit}`
-                  : ""}
-                {player.positionFit.confidence
-                  ? ` · ${Math.round(player.positionFit.confidence)}% confidence`
-                  : ""}
-              </p>
-            </section>
-          )}
         </>
       )}
 
@@ -794,11 +803,34 @@ export function PlayerProfilePage() {
         </>
       )}
 
-      {activeTab === "media" && (
-        <CombinedMediaSection
-          videoItems={videoItems}
-          photoItems={photoItems}
-          otherMediaItems={otherMediaItems}
+      {activeTab === "videos" && (
+        <TypedMediaTab
+          eyebrow="Media"
+          title="Videos"
+          emptyTitle="No highlight videos yet"
+          emptyDetail="Highlight reels and match clips will appear here once they are linked to this profile."
+          items={videoItems}
+        />
+      )}
+
+      {activeTab === "photos" && (
+        <TypedMediaTab
+          eyebrow="Media"
+          title="Photos"
+          emptyTitle="No photos yet"
+          emptyDetail="Profile and action photos will appear here once they are linked to this profile."
+          items={photoItems}
+          gallery
+        />
+      )}
+
+      {activeTab === "publications" && (
+        <TypedMediaTab
+          eyebrow="Media"
+          title="Publications"
+          emptyTitle="No publications yet"
+          emptyDetail="Press coverage and scouting articles will appear here once they are linked to this profile."
+          items={publicationItems}
         />
       )}
     </div>
@@ -1031,59 +1063,32 @@ function CareerStatBoxesSection({ stats }: { stats: CareerStatBox[] }) {
   );
 }
 
-function CombinedMediaSection({
-  videoItems,
-  photoItems,
-  otherMediaItems,
+function TypedMediaTab({
+  eyebrow,
+  title,
+  emptyTitle,
+  emptyDetail,
+  items,
+  gallery = false,
 }: {
-  videoItems: ProfileMediaItem[];
-  photoItems: ProfileMediaItem[];
-  otherMediaItems: ProfileMediaItem[];
+  eyebrow: string;
+  title: string;
+  emptyTitle: string;
+  emptyDetail: string;
+  items: ProfileMediaItem[];
+  gallery?: boolean;
 }) {
-  const hasAny =
-    videoItems.length > 0 || photoItems.length > 0 || otherMediaItems.length > 0;
-
-  if (!hasAny) {
-    return (
-      <section className="profile-section">
-        <span className="player-profile-eyebrow">Media</span>
-        <h2 className="player-profile-heading">Media (Video, Photos, Publications)</h2>
-        <div className="profile-empty-state">
-          <strong>No public media has been attached to this profile yet.</strong>
-          <p>Public media can be added through admin profile management or calibration imports.</p>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="profile-section player-profile-media">
-      <span className="player-profile-eyebrow">Media</span>
-      <h2 className="player-profile-heading">Media (Video, Photos, Publications)</h2>
-      {videoItems.length > 0 && (
-        <MediaSection
-          title="Video"
-          empty=""
-          items={videoItems}
-          embedded
-        />
-      )}
-      {photoItems.length > 0 && (
-        <MediaSection
-          title="Photos"
-          empty=""
-          items={photoItems}
-          gallery
-          embedded
-        />
-      )}
-      {otherMediaItems.length > 0 && (
-        <MediaSection
-          title="Publications"
-          empty=""
-          items={otherMediaItems}
-          embedded
-        />
+      <span className="player-profile-eyebrow">{eyebrow}</span>
+      <h2 className="player-profile-heading">{title}</h2>
+      {items.length === 0 ? (
+        <div className="profile-empty-state player-profile-media-empty">
+          <strong>{emptyTitle}</strong>
+          <p>{emptyDetail}</p>
+        </div>
+      ) : (
+        <MediaSection title="" empty="" items={items} gallery={gallery} embedded />
       )}
     </section>
   );
@@ -1395,20 +1400,6 @@ function ScoutingIntelligenceSection({
 
       <div className="profile-detail-grid">
         <article className="profile-panel">
-          <h3>Position intelligence</h3>
-          <div className="profile-metric-list">
-            <span>Primary fit</span>
-            <strong>{scouting.positionFit?.primaryPositionFit ?? "Pending"}</strong>
-            <span>Secondary fit</span>
-            <strong>{scouting.positionFit?.secondaryPositionFit ?? "Pending"}</strong>
-            <span>Confidence</span>
-            <strong>
-              {scouting.positionFit ? `${Math.round(scouting.positionFit.confidence)}%` : "Pending"}
-            </strong>
-          </div>
-        </article>
-
-        <article className="profile-panel">
           <h3>Philosophy fits</h3>
           {scouting.philosophyFits.length === 0 ? (
             <p className="muted">No saved philosophy-fit rows yet.</p>
@@ -1547,7 +1538,7 @@ function MediaSection({
 
   return (
     <div className={sectionClass}>
-      <h3 className="player-profile-subheading">{title}</h3>
+      {title ? <h3 className="player-profile-subheading">{title}</h3> : null}
       {items.length === 0 ? (
         empty ? (
           <div className="profile-empty-state">

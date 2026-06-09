@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { runDatabaseSeed } from "../seed/run-seed";
+import type { SeedMode } from "../seed/seed-options";
 import {
   getSeedRunStatus,
   markSeedRunFinished,
@@ -21,7 +22,7 @@ export class AdminSeedService {
     return getSeedRunStatus();
   }
 
-  async run() {
+  async run(mode: SeedMode = "incremental") {
     const current = getSeedRunStatus();
     if (current.running) {
       throw new ConflictException("Database seed is already running");
@@ -29,12 +30,13 @@ export class AdminSeedService {
 
     markSeedRunStarted();
     try {
-      const result = await runDatabaseSeed(this.prisma);
+      const result = await runDatabaseSeed(this.prisma, { mode });
       markSeedRunFinished(result);
       return result;
     } catch (err) {
       markSeedRunFinished({
         ok: false,
+        mode,
         durationMs: 0,
         seedPlayerId: "",
         counts: {

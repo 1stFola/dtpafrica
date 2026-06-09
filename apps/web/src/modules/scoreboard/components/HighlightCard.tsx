@@ -25,13 +25,16 @@ export function HighlightCard({ highlight, inlinePlayer }: Props) {
         })
       : null;
 
+  const videoMediaType =
+    highlight.mediaType === "photo" ? undefined : highlight.mediaType;
+
   if (inlinePlayer) {
     return (
       <article className="sb-hl-card sb-hl-card--inline">
         <MediaVideoEmbed
           url={highlight.youtubeUrl}
           title={highlight.title}
-          mediaType={highlight.mediaType}
+          mediaType={videoMediaType}
           embedUrl={highlight.videoEmbedUrl}
         />
         <div className="sb-hl-card__meta">

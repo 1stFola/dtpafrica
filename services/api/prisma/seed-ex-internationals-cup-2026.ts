@@ -2,6 +2,11 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { COMPETITION_TEMPLATES, normalizeClubName } from "@dtp/engines";
 import * as bcrypt from "bcrypt";
+import {
+  isFullSeed,
+  shouldPreserveSbMatch,
+  type SeedOptions,
+} from "../src/seed/seed-options";
 
 /** Shared dev password for all Ex Internationals seeded academy accounts. */
 export const EX_INTL_ACADEMY_SEED_PASSWORD = "ExIntl-Cup2026";
@@ -676,7 +681,10 @@ const BRACKET_LAYOUT = {
   ],
 };
 
-export async function seedExInternationalsCup2026(prisma: PrismaClient) {
+export async function seedExInternationalsCup2026(
+  prisma: PrismaClient,
+  options?: SeedOptions
+) {
   const template = COMPETITION_TEMPLATES.KNOCKOUT_CUP;
   const formatConfig = {
     format: "knockout",
@@ -743,31 +751,34 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
   const matchIds = MATCHES.map((m) => m.id);
   const teamSlugs = TEAMS.map((t) => t.slug);
 
-  await prisma.sbMatch.deleteMany({
-    where: { competitionId: comp.id, id: { notIn: matchIds } },
-  });
-  await prisma.sbTeam.deleteMany({
-    where: { competitionId: comp.id, slug: { notIn: teamSlugs } },
-  });
+  if (isFullSeed(options)) {
+    await prisma.sbMatch.deleteMany({
+      where: { competitionId: comp.id, id: { notIn: matchIds } },
+    });
+    await prisma.sbTeam.deleteMany({
+      where: { competitionId: comp.id, slug: { notIn: teamSlugs } },
+    });
+  }
 
   let academyCount = 0;
   const teamIds: Record<string, string> = {};
   const passwordHash = await bcrypt.hash(EX_INTL_ACADEMY_SEED_PASSWORD, 10);
+  const full = isFullSeed(options);
 
   for (const t of TEAMS) {
     const academySlug = `ex-intl-${t.slug}`;
+    const academyShared = {
+      name: normalizeClubName(t.name),
+      city: "Lagos",
+      country: "Nigeria",
+      logoUrl: t.logoUrl,
+      isPublished: true,
+      loginUsername: t.slug,
+      description: `Ex Internationals Cup 2026 participant — ${normalizeClubName(t.name)} (seed ${t.seed}).`,
+    };
     await prisma.academy.upsert({
       where: { slug: academySlug },
-      update: {
-        name: normalizeClubName(t.name),
-        city: "Lagos",
-        country: "Nigeria",
-        logoUrl: t.logoUrl,
-        isPublished: true,
-        loginUsername: t.slug,
-        passwordHash,
-        description: `Ex Internationals Cup 2026 participant — ${normalizeClubName(t.name)} (seed ${t.seed}).`,
-      },
+      update: full ? { ...academyShared, passwordHash } : academyShared,
       create: {
         id: t.academyId,
         slug: academySlug,
@@ -810,6 +821,7 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
   const r32StageId = stageByKey.get("r32");
   let eventCount = 0;
   for (const m of MATCHES) {
+    const preserve = await shouldPreserveSbMatch(prisma, m.id, options);
     const status = m.status ?? "scheduled";
     const homeScore = m.homeScore ?? 0;
     const awayScore = m.awayScore ?? 0;
@@ -819,58 +831,64 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
       round: "R32",
       timezone: TIMEZONE,
     };
-    await prisma.sbMatch.upsert({
-      where: { id: m.id },
-      update: {
-        homeScore,
-        awayScore,
-        status,
-        minute,
-        stats: m.stats ?? null,
-        meta,
-        stageKey: "r32",
-        stageId: r32StageId,
-        matchday: m.matchday,
-        roundLabel: "Round of 32",
-        venue: m.venue,
-        kickoffAt: new Date(m.kickoffAt),
-        homeTeamId: teamIds[m.homeSlug],
-        awayTeamId: teamIds[m.awaySlug],
-      },
-      create: {
-        id: m.id,
-        competitionId: comp.id,
-        stageId: r32StageId,
-        stageKey: "r32",
-        matchday: m.matchday,
-        homeTeamId: teamIds[m.homeSlug],
-        awayTeamId: teamIds[m.awaySlug],
-        status,
-        homeScore,
-        awayScore,
-        minute,
-        kickoffAt: new Date(m.kickoffAt),
-        venue: m.venue,
-        roundLabel: "Round of 32",
-        stats: m.stats ?? null,
-        meta,
-      },
-    });
 
-    await prisma.sbMatchEvent.deleteMany({ where: { matchId: m.id } });
-    for (const ev of m.events ?? []) {
-      await prisma.sbMatchEvent.create({
-        data: {
-          matchId: m.id,
-          teamId: teamIds[ev.teamSlug],
-          type: ev.type,
-          minute: ev.minute,
-          playerLabel: ev.playerLabel,
-          assistLabel: ev.assistLabel,
-          detail: ev.detail,
+    if (!preserve) {
+      await prisma.sbMatch.upsert({
+        where: { id: m.id },
+        update: {
+          homeScore,
+          awayScore,
+          status,
+          minute,
+          stats: m.stats ?? null,
+          meta,
+          stageKey: "r32",
+          stageId: r32StageId,
+          matchday: m.matchday,
+          roundLabel: "Round of 32",
+          venue: m.venue,
+          kickoffAt: new Date(m.kickoffAt),
+          homeTeamId: teamIds[m.homeSlug],
+          awayTeamId: teamIds[m.awaySlug],
+        },
+        create: {
+          id: m.id,
+          competitionId: comp.id,
+          stageId: r32StageId,
+          stageKey: "r32",
+          matchday: m.matchday,
+          homeTeamId: teamIds[m.homeSlug],
+          awayTeamId: teamIds[m.awaySlug],
+          status,
+          homeScore,
+          awayScore,
+          minute,
+          kickoffAt: new Date(m.kickoffAt),
+          venue: m.venue,
+          roundLabel: "Round of 32",
+          stats: m.stats ?? null,
+          meta,
         },
       });
-      eventCount += 1;
+
+      if (full) {
+        await prisma.sbMatchEvent.deleteMany({ where: { matchId: m.id } });
+      }
+
+      for (const ev of m.events ?? []) {
+        await prisma.sbMatchEvent.create({
+          data: {
+            matchId: m.id,
+            teamId: teamIds[ev.teamSlug],
+            type: ev.type,
+            minute: ev.minute,
+            playerLabel: ev.playerLabel,
+            assistLabel: ev.assistLabel,
+            detail: ev.detail,
+          },
+        });
+        eventCount += 1;
+      }
     }
   }
 
