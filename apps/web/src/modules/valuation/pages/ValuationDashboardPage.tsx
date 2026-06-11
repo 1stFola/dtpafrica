@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchValuationReport, type ValuationReport } from "../../../api/mvce";
+import { InfoTip } from "../../../components/InfoTip";
 import { ConfidenceGauge } from "../components/ConfidenceGauge";
 import { FactorBreakdown } from "../components/FactorBreakdown";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+
+const NARRATIVE_PLACEHOLDER =
+  /deterministic MVCE v[\d.]+ \(AI narrative layer optional in future\)\.?/i;
+
+function formatScoutNotes(notes: string): string {
+  return notes.replace(NARRATIVE_PLACEHOLDER, "").replace(/\s{2,}/g, " ").trim();
+}
 
 export function ValuationDashboardPage() {
   const { playerId } = useParams<{ playerId: string }>();
@@ -38,6 +46,8 @@ export function ValuationDashboardPage() {
 
   const { result, player } = report;
   const mult = result.multipliers;
+  const scoutNotes = formatScoutNotes(result.scoutNotes);
+  const hasLegacyPlaceholder = NARRATIVE_PLACEHOLDER.test(result.scoutNotes);
 
   return (
     <div className="sb-page mvce-dashboard">
@@ -70,7 +80,10 @@ export function ValuationDashboardPage() {
               {result.marketValueMaxEur?.toLocaleString()}
             </p>
           )}
-          <p className="muted">Base score {result.baseScore} before multipliers</p>
+          <p className="muted">
+            Base score {result.baseScore} before multipliers
+            <InfoTip text="Starting score from core performance factors before verification and market adjustments." />
+          </p>
         </section>
 
         <aside className="mvce-panel">
@@ -123,8 +136,16 @@ export function ValuationDashboardPage() {
       </section>
 
       <section className="sb-section">
-        <h2>Scout notes</h2>
-        <p className="mvce-scout-notes">{result.scoutNotes}</p>
+        <h2>
+          Scout notes
+          {hasLegacyPlaceholder && (
+            <InfoTip text="Personalised AI-written summaries are coming soon. Notes below are generated from valuation factors." />
+          )}
+        </h2>
+        <p className="mvce-scout-notes">
+          {scoutNotes ||
+            "Valuation reflects verification level, competition tier, and market demand."}
+        </p>
       </section>
     </div>
   );

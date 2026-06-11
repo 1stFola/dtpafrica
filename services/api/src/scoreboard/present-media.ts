@@ -17,17 +17,31 @@ export type PresentedHighlight = {
   [key: string]: unknown;
 };
 
-export function presentHighlight<T extends { youtubeUrl: string }>(
+export type HighlightKind = "video" | "photo";
+
+export function presentHighlight<T extends { youtubeUrl: string; mediaType?: string | null }>(
   row: T,
   explicitThumb?: string | null
 ): T & {
-  mediaType: VideoMediaType;
+  highlightKind: HighlightKind;
+  mediaType: VideoMediaType | "photo";
   videoEmbedUrl: string | null;
   thumbnailUrl: string | null;
 } {
+  if (row.mediaType === "photo") {
+    return {
+      ...row,
+      highlightKind: "photo",
+      mediaType: "photo",
+      videoEmbedUrl: null,
+      thumbnailUrl: row.youtubeUrl,
+    };
+  }
+
   const mediaType = detectVideoMediaType(row.youtubeUrl);
   return {
     ...row,
+    highlightKind: "video",
     mediaType,
     videoEmbedUrl: videoEmbedUrl(row.youtubeUrl, mediaType),
     thumbnailUrl: highlightThumbnailUrl(row.youtubeUrl, explicitThumb),
@@ -50,19 +64,29 @@ export function parseMatchPhotosFromMeta(meta: unknown): Array<{ url: string; ca
 export function presentMatchDetail<
   T extends {
     meta?: unknown;
-    highlights?: Array<{ youtubeUrl: string }>;
-    events?: Array<{ highlights?: Array<{ youtubeUrl: string }> }>;
+    highlights?: Array<{ youtubeUrl: string; title?: string; mediaType?: string | null }>;
+    events?: Array<{ highlights?: Array<{ youtubeUrl: string; mediaType?: string | null }> }>;
   },
 >(match: T): T & { photos: Array<{ url: string; caption: string | null }> } {
-  const photos = parseMatchPhotosFromMeta(match.meta);
-  const highlights = Array.isArray(match.highlights)
+  const metaPhotos = parseMatchPhotosFromMeta(match.meta);
+  const presentedHighlights = Array.isArray(match.highlights)
     ? match.highlights.map((h) => presentHighlight(h))
-    : match.highlights;
+    : [];
+  const photoHighlights = presentedHighlights
+    .filter((h) => h.highlightKind === "photo")
+    .map((h) => ({
+      url: h.youtubeUrl,
+      caption: typeof h.title === "string" ? h.title : null,
+    }));
+  const photos = [...metaPhotos, ...photoHighlights];
+  const highlights = presentedHighlights.filter((h) => h.highlightKind === "video");
   const events = Array.isArray(match.events)
     ? match.events.map((ev) => ({
         ...ev,
         highlights: Array.isArray(ev.highlights)
-          ? ev.highlights.map((h) => presentHighlight(h))
+          ? ev.highlights
+              .map((h) => presentHighlight(h))
+              .filter((h) => h.highlightKind === "video")
           : ev.highlights,
       }))
     : match.events;

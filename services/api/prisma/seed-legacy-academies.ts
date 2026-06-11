@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
 
 type LegacyAcademySeed = {
   name: string;
@@ -188,7 +189,11 @@ function normalizeCountry(country: string): string {
   return trimmed;
 }
 
-export async function seedLegacyAcademies(prisma: PrismaClient): Promise<number> {
+export async function seedLegacyAcademies(
+  prisma: PrismaClient,
+  options?: SeedOptions
+): Promise<number> {
+  const full = isFullSeed(options);
   let count = 0;
 
   for (const academy of LEGACY_ACADEMIES) {
@@ -196,21 +201,24 @@ export async function seedLegacyAcademies(prisma: PrismaClient): Promise<number>
     const passwordHash = await bcrypt.hash(academy.password, 10);
     const loginUsername = academy.loginUsername.trim();
 
+    const sharedFields = {
+      name: academy.name,
+      contactPerson: academy.contactPerson,
+      email: academy.email,
+      phone: null,
+      country: normalizeCountry(academy.country),
+      loginUsername,
+      subscriptionTier: academy.subscriptionTier,
+      maxPlayers: academy.maxPlayers,
+      logoUrl: academy.logoUrl,
+      isPublished: true,
+    };
+
     await prisma.academy.upsert({
       where: { slug },
-      update: {
-        name: academy.name,
-        contactPerson: academy.contactPerson,
-        email: academy.email,
-        phone: null,
-        country: normalizeCountry(academy.country),
-        loginUsername,
-        passwordHash,
-        subscriptionTier: academy.subscriptionTier,
-        maxPlayers: academy.maxPlayers,
-        logoUrl: academy.logoUrl,
-        isPublished: true,
-      },
+      update: full
+        ? { ...sharedFields, passwordHash }
+        : sharedFields,
       create: {
         slug,
         name: academy.name,

@@ -22,6 +22,8 @@ import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
 import { assertMatchReadyForLiveEvents } from "./roster-guard";
 import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
+import { deriveMatchStatsFromCsvEvents } from "./match-csv-events";
+import { parseMatchTimelineCsv } from "./match-csv-ingest";
 import { computeStandings } from "./standings";
 
 const MATCH_INCLUDE = {
@@ -557,6 +559,7 @@ export class ScoreboardService {
   async listMatches(query: {
     status?: string;
     competitionId?: string;
+    limit?: number;
     publicOnly?: boolean;
   }) {
     const where: Prisma.SbMatchWhereInput = {};
@@ -576,6 +579,7 @@ export class ScoreboardService {
     const rows = await this.prisma.sbMatch.findMany({
       where,
       orderBy: [{ kickoffAt: "desc" }],
+      ...(query.limit ? { take: query.limit } : {}),
       include: {
         homeTeam: true,
         awayTeam: true,
@@ -675,8 +679,9 @@ export class ScoreboardService {
     const rows = await this.prisma.sbHighlight.findMany({
       where: {
         isPublished: true,
+        mediaType: "video",
         ...(competitionId ? { competitionId } : {}),
-      },
+      } as Prisma.SbHighlightWhereInput,
       orderBy: { publishedAt: "desc" },
       include: {
         match: {
@@ -821,6 +826,106 @@ export class ScoreboardService {
     }
 
     return presentScoreboardPayload(updated);
+  }
+
+  async ingestMatchTimelineCsv(matchId: string, csv: string, replace = false) {
+    const parsed = parseMatchTimelineCsv(csv);
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: { homeTeam: true, awayTeam: true, competition: true, events: true },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+
+    if (match.status === "finished" && match.events.length > 0 && !replace) {
+      throw new BadRequestException(
+        "Match is already finished with events. Re-upload with replace=true or clear events first."
+      );
+    }
+
+    const existingMeta = (match.meta ?? {}) as Record<string, unknown>;
+    const existingStats = (match.stats ?? {}) as Record<string, unknown>;
+    const wasFinished = match.status === "finished";
+
+    const meta: Record<string, unknown> = { ...existingMeta };
+    if (parsed.penaltyShootout) {
+      meta.penaltyShootout = {
+        home: parsed.penaltyShootout.home,
+        away: parsed.penaltyShootout.away,
+        winner: parsed.penaltyShootout.winner,
+      };
+      meta.regulationScore = { home: parsed.homeScore, away: parsed.awayScore };
+    }
+
+    const derivedStats = deriveMatchStatsFromCsvEvents(parsed.events, {
+      narrative: parsed.narrative,
+    });
+
+    const createdEvents = await this.prisma.$transaction(async (tx) => {
+      await tx.sbMatchEvent.deleteMany({ where: { matchId } });
+
+      const rows = [];
+      for (const ev of parsed.events) {
+        const teamId = ev.teamSide
+          ? ev.teamSide === "home"
+            ? match.homeTeamId
+            : match.awayTeamId
+          : null;
+        const created = await tx.sbMatchEvent.create({
+          data: {
+            matchId,
+            type: ev.type,
+            minute: ev.minute,
+            teamId,
+            playerLabel: ev.playerLabel,
+            assistLabel: ev.assistLabel,
+            detail: ev.detail,
+            metadata: (ev.metadata ?? { source: "csv-ingest" }) as Prisma.InputJsonValue,
+          },
+        });
+        rows.push(created);
+      }
+
+      const statsPayload = {
+        ...existingStats,
+        ...derivedStats,
+        ...(wasFinished ? { lifecycle: undefined } : {}),
+      };
+
+      await tx.sbMatch.update({
+        where: { id: matchId },
+        data: {
+          homeScore: parsed.homeScore,
+          awayScore: parsed.awayScore,
+          minute: 90,
+          status: "finished",
+          meta: meta as Prisma.InputJsonValue,
+          stats: statsPayload as Prisma.InputJsonValue,
+        },
+      });
+
+      return rows;
+    });
+
+    for (const event of createdEvents) {
+      if (event.playerId) {
+        await this.lifecycle.applyMatchEventToPlayerStats(
+          event,
+          match.competitionId
+        );
+      }
+    }
+
+    await this.lifecycle.onMatchFinished(matchId);
+
+    return {
+      matchId,
+      status: "finished" as const,
+      homeScore: parsed.homeScore,
+      awayScore: parsed.awayScore,
+      eventsCreated: createdEvents.length,
+      penaltyShootout: parsed.penaltyShootout ?? null,
+      standingsRefresh: "scheduled" as const,
+    };
   }
 
   async supervisorFeed() {

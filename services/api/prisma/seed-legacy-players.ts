@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import { slugifyPlayerName } from "../src/players/player-slug";
+import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
 import { LEGACY_PLAYER_ROWS, type LegacyPlayerSeedRow } from "./seed-legacy-players-data";
 
 const SLUG_OVERRIDES: Record<string, string> = {
@@ -186,9 +187,24 @@ export type LegacyPlayerSeedResult = {
   sampleSlugs: string[];
 };
 
+function incrementalPlayerUpdate(
+  data: Prisma.PlayerUncheckedCreateInput
+): Prisma.PlayerUncheckedUpdateInput {
+  const {
+    isFeatured: _isFeatured,
+    isPublic: _isPublic,
+    registrationStatus: _registrationStatus,
+    academyId: _academyId,
+    ...rest
+  } = data;
+  return rest;
+}
+
 export async function seedLegacyPlayers(
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  options?: SeedOptions
 ): Promise<LegacyPlayerSeedResult> {
+  const full = isFullSeed(options);
   const academies = await prisma.academy.findMany({
     select: { id: true, slug: true },
   });
@@ -208,7 +224,7 @@ export async function seedLegacyPlayers(
     await prisma.player.upsert({
       where: { slug },
       create: data,
-      update: data,
+      update: full ? data : incrementalPlayerUpdate(data),
     });
 
     if (ratingAttributesPresent(row)) {
@@ -217,6 +233,10 @@ export async function seedLegacyPlayers(
         select: { id: true },
       });
       if (player) {
+        const metricsPayload = {
+          rawAverages: row.rating_attributes as Prisma.InputJsonValue,
+          derivedMetrics: row.rating_attributes as Prisma.InputJsonValue,
+        };
         await prisma.playerAggregatedMetrics.upsert({
           where: {
             playerId_season: { playerId: player.id, season: "rolling" },
@@ -224,13 +244,9 @@ export async function seedLegacyPlayers(
           create: {
             playerId: player.id,
             season: "rolling",
-            rawAverages: row.rating_attributes as Prisma.InputJsonValue,
-            derivedMetrics: row.rating_attributes as Prisma.InputJsonValue,
+            ...metricsPayload,
           },
-          update: {
-            rawAverages: row.rating_attributes as Prisma.InputJsonValue,
-            derivedMetrics: row.rating_attributes as Prisma.InputJsonValue,
-          },
+          update: full ? metricsPayload : {},
         });
       }
     }

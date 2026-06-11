@@ -9,6 +9,7 @@ import {
 } from "../../api/academy";
 import { isAbortError } from "../../api/client";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { InfoTip } from "../../components/InfoTip";
 import { useAcademyAuth } from "./AcademyAuthContext";
 
 const navItems = [
@@ -88,11 +89,9 @@ function mediaHref(item: AcademyMediaItem) {
 function AcademyHeroBanner({
   academy,
   playerCount,
-  mode,
 }: {
   academy: AcademyDashboard["academy"];
   playerCount: number;
-  mode: string;
 }) {
   const initials = academyInitials(academy.name);
   const hasLogo = Boolean(academy.logoUrl?.trim());
@@ -118,20 +117,23 @@ function AcademyHeroBanner({
               <img src={academy.logoUrl!} alt="" />
             </span>
           )}
-          <div>
+          <div className="academy-hero__heading">
             <p className="eyebrow">Academy command centre</p>
             <h1>{academy.name}</h1>
-            <p>
+            <p className="academy-hero__lede">
               Which players are improving, valuable, tactically useful, and ready for
               exposure?
             </p>
           </div>
         </div>
         <div className="academy-hero__meta">
-          <span>{mode.replace(/_/g, " ")}</span>
-          <strong>
-            {playerCount} {playerCount === 1 ? "player" : "players"}
-          </strong>
+          <span className="academy-metric-chip">
+            <span className="academy-metric-chip__label">Squad size</span>
+            <strong className="academy-metric-chip__value">
+              {playerCount}
+              <small>{playerCount === 1 ? "player" : "players"}</small>
+            </strong>
+          </span>
         </div>
       </div>
     </section>
@@ -265,7 +267,7 @@ export function AcademyDashboardApp() {
       </aside>
 
       <main className="academy-main">
-        <AcademyHeroBanner academy={data.academy} playerCount={data.squad.length} mode={data.scope.mode} />
+        <AcademyHeroBanner academy={data.academy} playerCount={data.squad.length} />
 
         {section === "overview" && <OverviewSection data={data} />}
         {section === "players" && <PlayersSection players={data.squad} />}
@@ -359,7 +361,7 @@ function OverviewSection({ data }: { data: AcademyDashboard }) {
               data.valuation.totalValueRangeEur.min,
               data.valuation.totalValueRangeEur.max
             )}
-            detail="Aggregated from latest MVCE valuation runs."
+            detail="Aggregated from latest market valuation runs."
           />
         </div>
       </section>
@@ -383,20 +385,20 @@ function PlayerCard({ player }: { player: AcademySquadPlayer }) {
         </div>
       </div>
       <div className="academy-score-row">
-        <span className={scoreClass(player.developmentIndex)}>
+        <span className={scoreClass(player.developmentIndex)} title="Development index">
           {player.developmentIndex}
           <small>DEV</small>
         </span>
-        <span className={scoreClass(player.tacticalFit)}>
+        <span className={scoreClass(player.tacticalFit)} title="Tactical fit">
           {player.tacticalFit ?? "N/A"}
           <small>FIT</small>
         </span>
-        <span className={scoreClass(player.exposureReadiness)}>
+        <span className={scoreClass(player.exposureReadiness)} title="Exposure readiness">
           {player.exposureReadiness}
           <small>EXP</small>
         </span>
       </div>
-      <p>{player.valuation?.marketValueLabel ?? "MVCE pending"}</p>
+      <p>{player.valuation?.marketValueLabel ?? "Valuation pending"}</p>
     </article>
   );
 }
@@ -440,13 +442,13 @@ function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
 
   return (
     <section className="academy-panel academy-panel--wide">
-      <div className="academy-panel__header">
+      <div className="academy-panel__header academy-panel__header--stacked">
         <div>
           <h2>Player intelligence</h2>
           <p>Filter by football traits and jump into the unified player profile.</p>
         </div>
       </div>
-      <div className="academy-filters">
+      <div className="academy-filters academy-filters--row">
         <FilterSelect label="Age group" value={ageGroup} options={ageGroups} onChange={setAgeGroup} />
         <FilterSelect label="Position" value={position} options={positions} onChange={setPosition} />
         <FilterSelect label="Foot" value={foot} options={feet} onChange={setFoot} />
@@ -488,7 +490,7 @@ function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
                 </td>
                 <td>
                   <span className={scoreClass(player.tacticalFit)}>{player.tacticalFit ?? "N/A"}</span>
-                  <small>{player.tacticalTags.join(", ") || "SIP pending"}</small>
+                  <small>{player.tacticalTags.join(", ") || "Scouting data pending"}</small>
                 </td>
                 <td>{player.valuation?.marketValueLabel ?? "Pending"}</td>
                 <td>
@@ -644,7 +646,7 @@ function PhilosophySection({ data }: { data: AcademyDashboard }) {
           </Link>
         ))}
         {data.philosophy.players.length === 0 && (
-          <p className="academy-empty">Run SIP recalculation to populate philosophy fit rows.</p>
+          <p className="academy-empty">Run scouting recalculation to populate style-fit rows.</p>
         )}
       </div>
     </section>
@@ -657,7 +659,10 @@ function ValuationSection({ data }: { data: AcademyDashboard }) {
       <div className="academy-panel__header">
         <div>
           <h2>Market valuation</h2>
-          <p>Latest MVCE valuations, confidence labels, and score trends.</p>
+          <p>
+            Latest market valuations, confidence labels, and score trends.
+            <InfoTip text="Valuations estimate transfer value from performance, age, competition level, and market signals." />
+          </p>
         </div>
         <strong>
           {formatCurrencyRange(
@@ -673,12 +678,12 @@ function ValuationSection({ data }: { data: AcademyDashboard }) {
             <span>{player.valuation?.confidenceLabel}</span>
             <strong>{player.valuation?.marketValueLabel}</strong>
             <small>
-              MVCE {player.valuation?.adjustedScore} · {player.valuation?.trend}
+              Score {player.valuation?.adjustedScore} · {player.valuation?.trend}
             </small>
           </article>
         ))}
         {data.valuation.latest.length === 0 && (
-          <p className="academy-empty">No MVCE valuation runs yet.</p>
+          <p className="academy-empty">No valuation runs yet.</p>
         )}
       </div>
     </section>

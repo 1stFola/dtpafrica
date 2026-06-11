@@ -426,9 +426,13 @@ function findNearestBenchmark(position, raw, meta){
     return {...p, __distance: isNaN(distance) ? 999 : distance, __similarity: isNaN(similarity) ? 50 : similarity};
   }).sort((a,b) => a.__distance - b.__distance);
 
+  const BENCHMARK_CANDIDATE_COUNT = 6;
+  const candidates = ranked.slice(0, BENCHMARK_CANDIDATE_COUNT);
+
   return {
-    nearest: ranked[0] || {__similarity: 50, __distance: 999},
-    alternatives: ranked.slice(1, 4),
+    rankedCandidates: candidates,
+    nearest: candidates[0] || {__similarity: 50, __distance: 999},
+    alternatives: candidates.slice(1),
     filterInfo: {poolSize: ranked.length}
   };
 }
@@ -460,6 +464,7 @@ function calibrate(meta, raw){
 
   return {
     calibrated: balanced,
+    rankedCandidates: nearestResult.rankedCandidates,
     nearest,
     alternatives: nearestResult.alternatives,
     filterInfo

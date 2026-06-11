@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@dtp/ui";
+import { BenchmarkPlayerHeadshot } from "./BenchmarkPlayerHeadshot";
+import { benchmarkNameFromRecord } from "../utils/benchmarkPlayerHeadshot";
 
 const ATTRIBUTE_GROUPS = [
   {
@@ -55,12 +57,7 @@ function numberFrom(record: Record<string, unknown> | null | undefined, key: str
 }
 
 function benchmarkName(benchmark: Record<string, unknown>) {
-  return String(benchmark.full_name ?? benchmark.playerName ?? "Benchmark profile");
-}
-
-function readBenchmarkOverall(benchmark: Record<string, unknown>) {
-  const value = benchmark.overall_rating ?? benchmark.overallRating;
-  return isNumber(value) ? clampScore(value) : null;
+  return benchmarkNameFromRecord(benchmark);
 }
 
 function similarityPercent(benchmark: Record<string, unknown>) {
@@ -68,31 +65,36 @@ function similarityPercent(benchmark: Record<string, unknown>) {
   return isNumber(value) ? clampScore(value) : null;
 }
 
-function ageFromDateOfBirth(dob: unknown) {
-  if (typeof dob !== "string" || !dob) return null;
-  const born = new Date(dob);
-  if (Number.isNaN(born.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - born.getFullYear();
-  const monthDelta = today.getMonth() - born.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < born.getDate())) age -= 1;
-  return age >= 0 ? age : null;
+function benchmarkTacticalRole(benchmark: Record<string, unknown>) {
+  const candidates = [
+    benchmark.tactical_role,
+    benchmark.tacticalRole,
+    benchmark.position,
+    benchmark.role,
+    benchmark.archetype,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  return null;
 }
 
-function formatAgeLabel(playerAge?: number | null, benchmark?: Record<string, unknown>) {
-  if (playerAge != null) return String(playerAge);
-  const benchmarkAge = ageFromDateOfBirth(benchmark?.date_of_birth);
-  if (benchmarkAge != null) return String(benchmarkAge);
-  const band = benchmark?.age_band;
-  return band ? String(band) : "N/A";
+function initialsFromName(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 type PlaystyleComparisonModalProps = {
   open: boolean;
   onClose: () => void;
   playerName: string;
-  playerAge?: number | null;
-  playerRating?: number | null;
+  playerPhotoUrl?: string | null;
   benchmark: Record<string, unknown>;
   attributes: Record<string, number>;
 };
@@ -101,8 +103,7 @@ function PlaystyleComparisonModal({
   open,
   onClose,
   playerName,
-  playerAge,
-  playerRating,
+  playerPhotoUrl,
   benchmark,
   attributes,
 }: PlaystyleComparisonModalProps) {
@@ -110,9 +111,6 @@ function PlaystyleComparisonModal({
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const benchLabel = benchmarkName(benchmark);
   const similarity = similarityPercent(benchmark) ?? "—";
-  const playerOverall = playerRating != null ? clampScore(playerRating) : "—";
-  const benchmarkOverallLabel = readBenchmarkOverall(benchmark) ?? "—";
-  const ageLabel = formatAgeLabel(playerAge, benchmark);
 
   useEffect(() => {
     if (!open) return;
@@ -168,23 +166,46 @@ function PlaystyleComparisonModal({
         </button>
 
         <header className="playstyle-modal__header">
-          <div className="playstyle-modal__badge playstyle-modal__badge--player">
-            <span className="playstyle-modal__badge-value">{playerOverall}</span>
-            <span className="playstyle-modal__badge-label">Player</span>
-            <strong>{playerName}</strong>
+          <div className="playstyle-modal__profile playstyle-modal__profile--player">
+            <div className="playstyle-modal__badge playstyle-modal__badge--player">
+              <div className="playstyle-modal__identity">
+                <div className="playstyle-modal__photo playstyle-modal__photo--player">
+                  {playerPhotoUrl ? (
+                    <img src={playerPhotoUrl} alt="" loading="lazy" decoding="async" />
+                  ) : (
+                    <span className="playstyle-modal__photo-fallback" aria-hidden="true">
+                      {initialsFromName(playerName)}
+                    </span>
+                  )}
+                </div>
+                <div className="playstyle-modal__name">
+                  <span className="playstyle-modal__badge-label">Player</span>
+                  <strong>{playerName}</strong>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="playstyle-modal__badge playstyle-modal__badge--benchmark">
-            <span className="playstyle-modal__badge-value">{benchmarkOverallLabel}</span>
-            <span className="playstyle-modal__badge-label">Benchmark</span>
-            <strong>{benchLabel}</strong>
+          <div className="playstyle-modal__profile playstyle-modal__profile--benchmark">
+            <div className="playstyle-modal__badge playstyle-modal__badge--benchmark">
+              <div className="playstyle-modal__identity">
+                <BenchmarkPlayerHeadshot
+                  playerName={benchLabel}
+                  className="playstyle-modal__photo playstyle-modal__photo--benchmark"
+                />
+                <div className="playstyle-modal__name">
+                  <span className="playstyle-modal__badge-label">Benchmark</span>
+                  <strong>{benchLabel}</strong>
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
         <div className="playstyle-modal__banner">
           <h2 id={titleId}>Benchmark Similarity: {similarity}%</h2>
           <p>
-            This comparison maps <strong>{playerName}</strong>, age {ageLabel}, against the
-            early-professional benchmark profile of <strong>{benchLabel}</strong> to show how
+            This comparison maps <strong>{playerName}</strong> against the early-professional
+            benchmark profile of <strong>{benchLabel}</strong> to show how
             closely the player&apos;s calibrated attributes align at a comparable development
             stage.
           </p>
@@ -198,11 +219,11 @@ function PlaystyleComparisonModal({
           <div className="playstyle-modal__legend" aria-hidden>
             <span>
               <i className="playstyle-modal__dot playstyle-modal__dot--player" />
-              Player (Blue)
+              Player
             </span>
             <span>
               <i className="playstyle-modal__dot playstyle-modal__dot--benchmark" />
-              Benchmark (Purple)
+              Benchmark
             </span>
           </div>
 
@@ -275,14 +296,12 @@ function PlaystyleComparisonModal({
 
 export function BenchmarkPlaystyleComparison({
   playerName,
-  playerAge,
-  playerRating,
+  playerPhotoUrl,
   benchmark,
   attributes,
 }: {
   playerName: string;
-  playerAge?: number | null;
-  playerRating?: number | null;
+  playerPhotoUrl?: string | null;
   benchmark: Record<string, unknown> | null;
   attributes: Record<string, number>;
 }) {
@@ -291,7 +310,7 @@ export function BenchmarkPlaystyleComparison({
 
   if (!benchmark) {
     return (
-      <article className="profile-panel profile-benchmark">
+      <article className="profile-panel profile-benchmark player-profile-playstyle-comparison">
         <h3>Playstyle comparison</h3>
         <p className="muted">
           Playstyle comparison will appear after calibration saves nearest-pro metadata for this
@@ -303,22 +322,29 @@ export function BenchmarkPlaystyleComparison({
 
   const benchLabel = benchmarkName(benchmark);
   const similarity = similarityPercent(benchmark);
+  const tacticalRole = benchmarkTacticalRole(benchmark);
 
   return (
     <>
-      <article className="profile-panel profile-benchmark">
-        <div className="profile-section-heading">
-          <div>
-            <h3>Playstyle comparison</h3>
-            <p className="muted">
+      <article className="profile-panel profile-benchmark player-profile-playstyle-comparison">
+        <div className="player-profile-playstyle-comparison__inner">
+          <div className="player-profile-playstyle-comparison__left">
+            <span className="player-profile-eyebrow">Playstyle comparison</span>
+            <p className="muted player-profile-playstyle-comparison__copy">
               Compared with {benchLabel}
-              {benchmark.archetype ? ` · ${String(benchmark.archetype)}` : ""}
+              {tacticalRole ? ` · ${tacticalRole}` : ""}
               {similarity != null ? ` · ${similarity}% similarity` : ""}
             </p>
           </div>
-          <Button type="button" variant="secondary" onClick={() => setOpen(true)}>
-            View Playstyle Comparison
-          </Button>
+          <div className="player-profile-playstyle-comparison__right">
+            <Button type="button" variant="secondary" onClick={() => setOpen(true)}>
+              View Playstyle Comparison
+            </Button>
+            <BenchmarkPlayerHeadshot
+              playerName={benchLabel}
+              className="player-profile-playstyle-comparison__headshot"
+            />
+          </div>
         </div>
       </article>
 
@@ -326,8 +352,7 @@ export function BenchmarkPlaystyleComparison({
         open={open}
         onClose={close}
         playerName={playerName}
-        playerAge={playerAge}
-        playerRating={playerRating}
+        playerPhotoUrl={playerPhotoUrl}
         benchmark={benchmark}
         attributes={attributes}
       />

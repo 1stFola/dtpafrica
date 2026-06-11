@@ -15,6 +15,7 @@ import {
   PlayerCategoryRadar,
   type CategoryScore,
 } from "../components/playerProfile/PlayerCategoryRadar";
+import { InfoTip } from "../../../components/InfoTip";
 import { PlayerPitchGraphic } from "../components/playerProfile/PlayerPitchGraphic";
 
 /**
@@ -30,11 +31,17 @@ export type PlayerProfileLinkState = {
   role?: string;
 };
 
-type ProfileTab = "overview" | "scoreboard" | "scouting" | "media";
+type ProfileTab = "overview" | "scoreboard" | "scouting" | "videos" | "photos" | "publications";
 type ProfileMediaItem = NonNullable<PublicPlayerProfile["mediaItems"]>[number] & {
   url: string;
 };
-type PlaystyleBadge = { icon: string; title: string; description: string };
+type PlaystyleBadge = {
+  icon: string;
+  title: string;
+  description: string;
+  fitPercent?: number | null;
+  contextLine?: string | null;
+};
 type CareerStatBox = { label: string; value: string };
 
 const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
@@ -249,6 +256,13 @@ function resolveShirtNumber(player: PublicPlayerProfile): number | null {
   return null;
 }
 
+function readEstimatedPlayerValue(player: PublicPlayerProfile): string | null {
+  const meta = player.benchmarkMetadata;
+  if (!meta || typeof meta !== "object") return null;
+  const value = (meta as Record<string, unknown>).estimatedPlayerValue;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function buildBioFacts(
   player: PublicPlayerProfile,
   valuation: PublicPlayerProfile["valuation"]
@@ -268,6 +282,7 @@ function buildBioFacts(
   facts.push({ label: "Position", value: player.positionPrimary });
   const shirt = resolveShirtNumber(player);
   if (shirt != null) facts.push({ label: "Shirt number", value: String(shirt) });
+  const estimatedValue = readEstimatedPlayerValue(player);
   if (valuation?.marketValueLabel) {
     facts.push({
       label: "Player value",
@@ -286,44 +301,87 @@ function buildBioFacts(
       ),
       highlight: true,
     });
+  } else if (estimatedValue) {
+    facts.push({
+      label: "Player value",
+      value: estimatedValue,
+      highlight: true,
+    });
   }
   return facts;
+}
+
+const PHILOSOPHY_FORMATION_CONTEXT: Record<string, { formation: string; slot: string }> = {
+  "Tiki-Taka": { formation: "4-3-3", slot: "cm" },
+  "Tiki Taka": { formation: "4-3-3", slot: "cm" },
+  Gegenpress: { formation: "4-2-3-1", slot: "lam" },
+  "Counter attack": { formation: "5-3-2", slot: "st" },
+  "Counter Attack": { formation: "5-3-2", slot: "st" },
+  "Winger play": { formation: "4-3-3", slot: "lw" },
+  "Winger Play": { formation: "4-3-3", slot: "lw" },
+  "Total football": { formation: "4-3-3", slot: "rw" },
+  "Total Football": { formation: "4-3-3", slot: "rw" },
+};
+
+const TACTICAL_TRAIT_CONTEXT: Record<string, { formation: string; slot: string }> = {
+  Gegenpress: { formation: "4-2-3-1", slot: "lam" },
+  "Tiki-taka": { formation: "4-3-3", slot: "cm" },
+  "Counter attack": { formation: "5-3-2", slot: "st" },
+  "Winger play": { formation: "4-3-3", slot: "lw" },
+  "Total football": { formation: "4-3-3", slot: "rw" },
+};
+
+function formatFormationContext(formation: string, slot?: string | null): string {
+  const normalizedSlot = slot?.trim().toLowerCase();
+  return normalizedSlot ? `${formation} · ${normalizedSlot}` : formation;
+}
+
+function resolvePhilosophyContext(name: string, slotHint?: string | null): string {
+  const mapped = PHILOSOPHY_FORMATION_CONTEXT[name];
+  if (mapped) {
+    return formatFormationContext(mapped.formation, slotHint ?? mapped.slot);
+  }
+  return slotHint ? formatFormationContext("4-3-3", slotHint) : "4-3-3 · cm";
 }
 
 function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
   const badges: PlaystyleBadge[] = [];
   const seen = new Set<string>();
-  const push = (icon: string, title: string, description: string) => {
-    const key = title.trim().toLowerCase();
+  const push = (badge: PlaystyleBadge) => {
+    const key = badge.title.trim().toLowerCase();
     if (!key || seen.has(key)) return;
     seen.add(key);
-    badges.push({ icon, title, description });
+    badges.push(badge);
   };
 
   for (const philosophy of player.philosophies ?? []) {
-    push(
-      "◆",
-      philosophy.name,
-      `${philosophy.score}% philosophy alignment from calibrated SIP scoring.`
-    );
+    push({
+      icon: "◆",
+      title: philosophy.name,
+      fitPercent: clampScore(philosophy.score),
+      contextLine: resolvePhilosophyContext(philosophy.name, player.positionPrimary?.toLowerCase()),
+      description: "How well the player suits this playing style based on match data.",
+    });
   }
 
   for (const fit of player.scoutingIntelligence?.philosophyFits ?? []) {
-    push(
-      "◆",
-      fit.philosophy,
-      `${Math.round(fit.philosophyFitScore)} fit in ${fit.formation}${
-        fit.positionSlot ? ` · ${fit.positionSlot}` : ""
-      }.`
-    );
+    push({
+      icon: "◆",
+      title: fit.philosophy,
+      fitPercent: clampScore(fit.philosophyFitScore),
+      contextLine: formatFormationContext(fit.formation, fit.positionSlot),
+      description: "Saved style-fit result from scouting analysis.",
+    });
   }
 
   for (const score of player.scoutingIntelligence?.topTacticalScores ?? []) {
-    push(
-      "⚡",
-      score.label,
-      `Tactical score ${Math.round(score.value)} — standout system trait.`
-    );
+    push({
+      icon: "⚡",
+      title: score.label,
+      fitPercent: clampScore(score.value),
+      contextLine: "System Trait",
+      description: "Standout tactical trait from match performance data.",
+    });
   }
 
   const tactical = player.tacticalSummary;
@@ -339,22 +397,37 @@ function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
       .slice(0, 2);
     for (const trait of tacticalTraits) {
       if (trait.value >= 55) {
-        push("◎", trait.label, `SIP tactical index ${Math.round(trait.value)}.`);
+        const mapped = TACTICAL_TRAIT_CONTEXT[trait.label];
+        push({
+          icon: "◎",
+          title: trait.label,
+          fitPercent: clampScore(trait.value),
+          contextLine: mapped
+            ? formatFormationContext(mapped.formation, mapped.slot)
+            : "System Trait",
+          description: "Tactical style score from recent match metrics.",
+        });
       }
     }
   }
 
   const benchmark = player.benchmarkMetadata?.nearest;
   if (benchmark && typeof benchmark === "object" && "name" in benchmark) {
-    push("★", "Benchmark comp", `Nearest comp: ${String(benchmark.name)}.`);
+    push({
+      icon: "★",
+      title: "Benchmark comp",
+      contextLine: "System Trait",
+      description: `Nearest comp: ${String(benchmark.name)}.`,
+    });
   }
 
   if (badges.length === 0) {
-    push(
-      "◎",
-      "Versatile profile",
-      "Playstyle badges populate once SIP tactical and philosophy data sync."
-    );
+    push({
+      icon: "◎",
+      title: "Versatile profile",
+      contextLine: "4-3-3 · cm",
+      description: "Playstyle badges appear once match and style-fit data is available.",
+    });
   }
 
   return badges.slice(0, 6);
@@ -534,8 +607,11 @@ export function PlayerProfilePage() {
   const mediaItems = buildMediaItems(player);
   const videoItems = mediaItems.filter((item) => item.type === "video");
   const photoItems = mediaItems.filter((item) => item.type === "photo");
-  const otherMediaItems = mediaItems.filter(
-    (item) => item.type !== "video" && item.type !== "photo"
+  const publicationItems = mediaItems.filter(
+    (item) =>
+      item.type === "article" ||
+      item.type === "publication" ||
+      (item.type !== "video" && item.type !== "photo")
   );
   const benchmark = player.benchmarkMetadata?.nearest ?? null;
   const scoreboard = player.scoreboardHistory;
@@ -545,10 +621,7 @@ export function PlayerProfilePage() {
   const isGk = isGkProfile(player);
   const careerStatBoxes = buildCareerStatBoxes(player, minutesPlayed, isGk);
   const playstyleBadges = buildPlaystyleBadges(player);
-  const positionLabel = resolvePositionFullLabel(
-    player.positionPrimary,
-    player.positionFull
-  );
+  const positionLabel = resolvePositionFullLabel(player.positionPrimary.trim(), null);
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
     player.ageGroup ? `${player.ageGroup} pathway candidate` : "Open age-band profile",
@@ -566,11 +639,19 @@ export function PlayerProfilePage() {
     { id: "scouting", label: "Scouting Details" },
     { id: "scoreboard", label: "ScoreBoard Metrics" },
     {
-      id: "media",
+      id: "videos",
+      label: videoItems.length > 0 ? `Videos (${videoItems.length})` : "Videos",
+    },
+    {
+      id: "photos",
+      label: photoItems.length > 0 ? `Photos (${photoItems.length})` : "Photos",
+    },
+    {
+      id: "publications",
       label:
-        mediaItems.length > 0
-          ? `Media (Video, Photos, Publications) (${mediaItems.length})`
-          : "Media (Video, Photos, Publications)",
+        publicationItems.length > 0
+          ? `Publications (${publicationItems.length})`
+          : "Publications",
     },
   ];
 
@@ -633,11 +714,14 @@ export function PlayerProfilePage() {
           <section className="profile-section">
             <div className="profile-section-heading">
               <div>
-                <span className="player-profile-eyebrow">Rating attributes</span>
-                <h2 className="player-profile-heading">18-point profile</h2>
+                <span className="player-profile-eyebrow">Skill ratings</span>
+                <h2 className="player-profile-heading">
+                  18-point profile
+                  <InfoTip text="Eighteen core skills grouped into athletic, technical, mental, and team-impact categories." />
+                </h2>
               </div>
               <span className="profile-data-note">
-                {player.ratingAttributes ? "Calibrated" : "Derived fallback"}
+                {player.ratingAttributes ? "From match data" : "Estimated from profile"}
               </span>
             </div>
 
@@ -675,8 +759,7 @@ export function PlayerProfilePage() {
 
             <BenchmarkPlaystyleComparison
               playerName={player.displayName}
-              playerAge={player.age}
-              playerRating={player.overallRating}
+              playerPhotoUrl={player.playerPhotoUrl}
               benchmark={benchmark}
               attributes={attributes}
             />
@@ -707,21 +790,6 @@ export function PlayerProfilePage() {
             </section>
           )}
 
-          {player.positionFit && (
-            <section className="profile-section">
-              <span className="player-profile-eyebrow">Position intelligence</span>
-              <h2 className="player-profile-heading">Role fit</h2>
-              <p className="player-profile-muted">
-                Primary {player.positionFit.primaryPositionFit}
-                {player.positionFit.secondaryPositionFit
-                  ? ` · Secondary ${player.positionFit.secondaryPositionFit}`
-                  : ""}
-                {player.positionFit.confidence
-                  ? ` · ${Math.round(player.positionFit.confidence)}% confidence`
-                  : ""}
-              </p>
-            </section>
-          )}
         </>
       )}
 
@@ -739,11 +807,34 @@ export function PlayerProfilePage() {
         </>
       )}
 
-      {activeTab === "media" && (
-        <CombinedMediaSection
-          videoItems={videoItems}
-          photoItems={photoItems}
-          otherMediaItems={otherMediaItems}
+      {activeTab === "videos" && (
+        <TypedMediaTab
+          eyebrow="Media"
+          title="Videos"
+          emptyTitle="No highlight videos yet"
+          emptyDetail="Highlight reels and match clips will appear here once they are linked to this profile."
+          items={videoItems}
+        />
+      )}
+
+      {activeTab === "photos" && (
+        <TypedMediaTab
+          eyebrow="Media"
+          title="Photos"
+          emptyTitle="No photos yet"
+          emptyDetail="Profile and action photos will appear here once they are linked to this profile."
+          items={photoItems}
+          gallery
+        />
+      )}
+
+      {activeTab === "publications" && (
+        <TypedMediaTab
+          eyebrow="Media"
+          title="Publications"
+          emptyTitle="No publications yet"
+          emptyDetail="Press coverage and scouting articles will appear here once they are linked to this profile."
+          items={publicationItems}
         />
       )}
     </div>
@@ -853,8 +944,13 @@ function PlayerCardBanner({
         <PlayerBioGrid facts={bioFacts} />
         <PlayerPitchGraphic
           positionPrimary={player.positionPrimary}
-          role={player.role}
           positionFull={player.positionFull}
+          positionSecondary={player.positionSecondary}
+          positionFitSecondary={player.positionFit?.secondaryPositionFit ?? null}
+          scoutingSecondaryPositionFit={
+            player.scoutingIntelligence?.positionFit?.secondaryPositionFit ?? null
+          }
+          ratingAttributes={player.ratingAttributes}
         />
         <PlayerCategoryRadar scores={categoryScores} />
       </div>
@@ -903,8 +999,16 @@ function PlaystyleBadgesSection({ badges }: { badges: PlaystyleBadge[] }) {
             <span className="player-profile-playstyle__icon" aria-hidden="true">
               {badge.icon}
             </span>
-            <div>
-              <strong className="player-profile-playstyle__title">{badge.title}</strong>
+            <div className="player-profile-playstyle__body">
+              <div className="player-profile-playstyle__head">
+                <strong className="player-profile-playstyle__title">{badge.title}</strong>
+                {badge.fitPercent != null && (
+                  <span className="player-profile-playstyle__fit">{badge.fitPercent}% fit</span>
+                )}
+              </div>
+              {badge.contextLine && (
+                <span className="player-profile-playstyle__context">{badge.contextLine}</span>
+              )}
               <p className="player-profile-playstyle__desc">{badge.description}</p>
             </div>
           </li>
@@ -963,59 +1067,32 @@ function CareerStatBoxesSection({ stats }: { stats: CareerStatBox[] }) {
   );
 }
 
-function CombinedMediaSection({
-  videoItems,
-  photoItems,
-  otherMediaItems,
+function TypedMediaTab({
+  eyebrow,
+  title,
+  emptyTitle,
+  emptyDetail,
+  items,
+  gallery = false,
 }: {
-  videoItems: ProfileMediaItem[];
-  photoItems: ProfileMediaItem[];
-  otherMediaItems: ProfileMediaItem[];
+  eyebrow: string;
+  title: string;
+  emptyTitle: string;
+  emptyDetail: string;
+  items: ProfileMediaItem[];
+  gallery?: boolean;
 }) {
-  const hasAny =
-    videoItems.length > 0 || photoItems.length > 0 || otherMediaItems.length > 0;
-
-  if (!hasAny) {
-    return (
-      <section className="profile-section">
-        <span className="player-profile-eyebrow">Media</span>
-        <h2 className="player-profile-heading">Media (Video, Photos, Publications)</h2>
-        <div className="profile-empty-state">
-          <strong>No public media has been attached to this profile yet.</strong>
-          <p>Public media can be added through admin profile management or calibration imports.</p>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="profile-section player-profile-media">
-      <span className="player-profile-eyebrow">Media</span>
-      <h2 className="player-profile-heading">Media (Video, Photos, Publications)</h2>
-      {videoItems.length > 0 && (
-        <MediaSection
-          title="Video"
-          empty=""
-          items={videoItems}
-          embedded
-        />
-      )}
-      {photoItems.length > 0 && (
-        <MediaSection
-          title="Photos"
-          empty=""
-          items={photoItems}
-          gallery
-          embedded
-        />
-      )}
-      {otherMediaItems.length > 0 && (
-        <MediaSection
-          title="Publications"
-          empty=""
-          items={otherMediaItems}
-          embedded
-        />
+      <span className="player-profile-eyebrow">{eyebrow}</span>
+      <h2 className="player-profile-heading">{title}</h2>
+      {items.length === 0 ? (
+        <div className="profile-empty-state player-profile-media-empty">
+          <strong>{emptyTitle}</strong>
+          <p>{emptyDetail}</p>
+        </div>
+      ) : (
+        <MediaSection title="" empty="" items={items} gallery={gallery} embedded />
       )}
     </section>
   );
@@ -1254,13 +1331,16 @@ function ScoutingIntelligenceSection({
 
   if (!hasSnapshot) {
     return (
-      <section className="profile-section">
-        <h2>Scouting Intelligence</h2>
-        <div className="profile-empty-state">
-          <strong>No SIP scouting snapshot yet.</strong>
+      <section className="profile-section scouting-intel">
+        <div className="scouting-intel__header">
+          <span className="profile-section__eyebrow">Scouting intelligence</span>
+          <h2>Style and tactical fit</h2>
+        </div>
+        <div className="profile-empty-state scouting-intel__empty">
+          <strong>No scouting snapshot yet.</strong>
           <p>
-            Match metrics, calibration imports, or ScoreBoard ingest are required before tactical
-            fit and philosophy matching can be computed.
+            Match metrics, calibration imports, or ScoreBoard ingest are required before style fit
+            and tactical matching can be computed.
           </p>
         </div>
       </section>
@@ -1268,16 +1348,19 @@ function ScoutingIntelligenceSection({
   }
 
   return (
-    <section className="profile-section">
-      <div className="profile-section-heading">
+    <section className="profile-section scouting-intel">
+      <div className="scouting-intel__header">
         <div>
-          <span className="profile-section__eyebrow">Scouting Intelligence</span>
-          <h2>Tactical and fit snapshot</h2>
+          <span className="profile-section__eyebrow">Scouting intelligence</span>
+          <h2>
+            Style and tactical fit
+            <InfoTip text="How this player fits different playing styles and tactical systems, based on match performance data." />
+          </h2>
         </div>
         {scouting.aggregateMetrics && (
-          <span className="profile-data-note">
-            {scouting.aggregateMetrics.matchesPlayed} SIP match
-            {scouting.aggregateMetrics.matchesPlayed === 1 ? "" : "es"}
+          <span className="scouting-intel__meta">
+            {scouting.aggregateMetrics.matchesPlayed} match
+            {scouting.aggregateMetrics.matchesPlayed === 1 ? "" : "es"} analysed
             {scouting.aggregateMetrics.minutesPlayed > 0
               ? ` · ${formatMinutesPlayed(
                   Math.round(scouting.aggregateMetrics.minutesPlayed)
@@ -1287,79 +1370,82 @@ function ScoutingIntelligenceSection({
         )}
       </div>
 
-      <div className="profile-facts profile-facts--wide">
-        <div>
-          <span>Tactical fit</span>
-          <strong>
+      <div className="scouting-intel__stats">
+        <article className="scouting-intel__stat-card">
+          <span className="scouting-intel__stat-label">
+            Tactical fit
+            <InfoTip text="Overall score for how well the player suits your tactical system." />
+          </span>
+          <strong className="scouting-intel__stat-value">
             {scouting.tacticalFit
               ? `${scouting.tacticalFit.score} · ${scouting.tacticalFit.label}`
               : "Pending"}
           </strong>
-        </div>
-        <div>
-          <span>Philosophy matching</span>
-          <strong>
+        </article>
+        <article className="scouting-intel__stat-card">
+          <span className="scouting-intel__stat-label">
+            Best style match
+            <InfoTip text="The playing philosophy this player aligns with most strongly." />
+          </span>
+          <strong className="scouting-intel__stat-value">
             {scouting.philosophyMatch
               ? `${scouting.philosophyMatch.score}% · ${scouting.philosophyMatch.philosophy}`
               : "Pending"}
           </strong>
-        </div>
+        </article>
         {scouting.aggregateMetrics && scouting.aggregateMetrics.minutesPlayed > 0 && (
-          <div>
-            <span>Rolling minutes</span>
-            <strong>
+          <article className="scouting-intel__stat-card">
+            <span className="scouting-intel__stat-label">
+              Minutes tracked
+              <InfoTip text="Total minutes from matches used in this scouting snapshot." />
+            </span>
+            <strong className="scouting-intel__stat-value">
               {formatMinutesPlayed(Math.round(scouting.aggregateMetrics.minutesPlayed))}
             </strong>
-          </div>
+          </article>
         )}
       </div>
 
       {scouting.topTacticalScores.length > 0 && (
-        <div className="tactical-grid">
-          {scouting.topTacticalScores.map((score) => (
-            <div key={score.label}>
-              <span className="label">{score.label}</span>
-              <strong>{Math.round(score.value)}</strong>
-            </div>
-          ))}
+        <div className="scouting-intel__traits">
+          <h3 className="scouting-intel__section-title">Top tactical traits</h3>
+          <div className="scouting-intel__trait-grid">
+            {scouting.topTacticalScores.map((score) => (
+              <article key={score.label} className="scouting-intel__trait-card">
+                <span className="scouting-intel__trait-label">{score.label}</span>
+                <strong className="scouting-intel__trait-score">{Math.round(score.value)}</strong>
+              </article>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className="profile-detail-grid">
-        <article className="profile-panel">
-          <h3>Position intelligence</h3>
-          <div className="profile-metric-list">
-            <span>Primary fit</span>
-            <strong>{scouting.positionFit?.primaryPositionFit ?? "Pending"}</strong>
-            <span>Secondary fit</span>
-            <strong>{scouting.positionFit?.secondaryPositionFit ?? "Pending"}</strong>
-            <span>Confidence</span>
-            <strong>
-              {scouting.positionFit ? `${Math.round(scouting.positionFit.confidence)}%` : "Pending"}
-            </strong>
-          </div>
-        </article>
-
-        <article className="profile-panel">
-          <h3>Philosophy fits</h3>
-          {scouting.philosophyFits.length === 0 ? (
-            <p className="muted">No saved philosophy-fit rows yet.</p>
-          ) : (
-            <ul className="profile-card-list">
-              {scouting.philosophyFits.map((fit) => (
-                <li key={`${fit.formation}-${fit.philosophy}-${fit.positionSlot ?? "any"}`}>
+      <article className="scouting-intel__panel">
+        <h3 className="scouting-intel__section-title">Playing style fits</h3>
+        {scouting.philosophyFits.length === 0 ? (
+          <p className="muted">No saved style-fit results yet.</p>
+        ) : (
+          <ul className="scouting-intel__fit-list">
+            {scouting.philosophyFits.map((fit) => (
+              <li
+                key={`${fit.formation}-${fit.philosophy}-${fit.positionSlot ?? "any"}`}
+                className="scouting-intel__fit-row"
+              >
+                <div>
                   <strong>{fit.philosophy}</strong>
                   <span>
                     {fit.formation}
-                    {fit.positionSlot ? ` · ${fit.positionSlot}` : ""} ·{" "}
-                    {Math.round(fit.philosophyFitScore)} fit
+                    {fit.positionSlot ? ` · ${fit.positionSlot}` : ""}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-      </div>
+                </div>
+                <span className="scouting-intel__fit-score">
+                  {Math.round(fit.philosophyFitScore)}% fit
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </article>
     </section>
   );
 }
@@ -1374,9 +1460,12 @@ function ValuationSection({
   if (!valuation) {
     return (
       <section className="profile-section">
-        <h2>MVCE valuation</h2>
+        <h2>
+          Market valuation
+          <InfoTip text="Estimated transfer value range based on performance, age, competition level, and market signals." />
+        </h2>
         <div className="profile-empty-state">
-          <strong>No MVCE valuation has been generated yet.</strong>
+          <strong>No valuation has been generated yet.</strong>
           <p>Generate a valuation to show projected market range and scout notes here.</p>
           <Link to={`/valuation/player/${playerId}`} className="text-link">
             Open valuation workspace
@@ -1393,8 +1482,11 @@ function ValuationSection({
     <section className="profile-section">
       <div className="profile-section-heading">
         <div>
-          <span className="profile-section__eyebrow">MVCE valuation</span>
-          <h2>Market value and confidence</h2>
+          <span className="profile-section__eyebrow">Market valuation</span>
+          <h2>
+            Value and confidence
+            <InfoTip text="Projected market value with a confidence band based on available match and verification data." />
+          </h2>
         </div>
         <Link to={`/valuation/player/${playerId}`} className="text-link">
           Open report
@@ -1409,11 +1501,17 @@ function ValuationSection({
         </div>
         <div className="profile-facts">
           <div>
-            <span>Adjusted score</span>
+            <span>
+              Overall score
+              <InfoTip text="Final valuation score after all factors and multipliers are applied." />
+            </span>
             <strong>{Math.round(valuation.adjustedScore)}</strong>
           </div>
           <div>
-            <span>Confidence</span>
+            <span>
+              Confidence
+              <InfoTip text="How reliable this valuation is given match data, footage, and competition level." />
+            </span>
             <strong>{valuation.confidenceLabel}</strong>
           </div>
           <div>
@@ -1426,7 +1524,10 @@ function ValuationSection({
             </strong>
           </div>
           <div>
-            <span>Base score</span>
+            <span>
+              Base score
+              <InfoTip text="Starting score from core factors before market and verification multipliers." />
+            </span>
             <strong>{Math.round(valuation.baseScore)}</strong>
           </div>
         </div>
@@ -1479,7 +1580,7 @@ function MediaSection({
 
   return (
     <div className={sectionClass}>
-      <h3 className="player-profile-subheading">{title}</h3>
+      {title ? <h3 className="player-profile-subheading">{title}</h3> : null}
       {items.length === 0 ? (
         empty ? (
           <div className="profile-empty-state">

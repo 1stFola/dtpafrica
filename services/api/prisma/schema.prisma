@@ -498,6 +498,7 @@ model SbHighlight {
   eventId       String?  @map("event_id")
   title         String
   youtubeUrl    String   @map("youtube_url")
+  mediaType     String   @default("video") @map("media_type")
   duration      String?  @map("duration")
   isPublished   Boolean  @default(true) @map("is_published")
   publishedAt   DateTime @default(now()) @map("published_at")

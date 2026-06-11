@@ -23,6 +23,9 @@ import {
   UpdateContactMessageArchiveDto,
   UpdateContactMessageReadDto,
 } from "./dto/update-contact-message.dto";
+import { QuickEditPlayerDto } from "./dto/quick-edit-player.dto";
+import { BulkUpdatePlayersDto } from "./dto/bulk-update-players.dto";
+import { RunDatabaseSeedDto } from "./dto/run-database-seed.dto";
 import { UpdatePlayerAdminDto } from "./dto/update-player-admin.dto";
 import { PublishBlogDto } from "./dto/publish-blog.dto";
 import { UpsertAcademyDto } from "./dto/upsert-academy.dto";
@@ -96,13 +99,30 @@ export class AdminController {
   listPlayers(
     @Query("q") q?: string,
     @Query("status") status?: string,
+    @Query("academyId") academyId?: string,
+    @Query("position") position?: string,
+    @Query("featured") featured?: string,
+    @Query("hasMedia") hasMedia?: string,
+    @Query("sort") sort?: string,
+    @Query("sortDir") sortDir?: string,
     @Query("limit") limit?: string
   ) {
     return this.players.list({
       q,
       status,
+      academyId,
+      position,
+      featured,
+      hasMedia,
+      sort,
+      sortDir,
       limit: limit != null ? Number(limit) : undefined,
     });
+  }
+
+  @Patch("players/bulk")
+  bulkUpdatePlayers(@Body() dto: BulkUpdatePlayersDto) {
+    return this.players.bulkUpdate(dto);
   }
 
   @Get("players/slug-preview")
@@ -118,6 +138,16 @@ export class AdminController {
     return this.players.update(id, dto);
   }
 
+  @Get("players/:id/quick-edit")
+  getPlayerQuickEdit(@Param("id") id: string) {
+    return this.players.getQuickEditContext(id);
+  }
+
+  @Patch("players/:id/quick-edit")
+  quickEditPlayer(@Param("id") id: string, @Body() dto: QuickEditPlayerDto) {
+    return this.players.quickEdit(id, dto);
+  }
+
   @Get("calibration/players/:id")
   getCalibrationContext(@Param("id") id: string) {
     return this.calibration.getPlayerMetrics(id);
@@ -130,14 +160,24 @@ export class AdminController {
         save: false,
         metricsOverride: body.metrics,
         playerInfo: body.player,
+        primaryBenchmarkIndex: body.primaryBenchmarkIndex,
       });
     }
-    return this.calibration.runAdhoc(body.player, body.metrics, false);
+    return this.calibration.runAdhoc(
+      body.player,
+      body.metrics,
+      false,
+      body.primaryBenchmarkIndex,
+    );
   }
 
   @Post("calibration/players")
   createCalibratedPlayer(@Body() body: CreateCalibratedPlayerDto) {
-    return this.calibration.createPlayerFromCalibration(body.player, body.metrics);
+    return this.calibration.createPlayerFromCalibration(
+      body.player,
+      body.metrics,
+      body.primaryBenchmarkIndex,
+    );
   }
 
   @Post("players/:id/calibrate")
@@ -146,6 +186,7 @@ export class AdminController {
       save: body.save !== false,
       metricsOverride: body.metrics,
       playerInfo: body.player,
+      primaryBenchmarkIndex: body.primaryBenchmarkIndex,
     });
   }
 
@@ -266,7 +307,7 @@ export class AdminController {
   }
 
   @Post("database/seed")
-  runDatabaseSeed() {
-    return this.seed.run();
+  runDatabaseSeed(@Body() dto: RunDatabaseSeedDto) {
+    return this.seed.run(dto.mode ?? "incremental");
   }
 }

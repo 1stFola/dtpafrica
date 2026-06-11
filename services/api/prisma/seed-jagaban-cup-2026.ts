@@ -6,6 +6,11 @@ import {
   toGoogleDrivePreviewUrl,
   toMatchPhotoEntries,
 } from "@dtp/engines";
+import {
+  isFullSeed,
+  shouldPreserveSbMatch,
+  type SeedOptions,
+} from "../src/seed/seed-options";
 import { JAGABAN_MATCH_MEDIA } from "./seed-jagaban-media-data";
 
 const COMP_SLUG = "jagaban-cup-2026";
@@ -628,7 +633,7 @@ async function seedSquads(
   return squadByLabel;
 }
 
-export async function seedJagabanCup2026(prisma: PrismaClient) {
+export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOptions) {
   const jagabanConfig = {
     editionLabel: "Jagaban Cup 2026",
     groupCount: 2,
@@ -697,12 +702,14 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
   const matchIds = MATCHES.map((m) => m.id);
   const teamSlugs = TEAMS.map((t) => t.slug);
 
-  await prisma.sbMatch.deleteMany({
-    where: { competitionId: comp.id, id: { notIn: matchIds } },
-  });
-  await prisma.sbTeam.deleteMany({
-    where: { competitionId: comp.id, slug: { notIn: teamSlugs } },
-  });
+  if (isFullSeed(options)) {
+    await prisma.sbMatch.deleteMany({
+      where: { competitionId: comp.id, id: { notIn: matchIds } },
+    });
+    await prisma.sbTeam.deleteMany({
+      where: { competitionId: comp.id, slug: { notIn: teamSlugs } },
+    });
+  }
 
   const teamIds: Record<string, string> = {};
   for (const t of TEAMS) {
@@ -733,58 +740,64 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
 
   let eventCount = 0;
   for (const m of MATCHES) {
+    const preserve = await shouldPreserveSbMatch(prisma, m.id, options);
     const stageId = stageByKey.get(m.stageKey);
-    await prisma.sbMatch.upsert({
-      where: { id: m.id },
-      update: {
-        homeScore: m.homeScore,
-        awayScore: m.awayScore,
-        status: "finished",
-        stats: m.stats,
-        meta: m.meta ?? null,
-        stageKey: m.stageKey,
-        stageId,
-        matchday: m.matchday,
-        roundLabel: m.roundLabel,
-        venue: m.venue,
-        kickoffAt: new Date(m.kickoffAt),
-        homeTeamId: teamIds[m.homeSlug],
-        awayTeamId: teamIds[m.awaySlug],
-      },
-      create: {
-        id: m.id,
-        competitionId: comp.id,
-        stageId,
-        stageKey: m.stageKey,
-        matchday: m.matchday,
-        homeTeamId: teamIds[m.homeSlug],
-        awayTeamId: teamIds[m.awaySlug],
-        status: "finished",
-        homeScore: m.homeScore,
-        awayScore: m.awayScore,
-        kickoffAt: new Date(m.kickoffAt),
-        venue: m.venue,
-        roundLabel: m.roundLabel,
-        stats: m.stats,
-        meta: m.meta ?? null,
-      },
-    });
 
-    await prisma.sbMatchEvent.deleteMany({ where: { matchId: m.id } });
-
-    for (const ev of m.events) {
-      await prisma.sbMatchEvent.create({
-        data: {
-          matchId: m.id,
-          teamId: teamIds[ev.teamSlug],
-          type: ev.type,
-          minute: ev.minute,
-          playerLabel: ev.playerLabel,
-          assistLabel: ev.assistLabel,
-          detail: ev.detail,
+    if (!preserve) {
+      await prisma.sbMatch.upsert({
+        where: { id: m.id },
+        update: {
+          homeScore: m.homeScore,
+          awayScore: m.awayScore,
+          status: "finished",
+          stats: m.stats,
+          meta: m.meta ?? null,
+          stageKey: m.stageKey,
+          stageId,
+          matchday: m.matchday,
+          roundLabel: m.roundLabel,
+          venue: m.venue,
+          kickoffAt: new Date(m.kickoffAt),
+          homeTeamId: teamIds[m.homeSlug],
+          awayTeamId: teamIds[m.awaySlug],
+        },
+        create: {
+          id: m.id,
+          competitionId: comp.id,
+          stageId,
+          stageKey: m.stageKey,
+          matchday: m.matchday,
+          homeTeamId: teamIds[m.homeSlug],
+          awayTeamId: teamIds[m.awaySlug],
+          status: "finished",
+          homeScore: m.homeScore,
+          awayScore: m.awayScore,
+          kickoffAt: new Date(m.kickoffAt),
+          venue: m.venue,
+          roundLabel: m.roundLabel,
+          stats: m.stats,
+          meta: m.meta ?? null,
         },
       });
-      eventCount += 1;
+
+      if (isFullSeed(options)) {
+        await prisma.sbMatchEvent.deleteMany({ where: { matchId: m.id } });
+      }
+
+      for (const ev of m.events) {
+        await prisma.sbMatchEvent.create({
+          data: {
+            matchId: m.id,
+            teamId: teamIds[ev.teamSlug],
+            type: ev.type,
+            minute: ev.minute,
+            playerLabel: ev.playerLabel,
+            assistLabel: ev.assistLabel,
+            detail: ev.detail,
+          },
+        });
+        eventCount += 1;
+      }
     }
   }
 
@@ -795,7 +808,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
     }),
   ]);
 
-  await seedJagabanMatchMedia(prisma, comp.id);
+  await seedJagabanMatchMedia(prisma, comp.id, options);
 
   console.log("Jagaban Cup 2026 seeded:", COMP_SLUG);
   console.log("  matches:", matchCount, "(expected 14)");
@@ -805,11 +818,17 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
   return comp;
 }
 
-async function seedJagabanMatchMedia(prisma: PrismaClient, competitionId: string) {
+async function seedJagabanMatchMedia(
+  prisma: PrismaClient,
+  competitionId: string,
+  options?: SeedOptions
+) {
   const matchIds = JAGABAN_MATCH_MEDIA.map((m) => m.matchId);
-  await prisma.sbHighlight.deleteMany({
-    where: { competitionId, matchId: { in: matchIds } },
-  });
+  if (isFullSeed(options)) {
+    await prisma.sbHighlight.deleteMany({
+      where: { competitionId, matchId: { in: matchIds } },
+    });
+  }
 
   for (const block of JAGABAN_MATCH_MEDIA) {
     const match = await prisma.sbMatch.findUnique({
@@ -817,6 +836,7 @@ async function seedJagabanMatchMedia(prisma: PrismaClient, competitionId: string
       select: { id: true, meta: true },
     });
     if (!match) continue;
+    if (await shouldPreserveSbMatch(prisma, block.matchId, options)) continue;
 
     const existingMeta =
       match.meta && typeof match.meta === "object" && !Array.isArray(match.meta)
@@ -834,14 +854,19 @@ async function seedJagabanMatchMedia(prisma: PrismaClient, competitionId: string
       },
     });
 
-    await prisma.sbHighlight.create({
-      data: {
-        competitionId,
-        matchId: block.matchId,
-        title: block.title,
-        youtubeUrl: toGoogleDrivePreviewUrl(block.driveId),
-        isPublished: true,
-      },
+    const existingHighlight = await prisma.sbHighlight.findFirst({
+      where: { competitionId, matchId: block.matchId, title: block.title },
     });
+    if (!existingHighlight) {
+      await prisma.sbHighlight.create({
+        data: {
+          competitionId,
+          matchId: block.matchId,
+          title: block.title,
+          youtubeUrl: toGoogleDrivePreviewUrl(block.driveId),
+          isPublished: true,
+        },
+      });
+    }
   }
 }

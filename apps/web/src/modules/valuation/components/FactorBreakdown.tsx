@@ -1,4 +1,6 @@
+import { InfoTip } from "../../../components/InfoTip";
 import type { ValuationReport } from "../../../api/mvce";
+import { VALUATION_FACTOR_TIPS } from "../factorTips";
 
 export function FactorBreakdown({
   factors,
@@ -15,7 +17,15 @@ export function FactorBreakdown({
       {factors.map((f) => (
         <li key={f.key} className="mvce-factor">
           <div className="mvce-factor__head">
-            <span>{f.label}</span>
+            <span className="mvce-factor__label">
+              <InfoTip
+                text={
+                  VALUATION_FACTOR_TIPS[f.key] ??
+                  `Contribution from ${f.label.toLowerCase()} in the valuation model.`
+                }
+              />
+              {f.label}
+            </span>
             <span className="muted">
               {f.rawScore.toFixed(0)} → {f.weightedContribution >= 0 ? "+" : ""}
               {f.weightedContribution.toFixed(1)}
