@@ -109,9 +109,19 @@ function buildNarrative(
   }
 
   const band = confidenceLabel(score);
-  const scoutNotes = `${input.positionPrimary} profile in ${input.nationality ?? "Nigeria"} grassroots context. ` +
-    `Confidence band: ${band}. Valuation reflects verification, competition tier, and market demand multipliers — ` +
-    `deterministic MVCE v0.1 (AI narrative layer optional in future).`;
+  const strengthLine =
+    strengths.length > 0
+      ? ` Standout areas: ${strengths.slice(0, 2).join("; ")}.`
+      : "";
+  const weaknessLine =
+    weaknesses.length > 0
+      ? ` Watch points: ${weaknesses.slice(0, 2).join("; ")}.`
+      : "";
+  const scoutNotes =
+    `${input.positionPrimary} profile in ${input.nationality ?? "Nigeria"} grassroots context. ` +
+    `Confidence band: ${band}. Valuation reflects verification, competition tier, and market demand.` +
+    strengthLine +
+    weaknessLine;
 
   return { strengths, weaknesses, scoutNotes };
 }
@@ -157,7 +167,7 @@ export function computeValuation(input: MvceValuationInput): MvceValuationResult
     },
     {
       key: "athletic",
-      label: "DTP athletic metrics",
+      label: "Athletic profile",
       weight: 0.1,
       raw: athleticScore(input),
     },

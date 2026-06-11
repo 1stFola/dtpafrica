@@ -15,6 +15,7 @@ import {
   PlayerCategoryRadar,
   type CategoryScore,
 } from "../components/playerProfile/PlayerCategoryRadar";
+import { InfoTip } from "../../../components/InfoTip";
 import { PlayerPitchGraphic } from "../components/playerProfile/PlayerPitchGraphic";
 
 /**
@@ -359,7 +360,7 @@ function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
       title: philosophy.name,
       fitPercent: clampScore(philosophy.score),
       contextLine: resolvePhilosophyContext(philosophy.name, player.positionPrimary?.toLowerCase()),
-      description: "Philosophy alignment from calibrated SIP scoring.",
+      description: "How well the player suits this playing style based on match data.",
     });
   }
 
@@ -369,7 +370,7 @@ function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
       title: fit.philosophy,
       fitPercent: clampScore(fit.philosophyFitScore),
       contextLine: formatFormationContext(fit.formation, fit.positionSlot),
-      description: "Saved philosophy-fit row from scouting intelligence.",
+      description: "Saved style-fit result from scouting analysis.",
     });
   }
 
@@ -379,7 +380,7 @@ function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
       title: score.label,
       fitPercent: clampScore(score.value),
       contextLine: "System Trait",
-      description: "Standout tactical score from SIP calibration.",
+      description: "Standout tactical trait from match performance data.",
     });
   }
 
@@ -404,7 +405,7 @@ function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
           contextLine: mapped
             ? formatFormationContext(mapped.formation, mapped.slot)
             : "System Trait",
-          description: "SIP tactical index from rolling match metrics.",
+          description: "Tactical style score from recent match metrics.",
         });
       }
     }
@@ -425,7 +426,7 @@ function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
       icon: "◎",
       title: "Versatile profile",
       contextLine: "4-3-3 · cm",
-      description: "Playstyle badges populate once SIP tactical and philosophy data sync.",
+      description: "Playstyle badges appear once match and style-fit data is available.",
     });
   }
 
@@ -713,11 +714,14 @@ export function PlayerProfilePage() {
           <section className="profile-section">
             <div className="profile-section-heading">
               <div>
-                <span className="player-profile-eyebrow">Rating attributes</span>
-                <h2 className="player-profile-heading">18-point profile</h2>
+                <span className="player-profile-eyebrow">Skill ratings</span>
+                <h2 className="player-profile-heading">
+                  18-point profile
+                  <InfoTip text="Eighteen core skills grouped into athletic, technical, mental, and team-impact categories." />
+                </h2>
               </div>
               <span className="profile-data-note">
-                {player.ratingAttributes ? "Calibrated" : "Derived fallback"}
+                {player.ratingAttributes ? "From match data" : "Estimated from profile"}
               </span>
             </div>
 
@@ -1327,13 +1331,16 @@ function ScoutingIntelligenceSection({
 
   if (!hasSnapshot) {
     return (
-      <section className="profile-section">
-        <h2>Scouting Intelligence</h2>
-        <div className="profile-empty-state">
-          <strong>No SIP scouting snapshot yet.</strong>
+      <section className="profile-section scouting-intel">
+        <div className="scouting-intel__header">
+          <span className="profile-section__eyebrow">Scouting intelligence</span>
+          <h2>Style and tactical fit</h2>
+        </div>
+        <div className="profile-empty-state scouting-intel__empty">
+          <strong>No scouting snapshot yet.</strong>
           <p>
-            Match metrics, calibration imports, or ScoreBoard ingest are required before tactical
-            fit and philosophy matching can be computed.
+            Match metrics, calibration imports, or ScoreBoard ingest are required before style fit
+            and tactical matching can be computed.
           </p>
         </div>
       </section>
@@ -1341,16 +1348,19 @@ function ScoutingIntelligenceSection({
   }
 
   return (
-    <section className="profile-section">
-      <div className="profile-section-heading">
+    <section className="profile-section scouting-intel">
+      <div className="scouting-intel__header">
         <div>
-          <span className="profile-section__eyebrow">Scouting Intelligence</span>
-          <h2>Tactical and fit snapshot</h2>
+          <span className="profile-section__eyebrow">Scouting intelligence</span>
+          <h2>
+            Style and tactical fit
+            <InfoTip text="How this player fits different playing styles and tactical systems, based on match performance data." />
+          </h2>
         </div>
         {scouting.aggregateMetrics && (
-          <span className="profile-data-note">
-            {scouting.aggregateMetrics.matchesPlayed} SIP match
-            {scouting.aggregateMetrics.matchesPlayed === 1 ? "" : "es"}
+          <span className="scouting-intel__meta">
+            {scouting.aggregateMetrics.matchesPlayed} match
+            {scouting.aggregateMetrics.matchesPlayed === 1 ? "" : "es"} analysed
             {scouting.aggregateMetrics.minutesPlayed > 0
               ? ` · ${formatMinutesPlayed(
                   Math.round(scouting.aggregateMetrics.minutesPlayed)
@@ -1360,65 +1370,82 @@ function ScoutingIntelligenceSection({
         )}
       </div>
 
-      <div className="profile-facts profile-facts--wide">
-        <div>
-          <span>Tactical fit</span>
-          <strong>
+      <div className="scouting-intel__stats">
+        <article className="scouting-intel__stat-card">
+          <span className="scouting-intel__stat-label">
+            Tactical fit
+            <InfoTip text="Overall score for how well the player suits your tactical system." />
+          </span>
+          <strong className="scouting-intel__stat-value">
             {scouting.tacticalFit
               ? `${scouting.tacticalFit.score} · ${scouting.tacticalFit.label}`
               : "Pending"}
           </strong>
-        </div>
-        <div>
-          <span>Philosophy matching</span>
-          <strong>
+        </article>
+        <article className="scouting-intel__stat-card">
+          <span className="scouting-intel__stat-label">
+            Best style match
+            <InfoTip text="The playing philosophy this player aligns with most strongly." />
+          </span>
+          <strong className="scouting-intel__stat-value">
             {scouting.philosophyMatch
               ? `${scouting.philosophyMatch.score}% · ${scouting.philosophyMatch.philosophy}`
               : "Pending"}
           </strong>
-        </div>
+        </article>
         {scouting.aggregateMetrics && scouting.aggregateMetrics.minutesPlayed > 0 && (
-          <div>
-            <span>Rolling minutes</span>
-            <strong>
+          <article className="scouting-intel__stat-card">
+            <span className="scouting-intel__stat-label">
+              Minutes tracked
+              <InfoTip text="Total minutes from matches used in this scouting snapshot." />
+            </span>
+            <strong className="scouting-intel__stat-value">
               {formatMinutesPlayed(Math.round(scouting.aggregateMetrics.minutesPlayed))}
             </strong>
-          </div>
+          </article>
         )}
       </div>
 
       {scouting.topTacticalScores.length > 0 && (
-        <div className="tactical-grid">
-          {scouting.topTacticalScores.map((score) => (
-            <div key={score.label}>
-              <span className="label">{score.label}</span>
-              <strong>{Math.round(score.value)}</strong>
-            </div>
-          ))}
+        <div className="scouting-intel__traits">
+          <h3 className="scouting-intel__section-title">Top tactical traits</h3>
+          <div className="scouting-intel__trait-grid">
+            {scouting.topTacticalScores.map((score) => (
+              <article key={score.label} className="scouting-intel__trait-card">
+                <span className="scouting-intel__trait-label">{score.label}</span>
+                <strong className="scouting-intel__trait-score">{Math.round(score.value)}</strong>
+              </article>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className="profile-detail-grid">
-        <article className="profile-panel">
-          <h3>Philosophy fits</h3>
-          {scouting.philosophyFits.length === 0 ? (
-            <p className="muted">No saved philosophy-fit rows yet.</p>
-          ) : (
-            <ul className="profile-card-list">
-              {scouting.philosophyFits.map((fit) => (
-                <li key={`${fit.formation}-${fit.philosophy}-${fit.positionSlot ?? "any"}`}>
+      <article className="scouting-intel__panel">
+        <h3 className="scouting-intel__section-title">Playing style fits</h3>
+        {scouting.philosophyFits.length === 0 ? (
+          <p className="muted">No saved style-fit results yet.</p>
+        ) : (
+          <ul className="scouting-intel__fit-list">
+            {scouting.philosophyFits.map((fit) => (
+              <li
+                key={`${fit.formation}-${fit.philosophy}-${fit.positionSlot ?? "any"}`}
+                className="scouting-intel__fit-row"
+              >
+                <div>
                   <strong>{fit.philosophy}</strong>
                   <span>
                     {fit.formation}
-                    {fit.positionSlot ? ` · ${fit.positionSlot}` : ""} ·{" "}
-                    {Math.round(fit.philosophyFitScore)} fit
+                    {fit.positionSlot ? ` · ${fit.positionSlot}` : ""}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-      </div>
+                </div>
+                <span className="scouting-intel__fit-score">
+                  {Math.round(fit.philosophyFitScore)}% fit
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </article>
     </section>
   );
 }
@@ -1433,9 +1460,12 @@ function ValuationSection({
   if (!valuation) {
     return (
       <section className="profile-section">
-        <h2>MVCE valuation</h2>
+        <h2>
+          Market valuation
+          <InfoTip text="Estimated transfer value range based on performance, age, competition level, and market signals." />
+        </h2>
         <div className="profile-empty-state">
-          <strong>No MVCE valuation has been generated yet.</strong>
+          <strong>No valuation has been generated yet.</strong>
           <p>Generate a valuation to show projected market range and scout notes here.</p>
           <Link to={`/valuation/player/${playerId}`} className="text-link">
             Open valuation workspace
@@ -1452,8 +1482,11 @@ function ValuationSection({
     <section className="profile-section">
       <div className="profile-section-heading">
         <div>
-          <span className="profile-section__eyebrow">MVCE valuation</span>
-          <h2>Market value and confidence</h2>
+          <span className="profile-section__eyebrow">Market valuation</span>
+          <h2>
+            Value and confidence
+            <InfoTip text="Projected market value with a confidence band based on available match and verification data." />
+          </h2>
         </div>
         <Link to={`/valuation/player/${playerId}`} className="text-link">
           Open report
@@ -1468,11 +1501,17 @@ function ValuationSection({
         </div>
         <div className="profile-facts">
           <div>
-            <span>Adjusted score</span>
+            <span>
+              Overall score
+              <InfoTip text="Final valuation score after all factors and multipliers are applied." />
+            </span>
             <strong>{Math.round(valuation.adjustedScore)}</strong>
           </div>
           <div>
-            <span>Confidence</span>
+            <span>
+              Confidence
+              <InfoTip text="How reliable this valuation is given match data, footage, and competition level." />
+            </span>
             <strong>{valuation.confidenceLabel}</strong>
           </div>
           <div>
@@ -1485,7 +1524,10 @@ function ValuationSection({
             </strong>
           </div>
           <div>
-            <span>Base score</span>
+            <span>
+              Base score
+              <InfoTip text="Starting score from core factors before market and verification multipliers." />
+            </span>
             <strong>{Math.round(valuation.baseScore)}</strong>
           </div>
         </div>

@@ -26,6 +26,20 @@ export const CSV_EVENT_TYPES = [
   "own_goal",
   "red_card",
   "injury",
+  "penalty_awarded",
+  "penalty_saved",
+  "woodwork",
+  "midfield_battle",
+  "double_save",
+  "long_throw",
+  "water_break",
+  "interception",
+  "match_control",
+  "goal_scorers_update",
+  "missed_chance",
+  "disallowed_goal",
+  "counter_attack",
+  "late_defense",
 ] as const;
 
 export type CsvEventType = (typeof CSV_EVENT_TYPES)[number];
@@ -64,16 +78,14 @@ const FLOW_CSV_TYPES = new Set<CsvEventType>([
   "second_half_kickoff",
   "added_time",
   "score_update",
+  "water_break",
+  "midfield_battle",
+  "match_control",
+  "goal_scorers_update",
 ]);
 
 const TEAM_OPTIONAL_TYPES = new Set<CsvEventType>([
-  "kick_off",
-  "match_flow",
-  "pressure",
-  "half_time",
-  "second_half_kickoff",
-  "added_time",
-  "score_update",
+  ...FLOW_CSV_TYPES,
   "possession",
   "throw_in",
   "offside",
@@ -84,6 +96,8 @@ const PLAYER_OPTIONAL_TYPES = new Set<CsvEventType>([
   "corner_kick",
   "foul",
   "clearance",
+  "long_throw",
+  "counter_attack",
 ]);
 
 const SHOT_CSV_TYPES = new Set<CsvEventType>([
@@ -94,6 +108,9 @@ const SHOT_CSV_TYPES = new Set<CsvEventType>([
   "close_chance",
   "shot_off_target",
   "blocked_shot",
+  "woodwork",
+  "missed_chance",
+  "disallowed_goal",
 ]);
 
 const SOT_CSV_TYPES = new Set<CsvEventType>([
@@ -102,6 +119,33 @@ const SOT_CSV_TYPES = new Set<CsvEventType>([
   "goal_penalty",
   "close_chance",
   "blocked_shot",
+  "woodwork",
+  "missed_chance",
+]);
+
+const SAVE_CSV_TYPES = new Set<CsvEventType>(["save", "double_save", "penalty_saved"]);
+
+/** Possession ticks are skipped for these event types (either side). */
+const POSSESSION_IGNORE = new Set<CsvEventType>([
+  "injury",
+  "substitution",
+  "red_card",
+  "yellow_card",
+]);
+
+/**
+ * Defensive actions that stop an opponent attack — possession tick credits the
+ * other side (the team that had the ball before the defensive action).
+ */
+const POSSESSION_REVERSE = new Set<CsvEventType>([
+  "blocked_shot",
+  "shot_off_target",
+  "clearance",
+  "save",
+  "late_defense",
+  "double_save",
+  "penalty_saved",
+  "interception",
 ]);
 
 const XG_WEIGHT: Partial<Record<CsvEventType, number>> = {
@@ -113,6 +157,11 @@ const XG_WEIGHT: Partial<Record<CsvEventType, number>> = {
   shot_off_target: 0.05,
   blocked_shot: 0.1,
   save: 0.25,
+  double_save: 0.25,
+  penalty_saved: 0.76,
+  woodwork: 0.2,
+  missed_chance: 0.12,
+  disallowed_goal: 0.85,
 };
 
 export function isFlowCsvType(csvType: string): boolean {
@@ -174,6 +223,14 @@ function flowDefaultDetail(csvType: CsvEventType): string | undefined {
       return "Added time";
     case "pressure":
       return "Pressure";
+    case "water_break":
+      return "Water break";
+    case "midfield_battle":
+      return "Midfield battle";
+    case "match_control":
+      return "Match control";
+    case "goal_scorers_update":
+      return "Goal scorers update";
     case "score_update":
       return undefined;
     default:
@@ -185,15 +242,33 @@ function bump(counts: HomeAwayCount, side: "home" | "away", n = 1) {
   counts[side] += n;
 }
 
+function oppositeSide(side: "home" | "away"): "home" | "away" {
+  return side === "home" ? "away" : "home";
+}
+
+/** Which side receives a possession tick for this event, or null to skip. */
+function possessionTickSide(
+  csvType: CsvEventType,
+  side: "home" | "away"
+): "home" | "away" | null {
+  if (POSSESSION_IGNORE.has(csvType)) return null;
+  if (POSSESSION_REVERSE.has(csvType)) return oppositeSide(side);
+  return side;
+}
+
+function capPossessionPct(homePct: number): HomeAwayCount {
+  const home = Math.min(75, Math.max(25, homePct));
+  return { home, away: 100 - home };
+}
+
 /**
  * Possession % is derived from CSV `team_side` (column C), not from `possession` rows alone.
- * Each ingested timeline row with team_side=home|away counts as one tick for that side.
  *
- * Counted: every parsed match event that carries team_side (goals, fouls, subs, flow rows
- * with a side, etc.).
- *
- * Not counted: full_time and penalty_shootout (never enter the events list), and any row
- * without team_side (kick_off, half_time, match_flow/pressure/score_update when side is blank).
+ * Ignored: injury, substitution, red_card, yellow_card.
+ * Reversed (credit other side): blocked_shot, shot_off_target, clearance, save,
+ * late_defense, double_save, penalty_saved, interception.
+ * Normal: all other events with team_side count for that side.
+ * Capped: each side is clamped to 25–75% after calculation.
  */
 export function deriveMatchStatsFromCsvEvents(
   events: ParsedCsvEvent[],
@@ -214,11 +289,11 @@ export function deriveMatchStatsFromCsvEvents(
     const side = ev.teamSide;
     if (!side && csvType !== "match_flow") continue;
 
-    if (csvType === "save" && side) {
-      const attackingSide = side === "home" ? "away" : "home";
+    if (SAVE_CSV_TYPES.has(csvType) && side) {
+      const attackingSide = oppositeSide(side);
       bump(shots, attackingSide);
       bump(shotsOnTarget, attackingSide);
-      const weight = XG_WEIGHT.save;
+      const weight = XG_WEIGHT[csvType];
       if (weight != null) xg[attackingSide] += weight;
       bump(saves, side);
     } else if (SHOT_CSV_TYPES.has(csvType) && side) {
@@ -229,9 +304,14 @@ export function deriveMatchStatsFromCsvEvents(
     }
 
     if (csvType === "corner_kick" && side) bump(corners, side);
-    if ((csvType === "foul" || csvType === "freekick") && side) bump(fouls, side);
+    if ((csvType === "foul" || csvType === "freekick" || csvType === "penalty_awarded") && side) {
+      bump(fouls, side);
+    }
 
-    if (side) bump(possessionTicks, side);
+    if (side) {
+      const possSide = possessionTickSide(csvType, side);
+      if (possSide) bump(possessionTicks, possSide);
+    }
 
     if (
       (csvType === "score_update" || csvType === "match_flow") &&
@@ -244,10 +324,7 @@ export function deriveMatchStatsFromCsvEvents(
   const possTotal = possessionTicks.home + possessionTicks.away;
   const possession =
     possTotal > 0
-      ? (() => {
-          const homePct = Math.round((possessionTicks.home / possTotal) * 100);
-          return { home: homePct, away: 100 - homePct };
-        })()
+      ? capPossessionPct(Math.round((possessionTicks.home / possTotal) * 100))
       : undefined;
 
   const hasShots = shots.home + shots.away > 0;

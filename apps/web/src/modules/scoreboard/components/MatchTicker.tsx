@@ -37,12 +37,12 @@ export function MatchTicker() {
       try {
         // Prefer finished/recent matches; fall back to the full feed so the
         // ticker still has content before any match is completed.
-        const finished = await fetchMatches({ status: "finished" });
+        const finished = await fetchMatches({ status: "finished", limit: 10 });
         let rows = finished;
         if (rows.length === 0) {
-          rows = await fetchMatches();
+          rows = await fetchMatches({ limit: 10 });
         }
-        if (active) setMatches(rows.slice(0, 24));
+        if (active) setMatches(rows.slice(0, 10));
       } catch {
         /* ticker is non-critical chrome — fail silently */
       }

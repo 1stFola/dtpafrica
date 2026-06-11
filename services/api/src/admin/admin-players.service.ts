@@ -23,6 +23,20 @@ function parseUrlList(value?: string | null): string[] {
     .filter(Boolean);
 }
 
+function normalizeUrlArray(value?: string[] | null): string[] {
+  if (!value?.length) return [];
+  return value.map((entry) => entry.trim()).filter(Boolean);
+}
+
+function resolveUrlList(
+  arrayValue?: string[] | null,
+  stringValue?: string | null
+): string[] {
+  const fromArray = normalizeUrlArray(arrayValue);
+  if (fromArray.length > 0) return fromArray;
+  return parseUrlList(stringValue);
+}
+
 function asMediaItems(value: unknown): MediaItemRow[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is MediaItemRow => Boolean(item && typeof item === "object"));
@@ -35,21 +49,21 @@ function isPublicationType(type?: string): boolean {
 }
 
 function buildQuickEditMediaItems(args: {
-  videoUrl?: string | null;
-  photosUrl?: string | null;
-  publicationsUrl?: string | null;
+  videoUrls?: string[];
+  photoUrls?: string[];
+  publicationUrls?: string[];
 }): MediaItemRow[] {
   const items: MediaItemRow[] = [];
 
-  if (args.videoUrl?.trim()) {
+  (args.videoUrls ?? []).forEach((url, index) => {
     items.push({
       type: "video",
-      title: "Highlight video",
-      url: args.videoUrl.trim(),
+      title: index === 0 ? "Highlight video" : `Video ${index + 1}`,
+      url,
     });
-  }
+  });
 
-  parseUrlList(args.photosUrl).forEach((url, index) => {
+  (args.photoUrls ?? []).forEach((url, index) => {
     items.push({
       type: "photo",
       title: index === 0 ? "Profile photo" : `Photo ${index + 1}`,
@@ -57,7 +71,7 @@ function buildQuickEditMediaItems(args: {
     });
   });
 
-  parseUrlList(args.publicationsUrl).forEach((url, index) => {
+  (args.publicationUrls ?? []).forEach((url, index) => {
     items.push({
       type: "article",
       title: index === 0 ? "Press" : `Publication ${index + 1}`,
@@ -68,21 +82,30 @@ function buildQuickEditMediaItems(args: {
   return items;
 }
 
-function extractPhotoUrls(items: MediaItemRow[], playerPhotoUrl?: string | null): string {
+function extractVideoUrls(items: MediaItemRow[], playerVideoUrl?: string | null): string[] {
+  const urls = items
+    .filter((item) => item.type === "video" && item.url)
+    .map((item) => String(item.url));
+  if (urls.length === 0 && playerVideoUrl?.trim()) {
+    return [playerVideoUrl.trim()];
+  }
+  return urls;
+}
+
+function extractPhotoUrls(items: MediaItemRow[], playerPhotoUrl?: string | null): string[] {
   const urls = items
     .filter((item) => item.type === "photo" && item.url)
     .map((item) => String(item.url));
   if (urls.length === 0 && playerPhotoUrl?.trim()) {
-    return playerPhotoUrl.trim();
+    return [playerPhotoUrl.trim()];
   }
-  return urls.join("\n");
+  return urls;
 }
 
-function extractPublicationUrls(items: MediaItemRow[]): string {
+function extractPublicationUrls(items: MediaItemRow[]): string[] {
   return items
     .filter((item) => isPublicationType(item.type) && item.url)
-    .map((item) => String(item.url))
-    .join("\n");
+    .map((item) => String(item.url));
 }
 
 function readEstimatedPlayerValue(benchmarkMetadata: unknown): string | null {
@@ -311,6 +334,10 @@ export class AdminPlayersService {
 
     const mediaItems = asMediaItems(player.mediaItems);
 
+    const videoUrls = extractVideoUrls(mediaItems, player.videoUrl);
+    const photoUrls = extractPhotoUrls(mediaItems, player.playerPhotoUrl);
+    const publicationUrls = extractPublicationUrls(mediaItems);
+
     return {
       id: player.id,
       displayName: player.displayName,
@@ -319,9 +346,9 @@ export class AdminPlayersService {
       preferredFoot: player.dominantFoot,
       positionPrimary: player.positionPrimary,
       estimatedPlayerValue: readEstimatedPlayerValue(player.benchmarkMetadata),
-      videoUrl: player.videoUrl,
-      photosUrl: extractPhotoUrls(mediaItems, player.playerPhotoUrl),
-      publicationsUrl: extractPublicationUrls(mediaItems),
+      videoUrls,
+      photoUrls,
+      publicationUrls,
     };
   }
 
@@ -369,23 +396,36 @@ export class AdminPlayersService {
 
     const touchesMedia =
       dto.videoUrl !== undefined ||
+      dto.videoUrls !== undefined ||
       dto.photosUrl !== undefined ||
-      dto.publicationsUrl !== undefined;
+      dto.photoUrls !== undefined ||
+      dto.publicationsUrl !== undefined ||
+      dto.publicationUrls !== undefined;
 
-    if (dto.videoUrl !== undefined) {
-      data.videoUrl = dto.videoUrl.trim() || null;
+    const nextVideoUrls = resolveUrlList(
+      dto.videoUrls,
+      dto.videoUrl !== undefined ? dto.videoUrl : undefined
+    );
+    const existingVideoUrls = extractVideoUrls(existingMedia, existing.videoUrl);
+    const resolvedVideoUrls =
+      dto.videoUrl !== undefined || dto.videoUrls !== undefined
+        ? nextVideoUrls
+        : existingVideoUrls;
+
+    if (dto.videoUrl !== undefined || dto.videoUrls !== undefined) {
+      data.videoUrl = resolvedVideoUrls[0] ?? null;
     }
 
     if (touchesMedia) {
       const mergedMedia = buildQuickEditMediaItems({
-        videoUrl: dto.videoUrl !== undefined ? dto.videoUrl : existing.videoUrl,
-        photosUrl:
-          dto.photosUrl !== undefined
-            ? dto.photosUrl
+        videoUrls: resolvedVideoUrls,
+        photoUrls:
+          dto.photoUrls !== undefined || dto.photosUrl !== undefined
+            ? resolveUrlList(dto.photoUrls, dto.photosUrl)
             : extractPhotoUrls(existingMedia, existing.playerPhotoUrl),
-        publicationsUrl:
-          dto.publicationsUrl !== undefined
-            ? dto.publicationsUrl
+        publicationUrls:
+          dto.publicationUrls !== undefined || dto.publicationsUrl !== undefined
+            ? resolveUrlList(dto.publicationUrls, dto.publicationsUrl)
             : extractPublicationUrls(existingMedia),
       });
       const nextMedia = [...preservedMedia, ...mergedMedia];
@@ -395,7 +435,10 @@ export class AdminPlayersService {
       const firstPhoto = mergedMedia.find((item) => item.type === "photo" && item.url);
       if (firstPhoto?.url) {
         data.playerPhotoUrl = String(firstPhoto.url);
-      } else if (dto.photosUrl !== undefined && !dto.photosUrl.trim()) {
+      } else if (
+        (dto.photosUrl !== undefined || dto.photoUrls !== undefined) &&
+        resolveUrlList(dto.photoUrls, dto.photosUrl).length === 0
+      ) {
         data.playerPhotoUrl = null;
       }
     }
@@ -421,6 +464,10 @@ export class AdminPlayersService {
 
     const mediaItems = asMediaItems(updated.mediaItems);
 
+    const videoUrls = extractVideoUrls(mediaItems, updated.videoUrl);
+    const photoUrls = extractPhotoUrls(mediaItems, updated.playerPhotoUrl);
+    const publicationUrls = extractPublicationUrls(mediaItems);
+
     return {
       id: updated.id,
       displayName: updated.displayName,
@@ -430,9 +477,9 @@ export class AdminPlayersService {
       positionPrimary: updated.positionPrimary,
       positionFull: updated.positionFull,
       estimatedPlayerValue: readEstimatedPlayerValue(updated.benchmarkMetadata),
-      videoUrl: updated.videoUrl,
-      photosUrl: extractPhotoUrls(mediaItems, updated.playerPhotoUrl),
-      publicationsUrl: extractPublicationUrls(mediaItems),
+      videoUrls,
+      photoUrls,
+      publicationUrls,
       updatedAt: updated.updatedAt,
     };
   }

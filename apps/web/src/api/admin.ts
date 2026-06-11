@@ -106,9 +106,9 @@ export type PlayerQuickEditContext = {
   preferredFoot: string | null;
   positionPrimary: string;
   estimatedPlayerValue: string | null;
-  videoUrl: string | null;
-  photosUrl: string;
-  publicationsUrl: string;
+  videoUrls: string[];
+  photoUrls: string[];
+  publicationUrls: string[];
   updatedAt?: string;
 };
 
@@ -117,9 +117,9 @@ export type PlayerQuickEditInput = {
   preferredFoot: string;
   positionPrimary: string;
   estimatedPlayerValue: string;
-  videoUrl: string;
-  photosUrl: string;
-  publicationsUrl: string;
+  videoUrls: string[];
+  photoUrls: string[];
+  publicationUrls: string[];
 };
 
 export type CalibrationMetrics = {
@@ -410,9 +410,9 @@ export const adminApi = {
       preferredFoot?: string;
       positionPrimary?: string;
       estimatedPlayerValue?: string;
-      videoUrl?: string;
-      photosUrl?: string;
-      publicationsUrl?: string;
+      videoUrls?: string[];
+      photoUrls?: string[];
+      publicationUrls?: string[];
     }
   ) =>
     adminFetch<PlayerQuickEditContext>(`/admin/players/${id}/quick-edit`, {

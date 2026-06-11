@@ -27,7 +27,46 @@ const EVENT_ICONS: Record<string, string> = {
   foul: "⚠",
   clearance: "↩",
   shot_off_target: "○",
+  penalty_awarded: "⚠",
+  penalty_saved: "🧤",
+  woodwork: "⊓",
+  midfield_battle: "⚔",
+  double_save: "🧤",
+  long_throw: "↗",
+  water_break: "💧",
+  interception: "✋",
+  match_control: "◉",
+  goal_scorers_update: "📋",
+  missed_chance: "○",
+  disallowed_goal: "🚫",
+  counter_attack: "⚡",
+  late_defense: "🛡",
 };
+
+/** assist_name column label by event type (CSV secondary player). */
+const ASSIST_LABEL_BY_TYPE: Record<string, string> = {
+  substitution: "On ",
+  clearance: "Stopped by ",
+  blocked_shot: "Stopped by ",
+  late_defense: "Stopped by ",
+  interception: "Stopped by ",
+  shot_off_target: "Played by ",
+  save: "Played by ",
+  double_save: "Played by ",
+  penalty_saved: "Played by ",
+};
+
+function resolveCsvEventType(ev: SbMatchEvent): string {
+  const meta = ev.metadata;
+  if (meta?.csvEventType && typeof meta.csvEventType === "string") return meta.csvEventType;
+  if (meta?.flowKind && typeof meta.flowKind === "string") return meta.flowKind;
+  return ev.type;
+}
+
+function assistPrefixForEvent(ev: SbMatchEvent): string {
+  const csvType = resolveCsvEventType(ev);
+  return ASSIST_LABEL_BY_TYPE[csvType] ?? ASSIST_LABEL_BY_TYPE[ev.type] ?? "Assist ";
+}
 
 function slugifyName(value: string): string {
   return value
@@ -165,7 +204,7 @@ export function EventTimeline({
                   )}
                   {assistLabel && (
                     <span className="sbm-event__assist">
-                      {ev.type === "substitution" ? "On " : "Assist "}
+                      {assistPrefixForEvent(ev)}
                       <PlayerLink
                         slug={ev.assistPlayer?.slug}
                         label={assistLabel}

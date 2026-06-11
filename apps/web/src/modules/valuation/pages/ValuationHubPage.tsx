@@ -35,7 +35,7 @@ export function ValuationHubPage() {
       <div className="sb-quick-links">
         <Link to="/valuation/generate" className="sip-card">
           <h3>Generate valuation</h3>
-          <p>Run MVCE for a DTP player (pulls SIP metrics when available)</p>
+          <p>Run a market valuation for a player (uses scouting metrics when available)</p>
         </Link>
         <Link to="/valuation/compare" className="sip-card">
           <h3>Compare players</h3>

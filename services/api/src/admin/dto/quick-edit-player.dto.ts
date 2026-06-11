@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsArray, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 
 export class QuickEditPlayerDto {
   @IsOptional()
@@ -23,13 +23,28 @@ export class QuickEditPlayerDto {
   @IsString()
   videoUrl?: string;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  videoUrls?: string[];
+
   /** One URL per line or comma-separated */
   @IsOptional()
   @IsString()
   photosUrl?: string;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  photoUrls?: string[];
+
   /** One URL per line or comma-separated */
   @IsOptional()
   @IsString()
   publicationsUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  publicationUrls?: string[];
 }

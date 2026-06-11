@@ -75,9 +75,17 @@ export class ScoreboardController {
   @Get("matches")
   matches(
     @Query("status") status?: string,
-    @Query("competitionId") competitionId?: string
+    @Query("competitionId") competitionId?: string,
+    @Query("limit") limit?: string
   ) {
-    return this.sb.listMatches({ status, competitionId, publicOnly: true });
+    const parsedLimit =
+      limit != null && limit !== "" ? Number.parseInt(limit, 10) : undefined;
+    return this.sb.listMatches({
+      status,
+      competitionId,
+      limit: Number.isFinite(parsedLimit) && parsedLimit! > 0 ? parsedLimit : undefined,
+      publicOnly: true,
+    });
   }
 
   @Get("matches/:id")

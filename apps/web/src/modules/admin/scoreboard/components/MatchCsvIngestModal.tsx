@@ -8,15 +8,42 @@ full_time,,,,,,0,1,FC OMORUYI 1-0 FC OGUNTUASE — Destiny Nosa 84',,,
 kick_off,0,,,,First half begins,,,,,
 half_time,45,,,,Half-time,,,,,
 second_half_kickoff,46,,,,Second half begins,,,,,
+added_time,90,,,,+3 minutes,,,,,
+water_break,30,,,,Drinks break,,,,,
+midfield_battle,38,,,,Midfield battle,,,,,
+pressure,22,away,,,Heavy pressure,,,,,
 goal,84,away,Destiny Nosa,,,,,,,
+own_goal,50,home,Defender,,,,,,,
+goal_penalty,82,home,No. 5,,,,,,,
+chance,40,away,David Adesanya,,Header wide,,,,,
+missed_chance,58,home,Tunde Oladejo,,,,,,,
+shot_off_target,55,home,Tunde Oladejo,Goalkeeper,,,,,,
+woodwork,63,away,David Adesanya,,,,,,,
+blocked_shot,68,home,Baare Adeyemi,Defender,,,,,,
+save,72,home,Goalkeeper,Striker,,,,,,
+double_save,74,home,Goalkeeper,,,,,,,
+penalty_awarded,80,away,,,,,,,,
+penalty_saved,81,home,Goalkeeper,,,,,,,
+clearance,35,home,Jide Oluseye,Goalkeeper,,,,,,
+interception,36,home,Jide Oluseye,,,,,,,
+late_defense,70,away,Defender,,,,,,,
+counter_attack,44,away,,,,,,,
+corner_kick,33,away,,,,,,,,
+long_throw,29,home,,,,,,,,
+offside,31,away,,,,,,,,
+foul,18,home,Shodakin Sodiq,,,,,,,
+freekick,19,away,,,Dangerous free kick,,,,,
+possession,20,home,,,Sustained spell,,,,,
 substitution,46,home,Anuoluwapo Oluwow,Korede Elejoba,#12 off #17 on,,,,,
 substitution,53,away,Ololade Yusuf,Destiny,#11 off #12 on,,,,,
-possession,20,home,,,Sustained spell,,,,,
-corner_kick,33,away,,,,,,,,
-foul,18,home,Shodakin Sodiq,,,,,,,
-save,72,home,Goalkeeper,,,,,,,
 yellow_card,40,away,Ololade Yusuf,,,,,,,
-score_update,84,away,,,OMORUYI lead 1-0,,,,,`;
+red_card,77,away,Goalkeeper,,straight red,,,,,
+injury,62,home,Player,,,,,,,
+disallowed_goal,85,away,Striker,,Offside,,,,,
+score_update,84,away,,,OMORUYI lead 1-0,,,,,
+match_control,55,home,,,Home controlling tempo,,,,,
+goal_scorers_update,84,,,,Scorers updated,,,,,
+match_flow,60,,,,Key phase,,,,,`;
 
 type Props = {
   matchId: string;
@@ -122,11 +149,11 @@ export function MatchCsvIngestModal({
             <strong>{fileName ?? "Drop CSV here or browse"}</strong>
             <p className="muted">
               Required: one <code>full_time</code> row with <code>home_score</code> /{" "}
-              <code>away_score</code>. Event types include goals, cards, subs, shots, fouls,
-              corners, saves, possession, and flow rows (<code>kick_off</code>,{" "}
-              <code>half_time</code>, <code>score_update</code>, etc.). Optional:{" "}
-              <code>narrative</code> on the full_time row, <code>penalty_shootout</code> for
-              knockouts.
+              <code>away_score</code>. Event types include goals, cards, subs, shots, saves,
+              clearances, penalties, flow rows (<code>kick_off</code>, <code>half_time</code>,{" "}
+              <code>water_break</code>, <code>midfield_battle</code>, <code>score_update</code>,
+              etc.). Optional: <code>narrative</code> on the full_time row,{" "}
+              <code>penalty_shootout</code> for knockouts.
             </p>
             <div className="admin-sb-dropzone-actions">
               <button type="button" className="admin-inline-button" onClick={downloadTemplate}>
