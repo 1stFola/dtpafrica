@@ -279,36 +279,51 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
 export const MATCH_TIMELINE_CSV_TEMPLATE = `event_type,minute,team_side,player_name,assist_name,detail,home_score,away_score,narrative,pen_home,pen_away,pen_winner
 # Required: one full_time row with final score. Optional narrative on full_time row.
 full_time,,,,,,0,1,FC OMORUYI 1-0 FC OGUNTUASE — Destiny Nosa 84',,,
-# Flow / narrative (stored as match_flow)
+# Flow / narrative (stored as match_flow with flowKind)
 kick_off,0,,,,First half begins,,,,,
 half_time,45,,,,Half-time,,,,,
 second_half_kickoff,46,,,,Second half begins,,,,,
 added_time,90,,,,+3 minutes,,,,,
-# Team actions — player_name optional for throw_in/offside/corner_kick
-possession,12,home,,,Sustained spell,,,,,
+water_break,30,,,,Drinks break,,,,,
+midfield_battle,38,,,,Midfield battle intensifies,,,,,
+match_control,55,home,,,Home side controlling tempo,,,,,
+goal_scorers_update,84,,,,Scorers updated,,,,,
 pressure,22,away,,,Heavy pressure in final third,,,,,
+score_update,84,away,,,OMORUYI take the lead 1-0,,,,,
+match_flow,60,,,,Key phase of play,,,,,
+# Team actions — player_name optional for throw_in/offside/corner_kick/long_throw
+possession,12,home,,,Sustained spell,,,,,
 foul,18,home,Shodakin Sodiq,,,,,,,
 freekick,19,away,,,Dangerous free kick,,,,,
 corner_kick,33,away,,,,,,,,
 throw_in,28,home,,,,,,,,
+long_throw,29,home,,,,,,,,
 offside,31,away,,,,,,,,
-clearance,35,home,Jide Oluseye,,,,,,,
+counter_attack,44,away,,,,,,,,
+interception,36,home,Jide Oluseye,,,,,,,
+clearance,35,home,Jide Oluseye,Goalkeeper,,,,,,
+late_defense,70,away,Defender,,,,,,,
 # Shots & chances
 chance,40,away,David Adesanya,,Header wide,,,,,
 close_chance,72,away,Destiny Nosa,,Saved,,,,,
-shot_off_target,55,home,Tunde Oladejo,,,,,,,
-blocked_shot,68,home,Baare Adeyemi,,,,,,,
-save,72,home,Goalkeeper,,,,,,,
+missed_chance,58,home,Tunde Oladejo,,,,,,,
+shot_off_target,55,home,Tunde Oladejo,Goalkeeper,,,,,,
+woodwork,63,away,David Adesanya,,,,,,,
+blocked_shot,68,home,Baare Adeyemi,Defender,,,,,,
+save,72,home,Goalkeeper,Striker,,,,,,
+double_save,74,home,Goalkeeper,,,,,,,
+penalty_awarded,80,away,,,,,,,,
+penalty_saved,81,home,Goalkeeper,,,,,,,
+disallowed_goal,85,away,Striker,,Offside,,,,,
 # Goals & cards
 goal,84,away,Destiny Nosa,,,,,,,
 goal_penalty,82,home,No. 5,,,,,,,
-yellow_card,40,away,Ololade Yusuf,,,,,,,
 own_goal,50,home,Defender,,,,,,,
+yellow_card,40,away,Ololade Yusuf,,,,,,,
 red_card,77,away,Goalkeeper,,straight red,,,,,
+injury,62,home,Player,,,,,,,
 # Substitutions (assist_name = player on)
 substitution,46,home,Anuoluwapo Oluwow,Korede Elejoba,#12 off #17 on,,,,,
 substitution,53,away,Ololade Yusuf,Destiny,#11 off #12 on,,,,,
-score_update,84,away,,,OMORUYI take the lead 1-0,,,,,
-match_flow,60,,,,Midfield battle intensifies,,,,,
 # Optional penalty shootout row (knockout)
 penalty_shootout,,,,,,,,4,2,home`;

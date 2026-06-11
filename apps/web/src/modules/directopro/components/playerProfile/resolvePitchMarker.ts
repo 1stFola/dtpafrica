@@ -256,3 +256,56 @@ export function resolveSecondaryPitchMarker(
   );
   return trySecondaryLabel(attributeRole, primaryRole, primaryMarker);
 }
+
+const RIGHT_FACING_TOKENS = [
+  "RB",
+  "RWB",
+  "RIGHT BACK",
+  "RIGHT WING BACK",
+  "RM",
+  "RIGHT MID",
+  "RIGHT MIDFIELDER",
+  "RW",
+  "RIGHT WING",
+  "RIGHT WINGER",
+  "RF",
+  "RIGHT FORWARD",
+  "RIGHT",
+];
+
+const LEFT_FACING_TOKENS = [
+  "LB",
+  "LWB",
+  "LEFT BACK",
+  "LEFT WING BACK",
+  "LM",
+  "LEFT MID",
+  "LEFT MIDFIELDER",
+  "LW",
+  "LEFT WING",
+  "LEFT WINGER",
+  "LF",
+  "LEFT FORWARD",
+  "LEFT",
+];
+
+/**
+ * CSS rotation (degrees) for a subtle attack-direction arrow on pitch markers.
+ * 0° points right; -90° points up (toward the attacking goal).
+ */
+export function resolveFacingDegrees(
+  positionPrimary?: string | null,
+  positionFull?: string | null
+): number {
+  const haystack = normalizePositionHaystack(positionPrimary, null, positionFull);
+  if (!haystack) return -90;
+
+  for (const token of RIGHT_FACING_TOKENS) {
+    if (matchesToken(haystack, token)) return -45;
+  }
+  for (const token of LEFT_FACING_TOKENS) {
+    if (matchesToken(haystack, token)) return -135;
+  }
+
+  return -90;
+}

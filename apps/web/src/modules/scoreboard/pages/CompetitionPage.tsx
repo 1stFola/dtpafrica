@@ -103,6 +103,49 @@ function groupFixtures(matches: SbMatchListItem[]) {
   );
 }
 
+type ExIntlFixtureTab = "first_leg" | "second_leg" | "r16" | "qf" | "sf" | "final";
+
+const EX_INTL_FIXTURE_TABS: { id: ExIntlFixtureTab; label: string }[] = [
+  { id: "first_leg", label: "1st Leg" },
+  { id: "second_leg", label: "2nd Leg" },
+  { id: "r16", label: "Round of 16" },
+  { id: "qf", label: "Quarter Final" },
+  { id: "sf", label: "Semi Final" },
+  { id: "final", label: "Final" },
+];
+
+/** Assign ex-internationals fixtures to a leg/stage tab via meta.leg, stageKey, roundLabel. */
+function exIntlFixtureTab(match: SbMatchListItem): ExIntlFixtureTab | null {
+  const stage = (match.stageKey ?? "").toLowerCase();
+  const leg = match.meta?.leg;
+  const round = (match.roundLabel ?? "").toLowerCase();
+
+  if (stage === "final" || stage === "grand_final" || /\bfinal\b/.test(round)) {
+    return "final";
+  }
+  if (stage === "sf" || round.includes("semi")) return "sf";
+  if (stage === "qf" || round.includes("quarter")) return "qf";
+  if (stage === "r16" || round.includes("round of 16")) return "r16";
+  if (stage === "r32") {
+    return leg === "second_leg" ? "second_leg" : "first_leg";
+  }
+  return null;
+}
+
+function filterExIntlFixtures(
+  matches: SbMatchListItem[],
+  tab: ExIntlFixtureTab
+): SbMatchListItem[] {
+  return matches.filter((m) => exIntlFixtureTab(m) === tab);
+}
+
+function defaultExIntlFixtureTab(matches: SbMatchListItem[]): ExIntlFixtureTab {
+  for (const tab of EX_INTL_FIXTURE_TABS) {
+    if (filterExIntlFixtures(matches, tab.id).length > 0) return tab.id;
+  }
+  return "first_leg";
+}
+
 function matchNarrative(match: SbMatchListItem): string | null {
   const narrative = match.stats?.narrative;
   return typeof narrative === "string" && narrative.trim() ? narrative.trim() : null;
@@ -591,6 +634,7 @@ export function CompetitionPage() {
     if (tabParam && TAB_IDS.has(tabParam)) return tabParam as CompetitionTab;
     return defaultTabForSlug(slug);
   });
+  const [exIntlFixtureTab, setExIntlFixtureTab] = useState<ExIntlFixtureTab>("first_leg");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -671,6 +715,16 @@ export function CompetitionPage() {
     };
   }, [slug]);
 
+  const isExIntlCup = slug === "ex-internationals-cup-2026";
+
+  useEffect(() => {
+    if (!isExIntlCup || matches.length === 0) return;
+    setExIntlFixtureTab((prev) => {
+      if (filterExIntlFixtures(matches, prev).length > 0) return prev;
+      return defaultExIntlFixtureTab(matches);
+    });
+  }, [isExIntlCup, matches]);
+
   const seasonYear = season.match(/\d{4}/)?.[0] ?? season;
   // Competition names often already embed the year (e.g. "Jagaban Cup 2026"),
   // so only append the season when it isn't already present.
@@ -679,7 +733,11 @@ export function CompetitionPage() {
       ? `${name} ${seasonYear}`
       : name
     : "";
-  const groupedFixtures = useMemo(() => groupFixtures(matches), [matches]);
+  const fixtureMatches = useMemo(() => {
+    if (isExIntlCup) return filterExIntlFixtures(matches, exIntlFixtureTab);
+    return matches;
+  }, [isExIntlCup, matches, exIntlFixtureTab]);
+  const groupedFixtures = useMemo(() => groupFixtures(fixtureMatches), [fixtureMatches]);
   const placements = useMemo(() => derivePlacements(matches), [matches]);
   const topScorers = useMemo(() => deriveTopScorers(matches), [matches]);
   const totalGoals = useMemo(
@@ -872,6 +930,38 @@ export function CompetitionPage() {
     }
     return (
       <div className="sbc-fixtures">
+        {isExIntlCup && (
+          <div
+            className="dbx-segmented sbc-fixture-tabs"
+            role="tablist"
+            aria-label="Fixture round filters"
+          >
+            {EX_INTL_FIXTURE_TABS.map((tab) => {
+              const count = filterExIntlFixtures(matches, tab.id).length;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={exIntlFixtureTab === tab.id}
+                  className={
+                    exIntlFixtureTab === tab.id
+                      ? "dbx-segmented__btn active"
+                      : "dbx-segmented__btn"
+                  }
+                  onClick={() => setExIntlFixtureTab(tab.id)}
+                >
+                  {tab.label}
+                  {count > 0 && (
+                    <span className="sbc-fixture-tabs__count" aria-hidden="true">
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {groupedFixtures.map((group) => (
           <section
             key={group.label}

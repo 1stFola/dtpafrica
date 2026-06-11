@@ -1,4 +1,5 @@
 import {
+  resolveFacingDegrees,
   resolvePrimaryPitchMarker,
   resolveSecondaryPitchMarker,
   type SecondaryPitchInput,
@@ -18,6 +19,7 @@ export function PlayerPitchGraphic({
   ratingAttributes,
 }: Props) {
   const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull);
+  const primaryFacing = resolveFacingDegrees(positionPrimary, positionFull);
   const secondaryMarker = resolveSecondaryPitchMarker(
     {
       positionPrimary,
@@ -28,6 +30,12 @@ export function PlayerPitchGraphic({
     },
     primaryMarker
   );
+  const secondaryFacing = secondaryMarker
+    ? resolveFacingDegrees(
+        positionSecondary ?? positionFitSecondary ?? scoutingSecondaryPositionFit,
+        null
+      )
+    : null;
 
   const ariaLabel = secondaryMarker
     ? `Tactical positions on pitch — primary (${Math.round(primaryMarker.x)}%, ${Math.round(primaryMarker.y)}%), secondary (${Math.round(secondaryMarker.x)}%, ${Math.round(secondaryMarker.y)}%)`
@@ -101,7 +109,13 @@ export function PlayerPitchGraphic({
         className="player-profile-pitch__marker player-profile-pitch__marker--primary"
         style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
         aria-hidden="true"
-      />
+      >
+        <span
+          className="player-profile-pitch__direction"
+          style={{ transform: `rotate(${primaryFacing}deg)` }}
+          aria-hidden="true"
+        />
+      </span>
       <span
         className="player-profile-pitch__main-role-label"
         style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
@@ -115,7 +129,15 @@ export function PlayerPitchGraphic({
             className="player-profile-pitch__marker player-profile-pitch__marker--secondary"
             style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}
             aria-hidden="true"
-          />
+          >
+            {secondaryFacing != null && (
+              <span
+                className="player-profile-pitch__direction player-profile-pitch__direction--secondary"
+                style={{ transform: `rotate(${secondaryFacing}deg)` }}
+                aria-hidden="true"
+              />
+            )}
+          </span>
           <span
             className="player-profile-pitch__alt-role-label"
             style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}

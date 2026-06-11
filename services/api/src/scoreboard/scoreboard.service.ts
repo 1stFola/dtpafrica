@@ -559,6 +559,7 @@ export class ScoreboardService {
   async listMatches(query: {
     status?: string;
     competitionId?: string;
+    limit?: number;
     publicOnly?: boolean;
   }) {
     const where: Prisma.SbMatchWhereInput = {};
@@ -578,6 +579,7 @@ export class ScoreboardService {
     const rows = await this.prisma.sbMatch.findMany({
       where,
       orderBy: [{ kickoffAt: "desc" }],
+      ...(query.limit ? { take: query.limit } : {}),
       include: {
         homeTeam: true,
         awayTeam: true,

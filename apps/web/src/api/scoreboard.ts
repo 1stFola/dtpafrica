@@ -106,6 +106,7 @@ export type SbMatchListItem = {
   matchday?: number | null;
   /** Knockout extras such as penalty shootout outcome. */
   meta?: {
+    leg?: "first_leg" | "second_leg";
     penaltyShootout?: { home: number; away: number; winner: "home" | "away" };
     regulationScore?: { home: number; away: number };
   } | null;
@@ -336,12 +337,13 @@ export function searchScoreboard(query: string, signal?: AbortSignal) {
 }
 
 export function fetchMatches(
-  params?: { status?: string; competitionId?: string },
+  params?: { status?: string; competitionId?: string; limit?: number },
   signal?: AbortSignal
 ) {
   const q = new URLSearchParams();
   if (params?.status) q.set("status", params.status);
   if (params?.competitionId) q.set("competitionId", params.competitionId);
+  if (params?.limit != null) q.set("limit", String(params.limit));
   const qs = q.toString();
   return apiGet<SbMatchListItem[]>(`/scoreboard/matches${qs ? `?${qs}` : ""}`, signal);
 }
@@ -467,4 +469,18 @@ export const EVENT_LABELS: Record<string, string> = {
   foul: "Foul",
   clearance: "Clearance",
   shot_off_target: "Shot off target",
+  penalty_awarded: "Penalty awarded",
+  penalty_saved: "Penalty saved",
+  woodwork: "Hit woodwork",
+  midfield_battle: "Midfield battle",
+  double_save: "Double save",
+  long_throw: "Long throw",
+  water_break: "Water break",
+  interception: "Interception",
+  match_control: "Match control",
+  goal_scorers_update: "Goal scorers update",
+  missed_chance: "Missed chance",
+  disallowed_goal: "Disallowed goal",
+  counter_attack: "Counter attack",
+  late_defense: "Late defense",
 };

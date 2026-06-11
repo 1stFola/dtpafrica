@@ -4,6 +4,7 @@ import {
   type PlayerQuickEditContext,
   type PlayerQuickEditInput,
 } from "../../../api/admin";
+import { MediaUrlFieldHint } from "../../../components/MediaUrlFieldHint";
 import { positionAbbreviationOptions } from "../../../utils/positionLabels";
 
 const POSITION_OPTIONS = positionAbbreviationOptions();
@@ -22,9 +23,9 @@ const emptyForm: PlayerQuickEditInput = {
   preferredFoot: "",
   positionPrimary: "",
   estimatedPlayerValue: "",
-  videoUrl: "",
-  photosUrl: "",
-  publicationsUrl: "",
+  videoUrls: [""],
+  photoUrls: [""],
+  publicationUrls: [""],
 };
 
 function contextToForm(context: PlayerQuickEditContext): PlayerQuickEditInput {
@@ -33,10 +34,68 @@ function contextToForm(context: PlayerQuickEditContext): PlayerQuickEditInput {
     preferredFoot: context.preferredFoot ?? "",
     positionPrimary: context.positionPrimary ?? "",
     estimatedPlayerValue: context.estimatedPlayerValue ?? "",
-    videoUrl: context.videoUrl ?? "",
-    photosUrl: context.photosUrl ?? "",
-    publicationsUrl: context.publicationsUrl ?? "",
+    videoUrls: context.videoUrls.length > 0 ? context.videoUrls : [""],
+    photoUrls: context.photoUrls.length > 0 ? context.photoUrls : [""],
+    publicationUrls:
+      context.publicationUrls.length > 0 ? context.publicationUrls : [""],
   };
+}
+
+function trimUrlRows(rows: string[]): string[] {
+  return rows.map((row) => row.trim()).filter(Boolean);
+}
+
+type UrlFieldProps = {
+  label: string;
+  rows: string[];
+  onChange: (rows: string[]) => void;
+  placeholder: string;
+  hint?: React.ReactNode;
+};
+
+function UrlFieldGroup({ label, rows, onChange, placeholder, hint }: UrlFieldProps) {
+  const updateRow = (index: number, value: string) => {
+    onChange(rows.map((row, rowIndex) => (rowIndex === index ? value : row)));
+  };
+
+  const addRow = () => onChange([...rows, ""]);
+
+  const removeRow = (index: number) => {
+    if (rows.length <= 1) {
+      onChange([""]);
+      return;
+    }
+    onChange(rows.filter((_, rowIndex) => rowIndex !== index));
+  };
+
+  return (
+    <div className="admin-sb-field admin-sb-field--wide admin-url-rows">
+      <span>{label}</span>
+      <div className="admin-url-rows__list">
+        {rows.map((row, index) => (
+          <div key={`${label}-${index}`} className="admin-url-rows__row">
+            <input
+              value={row}
+              onChange={(event) => updateRow(index, event.target.value)}
+              placeholder={placeholder}
+            />
+            <button
+              type="button"
+              className="admin-link admin-url-rows__remove"
+              onClick={() => removeRow(index)}
+              aria-label={`Remove ${label} row ${index + 1}`}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="admin-link admin-url-rows__add" onClick={addRow}>
+        + Add URL
+      </button>
+      {hint}
+    </div>
+  );
 }
 
 export function PlayerQuickEditModal({
@@ -90,9 +149,9 @@ export function PlayerQuickEditModal({
         preferredFoot: form.preferredFoot.trim() || "",
         positionPrimary: form.positionPrimary.trim() || undefined,
         estimatedPlayerValue: form.estimatedPlayerValue.trim(),
-        videoUrl: form.videoUrl.trim(),
-        photosUrl: form.photosUrl.trim(),
-        publicationsUrl: form.publicationsUrl.trim(),
+        videoUrls: trimUrlRows(form.videoUrls),
+        photoUrls: trimUrlRows(form.photoUrls),
+        publicationUrls: trimUrlRows(form.publicationUrls),
       });
       onSaved();
       onClose();
@@ -197,43 +256,30 @@ export function PlayerQuickEditModal({
                 />
               </label>
 
-              <label className="admin-sb-field admin-sb-field--wide">
-                <span>Video URL</span>
-                <input
-                  value={form.videoUrl}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, videoUrl: event.target.value }))
-                  }
-                  placeholder="https://youtube.com/…"
-                />
-              </label>
+              <UrlFieldGroup
+                label="Video URLs"
+                rows={form.videoUrls}
+                onChange={(videoUrls) => setForm((current) => ({ ...current, videoUrls }))}
+                placeholder="https://youtube.com/…"
+                hint={<MediaUrlFieldHint kind="video" />}
+              />
 
-              <label className="admin-sb-field admin-sb-field--wide">
-                <span>Photo URLs</span>
-                <textarea
-                  rows={3}
-                  value={form.photosUrl}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, photosUrl: event.target.value }))
-                  }
-                  placeholder="One URL per line or comma-separated"
-                />
-              </label>
+              <UrlFieldGroup
+                label="Photo URLs"
+                rows={form.photoUrls}
+                onChange={(photoUrls) => setForm((current) => ({ ...current, photoUrls }))}
+                placeholder="https://…"
+                hint={<MediaUrlFieldHint kind="image" />}
+              />
 
-              <label className="admin-sb-field admin-sb-field--wide">
-                <span>Publication URLs</span>
-                <textarea
-                  rows={3}
-                  value={form.publicationsUrl}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      publicationsUrl: event.target.value,
-                    }))
-                  }
-                  placeholder="Press links, one per line"
-                />
-              </label>
+              <UrlFieldGroup
+                label="Publication URLs"
+                rows={form.publicationUrls}
+                onChange={(publicationUrls) =>
+                  setForm((current) => ({ ...current, publicationUrls }))
+                }
+                placeholder="Press links"
+              />
             </div>
           )}
 
