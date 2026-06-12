@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   fetchCompetition,
@@ -11,6 +11,7 @@ import {
 } from "../../../api/scoreboard";
 import { MatchCenterCard } from "../components/MatchCenterCard";
 import { MatchTicker } from "../components/MatchTicker";
+import { StatLeadersWidget } from "../components/StatLeadersWidget";
 import { TeamCrest } from "../components/TeamCrest";
 import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -120,12 +121,17 @@ function exIntlFixtureTab(match: SbMatchListItem): ExIntlFixtureTab | null {
   const leg = match.meta?.leg;
   const round = (match.roundLabel ?? "").toLowerCase();
 
-  if (stage === "final" || stage === "grand_final" || /\bfinal\b/.test(round)) {
+  if (stage === "r16" || round.includes("round of 16")) return "r16";
+  if (stage === "qf" || round.includes("quarter")) return "qf";
+  if (stage === "sf" || round.includes("semi")) return "sf";
+  if (
+    stage === "final" ||
+    stage === "grand_final" ||
+    round === "final" ||
+    /^final\b/.test(round)
+  ) {
     return "final";
   }
-  if (stage === "sf" || round.includes("semi")) return "sf";
-  if (stage === "qf" || round.includes("quarter")) return "qf";
-  if (stage === "r16" || round.includes("round of 16")) return "r16";
   if (stage === "r32") {
     return leg === "second_leg" ? "second_leg" : "first_leg";
   }
@@ -229,7 +235,7 @@ function deriveTopScorers(matches: SbMatchListItem[]): Scorer[] {
     for (const event of match.events ?? []) {
       if (event.type !== "goal") continue;
       const name = event.player?.displayName ?? event.playerLabel;
-      if (!name) continue;
+      if (!name || /^(unknown|player\s*[12])$/i.test(name.trim())) continue;
       const team =
         event.teamId === match.homeTeam.id
           ? match.homeTeam
@@ -635,6 +641,7 @@ export function CompetitionPage() {
     return defaultTabForSlug(slug);
   });
   const [exIntlFixtureTab, setExIntlFixtureTab] = useState<ExIntlFixtureTab>("first_leg");
+  const exIntlTabInitialized = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -718,12 +725,15 @@ export function CompetitionPage() {
   const isExIntlCup = slug === "ex-internationals-cup-2026";
 
   useEffect(() => {
-    if (!isExIntlCup || matches.length === 0) return;
-    setExIntlFixtureTab((prev) => {
-      if (filterExIntlFixtures(matches, prev).length > 0) return prev;
-      return defaultExIntlFixtureTab(matches);
-    });
-  }, [isExIntlCup, matches]);
+    exIntlTabInitialized.current = false;
+    setExIntlFixtureTab("first_leg");
+  }, [slug]);
+
+  useEffect(() => {
+    if (!isExIntlCup || matches.length === 0 || exIntlTabInitialized.current) return;
+    exIntlTabInitialized.current = true;
+    setExIntlFixtureTab(defaultExIntlFixtureTab(matches));
+  }, [isExIntlCup, matches.length]);
 
   const seasonYear = season.match(/\d{4}/)?.[0] ?? season;
   // Competition names often already embed the year (e.g. "Jagaban Cup 2026"),
@@ -744,10 +754,13 @@ export function CompetitionPage() {
     () => matches.reduce((sum, m) => sum + m.homeScore + m.awayScore, 0),
     [matches]
   );
-  const isGroupFormat =
-    formatType === "JAGABAN_CUP_STANDARD" || standingsGroups.length > 0;
   const isKnockoutFormat =
     formatType === "KNOCKOUT_CUP" || slug === "ex-internationals-cup-2026";
+  const isGroupFormat =
+    !isKnockoutFormat &&
+    (formatType === "JAGABAN_CUP_STANDARD" ||
+      formatType === "HYBRID_CHAMPIONS_LEAGUE" ||
+      standingsGroups.length > 0);
   const showKnockoutBracket = Boolean(bracketImageUrl && isKnockoutFormat);
 
   const groups = standingsGroups.length ? standingsGroups : isGroupFormat ? [] : [""];
@@ -920,7 +933,7 @@ export function CompetitionPage() {
         </div>
       );
     }
-    if (groupedFixtures.length === 0) {
+    if (!isExIntlCup && groupedFixtures.length === 0) {
       return (
         <div className="dtp-empty-state">
           <p className="dtp-empty-state__title">No matches scheduled</p>
@@ -930,7 +943,7 @@ export function CompetitionPage() {
     }
     return (
       <div className="sbc-fixtures">
-        {isExIntlCup && (
+        {isExIntlCup && matches.length > 0 && (
           <div
             className="dbx-segmented sbc-fixture-tabs"
             role="tablist"
@@ -960,6 +973,12 @@ export function CompetitionPage() {
                 </button>
               );
             })}
+          </div>
+        )}
+        {isExIntlCup && groupedFixtures.length === 0 && (
+          <div className="dtp-empty-state sbc-fixtures-empty">
+            <p className="dtp-empty-state__title">Fixtures coming soon</p>
+            <p>No matches scheduled yet for this round.</p>
           </div>
         )}
         {groupedFixtures.map((group) => (
@@ -1192,10 +1211,19 @@ export function CompetitionPage() {
         ))}
       </div>
 
-      {activeTab === "overview" && renderOverview()}
-      {activeTab === "fixtures" && <div className="sbc-overview">{renderFixtures()}</div>}
-      {activeTab === "teams" && <div className="sbc-overview">{renderTeams()}</div>}
-      {activeTab === "history" && <div className="sbc-overview">{renderHistory()}</div>}
+      <div className="sbc-comp-layout">
+        <div className="sbc-comp-layout__main">
+          {activeTab === "overview" && renderOverview()}
+          {activeTab === "fixtures" && <div className="sbc-overview">{renderFixtures()}</div>}
+          {activeTab === "teams" && <div className="sbc-overview">{renderTeams()}</div>}
+          {activeTab === "history" && <div className="sbc-overview">{renderHistory()}</div>}
+        </div>
+        {slug && (
+          <aside className="sbc-comp-layout__sidebar" aria-label="Competition stats">
+            <StatLeadersWidget competitionSlug={slug} competitionLabel={competitionLabel} />
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

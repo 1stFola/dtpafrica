@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -60,6 +61,27 @@ export class ScoreboardController {
   @Get("competitions/:slug")
   competition(@Param("slug") slug: string) {
     return this.sb.competitionBySlug(slug);
+  }
+
+  @Get("competitions/:slug/stat-leaders")
+  statLeaders(
+    @Param("slug") slug: string,
+    @Query("metric") metric = "goals",
+    @Query("limit") limit?: string
+  ) {
+    const valid = ScoreboardService.STAT_LEADER_METRICS as readonly string[];
+    if (!valid.includes(metric)) {
+      throw new BadRequestException(
+        `metric must be one of: ${valid.join(", ")}`
+      );
+    }
+    const parsedLimit =
+      limit != null && limit !== "" ? Number.parseInt(limit, 10) : undefined;
+    return this.sb.statLeaders(
+      slug,
+      metric as (typeof ScoreboardService.STAT_LEADER_METRICS)[number],
+      Number.isFinite(parsedLimit) && parsedLimit! > 0 ? parsedLimit : 10
+    );
   }
 
   @Get("teams/:id")
