@@ -46,15 +46,34 @@ const EVENT_ICONS: Record<string, string> = {
 /** assist_name column label by event type (CSV secondary player). */
 const ASSIST_LABEL_BY_TYPE: Record<string, string> = {
   substitution: "On ",
-  clearance: "Stopped by ",
   blocked_shot: "Stopped by ",
   late_defense: "Stopped by ",
   interception: "Stopped by ",
   shot_off_target: "Played by ",
-  save: "Played by ",
   double_save: "Played by ",
   penalty_saved: "Played by ",
 };
+
+/** Show secondary player in parentheses on the type line (no prefix). */
+const PAREN_SECONDARY_TYPES = new Set([
+  "yellow_card",
+  "red_card",
+  "clearance",
+  "counter_attack",
+  "save",
+]);
+
+const PLACEHOLDER_PLAYER_RE = /^(unknown|player\s*[12])$/i;
+
+function isPlaceholderPlayer(name: string | null | undefined): boolean {
+  if (!name?.trim()) return false;
+  return PLACEHOLDER_PLAYER_RE.test(name.trim());
+}
+
+function visiblePlayerLabel(name: string | null | undefined): string | null {
+  if (!name?.trim() || isPlaceholderPlayer(name)) return null;
+  return name.trim();
+}
 
 function resolveCsvEventType(ev: SbMatchEvent): string {
   const meta = ev.metadata;
@@ -142,6 +161,19 @@ function isNarrativeEvent(ev: SbMatchEvent): boolean {
   return flowKind === "score_update" || flowKind === "match_flow";
 }
 
+function usesParenSecondaryFormat(ev: SbMatchEvent): boolean {
+  const csvType = resolveCsvEventType(ev);
+  return PAREN_SECONDARY_TYPES.has(csvType) || PAREN_SECONDARY_TYPES.has(ev.type);
+}
+
+/** Parenthetical name: assist_name first, else player_name (CSV). */
+function parentheticalPlayerName(
+  playerLabel: string | null,
+  assistLabel: string | null
+): string | null {
+  return assistLabel ?? playerLabel;
+}
+
 export function EventTimeline({
   events,
   homeTeam,
@@ -169,16 +201,25 @@ export function EventTimeline({
       {sorted.map((ev) => {
         const side = eventSide(ev, homeTeam, awayTeam);
         const club = teamNameForEvent(ev, homeTeam, awayTeam);
-        const playerLabel = ev.player?.displayName ?? ev.playerLabel;
-        const assistLabel = ev.assistPlayer?.displayName ?? ev.assistLabel;
+        const csvType = resolveCsvEventType(ev);
+        const playerLabel = visiblePlayerLabel(ev.player?.displayName ?? ev.playerLabel);
+        const assistLabel = visiblePlayerLabel(ev.assistPlayer?.displayName ?? ev.assistLabel);
+        const parenFormat = usesParenSecondaryFormat(ev);
+        const parenName = parenFormat
+          ? parentheticalPlayerName(playerLabel, assistLabel)
+          : null;
+        const baseLabel = resolveEventLabel(ev);
+        const typeLabel = parenName ? `${baseLabel} (${parenName})` : baseLabel;
         const narrative = isNarrativeEvent(ev);
         const showDetail =
-          ev.detail && (!narrative || ev.detail !== resolveEventLabel(ev));
+          ev.detail && (!narrative || ev.detail !== baseLabel);
+        const showPrimary = !parenFormat && playerLabel;
+        const showAssist = !parenFormat && assistLabel;
 
         return (
           <li
             key={ev.id}
-            className={`sbm-event sbm-event--${ev.type} sbm-event--${side}`}
+            className={`sbm-event sbm-event--${csvType} sbm-event--${side}`}
           >
             <span className="sbm-event__rail" aria-hidden="true">
               <span className="sbm-event__dot" />
@@ -189,12 +230,12 @@ export function EventTimeline({
                 <span className="sbm-event__icon" aria-hidden="true">
                   {resolveEventIcon(ev)}
                 </span>
-                <span className="sbm-event__type">{resolveEventLabel(ev)}</span>
+                <span className="sbm-event__type">{typeLabel}</span>
                 {showDetail && <span className="sbm-event__detail">{ev.detail}</span>}
               </div>
-              {(playerLabel || assistLabel) && (
+              {(showPrimary || showAssist || (ev.highlights?.length ?? 0) > 0) && (
                 <div className="sbm-event__body">
-                  {playerLabel && (
+                  {showPrimary && (
                     <PlayerLink
                       slug={ev.player?.slug}
                       label={playerLabel}
@@ -202,7 +243,7 @@ export function EventTimeline({
                       competition={competition}
                     />
                   )}
-                  {assistLabel && (
+                  {showAssist && (
                     <span className="sbm-event__assist">
                       {assistPrefixForEvent(ev)}
                       <PlayerLink

@@ -352,6 +352,37 @@ export function fetchMatch(id: string, signal?: AbortSignal) {
   return apiGet<SbMatchDetail>(`/scoreboard/matches/${id}`, signal);
 }
 
+export type StatLeaderMetric = "goals" | "assists" | "yellow" | "red";
+
+export type StatLeaderRow = {
+  rank: number;
+  playerId: string | null;
+  playerName: string;
+  playerSlug: string;
+  photoUrl: string | null;
+  count: number;
+  team: SbTeamRef | null;
+};
+
+export type StatLeadersResponse = {
+  metric: StatLeaderMetric;
+  competitionId: string;
+  competitionSlug: string;
+  leaders: StatLeaderRow[];
+};
+
+export function fetchStatLeaders(
+  competitionSlug: string,
+  metric: StatLeaderMetric = "goals",
+  signal?: AbortSignal
+) {
+  const q = new URLSearchParams({ metric });
+  return apiGet<StatLeadersResponse>(
+    `/scoreboard/competitions/${competitionSlug}/stat-leaders?${q.toString()}`,
+    signal
+  );
+}
+
 export function fetchStandings(competitionId: string, signal?: AbortSignal) {
   return apiGet<{
     competitionName: string;

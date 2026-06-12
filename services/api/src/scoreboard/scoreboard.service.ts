@@ -17,6 +17,7 @@ import {
   type SkeletonProfileQuery,
 } from "../home/player-profile.presenter";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
+import { slugifyPlayerName } from "../players/player-slug";
 import { presentHighlight, presentMatchDetail } from "./present-media";
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
@@ -325,6 +326,167 @@ export class ScoreboardService {
     });
   }
 
+  static readonly STAT_LEADER_METRICS = ["goals", "assists", "yellow", "red"] as const;
+
+  /**
+   * Top-N stat leaders for a competition, aggregated from published match events.
+   */
+  async statLeaders(
+    competitionSlugOrId: string,
+    metric: (typeof ScoreboardService.STAT_LEADER_METRICS)[number],
+    limit = 10
+  ) {
+    const competition = await this.resolvePublishedCompetition(competitionSlugOrId);
+    const take = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 10;
+
+    const matchScope = {
+      isPublished: true,
+      competitionId: competition.id,
+    } as const;
+
+    type TeamPick = {
+      id: string;
+      name: string;
+      shortName: string | null;
+      slug: string;
+      logoUrl: string | null;
+    };
+
+    type LeaderAgg = {
+      playerId: string | null;
+      playerName: string;
+      playerSlug: string;
+      photoUrl: string | null;
+      team: TeamPick | null;
+      count: number;
+    };
+
+    const bump = (
+      map: Map<string, LeaderAgg>,
+      key: string,
+      row: Omit<LeaderAgg, "count">
+    ) => {
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += 1;
+        return;
+      }
+      map.set(key, { ...row, count: 1 });
+    };
+
+    const eventSelect = {
+      type: true,
+      playerId: true,
+      playerLabel: true,
+      assistPlayerId: true,
+      assistLabel: true,
+      teamId: true,
+      player: {
+        select: {
+          id: true,
+          slug: true,
+          displayName: true,
+          playerPhotoUrl: true,
+        },
+      },
+      assistPlayer: {
+        select: {
+          id: true,
+          slug: true,
+          displayName: true,
+          playerPhotoUrl: true,
+        },
+      },
+      team: {
+        select: {
+          id: true,
+          name: true,
+          shortName: true,
+          slug: true,
+          logoUrl: true,
+        },
+      },
+    } as const;
+
+    const byKey = new Map<string, LeaderAgg>();
+
+    if (metric === "assists") {
+      const events = await this.prisma.sbMatchEvent.findMany({
+        where: {
+          type: "goal",
+          match: matchScope,
+          OR: [{ assistPlayerId: { not: null } }, { assistLabel: { not: null } }],
+        },
+        select: eventSelect,
+      });
+
+      for (const event of events) {
+        const name = event.assistPlayer?.displayName ?? event.assistLabel?.trim();
+        if (!name) continue;
+        const playerId = event.assistPlayerId;
+        const playerSlug = event.assistPlayer?.slug ?? slugifyPlayerName(name);
+        const key = `${playerId ?? playerSlug}::${event.teamId ?? "free"}`;
+        bump(byKey, key, {
+          playerId,
+          playerName: name,
+          playerSlug,
+          photoUrl: event.assistPlayer?.playerPhotoUrl ?? null,
+          team: event.team,
+        });
+      }
+    } else {
+      const type =
+        metric === "goals"
+          ? "goal"
+          : metric === "yellow"
+            ? "yellow_card"
+            : "red_card";
+
+      const events = await this.prisma.sbMatchEvent.findMany({
+        where: { type, match: matchScope },
+        select: eventSelect,
+      });
+
+      for (const event of events) {
+        const name = event.player?.displayName ?? event.playerLabel?.trim();
+        if (!name) continue;
+        const playerId = event.playerId;
+        const playerSlug = event.player?.slug ?? slugifyPlayerName(name);
+        const key = `${playerId ?? playerSlug}::${event.teamId ?? "free"}`;
+        bump(byKey, key, {
+          playerId,
+          playerName: name,
+          playerSlug,
+          photoUrl: event.player?.playerPhotoUrl ?? null,
+          team: event.team,
+        });
+      }
+    }
+
+    const leaders = [...byKey.values()]
+      .sort(
+        (a, b) =>
+          b.count - a.count || a.playerName.localeCompare(b.playerName)
+      )
+      .slice(0, take)
+      .map((row, index) => ({
+        rank: index + 1,
+        playerId: row.playerId,
+        playerName: row.playerName,
+        playerSlug: row.playerSlug,
+        photoUrl: row.photoUrl,
+        count: row.count,
+        team: row.team ? presentScoreboardPayload(row.team) : null,
+      }));
+
+    return presentScoreboardPayload({
+      metric,
+      competitionId: competition.id,
+      competitionSlug: competition.slug,
+      leaders,
+    });
+  }
+
   /** Public scoreboard player card (slug/name); skeleton when not published. */
   async playerProfile(slugOrId: string, query: SkeletonProfileQuery = {}) {
     const resolved = await resolvePlayerBySlugOrId(this.prisma, slugOrId);
@@ -625,9 +787,11 @@ export class ScoreboardService {
     if (!competition) throw new NotFoundException("Competition not found");
 
     const groupFormats = new Set(["JAGABAN_CUP_STANDARD", "HYBRID_CHAMPIONS_LEAGUE"]);
+    const isKnockoutCup = competition.formatType === "KNOCKOUT_CUP";
     const useGroups =
-      groupFormats.has(competition.formatType ?? "") ||
-      competition.teams.some((t) => t.groupKey);
+      !isKnockoutCup &&
+      (groupFormats.has(competition.formatType ?? "") ||
+        competition.teams.some((t) => t.groupKey));
 
     const finished = await this.prisma.sbMatch.findMany({
       where: {
