@@ -649,9 +649,14 @@ export function CompetitionPage() {
     setActiveTab(tab);
     const next = new URLSearchParams(searchParams);
     const slugDefault = defaultTabForSlug(slug);
-    if (tab === slugDefault) next.set("tab", tab);
-    else if (tab === "overview") next.delete("tab");
-    else next.set("tab", tab);
+    // Only omit tab from the URL when overview is this competition's default.
+    // Competitions with a non-overview default (e.g. ex-intl → fixtures) must
+    // persist tab=overview or the sync effect falls back to the slug default.
+    if (tab === "overview" && slugDefault === "overview") {
+      next.delete("tab");
+    } else {
+      next.set("tab", tab);
+    }
     setSearchParams(next, { replace: true });
   };
 
