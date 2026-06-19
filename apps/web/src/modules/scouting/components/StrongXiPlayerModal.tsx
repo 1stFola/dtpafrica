@@ -23,6 +23,7 @@ import {
   resolvePlayerAge,
   resolvePlayerClub,
 } from "../utils/strongXiPlayerModalUtils";
+import { PositionScoutingMetricsRow } from "./PositionScoutingMetricsRow";
 
 export type StrongXiPlayerSelection = {
   playerId: string;
@@ -282,6 +283,7 @@ export function StrongXiPlayerModal({
     slug: null,
     displayName: selection.displayName,
     positionPrimary: selection.positionPrimary ?? "—",
+    role: null,
     playerPhotoUrl: selection.photoUrl,
     overallRating: selection.overallRating ?? null,
     offensiveRating: selection.offensiveRating ?? null,
@@ -309,6 +311,73 @@ export function StrongXiPlayerModal({
   const confidenceScore = savedFit?.confidenceScore ?? selection.confidenceScore;
   const fitTierLabel = philosophyFitTier(philosophyFitScore);
   const fitTierClass = philosophyFitTierClass(philosophyFitScore);
+
+  const topStatsSection = (
+    <section
+      className="strong-xi-modal__module strong-xi-modal__module--secondary-stats"
+      aria-labelledby="strong-xi-modal-stats"
+    >
+      <h3 id="strong-xi-modal-stats">Top Stats</h3>
+      {loading && !profile ? (
+        <div className="strong-xi-modal__loading" aria-live="polite">
+          <span className="strong-xi-modal__loading-dot" />
+          <span className="strong-xi-modal__loading-dot" />
+          <span className="strong-xi-modal__loading-dot" />
+          <span className="strong-xi-modal__loading-text">Loading profile…</span>
+        </div>
+      ) : (
+        <>
+          <div className="strong-xi-modal__stats-grid strong-xi-modal__stats-grid--compact">
+            <StatChip
+              icon="matches"
+              label="Matches"
+              value={formatStatValue(stats?.appearances)}
+            />
+            <StatChip icon="goals" label="Goals" value={formatStatValue(stats?.goals)} />
+            <StatChip icon="assists" label="Assists" value={formatStatValue(stats?.assists)} />
+            {isGk && (
+              <StatChip
+                icon="cleanSheets"
+                label="Clean sheets"
+                value={formatStatValue(stats?.cleanSheets)}
+              />
+            )}
+          </div>
+
+          <div
+            className={`strong-xi-modal__honor strong-xi-modal__honor--compact${honor ? "" : " strong-xi-modal__honor--empty"}`}
+          >
+            <svg
+              className="strong-xi-modal__honor-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M8 4h8l1 4-4 2-4-2 1-4Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                fill="none"
+              />
+              <path
+                d="M12 10v10M8 20h8"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="strong-xi-modal__honor-copy">
+              <span className="strong-xi-modal__honor-label">Honors</span>
+              <span className="strong-xi-modal__honor-value">
+                {honor ?? "No stat leader honors yet"}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
 
   return (
     <div
@@ -369,86 +438,21 @@ export function StrongXiPlayerModal({
                 {selection.slotLabel && (
                   <span className="strong-xi-modal__slot">{selection.slotLabel}</span>
                 )}
+                <span className={`strong-xi-modal__tier-badge ${fitTierClass}`}>
+                  {fitTierLabel}
+                </span>
               </div>
             </div>
           </div>
+
+          <PositionScoutingMetricsRow player={mergedProfile} compact />
         </header>
 
         <div className="strong-xi-modal__body">
-          <section className="strong-xi-modal__module" aria-labelledby="strong-xi-modal-stats">
-            <h3 id="strong-xi-modal-stats">Top Stats</h3>
-            {loading && !profile ? (
-              <div className="strong-xi-modal__loading" aria-live="polite">
-                <span className="strong-xi-modal__loading-dot" />
-                <span className="strong-xi-modal__loading-dot" />
-                <span className="strong-xi-modal__loading-dot" />
-                <span className="strong-xi-modal__loading-text">Loading profile…</span>
-              </div>
-            ) : (
-              <>
-                <div className="strong-xi-modal__stats-grid">
-                  <StatChip
-                    icon="matches"
-                    label="Matches"
-                    value={formatStatValue(stats?.appearances)}
-                  />
-                  <StatChip
-                    icon="goals"
-                    label="Goals"
-                    value={formatStatValue(stats?.goals)}
-                  />
-                  <StatChip
-                    icon="assists"
-                    label="Assists"
-                    value={formatStatValue(stats?.assists)}
-                  />
-                  {isGk && (
-                    <StatChip
-                      icon="cleanSheets"
-                      label="Clean sheets"
-                      value={formatStatValue(stats?.cleanSheets)}
-                    />
-                  )}
-                </div>
-
-                <div
-                  className={`strong-xi-modal__honor${honor ? "" : " strong-xi-modal__honor--empty"}`}
-                >
-                  <svg
-                    className="strong-xi-modal__honor-icon"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <path
-                      d="M8 4h8l1 4-4 2-4-2 1-4Z"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                    <path
-                      d="M12 10v10M8 20h8"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="strong-xi-modal__honor-copy">
-                    <span className="strong-xi-modal__honor-label">Honors</span>
-                    <span className="strong-xi-modal__honor-value">
-                      {honor ?? "No stat leader honors yet"}
-                    </span>
-                  </div>
-                </div>
-              </>
-            )}
-          </section>
-
           <section className="strong-xi-modal__module" aria-labelledby="strong-xi-modal-radar">
             <h3 id="strong-xi-modal-radar">Performance Radar</h3>
             <div className="strong-xi-modal__radar-frame">
-              <PlayerCategoryRadar scores={radarScores} />
+              <PlayerCategoryRadar scores={radarScores} expandLabels />
             </div>
           </section>
 
@@ -486,6 +490,8 @@ export function StrongXiPlayerModal({
               </div>
             </div>
           </section>
+
+          {topStatsSection}
         </div>
 
         <footer className="strong-xi-modal__footer">
