@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { ADS_CONFIG_KEY, DEFAULT_AD_SLOTS } from "../ads/ads.constants";
 import {
   seedLegacyAcademies,
@@ -7,6 +7,8 @@ import {
   seedScoreboard,
 } from "./prisma-seed-modules";
 import { isFullSeed, type SeedOptions } from "./seed-options";
+import { legacyMatchMetricsToPlayerMatchRecord } from "../sip/legacy-match-metrics-mapper";
+import type { LegacyMatchMetricsDto } from "../admin/dto/calibration-player-info.dto";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
@@ -65,7 +67,113 @@ const SEED_BENCHMARK_METADATA = {
   },
   alternatives: [],
   filterInfo: { poolSize: 20 },
+  calibrationMetrics: {
+    duration: 78,
+    ball_touches: 62,
+    one_touch_possessions_percentage: 45.2,
+    multi_touch_possessions__percentage: 54.8,
+    possession_duration_seconds: 3.2,
+    quick_release_score: 45.2,
+    left_foot_release_percentage: 34.8,
+    right_foot_release_percentage: 65.2,
+    left_foot_touch_percentage: 38.7,
+    right_foot_touch_percentage: 61.3,
+    release_laces_percentage: 40,
+    turn_efficiency: 1.2,
+    kicking_power: 58,
+    top_speed_with_ball: 16.5,
+    distance_with_ball: 280,
+    first_step_accelerations: 14,
+    sprints: 18,
+  },
 };
+
+const ISMAEL_SALISU_CALIBRATION_METRICS = {
+  duration: 82,
+  ball_touches: 74,
+  one_touch_possessions_percentage: 36.4,
+  multi_touch_possessions__percentage: 63.6,
+  possession_duration_seconds: 4.8,
+  quick_release_score: 36.4,
+  left_foot_release_percentage: 48,
+  right_foot_release_percentage: 52,
+  left_foot_touch_percentage: 46,
+  right_foot_touch_percentage: 54,
+  release_laces_percentage: 38,
+  turn_efficiency: 1.15,
+  kicking_power: 62,
+  top_speed: 18.4,
+  first_step_accelerations: 11,
+  intense_turns: 9,
+  sprints: 14,
+};
+
+async function seedDemoCalibrationPlayer(
+  prisma: PrismaClient,
+  slug: string,
+  calibrationMetrics: LegacyMatchMetricsDto
+): Promise<void> {
+  const player = await prisma.player.findUnique({
+    where: { slug },
+    select: { id: true, benchmarkMetadata: true },
+  });
+  if (!player) return;
+
+  const existingMeta =
+    player.benchmarkMetadata && typeof player.benchmarkMetadata === "object"
+      ? (player.benchmarkMetadata as Record<string, unknown>)
+      : {};
+  const existingCal =
+    existingMeta.calibrationMetrics && typeof existingMeta.calibrationMetrics === "object"
+      ? (existingMeta.calibrationMetrics as Record<string, unknown>)
+      : {};
+  const mergedCalibration = { ...calibrationMetrics, ...existingCal };
+  const needsCalibrationMerge = Object.entries(calibrationMetrics).some(([key, value]) => {
+    const current = existingCal[key];
+    return current == null && value != null;
+  });
+  if (needsCalibrationMerge) {
+    await prisma.player.update({
+      where: { id: player.id },
+      data: {
+        benchmarkMetadata: {
+          ...existingMeta,
+          calibrationMetrics: mergedCalibration,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  const existingMetrics = await prisma.playerMatchMetrics.findFirst({
+    where: { playerId: player.id },
+  });
+  const matchRecord = legacyMatchMetricsToPlayerMatchRecord(calibrationMetrics);
+
+  if (!existingMetrics) {
+    const match = await prisma.match.create({
+      data: {
+        competition: "Calibration import",
+        season: String(new Date().getFullYear()),
+        playedAt: new Date(),
+      },
+    });
+    await prisma.playerMatchMetrics.create({
+      data: {
+        playerId: player.id,
+        matchId: match.id,
+        ...matchRecord,
+      },
+    });
+    return;
+  }
+
+  await prisma.playerMatchMetrics.updateMany({
+    where: { playerId: player.id },
+    data: {
+      possessionDurationSeconds: matchRecord.possessionDurationSeconds,
+    },
+  });
+}
 
 const SEED_MEDIA_ITEMS = [
   {
@@ -212,13 +320,18 @@ export async function runDatabaseSeed(
               ballTouches: 62,
               oneTouchPossessions: 28,
               multiTouchPossessions: 34,
+              possessionDurationSeconds: 3.2,
               releaseInsideFootCount: 22,
               releaseLacesCount: 18,
               releaseOtherFootzoneCount: 6,
               leftFootTouchCount: 24,
               rightFootTouchCount: 38,
+              leftFootReleaseCount: 16,
+              rightFootReleaseCount: 30,
               leftFootReceiveCount: 20,
               rightFootReceiveCount: 30,
+              leftFootKickingPowerMph: 54,
+              rightFootKickingPowerMph: 58,
               totalDistanceMiles: 6.2,
               sprintDistanceYards: 420,
               firstStepAccelerations: 14,
@@ -236,6 +349,11 @@ export async function runDatabaseSeed(
               topSpeedWithBallMph: 16.5,
               intenseTurnsWithBall: 7,
             },
+          });
+        } else if (existingMetrics.possessionDurationSeconds <= 0) {
+          await prisma.playerMatchMetrics.update({
+            where: { id: existingMetrics.id },
+            data: { possessionDurationSeconds: 3.2 },
           });
         }
 
@@ -481,6 +599,16 @@ Parents and guardians can register minors with consent workflows built for youth
         legacyPlayers = legacyResult.playerCount;
         legacyAcademyLinks = legacyResult.academyLinkCount;
         legacySampleSlugs = legacyResult.sampleSlugs;
+      },
+    },
+    {
+      name: "demo-player-metrics",
+      run: async () => {
+        await seedDemoCalibrationPlayer(
+          prisma,
+          "ismael-salisu",
+          ISMAEL_SALISU_CALIBRATION_METRICS
+        );
       },
     },
   ];

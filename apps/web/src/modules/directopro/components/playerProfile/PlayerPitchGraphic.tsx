@@ -1,5 +1,4 @@
 import {
-  resolveFacingDegrees,
   resolvePrimaryPitchMarker,
   resolveSecondaryPitchMarker,
   type SecondaryPitchInput,
@@ -8,34 +7,33 @@ import {
 type Props = SecondaryPitchInput & {
   positionPrimary: string;
   positionFull?: string | null;
+  role?: string | null;
 };
 
 export function PlayerPitchGraphic({
   positionPrimary,
   positionFull,
+  role,
   positionSecondary,
   positionFitSecondary,
   scoutingSecondaryPositionFit,
   ratingAttributes,
+  tacticalSummary,
 }: Props) {
-  const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull);
-  const primaryFacing = resolveFacingDegrees(positionPrimary, positionFull);
+  const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull, role);
   const secondaryMarker = resolveSecondaryPitchMarker(
     {
       positionPrimary,
+      positionFull,
+      role,
       positionSecondary,
       positionFitSecondary,
       scoutingSecondaryPositionFit,
       ratingAttributes,
+      tacticalSummary,
     },
     primaryMarker
   );
-  const secondaryFacing = secondaryMarker
-    ? resolveFacingDegrees(
-        positionSecondary ?? positionFitSecondary ?? scoutingSecondaryPositionFit,
-        null
-      )
-    : null;
 
   const ariaLabel = secondaryMarker
     ? `Tactical positions on pitch — primary (${Math.round(primaryMarker.x)}%, ${Math.round(primaryMarker.y)}%), secondary (${Math.round(secondaryMarker.x)}%, ${Math.round(secondaryMarker.y)}%)`
@@ -43,6 +41,18 @@ export function PlayerPitchGraphic({
 
   return (
     <div className="player-profile-pitch" role="img" aria-label={ariaLabel}>
+      <span
+        className="player-profile-pitch__attack-edge player-profile-pitch__attack-edge--left"
+        aria-hidden="true"
+      >
+        ‹
+      </span>
+      <span
+        className="player-profile-pitch__attack-edge player-profile-pitch__attack-edge--right"
+        aria-hidden="true"
+      >
+        ‹
+      </span>
       <svg
         className="player-profile-pitch__svg"
         viewBox="0 0 68 100"
@@ -109,13 +119,7 @@ export function PlayerPitchGraphic({
         className="player-profile-pitch__marker player-profile-pitch__marker--primary"
         style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
         aria-hidden="true"
-      >
-        <span
-          className="player-profile-pitch__direction"
-          style={{ transform: `rotate(${primaryFacing}deg)` }}
-          aria-hidden="true"
-        />
-      </span>
+      />
       <span
         className="player-profile-pitch__main-role-label"
         style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
@@ -129,15 +133,7 @@ export function PlayerPitchGraphic({
             className="player-profile-pitch__marker player-profile-pitch__marker--secondary"
             style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}
             aria-hidden="true"
-          >
-            {secondaryFacing != null && (
-              <span
-                className="player-profile-pitch__direction player-profile-pitch__direction--secondary"
-                style={{ transform: `rotate(${secondaryFacing}deg)` }}
-                aria-hidden="true"
-              />
-            )}
-          </span>
+          />
           <span
             className="player-profile-pitch__alt-role-label"
             style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}

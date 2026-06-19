@@ -22,6 +22,12 @@ import {
   type SkeletonProfileQuery,
 } from "./player-profile.presenter";
 import { PlayerProfileIntelligenceService } from "./player-profile-intelligence.service";
+import { presentPlayerMetrics } from "./player-metrics.presenter";
+import {
+  playerMatchMetricsToLegacyMetrics,
+  readCalibrationMetricsFromBenchmark,
+  toCalibrationMetricsFallback,
+} from "../sip/legacy-match-metrics-mapper";
 import {
   buildSeedByTeamSlug,
   presentAcademyListing,
@@ -168,6 +174,7 @@ export class HomeService {
       positionFit,
       philosophyFitRows,
       aggregatedMetrics,
+      matchMetrics,
       scoreboardSquad,
       scoreboardEvents,
       mvceValuations,
@@ -232,6 +239,16 @@ export class HomeService {
           }
         : null,
       positionFit,
+      metrics: presentPlayerMetrics(
+        aggregatedMetrics[0]?.rawAverages as Record<string, unknown> | null,
+        aggregatedMetrics[0]?.derivedMetrics as Record<string, unknown> | null,
+        toCalibrationMetricsFallback(
+          readCalibrationMetricsFromBenchmark(profile.benchmarkMetadata) ??
+            (matchMetrics[0]
+              ? playerMatchMetricsToLegacyMetrics(matchMetrics[0])
+              : null)
+        )
+      ),
       scoutingIntelligence: this.buildScoutingIntelligence({
         tacticalScores,
         positionFit,
@@ -470,6 +487,10 @@ export class HomeService {
       aggregatedMetrics: {
         where: { season: "rolling" },
         take: 1,
+      },
+      matchMetrics: {
+        take: 1,
+        orderBy: { createdAt: "desc" },
       },
       scoreboardSquad: {
         include: {

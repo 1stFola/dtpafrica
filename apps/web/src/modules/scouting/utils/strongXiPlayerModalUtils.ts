@@ -76,17 +76,17 @@ export function buildPerformanceRadarScores(
   return [
     {
       key: "pace",
-      label: "Pace",
+      label: "PACE",
       score: readAttr(attributes, ["pace", "acceleration", "sprint_speed"], att),
     },
     {
       key: "passing",
-      label: "Passing",
+      label: "PASSING",
       score: readAttr(attributes, ["passing", "vision", "team_play"], att),
     },
     {
       key: "technical",
-      label: "Technical",
+      label: "TECHNICAL",
       score: readAttr(
         attributes,
         ["dribbling", "ball_control", "finishing", "technique", "first_touch"],
@@ -95,12 +95,12 @@ export function buildPerformanceRadarScores(
     },
     {
       key: "physical",
-      label: "Physical",
+      label: "PHYSICAL",
       score: readAttr(attributes, ["stamina", "strength", "agility"], overall),
     },
     {
       key: "defending",
-      label: "Defending",
+      label: "DEFENDING",
       score: readAttr(
         attributes,
         ["positioning", "work_rate", "decision_making", "composure"],

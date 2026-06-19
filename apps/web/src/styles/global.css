@@ -935,10 +935,27 @@ a {
 .strong-xi-modal__header {
   flex-shrink: 0;
   position: relative;
-  padding: 0.7rem 2.65rem 0.7rem 0.95rem;
+  padding: 0.7rem 2.65rem 0.95rem 0.95rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   background:
     radial-gradient(ellipse 70% 120% at 12% 0%, rgba(16, 185, 129, 0.1), transparent 58%);
+}
+
+.strong-xi-modal__header .position-scouting-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  margin-bottom: 0;
+}
+
+.strong-xi-modal__header .position-scouting-metrics__card {
+  min-width: 0;
+}
+
+.strong-xi-modal__header .strong-xi-modal__tier-badge {
+  align-self: flex-start;
+  margin-top: 0.15rem;
 }
 
 .strong-xi-modal__header-row {
@@ -1124,6 +1141,53 @@ a {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+.strong-xi-modal__module--secondary-stats {
+  opacity: 0.88;
+}
+
+.strong-xi-modal__module--secondary-stats h3 {
+  font-size: 0.66rem;
+  color: #475569;
+}
+
+.strong-xi-modal__stats-grid--compact {
+  gap: 0.5rem;
+}
+
+.strong-xi-modal__stats-grid--compact .strong-xi-modal__stat {
+  padding: 0.55rem 0.35rem 0.5rem;
+  background: rgba(15, 23, 42, 0.42);
+  border-color: rgba(148, 163, 184, 0.1);
+}
+
+.strong-xi-modal__stats-grid--compact .strong-xi-modal__stat-value {
+  font-size: 0.95rem;
+}
+
+.strong-xi-modal__stats-grid--compact .strong-xi-modal__stat-label {
+  font-size: 0.68rem;
+}
+
+.strong-xi-modal__honor--compact {
+  margin-top: 0.55rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.strong-xi-modal__module .player-profile-cat-radar__label--compact {
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.strong-xi-modal__module .player-profile-cat-radar__label--compact .player-profile-cat-radar__label-score {
+  font-size: 6.5px;
+  letter-spacing: 0.08em;
+}
+
+.strong-xi-modal__module .player-profile-cat-radar--expanded .player-profile-cat-radar__chart {
+  max-width: min(300px, 100%);
 }
 
 .strong-xi-modal__stats-grid {
@@ -3481,6 +3545,218 @@ a {
   margin-top: 0.5rem;
 }
 
+.position-scouting-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 0.65rem;
+  margin: 0 0 1.5rem;
+}
+
+.position-scouting-metrics__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 120px;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.position-scouting-metrics__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.position-scouting-metrics__icon {
+  flex-shrink: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  color: #64748b;
+}
+
+.position-scouting-metrics__value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.position-scouting-metrics__value-num {
+  letter-spacing: -0.01em;
+}
+
+.position-scouting-metrics__value-unit {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.position-scouting-metrics__label {
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.position-scouting-metrics__bar {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+
+.position-scouting-metrics__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.55), rgba(226, 232, 240, 0.85));
+}
+
+.position-scouting-metrics__bar--subtle .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #475569, #94a3b8);
+}
+
+.position-scouting-metrics__card--elite .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.position-scouting-metrics__card--strong .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #0891b2, #22d3ee);
+}
+
+.position-scouting-metrics__card--developing .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #059669, #34d399);
+}
+
+.position-scouting-metrics__card--base .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #475569, #94a3b8);
+}
+
+.position-scouting-metrics__card--elite .position-scouting-metrics__value-num {
+  color: #fde68a;
+}
+
+.position-scouting-metrics__card--strong .position-scouting-metrics__value-num {
+  color: #a5f3fc;
+}
+
+.position-scouting-metrics__card--developing .position-scouting-metrics__value-num {
+  color: #bbf7d0;
+}
+
+.position-scouting-metrics--compact {
+  margin: 0.85rem 0 0;
+  grid-template-columns: repeat(6, minmax(100px, 1fr));
+  gap: 0.5rem;
+}
+
+.position-scouting-metrics--compact .position-scouting-metrics__card {
+  min-width: 100px;
+  padding: 0.6rem;
+}
+
+.position-scouting-metrics--compact .position-scouting-metrics__value {
+  font-size: 0.9rem;
+}
+
+.position-scouting-metrics--compact .position-scouting-metrics__label {
+  font-size: 0.6rem;
+}
+
+.strong-xi-modal__header .position-scouting-metrics--compact {
+  margin: 0.85rem 0 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.strong-xi-modal__header .position-scouting-metrics--compact .position-scouting-metrics__card {
+  min-width: 0;
+}
+
+.position-scouting-metrics--strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.position-scouting-metrics--strip .position-scouting-metrics__card {
+  min-width: 0;
+  padding: 0.65rem 0.7rem;
+  gap: 0;
+}
+
+.position-scouting-metrics__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.position-scouting-metrics__label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.position-scouting-metrics__label-row .info-tip {
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+.position-scouting-metrics--strip .position-scouting-metrics__label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.position-scouting-metrics--strip .position-scouting-metrics__value {
+  flex-shrink: 0;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 960px) {
+  .position-scouting-metrics:not(.position-scouting-metrics--strip) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .strong-xi-modal__header .position-scouting-metrics,
+  .strong-xi-modal__header .position-scouting-metrics--compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0;
+  }
+
+  .position-scouting-metrics--strip {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .position-scouting-metrics__card {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
 .info-tip {
   position: relative;
   display: inline-flex;
@@ -4197,35 +4473,34 @@ a {
   height: 100%;
 }
 
+.player-profile-pitch__attack-edge {
+  position: absolute;
+  top: 38%;
+  z-index: 4;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.42);
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.55);
+}
+
+.player-profile-pitch__attack-edge--left {
+  left: 2px;
+  transform: rotate(90deg);
+}
+
+.player-profile-pitch__attack-edge--right {
+  right: 2px;
+  transform: rotate(90deg);
+}
+
 .player-profile-pitch__marker {
   position: absolute;
   width: 12px;
   height: 12px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.player-profile-pitch__direction {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  margin-top: -9px;
-  margin-left: -3px;
-  border-left: 3px solid transparent;
-  border-right: 3px solid transparent;
-  border-bottom: 7px solid rgba(255, 255, 255, 0.42);
-  transform-origin: 50% 85%;
-  pointer-events: none;
-}
-
-.player-profile-pitch__direction--secondary {
-  border-bottom-color: rgba(186, 230, 253, 0.38);
-  margin-top: -8px;
 }
 
 .player-profile-pitch__marker--primary {
@@ -4420,7 +4695,7 @@ a {
 .player-profile-cat-radar__label {
   font-family: inherit;
   font-size: 7px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   dominant-baseline: middle;
@@ -4431,12 +4706,16 @@ a {
 }
 
 .player-profile-cat-radar__label-score {
-  font-size: 6.2px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 6.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
   fill: currentColor;
-  opacity: 0.92;
+  opacity: 0.9;
+}
+
+.player-profile-cat-radar--expanded .player-profile-cat-radar__chart {
+  max-width: clamp(200px, 24vw, 240px);
 }
 
 .player-profile-cat-radar__tier--elite.player-profile-cat-radar__label {
@@ -4499,13 +4778,12 @@ a {
 .player-profile-scout-strip {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.25rem 1.35rem;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
   margin-bottom: 0.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background:
-    linear-gradient(165deg, rgba(30, 41, 59, 0.55) 0%, rgba(15, 23, 42, 0.82) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.72);
 }
 
 .player-profile-scout-strip__summary {
@@ -4586,6 +4864,59 @@ a {
   margin: 0;
   color: var(--color-text);
   line-height: 1.65;
+}
+
+.player-profile-scout-strip__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.scouting-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.scouting-details__meta {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.scouting-details__summary {
+  margin: 0 0 1rem;
+  color: var(--color-text);
+  line-height: 1.65;
+}
+
+.scouting-details__snapshot {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.scouting-details__fit-panel--full {
+  max-width: 36rem;
+}
+
+.scouting-details__metrics .position-scouting-metrics {
+  margin-bottom: 0;
+}
+
+.scouting-details__trait-grid {
+  margin-bottom: 0;
+}
+
+.scouting-details__benchmark .player-profile-playstyle-comparison {
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  .scouting-details__snapshot {
+    grid-template-columns: 1fr;
+  }
 }
 
 .player-profile-playstyle__icon {
@@ -4956,11 +5287,11 @@ a {
   }
 
   .player-profile-cat-radar__label {
-    font-size: 7.6px;
+    font-size: 7px;
   }
 
   .player-profile-cat-radar__label-score {
-    font-size: 6.7px;
+    font-size: 6.5px;
   }
 
   .player-profile-tabs {
@@ -5082,11 +5413,11 @@ a {
   }
 
   .player-profile-cat-radar__label {
-    font-size: 8px;
+    font-size: 7px;
   }
 
   .player-profile-cat-radar__label-score {
-    font-size: 7px;
+    font-size: 6.5px;
   }
 
   .player-profile-rating-badge__value {

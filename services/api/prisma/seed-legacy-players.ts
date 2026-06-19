@@ -227,30 +227,6 @@ export async function seedLegacyPlayers(
       update: full ? data : incrementalPlayerUpdate(data),
     });
 
-    if (ratingAttributesPresent(row)) {
-      const player = await prisma.player.findUnique({
-        where: { slug },
-        select: { id: true },
-      });
-      if (player) {
-        const metricsPayload = {
-          rawAverages: row.rating_attributes as Prisma.InputJsonValue,
-          derivedMetrics: row.rating_attributes as Prisma.InputJsonValue,
-        };
-        await prisma.playerAggregatedMetrics.upsert({
-          where: {
-            playerId_season: { playerId: player.id, season: "rolling" },
-          },
-          create: {
-            playerId: player.id,
-            season: "rolling",
-            ...metricsPayload,
-          },
-          update: full ? metricsPayload : {},
-        });
-      }
-    }
-
     if (sampleSlugs.length < 8) sampleSlugs.push(slug);
     console.log(
       `  legacy player: ${slug}${academyId ? ` → ${academySlug}` : row.current_club ? ` (club: ${row.current_club})` : ""}`
@@ -262,8 +238,4 @@ export async function seedLegacyPlayers(
     academyLinkCount,
     sampleSlugs,
   };
-}
-
-function ratingAttributesPresent(row: LegacyPlayerSeedRow): boolean {
-  return Object.keys(row.rating_attributes ?? {}).length > 0;
 }

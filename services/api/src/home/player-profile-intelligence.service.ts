@@ -11,6 +11,17 @@ import { PrismaService } from "../prisma/prisma.service";
 import { MvceService } from "../mvce/mvce.service";
 import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import {
+  isCalibrationMetricsIncomplete,
+  isRatingAttributesPayload,
+  presentPlayerMetrics,
+} from "./player-metrics.presenter";
+import {
+  legacyMatchMetricsToPlayerMatchRecord,
+  playerMatchMetricsToLegacyMetrics,
+  readCalibrationMetricsFromBenchmark,
+  toCalibrationMetricsFallback,
+} from "../sip/legacy-match-metrics-mapper";
+import {
   toPhilosophyFitPlayer,
   type PlayerWithSip,
 } from "../scouting/scouting.mapper";
@@ -41,13 +52,13 @@ export class PlayerProfileIntelligenceService {
             mvceValuations: true,
           },
         },
-        tacticalScores: { select: { playerId: true } },
       },
     });
     if (!snapshot) return;
 
-    if (snapshot._count.matchMetrics > 0 && !snapshot.tacticalScores) {
+    if (snapshot._count.matchMetrics > 0 && (await this.needsSipRecalculation(playerId))) {
       try {
+        await this.repairMatchMetricsFromCalibration(playerId);
         await this.sipRecalc.recalculatePlayer(playerId);
       } catch (error) {
         this.logger.warn(
@@ -80,6 +91,84 @@ export class PlayerProfileIntelligenceService {
         );
       }
     }
+  }
+
+  /** Rebuild rolling aggregates when match metrics exist but stored aggregates are missing or FM-only. */
+  private async needsSipRecalculation(playerId: string): Promise<boolean> {
+    const player = await this.prisma.player.findUnique({
+      where: { id: playerId },
+      select: {
+        benchmarkMetadata: true,
+        aggregatedMetrics: {
+          where: { season: "rolling" },
+          take: 1,
+          select: { rawAverages: true, derivedMetrics: true },
+        },
+      },
+    });
+    const aggregate = player?.aggregatedMetrics[0];
+    if (!aggregate?.rawAverages) return true;
+
+    const raw = aggregate.rawAverages as Record<string, unknown>;
+    if (isRatingAttributesPayload(raw)) return true;
+
+    const calibrationFallback = toCalibrationMetricsFallback(
+      readCalibrationMetricsFromBenchmark(player?.benchmarkMetadata ?? null)
+    );
+    const presented = presentPlayerMetrics(
+      raw,
+      aggregate.derivedMetrics as Record<string, unknown> | null,
+      calibrationFallback
+    );
+    if (presented == null) return true;
+    return isCalibrationMetricsIncomplete(presented);
+  }
+
+  /** Backfill possession / foot-release counts from stored calibration CSV snapshot. */
+  private async repairMatchMetricsFromCalibration(playerId: string): Promise<void> {
+    const player = await this.prisma.player.findUnique({
+      where: { id: playerId },
+      select: { benchmarkMetadata: true },
+    });
+    const legacy = readCalibrationMetricsFromBenchmark(player?.benchmarkMetadata ?? null);
+    if (!legacy) return;
+
+    const latest = await this.prisma.playerMatchMetrics.findFirst({
+      where: { playerId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!latest) return;
+
+    const repaired = legacyMatchMetricsToPlayerMatchRecord({
+      ...playerMatchMetricsToLegacyMetrics(latest),
+      ...legacy,
+    });
+
+    const needsRepair =
+      latest.oneTouchPossessions + latest.multiTouchPossessions <= 0 ||
+      latest.leftFootReleaseCount + latest.rightFootReleaseCount <= 0 ||
+      latest.possessionDurationSeconds <= 0;
+    if (!needsRepair) return;
+
+    await this.prisma.playerMatchMetrics.update({
+      where: { id: latest.id },
+      data: {
+        oneTouchPossessions: repaired.oneTouchPossessions,
+        multiTouchPossessions: repaired.multiTouchPossessions,
+        possessionDurationSeconds: repaired.possessionDurationSeconds,
+        leftFootReleaseCount: repaired.leftFootReleaseCount,
+        rightFootReleaseCount: repaired.rightFootReleaseCount,
+        leftFootTouchCount: repaired.leftFootTouchCount,
+        rightFootTouchCount: repaired.rightFootTouchCount,
+        leftFootReceiveCount: repaired.leftFootReceiveCount,
+        rightFootReceiveCount: repaired.rightFootReceiveCount,
+        releaseLacesCount: repaired.releaseLacesCount,
+        releaseInsideFootCount: repaired.releaseInsideFootCount,
+        releaseOtherFootzoneCount: repaired.releaseOtherFootzoneCount,
+        leftFootKickingPowerMph: repaired.leftFootKickingPowerMph,
+        rightFootKickingPowerMph: repaired.rightFootKickingPowerMph,
+      },
+    });
   }
 
   private async ensurePhilosophyFits(playerId: string) {

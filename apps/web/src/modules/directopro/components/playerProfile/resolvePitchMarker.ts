@@ -35,14 +35,20 @@ const POSITION_SLOTS: PositionSlot[] = [
 /** Map 18-point attribute groups to outfield role contexts for secondary inference. */
 const SECONDARY_ROLE_PROFILES: { label: string; keys: readonly string[] }[] = [
   { label: "ST", keys: ["finishing", "positioning", "strength", "acceleration", "first_touch"] },
+  { label: "CF", keys: ["finishing", "positioning", "strength", "first_touch", "team_play"] },
   { label: "LW", keys: ["pace", "dribbling", "acceleration", "agility", "sprint_speed"] },
   { label: "RW", keys: ["pace", "dribbling", "acceleration", "agility", "sprint_speed"] },
   { label: "AM", keys: ["vision", "technique", "dribbling", "passing", "first_touch"] },
+  { label: "CAM", keys: ["vision", "technique", "passing", "dribbling", "composure"] },
   { label: "CM", keys: ["passing", "vision", "decision_making", "team_play", "work_rate"] },
   { label: "CDM", keys: ["work_rate", "positioning", "strength", "passing", "decision_making"] },
   { label: "CB", keys: ["strength", "positioning", "composure", "work_rate"] },
+  { label: "LCB", keys: ["strength", "positioning", "composure", "work_rate"] },
+  { label: "RCB", keys: ["strength", "positioning", "composure", "work_rate"] },
   { label: "RB", keys: ["pace", "sprint_speed", "stamina", "work_rate", "passing"] },
   { label: "LB", keys: ["pace", "sprint_speed", "stamina", "work_rate", "passing"] },
+  { label: "RWB", keys: ["pace", "sprint_speed", "stamina", "work_rate", "acceleration"] },
+  { label: "LWB", keys: ["pace", "sprint_speed", "stamina", "work_rate", "acceleration"] },
 ];
 
 function normalizePositionHaystack(
@@ -121,8 +127,51 @@ function rolesEquivalent(a: string, b: string): boolean {
   return normalizeRoleToken(a) === normalizeRoleToken(b);
 }
 
-function coordsNear(a: PitchMarkerCoords, b: PitchMarkerCoords, threshold = 4): boolean {
+function coordsNear(a: PitchMarkerCoords, b: PitchMarkerCoords, threshold = 5): boolean {
   return Math.abs(a.x - b.x) <= threshold && Math.abs(a.y - b.y) <= threshold;
+}
+
+function primaryRoleHaystack(input: SecondaryPitchInput): string {
+  return normalizePositionHaystack(
+    input.positionPrimary,
+    input.positionFull ?? null,
+    input.role ?? null
+  );
+}
+
+function isDistinctSecondaryRole(
+  label: string,
+  primaryHaystack: string,
+  primaryMarker: PitchMarkerCoords
+): boolean {
+  if (!label.trim()) return false;
+  if (primaryHaystack && rolesEquivalent(label, primaryHaystack)) return false;
+
+  const marker = resolvePitchMarkerFromLabel(label);
+  if (!marker) return false;
+  return !coordsNear(marker, primaryMarker);
+}
+
+function pickBestDistinctRole(
+  ranked: { label: string; score: number }[],
+  primaryHaystack: string,
+  primaryMarker: PitchMarkerCoords
+): string | null {
+  const seenSlots = new Set<string>();
+
+  for (const entry of ranked) {
+    const marker = resolvePitchMarkerFromLabel(entry.label);
+    if (!marker) continue;
+
+    const slotKey = `${Math.round(marker.x)}:${Math.round(marker.y)}`;
+    if (seenSlots.has(slotKey)) continue;
+    seenSlots.add(slotKey);
+
+    if (!isDistinctSecondaryRole(entry.label, primaryHaystack, primaryMarker)) continue;
+    return entry.label;
+  }
+
+  return null;
 }
 
 /** Map role / abbreviation / full position label to a mini-pitch marker (percent coords). */
@@ -152,15 +201,17 @@ function isVaguePrimaryToken(value?: string | null): boolean {
  */
 export function resolvePrimaryPitchMarker(
   positionPrimary?: string | null,
-  positionFull?: string | null
+  positionFull?: string | null,
+  role?: string | null
 ): PitchMarkerCoords {
   const primary = positionPrimary?.trim() ?? "";
   const full = positionFull?.trim() ?? "";
+  const roleToken = role?.trim() ?? "";
 
   const candidates =
     isVaguePrimaryToken(primary) && full
-      ? [full, primary]
-      : [primary, full].filter(Boolean);
+      ? [full, primary, roleToken]
+      : [primary, full, roleToken].filter(Boolean);
 
   for (const label of candidates) {
     const marker = resolvePitchMarkerFromLabel(label);
@@ -179,65 +230,141 @@ export function resolvePitchMarkerFromLabel(label?: string | null): PitchMarkerC
   return mapCoordsToPitchInset({ x: slot.x, y: slot.y });
 }
 
-/**
- * Derive secondary role from 18-point rating attributes by highest group average
- * that differs from the primary role context.
- */
-export function deriveSecondaryRoleFromAttributes(
-  attributes: Record<string, number> | null | undefined,
-  primaryRole?: string | null
+type TacticalSummaryInput = {
+  gegenpressScore: number;
+  tikiTakaScore: number;
+  counterAttackScore: number;
+  wingerScore: number;
+  totalFootballScore: number;
+};
+
+const TACTICAL_ROLE_PROFILES: { label: string; scoreOf: (t: TacticalSummaryInput) => number }[] = [
+  { label: "RW", scoreOf: (t) => t.wingerScore },
+  { label: "LW", scoreOf: (t) => t.wingerScore },
+  { label: "CAM", scoreOf: (t) => t.tikiTakaScore },
+  { label: "CM", scoreOf: (t) => (t.tikiTakaScore + t.totalFootballScore) / 2 },
+  { label: "ST", scoreOf: (t) => t.counterAttackScore },
+  { label: "CDM", scoreOf: (t) => t.gegenpressScore },
+  { label: "AM", scoreOf: (t) => t.totalFootballScore },
+];
+
+function pickSecondBestRole(
+  ranked: { label: string; score: number }[],
+  primaryHaystack: string,
+  primaryMarker: PitchMarkerCoords
 ): string | null {
-  if (!attributes || Object.keys(attributes).length === 0) return null;
+  if (ranked.length === 0) return null;
 
-  const ranked = SECONDARY_ROLE_PROFILES.map(({ label, keys }) => ({
-    label,
-    avg: averageKeys(attributes, keys),
-  }))
-    .filter((entry) => entry.avg > 0)
-    .sort((a, b) => b.avg - a.avg);
-
+  const deduped: { label: string; score: number }[] = [];
   for (const entry of ranked) {
-    if (!rolesEquivalent(entry.label, primaryRole ?? "")) {
-      return entry.label;
+    const last = deduped[deduped.length - 1];
+    if (last && rolesEquivalent(last.label, entry.label)) {
+      if (entry.score > last.score) last.score = entry.score;
+    } else {
+      deduped.push({ ...entry });
     }
   }
 
-  return ranked[1]?.label ?? null;
+  const primaryIsTop =
+    deduped.length > 0 && rolesEquivalent(deduped[0].label, primaryHaystack);
+  const candidates = primaryIsTop ? deduped.slice(1) : deduped;
+
+  return pickBestDistinctRole(candidates, primaryHaystack, primaryMarker);
+}
+
+function wingLabelForPrimary(primaryRole?: string | null): "LW" | "RW" {
+  const haystack = normalizeRoleToken(primaryRole);
+  if (matchesToken(haystack, "LEFT") || matchesToken(haystack, "LW") || matchesToken(haystack, "LB")) {
+    return "RW";
+  }
+  if (matchesToken(haystack, "RIGHT") || matchesToken(haystack, "RW") || matchesToken(haystack, "RB")) {
+    return "LW";
+  }
+  return "RW";
 }
 
 export type SecondaryPitchInput = {
   /** Registration/calibration primary — used to exclude duplicate secondary roles. */
   positionPrimary?: string | null;
+  positionFull?: string | null;
+  role?: string | null;
   positionSecondary?: string | null;
   positionFitSecondary?: string | null;
   scoutingSecondaryPositionFit?: string | null;
   ratingAttributes?: Record<string, number> | null;
+  tacticalSummary?: TacticalSummaryInput | null;
 };
 
 function trySecondaryLabel(
   label: string | null | undefined,
-  primaryRole: string,
+  primaryHaystack: string,
   primaryMarker: PitchMarkerCoords
 ): PitchMarkerCoords | null {
-  if (!label?.trim()) return null;
-  if (rolesEquivalent(label, primaryRole)) return null;
-  const marker = resolvePitchMarkerFromLabel(label);
-  if (marker && !coordsNear(marker, primaryMarker)) {
-    return marker;
+  if (!isDistinctSecondaryRole(label ?? "", primaryHaystack, primaryMarker)) return null;
+  return resolvePitchMarkerFromLabel(label);
+}
+
+/**
+ * Derive secondary role from 18-point rating attributes — second-best role
+ * profile average that differs from the primary role and pitch slot.
+ */
+export function deriveSecondaryRoleFromAttributes(
+  attributes: Record<string, number> | null | undefined,
+  primaryHaystack: string,
+  primaryMarker: PitchMarkerCoords
+): string | null {
+  if (!attributes || Object.keys(attributes).length === 0) return null;
+
+  const ranked = SECONDARY_ROLE_PROFILES.map(({ label, keys }) => ({
+    label,
+    score: averageKeys(attributes, keys),
+  }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return pickSecondBestRole(ranked, primaryHaystack, primaryMarker);
+}
+
+/** Derive secondary role from tactical style scores when explicit fields are absent. */
+export function deriveSecondaryRoleFromTactical(
+  tactical: TacticalSummaryInput | null | undefined,
+  primaryHaystack: string,
+  primaryMarker: PitchMarkerCoords,
+  primaryRole?: string | null
+): string | null {
+  if (!tactical) return null;
+
+  const wingLabel = wingLabelForPrimary(primaryRole ?? primaryHaystack);
+  const ranked = TACTICAL_ROLE_PROFILES.map(({ label, scoreOf }) => ({
+    label: label === "RW" || label === "LW" ? wingLabel : label,
+    score: scoreOf(tactical),
+  }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const deduped: { label: string; score: number }[] = [];
+  for (const entry of ranked) {
+    const last = deduped[deduped.length - 1];
+    if (last && rolesEquivalent(last.label, entry.label)) {
+      if (entry.score > last.score) last.score = entry.score;
+    } else {
+      deduped.push({ ...entry });
+    }
   }
-  return null;
+
+  return pickSecondBestRole(deduped, primaryHaystack, primaryMarker);
 }
 
 /**
  * Secondary marker: API secondary roles first (positionSecondary → position fit →
- * scouting fit), then attribute-group inference only when no API secondary exists.
+ * scouting fit), then attribute-group inference when no API secondary exists.
  * Returns null when unavailable or overlapping primary.
  */
 export function resolveSecondaryPitchMarker(
   input: SecondaryPitchInput,
   primaryMarker: PitchMarkerCoords
 ): PitchMarkerCoords | null {
-  const primaryRole = input.positionPrimary ?? "";
+  const primaryHaystack = primaryRoleHaystack(input);
 
   const apiCandidates = [
     input.positionSecondary,
@@ -246,15 +373,31 @@ export function resolveSecondaryPitchMarker(
   ];
 
   for (const label of apiCandidates) {
-    const marker = trySecondaryLabel(label, primaryRole, primaryMarker);
+    const marker = trySecondaryLabel(label, primaryHaystack, primaryMarker);
     if (marker) return marker;
   }
 
-  const attributeRole = deriveSecondaryRoleFromAttributes(
-    input.ratingAttributes,
-    primaryRole
-  );
-  return trySecondaryLabel(attributeRole, primaryRole, primaryMarker);
+  if (input.ratingAttributes && Object.keys(input.ratingAttributes).length > 0) {
+    const attributeRole = deriveSecondaryRoleFromAttributes(
+      input.ratingAttributes,
+      primaryHaystack,
+      primaryMarker
+    );
+    const marker = trySecondaryLabel(attributeRole, primaryHaystack, primaryMarker);
+    if (marker) return marker;
+  }
+
+  if (input.tacticalSummary) {
+    const tacticalRole = deriveSecondaryRoleFromTactical(
+      input.tacticalSummary,
+      primaryHaystack,
+      primaryMarker,
+      input.positionPrimary
+    );
+    return trySecondaryLabel(tacticalRole, primaryHaystack, primaryMarker);
+  }
+
+  return null;
 }
 
 const RIGHT_FACING_TOKENS = [
@@ -291,21 +434,21 @@ const LEFT_FACING_TOKENS = [
 
 /**
  * CSS rotation (degrees) for a subtle attack-direction arrow on pitch markers.
- * 0° points right; -90° points up (toward the attacking goal).
+ * Triangle default points down; 180deg points toward the attacking goal (top).
  */
 export function resolveFacingDegrees(
   positionPrimary?: string | null,
   positionFull?: string | null
 ): number {
   const haystack = normalizePositionHaystack(positionPrimary, null, positionFull);
-  if (!haystack) return -90;
+  if (!haystack) return 180;
 
   for (const token of RIGHT_FACING_TOKENS) {
-    if (matchesToken(haystack, token)) return -45;
+    if (matchesToken(haystack, token)) return 135;
   }
   for (const token of LEFT_FACING_TOKENS) {
-    if (matchesToken(haystack, token)) return -135;
+    if (matchesToken(haystack, token)) return 225;
   }
 
-  return -90;
+  return 180;
 }
