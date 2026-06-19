@@ -4,6 +4,7 @@ export type RawMatchMetrics = {
   ballTouches: number;
   oneTouchPossessions: number;
   multiTouchPossessions: number;
+  possessionDurationSeconds: number;
   releaseLacesCount: number;
   releaseInsideFootCount: number;
   releaseOtherFootzoneCount: number;

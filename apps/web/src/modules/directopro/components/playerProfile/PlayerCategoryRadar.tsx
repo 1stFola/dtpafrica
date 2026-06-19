@@ -6,7 +6,7 @@ const RADAR_AXES_DEG = [0, 72, 144, 216, 288];
 const RADAR_CX = 50;
 const RADAR_CY = 50;
 const RADAR_MAX_R = 38;
-const LABEL_RADIUS_PCT = 118;
+const LABEL_RADIUS_PCT = 112;
 
 const LABEL_LAYOUT: {
   anchor: "middle" | "start" | "end";
@@ -72,9 +72,11 @@ function tierGradientStopColor(score: number): string {
 
 type Props = {
   scores: CategoryScore[];
+  /** Extra viewBox padding for uppercase modal labels (Strong XI). */
+  expandLabels?: boolean;
 };
 
-export function PlayerCategoryRadar({ scores }: Props) {
+export function PlayerCategoryRadar({ scores, expandLabels = false }: Props) {
   const [progress, setProgress] = useState(0);
   const fillGradId = useId().replace(/:/g, "");
 
@@ -117,12 +119,18 @@ export function PlayerCategoryRadar({ scores }: Props) {
 
   const gridLevels = [25, 50, 75, 100];
   const gradStops = scores.length > 1 ? scores.length - 1 : 1;
+  const chartClassName = expandLabels
+    ? "player-profile-cat-radar__chart player-profile-cat-radar__chart--expanded"
+    : "player-profile-cat-radar__chart";
 
   return (
-    <div className="player-profile-cat-radar" aria-label="Attribute category overview">
+    <div
+      className={`player-profile-cat-radar${expandLabels ? " player-profile-cat-radar--expanded" : ""}`}
+      aria-label="Attribute category overview"
+    >
       <svg
-        className="player-profile-cat-radar__chart"
-        viewBox="-12 -12 124 124"
+        className={chartClassName}
+        viewBox={expandLabels ? "-18 -18 136 136" : "-12 -12 124 124"}
         role="img"
         aria-hidden="true"
       >
@@ -208,7 +216,7 @@ export function PlayerCategoryRadar({ scores }: Props) {
               x={x}
               y={y}
               textAnchor={layout.anchor}
-              className={`player-profile-cat-radar__label ${tierClass}`}
+              className={`player-profile-cat-radar__label ${tierClass}${expandLabels ? " player-profile-cat-radar__label--compact" : ""}`}
             >
               <tspan className="player-profile-cat-radar__label-name">{item.label}</tspan>
               <tspan

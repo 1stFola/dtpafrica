@@ -7,6 +7,7 @@ export function toRawMatchMetrics(row: PlayerMatchMetrics): RawMatchMetrics {
     ballTouches: row.ballTouches,
     oneTouchPossessions: row.oneTouchPossessions,
     multiTouchPossessions: row.multiTouchPossessions,
+    possessionDurationSeconds: row.possessionDurationSeconds,
     releaseLacesCount: row.releaseLacesCount,
     releaseInsideFootCount: row.releaseInsideFootCount,
     releaseOtherFootzoneCount: row.releaseOtherFootzoneCount,

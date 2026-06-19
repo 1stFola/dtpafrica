@@ -1,6 +1,10 @@
 import { runSipPipeline } from "@dtp/engines";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  mergeCalibrationExtrasIntoRaw,
+  readCalibrationMetricsFromBenchmark,
+} from "./legacy-match-metrics-mapper";
 import { toRawMatchMetrics } from "./metrics-mapper";
 
 @Injectable()
@@ -8,10 +12,17 @@ export class SipRecalculationService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async recalculatePlayer(playerId: string) {
-    const player = await this.prisma.player.findUnique({ where: { id: playerId } });
+    const player = await this.prisma.player.findUnique({
+      where: { id: playerId },
+      select: { id: true, benchmarkMetadata: true },
+    });
     if (!player) {
       throw new NotFoundException(`Player ${playerId} not found`);
     }
+
+    const calibrationMetrics = readCalibrationMetricsFromBenchmark(
+      player.benchmarkMetadata ?? null
+    );
 
     const rows = await this.prisma.playerMatchMetrics.findMany({ where: { playerId } });
     if (rows.length === 0) {
@@ -19,6 +30,11 @@ export class SipRecalculationService {
     }
 
     const pipeline = runSipPipeline(rows.map(toRawMatchMetrics));
+    const rawAverages = mergeCalibrationExtrasIntoRaw(
+      pipeline.raw,
+      pipeline.derived as Record<string, unknown>,
+      calibrationMetrics
+    );
 
     await this.prisma.playerAggregatedMetrics.upsert({
       where: { playerId_season: { playerId, season: "rolling" } },
@@ -27,13 +43,13 @@ export class SipRecalculationService {
         season: "rolling",
         matchesPlayed: rows.length,
         minutesPlayed: pipeline.raw.minutesPlayed,
-        rawAverages: pipeline.raw as object,
+        rawAverages: rawAverages as object,
         derivedMetrics: pipeline.derived as object,
       },
       update: {
         matchesPlayed: rows.length,
         minutesPlayed: pipeline.raw.minutesPlayed,
-        rawAverages: pipeline.raw as object,
+        rawAverages: rawAverages as object,
         derivedMetrics: pipeline.derived as object,
       },
     });

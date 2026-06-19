@@ -116,6 +116,8 @@ export type PublicPlayerProfile = FeaturedPlayer & {
   state?: string | null;
   age?: number | null;
   ratingAttributes?: Record<string, number> | null;
+  /** Rolling match-metric averages in snake_case CSV field names. */
+  metrics?: Record<string, number> | null;
   benchmarkMetadata?: {
     nearest?: Record<string, unknown> | null;
     alternatives?: Record<string, unknown>[];

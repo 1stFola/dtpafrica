@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AcademyAuthModule } from "../academy-auth/academy-auth.module";
 import { AdsModule } from "../ads/ads.module";
 import { ScoreboardModule } from "../scoreboard/scoreboard.module";
+import { SipModule } from "../sip/sip.module";
 import { AdminAcademiesService } from "./admin-academies.service";
 import { AdminBlogService } from "./admin-blog.service";
 import { AdminCalibrationService } from "./admin-calibration.service";
@@ -14,7 +15,7 @@ import { AdminScoreboardService } from "./admin-scoreboard.service";
 import { AdminSeedService } from "./admin-seed.service";
 
 @Module({
-  imports: [AcademyAuthModule, AdsModule, ScoreboardModule],
+  imports: [AcademyAuthModule, AdsModule, ScoreboardModule, SipModule],
   controllers: [AdminController, AdminScoreboardController],
   providers: [
     AdminPlayersService,

@@ -17,6 +17,9 @@ import {
 } from "../components/playerProfile/PlayerCategoryRadar";
 import { InfoTip } from "../../../components/InfoTip";
 import { PlayerPitchGraphic } from "../components/playerProfile/PlayerPitchGraphic";
+import { ScoutingDetailsTab } from "../components/playerProfile/ScoutingDetailsTab";
+import { PositionScoutingMetricsRow } from "../../scouting/components/PositionScoutingMetricsRow";
+import { buildPerformanceRadarScores } from "../../scouting/utils/strongXiPlayerModalUtils";
 
 /**
  * Navigation context a linking surface (e.g. Top Scorers, squad rows) can pass
@@ -34,13 +37,6 @@ export type PlayerProfileLinkState = {
 type ProfileTab = "overview" | "scoreboard" | "scouting" | "videos" | "photos" | "publications";
 type ProfileMediaItem = NonNullable<PublicPlayerProfile["mediaItems"]>[number] & {
   url: string;
-};
-type PlaystyleBadge = {
-  icon: string;
-  title: string;
-  description: string;
-  fitPercent?: number | null;
-  contextLine?: string | null;
 };
 type CareerStatBox = { label: string; value: string };
 
@@ -183,61 +179,6 @@ function ratingBadgeTone(rating?: number | null): string {
 
 type BioFact = { label: string; value: string; highlight?: boolean };
 
-function averageAttributeScores(values: number[]) {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function buildCategoryScores(
-  player: PublicPlayerProfile,
-  attributes: ReturnType<typeof buildAttributeMap>
-): CategoryScore[] {
-  const overall = player.overallRating ?? 62;
-  const att = clampScore(player.offensiveRating ?? overall);
-  const def = clampScore(player.defensiveRating ?? overall);
-  const technicalKeys = [
-    "dribbling",
-    "ball_control",
-    "passing",
-    "finishing",
-    "technique",
-    "first_touch",
-  ] as const;
-  const tec = clampScore(
-    averageAttributeScores(technicalKeys.map((key) => attributes[key]))
-  );
-  const creativeKeys = ["vision", "passing", "decision_making", "technique"] as const;
-  const cre = clampScore(
-    averageAttributeScores(creativeKeys.map((key) => attributes[key]))
-  );
-  const tactical = player.tacticalSummary;
-  const tac = tactical
-    ? clampScore(
-        averageAttributeScores([
-          tactical.gegenpressScore,
-          tactical.tikiTakaScore,
-          tactical.counterAttackScore,
-          tactical.wingerScore,
-          tactical.totalFootballScore,
-        ])
-      )
-    : clampScore(
-        averageAttributeScores([
-          attributes.positioning,
-          attributes.work_rate,
-          attributes.decision_making,
-        ])
-      );
-
-  return [
-    { key: "att", label: "ATT", score: att },
-    { key: "tec", label: "TEC", score: tec },
-    { key: "tac", label: "TAC", score: tac },
-    { key: "def", label: "DEF", score: def },
-    { key: "cre", label: "CRE", score: cre },
-  ];
-}
-
 function isDuplicateScoutingCopy(
   biography: string | null | undefined,
   scoutingSummary: string | null | undefined
@@ -311,128 +252,6 @@ function buildBioFacts(
   return facts;
 }
 
-const PHILOSOPHY_FORMATION_CONTEXT: Record<string, { formation: string; slot: string }> = {
-  "Tiki-Taka": { formation: "4-3-3", slot: "cm" },
-  "Tiki Taka": { formation: "4-3-3", slot: "cm" },
-  Gegenpress: { formation: "4-2-3-1", slot: "lam" },
-  "Counter attack": { formation: "5-3-2", slot: "st" },
-  "Counter Attack": { formation: "5-3-2", slot: "st" },
-  "Winger play": { formation: "4-3-3", slot: "lw" },
-  "Winger Play": { formation: "4-3-3", slot: "lw" },
-  "Total football": { formation: "4-3-3", slot: "rw" },
-  "Total Football": { formation: "4-3-3", slot: "rw" },
-};
-
-const TACTICAL_TRAIT_CONTEXT: Record<string, { formation: string; slot: string }> = {
-  Gegenpress: { formation: "4-2-3-1", slot: "lam" },
-  "Tiki-taka": { formation: "4-3-3", slot: "cm" },
-  "Counter attack": { formation: "5-3-2", slot: "st" },
-  "Winger play": { formation: "4-3-3", slot: "lw" },
-  "Total football": { formation: "4-3-3", slot: "rw" },
-};
-
-function formatFormationContext(formation: string, slot?: string | null): string {
-  const normalizedSlot = slot?.trim().toLowerCase();
-  return normalizedSlot ? `${formation} · ${normalizedSlot}` : formation;
-}
-
-function resolvePhilosophyContext(name: string, slotHint?: string | null): string {
-  const mapped = PHILOSOPHY_FORMATION_CONTEXT[name];
-  if (mapped) {
-    return formatFormationContext(mapped.formation, slotHint ?? mapped.slot);
-  }
-  return slotHint ? formatFormationContext("4-3-3", slotHint) : "4-3-3 · cm";
-}
-
-function buildPlaystyleBadges(player: PublicPlayerProfile): PlaystyleBadge[] {
-  const badges: PlaystyleBadge[] = [];
-  const seen = new Set<string>();
-  const push = (badge: PlaystyleBadge) => {
-    const key = badge.title.trim().toLowerCase();
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    badges.push(badge);
-  };
-
-  for (const philosophy of player.philosophies ?? []) {
-    push({
-      icon: "◆",
-      title: philosophy.name,
-      fitPercent: clampScore(philosophy.score),
-      contextLine: resolvePhilosophyContext(philosophy.name, player.positionPrimary?.toLowerCase()),
-      description: "How well the player suits this playing style based on match data.",
-    });
-  }
-
-  for (const fit of player.scoutingIntelligence?.philosophyFits ?? []) {
-    push({
-      icon: "◆",
-      title: fit.philosophy,
-      fitPercent: clampScore(fit.philosophyFitScore),
-      contextLine: formatFormationContext(fit.formation, fit.positionSlot),
-      description: "Saved style-fit result from scouting analysis.",
-    });
-  }
-
-  for (const score of player.scoutingIntelligence?.topTacticalScores ?? []) {
-    push({
-      icon: "⚡",
-      title: score.label,
-      fitPercent: clampScore(score.value),
-      contextLine: "System Trait",
-      description: "Standout tactical trait from match performance data.",
-    });
-  }
-
-  const tactical = player.tacticalSummary;
-  if (tactical) {
-    const tacticalTraits = [
-      { label: "Gegenpress", value: tactical.gegenpressScore },
-      { label: "Tiki-taka", value: tactical.tikiTakaScore },
-      { label: "Counter attack", value: tactical.counterAttackScore },
-      { label: "Winger play", value: tactical.wingerScore },
-      { label: "Total football", value: tactical.totalFootballScore },
-    ]
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 2);
-    for (const trait of tacticalTraits) {
-      if (trait.value >= 55) {
-        const mapped = TACTICAL_TRAIT_CONTEXT[trait.label];
-        push({
-          icon: "◎",
-          title: trait.label,
-          fitPercent: clampScore(trait.value),
-          contextLine: mapped
-            ? formatFormationContext(mapped.formation, mapped.slot)
-            : "System Trait",
-          description: "Tactical style score from recent match metrics.",
-        });
-      }
-    }
-  }
-
-  const benchmark = player.benchmarkMetadata?.nearest;
-  if (benchmark && typeof benchmark === "object" && "name" in benchmark) {
-    push({
-      icon: "★",
-      title: "Benchmark comp",
-      contextLine: "System Trait",
-      description: `Nearest comp: ${String(benchmark.name)}.`,
-    });
-  }
-
-  if (badges.length === 0) {
-    push({
-      icon: "◎",
-      title: "Versatile profile",
-      contextLine: "4-3-3 · cm",
-      description: "Playstyle badges appear once match and style-fit data is available.",
-    });
-  }
-
-  return badges.slice(0, 6);
-}
-
 function buildCareerStatBoxes(
   player: PublicPlayerProfile,
   minutesPlayed: number | null,
@@ -478,14 +297,6 @@ function formatCurrencyRange(min?: number | null, max?: number | null) {
   });
   if (min != null && max != null) return `${formatter.format(min)} - ${formatter.format(max)}`;
   return formatter.format(min ?? max ?? 0);
-}
-
-function stringList(value: unknown) {
-  if (Array.isArray(value)) return value.map(String).filter(Boolean);
-  if (value && typeof value === "object") {
-    return Object.values(value as Record<string, unknown>).map(String).filter(Boolean);
-  }
-  return [];
 }
 
 function buildMediaItems(player: PublicPlayerProfile): ProfileMediaItem[] {
@@ -615,12 +426,9 @@ export function PlayerProfilePage() {
   );
   const benchmark = player.benchmarkMetadata?.nearest ?? null;
   const scoreboard = player.scoreboardHistory;
-  const scouting = player.scoutingIntelligence;
-  const valuation = player.valuation;
   const minutesPlayed = resolveProfileMinutes(player);
   const isGk = isGkProfile(player);
   const careerStatBoxes = buildCareerStatBoxes(player, minutesPlayed, isGk);
-  const playstyleBadges = buildPlaystyleBadges(player);
   const positionLabel = resolvePositionFullLabel(player.positionPrimary.trim(), null);
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
@@ -631,8 +439,8 @@ export function PlayerProfilePage() {
       : "ScoreBoard history pending",
   ];
 
-  const categoryScores = buildCategoryScores(player, attributes);
-  const bioFacts = buildBioFacts(player, valuation);
+  const categoryScores = buildPerformanceRadarScores(player);
+  const bioFacts = buildBioFacts(player, player.valuation);
 
   const tabs: { id: ProfileTab; label: string }[] = [
     { id: "overview", label: "Overview" },
@@ -693,7 +501,7 @@ export function PlayerProfilePage() {
             {player.scoutingSummary ?? "Scouting summary pending calibration review."}
           </p>
         </div>
-        <PlaystyleBadgesSection badges={playstyleBadges} />
+        <PositionScoutingMetricsRow player={player} variant="strip" />
       </section>
 
       <nav className="player-profile-tabs" aria-label="Player profile sections">
@@ -764,32 +572,6 @@ export function PlayerProfilePage() {
               attributes={attributes}
             />
           </section>
-
-          {tactical && (
-            <section className="profile-section">
-              <span className="player-profile-eyebrow">Tactical snapshot</span>
-              <h2 className="player-profile-heading">System fit</h2>
-              <div className="tactical-grid player-profile-tactical-grid">
-                <div className="player-profile-tactical-cell">
-                  <span className="label">Gegenpress</span>
-                  <strong>{Math.round(tactical.gegenpressScore)}</strong>
-                </div>
-                <div className="player-profile-tactical-cell">
-                  <span className="label">Tiki-taka</span>
-                  <strong>{Math.round(tactical.tikiTakaScore)}</strong>
-                </div>
-                <div className="player-profile-tactical-cell">
-                  <span className="label">Counter</span>
-                  <strong>{Math.round(tactical.counterAttackScore)}</strong>
-                </div>
-                <div className="player-profile-tactical-cell">
-                  <span className="label">Winger</span>
-                  <strong>{Math.round(tactical.wingerScore)}</strong>
-                </div>
-              </div>
-            </section>
-          )}
-
         </>
       )}
 
@@ -800,12 +582,7 @@ export function PlayerProfilePage() {
         </>
       )}
 
-      {activeTab === "scouting" && (
-        <>
-          <ScoutingIntelligenceSection scouting={scouting} />
-          <ValuationSection valuation={valuation} playerId={player.id} />
-        </>
-      )}
+      {activeTab === "scouting" && <ScoutingDetailsTab player={player} />}
 
       {activeTab === "videos" && (
         <TypedMediaTab
@@ -945,12 +722,14 @@ function PlayerCardBanner({
         <PlayerPitchGraphic
           positionPrimary={player.positionPrimary}
           positionFull={player.positionFull}
+          role={player.role}
           positionSecondary={player.positionSecondary}
           positionFitSecondary={player.positionFit?.secondaryPositionFit ?? null}
           scoutingSecondaryPositionFit={
             player.scoutingIntelligence?.positionFit?.secondaryPositionFit ?? null
           }
           ratingAttributes={player.ratingAttributes}
+          tacticalSummary={player.tacticalSummary}
         />
         <PlayerCategoryRadar scores={categoryScores} />
       </div>
@@ -981,36 +760,6 @@ function PlayerBioGrid({ facts }: { facts: BioFact[] }) {
           >
             <strong className="player-profile-banner__bio-value">{fact.value}</strong>
             <span className="player-profile-banner__bio-label">{fact.label}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PlaystyleBadgesSection({ badges }: { badges: PlaystyleBadge[] }) {
-  return (
-    <div className="player-profile-playstyles">
-      <span className="player-profile-eyebrow">Playstyle badges</span>
-      <h3 className="player-profile-subheading">Specialties</h3>
-      <ul className="player-profile-playstyles__grid">
-        {badges.map((badge) => (
-          <li key={badge.title} className="player-profile-playstyle">
-            <span className="player-profile-playstyle__icon" aria-hidden="true">
-              {badge.icon}
-            </span>
-            <div className="player-profile-playstyle__body">
-              <div className="player-profile-playstyle__head">
-                <strong className="player-profile-playstyle__title">{badge.title}</strong>
-                {badge.fitPercent != null && (
-                  <span className="player-profile-playstyle__fit">{badge.fitPercent}% fit</span>
-                )}
-              </div>
-              {badge.contextLine && (
-                <span className="player-profile-playstyle__context">{badge.contextLine}</span>
-              )}
-              <p className="player-profile-playstyle__desc">{badge.description}</p>
-            </div>
           </li>
         ))}
       </ul>
@@ -1311,254 +1060,6 @@ function ScoreboardHistorySection({
           </ul>
         )}
       </article>
-    </section>
-  );
-}
-
-function ScoutingIntelligenceSection({
-  scouting,
-}: {
-  scouting: PublicPlayerProfile["scoutingIntelligence"];
-}) {
-  const hasSnapshot =
-    scouting &&
-    (scouting.tacticalFit ||
-      scouting.philosophyMatch ||
-      scouting.topTacticalScores.length > 0 ||
-      scouting.positionFit ||
-      scouting.philosophyFits.length > 0 ||
-      scouting.aggregateMetrics);
-
-  if (!hasSnapshot) {
-    return (
-      <section className="profile-section scouting-intel">
-        <div className="scouting-intel__header">
-          <span className="profile-section__eyebrow">Scouting intelligence</span>
-          <h2>Style and tactical fit</h2>
-        </div>
-        <div className="profile-empty-state scouting-intel__empty">
-          <strong>No scouting snapshot yet.</strong>
-          <p>
-            Match metrics, calibration imports, or ScoreBoard ingest are required before style fit
-            and tactical matching can be computed.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="profile-section scouting-intel">
-      <div className="scouting-intel__header">
-        <div>
-          <span className="profile-section__eyebrow">Scouting intelligence</span>
-          <h2>
-            Style and tactical fit
-            <InfoTip text="How this player fits different playing styles and tactical systems, based on match performance data." />
-          </h2>
-        </div>
-        {scouting.aggregateMetrics && (
-          <span className="scouting-intel__meta">
-            {scouting.aggregateMetrics.matchesPlayed} match
-            {scouting.aggregateMetrics.matchesPlayed === 1 ? "" : "es"} analysed
-            {scouting.aggregateMetrics.minutesPlayed > 0
-              ? ` · ${formatMinutesPlayed(
-                  Math.round(scouting.aggregateMetrics.minutesPlayed)
-                )} min`
-              : ""}
-          </span>
-        )}
-      </div>
-
-      <div className="scouting-intel__stats">
-        <article className="scouting-intel__stat-card">
-          <span className="scouting-intel__stat-label">
-            Tactical fit
-            <InfoTip text="Overall score for how well the player suits your tactical system." />
-          </span>
-          <strong className="scouting-intel__stat-value">
-            {scouting.tacticalFit
-              ? `${scouting.tacticalFit.score} · ${scouting.tacticalFit.label}`
-              : "Pending"}
-          </strong>
-        </article>
-        <article className="scouting-intel__stat-card">
-          <span className="scouting-intel__stat-label">
-            Best style match
-            <InfoTip text="The playing philosophy this player aligns with most strongly." />
-          </span>
-          <strong className="scouting-intel__stat-value">
-            {scouting.philosophyMatch
-              ? `${scouting.philosophyMatch.score}% · ${scouting.philosophyMatch.philosophy}`
-              : "Pending"}
-          </strong>
-        </article>
-        {scouting.aggregateMetrics && scouting.aggregateMetrics.minutesPlayed > 0 && (
-          <article className="scouting-intel__stat-card">
-            <span className="scouting-intel__stat-label">
-              Minutes tracked
-              <InfoTip text="Total minutes from matches used in this scouting snapshot." />
-            </span>
-            <strong className="scouting-intel__stat-value">
-              {formatMinutesPlayed(Math.round(scouting.aggregateMetrics.minutesPlayed))}
-            </strong>
-          </article>
-        )}
-      </div>
-
-      {scouting.topTacticalScores.length > 0 && (
-        <div className="scouting-intel__traits">
-          <h3 className="scouting-intel__section-title">Top tactical traits</h3>
-          <div className="scouting-intel__trait-grid">
-            {scouting.topTacticalScores.map((score) => (
-              <article key={score.label} className="scouting-intel__trait-card">
-                <span className="scouting-intel__trait-label">{score.label}</span>
-                <strong className="scouting-intel__trait-score">{Math.round(score.value)}</strong>
-              </article>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <article className="scouting-intel__panel">
-        <h3 className="scouting-intel__section-title">Playing style fits</h3>
-        {scouting.philosophyFits.length === 0 ? (
-          <p className="muted">No saved style-fit results yet.</p>
-        ) : (
-          <ul className="scouting-intel__fit-list">
-            {scouting.philosophyFits.map((fit) => (
-              <li
-                key={`${fit.formation}-${fit.philosophy}-${fit.positionSlot ?? "any"}`}
-                className="scouting-intel__fit-row"
-              >
-                <div>
-                  <strong>{fit.philosophy}</strong>
-                  <span>
-                    {fit.formation}
-                    {fit.positionSlot ? ` · ${fit.positionSlot}` : ""}
-                  </span>
-                </div>
-                <span className="scouting-intel__fit-score">
-                  {Math.round(fit.philosophyFitScore)}% fit
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </article>
-    </section>
-  );
-}
-
-function ValuationSection({
-  valuation,
-  playerId,
-}: {
-  valuation: PublicPlayerProfile["valuation"];
-  playerId: string;
-}) {
-  if (!valuation) {
-    return (
-      <section className="profile-section">
-        <h2>
-          Market valuation
-          <InfoTip text="Estimated transfer value range based on performance, age, competition level, and market signals." />
-        </h2>
-        <div className="profile-empty-state">
-          <strong>No valuation has been generated yet.</strong>
-          <p>Generate a valuation to show projected market range and scout notes here.</p>
-          <Link to={`/valuation/player/${playerId}`} className="text-link">
-            Open valuation workspace
-          </Link>
-        </div>
-      </section>
-    );
-  }
-
-  const strengths = stringList(valuation.strengths);
-  const weaknesses = stringList(valuation.weaknesses);
-
-  return (
-    <section className="profile-section">
-      <div className="profile-section-heading">
-        <div>
-          <span className="profile-section__eyebrow">Market valuation</span>
-          <h2>
-            Value and confidence
-            <InfoTip text="Projected market value with a confidence band based on available match and verification data." />
-          </h2>
-        </div>
-        <Link to={`/valuation/player/${playerId}`} className="text-link">
-          Open report
-        </Link>
-      </div>
-
-      <div className="profile-summary-card">
-        <div>
-          <h2>{valuation.marketValueLabel}</h2>
-          <p>{valuation.scoutNotes}</p>
-          <p className="muted">Generated {formatDate(valuation.createdAt)}</p>
-        </div>
-        <div className="profile-facts">
-          <div>
-            <span>
-              Overall score
-              <InfoTip text="Final valuation score after all factors and multipliers are applied." />
-            </span>
-            <strong>{Math.round(valuation.adjustedScore)}</strong>
-          </div>
-          <div>
-            <span>
-              Confidence
-              <InfoTip text="How reliable this valuation is given match data, footage, and competition level." />
-            </span>
-            <strong>{valuation.confidenceLabel}</strong>
-          </div>
-          <div>
-            <span>Market range</span>
-            <strong>
-              {formatCurrencyRange(
-                valuation.marketValueMinEur,
-                valuation.marketValueMaxEur
-              )}
-            </strong>
-          </div>
-          <div>
-            <span>
-              Base score
-              <InfoTip text="Starting score from core factors before market and verification multipliers." />
-            </span>
-            <strong>{Math.round(valuation.baseScore)}</strong>
-          </div>
-        </div>
-      </div>
-
-      <div className="profile-detail-grid">
-        <article className="profile-panel">
-          <h3>Strengths</h3>
-          {strengths.length === 0 ? (
-            <p className="muted">No strengths saved with this valuation.</p>
-          ) : (
-            <ul className="profile-list">
-              {strengths.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          )}
-        </article>
-        <article className="profile-panel">
-          <h3>Development flags</h3>
-          {weaknesses.length === 0 ? (
-            <p className="muted">No weaknesses saved with this valuation.</p>
-          ) : (
-            <ul className="profile-list">
-              {weaknesses.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          )}
-        </article>
-      </div>
     </section>
   );
 }

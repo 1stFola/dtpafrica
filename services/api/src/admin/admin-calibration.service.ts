@@ -14,6 +14,11 @@ import {
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveUniquePlayerSlug } from "../players/player-slug";
+import { SipRecalculationService } from "../sip/sip-recalculation.service";
+import {
+  legacyMatchMetricsToPlayerMatchRecord,
+  playerMatchMetricsToLegacyMetrics,
+} from "../sip/legacy-match-metrics-mapper";
 import { CalibrationMetricsDto } from "./dto/calibration-metrics.dto";
 import {
   CalibrationPlayerInfoDto,
@@ -43,7 +48,11 @@ type MetricsRecord = {
 
 @Injectable()
 export class AdminCalibrationService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(SipRecalculationService)
+    private readonly sipRecalc: SipRecalculationService
+  ) {}
 
   private parseHeightFt(heightFt?: string): number | undefined {
     if (!heightFt?.trim()) return undefined;
@@ -101,44 +110,6 @@ export class AdminCalibrationService {
     };
   }
 
-  private rowToLegacyMetrics(m: MatchMetricsRow): LegacyMatchMetricsDto {
-    return {
-      duration: m.minutesPlayed,
-      total_distance: m.totalDistanceMiles,
-      sprint_distance: m.sprintDistanceYards,
-      sprints: m.sprints,
-      top_speed: m.topSpeedMph ?? 0,
-      first_step_accelerations: m.firstStepAccelerations,
-      intense_accelerations: m.intenseAccelerations,
-      intense_turns: m.intenseTurns,
-      avg_turn_entry: m.avgTurnEntrySpeedMph ?? 0,
-      avg_turn_exit: m.avgTurnExitSpeedMph ?? 0,
-      turn_efficiency: 0,
-      left_turns: m.leftTurns,
-      right_turns: m.rightTurns,
-      back_turns: m.backTurns,
-      ball_touches: m.ballTouches,
-      possession_duration_seconds: 0,
-      one_touch_possessions_percentage: 0,
-      multi_touch_possessions__percentage: 0,
-      quick_release_score: 0,
-      distance_with_ball: m.distanceWithBallYards,
-      top_speed_with_ball: m.topSpeedWithBallMph ?? 0,
-      intense_turns_with_ball: m.intenseTurnsWithBall,
-      kicking_power: m.kickingPowerMph ?? 0,
-      release_inside_foot_percentage: 0,
-      release_laces_percentage: 0,
-      release_other_footzone_percentage: 0,
-      left_foot_touch_percentage: 0,
-      left_foot_release_percentage: 0,
-      left_foot_receive_percentage: 0,
-      left_foot_kicking_power_mph: 0,
-      right_foot_touch_percentage: 0,
-      right_foot_release_percentage: 0,
-      right_foot_receive_percentage: 0,
-      right_foot_kicking_power_mph: 0,
-    };
-  }
 
   private toMetricsRow(row: MetricsRecord): MatchMetricsRow {
     return {
@@ -214,13 +185,17 @@ export class AdminCalibrationService {
     return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
   }
 
-  private buildBenchmarkMetadata(result: ReturnType<typeof runCalibration>) {
+  private buildBenchmarkMetadata(
+    result: ReturnType<typeof runCalibration>,
+    calibrationMetrics?: LegacyMatchMetricsDto | null
+  ) {
     return {
       nearest: result.nearestBenchmark,
       alternatives: result.alternativeBenchmarks,
       rankedCandidates: result.rankedCandidates,
       primaryBenchmarkIndex: result.primaryBenchmarkIndex,
       filterInfo: result.filterInfo,
+      ...(calibrationMetrics ? { calibrationMetrics } : {}),
     };
   }
 
@@ -302,7 +277,7 @@ export class AdminCalibrationService {
         offensiveRating: player.offensiveRating,
         defensiveRating: player.defensiveRating,
       },
-      metrics: metrics ? this.rowToLegacyMetrics(this.toMetricsRow(metrics)) : null,
+      metrics: metrics ? playerMatchMetricsToLegacyMetrics(metrics) : null,
     };
   }
 
@@ -343,10 +318,14 @@ export class AdminCalibrationService {
       orderBy: { createdAt: "desc" },
     });
 
-    const legacyOverride =
+    const legacyMetricsOverride =
       options.metricsOverride && "duration" in options.metricsOverride
-        ? this.legacyMetricsToRow(options.metricsOverride as LegacyMatchMetricsDto)
+        ? (options.metricsOverride as LegacyMatchMetricsDto)
         : undefined;
+
+    const legacyOverride = legacyMetricsOverride
+      ? this.legacyMetricsToRow(legacyMetricsOverride)
+      : undefined;
 
     if (!stored && !legacyOverride && !options.metricsOverride) {
       throw new BadRequestException(
@@ -361,6 +340,10 @@ export class AdminCalibrationService {
     const metrics = legacyOverride
       ? legacyOverride
       : this.mergeMetrics(base, options.metricsOverride as CalibrationMetricsDto);
+
+    const calibrationMetricsForPersist =
+      legacyMetricsOverride ??
+      (stored ? playerMatchMetricsToLegacyMetrics(stored) : null);
 
     const meta = options.playerInfo
       ? this.infoToLegacyMeta(options.playerInfo)
@@ -393,7 +376,9 @@ export class AdminCalibrationService {
           playerPhotoUrl: options.playerInfo?.photoUrl ?? player.playerPhotoUrl,
           videoUrl: options.playerInfo?.videoUrl ?? player.videoUrl,
           ratingAttributes: this.toJson(result.calibrated),
-          benchmarkMetadata: this.toJson(this.buildBenchmarkMetadata(result)),
+          benchmarkMetadata: this.toJson(
+            this.buildBenchmarkMetadata(result, calibrationMetricsForPersist)
+          ),
           mediaItems: this.toJson(
             this.buildMediaItems(
               options.playerInfo?.photoUrl ?? player.playerPhotoUrl,
@@ -413,7 +398,14 @@ export class AdminCalibrationService {
         },
       });
 
-      await this.persistMetrics(playerId, metrics);
+      if (calibrationMetricsForPersist) {
+        await this.persistMetrics(playerId, calibrationMetricsForPersist);
+      }
+      try {
+        await this.sipRecalc.recalculatePlayer(playerId);
+      } catch {
+        // Profile intelligence can rebuild aggregates on next public view.
+      }
     }
 
     return this.formatResult(
@@ -484,7 +476,7 @@ export class AdminCalibrationService {
         offensiveRating: result.rawSummary.offensive_score,
         defensiveRating: result.rawSummary.defensive_score,
         ratingAttributes: this.toJson(result.calibrated),
-        benchmarkMetadata: this.toJson(this.buildBenchmarkMetadata(result)),
+        benchmarkMetadata: this.toJson(this.buildBenchmarkMetadata(result, metrics)),
         mediaItems: this.toJson(
           this.buildMediaItems(playerInfo.photoUrl, playerInfo.videoUrl)
         ),
@@ -502,7 +494,12 @@ export class AdminCalibrationService {
       },
     });
 
-    await this.persistMetrics(player.id, metricsRow);
+    await this.persistMetrics(player.id, metrics);
+    try {
+      await this.sipRecalc.recalculatePlayer(player.id);
+    } catch {
+      // Profile intelligence can rebuild aggregates on next public view.
+    }
 
     return {
       player: {
@@ -520,8 +517,8 @@ export class AdminCalibrationService {
     };
   }
 
-  private async persistMetrics(playerId: string, row: MatchMetricsRow) {
-    const data = this.metricsRecordFromRow(row);
+  private async persistMetrics(playerId: string, legacy: LegacyMatchMetricsDto) {
+    const data = legacyMatchMetricsToPlayerMatchRecord(legacy);
     const match = await this.prisma.match.create({
       data: {
         competition: "Calibration import",
