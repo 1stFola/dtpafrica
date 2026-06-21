@@ -837,8 +837,18 @@ export class AdminScoreboardService {
     return this.scoreboard.addEvent(matchId, dto);
   }
 
-  ingestMatchTimelineCsv(matchId: string, csv: string, replace?: boolean) {
-    return this.scoreboard.ingestMatchTimelineCsv(matchId, csv, replace);
+  ingestMatchTimelineCsv(
+    matchId: string,
+    csv: string,
+    replace?: boolean,
+    matchComment?: string
+  ) {
+    return this.scoreboard.ingestMatchTimelineCsv(
+      matchId,
+      csv,
+      replace,
+      matchComment
+    );
   }
 
   async deleteMatchEvent(matchId: string, eventId: string) {

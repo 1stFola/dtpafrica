@@ -898,6 +898,7 @@ export class ScoreboardService {
       playerId: dto.playerId,
       assistPlayerId: dto.assistPlayerId,
       playerLabel: dto.playerLabel?.trim() || undefined,
+      playerLabel2: dto.playerLabel2?.trim() || undefined,
       assistLabel: dto.assistLabel?.trim() || undefined,
       detail: dto.detail?.trim() || undefined,
       metadata: dto.metadata as Prisma.InputJsonValue | undefined,
@@ -992,7 +993,12 @@ export class ScoreboardService {
     return presentScoreboardPayload(updated);
   }
 
-  async ingestMatchTimelineCsv(matchId: string, csv: string, replace = false) {
+  async ingestMatchTimelineCsv(
+    matchId: string,
+    csv: string,
+    replace = false,
+    matchComment?: string
+  ) {
     const parsed = parseMatchTimelineCsv(csv);
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },
@@ -1040,6 +1046,7 @@ export class ScoreboardService {
             type: ev.type,
             minute: ev.minute,
             teamId,
+            playerLabel2: ev.playerLabel2,
             playerLabel: ev.playerLabel,
             assistLabel: ev.assistLabel,
             detail: ev.detail,
@@ -1055,6 +1062,7 @@ export class ScoreboardService {
         ...(wasFinished ? { lifecycle: undefined } : {}),
       };
 
+      const commentTrimmed = matchComment?.trim();
       await tx.sbMatch.update({
         where: { id: matchId },
         data: {
@@ -1062,6 +1070,7 @@ export class ScoreboardService {
           awayScore: parsed.awayScore,
           minute: 90,
           status: "finished",
+          matchComment: commentTrimmed || null,
           meta: meta as Prisma.InputJsonValue,
           stats: statsPayload as Prisma.InputJsonValue,
         },

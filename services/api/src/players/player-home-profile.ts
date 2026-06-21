@@ -1,5 +1,6 @@
 import {
   PHILOSOPHY_IDS,
+  clampPercent,
   positionFullFromAbbreviation,
   type PhilosophyId,
 } from "@dtp/engines";
@@ -30,7 +31,7 @@ const TACTICAL_PHILOSOPHY_KEYS: { philosophy: PhilosophyId; key: keyof TacticalR
 ];
 
 function clampScore(value: number): number {
-  return Math.round(Math.min(100, Math.max(0, value)));
+  return clampPercent(value);
 }
 
 function scoreForPhilosophy(philosophy: PhilosophyId, tactical: TacticalRow | null): number {

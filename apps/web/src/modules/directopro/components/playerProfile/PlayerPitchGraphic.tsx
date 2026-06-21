@@ -1,4 +1,6 @@
+import { useId } from "react";
 import {
+  resolveHybridPitchMarker,
   resolvePrimaryPitchMarker,
   resolveSecondaryPitchMarker,
   type SecondaryPitchInput,
@@ -10,6 +12,10 @@ type Props = SecondaryPitchInput & {
   role?: string | null;
 };
 
+function formatMarkerAria(x: number, y: number): string {
+  return `${Math.round(x)}%, ${Math.round(y)}%`;
+}
+
 export function PlayerPitchGraphic({
   positionPrimary,
   positionFull,
@@ -17,27 +23,45 @@ export function PlayerPitchGraphic({
   positionSecondary,
   positionFitSecondary,
   scoutingSecondaryPositionFit,
+  positionFitHybrid,
+  scoutingHybridFit,
   ratingAttributes,
   tacticalSummary,
 }: Props) {
-  const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull, role);
-  const secondaryMarker = resolveSecondaryPitchMarker(
-    {
-      positionPrimary,
-      positionFull,
-      role,
-      positionSecondary,
-      positionFitSecondary,
-      scoutingSecondaryPositionFit,
-      ratingAttributes,
-      tacticalSummary,
-    },
-    primaryMarker
-  );
+  const uid = useId().replace(/:/g, "");
+  const pitchInput: SecondaryPitchInput = {
+    positionPrimary,
+    positionFull,
+    role,
+    positionSecondary,
+    positionFitSecondary,
+    scoutingSecondaryPositionFit,
+    positionFitHybrid,
+    scoutingHybridFit,
+    ratingAttributes,
+    tacticalSummary,
+  };
 
-  const ariaLabel = secondaryMarker
-    ? `Tactical positions on pitch — primary (${Math.round(primaryMarker.x)}%, ${Math.round(primaryMarker.y)}%), secondary (${Math.round(secondaryMarker.x)}%, ${Math.round(secondaryMarker.y)}%)`
-    : `Tactical position on pitch (${Math.round(primaryMarker.x)}%, ${Math.round(primaryMarker.y)}%)`;
+  const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull, role);
+  const secondaryMarker = resolveSecondaryPitchMarker(pitchInput, primaryMarker);
+  const hybridMarker = resolveHybridPitchMarker(pitchInput, primaryMarker, secondaryMarker);
+
+  const hybridLabel = positionFitHybrid ?? scoutingHybridFit ?? null;
+
+  const ariaParts = [
+    `primary (${formatMarkerAria(primaryMarker.x, primaryMarker.y)})`,
+    secondaryMarker
+      ? `secondary (${formatMarkerAria(secondaryMarker.x, secondaryMarker.y)})`
+      : null,
+    hybridMarker
+      ? `hybrid${hybridLabel ? ` ${hybridLabel}` : ""} (${formatMarkerAria(hybridMarker.x, hybridMarker.y)})`
+      : null,
+  ].filter(Boolean);
+
+  const ariaLabel = `Tactical positions on pitch — ${ariaParts.join(", ")}`;
+
+  const connectorGradId = `player-profile-pitch-hybrid-connector-${uid}`;
+  const zoneGradId = `player-profile-pitch-hybrid-zone-${uid}`;
 
   return (
     <div className="player-profile-pitch" role="img" aria-label={ariaLabel}>
@@ -115,6 +139,46 @@ export function PlayerPitchGraphic({
         <circle cx="34" cy="50" r="0.9" fill="rgba(255,255,255,0.28)" />
       </svg>
 
+      {hybridMarker && (
+        <svg
+          className="player-profile-pitch__overlay"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id={connectorGradId} gradientUnits="userSpaceOnUse" x1={primaryMarker.x} y1={primaryMarker.y} x2={hybridMarker.x} y2={hybridMarker.y}>
+              <stop offset="0%" stopColor="rgba(34, 197, 94, 0.85)" />
+              <stop offset="55%" stopColor="rgba(251, 191, 36, 0.75)" />
+              <stop offset="100%" stopColor="rgba(167, 139, 250, 0.9)" />
+            </linearGradient>
+            <radialGradient id={zoneGradId} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="rgba(251, 191, 36, 0.45)" />
+              <stop offset="70%" stopColor="rgba(167, 139, 250, 0.18)" />
+              <stop offset="100%" stopColor="rgba(167, 139, 250, 0)" />
+            </radialGradient>
+          </defs>
+          <ellipse
+            className="player-profile-pitch__hybrid-zone"
+            cx={hybridMarker.x}
+            cy={hybridMarker.y}
+            rx="9"
+            ry="7.5"
+            fill={`url(#${zoneGradId})`}
+          />
+          <line
+            className="player-profile-pitch__hybrid-connector"
+            x1={primaryMarker.x}
+            y1={primaryMarker.y}
+            x2={hybridMarker.x}
+            y2={hybridMarker.y}
+            stroke={`url(#${connectorGradId})`}
+            strokeWidth="1.1"
+            strokeLinecap="round"
+          />
+        </svg>
+      )}
+
       <span
         className="player-profile-pitch__marker player-profile-pitch__marker--primary"
         style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
@@ -140,6 +204,27 @@ export function PlayerPitchGraphic({
             aria-hidden="true"
           >
             Alt. Role
+          </span>
+        </>
+      )}
+      {hybridMarker && (
+        <>
+          <span
+            className="player-profile-pitch__hybrid-halo"
+            style={{ left: `${hybridMarker.x}%`, top: `${hybridMarker.y}%` }}
+            aria-hidden="true"
+          />
+          <span
+            className="player-profile-pitch__marker player-profile-pitch__marker--hybrid"
+            style={{ left: `${hybridMarker.x}%`, top: `${hybridMarker.y}%` }}
+            aria-hidden="true"
+          />
+          <span
+            className="player-profile-pitch__hybrid-role-label"
+            style={{ left: `${hybridMarker.x}%`, top: `${hybridMarker.y}%` }}
+            aria-hidden="true"
+          >
+            Hybrid{hybridLabel ? ` · ${hybridLabel}` : " Role"}
           </span>
         </>
       )}

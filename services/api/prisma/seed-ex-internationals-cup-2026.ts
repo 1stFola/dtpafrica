@@ -54,6 +54,7 @@ type MatchSeed = {
   kickoffAt: string;
   venue: string;
   matchday: number;
+  stageKey?: "r32" | "r16";
   leg?: "first_leg" | "second_leg";
   firstLegMatchId?: string;
   homeScore?: number;
@@ -819,6 +820,168 @@ const MATCHES: MatchSeed[] = [
     leg: "second_leg",
     firstLegMatchId: matchId(16),
   },
+  // R16 first legs
+  {
+    id: matchId(33),
+    homeSlug: "fc-ipaye",
+    awaySlug: "fc-ogunlade",
+    kickoffAt: watKickoff("2026-06-18", "11:00"),
+    venue: "Legacy Pitch, National Stadium",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  {
+    id: matchId(34),
+    homeSlug: "fc-elaho",
+    awaySlug: "fc-okpara",
+    kickoffAt: watKickoff("2026-06-21", "13:00"),
+    venue: "Legacy Pitch, National Stadium",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  {
+    id: matchId(35),
+    homeSlug: "fc-ikpeba",
+    awaySlug: "fc-enegwea",
+    kickoffAt: watKickoff("2026-06-22", "11:00"),
+    venue: "Legacy Pitch, National Stadium",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  {
+    id: matchId(36),
+    homeSlug: "fc-giwa",
+    awaySlug: "fc-odiaka",
+    kickoffAt: watKickoff("2026-06-22", "13:00"),
+    venue: "Mobolaji Johnson Arena, Onikan",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  {
+    id: matchId(37),
+    homeSlug: "fc-dominic",
+    awaySlug: "fc-babington",
+    kickoffAt: watKickoff("2026-06-23", "13:00"),
+    venue: "Legacy Pitch, National Stadium",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  {
+    id: matchId(38),
+    homeSlug: "fc-obafemi",
+    awaySlug: "fc-omoruyi",
+    kickoffAt: watKickoff("2026-06-23", "15:00"),
+    venue: "Legacy Pitch, National Stadium",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  {
+    id: matchId(39),
+    homeSlug: "fc-oloyede",
+    awaySlug: "fc-aloy",
+    kickoffAt: watKickoff("2026-06-23", "15:00"),
+    venue: "Eleja Pry Sch, Igbogbo, Ikorodu",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  {
+    id: matchId(40),
+    homeSlug: "fc-nieketien",
+    awaySlug: "fc-udeze",
+    kickoffAt: watKickoff("2026-06-24", "15:00"),
+    venue: "Nathaniel Idowu Pitch, Unity Pry Sch, Oregie, Ajegunle",
+    matchday: 1,
+    stageKey: "r16",
+  },
+  // R16 second legs (home/away reversed from first leg)
+  {
+    id: matchId(41),
+    homeSlug: "fc-ogunlade",
+    awaySlug: "fc-ipaye",
+    kickoffAt: watKickoff("2026-06-23", "07:30"),
+    venue: "Bethlehem Field, Omo-Onile, Abule-Ado",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(33),
+  },
+  {
+    id: matchId(42),
+    homeSlug: "fc-okpara",
+    awaySlug: "fc-elaho",
+    kickoffAt: watKickoff("2026-06-25", "15:00"),
+    venue: "Gospel City Field, Command Road, Ipaja",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(34),
+  },
+  {
+    id: matchId(43),
+    homeSlug: "fc-odiaka",
+    awaySlug: "fc-giwa",
+    kickoffAt: watKickoff("2026-06-24", "15:00"),
+    venue: "Legacy Pitch, National Stadium",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(36),
+  },
+  {
+    id: matchId(44),
+    homeSlug: "fc-omoruyi",
+    awaySlug: "fc-obafemi",
+    kickoffAt: watKickoff("2026-06-25", "14:00"),
+    venue: "St. Jude Pry Sch, Mushin",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(38),
+  },
+  {
+    id: matchId(45),
+    homeSlug: "fc-aloy",
+    awaySlug: "fc-oloyede",
+    kickoffAt: watKickoff("2026-06-26", "10:00"),
+    venue: "Gospel City Field, Command Road, Ipaja",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(39),
+  },
+  {
+    id: matchId(46),
+    homeSlug: "fc-udeze",
+    awaySlug: "fc-nieketien",
+    kickoffAt: watKickoff("2026-06-26", "15:00"),
+    venue: "Navy Barracks, Ajegunle",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(40),
+  },
+  {
+    id: matchId(47),
+    homeSlug: "fc-babington",
+    awaySlug: "fc-dominic",
+    kickoffAt: watKickoff("2026-06-26", "16:00"),
+    venue: "Mobolaji Johnson Arena, Onikan",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(37),
+  },
+  {
+    id: matchId(48),
+    homeSlug: "fc-enegwea",
+    awaySlug: "fc-ikpeba",
+    kickoffAt: watKickoff("2026-06-26", "16:30"),
+    venue: "Nathaniel Idowu Pitch, Unity Pry Sch, Oregie, Ajegunle",
+    matchday: 2,
+    stageKey: "r16",
+    leg: "second_leg",
+    firstLegMatchId: matchId(35),
+  },
 ];
 
 const BRACKET_LAYOUT = {
@@ -990,9 +1153,13 @@ export async function seedExInternationalsCup2026(
     const awayScore = m.awayScore ?? 0;
     const minute = status === "finished" ? (m.minute ?? 90) : null;
     const leg = m.leg ?? "first_leg";
+    const stageKey = m.stageKey ?? "r32";
+    const stageId = stageByKey.get(stageKey) ?? r32StageId;
+    const knockoutRound = stageKey === "r16" ? "R16" : "R32";
+    const roundBase = stageKey === "r16" ? "Round of 16" : "Round of 32";
     const meta: Prisma.InputJsonValue = {
-      knockoutRound: "R32",
-      round: "R32",
+      knockoutRound,
+      round: knockoutRound,
       timezone: TIMEZONE,
       leg,
       ...(m.firstLegMatchId
@@ -1000,7 +1167,7 @@ export async function seedExInternationalsCup2026(
         : {}),
     };
     const roundLabel =
-      leg === "second_leg" ? "Round of 32 — Leg 2" : "Round of 32";
+      leg === "second_leg" ? `${roundBase} — Leg 2` : roundBase;
 
     if (!preserve) {
       await prisma.sbMatch.upsert({
@@ -1012,8 +1179,8 @@ export async function seedExInternationalsCup2026(
           minute,
           stats: m.stats ?? null,
           meta,
-          stageKey: "r32",
-          stageId: r32StageId,
+          stageKey,
+          stageId,
           matchday: m.matchday,
           roundLabel,
           venue: m.venue,
@@ -1024,8 +1191,8 @@ export async function seedExInternationalsCup2026(
         create: {
           id: m.id,
           competitionId: comp.id,
-          stageId: r32StageId,
-          stageKey: "r32",
+          stageId,
+          stageKey,
           matchday: m.matchday,
           homeTeamId: teamIds[m.homeSlug],
           awayTeamId: teamIds[m.awaySlug],
@@ -1069,7 +1236,7 @@ export async function seedExInternationalsCup2026(
 
   console.log("Ex Internationals Cup 2026 seeded:", COMP_SLUG);
   console.log("  teams:", teamCount, "(expected 32)");
-  console.log("  matches:", matchCount, "(expected 32 R32 — 16 first legs + 16 second legs)");
+  console.log("  matches:", matchCount, "(expected 48 — 32 R32 + 16 R16)");
   console.log("  events:", eventCount);
   console.log("  academies:", academyCount);
   console.log(

@@ -291,6 +291,8 @@ export type SecondaryPitchInput = {
   positionSecondary?: string | null;
   positionFitSecondary?: string | null;
   scoutingSecondaryPositionFit?: string | null;
+  positionFitHybrid?: string | null;
+  scoutingHybridFit?: string | null;
   ratingAttributes?: Record<string, number> | null;
   tacticalSummary?: TacticalSummaryInput | null;
 };
@@ -395,6 +397,39 @@ export function resolveSecondaryPitchMarker(
       input.positionPrimary
     );
     return trySecondaryLabel(tacticalRole, primaryHaystack, primaryMarker);
+  }
+
+  return null;
+}
+
+function isDistinctFromMarkers(
+  label: string | null | undefined,
+  primaryHaystack: string,
+  primaryMarker: PitchMarkerCoords,
+  otherMarkers: (PitchMarkerCoords | null | undefined)[]
+): boolean {
+  if (!isDistinctSecondaryRole(label ?? "", primaryHaystack, primaryMarker)) return false;
+  const marker = resolvePitchMarkerFromLabel(label);
+  if (!marker) return false;
+  return !otherMarkers.some((other) => other && coordsNear(marker, other));
+}
+
+/**
+ * Hybrid marker: SIP third-best position fit (`hybridFit`) when it maps to a
+ * distinct pitch zone from both primary and secondary markers.
+ */
+export function resolveHybridPitchMarker(
+  input: SecondaryPitchInput,
+  primaryMarker: PitchMarkerCoords,
+  secondaryMarker: PitchMarkerCoords | null
+): PitchMarkerCoords | null {
+  const primaryHaystack = primaryRoleHaystack(input);
+  const otherMarkers = [primaryMarker, secondaryMarker];
+
+  for (const label of [input.positionFitHybrid, input.scoutingHybridFit]) {
+    if (!isDistinctFromMarkers(label, primaryHaystack, primaryMarker, otherMarkers)) continue;
+    const marker = resolvePitchMarkerFromLabel(label);
+    if (marker) return marker;
   }
 
   return null;

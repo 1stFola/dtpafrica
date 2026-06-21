@@ -1,5 +1,6 @@
 export const ENGINES_VERSION = "0.1.0";
 
+export * from "./clamp-percent";
 export * from "./sip/types";
 export * from "./sip/metrics-engine";
 export * from "./sip/tactical-style-engine";

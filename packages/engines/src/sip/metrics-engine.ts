@@ -1,3 +1,4 @@
+import { clampPercent } from "../clamp-percent";
 import type { DerivedMetrics, RawMatchMetrics } from "./types";
 
 function safeDiv(n: number, d: number): number {
@@ -6,7 +7,7 @@ function safeDiv(n: number, d: number): number {
 }
 
 function clamp(n: number, min = 0, max = 100): number {
-  return Math.max(min, Math.min(max, n));
+  return clampPercent(n);
 }
 
 /** Normalize a raw value into 0–100 using soft caps (Phase 1 heuristic). */
