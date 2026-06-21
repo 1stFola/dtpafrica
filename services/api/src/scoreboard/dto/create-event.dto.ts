@@ -28,6 +28,10 @@ export class CreateMatchEventDto {
 
   @IsOptional()
   @IsString()
+  playerLabel2?: string;
+
+  @IsOptional()
+  @IsString()
   assistLabel?: string;
 
   @IsOptional()

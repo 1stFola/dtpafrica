@@ -208,11 +208,16 @@ export class AdminScoreboardController {
   @Post("matches/:matchId/csv-ingest")
   ingestMatchCsv(
     @Param("matchId") matchId: string,
-    @Body() body: { csv: string; replace?: boolean }
+    @Body() body: { csv: string; replace?: boolean; matchComment?: string }
   ) {
     if (!body.csv?.trim()) {
       throw new BadRequestException("csv body field is required");
     }
-    return this.sb.ingestMatchTimelineCsv(matchId, body.csv, body.replace);
+    return this.sb.ingestMatchTimelineCsv(
+      matchId,
+      body.csv,
+      body.replace,
+      body.matchComment
+    );
   }
 }

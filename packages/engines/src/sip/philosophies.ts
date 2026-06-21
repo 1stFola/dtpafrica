@@ -1,3 +1,4 @@
+import { clampPercent } from "../clamp-percent";
 import type { TacticalScores } from "./types";
 
 export type PhilosophyId =
@@ -68,5 +69,5 @@ export function primaryStyleScore(
       score = score * (1 - b.weight) + (tactical[b.key] as number) * b.weight;
     }
   }
-  return Math.round(score * 10) / 10;
+  return clampPercent(score, 1);
 }

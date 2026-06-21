@@ -15,8 +15,8 @@ import {
   PlayerCategoryRadar,
   type CategoryScore,
 } from "../components/playerProfile/PlayerCategoryRadar";
-import { InfoTip } from "../../../components/InfoTip";
 import { PlayerPitchGraphic } from "../components/playerProfile/PlayerPitchGraphic";
+import { PlayerRoleProfileSection } from "../components/playerProfile/PlayerRoleProfileSection";
 import { ScoutingDetailsTab } from "../components/playerProfile/ScoutingDetailsTab";
 import { PositionScoutingMetricsRow } from "../../scouting/components/PositionScoutingMetricsRow";
 import { buildPerformanceRadarScores } from "../../scouting/utils/strongXiPlayerModalUtils";
@@ -48,52 +48,6 @@ const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
   substitution: "Substitution",
   injury: "Injury",
 };
-
-const ATTRIBUTE_GROUPS = [
-  {
-    title: "Athletic",
-    keys: ["pace", "acceleration", "sprint_speed", "stamina", "strength", "agility"],
-  },
-  {
-    title: "Technical",
-    keys: ["dribbling", "ball_control", "passing", "finishing", "technique", "first_touch"],
-  },
-  {
-    title: "Mental",
-    keys: ["vision", "composure", "decision_making"],
-  },
-  {
-    title: "Team impact",
-    keys: ["work_rate", "positioning", "team_play"],
-  },
-] as const;
-
-const ATTRIBUTE_LABELS: Record<string, string> = {
-  pace: "Pace",
-  acceleration: "Acceleration",
-  sprint_speed: "Sprint speed",
-  stamina: "Stamina",
-  strength: "Strength",
-  agility: "Agility",
-  dribbling: "Dribbling",
-  ball_control: "Ball control",
-  passing: "Passing",
-  finishing: "Finishing",
-  technique: "Technique",
-  first_touch: "First touch",
-  vision: "Vision",
-  composure: "Composure",
-  decision_making: "Decision making",
-  work_rate: "Work rate",
-  positioning: "Positioning",
-  team_play: "Team play",
-};
-
-const ALL_ATTRIBUTE_KEYS = ATTRIBUTE_GROUPS.flatMap((group) => group.keys);
-
-function clampScore(value: number) {
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
 
 /** Turn a route slug/name param into a readable display name ("ahmed-adesanu" → "Ahmed Adesanu"). */
 function deslugifyName(value: string): string {
@@ -161,13 +115,6 @@ function ratingTier(rating?: number | null) {
 
 function isGkProfile(player: Pick<PublicPlayerProfile, "role" | "positionPrimary">): boolean {
   return isGoalkeeper(player.role) || isGoalkeeper(player.positionPrimary);
-}
-
-function attributeTierClass(score: number): string {
-  if (score >= 80) return "player-profile-attr--elite";
-  if (score >= 70) return "player-profile-attr--silver";
-  if (score >= 60) return "player-profile-attr--developing";
-  return "player-profile-attr--base";
 }
 
 function ratingBadgeTone(rating?: number | null): string {
@@ -520,20 +467,14 @@ export function PlayerProfilePage() {
       {activeTab === "overview" && (
         <>
           <section className="profile-section">
-            <div className="profile-section-heading">
-              <div>
-                <span className="player-profile-eyebrow">Skill ratings</span>
-                <h2 className="player-profile-heading">
-                  18-point profile
-                  <InfoTip text="Eighteen core skills grouped into athletic, technical, mental, and team-impact categories." />
-                </h2>
-              </div>
-              <span className="profile-data-note">
-                {player.ratingAttributes ? "From match data" : "Estimated from profile"}
-              </span>
-            </div>
-
-            <PlayerAttributeMicroGrid attributes={attributes} />
+            <PlayerRoleProfileSection
+              attributes={attributes}
+              positionPrimary={player.positionPrimary}
+              role={player.role}
+              dataSourceLabel={
+                player.ratingAttributes ? "From match data" : "Estimated from profile"
+              }
+            />
 
             <div className="profile-detail-grid">
               <article className="profile-panel player-profile-panel">
@@ -728,10 +669,14 @@ function PlayerCardBanner({
           scoutingSecondaryPositionFit={
             player.scoutingIntelligence?.positionFit?.secondaryPositionFit ?? null
           }
+          positionFitHybrid={player.positionFit?.hybridFit ?? null}
+          scoutingHybridFit={player.scoutingIntelligence?.positionFit?.hybridFit ?? null}
           ratingAttributes={player.ratingAttributes}
           tacticalSummary={player.tacticalSummary}
         />
-        <PlayerCategoryRadar scores={categoryScores} />
+        <div className="player-profile-cat-radar__frame">
+          <PlayerCategoryRadar scores={categoryScores} />
+        </div>
       </div>
     </header>
   );
@@ -763,34 +708,6 @@ function PlayerBioGrid({ facts }: { facts: BioFact[] }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function PlayerAttributeMicroGrid({
-  attributes,
-}: {
-  attributes: ReturnType<typeof buildAttributeMap>;
-}) {
-  return (
-    <div className="player-profile-attr-grid">
-      {ALL_ATTRIBUTE_KEYS.map((key) => {
-        const score = clampScore(attributes[key]);
-        return (
-          <article
-            key={key}
-            className={`player-profile-attr ${attributeTierClass(score)}`}
-          >
-            <div className="player-profile-attr__head">
-              <span className="player-profile-attr__label">{ATTRIBUTE_LABELS[key]}</span>
-              <strong className="player-profile-attr__score">{score}</strong>
-            </div>
-            <div className="player-profile-attr__track" aria-hidden="true">
-              <span className="player-profile-attr__fill" style={{ width: `${score}%` }} />
-            </div>
-          </article>
-        );
-      })}
     </div>
   );
 }

@@ -132,6 +132,7 @@ export type SbMatchEvent = {
   teamId: string | null;
   playerId: string | null;
   playerLabel: string | null;
+  playerLabel2: string | null;
   assistPlayerId: string | null;
   assistLabel: string | null;
   detail: string | null;
@@ -452,6 +453,7 @@ export function postMatchEvent(
     minute: number;
     teamId?: string;
     playerLabel?: string;
+    playerLabel2?: string;
     playerId?: string;
     assistPlayerId?: string;
     assistLabel?: string;

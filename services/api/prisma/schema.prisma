@@ -422,6 +422,7 @@ model SbMatch {
   awayScore     Int       @default(0) @map("away_score")
   kickoffAt     DateTime? @map("kickoff_at")
   venue         String?
+  matchComment  String?   @map("match_comment") @db.Text
   roundLabel    String?   @map("round_label")
   stageKey      String?   @map("stage_key")
   matchday      Int?
@@ -472,6 +473,7 @@ model SbMatchEvent {
   playerId    String?  @map("player_id")
   assistPlayerId String? @map("assist_player_id")
   playerLabel String?  @map("player_label")
+  playerLabel2 String? @map("player_label2")
   assistLabel String?  @map("assist_label")
   type        String
   minute      Int

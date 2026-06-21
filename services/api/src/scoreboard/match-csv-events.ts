@@ -51,6 +51,7 @@ export type ParsedCsvEvent = {
   type: string;
   minute: number;
   teamSide?: "home" | "away";
+  playerLabel2?: string;
   playerLabel?: string;
   assistLabel?: string;
   detail?: string;
