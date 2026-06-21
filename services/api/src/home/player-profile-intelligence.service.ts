@@ -1,11 +1,3 @@
-import {
-  computePhilosophyFit,
-  computePositionFitScore,
-  FORMATIONS,
-  PHILOSOPHY_IDS,
-  type FormationId,
-  type PhilosophyId,
-} from "@dtp/engines";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { MvceService } from "../mvce/mvce.service";
@@ -21,13 +13,7 @@ import {
   readCalibrationMetricsFromBenchmark,
   toCalibrationMetricsFallback,
 } from "../sip/legacy-match-metrics-mapper";
-import {
-  toPhilosophyFitPlayer,
-  type PlayerWithSip,
-} from "../scouting/scouting.mapper";
-
-const PROFILE_FORMATION: FormationId = "4-2-3-1";
-const PHILOSOPHY_FIT_LIMIT = 5;
+import { syncPhilosophyFitsForPlayer } from "../scouting/philosophy-fit-sync";
 
 @Injectable()
 export class PlayerProfileIntelligenceService {
@@ -72,9 +58,9 @@ export class PlayerProfileIntelligenceService {
       select: { playerId: true },
     });
 
-    if (hasTactical && snapshot._count.philosophyFitRows === 0) {
+    if (hasTactical) {
       try {
-        await this.ensurePhilosophyFits(playerId);
+        await syncPhilosophyFitsForPlayer(this.prisma, playerId);
       } catch (error) {
         this.logger.warn(
           `Philosophy fit generation skipped for ${playerId}: ${error instanceof Error ? error.message : error}`
@@ -171,70 +157,4 @@ export class PlayerProfileIntelligenceService {
     });
   }
 
-  private async ensurePhilosophyFits(playerId: string) {
-    const row = await this.prisma.player.findUnique({
-      where: { id: playerId },
-      include: { tacticalScores: true, positionFit: true },
-    });
-    if (!row?.tacticalScores) return;
-
-    const player = toPhilosophyFitPlayer(row as PlayerWithSip);
-    if (!player) return;
-
-    const slots = FORMATIONS[PROFILE_FORMATION];
-    const bestSlot =
-      slots
-        .map((slot) => ({ slot, score: computePositionFitScore(player, slot) }))
-        .sort((a, b) => b.score - a.score)[0]?.slot ?? slots.find((s) => s.id === "cam");
-
-    const fits = PHILOSOPHY_IDS.map((philosophy: PhilosophyId) =>
-      computePhilosophyFit(player, philosophy, PROFILE_FORMATION, bestSlot)
-    )
-      .sort((a, b) => b.philosophyFitScore - a.philosophyFitScore)
-      .slice(0, PHILOSOPHY_FIT_LIMIT);
-
-    for (const fit of fits) {
-      await this.persistPhilosophyFit(fit);
-    }
-  }
-
-  private async persistPhilosophyFit(fit: {
-    playerId: string;
-    formation: string;
-    philosophy: string;
-    positionSlot?: string;
-    philosophyFitScore: number;
-    positionFitScore: number;
-    confidenceScore: number;
-  }) {
-    const existing = await this.prisma.philosophyFitProfile.findFirst({
-      where: {
-        playerId: fit.playerId,
-        formation: fit.formation,
-        philosophy: fit.philosophy,
-        positionSlot: fit.positionSlot ?? null,
-      },
-    });
-    const data = {
-      philosophyFitScore: fit.philosophyFitScore,
-      positionFitScore: fit.positionFitScore,
-      confidenceScore: fit.confidenceScore,
-    };
-    if (existing) {
-      await this.prisma.philosophyFitProfile.update({
-        where: { id: existing.id },
-        data,
-      });
-    } else {
-      await this.prisma.philosophyFitProfile.create({
-        data: {
-          playerId: fit.playerId,
-          formation: fit.formation,
-          philosophy: fit.philosophy,
-          positionSlot: fit.positionSlot ?? null,
-          ...data,
-        },
-      });
-    }
-  }
 }

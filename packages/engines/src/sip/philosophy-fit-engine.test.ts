@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { FormationSlot } from "./formations";
-import { computePhilosophyFit } from "./philosophy-fit-engine";
+import {
+  computePhilosophyConfidence,
+  computePhilosophyFit,
+  computePhilosophyFitScore,
+  PHILOSOPHY_FIT_WEIGHTS,
+} from "./philosophy-fit-engine";
 import type { PhilosophyFitPlayer } from "./philosophy-fit-engine";
 
 function samplePlayer(overrides: Partial<PhilosophyFitPlayer> = {}): PhilosophyFitPlayer {
@@ -53,6 +58,15 @@ const stSlot: FormationSlot = {
   y: 16,
 };
 
+const mismatchedSlot: FormationSlot = {
+  id: "lb",
+  label: "LB",
+  positions: ["LB"],
+  role: "def",
+  x: 18,
+  y: 72,
+};
+
 test("philosophy fit stays within 0–100 for goalkeeper slot (regression)", () => {
   const player = samplePlayer({ positionPrimary: "GK" });
   const fit = computePhilosophyFit(player, "Counter-Attacking", "4-2-3-1", gkSlot);
@@ -63,10 +77,58 @@ test("philosophy fit stays within 0–100 for goalkeeper slot (regression)", () 
   assert.ok(fit.primaryStyleScore >= 0 && fit.primaryStyleScore <= 100);
 });
 
-test("counter-attacking fit aligns with counter attack tactical trait for outfield roles", () => {
+test("counter-attacking fit uses tactical trait as primary style score", () => {
   const player = samplePlayer();
   const fit = computePhilosophyFit(player, "Counter-Attacking", "4-2-3-1", stSlot);
 
-  assert.ok(fit.philosophyFitScore >= 70 && fit.philosophyFitScore <= 95);
   assert.ok(Math.abs(fit.primaryStyleScore - 83) < 1);
+  assert.ok(fit.philosophyFitScore >= 70 && fit.philosophyFitScore <= 95);
+});
+
+test("weighted composite cannot reach 100 when position fit and confidence are low", () => {
+  const tactical = 83;
+  const positionFit = 45;
+  const confidence = computePhilosophyConfidence(tactical, positionFit);
+  const composite = computePhilosophyFitScore(tactical, positionFit, confidence);
+
+  assert.equal(confidence, 59);
+  assert.equal(composite, 66.8);
+  assert.ok(composite < 75);
+});
+
+test("mismatched slot yields realistic system fit, not flat 100", () => {
+  const player = samplePlayer({
+    positionPrimary: "ST",
+    positionSecondary: null,
+    tactical: {
+      ...samplePlayer().tactical,
+      counterAttackScore: 83,
+      gegenpressScore: 100,
+    },
+  });
+
+  const counterFit = computePhilosophyFit(
+    player,
+    "Counter-Attacking",
+    "4-2-3-1",
+    mismatchedSlot
+  );
+  const gegenFit = computePhilosophyFit(
+    player,
+    "Gegenpressing",
+    "4-2-3-1",
+    mismatchedSlot
+  );
+
+  assert.equal(counterFit.positionFitScore, 45);
+  assert.equal(gegenFit.positionFitScore, 45);
+  assert.ok(counterFit.philosophyFitScore < 80);
+  assert.ok(gegenFit.philosophyFitScore < 85);
+  assert.notEqual(counterFit.philosophyFitScore, 100);
+  assert.notEqual(gegenFit.philosophyFitScore, 100);
+});
+
+test("composite weights sum to 1", () => {
+  const { tacticalTrait, positionFit, confidence } = PHILOSOPHY_FIT_WEIGHTS;
+  assert.equal(tacticalTrait + positionFit + confidence, 1);
 });

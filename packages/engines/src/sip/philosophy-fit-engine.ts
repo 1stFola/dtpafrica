@@ -1,5 +1,5 @@
 import { clampPercent } from "../clamp-percent";
-import type { FormationId, FormationSlot, SlotRole } from "./formations";
+import type { FormationId, FormationSlot } from "./formations";
 import { FORMATIONS, positionMatchesSlot } from "./formations";
 import { PHILOSOPHY_IDS, type PhilosophyId, primaryStyleScore } from "./philosophies";
 import type { PositionFitResult, TacticalScores } from "./types";
@@ -28,14 +28,36 @@ export type PhilosophyFitResult = {
   confidenceScore: number;
 };
 
-/** Normalized 0–1 offensive/defensive relevance for the slot role. */
-function roleRelevance(player: PhilosophyFitPlayer, role: SlotRole): number {
-  const offensive = clampPercent(player.offensiveRating ?? 50) / 100;
-  const defensive = clampPercent(player.defensiveRating ?? 50) / 100;
-  if (role === "gk") return 0.5;
-  if (role === "att") return offensive;
-  if (role === "def") return defensive;
-  return (offensive + defensive) / 2;
+/** Weights for the composite system-fit score exposed in the UI. */
+export const PHILOSOPHY_FIT_WEIGHTS = {
+  tacticalTrait: 0.5,
+  positionFit: 0.3,
+  confidence: 0.2,
+} as const;
+
+export function computePhilosophyConfidence(
+  tacticalTraitScore: number,
+  positionFitScore: number
+): number {
+  const raw = clampPercent(
+    50 + (tacticalTraitScore - 50) * 0.3 + (positionFitScore - 50) * 0.2,
+    0
+  );
+  return Math.min(99, Math.max(40, raw));
+}
+
+export function computePhilosophyFitScore(
+  tacticalTraitScore: number,
+  positionFitScore: number,
+  confidenceScore: number
+): number {
+  const { tacticalTrait, positionFit, confidence } = PHILOSOPHY_FIT_WEIGHTS;
+  return clampPercent(
+    tacticalTraitScore * tacticalTrait +
+      positionFitScore * positionFit +
+      confidenceScore * confidence,
+    1
+  );
 }
 
 export function computePositionFitScore(
@@ -67,21 +89,9 @@ export function computePhilosophyFit(
   slot?: FormationSlot
 ): PhilosophyFitResult {
   const primary = clampPercent(primaryStyleScore(player.tactical, philosophy), 1);
-  const overall = clampPercent(player.overallRating ?? 50);
   const posFit = clampPercent(slot ? computePositionFitScore(player, slot) : 60);
-  const role = slot?.role ?? "mid";
-  const offDef = clampPercent(roleRelevance(player, role) * 100);
-
-  const philosophyFitScore = clampPercent(
-    primary * 0.5 + overall * 0.25 + posFit * 0.15 + offDef * 0.1,
-    1
-  );
-
-  const confidenceScore = clampPercent(
-    50 + (primary - 50) * 0.3 + (posFit - 50) * 0.2,
-    0
-  );
-  const boundedConfidence = Math.min(99, Math.max(40, confidenceScore));
+  const confidenceScore = computePhilosophyConfidence(primary, posFit);
+  const philosophyFitScore = computePhilosophyFitScore(primary, posFit, confidenceScore);
 
   return {
     playerId: player.id,
@@ -91,7 +101,7 @@ export function computePhilosophyFit(
     philosophyFitScore,
     positionFitScore: posFit,
     primaryStyleScore: primary,
-    confidenceScore: boundedConfidence,
+    confidenceScore,
   };
 }
 
