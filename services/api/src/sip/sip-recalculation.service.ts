@@ -1,6 +1,7 @@
 import { runSipPipeline } from "@dtp/engines";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { syncPhilosophyFitsForPlayer } from "../scouting/philosophy-fit-sync";
 import {
   mergeCalibrationExtrasIntoRaw,
   readCalibrationMetricsFromBenchmark,
@@ -85,6 +86,8 @@ export class SipRecalculationService {
         defensiveRating: pipeline.defensiveRating,
       },
     });
+
+    await syncPhilosophyFitsForPlayer(this.prisma, playerId);
 
     return {
       player: updatedPlayer,
