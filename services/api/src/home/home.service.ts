@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { normalizeClubName } from "@dtp/engines";
+import { normalizeClubName, clampPercent } from "@dtp/engines";
 import {
   resolvePositionFull,
   resolveTopPhilosophies,
@@ -565,14 +565,15 @@ export class HomeService {
     }>;
   }) {
     const tactical = args.tacticalScores;
+    const clampTactical = (value: number) => clampPercent(value, 1);
     const primaryScores = tactical
       ? [
-          { label: "Gegenpress", value: tactical.gegenpressScore },
-          { label: "Tiki-taka", value: tactical.tikiTakaScore },
-          { label: "Counter attack", value: tactical.counterAttackScore },
-          { label: "Winger", value: tactical.wingerScore },
-          { label: "Press resistance", value: tactical.pressResistanceScore },
-          { label: "Two-footedness", value: tactical.twoFootednessScore },
+          { label: "Gegenpress", value: clampTactical(tactical.gegenpressScore) },
+          { label: "Tiki-taka", value: clampTactical(tactical.tikiTakaScore) },
+          { label: "Counter attack", value: clampTactical(tactical.counterAttackScore) },
+          { label: "Winger", value: clampTactical(tactical.wingerScore) },
+          { label: "Press resistance", value: clampTactical(tactical.pressResistanceScore) },
+          { label: "Two-footedness", value: clampTactical(tactical.twoFootednessScore) },
         ].sort((a, b) => b.value - a.value)
       : [];
 
@@ -582,9 +583,9 @@ export class HomeService {
         formation: fit.formation,
         philosophy: fit.philosophy,
         positionSlot: fit.positionSlot,
-        philosophyFitScore: fit.philosophyFitScore,
-        positionFitScore: fit.positionFitScore,
-        confidenceScore: fit.confidenceScore,
+        philosophyFitScore: clampPercent(fit.philosophyFitScore, 1),
+        positionFitScore: clampPercent(fit.positionFitScore),
+        confidenceScore: clampPercent(fit.confidenceScore),
       }));
 
     const topTactical = primaryScores[0];
@@ -593,37 +594,45 @@ export class HomeService {
     return {
       tacticalScores: tactical
         ? {
-            gegenpressScore: tactical.gegenpressScore,
-            tikiTakaScore: tactical.tikiTakaScore,
-            counterAttackScore: tactical.counterAttackScore,
-            totalFootballScore: tactical.totalFootballScore,
-            highLineScore: tactical.highLineScore,
-            wingerScore: tactical.wingerScore,
-            lowBlockScore: tactical.lowBlockScore,
-            quickReleaseScore: tactical.quickReleaseScore,
-            ballRetentionScore: tactical.ballRetentionScore,
-            technicalCleanlinessScore: tactical.technicalCleanlinessScore,
-            directPlayScore: tactical.directPlayScore,
-            flairScore: tactical.flairScore,
-            pressResistanceScore: tactical.pressResistanceScore,
-            possessionHubScore: tactical.possessionHubScore,
-            transitionExplosivenessScore: tactical.transitionExplosivenessScore,
-            isolationThreatScore: tactical.isolationThreatScore,
-            twoFootednessScore: tactical.twoFootednessScore,
+            gegenpressScore: clampTactical(tactical.gegenpressScore),
+            tikiTakaScore: clampTactical(tactical.tikiTakaScore),
+            counterAttackScore: clampTactical(tactical.counterAttackScore),
+            totalFootballScore: clampTactical(tactical.totalFootballScore),
+            highLineScore: clampTactical(tactical.highLineScore),
+            wingerScore: clampTactical(tactical.wingerScore),
+            lowBlockScore: clampTactical(tactical.lowBlockScore),
+            quickReleaseScore: clampTactical(tactical.quickReleaseScore),
+            ballRetentionScore: clampTactical(tactical.ballRetentionScore),
+            technicalCleanlinessScore: clampTactical(tactical.technicalCleanlinessScore),
+            directPlayScore: clampTactical(tactical.directPlayScore),
+            flairScore: clampTactical(tactical.flairScore),
+            pressResistanceScore: clampTactical(tactical.pressResistanceScore),
+            possessionHubScore: clampTactical(tactical.possessionHubScore),
+            transitionExplosivenessScore: clampTactical(tactical.transitionExplosivenessScore),
+            isolationThreatScore: clampTactical(tactical.isolationThreatScore),
+            twoFootednessScore: clampTactical(tactical.twoFootednessScore),
           }
         : null,
-      topTacticalScores: primaryScores.slice(0, 4),
+      topTacticalScores: primaryScores.slice(0, 4).map((row) => ({
+        label: row.label,
+        value: clampPercent(row.value),
+      })),
       tacticalFit: topTactical
-        ? { label: topTactical.label, score: Math.round(topTactical.value) }
+        ? { label: topTactical.label, score: clampPercent(topTactical.value) }
         : null,
       philosophyMatch: bestPhilosophy
         ? {
             philosophy: bestPhilosophy.philosophy,
             formation: bestPhilosophy.formation,
-            score: Math.round(bestPhilosophy.philosophyFitScore),
+            score: clampPercent(bestPhilosophy.philosophyFitScore),
           }
         : null,
-      positionFit: args.positionFit,
+      positionFit: args.positionFit
+        ? {
+            ...args.positionFit,
+            confidence: clampPercent(args.positionFit.confidence),
+          }
+        : null,
       philosophyFits,
       aggregateMetrics: args.aggregatedMetrics[0]
         ? {

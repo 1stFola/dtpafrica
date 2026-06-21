@@ -1,3 +1,4 @@
+import { clampPercent } from "../clamp-percent";
 import type { PositionFitResult, TacticalScores } from "./types";
 
 const POSITION_MAP: { key: keyof TacticalScores; label: string }[] = [
@@ -22,7 +23,7 @@ export function computePositionFit(scores: TacticalScores): PositionFitResult {
   const hybrid = ranked[2];
 
   const spread = primary.value - (ranked[ranked.length - 1]?.value ?? 0);
-  const confidence = Math.round(Math.min(99, Math.max(40, 50 + spread)));
+  const confidence = clampPercent(Math.min(99, Math.max(40, 50 + spread)));
 
   return {
     primaryPositionFit: primary.label,

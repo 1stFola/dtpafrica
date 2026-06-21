@@ -236,7 +236,12 @@ export const adminScoreboardApi = {
       method: "DELETE",
     }),
 
-  ingestMatchCsv: (matchId: string, csv: string, replace?: boolean) =>
+  ingestMatchCsv: (
+    matchId: string,
+    csv: string,
+    replace?: boolean,
+    matchComment?: string
+  ) =>
     sbFetch<{
       matchId: string;
       status: string;
@@ -247,7 +252,7 @@ export const adminScoreboardApi = {
       standingsRefresh: string;
     }>(`/admin/scoreboard/matches/${matchId}/csv-ingest`, {
       method: "POST",
-      body: JSON.stringify({ csv, replace }),
+      body: JSON.stringify({ csv, replace, matchComment }),
     }),
 
   createHighlight: (body: {

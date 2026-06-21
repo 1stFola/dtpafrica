@@ -1,3 +1,4 @@
+import { clampPercent } from "../clamp-percent";
 import type { DerivedMetrics, RawMatchMetrics, TacticalScores } from "./types";
 import { normalize } from "./metrics-engine";
 
@@ -10,7 +11,7 @@ export function computeTacticalScores(
 ): TacticalScores {
   const minutes = Math.max(raw.minutesPlayed, 1);
 
-  const gegenpressScore = clampScore(
+  const gegenpressScore = clampPercent(
     raw.intenseAccelerations * 0.3 +
       raw.sprints * 0.25 +
       raw.intenseTurns * 0.2 +
@@ -18,14 +19,14 @@ export function computeTacticalScores(
       normalize(derived.workloadIndex, 120) * 0.1
   );
 
-  const tikiTakaScore = clampScore(
+  const tikiTakaScore = clampPercent(
     normalize(raw.ballTouches, 80) * 0.35 +
       derived.turnEfficiency * 25 * 0.25 +
       normalize(raw.distanceWithBallYards, 400) * 0.2 +
       (raw.leftTurns + raw.rightTurns) * 0.2
   );
 
-  const counterAttackScore = clampScore(
+  const counterAttackScore = clampPercent(
     normalize(raw.topSpeedMph, 22) * 0.3 +
       normalize(raw.sprintDistanceYards, 600) * 0.25 +
       normalize(raw.topSpeedWithBallMph, 18) * 0.2 +
@@ -33,7 +34,7 @@ export function computeTacticalScores(
       normalize(raw.kickingPowerMph, 70) * 0.1
   );
 
-  const totalFootballScore = clampScore(
+  const totalFootballScore = clampPercent(
     normalize(raw.totalDistanceMiles, 7) * 0.3 +
       derived.turnDiversity * 3 * 0.25 +
       normalize(raw.distanceWithBallYards, 500) * 0.2 +
@@ -41,52 +42,53 @@ export function computeTacticalScores(
       derived.accelerationDensity * 15 * 0.1
   );
 
-  const highLineScore = clampScore(
+  const highLineScore = clampPercent(
     normalize(raw.topSpeedMph, 22) * 0.4 +
       derived.sprintFrequency * 25 * 0.3 +
       raw.backTurns * 0.2 +
       raw.intenseAccelerations * 0.1
   );
 
-  const wingerScore = clampScore(
+  const wingerScore = clampPercent(
     normalize(raw.topSpeedWithBallMph, 18) * 0.3 +
       raw.intenseTurnsWithBall * 0.25 +
       normalize(raw.distanceWithBallYards, 400) * 0.25 +
       raw.sprints * 0.2
   );
 
-  const lowBlockScore = clampScore(
+  const lowBlockScore = clampPercent(
     raw.intenseTurns * 0.35 +
       raw.firstStepAccelerations * 0.25 +
       raw.backTurns * 0.2 +
       (raw.totalDistanceMiles > 0 ? (1 / raw.totalDistanceMiles) * 20 : 0) * 0.2
   );
 
-  const quickReleaseScore = clampScore(derived.quickReleaseScore);
-  const technicalCleanlinessScore = clampScore(
-    normalize(derived.technicalCleanlinessScore, 80)
+  const quickReleaseScore = clampPercent(derived.quickReleaseScore, 1);
+  const technicalCleanlinessScore = clampPercent(
+    normalize(derived.technicalCleanlinessScore, 80),
+    1
   );
-  const directPlayScore = clampScore(normalize(derived.directPlayScore, 100));
-  const flairScore = clampScore(normalize(derived.flairScore, 50));
-  const twoFootednessScore = clampScore(derived.twoFootednessScore);
+  const directPlayScore = clampPercent(normalize(derived.directPlayScore, 100), 1);
+  const flairScore = clampPercent(normalize(derived.flairScore, 50), 1);
+  const twoFootednessScore = clampPercent(derived.twoFootednessScore, 1);
 
-  const ballRetentionScore = clampScore(
+  const ballRetentionScore = clampPercent(
     tikiTakaScore * 0.5 + technicalCleanlinessScore * 0.3 + twoFootednessScore * 0.2
   );
 
-  const pressResistanceScore = clampScore(
+  const pressResistanceScore = clampPercent(
     gegenpressScore * 0.4 + technicalCleanlinessScore * 0.35 + twoFootednessScore * 0.25
   );
 
-  const possessionHubScore = clampScore(
+  const possessionHubScore = clampPercent(
     tikiTakaScore * 0.45 + ballRetentionScore * 0.35 + derived.ballActivityRate * 10 * 0.2
   );
 
-  const transitionExplosivenessScore = clampScore(
+  const transitionExplosivenessScore = clampPercent(
     counterAttackScore * 0.5 + gegenpressScore * 0.3 + wingerScore * 0.2
   );
 
-  const isolationThreatScore = clampScore(
+  const isolationThreatScore = clampPercent(
     wingerScore * 0.4 + flairScore * 0.35 + directPlayScore * 0.25
   );
 
@@ -109,8 +111,4 @@ export function computeTacticalScores(
     isolationThreatScore,
     twoFootednessScore,
   };
-}
-
-function clampScore(n: number): number {
-  return Math.round(Math.max(0, Math.min(100, n)) * 10) / 10;
 }
