@@ -516,4 +516,6 @@ export const EVENT_LABELS: Record<string, string> = {
   disallowed_goal: "Disallowed goal",
   counter_attack: "Counter attack",
   late_defense: "Late defense",
+  full_time: "Full time",
+  penalty_shootout: "Shootout begins",
 };
