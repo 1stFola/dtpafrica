@@ -41,7 +41,26 @@ const EVENT_ICONS: Record<string, string> = {
   disallowed_goal: "🚫",
   counter_attack: "⚡",
   late_defense: "🛡",
+  full_time: "🏁",
+  penalty_shootout: "⚽",
 };
+
+/** Match-wide events — centered cards, never home/away aligned (mirrors FLOW_CSV_TYPES + specials). */
+const NEUTRAL_EVENT_TYPES = new Set([
+  "kick_off",
+  "match_flow",
+  "pressure",
+  "half_time",
+  "second_half_kickoff",
+  "added_time",
+  "score_update",
+  "water_break",
+  "midfield_battle",
+  "match_control",
+  "goal_scorers_update",
+  "full_time",
+  "penalty_shootout",
+]);
 
 /** assist_name column label by event type (CSV secondary player). */
 const ASSIST_LABEL_BY_TYPE: Record<string, string> = {
@@ -120,11 +139,18 @@ function PlayerLink({
 
 type EventSide = "home" | "away" | "neutral";
 
+function isNeutralEvent(ev: SbMatchEvent): boolean {
+  const csvType = resolveCsvEventType(ev);
+  if (NEUTRAL_EVENT_TYPES.has(csvType)) return true;
+  return ev.type === "match_flow";
+}
+
 function eventSide(
   ev: SbMatchEvent,
   homeTeam: SbTeamRef,
   awayTeam: SbTeamRef
 ): EventSide {
+  if (isNeutralEvent(ev)) return "neutral";
   if (ev.teamId === homeTeam.id) return "home";
   if (ev.teamId === awayTeam.id) return "away";
   return "neutral";
@@ -321,14 +347,39 @@ function OppositePlayerTag({
 function NeutralEventCard({ parsed }: { parsed: ParsedEvent }) {
   const { ev, typeLabel, showDetail } = parsed;
   return (
-    <div className="sbm-event__neutral-card">
-      <span className="sbm-event__type">{typeLabel}</span>
-      {showDetail && <span className="sbm-event__detail">{ev.detail}</span>}
-    </div>
+    <article className="sbm-event__neutral-card">
+      <div className="sbm-event__neutral-head">
+        <span className="sbm-event__type">{typeLabel}</span>
+      </div>
+      {showDetail && <p className="sbm-event__detail sbm-event__detail--neutral">{ev.detail}</p>}
+    </article>
   );
 }
 
-function TimelineRow({
+function NeutralTimelineRow({ parsed }: { parsed: ParsedEvent }) {
+  const { ev, csvType } = parsed;
+  const icon = resolveEventIcon(ev);
+
+  return (
+    <li
+      className={`sbm-timeline__row sbm-timeline__row--neutral sbm-event--${csvType}`}
+    >
+      <div className="sbm-timeline__neutral-break">
+        <div className="sbm-timeline__neutral-marker">
+          <span className="sbm-timeline__minute">{ev.minute}&apos;</span>
+          <span className="sbm-timeline__marker">
+            <span className="sbm-event__icon sbm-timeline__icon" aria-hidden>
+              {icon}
+            </span>
+          </span>
+        </div>
+        <NeutralEventCard parsed={parsed} />
+      </div>
+    </li>
+  );
+}
+
+function TeamTimelineRow({
   parsed,
   homeTeam,
   awayTeam,
@@ -366,10 +417,11 @@ function TimelineRow({
       <div className="sbm-timeline__axis" aria-hidden="false">
         <span className="sbm-timeline__minute">{ev.minute}&apos;</span>
         <span className="sbm-timeline__marker">
-          <span className="sbm-timeline__icon">{icon}</span>
+          <span className="sbm-event__icon sbm-timeline__icon" aria-hidden>
+            {icon}
+          </span>
           <span className="sbm-timeline__dot" />
         </span>
-        {side === "neutral" && <NeutralEventCard parsed={parsed} />}
       </div>
 
       <div className="sbm-timeline__col sbm-timeline__col--away">
@@ -430,15 +482,21 @@ export function EventTimeline({
 
   return (
     <ol className="sbm-timeline">
-      {sorted.map((ev) => (
-        <TimelineRow
-          key={ev.id}
-          parsed={parseEvent(ev, homeTeam, awayTeam)}
-          homeTeam={homeTeam}
-          awayTeam={awayTeam}
-          competition={competition}
-        />
-      ))}
+      {sorted.map((ev) => {
+        const parsed = parseEvent(ev, homeTeam, awayTeam);
+        if (parsed.side === "neutral") {
+          return <NeutralTimelineRow key={ev.id} parsed={parsed} />;
+        }
+        return (
+          <TeamTimelineRow
+            key={ev.id}
+            parsed={parsed}
+            homeTeam={homeTeam}
+            awayTeam={awayTeam}
+            competition={competition}
+          />
+        );
+      })}
     </ol>
   );
 }

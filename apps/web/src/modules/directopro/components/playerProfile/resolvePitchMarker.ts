@@ -23,6 +23,7 @@ const POSITION_SLOTS: PositionSlot[] = [
   { tokens: ["CM", "CENTRAL MID", "CENTRE MID"], x: 50, y: 52 },
   { tokens: ["LW", "LEFT WING", "LEFT WINGER"], x: 22, y: 30 },
   { tokens: ["RW", "RIGHT WING", "RIGHT WINGER"], x: 78, y: 30 },
+  { tokens: ["WINGER"], x: 50, y: 30 },
   { tokens: ["LF", "LEFT FORWARD"], x: 28, y: 20 },
   { tokens: ["RF", "RIGHT FORWARD"], x: 72, y: 20 },
   { tokens: ["ST", "STRIKER", "CF", "CENTER FORWARD", "CENTRE FORWARD"], x: 50, y: 16 },
@@ -134,8 +135,17 @@ function coordsNear(a: PitchMarkerCoords, b: PitchMarkerCoords, threshold = 5): 
 function primaryRoleHaystack(input: SecondaryPitchInput): string {
   return normalizePositionHaystack(
     input.positionPrimary,
-    input.positionFull ?? null,
-    input.role ?? null
+    input.role ?? null,
+    input.positionFull ?? null
+  );
+}
+
+function isGoalkeeperInput(input: SecondaryPitchInput): boolean {
+  const haystack = primaryRoleHaystack(input);
+  return (
+    matchesToken(haystack, "GK") ||
+    matchesToken(haystack, "GOALKEEPER") ||
+    matchesToken(haystack, "GOAL KEEPER")
   );
 }
 
@@ -366,6 +376,8 @@ export function resolveSecondaryPitchMarker(
   input: SecondaryPitchInput,
   primaryMarker: PitchMarkerCoords
 ): PitchMarkerCoords | null {
+  if (isGoalkeeperInput(input)) return null;
+
   const primaryHaystack = primaryRoleHaystack(input);
 
   const apiCandidates = [
@@ -416,13 +428,18 @@ function isDistinctFromMarkers(
 
 /**
  * Hybrid marker: SIP third-best position fit (`hybridFit`) when it maps to a
- * distinct pitch zone from both primary and secondary markers.
+ * distinct pitch zone from the registered primary and from the secondary marker.
+ * Intentionally suppressed when the hybrid role shares the primary zone (same slot
+ * or within ~5% coords) so Main Role is not duplicated; also hidden when it
+ * overlaps the Alt. Role marker.
  */
 export function resolveHybridPitchMarker(
   input: SecondaryPitchInput,
   primaryMarker: PitchMarkerCoords,
   secondaryMarker: PitchMarkerCoords | null
 ): PitchMarkerCoords | null {
+  if (isGoalkeeperInput(input)) return null;
+
   const primaryHaystack = primaryRoleHaystack(input);
   const otherMarkers = [primaryMarker, secondaryMarker];
 
@@ -433,6 +450,56 @@ export function resolveHybridPitchMarker(
   }
 
   return null;
+}
+
+/** Label token that produced the active hybrid marker, if any. */
+export function resolveHybridPitchLabel(
+  input: SecondaryPitchInput,
+  primaryMarker: PitchMarkerCoords,
+  secondaryMarker: PitchMarkerCoords | null
+): string | null {
+  if (isGoalkeeperInput(input)) return null;
+
+  const primaryHaystack = primaryRoleHaystack(input);
+  const otherMarkers = [primaryMarker, secondaryMarker];
+
+  for (const label of [input.positionFitHybrid, input.scoutingHybridFit]) {
+    if (!label?.trim()) continue;
+    if (!isDistinctFromMarkers(label, primaryHaystack, primaryMarker, otherMarkers)) continue;
+    if (resolvePitchMarkerFromLabel(label)) return label.trim();
+  }
+
+  return null;
+}
+
+export type PitchMarkerRole = "primary" | "secondary" | "hybrid";
+
+/** Nudge role labels when markers share a pitch zone to reduce overlap. */
+export function resolveMarkerLabelTransform(
+  marker: PitchMarkerCoords,
+  role: PitchMarkerRole,
+  siblings: Array<{ role: PitchMarkerRole; coords: PitchMarkerCoords }>
+): string {
+  const defaultBelow = "translate(-50%, calc(-50% + 13px))";
+  const nearX = 11;
+  const nearY = 15;
+
+  const nearby = siblings.filter(
+    (entry) =>
+      entry.role !== role &&
+      Math.abs(entry.coords.x - marker.x) <= nearX &&
+      Math.abs(entry.coords.y - marker.y) <= nearY
+  );
+
+  if (nearby.length === 0) return defaultBelow;
+
+  if (role === "secondary") {
+    return "translate(calc(-50% + 14px), calc(-50% - 12px))";
+  }
+  if (role === "hybrid") {
+    return "translate(-50%, calc(-50% + 24px))";
+  }
+  return "translate(calc(-50% - 14px), calc(-50% - 12px))";
 }
 
 const RIGHT_FACING_TOKENS = [
