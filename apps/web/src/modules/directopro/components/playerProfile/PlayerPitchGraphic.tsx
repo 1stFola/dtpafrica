@@ -1,8 +1,12 @@
 import { useId } from "react";
 import {
+  resolveHybridPitchLabel,
   resolveHybridPitchMarker,
+  resolveMarkerLabelTransform,
   resolvePrimaryPitchMarker,
   resolveSecondaryPitchMarker,
+  type PitchMarkerCoords,
+  type PitchMarkerRole,
   type SecondaryPitchInput,
 } from "./resolvePitchMarker";
 
@@ -14,6 +18,19 @@ type Props = SecondaryPitchInput & {
 
 function formatMarkerAria(x: number, y: number): string {
   return `${Math.round(x)}%, ${Math.round(y)}%`;
+}
+
+function buildLabelSiblings(
+  primaryMarker: PitchMarkerCoords,
+  secondaryMarker: PitchMarkerCoords | null,
+  hybridMarker: PitchMarkerCoords | null
+): Array<{ role: PitchMarkerRole; coords: PitchMarkerCoords }> {
+  const siblings: Array<{ role: PitchMarkerRole; coords: PitchMarkerCoords }> = [
+    { role: "primary", coords: primaryMarker },
+  ];
+  if (secondaryMarker) siblings.push({ role: "secondary", coords: secondaryMarker });
+  if (hybridMarker) siblings.push({ role: "hybrid", coords: hybridMarker });
+  return siblings;
 }
 
 export function PlayerPitchGraphic({
@@ -45,8 +62,8 @@ export function PlayerPitchGraphic({
   const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull, role);
   const secondaryMarker = resolveSecondaryPitchMarker(pitchInput, primaryMarker);
   const hybridMarker = resolveHybridPitchMarker(pitchInput, primaryMarker, secondaryMarker);
-
-  const hybridLabel = positionFitHybrid ?? scoutingHybridFit ?? null;
+  const hybridLabel = resolveHybridPitchLabel(pitchInput, primaryMarker, secondaryMarker);
+  const labelSiblings = buildLabelSiblings(primaryMarker, secondaryMarker, hybridMarker);
 
   const ariaParts = [
     `primary (${formatMarkerAria(primaryMarker.x, primaryMarker.y)})`,
@@ -186,7 +203,11 @@ export function PlayerPitchGraphic({
       />
       <span
         className="player-profile-pitch__main-role-label"
-        style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
+        style={{
+          left: `${primaryMarker.x}%`,
+          top: `${primaryMarker.y}%`,
+          transform: resolveMarkerLabelTransform(primaryMarker, "primary", labelSiblings),
+        }}
         aria-hidden="true"
       >
         Main Role
@@ -200,7 +221,11 @@ export function PlayerPitchGraphic({
           />
           <span
             className="player-profile-pitch__alt-role-label"
-            style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}
+            style={{
+              left: `${secondaryMarker.x}%`,
+              top: `${secondaryMarker.y}%`,
+              transform: resolveMarkerLabelTransform(secondaryMarker, "secondary", labelSiblings),
+            }}
             aria-hidden="true"
           >
             Alt. Role
@@ -221,7 +246,11 @@ export function PlayerPitchGraphic({
           />
           <span
             className="player-profile-pitch__hybrid-role-label"
-            style={{ left: `${hybridMarker.x}%`, top: `${hybridMarker.y}%` }}
+            style={{
+              left: `${hybridMarker.x}%`,
+              top: `${hybridMarker.y}%`,
+              transform: resolveMarkerLabelTransform(hybridMarker, "hybrid", labelSiblings),
+            }}
             aria-hidden="true"
           >
             Hybrid{hybridLabel ? ` · ${hybridLabel}` : " Role"}
