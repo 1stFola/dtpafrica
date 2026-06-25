@@ -18,7 +18,7 @@ import {
 type AcademyAuthContextValue = {
   isAuthenticated: boolean;
   academy: AcademyLoginResponse["academy"] | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<AcademyLoginResponse["academy"]>;
   logout: () => void;
   checkStored: () => Promise<boolean>;
 };
@@ -53,6 +53,7 @@ export function AcademyAuthProvider({ children }: { children: ReactNode }) {
     setAcademyToken(res.token);
     setAcademy(res.academy);
     setIsAuthenticated(true);
+    return res.academy;
   }, []);
 
   const logout = useCallback(() => {

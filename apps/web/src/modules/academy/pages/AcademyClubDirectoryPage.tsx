@@ -68,9 +68,14 @@ export function AcademyClubDirectoryPage() {
         </div>
         <div className="academy-dir-header__actions">
           {academy && (
-            <span className="academy-dir-session muted">
-              Signed in as <strong>{academy.loginUsername ?? academy.slug}</strong>
-            </span>
+            <>
+              <Link to={`/academy/${academy.slug}/dashboard`} className="btn btn-primary">
+                My dashboard
+              </Link>
+              <span className="academy-dir-session muted">
+                Signed in as <strong>{academy.loginUsername ?? academy.slug}</strong>
+              </span>
+            </>
           )}
           <button type="button" className="academy-dir-logout" onClick={logout}>
             Sign out
@@ -125,10 +130,22 @@ export function AcademyClubDirectoryPage() {
               ))}
             </ul>
             <Link
-              to={`/academy/${club.slug}/dashboard`}
-              className="academy-dir-card__cta"
+              to={
+                academy?.slug === club.slug
+                  ? `/academy/${club.slug}/dashboard`
+                  : "#"
+              }
+              className={
+                academy?.slug === club.slug
+                  ? "academy-dir-card__cta"
+                  : "academy-dir-card__cta academy-dir-card__cta--disabled"
+              }
+              aria-disabled={academy?.slug !== club.slug}
+              onClick={(e) => {
+                if (academy?.slug !== club.slug) e.preventDefault();
+              }}
             >
-              Open dashboard
+              {academy?.slug === club.slug ? "Open dashboard" : "Members only"}
             </Link>
           </article>
         ))}

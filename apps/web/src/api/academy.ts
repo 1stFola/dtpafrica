@@ -1,4 +1,4 @@
-import { apiGet } from "./client";
+import { academyAuthFetch } from "./academy-auth";
 
 export type AcademyKpi = {
   id: string;
@@ -160,8 +160,8 @@ export type AcademyDashboard = {
 };
 
 export function fetchAcademyDashboard(slug: string, signal?: AbortSignal) {
-  return apiGet<AcademyDashboard>(
+  return academyAuthFetch<AcademyDashboard>(
     `/academy/${encodeURIComponent(slug)}/dashboard`,
-    signal
+    { signal }
   );
 }

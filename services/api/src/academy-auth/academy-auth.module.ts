@@ -3,6 +3,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { AcademyAuthController } from "./academy-auth.controller";
 import { AcademyAuthService } from "./academy-auth.service";
 import { AcademyAuthGuard } from "./guards/academy-auth.guard";
+import { AcademyScopeGuard } from "./guards/academy-scope.guard";
 import { academyJwtSecret } from "./academy-auth.util";
 
 @Module({
@@ -13,7 +14,7 @@ import { academyJwtSecret } from "./academy-auth.util";
     }),
   ],
   controllers: [AcademyAuthController],
-  providers: [AcademyAuthService, AcademyAuthGuard],
-  exports: [AcademyAuthService, AcademyAuthGuard, JwtModule],
+  providers: [AcademyAuthService, AcademyAuthGuard, AcademyScopeGuard],
+  exports: [AcademyAuthService, AcademyAuthGuard, AcademyScopeGuard, JwtModule],
 })
 export class AcademyAuthModule {}

@@ -5,6 +5,7 @@ import type {
   AdminSbPlayerDirectoryRow,
   AdminSbStats,
   AdminSbTeam,
+  AdminSbTeamInput,
   CompetitionFormat,
   CompetitionTemplatePreview,
   MatchdayRoster,
@@ -115,6 +116,26 @@ export const adminScoreboardApi = {
     const qs = q.toString();
     return sbFetch<AdminSbTeam[]>(`/admin/scoreboard/teams${qs ? `?${qs}` : ""}`);
   },
+
+  getTeam: (teamId: string) =>
+    sbFetch<AdminSbTeam>(`/admin/scoreboard/teams/${teamId}`),
+
+  createTeam: (body: AdminSbTeamInput) =>
+    sbFetch<AdminSbTeam>("/admin/scoreboard/teams", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateTeam: (teamId: string, body: AdminSbTeamInput) =>
+    sbFetch<AdminSbTeam>(`/admin/scoreboard/teams/${teamId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteTeam: (teamId: string) =>
+    sbFetch<{ ok: boolean }>(`/admin/scoreboard/teams/${teamId}`, {
+      method: "DELETE",
+    }),
 
   players: (q?: string) => {
     const qs = q ? `?q=${encodeURIComponent(q)}` : "";
