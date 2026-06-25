@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -15,6 +16,11 @@ import { CompetitionEngineService } from "../scoreboard/competition-engine.servi
 import { ScoreboardService } from "../scoreboard/scoreboard.service";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
 import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
+import type { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
+import {
+  academyFieldsForTeamSync,
+  scoreboardTeamSlugForAcademy,
+} from "../academy/academy-team-sync.util";
 
 export type SbCompetitionStatus = "active" | "upcoming" | "draft" | "archived";
 
@@ -273,9 +279,189 @@ export class AdminScoreboardService {
       shortName: t.shortName,
       region: t.city,
       logoUrl: t.logoUrl,
+      groupKey: t.groupKey,
       competition: t.competition,
       squadCount: t._count.squad,
     }));
+  }
+
+  private presentTeamRow(
+    t: {
+      id: string;
+      slug: string;
+      name: string;
+      shortName: string | null;
+      city: string | null;
+      logoUrl: string | null;
+      groupKey: string | null;
+      competition: { id: string; name: string; slug: string };
+      _count: { squad: number };
+    }
+  ) {
+    return {
+      id: t.id,
+      slug: t.slug,
+      name: normalizeClubName(t.name),
+      shortName: t.shortName,
+      region: t.city,
+      logoUrl: t.logoUrl,
+      groupKey: t.groupKey,
+      competition: t.competition,
+      squadCount: t._count.squad,
+    };
+  }
+
+  private teamInclude = {
+    competition: { select: { id: true, name: true, slug: true } },
+    _count: { select: { squad: true } },
+  } as const;
+
+  private cleanTeamField(value?: string) {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  private validateTeamLogoUrl(logoUrl?: string | null) {
+    const url = logoUrl?.trim();
+    if (!url) return null;
+    if (!isAllowedImageMediaUrl(url)) {
+      throw new BadRequestException("logoUrl must be a valid image URL");
+    }
+    return url;
+  }
+
+  async getTeam(teamId: string) {
+    const team = await this.prisma.sbTeam.findUnique({
+      where: { id: teamId },
+      include: this.teamInclude,
+    });
+    if (!team) throw new NotFoundException("Team not found");
+    return this.presentTeamRow(team);
+  }
+
+  async createTeam(dto: UpsertAdminTeamDto) {
+    const competition = await this.prisma.sbCompetition.findUnique({
+      where: { id: dto.competitionId },
+    });
+    if (!competition) throw new NotFoundException("Competition not found");
+
+    const name = normalizeClubName(dto.name.trim());
+    if (!name) throw new BadRequestException("Team name is required");
+    const slug = this.cleanTeamField(dto.slug) ?? slugify(name);
+
+    try {
+      const team = await this.prisma.sbTeam.create({
+        data: {
+          competitionId: dto.competitionId,
+          name,
+          slug,
+          shortName: this.cleanTeamField(dto.shortName),
+          city: this.cleanTeamField(dto.city),
+          logoUrl: this.validateTeamLogoUrl(dto.logoUrl),
+          groupKey: this.cleanTeamField(dto.groupKey),
+        },
+        include: this.teamInclude,
+      });
+      this.statsCache = null;
+      return this.presentTeamRow(team);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("A team with this slug already exists in the competition");
+      }
+      throw err;
+    }
+  }
+
+  async updateTeam(teamId: string, dto: UpsertAdminTeamDto) {
+    const existing = await this.prisma.sbTeam.findUnique({ where: { id: teamId } });
+    if (!existing) throw new NotFoundException("Team not found");
+
+    const competitionId = dto.competitionId ?? existing.competitionId;
+    if (dto.competitionId) {
+      const competition = await this.prisma.sbCompetition.findUnique({
+        where: { id: dto.competitionId },
+      });
+      if (!competition) throw new NotFoundException("Competition not found");
+    }
+
+    const name = dto.name?.trim() ? normalizeClubName(dto.name.trim()) : existing.name;
+    const slug =
+      dto.slug !== undefined
+        ? this.cleanTeamField(dto.slug) ?? slugify(name)
+        : existing.slug;
+
+    try {
+      const team = await this.prisma.sbTeam.update({
+        where: { id: teamId },
+        data: {
+          competitionId,
+          name,
+          slug,
+          ...(dto.shortName !== undefined
+            ? { shortName: this.cleanTeamField(dto.shortName) }
+            : {}),
+          ...(dto.city !== undefined ? { city: this.cleanTeamField(dto.city) } : {}),
+          ...(dto.logoUrl !== undefined
+            ? { logoUrl: this.validateTeamLogoUrl(dto.logoUrl) }
+            : {}),
+          ...(dto.groupKey !== undefined
+            ? { groupKey: this.cleanTeamField(dto.groupKey) }
+            : {}),
+        },
+        include: this.teamInclude,
+      });
+      this.statsCache = null;
+      return this.presentTeamRow(team);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("A team with this slug already exists in the competition");
+      }
+      throw err;
+    }
+  }
+
+  async deleteTeam(teamId: string) {
+    const team = await this.prisma.sbTeam.findUnique({
+      where: { id: teamId },
+      include: {
+        _count: {
+          select: {
+            homeMatches: true,
+            awayMatches: true,
+          },
+        },
+      },
+    });
+    if (!team) throw new NotFoundException("Team not found");
+    const matchCount = team._count.homeMatches + team._count.awayMatches;
+    if (matchCount > 0) {
+      throw new BadRequestException(
+        "Cannot delete a team that is linked to matches. Remove fixtures first."
+      );
+    }
+
+    await this.prisma.sbTeam.delete({ where: { id: teamId } });
+    this.statsCache = null;
+    return { ok: true };
+  }
+
+  /** Sync scoreboard teams that share a slug with the given academy profile. */
+  async syncTeamsFromAcademy(academy: {
+    slug: string;
+    name: string;
+    logoUrl: string | null;
+    city: string | null;
+  }) {
+    const teamSlug = scoreboardTeamSlugForAcademy(academy);
+    if (!teamSlug) return { updated: 0, teamSlug: null };
+
+    const fields = academyFieldsForTeamSync(academy);
+    const result = await this.prisma.sbTeam.updateMany({
+      where: { slug: teamSlug },
+      data: fields,
+    });
+    if (result.count > 0) this.statsCache = null;
+    return { updated: result.count, teamSlug };
   }
 
   async listScoreboardPlayers(q?: string) {

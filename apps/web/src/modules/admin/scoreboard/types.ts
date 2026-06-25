@@ -40,6 +40,16 @@ export type AdminSbCompetition = {
   logoUrl: string | null;
 };
 
+export type AdminSbTeamInput = {
+  competitionId: string;
+  name: string;
+  slug?: string;
+  shortName?: string;
+  logoUrl?: string;
+  city?: string;
+  groupKey?: string;
+};
+
 export type AdminSbTeam = {
   id: string;
   slug: string;
@@ -47,6 +57,7 @@ export type AdminSbTeam = {
   shortName: string | null;
   region: string | null;
   logoUrl: string | null;
+  groupKey: string | null;
   competition: { id: string; name: string; slug: string };
   squadCount: number;
 };

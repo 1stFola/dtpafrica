@@ -27,6 +27,7 @@ import {
   isCompetitionFormat,
 } from "./dto/create-competition-from-template.dto";
 import { PatchSpotterOpsDto } from "./dto/patch-spotter-ops.dto";
+import { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
 
 @Controller("admin/scoreboard")
 @UseGuards(AdminApiKeyGuard)
@@ -83,6 +84,31 @@ export class AdminScoreboardController {
   @Get("teams")
   teams(@Query("q") q?: string, @Query("competitionId") competitionId?: string) {
     return this.sb.listTeams({ q, competitionId });
+  }
+
+  @Get("teams/:teamId")
+  getTeam(@Param("teamId") teamId: string) {
+    return this.sb.getTeam(teamId);
+  }
+
+  @Post("teams")
+  createTeam(@Body() dto: UpsertAdminTeamDto) {
+    return this.sb.createTeam(dto);
+  }
+
+  @Patch("teams/:teamId")
+  updateTeam(@Param("teamId") teamId: string, @Body() dto: UpsertAdminTeamDto) {
+    return this.sb.updateTeam(teamId, dto);
+  }
+
+  @Put("teams/:teamId")
+  replaceTeam(@Param("teamId") teamId: string, @Body() dto: UpsertAdminTeamDto) {
+    return this.sb.updateTeam(teamId, dto);
+  }
+
+  @Delete("teams/:teamId")
+  deleteTeam(@Param("teamId") teamId: string) {
+    return this.sb.deleteTeam(teamId);
   }
 
   @Get("players")

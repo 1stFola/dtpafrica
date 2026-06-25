@@ -10086,6 +10086,49 @@ a {
   max-width: 16rem;
 }
 
+.admin-sb-team-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.admin-sb-team-cell small {
+  display: block;
+}
+
+.admin-sb-team-crest {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+  object-fit: contain;
+  background: rgba(15, 23, 42, 0.5);
+  flex-shrink: 0;
+}
+
+.admin-sb-team-crest--empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.admin-sb-row-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.admin-inline-button--danger {
+  color: #f87171;
+}
+
+.admin-inline-button--danger:hover {
+  color: #fca5a5;
+}
+
 .admin-sb-empty-state {
   background: rgba(15, 23, 42, 0.45);
   border: 1px dashed var(--color-border-strong);
@@ -14411,6 +14454,13 @@ a.dbx-comp-card:hover {
 .academy-dir-card__cta:hover {
   background: #34d399;
   transform: scale(1.02);
+}
+
+.academy-dir-card__cta--disabled {
+  background: rgba(148, 163, 184, 0.2);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .academy-dir-empty {

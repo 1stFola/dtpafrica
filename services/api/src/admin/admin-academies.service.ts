@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AcademyAuthService } from "../academy-auth/academy-auth.service";
 import { sanitizeAcademy } from "../academy-auth/academy-auth.util";
 import { PrismaService } from "../prisma/prisma.service";
+import { AdminScoreboardService } from "./admin-scoreboard.service";
 import { UpsertAcademyDto } from "./dto/upsert-academy.dto";
 
 function slugify(value: string) {
@@ -33,7 +34,8 @@ function parseMaxPlayers(value?: number | null) {
 export class AdminAcademiesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AcademyAuthService) private readonly academyAuth: AcademyAuthService
+    @Inject(AcademyAuthService) private readonly academyAuth: AcademyAuthService,
+    @Inject(AdminScoreboardService) private readonly scoreboard: AdminScoreboardService
   ) {}
 
   async list() {
@@ -83,6 +85,7 @@ export class AdminAcademiesService {
         ...(passwordHash != null ? { passwordHash } : {}),
       },
     });
+    await this.scoreboard.syncTeamsFromAcademy(row);
     return sanitizeAcademy(row);
   }
 
@@ -112,6 +115,7 @@ export class AdminAcademiesService {
         ...(passwordHash != null ? { passwordHash } : {}),
       },
     });
+    await this.scoreboard.syncTeamsFromAcademy(row);
     return sanitizeAcademy(row);
   }
 
