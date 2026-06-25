@@ -8,6 +8,7 @@ import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { AdminSbTableShell } from "../components/AdminSbTableShell";
 import { CreateCompetitionModal } from "../components/CreateCompetitionModal";
+import { TeamFormModal } from "../components/TeamFormModal";
 import { CsvDropzone } from "../components/CsvDropzone";
 import { StatusBadge } from "../components/StatusBadge";
 import { useAdminScoreboardContext } from "../AdminScoreboardLayout";
@@ -37,6 +38,11 @@ export function AdminScoreboardEntitiesPage() {
   const [playerQ, setPlayerQ] = useState("");
   const [seedCompId, setSeedCompId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [teamModal, setTeamModal] = useState<"create" | "edit" | null>(null);
+  const [editingTeam, setEditingTeam] = useState<AdminSbTeam | null>(null);
+  const [competitionOptions, setCompetitionOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [loading, setLoading] = useState<Record<Tab, boolean>>({
     competitions: false,
     teams: false,
@@ -114,6 +120,12 @@ export function AdminScoreboardEntitiesPage() {
   }, [tab, loadCompetitions]);
 
   useEffect(() => {
+    if (tab === "teams" || teamModal) {
+      adminScoreboardApi.competitionPicker().then(setCompetitionOptions).catch(() => {});
+    }
+  }, [tab, teamModal]);
+
+  useEffect(() => {
     if (tab === "teams") void loadTeams();
   }, [tab, loadTeams]);
 
@@ -138,6 +150,17 @@ export function AdminScoreboardEntitiesPage() {
           tab === "competitions" ? (
             <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
               Create competition
+            </button>
+          ) : tab === "teams" ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setEditingTeam(null);
+                setTeamModal("create");
+              }}
+            >
+              Create team
             </button>
           ) : undefined
         }
@@ -172,6 +195,23 @@ export function AdminScoreboardEntitiesPage() {
           toast.success("Competition created");
           loadedRef.current.competitions = false;
           void loadCompetitions();
+          void refreshStats();
+        }}
+      />
+
+      <TeamFormModal
+        open={teamModal !== null}
+        mode={teamModal === "edit" ? "edit" : "create"}
+        team={editingTeam}
+        competitions={competitionOptions}
+        onClose={() => {
+          setTeamModal(null);
+          setEditingTeam(null);
+        }}
+        onSaved={() => {
+          toast.success(teamModal === "edit" ? "Team updated" : "Team created");
+          loadedRef.current.teams = false;
+          void loadTeams();
           void refreshStats();
         }}
       />
@@ -272,7 +312,7 @@ export function AdminScoreboardEntitiesPage() {
             loading={loading.teams}
             empty={!loading.teams && teams.length === 0}
             emptyTitle="No teams found"
-            columns={4}
+            columns={5}
           >
             <table className="admin-table admin-sb-table">
               <thead>
@@ -281,15 +321,59 @@ export function AdminScoreboardEntitiesPage() {
                   <th>Competition</th>
                   <th>Region</th>
                   <th>Squad</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {teams.map((t) => (
                   <tr key={t.id}>
-                    <td>{t.name}</td>
+                    <td>
+                      <div className="admin-sb-team-cell">
+                        {t.logoUrl ? (
+                          <img src={t.logoUrl} alt="" className="admin-sb-team-crest" />
+                        ) : (
+                          <span className="admin-sb-team-crest admin-sb-team-crest--empty" aria-hidden>
+                            {t.shortName?.slice(0, 2) ?? t.name.slice(0, 2)}
+                          </span>
+                        )}
+                        <span>
+                          {t.name}
+                          <small className="muted admin-sb-code">{t.slug}</small>
+                        </span>
+                      </div>
+                    </td>
                     <td>{t.competition.name}</td>
                     <td>{t.region ?? "—"}</td>
                     <td>{t.squadCount}</td>
+                    <td className="admin-sb-row-actions">
+                      <button
+                        type="button"
+                        className="admin-inline-button"
+                        onClick={() => {
+                          setEditingTeam(t);
+                          setTeamModal("edit");
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-inline-button admin-inline-button--danger"
+                        onClick={async () => {
+                          if (!window.confirm(`Delete ${t.name}?`)) return;
+                          try {
+                            await adminScoreboardApi.deleteTeam(t.id);
+                            toast.success("Team deleted");
+                            void loadTeams();
+                            void refreshStats();
+                          } catch (err) {
+                            toast.error(formatAdminScoreboardError(err));
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

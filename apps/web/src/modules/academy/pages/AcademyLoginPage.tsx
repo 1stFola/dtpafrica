@@ -5,27 +5,36 @@ import { BrandLogo } from "../../../components/BrandLogo";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAcademyAuth } from "../AcademyAuthContext";
 
-function safeRedirectPath(value: string | null): string | null {
+function safeRedirectPath(value: string | null, academySlug?: string | null): string | null {
   if (!value) return null;
   if (!value.startsWith("/") || value.startsWith("//")) return null;
+  if (academySlug && value.startsWith("/academy/") && !value.startsWith(`/academy/${academySlug}/`)) {
+    return null;
+  }
   return value;
 }
 
 export function AcademyLoginPage() {
   usePageTitle("Club login");
-  const { login, isAuthenticated } = useAcademyAuth();
+  const { login, isAuthenticated, academy } = useAcademyAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const redirectTarget = useMemo(() => {
     const fromQuery = safeRedirectPath(
-      searchParams.get("redirect") ?? searchParams.get("next")
+      searchParams.get("redirect") ?? searchParams.get("next"),
+      academy?.slug
     );
     const fromState = safeRedirectPath(
-      (location.state as { from?: string } | null)?.from ?? null
+      (location.state as { from?: string } | null)?.from ?? null,
+      academy?.slug
     );
-    return fromQuery ?? fromState ?? "/academy";
-  }, [location.state, searchParams]);
+    return (
+      fromQuery ??
+      fromState ??
+      (academy ? `/academy/${academy.slug}/dashboard` : "/academy")
+    );
+  }, [location.state, searchParams, academy?.slug]);
   const slugHint = searchParams.get("slug") ?? "";
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -42,8 +51,11 @@ export function AcademyLoginPage() {
     const username = String(data.get("username") ?? "");
     const password = String(data.get("password") ?? "");
     try {
-      await login(username, password);
-      navigate(redirectTarget, { replace: true });
+      const signedIn = await login(username, password);
+      const ownDashboard = `/academy/${signedIn.slug}/dashboard`;
+      const target =
+        redirectTarget.startsWith(`/academy/${signedIn.slug}/`) ? redirectTarget : ownDashboard;
+      navigate(target, { replace: true });
     } catch {
       setError("Invalid username or password. Contact DTP admin if credentials are not set.");
     } finally {
