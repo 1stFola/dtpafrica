@@ -5,7 +5,7 @@ import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 
 const CSV_TEMPLATE = `event_type,minute,team_side,player_name2,player_name,assist_name,detail,home_score,away_score,narrative,pen_home,pen_away,pen_winner
 full_time,,,,,,,0,1,FC OMORUYI 1-0 FC OGUNTUASE — Destiny Nosa 84',,,
-kick_off,0,,,,,First half begins,,,,,
+kick_off,0,Unknown,,,,First half begins,,,,,
 half_time,45,,,,,Half-time,,,,,
 second_half_kickoff,46,,,,,Second half begins,,,,,
 added_time,90,,,,,+3 minutes,,,,,
@@ -159,7 +159,9 @@ export function MatchCsvIngestModal({
               <code>away_score</code>. Event types include goals, cards, subs, shots, saves,
               clearances, penalties, flow rows (<code>kick_off</code>, <code>half_time</code>,{" "}
               <code>water_break</code>, <code>midfield_battle</code>, <code>score_update</code>,
-              etc.). Optional: <code>narrative</code> on the full_time row,{" "}
+              etc.). Neutral flow rows (<code>kick_off</code>, <code>half_time</code>,{" "}
+              <code>match_flow</code>) may use empty or <code>Unknown</code>{" "}
+              <code>team_side</code>. Optional: <code>narrative</code> on the full_time row,{" "}
               <code>penalty_shootout</code> for knockouts.
             </p>
             <div className="admin-sb-dropzone-actions">

@@ -22,6 +22,7 @@ import {
   scoreboardTeamSlugForAcademy,
 } from "../academy/academy-team-sync.util";
 import type { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
+import type { PatchMatchScoreDto } from "./dto/patch-match-score.dto";
 import { parseKickoffAtIso, parseWatKickoff } from "../shared/wat-datetime";
 
 export type SbCompetitionStatus = "active" | "upcoming" | "draft" | "archived";
@@ -540,6 +541,10 @@ export class AdminScoreboardService {
       competitionId,
       publicOnly: false,
     });
+  }
+
+  patchMatchScore(matchId: string, dto: PatchMatchScoreDto) {
+    return this.scoreboard.patchMatchScore(matchId, dto);
   }
 
   async patchMatchGameday(matchId: string, dto: PatchMatchGamedayDto) {

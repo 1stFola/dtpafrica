@@ -14,6 +14,7 @@ import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { MatchCsvIngestModal } from "../components/MatchCsvIngestModal";
+import { QuickScoreUpdatePanel } from "../components/QuickScoreUpdatePanel";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 
 type TimelineEvent = Awaited<
@@ -74,6 +75,13 @@ export function AdminScoreboardMatchCenterPage() {
   }, [refresh]);
 
   const selected = [...live, ...all].find((m) => m.id === selectedId) ?? live[0] ?? all[0];
+
+  const patchSelectedMatch = (patch: Partial<SbMatchListItem>) => {
+    const apply = (rows: SbMatchListItem[]) =>
+      rows.map((m) => (m.id === selected?.id ? { ...m, ...patch } : m));
+    setLive((rows) => apply(rows));
+    setAll((rows) => apply(rows));
+  };
 
   useEffect(() => {
     if (selected?.id) loadTimeline(selected.id);
@@ -192,6 +200,14 @@ export function AdminScoreboardMatchCenterPage() {
             homeLabel={selected.homeTeam.name}
             awayLabel={selected.awayTeam.name}
             compact
+          />
+
+          <QuickScoreUpdatePanel
+            match={selected}
+            onSaved={(patch) => {
+              patchSelectedMatch(patch);
+              refresh();
+            }}
           />
 
           <div className="sb-supervisor-panel admin-sb-match-panel admin-sb-panel">
