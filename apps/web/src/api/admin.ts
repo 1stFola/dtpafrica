@@ -220,6 +220,7 @@ export type CalibrationPlayerInfo = {
   gender?: string;
   dateOfBirth?: string;
   position: string;
+  preferredFoot?: string;
   benchmarkRegion?: string;
   benchmarkAgeBand?: string;
   nationality?: string;

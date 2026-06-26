@@ -101,6 +101,8 @@ export type SbMatchListItem = {
   kickoffAt: string | null;
   venue: string | null;
   roundLabel: string | null;
+  /** Admin-authored match report shown on the stats tab (not CSV narrative). */
+  matchComment?: string | null;
   /** Engine stage key, e.g. "group_a", "third_place", "grand_final". */
   stageKey?: string | null;
   matchday?: number | null;

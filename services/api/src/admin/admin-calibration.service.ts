@@ -254,6 +254,7 @@ export class AdminCalibrationService {
         dateOfBirth: true,
         positionPrimary: true,
         nationality: true,
+        dominantFoot: true,
         heightCm: true,
         weightKg: true,
         city: true,
@@ -288,6 +289,7 @@ export class AdminCalibrationService {
         gender: "Male",
         dateOfBirth: player.dateOfBirth?.toISOString().slice(0, 10) ?? null,
         position: player.positionPrimary,
+        preferredFoot: player.dominantFoot,
         benchmarkRegion: "Global",
         benchmarkAgeBand: "Auto",
         nationality: player.nationality,
@@ -385,6 +387,9 @@ export class AdminCalibrationService {
           defensiveRating: result.rawSummary.defensive_score,
           displayName: options.playerInfo?.fullName ?? player.displayName,
           positionPrimary: options.playerInfo?.position ?? player.positionPrimary,
+          dominantFoot: options.playerInfo?.preferredFoot?.trim()
+            ? options.playerInfo.preferredFoot.trim()
+            : player.dominantFoot,
           nationality: options.playerInfo?.nationality ?? player.nationality,
           dateOfBirth: options.playerInfo?.dateOfBirth
             ? new Date(options.playerInfo.dateOfBirth)
@@ -485,6 +490,7 @@ export class AdminCalibrationService {
         lastName,
         displayName: playerInfo.fullName.trim(),
         positionPrimary: playerInfo.position,
+        dominantFoot: playerInfo.preferredFoot?.trim() || undefined,
         nationality: playerInfo.nationality,
         dateOfBirth: dob,
         age,

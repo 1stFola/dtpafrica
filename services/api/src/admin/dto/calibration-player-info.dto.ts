@@ -1,6 +1,7 @@
 import { IsIn, IsNumber, IsOptional, IsString, MaxLength } from "class-validator";
 
 const POSITIONS = ["ST", "WINGER", "AM", "CM", "CDM", "FB", "CB"] as const;
+const DOMINANT_FOOT_OPTIONS = ["Left", "Right", "Both"] as const;
 
 export class CalibrationPlayerInfoDto {
   @IsString()
@@ -18,6 +19,11 @@ export class CalibrationPlayerInfoDto {
   @IsString()
   @IsIn([...POSITIONS])
   position!: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn([...DOMINANT_FOOT_OPTIONS])
+  preferredFoot?: string;
 
   @IsOptional()
   @IsString()
