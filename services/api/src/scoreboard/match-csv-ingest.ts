@@ -6,6 +6,8 @@ import {
   type ParsedCsvEvent,
   csvTypeRequiresPlayer,
   csvTypeRequiresTeam,
+  isNeutralCsvEventType,
+  isPenaltyShootoutEventType,
   mapCsvEventToStorage,
 } from "./match-csv-events";
 
@@ -83,13 +85,15 @@ function parseIntCell(value: string | undefined, label: string, rowNum: number):
   return n;
 }
 
+const NEUTRAL_TEAM_SIDE_VALUES = new Set(["", "unknown", "n/a", "na", "-", "none"]);
+
 function parseTeamSide(
   value: string | undefined,
   rowNum: number,
   optional: boolean
 ): "home" | "away" | undefined {
   const side = (value ?? "").trim().toLowerCase();
-  if (!side) {
+  if (NEUTRAL_TEAM_SIDE_VALUES.has(side)) {
     if (optional) return undefined;
     throw new BadRequestException(
       `Row ${rowNum}: team_side must be "home" or "away" (got empty)`
@@ -100,6 +104,23 @@ function parseTeamSide(
   throw new BadRequestException(
     `Row ${rowNum}: team_side must be "home" or "away" (got "${value ?? ""}")`
   );
+}
+
+function penaltyShootoutFieldsRequired(
+  eventType: string,
+  inShootoutPhase: boolean
+): boolean {
+  if (!isPenaltyShootoutEventType(eventType)) return false;
+  if (eventType === "penalty_shootout") return true;
+  return inShootoutPhase;
+}
+
+function hasPenaltyShootoutHeader(
+  penHomeIdx: number,
+  penAwayIdx: number,
+  penWinnerIdx: number
+): boolean {
+  return penHomeIdx >= 0 || penAwayIdx >= 0 || penWinnerIdx >= 0;
 }
 
 function parseMinute(value: string | undefined, rowNum: number): number {
@@ -154,6 +175,7 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
   const events: ParsedCsvEvent[] = [];
   let fullTimeCount = 0;
   let penaltyCount = 0;
+  let inShootoutPhase = false;
 
   for (let r = 1; r < table.length; r++) {
     const row = table[r];
@@ -180,17 +202,30 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
 
     if (eventType === "penalty_shootout") {
       penaltyCount++;
-      try {
-        const home = parseIntCell(row[penHomeIdx], "pen_home", rowNum);
-        const away = parseIntCell(row[penAwayIdx], "pen_away", rowNum);
-        const winnerRaw = (row[penWinnerIdx] ?? "").trim().toLowerCase();
-        if (winnerRaw !== "home" && winnerRaw !== "away") {
-          errors.push(`Row ${rowNum}: pen_winner must be "home" or "away"`);
-        } else {
-          penaltyShootout = { home, away, winner: winnerRaw };
+      inShootoutPhase = true;
+      if (hasPenaltyShootoutHeader(penHomeIdx, penAwayIdx, penWinnerIdx)) {
+        try {
+          const home = parseIntCell(
+            penHomeIdx >= 0 ? row[penHomeIdx] : undefined,
+            "pen_home",
+            rowNum
+          );
+          const away = parseIntCell(
+            penAwayIdx >= 0 ? row[penAwayIdx] : undefined,
+            "pen_away",
+            rowNum
+          );
+          const winnerRaw = ((penWinnerIdx >= 0 ? row[penWinnerIdx] : undefined) ?? "")
+            .trim()
+            .toLowerCase();
+          if (winnerRaw !== "home" && winnerRaw !== "away") {
+            errors.push(`Row ${rowNum}: pen_winner must be "home" or "away"`);
+          } else {
+            penaltyShootout = { home, away, winner: winnerRaw };
+          }
+        } catch (e) {
+          if (e instanceof BadRequestException) errors.push(e.message);
         }
-      } catch (e) {
-        if (e instanceof BadRequestException) errors.push(e.message);
       }
       continue;
     }
@@ -204,9 +239,14 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
 
     const csvType = eventType as CsvEventType;
 
+    if (eventType !== "penalty_shootout") {
+      inShootoutPhase = inShootoutPhase || isPenaltyShootoutEventType(eventType);
+    }
+
     try {
       const minute = parseMinute(row[minuteIdx], rowNum);
-      const teamSide = parseTeamSide(row[teamIdx], rowNum, !csvTypeRequiresTeam(csvType));
+      const teamOptional = isNeutralCsvEventType(eventType) || !csvTypeRequiresTeam(csvType);
+      const teamSide = parseTeamSide(row[teamIdx], rowNum, teamOptional);
       const playerLabel2 = player2Idx >= 0 ? (row[player2Idx] ?? "").trim() : "";
       const playerLabel = (row[playerIdx] ?? "").trim();
       const assistLabel = (row[assistIdx] ?? "").trim();
@@ -225,6 +265,32 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
           `Row ${rowNum}: assist_name (player coming on) is required for substitution events`
         );
         continue;
+      }
+
+      if (
+        penaltyShootoutFieldsRequired(eventType, inShootoutPhase) &&
+        hasPenaltyShootoutHeader(penHomeIdx, penAwayIdx, penWinnerIdx)
+      ) {
+        const penHome = (penHomeIdx >= 0 ? row[penHomeIdx] : undefined) ?? "";
+        const penAway = (penAwayIdx >= 0 ? row[penAwayIdx] : undefined) ?? "";
+        const penWinner = (penWinnerIdx >= 0 ? row[penWinnerIdx] : undefined) ?? "";
+        const anyPenCell = penHome.trim() || penAway.trim() || penWinner.trim();
+        if (anyPenCell) {
+          try {
+            parseIntCell(penHome || undefined, "pen_home", rowNum);
+            parseIntCell(penAway || undefined, "pen_away", rowNum);
+            const winnerRaw = penWinner.trim().toLowerCase();
+            if (winnerRaw !== "home" && winnerRaw !== "away") {
+              errors.push(`Row ${rowNum}: pen_winner must be "home" or "away"`);
+              continue;
+            }
+          } catch (e) {
+            if (e instanceof BadRequestException) {
+              errors.push(e.message);
+              continue;
+            }
+          }
+        }
       }
 
       const mapped = mapCsvEventToStorage({
@@ -283,7 +349,7 @@ export const MATCH_TIMELINE_CSV_TEMPLATE = `event_type,minute,team_side,player_n
 # Required: one full_time row with final score. Optional narrative on full_time row.
 full_time,,,,,,,0,1,FC OMORUYI 1-0 FC OGUNTUASE — Destiny Nosa 84',,,
 # Flow / narrative (stored as match_flow with flowKind)
-kick_off,0,,,,,First half begins,,,,,
+kick_off,0,Unknown,,,,First half begins,,,,,
 half_time,45,,,,,Half-time,,,,,
 second_half_kickoff,46,,,,,Second half begins,,,,,
 added_time,90,,,,,+3 minutes,,,,,

@@ -10,6 +10,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
+import type { PatchMatchScoreDto } from "../admin/dto/patch-match-score.dto";
 import { computeGroupStandings, normalizeClubName } from "@dtp/engines";
 import {
   buildSkeletonProfile,
@@ -1098,6 +1099,74 @@ export class ScoreboardService {
       eventsCreated: createdEvents.length,
       penaltyShootout: parsed.penaltyShootout ?? null,
       standingsRefresh: "scheduled" as const,
+    };
+  }
+
+  async patchMatchScore(matchId: string, dto: PatchMatchScoreDto) {
+    const hasPenaltyHome = dto.penaltyHome !== undefined;
+    const hasPenaltyAway = dto.penaltyAway !== undefined;
+    if (hasPenaltyHome !== hasPenaltyAway) {
+      throw new BadRequestException("penaltyHome and penaltyAway must be sent together");
+    }
+
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: { homeTeam: true, awayTeam: true, competition: true },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+
+    const newStatus = dto.status ?? "finished";
+    const wasFinished = match.status === "finished";
+    const scoresChanged =
+      match.homeScore !== dto.homeScore || match.awayScore !== dto.awayScore;
+
+    const existingMeta = (match.meta ?? {}) as Record<string, unknown>;
+    const meta: Record<string, unknown> = { ...existingMeta };
+
+    let penaltyShootout: { home: number; away: number; winner: "home" | "away" } | null =
+      null;
+
+    if (hasPenaltyHome && hasPenaltyAway) {
+      const home = dto.penaltyHome!;
+      const away = dto.penaltyAway!;
+      if (home === away) {
+        throw new BadRequestException("Penalty shootout cannot end in a draw");
+      }
+      const winner: "home" | "away" = home > away ? "home" : "away";
+      penaltyShootout = { home, away, winner };
+      meta.penaltyShootout = penaltyShootout;
+      meta.regulationScore = { home: dto.homeScore, away: dto.awayScore };
+    }
+
+    const updated = await this.prisma.sbMatch.update({
+      where: { id: matchId },
+      data: {
+        homeScore: dto.homeScore,
+        awayScore: dto.awayScore,
+        status: newStatus,
+        minute: newStatus === "finished" ? (match.minute ?? 90) : match.minute,
+        meta: meta as Prisma.InputJsonValue,
+      },
+      include: MATCH_INCLUDE,
+    });
+
+    if (newStatus === "finished") {
+      if (!wasFinished) {
+        await this.lifecycle.onMatchFinished(matchId);
+      } else if (scoresChanged || hasPenaltyHome) {
+        await this.lifecycle.refreshStandingsForFinishedMatch(matchId);
+      }
+    }
+
+    return {
+      ok: true,
+      matchId,
+      status: updated.status,
+      homeScore: updated.homeScore,
+      awayScore: updated.awayScore,
+      penaltyShootout,
+      standingsRefresh: newStatus === "finished" ? ("scheduled" as const) : null,
+      match: presentScoreboardPayload(updated),
     };
   }
 
