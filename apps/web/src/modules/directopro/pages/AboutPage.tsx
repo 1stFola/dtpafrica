@@ -36,13 +36,13 @@ export function AboutPage() {
             <Link to="/featured-players">Featured players</Link> — public talent profiles
           </li>
           <li>
-            <Link to="/scouting">Scouting Intelligence</Link> — tactical fit & Strong XI
+            <Link to="/scouting">Scouting Hub</Link> — tactical fit, Strong XI &amp; valuation
           </li>
           <li>
             <Link to="/scoreboard">ScoreBoard</Link> — live match operations
           </li>
           <li>
-            <Link to="/valuation">Market Value Engine</Link> — valuation confidence
+            <Link to="/scouting/generate">Market Value Engine</Link> — valuation confidence
           </li>
         </ul>
       </section>

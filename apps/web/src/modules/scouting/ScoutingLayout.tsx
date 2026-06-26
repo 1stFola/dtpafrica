@@ -4,18 +4,17 @@ import { ModuleAdRails } from "../../components/ModuleAdRails";
 const links = [
   { to: "/scouting", end: true, label: "Overview" },
   { to: "/scouting/strong-xi", label: "Strong XI" },
-  { to: "/scouting/philosophy", label: "Philosophy fit" },
-  { to: "/scouting/search", label: "Tactical search" },
   { to: "/scouting/compare", label: "Compare" },
+  { to: "/scouting/generate", label: "Generate" },
 ];
 
 export function ScoutingLayout() {
   return (
     <div className="scouting-module">
       <header className="scouting-header">
-        <h1>Scouting Intelligence</h1>
+        <h1>Scouting Hub</h1>
         <p className="muted">
-          Tactical fit, philosophy matching, and Strong XI generation
+          Strong XI, player comparison, and market valuation generation
         </p>
         <nav className="scouting-subnav" aria-label="Scouting">
           {links.map((l) => (

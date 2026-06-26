@@ -1,6 +1,7 @@
 import { runSipPipeline } from "@dtp/engines";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { isRatingAttributesPayload } from "../home/player-metrics.presenter";
 import { syncPhilosophyFitsForPlayer } from "../scouting/philosophy-fit-sync";
 import {
   mergeCalibrationExtrasIntoRaw,
@@ -8,14 +9,23 @@ import {
 } from "./legacy-match-metrics-mapper";
 import { toRawMatchMetrics } from "./metrics-mapper";
 
+export type SipRecalculateOptions = {
+  /** Keep calibration headline ratings instead of SIP tactical proxies. */
+  preserveHeadlineRatings?: boolean;
+};
+
 @Injectable()
 export class SipRecalculationService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async recalculatePlayer(playerId: string) {
+  async recalculatePlayer(playerId: string, options: SipRecalculateOptions = {}) {
     const player = await this.prisma.player.findUnique({
       where: { id: playerId },
-      select: { id: true, benchmarkMetadata: true },
+      select: {
+        id: true,
+        benchmarkMetadata: true,
+        ratingAttributes: true,
+      },
     });
     if (!player) {
       throw new NotFoundException(`Player ${playerId} not found`);
@@ -78,14 +88,22 @@ export class SipRecalculationService {
       },
     });
 
-    const updatedPlayer = await this.prisma.player.update({
-      where: { id: playerId },
-      data: {
-        overallRating: pipeline.overallRating,
-        offensiveRating: pipeline.offensiveRating,
-        defensiveRating: pipeline.defensiveRating,
-      },
-    });
+    const preserveHeadlineRatings =
+      options.preserveHeadlineRatings ??
+      isRatingAttributesPayload(
+        player.ratingAttributes as Record<string, unknown> | null | undefined
+      );
+
+    const updatedPlayer = preserveHeadlineRatings
+      ? await this.prisma.player.findUniqueOrThrow({ where: { id: playerId } })
+      : await this.prisma.player.update({
+          where: { id: playerId },
+          data: {
+            overallRating: pipeline.overallRating,
+            offensiveRating: pipeline.offensiveRating,
+            defensiveRating: pipeline.defensiveRating,
+          },
+        });
 
     await syncPhilosophyFitsForPlayer(this.prisma, playerId);
 

@@ -1,3 +1,5 @@
+import { cachedFetch } from "./fetch-cache";
+
 const API_PREFIX = "/api/v1";
 
 export class ApiError extends Error {
@@ -84,6 +86,8 @@ export type FeaturedPlayer = {
   careerCleanSheets?: number | null;
   minutesPlayed?: number | null;
   interceptions?: number | null;
+  /** Rolling match-metric averages in snake_case CSV field names. */
+  metrics?: Record<string, number> | null;
 };
 
 export type HomeVideoHighlight = {
@@ -333,3 +337,14 @@ export type ComparisonResponse = {
   metrics: string[];
   values: Record<string, number[]>;
 };
+
+const FEATURED_PLAYERS_CACHE_TTL_MS = 60_000;
+
+export function fetchFeaturedPlayers(limit?: number, signal?: AbortSignal) {
+  const path =
+    limit != null ? `/home/featured-players?limit=${limit}` : "/home/featured-players";
+  const cacheKey = `public:featured-players:${limit ?? "default"}`;
+  return cachedFetch(cacheKey, FEATURED_PLAYERS_CACHE_TTL_MS, () =>
+    apiGet<FeaturedPlayer[]>(path, signal)
+  );
+}

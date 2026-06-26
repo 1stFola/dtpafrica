@@ -23,38 +23,52 @@ export function legacyMatchMetricsToPlayerMatchRecord(
   let multiTouchPossessions = 0;
   if (oneTouchPct != null) {
     oneTouchPossessions = pctToCount(oneTouchPct);
-    if (multiTouchPct != null) {
-      multiTouchPossessions = pctToCount(multiTouchPct);
-    } else {
-      multiTouchPossessions = SYNTHETIC_TOTAL - oneTouchPossessions;
-    }
+    multiTouchPossessions =
+      multiTouchPct != null ? pctToCount(multiTouchPct) : SYNTHETIC_TOTAL - oneTouchPossessions;
+  } else if (multiTouchPct != null) {
+    multiTouchPossessions = pctToCount(multiTouchPct);
+    oneTouchPossessions = SYNTHETIC_TOTAL - multiTouchPossessions;
   }
 
   const leftReleasePct = m.left_foot_release_percentage;
   const rightReleasePct = m.right_foot_release_percentage;
   let leftFootReleaseCount = 0;
   let rightFootReleaseCount = 0;
-  if (leftReleasePct != null && rightReleasePct != null) {
+  if (leftReleasePct != null) {
     leftFootReleaseCount = pctToCount(leftReleasePct);
+    rightFootReleaseCount =
+      rightReleasePct != null ? pctToCount(rightReleasePct) : SYNTHETIC_TOTAL - leftFootReleaseCount;
+  } else if (rightReleasePct != null) {
     rightFootReleaseCount = pctToCount(rightReleasePct);
+    leftFootReleaseCount = SYNTHETIC_TOTAL - rightFootReleaseCount;
   }
 
   const leftTouchPct = m.left_foot_touch_percentage;
   const rightTouchPct = m.right_foot_touch_percentage;
   let leftFootTouchCount = 0;
   let rightFootTouchCount = 0;
-  if (leftTouchPct != null && rightTouchPct != null) {
+  if (leftTouchPct != null) {
     leftFootTouchCount = pctToCount(leftTouchPct);
+    rightFootTouchCount =
+      rightTouchPct != null ? pctToCount(rightTouchPct) : SYNTHETIC_TOTAL - leftFootTouchCount;
+  } else if (rightTouchPct != null) {
     rightFootTouchCount = pctToCount(rightTouchPct);
+    leftFootTouchCount = SYNTHETIC_TOTAL - rightFootTouchCount;
   }
 
   const leftReceivePct = m.left_foot_receive_percentage;
   const rightReceivePct = m.right_foot_receive_percentage;
   let leftFootReceiveCount = 0;
   let rightFootReceiveCount = 0;
-  if (leftReceivePct != null && rightReceivePct != null) {
+  if (leftReceivePct != null) {
     leftFootReceiveCount = pctToCount(leftReceivePct);
+    rightFootReceiveCount =
+      rightReceivePct != null
+        ? pctToCount(rightReceivePct)
+        : SYNTHETIC_TOTAL - leftFootReceiveCount;
+  } else if (rightReceivePct != null) {
     rightFootReceiveCount = pctToCount(rightReceivePct);
+    leftFootReceiveCount = SYNTHETIC_TOTAL - rightFootReceiveCount;
   }
 
   const releaseLacesPct = m.release_laces_percentage;
@@ -63,14 +77,19 @@ export function legacyMatchMetricsToPlayerMatchRecord(
   let releaseLacesCount = 0;
   let releaseInsideFootCount = 0;
   let releaseOtherFootzoneCount = 0;
-  if (
-    releaseLacesPct != null &&
-    releaseInsidePct != null &&
-    releaseOtherPct != null
-  ) {
-    releaseLacesCount = pctToCount(releaseLacesPct);
-    releaseInsideFootCount = pctToCount(releaseInsidePct);
-    releaseOtherFootzoneCount = pctToCount(releaseOtherPct);
+  if (releaseLacesPct != null || releaseInsidePct != null || releaseOtherPct != null) {
+    releaseLacesCount = releaseLacesPct != null ? pctToCount(releaseLacesPct) : 0;
+    releaseInsideFootCount = releaseInsidePct != null ? pctToCount(releaseInsidePct) : 0;
+    releaseOtherFootzoneCount = releaseOtherPct != null ? pctToCount(releaseOtherPct) : 0;
+    const releaseTotal =
+      releaseLacesCount + releaseInsideFootCount + releaseOtherFootzoneCount;
+    if (releaseTotal > 0 && releaseTotal !== SYNTHETIC_TOTAL) {
+      const scale = SYNTHETIC_TOTAL / releaseTotal;
+      releaseLacesCount = Math.round(releaseLacesCount * scale);
+      releaseInsideFootCount = Math.round(releaseInsideFootCount * scale);
+      releaseOtherFootzoneCount =
+        SYNTHETIC_TOTAL - releaseLacesCount - releaseInsideFootCount;
+    }
   }
 
   return {

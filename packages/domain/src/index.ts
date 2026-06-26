@@ -1,4 +1,4 @@
-export type ProductModuleId = "directopro" | "scoreboard" | "sip" | "mvce";
+export type ProductModuleId = "directopro" | "scoreboard" | "sip";
 
 export type ProductModule = {
   id: ProductModuleId;
@@ -29,19 +29,11 @@ export const PRODUCT_MODULES: ProductModule[] = [
   },
   {
     id: "sip",
-    title: "Scouting Intelligence",
-    navLabel: "Scouting",
+    title: "Scouting Hub",
+    navLabel: "Scouting Hub",
     path: "/scouting",
-    description: "Tactical scores, philosophy fit, Strong XI, comparison",
+    description: "Tactical scores, philosophy fit, Strong XI, comparison, valuation",
     buildPhase: "1 — DB + tactical engine (see SIP spec)",
-  },
-  {
-    id: "mvce",
-    title: "Market Value Confidence",
-    navLabel: "Valuation",
-    path: "/valuation",
-    description: "Valuation bands, confidence scores, comparables",
-    buildPhase: "1 — valuation engine + dashboard (see docs/11)",
   },
 ];
 

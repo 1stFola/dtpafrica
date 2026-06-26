@@ -32,7 +32,7 @@ export function HomeIntelligenceTeasers() {
       <div className="home-features-teasers">
         <Link to="/scouting" className="home-features-teaser home-features-teaser--scouting">
           <div className="home-features-teaser__copy">
-            <span className="home-features-teaser__tag">Scouting Intelligence</span>
+            <span className="home-features-teaser__tag">Scouting Hub</span>
             <h3>Tactical fit &amp; Strong XI</h3>
             <p>
               Philosophy matching, formation-aware Strong XI picks, and position-fit confidence
@@ -60,7 +60,7 @@ export function HomeIntelligenceTeasers() {
           </div>
         </Link>
 
-        <Link to="/valuation" className="home-features-teaser home-features-teaser--valuation">
+        <Link to="/scouting/generate" className="home-features-teaser home-features-teaser--valuation">
           <div className="home-features-teaser__copy">
             <span className="home-features-teaser__tag">Market Value Engine</span>
             <h3>MVCE confidence bands</h3>

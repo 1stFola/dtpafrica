@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@dtp/ui";
 import { BrandLogo } from "../../../components/BrandLogo";
@@ -7,10 +7,20 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 
 export function AdminLoginPage() {
   usePageTitle("Admin login");
-  const { login } = useAdminAuth();
+  const { login, checkStored, isAuthenticated } = useAdminAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    checkStored().then((ok) => {
+      if (ok) navigate("/admin", { replace: true });
+    });
+  }, [checkStored, navigate]);
+
+  if (isAuthenticated) {
+    return <p className="muted admin-loading">Redirecting to admin…</p>;
+  }
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();

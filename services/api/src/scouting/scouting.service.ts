@@ -137,6 +137,37 @@ export class ScoutingService {
     return result;
   }
 
+  async playerSearch(query: string, limit = 40) {
+    const q = query.trim();
+    if (q.length < 2) {
+      return { query: q, players: [] };
+    }
+
+    const contains = { contains: q, mode: "insensitive" as const };
+    const players = await this.prisma.player.findMany({
+      where: {
+        isPublic: true,
+        tacticalScores: { isNot: null },
+        OR: [
+          { displayName: contains },
+          { slug: contains },
+          { positionPrimary: contains },
+        ],
+      },
+      take: Math.min(Math.max(limit, 1), 40),
+      select: {
+        id: true,
+        displayName: true,
+        positionPrimary: true,
+        playerPhotoUrl: true,
+        overallRating: true,
+      },
+      orderBy: [{ overallRating: "desc" }, { displayName: "asc" }],
+    });
+
+    return { query: q, players };
+  }
+
   async playerComparison(idsRaw: string) {
     const ids = idsRaw
       .split(",")

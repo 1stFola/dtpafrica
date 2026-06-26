@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiGet, type FeaturedPlayer } from "../../../../api/client";
+import { fetchFeaturedPlayers, type FeaturedPlayer } from "../../../../api/client";
 import { HomeFeaturedTalentCard } from "./HomeFeaturedTalentCard";
 
 const TALENT_SKELETON_COUNT = 8;
@@ -14,7 +14,7 @@ export function HomeFeaturedTalentCarousel() {
     const controller = new AbortController();
     let active = true;
 
-    apiGet<FeaturedPlayer[]>("/home/featured-players?limit=12", controller.signal)
+    fetchFeaturedPlayers(12, controller.signal)
       .then((data) => {
         if (active) setPlayers(data);
       })
@@ -45,7 +45,10 @@ export function HomeFeaturedTalentCarousel() {
           </p>
         </div>
         <div className="home-features-block__actions">
-          <Link to="/featured-players" className="home-features-link">
+          <Link
+            to="/featured-players"
+            className="dtp-btn dtp-btn--primary home-features-cta home-features-cta--talent"
+          >
             View all talent →
           </Link>
         </div>

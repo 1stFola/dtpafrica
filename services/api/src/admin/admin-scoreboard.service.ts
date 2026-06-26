@@ -21,6 +21,8 @@ import {
   academyFieldsForTeamSync,
   scoreboardTeamSlugForAcademy,
 } from "../academy/academy-team-sync.util";
+import type { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
+import { parseKickoffAtIso, parseWatKickoff } from "../shared/wat-datetime";
 
 export type SbCompetitionStatus = "active" | "upcoming" | "draft" | "archived";
 
@@ -538,6 +540,68 @@ export class AdminScoreboardService {
       competitionId,
       publicOnly: false,
     });
+  }
+
+  async patchMatchGameday(matchId: string, dto: PatchMatchGamedayDto) {
+    const match = await this.prisma.sbMatch.findUnique({ where: { id: matchId } });
+    if (!match) throw new NotFoundException("Match not found");
+
+    const data: Prisma.SbMatchUpdateInput = {};
+
+    if (dto.venue !== undefined) {
+      const trimmed = dto.venue.trim();
+      data.venue = trimmed.length ? trimmed : null;
+    }
+
+    const hasDate = dto.kickoffDate !== undefined;
+    const hasTime = dto.kickoffTime !== undefined;
+    if (hasDate !== hasTime) {
+      throw new BadRequestException("kickoffDate and kickoffTime must be sent together");
+    }
+
+    if (dto.kickoffAt !== undefined) {
+      if (dto.kickoffAt === null || dto.kickoffAt === "") {
+        data.kickoffAt = null;
+      } else {
+        if (hasDate) {
+          throw new BadRequestException(
+            "Send either kickoffAt or kickoffDate+kickoffTime, not both"
+          );
+        }
+        data.kickoffAt = parseKickoffAtIso(dto.kickoffAt);
+      }
+    } else if (hasDate && hasTime) {
+      data.kickoffAt = parseWatKickoff(dto.kickoffDate!, dto.kickoffTime!);
+    }
+
+    if (!Object.keys(data).length) {
+      throw new BadRequestException("No gameday fields to update");
+    }
+
+    const updated = await this.prisma.sbMatch.update({
+      where: { id: matchId },
+      data,
+      select: {
+        id: true,
+        venue: true,
+        kickoffAt: true,
+        status: true,
+        homeTeam: { select: { id: true, name: true } },
+        awayTeam: { select: { id: true, name: true } },
+      },
+    });
+
+    return {
+      ok: true,
+      match: {
+        id: updated.id,
+        venue: updated.venue,
+        kickoffAt: updated.kickoffAt?.toISOString() ?? null,
+        status: updated.status,
+        homeTeam: { id: updated.homeTeam.id, name: updated.homeTeam.name },
+        awayTeam: { id: updated.awayTeam.id, name: updated.awayTeam.name },
+      },
+    };
   }
 
   async getMatchRoster(matchId: string, teamId: string) {

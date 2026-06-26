@@ -674,7 +674,7 @@ function ValuationSection({ data }: { data: AcademyDashboard }) {
       <div className="academy-valuation-grid">
         {data.valuation.latest.map((player) => (
           <article key={player.id} className="academy-valuation-card">
-            <Link to={`/valuation/player/${player.id}`}>{player.displayName}</Link>
+            <Link to={`/scouting/valuation/${player.id}`}>{player.displayName}</Link>
             <span>{player.valuation?.confidenceLabel}</span>
             <strong>{player.valuation?.marketValueLabel}</strong>
             <small>

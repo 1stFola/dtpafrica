@@ -328,7 +328,7 @@ function ScoutingValuationSection({
         <div className="profile-empty-state">
           <strong>No valuation has been generated yet.</strong>
           <p>Generate a valuation to show projected market range and scout notes here.</p>
-          <Link to={`/valuation/player/${playerId}`} className="text-link">
+          <Link to={`/scouting/valuation/${playerId}`} className="text-link">
             Open valuation workspace
           </Link>
         </div>
@@ -349,7 +349,7 @@ function ScoutingValuationSection({
             <InfoTip text="Projected market value with a confidence band based on available match and verification data." />
           </h2>
         </div>
-        <Link to={`/valuation/player/${playerId}`} className="text-link">
+        <Link to={`/scouting/valuation/${playerId}`} className="text-link">
           Open report
         </Link>
       </div>

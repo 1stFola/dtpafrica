@@ -50,6 +50,11 @@ export class ScoutingController {
     return this.scouting.strongXi(formation, philosophy);
   }
 
+  @Get("player-search")
+  playerSearch(@Query("q") q = "", @Query("limit") limit?: string) {
+    return this.scouting.playerSearch(q, limit != null ? Number(limit) : undefined);
+  }
+
   @Get("player-comparison")
   playerComparison(@Query("ids") ids: string) {
     return this.scouting.playerComparison(ids);

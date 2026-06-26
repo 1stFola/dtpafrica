@@ -14,6 +14,10 @@ type Props = {
   compact?: boolean;
   /** 2-column grid for the scouting summary strip. */
   variant?: "row" | "strip";
+  /** Show only the first N position-specific metrics (e.g. 4 for home preview cards). */
+  limit?: number;
+  /** Show info tooltips next to metric labels (default true). */
+  showInfo?: boolean;
 };
 
 function ScoutingMetricIcon({ metricKey }: { metricKey: ScoutingMetricKey }) {
@@ -204,8 +208,11 @@ export function PositionScoutingMetricsRow({
   className = "",
   compact = false,
   variant = "row",
+  limit,
+  showInfo = true,
 }: Props) {
-  const metrics = buildPositionScoutingMetrics(player);
+  const allMetrics = buildPositionScoutingMetrics(player);
+  const metrics = limit != null ? allMetrics.slice(0, limit) : allMetrics;
   const isStrip = variant === "strip";
 
   return (
@@ -236,7 +243,7 @@ export function PositionScoutingMetricsRow({
                 <div className="position-scouting-metrics__label-row">
                   <ScoutingMetricIcon metricKey={metric.key} />
                   <span className="position-scouting-metrics__label">{metric.label}</span>
-                  {metric.description ? (
+                  {showInfo && metric.description ? (
                     <InfoTip text={metric.description} label={metric.label} />
                   ) : null}
                 </div>
@@ -257,7 +264,7 @@ export function PositionScoutingMetricsRow({
               ) : null}
               <div className="position-scouting-metrics__label-row">
                 <span className="position-scouting-metrics__label">{metric.label}</span>
-                {metric.description ? (
+                {showInfo && metric.description ? (
                   <InfoTip text={metric.description} label={metric.label} />
                 ) : null}
               </div>

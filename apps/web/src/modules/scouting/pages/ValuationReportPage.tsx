@@ -13,7 +13,7 @@ function formatScoutNotes(notes: string): string {
   return notes.replace(NARRATIVE_PLACEHOLDER, "").replace(/\s{2,}/g, " ").trim();
 }
 
-export function ValuationDashboardPage() {
+export function ValuationReportPage() {
   const { playerId } = useParams<{ playerId: string }>();
   const [report, setReport] = useState<ValuationReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export function ValuationDashboardPage() {
     return (
       <div className="sb-page">
         <p className="form-error">{error}</p>
-        <Link to="/valuation/generate">Generate valuation</Link>
+        <Link to="/scouting/generate">Generate valuation</Link>
       </div>
     );
   }
@@ -51,8 +51,8 @@ export function ValuationDashboardPage() {
 
   return (
     <div className="sb-page mvce-dashboard">
-      <Link to="/valuation" className="back-link">
-        ← Valuation
+      <Link to="/scouting" className="back-link">
+        ← Scouting Hub
       </Link>
 
       <div className="mvce-dashboard-grid">
