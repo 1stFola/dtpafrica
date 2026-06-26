@@ -171,6 +171,29 @@ export const adminScoreboardApi = {
       body: JSON.stringify(body),
     }),
 
+  patchMatchScore: (
+    matchId: string,
+    body: {
+      homeScore: number;
+      awayScore: number;
+      status?: "finished";
+      penaltyHome?: number;
+      penaltyAway?: number;
+    }
+  ) =>
+    sbFetch<{
+      ok: boolean;
+      matchId: string;
+      status: string;
+      homeScore: number;
+      awayScore: number;
+      penaltyShootout: { home: number; away: number; winner: "home" | "away" } | null;
+      standingsRefresh: "scheduled" | null;
+    }>(`/admin/scoreboard/matches/${matchId}/score`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
   exportCompetitionsCsv: () =>
     sbFetch<{ csv: string }>("/admin/scoreboard/seed/competitions/export"),
 

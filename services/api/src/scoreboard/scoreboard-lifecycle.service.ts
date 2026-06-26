@@ -120,6 +120,17 @@ export class ScoreboardLifecycleService {
     return payload;
   }
 
+  async refreshStandingsForFinishedMatch(matchId: string) {
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: { competition: { select: { formatType: true } } },
+    });
+    if (!match || match.status !== "finished") return;
+    if (this.shouldRefreshStandings(match, match.competition.formatType)) {
+      this.scheduleStandingsRefresh(match.competitionId);
+    }
+  }
+
   private shouldRefreshStandings(
     match: Pick<SbMatch, "stageKey">,
     formatType: string | null

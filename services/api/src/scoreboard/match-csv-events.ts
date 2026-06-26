@@ -71,15 +71,22 @@ export type DerivedMatchStats = {
   narrative?: string | null;
 };
 
-const FLOW_CSV_TYPES = new Set<CsvEventType>([
+/** Neutral / systemic flow rows — team_side may be empty or "Unknown". */
+export const NEUTRAL_EVENT_TYPES = new Set<CsvEventType>([
   "kick_off",
   "match_flow",
-  "pressure",
   "half_time",
   "second_half_kickoff",
   "added_time",
-  "score_update",
   "water_break",
+]);
+
+export const NEUTRAL_SPECIAL_EVENT_TYPES = ["full_time", "penalty_shootout"] as const;
+
+const FLOW_CSV_TYPES = new Set<CsvEventType>([
+  ...NEUTRAL_EVENT_TYPES,
+  "pressure",
+  "score_update",
   "midfield_battle",
   "match_control",
   "goal_scorers_update",
@@ -126,27 +133,51 @@ const SOT_CSV_TYPES = new Set<CsvEventType>([
 
 const SAVE_CSV_TYPES = new Set<CsvEventType>(["save", "double_save", "penalty_saved"]);
 
-/** Possession ticks are skipped for these event types (either side). */
-const POSSESSION_IGNORE = new Set<CsvEventType>([
-  "injury",
-  "substitution",
-  "red_card",
-  "yellow_card",
+/** Only these event types contribute a possession tick (team_side column). */
+export const POSSESSION_EVENT_TYPES = new Set<CsvEventType>([
+  "possession",
+  "pressure",
+  "counter_attack",
+  "midfield_battle",
+  "match_control",
+  "chance",
+  "close_chance",
+  "missed_chance",
+  "shot_off_target",
+  "blocked_shot",
+  "save",
+  "double_save",
+  "woodwork",
+  "clearance",
+  "interception",
+  "throw_in",
+  "long_throw",
+  "corner_kick",
+  "freekick",
+  "kick_off",
+  "second_half_kickoff",
 ]);
 
-/**
- * Defensive actions that stop an opponent attack — possession tick credits the
- * other side (the team that had the ball before the defensive action).
- */
-const POSSESSION_REVERSE = new Set<CsvEventType>([
-  "blocked_shot",
-  "shot_off_target",
-  "clearance",
-  "save",
-  "late_defense",
-  "double_save",
+/** Documented exclusions — not counted toward possession %. */
+export const POSSESSION_EXCLUDE_EVENT_TYPES = new Set<CsvEventType>([
+  "match_flow",
+  "added_time",
+  "half_time",
+  "water_break",
+  "injury",
+  "substitution",
+  "score_update",
+  "goal_scorers_update",
+  "foul",
+  "offside",
+  "yellow_card",
+  "red_card",
+  "penalty_awarded",
+  "own_goal",
+  "disallowed_goal",
+  "goal_penalty",
   "penalty_saved",
-  "interception",
+  "late_defense",
 ]);
 
 const XG_WEIGHT: Partial<Record<CsvEventType, number>> = {
@@ -169,7 +200,19 @@ export function isFlowCsvType(csvType: string): boolean {
   return FLOW_CSV_TYPES.has(csvType as CsvEventType);
 }
 
+export function isNeutralCsvEventType(eventType: string): boolean {
+  return (
+    NEUTRAL_EVENT_TYPES.has(eventType as CsvEventType) ||
+    (NEUTRAL_SPECIAL_EVENT_TYPES as readonly string[]).includes(eventType)
+  );
+}
+
+export function isPenaltyShootoutEventType(eventType: string): boolean {
+  return eventType === "penalty_shootout" || eventType.startsWith("penalty_shootout_");
+}
+
 export function csvTypeRequiresTeam(csvType: CsvEventType): boolean {
+  if (NEUTRAL_EVENT_TYPES.has(csvType)) return false;
   return !TEAM_OPTIONAL_TYPES.has(csvType);
 }
 
@@ -252,8 +295,7 @@ function possessionTickSide(
   csvType: CsvEventType,
   side: "home" | "away"
 ): "home" | "away" | null {
-  if (POSSESSION_IGNORE.has(csvType)) return null;
-  if (POSSESSION_REVERSE.has(csvType)) return oppositeSide(side);
+  if (!POSSESSION_EVENT_TYPES.has(csvType)) return null;
   return side;
 }
 
@@ -263,13 +305,9 @@ function capPossessionPct(homePct: number): HomeAwayCount {
 }
 
 /**
- * Possession % is derived from CSV `team_side` (column C), not from `possession` rows alone.
- *
- * Ignored: injury, substitution, red_card, yellow_card.
- * Reversed (credit other side): blocked_shot, shot_off_target, clearance, save,
- * late_defense, double_save, penalty_saved, interception.
- * Normal: all other events with team_side count for that side.
- * Capped: each side is clamped to 25–75% after calculation.
+ * Possession % is derived from CSV `team_side` (column C) for whitelisted event types only
+ * (`POSSESSION_EVENT_TYPES`). Administrative, feed, disciplinary, and dead-stop rows are
+ * excluded. Each side is clamped to 25–75% after calculation.
  */
 export function deriveMatchStatsFromCsvEvents(
   events: ParsedCsvEvent[],
