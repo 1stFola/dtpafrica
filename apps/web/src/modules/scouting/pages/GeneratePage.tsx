@@ -9,7 +9,7 @@ type PlayerOption = { id: string; displayName: string; positionPrimary: string }
 
 const SEED_ID = "00000000-0000-4000-8000-000000000001";
 
-export function GenerateValuationPage() {
+export function GeneratePage() {
   usePageTitle("Generate valuation");
   const navigate = useNavigate();
   const [players, setPlayers] = useState<PlayerOption[]>([]);
@@ -58,7 +58,7 @@ export function GenerateValuationPage() {
         marketDemand: String(fd.get("marketDemand") || "none"),
         verificationLevel: String(fd.get("verificationLevel") || "video_only"),
       });
-      navigate(`/valuation/player/${report.player.id}`);
+      navigate(`/scouting/valuation/${report.player.id}`);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -153,7 +153,7 @@ export function GenerateValuationPage() {
 
       <p className="muted">
         Or view existing:{" "}
-        <Link to={`/valuation/player/${SEED_ID}`}>seed player report</Link>
+        <Link to={`/scouting/valuation/${SEED_ID}`}>seed player report</Link>
       </p>
     </div>
   );

@@ -18,6 +18,7 @@ import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import {
   legacyMatchMetricsToPlayerMatchRecord,
   playerMatchMetricsToLegacyMetrics,
+  readCalibrationMetricsFromBenchmark,
 } from "../sip/legacy-match-metrics-mapper";
 import { CalibrationMetricsDto } from "./dto/calibration-metrics.dto";
 import {
@@ -245,7 +246,25 @@ export class AdminCalibrationService {
   }
 
   async getPlayerMetrics(playerId: string) {
-    const player = await this.prisma.player.findUnique({ where: { id: playerId } });
+    const player = await this.prisma.player.findUnique({
+      where: { id: playerId },
+      select: {
+        id: true,
+        displayName: true,
+        dateOfBirth: true,
+        positionPrimary: true,
+        nationality: true,
+        heightCm: true,
+        weightKg: true,
+        city: true,
+        playerPhotoUrl: true,
+        videoUrl: true,
+        overallRating: true,
+        offensiveRating: true,
+        defensiveRating: true,
+        benchmarkMetadata: true,
+      },
+    });
     if (!player) throw new NotFoundException("Player not found");
 
     const metrics = await this.prisma.playerMatchMetrics.findFirst({
@@ -257,6 +276,10 @@ export class AdminCalibrationService {
       player.heightCm != null
         ? `${Math.floor(player.heightCm / 30.48)}'${Math.round((player.heightCm % 30.48) / 2.54)}"`
         : "";
+
+    const fromDb = metrics ? playerMatchMetricsToLegacyMetrics(metrics) : {};
+    const fromSnapshot = readCalibrationMetricsFromBenchmark(player.benchmarkMetadata) ?? {};
+    const mergedMetrics = { ...fromDb, ...fromSnapshot };
 
     return {
       player: {
@@ -277,7 +300,7 @@ export class AdminCalibrationService {
         offensiveRating: player.offensiveRating,
         defensiveRating: player.defensiveRating,
       },
-      metrics: metrics ? playerMatchMetricsToLegacyMetrics(metrics) : null,
+      metrics: Object.keys(mergedMetrics).length > 0 ? mergedMetrics : null,
     };
   }
 
@@ -519,6 +542,22 @@ export class AdminCalibrationService {
 
   private async persistMetrics(playerId: string, legacy: LegacyMatchMetricsDto) {
     const data = legacyMatchMetricsToPlayerMatchRecord(legacy);
+    const existing = await this.prisma.playerMatchMetrics.findFirst({
+      where: {
+        playerId,
+        match: { competition: "Calibration import" },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existing) {
+      await this.prisma.playerMatchMetrics.update({
+        where: { id: existing.id },
+        data,
+      });
+      return;
+    }
+
     const match = await this.prisma.match.create({
       data: {
         competition: "Calibration import",

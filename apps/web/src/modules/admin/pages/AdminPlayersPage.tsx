@@ -6,6 +6,7 @@ import {
   type AdminPlayerListQuery,
   type AdminPlayerRow,
 } from "../../../api/admin";
+import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import {
   positionAbbreviationOptions,
@@ -24,6 +25,7 @@ import { PlayerSlugPreview } from "../components/PlayerSlugPreview";
 import { PlayerQuickEditModal } from "../components/PlayerQuickEditModal";
 
 const POSITION_OPTIONS = positionAbbreviationOptions();
+const PAGE_SIZE = 50;
 
 type ProfileFormState = {
   positionPrimary: string;
@@ -70,9 +72,12 @@ export function AdminPlayersPage() {
   usePageTitle("Admin — Players");
   const toast = useAdminToast();
   const [rows, setRows] = useState<AdminPlayerRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [academies, setAcademies] = useState<AdminAcademy[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const debouncedQ = useDebouncedValue(q, 300);
   const [status, setStatus] = useState("");
   const [academyId, setAcademyId] = useState("");
   const [position, setPosition] = useState("");
@@ -94,7 +99,7 @@ export function AdminPlayersPage() {
 
   const listQuery = useMemo<AdminPlayerListQuery>(
     () => ({
-      q: q || undefined,
+      q: debouncedQ || undefined,
       status: status || undefined,
       academyId: academyId || undefined,
       position: position || undefined,
@@ -102,25 +107,35 @@ export function AdminPlayersPage() {
       hasMedia: hasMedia || undefined,
       sort,
       sortDir,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
     }),
-    [q, status, academyId, position, featured, hasMedia, sort, sortDir]
+    [debouncedQ, status, academyId, position, featured, hasMedia, sort, sortDir, page]
   );
+
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedQ, status, academyId, position, featured, hasMedia, sort, sortDir]);
 
   const load = useCallback(() => {
     setLoading(true);
     adminApi
       .players(listQuery)
       .then((data) => {
-        setRows(data);
+        setRows(data.items);
+        setTotal(data.total);
         setSelectedIds((prev) => {
           const next = new Set<string>();
           for (const id of prev) {
-            if (data.some((row) => row.id === id)) next.add(id);
+            if (data.items.some((row) => row.id === id)) next.add(id);
           }
           return next;
         });
       })
-      .catch(() => setRows([]))
+      .catch(() => {
+        setRows([]);
+        setTotal(0);
+      })
       .finally(() => setLoading(false));
   }, [listQuery]);
 
@@ -293,6 +308,10 @@ export function AdminPlayersPage() {
     URL.revokeObjectURL(url);
     toast.success("CSV exported");
   };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const pageEnd = Math.min(total, (page + 1) * PAGE_SIZE);
 
   return (
     <section className="admin-page admin-sb-section">
@@ -685,6 +704,35 @@ export function AdminPlayersPage() {
           </table>
         </AdminTableShell>
       </div>
+
+      {total > PAGE_SIZE && (
+        <div className="admin-pagination" aria-label="Players pagination">
+          <p className="muted admin-pagination__meta">
+            Showing {pageStart}–{pageEnd} of {total}
+          </p>
+          <div className="admin-pagination__controls">
+            <button
+              type="button"
+              className="admin-inline-button"
+              disabled={page <= 0 || loading}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              Previous
+            </button>
+            <span className="muted">
+              Page {page + 1} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="admin-inline-button"
+              disabled={page + 1 >= totalPages || loading}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       <PlayerQuickEditModal
         playerId={quickEditId}

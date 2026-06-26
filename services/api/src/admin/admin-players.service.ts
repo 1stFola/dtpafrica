@@ -118,7 +118,8 @@ function readEstimatedPlayerValue(benchmarkMetadata: unknown): string | null {
 export class AdminPlayersService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  list(query: {
+  async list(query: {
+    id?: string;
     q?: string;
     status?: string;
     academyId?: string;
@@ -128,8 +129,13 @@ export class AdminPlayersService {
     sort?: string;
     sortDir?: string;
     limit?: number;
+    offset?: number;
   }) {
     const and: Prisma.PlayerWhereInput[] = [];
+
+    if (query.id?.trim()) {
+      and.push({ id: query.id.trim() });
+    }
 
     if (query.q?.trim()) {
       const term = query.q.trim();
@@ -184,33 +190,42 @@ export class AdminPlayersService {
       orderBy = { createdAt: sortDir };
     }
 
-    return this.prisma.player.findMany({
-      where,
-      take: Math.min(query.limit ?? 200, 500),
-      orderBy,
-      select: {
-        id: true,
-        displayName: true,
-        positionPrimary: true,
-        positionFull: true,
-        playingPhilosophies: true,
-        slug: true,
-        isFeatured: true,
-        isPublic: true,
-        registrationStatus: true,
-        nationality: true,
-        age: true,
-        overallRating: true,
-        offensiveRating: true,
-        defensiveRating: true,
-        academyId: true,
-        videoUrl: true,
-        playerPhotoUrl: true,
-        updatedAt: true,
-        createdAt: true,
-        academy: { select: { id: true, name: true, slug: true } },
-      },
-    });
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 500);
+    const offset = Math.max(query.offset ?? 0, 0);
+
+    const [total, items] = await this.prisma.$transaction([
+      this.prisma.player.count({ where }),
+      this.prisma.player.findMany({
+        where,
+        skip: offset,
+        take: limit,
+        orderBy,
+        select: {
+          id: true,
+          displayName: true,
+          positionPrimary: true,
+          positionFull: true,
+          playingPhilosophies: true,
+          slug: true,
+          isFeatured: true,
+          isPublic: true,
+          registrationStatus: true,
+          nationality: true,
+          age: true,
+          overallRating: true,
+          offensiveRating: true,
+          defensiveRating: true,
+          academyId: true,
+          videoUrl: true,
+          playerPhotoUrl: true,
+          updatedAt: true,
+          createdAt: true,
+          academy: { select: { id: true, name: true, slug: true } },
+        },
+      }),
+    ]);
+
+    return { items, total, offset, limit };
   }
 
   async bulkUpdate(dto: BulkUpdatePlayersDto) {

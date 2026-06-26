@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AppShell } from "./layout/AppShell";
 import { HomePage } from "./modules/directopro/HomePage";
 import { MarketingLayout } from "./modules/directopro/MarketingLayout";
@@ -13,9 +13,13 @@ import { RegisterPage } from "./modules/directopro/pages/RegisterPage";
 import { ScoreboardApp } from "./modules/scoreboard/ScoreboardApp";
 import { SpotterTabletPage } from "./modules/scoreboard/pages/SpotterTabletPage";
 import { ScoutingApp } from "./modules/scouting/ScoutingApp";
-import { ValuationApp } from "./modules/valuation/ValuationApp";
 import { AdminApp } from "./modules/admin/AdminApp";
 import { AcademyApp } from "./modules/academy/AcademyApp";
+
+function ValuationPlayerRedirect() {
+  const { playerId } = useParams<{ playerId: string }>();
+  return <Navigate to={`/scouting/valuation/${playerId ?? ""}`} replace />;
+}
 
 export default function App() {
   return (
@@ -36,7 +40,10 @@ export default function App() {
         <Route path="comparison" element={<Navigate to="/scouting/compare" replace />} />
         <Route path="scouting/*" element={<ScoutingApp />} />
         <Route path="scoreboard/*" element={<ScoreboardApp />} />
-        <Route path="valuation/*" element={<ValuationApp />} />
+        <Route path="valuation" element={<Navigate to="/scouting" replace />} />
+        <Route path="valuation/generate" element={<Navigate to="/scouting/generate" replace />} />
+        <Route path="valuation/compare" element={<Navigate to="/scouting/compare" replace />} />
+        <Route path="valuation/player/:playerId" element={<ValuationPlayerRedirect />} />
         <Route path="admin/*" element={<AdminApp />} />
         <Route path="spotter-tablet" element={<SpotterTabletPage />} />
         <Route path="academy/*" element={<AcademyApp />} />

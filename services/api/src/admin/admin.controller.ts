@@ -97,6 +97,7 @@ export class AdminController {
 
   @Get("players")
   listPlayers(
+    @Query("id") id?: string,
     @Query("q") q?: string,
     @Query("status") status?: string,
     @Query("academyId") academyId?: string,
@@ -105,9 +106,11 @@ export class AdminController {
     @Query("hasMedia") hasMedia?: string,
     @Query("sort") sort?: string,
     @Query("sortDir") sortDir?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string
   ) {
     return this.players.list({
+      id,
       q,
       status,
       academyId,
@@ -117,6 +120,7 @@ export class AdminController {
       sort,
       sortDir,
       limit: limit != null ? Number(limit) : undefined,
+      offset: offset != null ? Number(offset) : undefined,
     });
   }
 

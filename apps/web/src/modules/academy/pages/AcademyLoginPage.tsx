@@ -16,7 +16,7 @@ function safeRedirectPath(value: string | null, academySlug?: string | null): st
 
 export function AcademyLoginPage() {
   usePageTitle("Club login");
-  const { login, isAuthenticated, academy } = useAcademyAuth();
+  const { login, isAuthenticated, academy, checkStored } = useAcademyAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -38,6 +38,12 @@ export function AcademyLoginPage() {
   const slugHint = searchParams.get("slug") ?? "";
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    checkStored().then((ok) => {
+      if (ok) navigate(redirectTarget, { replace: true });
+    });
+  }, [checkStored, redirectTarget, navigate]);
 
   useEffect(() => {
     if (isAuthenticated) navigate(redirectTarget, { replace: true });

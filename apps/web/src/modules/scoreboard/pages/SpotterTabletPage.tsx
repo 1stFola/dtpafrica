@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { adminScoreboardApi } from "../../../api/admin-scoreboard";
 import { patchMatch, postMatchEvent } from "../../../api/scoreboard";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { AdminApiKeyGate } from "../../admin/components/AdminApiKeyGate";
 import { RosterReadinessBar } from "../../admin/scoreboard/components/RosterReadinessBar";
 import { isGoalkeeper } from "../../admin/scoreboard/types";
 
@@ -188,6 +189,7 @@ export function SpotterTabletPage() {
   }, [pitchSquad]);
 
   return (
+    <AdminApiKeyGate title="Spotter tablet">
     <div className="spotter-tablet">
       <header className="spotter-header">
         <h1>Stadium spotter</h1>
@@ -421,5 +423,6 @@ export function SpotterTabletPage() {
 
       {message && <p className="spotter-toast" role="status">{message}</p>}
     </div>
+    </AdminApiKeyGate>
   );
 }

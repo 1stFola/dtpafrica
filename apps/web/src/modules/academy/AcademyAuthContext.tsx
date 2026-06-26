@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -66,6 +67,10 @@ export function AcademyAuthProvider({ children }: { children: ReactNode }) {
     () => ({ isAuthenticated, academy, login, logout, checkStored }),
     [isAuthenticated, academy, login, logout, checkStored]
   );
+
+  useEffect(() => {
+    void checkStored();
+  }, [checkStored]);
 
   return (
     <AcademyAuthContext.Provider value={value}>{children}</AcademyAuthContext.Provider>

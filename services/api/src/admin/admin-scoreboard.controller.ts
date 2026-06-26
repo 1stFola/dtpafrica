@@ -27,6 +27,7 @@ import {
   isCompetitionFormat,
 } from "./dto/create-competition-from-template.dto";
 import { PatchSpotterOpsDto } from "./dto/patch-spotter-ops.dto";
+import { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
 import { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
 
 @Controller("admin/scoreboard")
@@ -144,6 +145,14 @@ export class AdminScoreboardController {
   @Get("matches/:matchId/roster")
   getRoster(@Param("matchId") matchId: string, @Query("teamId") teamId: string) {
     return this.sb.getMatchRoster(matchId, teamId);
+  }
+
+  @Patch("matches/:matchId/gameday")
+  patchMatchGameday(
+    @Param("matchId") matchId: string,
+    @Body() dto: PatchMatchGamedayDto
+  ) {
+    return this.sb.patchMatchGameday(matchId, dto);
   }
 
   @Put("matches/:matchId/roster")
