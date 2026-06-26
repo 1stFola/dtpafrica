@@ -102,9 +102,14 @@ export function HomeLiveMatchCenter() {
             Live scores, goal timelines, and tournament coverage from Nigeria grassroots football.
           </p>
         </div>
-        <Link to="/scoreboard" className="home-features-link">
-          Open ScoreBoard →
-        </Link>
+        <div className="home-features-block__actions">
+          <Link
+            to="/scoreboard"
+            className="dtp-btn dtp-btn--primary home-features-cta home-features-cta--scoreboard"
+          >
+            Open ScoreBoard →
+          </Link>
+        </div>
       </div>
 
       {loading ? (

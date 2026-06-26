@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PlayerCard } from "@dtp/ui";
-import { apiGet, type FeaturedPlayer } from "../../../api/client";
+import { fetchFeaturedPlayers, type FeaturedPlayer } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { useAdSlot } from "../../../context/AdConfigContext";
@@ -14,9 +14,10 @@ export function FeaturedPlayersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const controller = new AbortController();
     let active = true;
     setLoading(true);
-    apiGet<FeaturedPlayer[]>("/home/featured-players")
+    fetchFeaturedPlayers(undefined, controller.signal)
       .then((data) => {
         if (active) setPlayers(data);
       })
@@ -28,6 +29,7 @@ export function FeaturedPlayersPage() {
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, []);
 

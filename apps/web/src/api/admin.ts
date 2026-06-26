@@ -1,4 +1,29 @@
+import { cachedFetch, invalidateCachePrefix } from "./fetch-cache";
+
 const STORAGE_KEY = "dtp_admin_api_key";
+
+const ADMIN_PLAYERS_CACHE_TTL_MS = 45_000;
+const ADMIN_ACADEMIES_CACHE_TTL_MS = 120_000;
+
+function playersQueryKey(query: AdminPlayerListQuery): string {
+  const params = new URLSearchParams();
+  if (query.id) params.set("id", query.id);
+  if (query.q) params.set("q", query.q);
+  if (query.status) params.set("status", query.status);
+  if (query.academyId) params.set("academyId", query.academyId);
+  if (query.position) params.set("position", query.position);
+  if (query.featured) params.set("featured", query.featured);
+  if (query.hasMedia) params.set("hasMedia", query.hasMedia);
+  if (query.sort) params.set("sort", query.sort);
+  if (query.sortDir) params.set("sortDir", query.sortDir);
+  if (query.limit != null) params.set("limit", String(query.limit));
+  if (query.offset != null) params.set("offset", String(query.offset));
+  return params.toString();
+}
+
+function invalidateAdminPlayersCache() {
+  invalidateCachePrefix("admin:players:");
+}
 
 export function getAdminApiKey(): string | null {
   return sessionStorage.getItem(STORAGE_KEY);
@@ -82,6 +107,7 @@ export type AdminPlayerRow = {
 };
 
 export type AdminPlayerListQuery = {
+  id?: string;
   q?: string;
   status?: string;
   academyId?: string;
@@ -90,6 +116,15 @@ export type AdminPlayerListQuery = {
   hasMedia?: "video" | "photo" | "any" | "none" | "";
   sort?: "name" | "date" | "rating";
   sortDir?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+};
+
+export type AdminPlayerListPage = {
+  items: AdminPlayerRow[];
+  total: number;
+  offset: number;
+  limit: number;
 };
 
 export type BulkPlayerUpdates = {
@@ -366,22 +401,20 @@ export type AdminAcademyInput = {
 export const adminApi = {
   stats: () => adminFetch<AdminStats>("/admin/stats"),
   players: (query: AdminPlayerListQuery = {}) => {
-    const params = new URLSearchParams();
-    if (query.q) params.set("q", query.q);
-    if (query.status) params.set("status", query.status);
-    if (query.academyId) params.set("academyId", query.academyId);
-    if (query.position) params.set("position", query.position);
-    if (query.featured) params.set("featured", query.featured);
-    if (query.hasMedia) params.set("hasMedia", query.hasMedia);
-    if (query.sort) params.set("sort", query.sort);
-    if (query.sortDir) params.set("sortDir", query.sortDir);
-    const qs = params.toString();
-    return adminFetch<AdminPlayerRow[]>(`/admin/players${qs ? `?${qs}` : ""}`);
+    const qs = playersQueryKey(query);
+    return cachedFetch(
+      `admin:players:${qs}`,
+      ADMIN_PLAYERS_CACHE_TTL_MS,
+      () => adminFetch<AdminPlayerListPage>(`/admin/players${qs ? `?${qs}` : ""}`)
+    );
   },
   bulkUpdatePlayers: (ids: string[], updates: BulkPlayerUpdates) =>
     adminFetch<{ updated: number; ids: string[] }>("/admin/players/bulk", {
       method: "PATCH",
       body: JSON.stringify({ ids, updates }),
+    }).then((result) => {
+      invalidateAdminPlayersCache();
+      return result;
     }),
   previewPlayerSlug: (name: string, excludeId?: string) => {
     const params = new URLSearchParams({ name });
@@ -400,6 +433,9 @@ export const adminApi = {
     adminFetch(`/admin/players/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
+    }).then((result) => {
+      invalidateAdminPlayersCache();
+      return result;
     }),
   getPlayerQuickEdit: (id: string) =>
     adminFetch<PlayerQuickEditContext>(`/admin/players/${id}/quick-edit`),
@@ -418,6 +454,9 @@ export const adminApi = {
     adminFetch<PlayerQuickEditContext>(`/admin/players/${id}/quick-edit`, {
       method: "PATCH",
       body: JSON.stringify(body),
+    }).then((result) => {
+      invalidateAdminPlayersCache();
+      return result;
     }),
   inbox: (status?: string, q?: string) => {
     const params = new URLSearchParams();
@@ -440,7 +479,10 @@ export const adminApi = {
     }),
   inboxDelete: (id: string) =>
     adminFetch(`/admin/inbox/${id}`, { method: "DELETE" }),
-  academyList: () => adminFetch<AdminAcademy[]>("/admin/academies"),
+  academyList: () =>
+    cachedFetch("admin:academies", ADMIN_ACADEMIES_CACHE_TTL_MS, () =>
+      adminFetch<AdminAcademy[]>("/admin/academies")
+    ),
   academyGet: (id: string) =>
     adminFetch<AdminAcademy>(`/admin/academies/${id}`),
   academyCreate: (body: AdminAcademyInput) =>
@@ -521,7 +563,10 @@ export const adminApi = {
     adminFetch<CalibrationRunResult & { player: { id: string; slug: string | null; displayName: string } }>(
       "/admin/calibration/players",
       { method: "POST", body: JSON.stringify(body) }
-    ),
+    ).then((result) => {
+      invalidateAdminPlayersCache();
+      return result;
+    }),
   calibratePlayer: (
     id: string,
     body?: {
@@ -534,6 +579,9 @@ export const adminApi = {
     adminFetch<CalibrationRunResult>(`/admin/players/${id}/calibrate`, {
       method: "POST",
       body: JSON.stringify(body ?? { save: true }),
+    }).then((result) => {
+      invalidateAdminPlayersCache();
+      return result;
     }),
   databaseSeedStatus: () =>
     adminFetch<AdminSeedStatus>("/admin/database/seed/status"),

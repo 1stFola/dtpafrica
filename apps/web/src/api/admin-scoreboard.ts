@@ -147,6 +147,30 @@ export const adminScoreboardApi = {
     return sbFetch<SbMatchListItem[]>(`/admin/scoreboard/matches${qs}`);
   },
 
+  patchMatchGameday: (
+    matchId: string,
+    body: {
+      venue?: string;
+      kickoffDate?: string;
+      kickoffTime?: string;
+      kickoffAt?: string | null;
+    }
+  ) =>
+    sbFetch<{
+      ok: boolean;
+      match: {
+        id: string;
+        venue: string | null;
+        kickoffAt: string | null;
+        status: string;
+        homeTeam: { id: string; name: string };
+        awayTeam: { id: string; name: string };
+      };
+    }>(`/admin/scoreboard/matches/${matchId}/gameday`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
   exportCompetitionsCsv: () =>
     sbFetch<{ csv: string }>("/admin/scoreboard/seed/competitions/export"),
 

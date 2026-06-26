@@ -21,7 +21,7 @@ export class HomeController {
   ) {}
 
   @Get("featured-players")
-  @Header("Cache-Control", "no-store")
+  @Header("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
   featuredPlayers(@Query("limit") limit?: string) {
     return this.home.featuredPlayers(limit != null ? Number(limit) : 24);
   }

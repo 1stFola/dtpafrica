@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { selectBenchmarkFromPool } from "@dtp/engines/benchmark-selection";
 import { useAdminToast } from "../components/AdminToast";
 import { AdminPageHeader } from "../components/AdminPageHeader";
+import { AdminPlayerSearchPicker } from "../components/AdminPlayerSearchPicker";
 import { PlayerSlugPreview } from "../components/PlayerSlugPreview";
 import { ClubNameField } from "../components/ClubNameField";
 import { adminScoreboardApi } from "../../../api/admin-scoreboard";
@@ -127,7 +128,7 @@ export function AdminCalibrationPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const csvRef = useRef<HTMLInputElement>(null);
 
-  const [players, setPlayers] = useState<AdminPlayerRow[]>([]);
+  const [selectedPlayer, setSelectedPlayer] = useState<AdminPlayerRow | null>(null);
   const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
   const [playerId, setPlayerId] = useState(searchParams.get("playerId") ?? "");
   const [playerInfo, setPlayerInfo] = useState<PlayerInfoForm>(emptyPlayerInfo);
@@ -139,14 +140,9 @@ export function AdminCalibrationPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [csvStatus, setCsvStatus] = useState(CSV_HEADER_HINT);
 
-  const loadPlayers = useCallback(() => {
-    adminApi.players().then(setPlayers).catch(() => {});
-  }, []);
-
   useEffect(() => {
-    loadPlayers();
     adminScoreboardApi.teams().then((rows) => setTeams(rows)).catch(() => {});
-  }, [loadPlayers]);
+  }, []);
 
   useEffect(() => {
     const id = searchParams.get("playerId");
@@ -172,8 +168,9 @@ export function AdminCalibrationPage() {
     if (playerId) loadPlayer(playerId);
   }, [playerId, loadPlayer]);
 
-  const onSelectPlayer = (id: string) => {
+  const onSelectPlayer = (id: string, player?: AdminPlayerRow) => {
     setPlayerId(id);
+    setSelectedPlayer(player ?? null);
     if (id) {
       setSearchParams({ playerId: id });
     } else {
@@ -235,7 +232,6 @@ export function AdminCalibrationPage() {
       setResult(out);
       setSelectedPrimaryIndex(out.primaryBenchmarkIndex ?? selectedPrimaryIndex);
       toast.success("Calibrated ratings saved to player profile.");
-      loadPlayers();
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -257,7 +253,6 @@ export function AdminCalibrationPage() {
       setPlayerId(out.player.id);
       setSearchParams({ playerId: out.player.id });
       toast.success(`Player "${out.player.displayName}" created with calibrated ratings.`);
-      loadPlayers();
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -268,6 +263,7 @@ export function AdminCalibrationPage() {
   const clearAll = () => {
     if (!window.confirm("Clear all fields and reset? This cannot be undone.")) return;
     setPlayerId("");
+    setSelectedPlayer(null);
     setSearchParams({});
     setPlayerInfo(emptyPlayerInfo());
     setMetrics(emptyLegacyMetrics());
@@ -399,18 +395,11 @@ export function AdminCalibrationPage() {
 
       <div className="admin-sb-sticky-bar">
         <div className="admin-calibration__toolbar">
-          <label className="admin-sb-field admin-calibration__select">
-            <span>Load existing player (optional)</span>
-            <select value={playerId} onChange={(e) => onSelectPlayer(e.target.value)}>
-              <option value="">New entry / manual…</option>
-              {players.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.displayName} ({p.positionPrimary})
-                  {p.overallRating != null ? ` · OVR ${p.overallRating}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          <AdminPlayerSearchPicker
+            value={playerId}
+            onChange={onSelectPlayer}
+            selectedSlug={selectedPlayer?.slug}
+          />
         </div>
       </div>
 
@@ -444,7 +433,7 @@ export function AdminCalibrationPage() {
                       <PlayerSlugPreview
                         displayName={playerInfo.full_name}
                         excludeId={playerId || undefined}
-                        currentSlug={players.find((p) => p.id === playerId)?.slug}
+                        currentSlug={selectedPlayer?.slug}
                       />
                     </div>
                   );

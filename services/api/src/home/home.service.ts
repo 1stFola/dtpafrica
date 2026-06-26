@@ -88,7 +88,7 @@ export class HomeService {
         aggregatedMetrics: {
           where: { season: "rolling" },
           take: 1,
-          select: { derivedMetrics: true, minutesPlayed: true },
+          select: { rawAverages: true, derivedMetrics: true, minutesPlayed: true },
         },
       },
     });
@@ -114,6 +114,10 @@ export class HomeService {
         minutesPlayed: this.resolveMinutesPlayed(
           careerMinutes,
           aggregatedMetrics[0]?.minutesPlayed
+        ),
+        metrics: presentPlayerMetrics(
+          aggregatedMetrics[0]?.rawAverages as Record<string, unknown> | null,
+          aggregatedMetrics[0]?.derivedMetrics as Record<string, unknown> | null
         ),
       })
     );

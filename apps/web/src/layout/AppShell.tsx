@@ -41,6 +41,11 @@ const FOOTER_SOCIAL_LINKS = [
   },
 ] as const;
 
+const MARKETING_LINKS = [
+  { to: "/partners/academies", label: "Clubs" },
+  { to: "/contact", label: "Contact" },
+] as const;
+
 export function AppShell() {
   return (
     <div className="app-shell">
@@ -52,15 +57,32 @@ export function AppShell() {
           <BrandLogo variant="white-horizontal" size="header" />
         </NavLink>
         <nav className="app-nav" aria-label="Main">
-          {PRODUCT_MODULES.map((mod) => (
-            <NavLink
-              key={mod.id}
-              to={mod.path}
-              className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
-            >
-              {mod.navLabel}
-            </NavLink>
-          ))}
+          <div className="app-nav__group" aria-label="Platform">
+            {PRODUCT_MODULES.map((mod) => (
+              <NavLink
+                key={mod.id}
+                to={mod.path}
+                end={mod.path === "/"}
+                className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+              >
+                {mod.navLabel}
+              </NavLink>
+            ))}
+          </div>
+          <div className="app-nav__divider" aria-hidden="true" />
+          <div className="app-nav__group app-nav__group--secondary" aria-label="Site">
+            {MARKETING_LINKS.map((link) => (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                className={({ isActive }) =>
+                  isActive ? "nav-link nav-link--secondary active" : "nav-link nav-link--secondary"
+                }
+              >
+                {link.label}
+              </NavLink>
+            ))}
+          </div>
         </nav>
       </header>
       <div className="app-body app-body--no-rail">

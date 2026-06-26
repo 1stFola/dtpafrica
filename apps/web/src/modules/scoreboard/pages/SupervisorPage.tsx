@@ -9,6 +9,7 @@ import {
   EVENT_LABELS,
   type SbMatchListItem,
 } from "../../../api/scoreboard";
+import { AdminApiKeyGate } from "../../admin/components/AdminApiKeyGate";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
 export function SupervisorPage() {
@@ -86,6 +87,7 @@ export function SupervisorPage() {
   };
 
   return (
+    <AdminApiKeyGate title="Supervisor monitor">
     <div className="sb-page">
       <header className="page-header">
         <h1>Supervisor monitor</h1>
@@ -197,5 +199,6 @@ export function SupervisorPage() {
 
       {message && <p className="muted">{message}</p>}
     </div>
+    </AdminApiKeyGate>
   );
 }

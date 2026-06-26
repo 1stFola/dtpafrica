@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -56,6 +57,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     () => ({ isAuthenticated, login, logout, checkStored }),
     [isAuthenticated, login, logout, checkStored]
   );
+
+  useEffect(() => {
+    void checkStored();
+  }, [checkStored]);
 
   return (
     <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>

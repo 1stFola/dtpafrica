@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@dtp/ui";
-import {
-  apiGet,
-  isAbortError,
-  type PlayerSkeletonProfile,
-  type PublicPlayerProfile,
-} from "../../../api/client";
+import { apiGet, isAbortError, type PlayerSkeletonProfile, type PublicPlayerProfile } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { isGoalkeeper } from "../../../utils/position";
 import { resolvePositionFullLabel } from "../../../utils/positionLabels";
@@ -270,6 +265,7 @@ export function PlayerProfilePage() {
   const [searchParams] = useSearchParams();
   const [player, setPlayer] = useState<PublicPlayerProfile | null>(null);
   const [skeleton, setSkeleton] = useState<PlayerSkeletonProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [shareStatus, setShareStatus] = useState<string | null>(null);
@@ -290,12 +286,16 @@ export function PlayerProfilePage() {
   usePageTitle(player?.displayName ?? skeleton?.displayName ?? knownName);
 
   useEffect(() => {
-    if (!slugOrId) return;
+    if (!slugOrId) {
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     let cancelled = false;
     setPlayer(null);
     setSkeleton(null);
     setError(null);
+    setLoading(true);
     const qs = new URLSearchParams();
     if (knownClub) qs.set("club", knownClub);
     if (knownCompetition) qs.set("competition", knownCompetition);
@@ -316,6 +316,9 @@ export function PlayerProfilePage() {
       .catch((e) => {
         if (cancelled || isAbortError(e)) return;
         setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -348,7 +351,7 @@ export function PlayerProfilePage() {
     );
   }
 
-  if (!player) {
+  if (!player && !skeleton && loading) {
     return (
       <div className="home-page profile-page player-profile" aria-busy="true">
         <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "10rem" }} />
@@ -356,6 +359,20 @@ export function PlayerProfilePage() {
           <span className="dtp-skeleton" style={{ width: "100%", height: 220, borderRadius: "var(--radius-lg)" }} />
         </div>
         <div className="dtp-skeleton dtp-skeleton--card" style={{ marginTop: "2rem" }} />
+      </div>
+    );
+  }
+
+  if (!player) {
+    return (
+      <div className="home-page">
+        <div className="dtp-empty-state">
+          <p className="dtp-empty-state__title">Player profile unavailable</p>
+          <p>We could not load this profile. Try again or browse featured players.</p>
+          <Link to="/featured-players" className="text-link">
+            Featured players
+          </Link>
+        </div>
       </div>
     );
   }

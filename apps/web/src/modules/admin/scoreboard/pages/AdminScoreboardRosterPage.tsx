@@ -3,8 +3,9 @@ import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import type { SbMatchListItem } from "../../../../api/scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
-import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
+import { formatAdminScoreboardError, formatMatchOptionLabel, sortRosterMatches } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
+import { GamedayEditPanel } from "../components/GamedayEditPanel";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 import {
   isGoalkeeper,
@@ -59,23 +60,57 @@ export function AdminScoreboardRosterPage() {
   const [readiness, setReadiness] = useState<
     Awaited<ReturnType<typeof adminScoreboardApi.getSpotter>>["rosterReadiness"] | null
   >(null);
+  const [competitionId, setCompetitionId] = useState("");
+  const [competitions, setCompetitions] = useState<
+    Array<{ id: string; name: string; slug: string; season: string }>
+  >([]);
 
   useEffect(() => {
-    setMatchesLoading(true);
     adminScoreboardApi
-      .matches()
+      .competitionPicker()
+      .then(setCompetitions)
+      .catch(() => setCompetitions([]));
+  }, []);
+
+  const loadMatches = useCallback((compId?: string) => {
+    setMatchesLoading(true);
+    return adminScoreboardApi
+      .matches(compId || undefined)
       .then((rows) => {
-        setMatches(rows);
-        if (rows[0]) {
-          setMatchId(rows[0].id);
-          setTeamId(rows[0].homeTeam.id);
-        }
+        const sorted = sortRosterMatches(rows);
+        setMatches(sorted);
+        setMatchId((prev) => {
+          if (prev && sorted.some((m) => m.id === prev)) return prev;
+          return sorted[0]?.id ?? "";
+        });
       })
-      .catch(() => setMatches([]))
+      .catch(() => {
+        setMatches([]);
+        setMatchId("");
+      })
       .finally(() => setMatchesLoading(false));
   }, []);
 
+  useEffect(() => {
+    void loadMatches(competitionId || undefined);
+  }, [competitionId, loadMatches]);
+
   const selectedMatch = matches.find((m) => m.id === matchId);
+
+  useEffect(() => {
+    if (!selectedMatch) return;
+    if (teamId !== selectedMatch.homeTeam.id && teamId !== selectedMatch.awayTeam.id) {
+      setTeamId(selectedMatch.homeTeam.id);
+    }
+  }, [selectedMatch, teamId]);
+
+  const handleGamedaySaved = (patch: { venue: string | null; kickoffAt: string | null }) => {
+    setMatches((prev) =>
+      prev.map((m) =>
+        m.id === matchId ? { ...m, venue: patch.venue, kickoffAt: patch.kickoffAt } : m
+      )
+    );
+  };
 
   const loadRoster = useCallback(() => {
     if (!matchId || !teamId) return;
@@ -231,10 +266,24 @@ export function AdminScoreboardRosterPage() {
             <span className="admin-sb-skeleton admin-sb-skeleton--bar" aria-busy="true" />
           ) : matches.length === 0 ? null : (
             <>
+              {competitions.length > 1 && (
+                <select
+                  value={competitionId}
+                  onChange={(e) => setCompetitionId(e.target.value)}
+                  aria-label="Competition"
+                >
+                  <option value="">All competitions</option>
+                  {competitions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <select value={matchId} onChange={(e) => setMatchId(e.target.value)} aria-label="Match">
                 {matches.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.homeTeam.name} vs {m.awayTeam.name} ({m.status})
+                    {formatMatchOptionLabel(m)}
                   </option>
                 ))}
               </select>
@@ -272,6 +321,10 @@ export function AdminScoreboardRosterPage() {
         </div>
       ) : (
         <>
+      {selectedMatch && (
+        <GamedayEditPanel match={selectedMatch} onSaved={handleGamedaySaved} />
+      )}
+
       {selectedMatch && (
         <RosterReadinessBar
           readiness={readiness}
