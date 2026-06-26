@@ -231,8 +231,8 @@ export function MatchCenterPage() {
     () => (match ? competitionLabel(match.competition.name) : ""),
     [match]
   );
-  const narrative = useMemo(() => {
-    const text = match?.stats?.narrative;
+  const gameComment = useMemo(() => {
+    const text = match?.matchComment;
     return typeof text === "string" && text.trim() ? text.trim() : null;
   }, [match]);
   const matchPhotos = useMemo(() => {
@@ -382,11 +382,11 @@ export function MatchCenterPage() {
             id="sbm-panel-stats"
             aria-labelledby="sbm-tab-stats"
           >
-            {narrative && (
+            {gameComment && (
               <>
                 <h2 className="sbc-block__title">Match Report</h2>
                 <article className="sbc-narrative sbm-narrative">
-                  <p className="sbc-narrative__text">{narrative}</p>
+                  <p className="sbc-narrative__text">{gameComment}</p>
                 </article>
               </>
             )}

@@ -5,6 +5,7 @@ export type PlayerInfoForm = {
   gender: string;
   date_of_birth: string;
   position: string;
+  dominant_foot: string;
   benchmark_region: string;
   benchmark_age_band: string;
   nationality: string;
@@ -67,6 +68,7 @@ export const BENCHMARK_REGIONS = [
   "North America",
 ] as const;
 export const BENCHMARK_AGE_BANDS = ["Auto", "All Ages", "U17", "U20", "U23", "Senior"] as const;
+export const DOMINANT_FOOT_OPTIONS = ["Left", "Right", "Both"] as const;
 
 export const PLAYER_FIELDS: {
   key: keyof PlayerInfoForm;
@@ -80,6 +82,12 @@ export const PLAYER_FIELDS: {
   { key: "gender", label: "Gender", type: "select", options: GENDERS },
   { key: "date_of_birth", label: "Date of Birth", type: "date" },
   { key: "position", label: "Position", type: "select", options: POSITIONS },
+  {
+    key: "dominant_foot",
+    label: "Dominant foot",
+    type: "select",
+    options: DOMINANT_FOOT_OPTIONS,
+  },
   {
     key: "benchmark_region",
     label: "Benchmark Region",
@@ -184,6 +192,7 @@ export function emptyPlayerInfo(): PlayerInfoForm {
     gender: "",
     date_of_birth: "",
     position: "",
+    dominant_foot: "",
     benchmark_region: "Global",
     benchmark_age_band: "Auto",
     nationality: "",
@@ -286,6 +295,7 @@ export function playerInfoToApiPayload(info: PlayerInfoForm) {
     gender: info.gender || "Male",
     dateOfBirth: info.date_of_birth || undefined,
     position: info.position,
+    preferredFoot: info.dominant_foot || undefined,
     benchmarkRegion: info.benchmark_region || "Global",
     benchmarkAgeBand: info.benchmark_age_band || "Auto",
     nationality: info.nationality || undefined,
@@ -321,6 +331,7 @@ export function contextToPlayerInfo(
     gender?: string | null;
     dateOfBirth?: string | null;
     position: string;
+    preferredFoot?: string | null;
     benchmarkRegion?: string | null;
     benchmarkAgeBand?: string | null;
     nationality?: string | null;
@@ -336,6 +347,7 @@ export function contextToPlayerInfo(
     gender: ctx.gender || "Male",
     date_of_birth: ctx.dateOfBirth?.slice(0, 10) ?? "",
     position: ctx.position,
+    dominant_foot: ctx.preferredFoot ?? "",
     benchmark_region: ctx.benchmarkRegion || "Global",
     benchmark_age_band: ctx.benchmarkAgeBand || "Auto",
     nationality: ctx.nationality ?? "",
