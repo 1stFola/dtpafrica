@@ -44,6 +44,6 @@ SET "slug" = r."slug" || '-' || r.rn::text
 FROM ranked r
 WHERE m."id" = r."id" AND r.rn > 1;
 
-ALTER TABLE "sb_matches" ALTER COLUMN "slug" SET NOT NULL;
-
+-- Keep slug nullable so prisma db push succeeds on DBs with existing rows;
+-- backfillMissingMatchSlugs (seed / API startup) fills any remaining NULLs.
 CREATE UNIQUE INDEX "sb_matches_slug_key" ON "sb_matches"("slug");
