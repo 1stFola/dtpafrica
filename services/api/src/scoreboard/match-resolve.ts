@@ -11,7 +11,7 @@ export function isMatchUuid(value: string): boolean {
 export async function resolveMatchBySlugOrId(
   prisma: PrismaClient,
   slugOrId: string
-): Promise<{ id: string; slug: string } | null> {
+): Promise<{ id: string; slug: string | null } | null> {
   if (isMatchUuid(slugOrId)) {
     return prisma.sbMatch.findUnique({
       where: { id: slugOrId },
