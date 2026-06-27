@@ -461,6 +461,7 @@ export class AcademyDashboardService {
 
     return {
       id: match.id,
+      slug: match.slug,
       status: match.status,
       minute: match.minute,
       kickoffAt: match.kickoffAt,
@@ -529,7 +530,7 @@ export class AcademyDashboardService {
         title: `${player.displayName}: ${event.type.replace(/_/g, " ")}`,
         detail: `${event.minute}' · ${event.match.competition.name}`,
         at: event.createdAt,
-        href: `/scoreboard/match/${event.matchId}`,
+        href: `/scoreboard/match/${event.match.slug}`,
       }))
     );
     const matchItems = matches.slice(0, 5).map((match) => ({
@@ -538,7 +539,7 @@ export class AcademyDashboardService {
       title: `${match.homeTeam.name} ${match.homeScore}-${match.awayScore} ${match.awayTeam.name}`,
       detail: `${match.status} · ${match.competition.name}`,
       at: match.kickoffAt ?? match.updatedAt,
-      href: `/scoreboard/match/${match.id}`,
+      href: `/scoreboard/match/${match.slug}`,
     }));
     const highlightItems = highlights.slice(0, 4).map((highlight) => ({
       id: `highlight-${highlight.id}`,

@@ -300,6 +300,76 @@ export type CalibrationMetricsFallback = Partial<
   >
 >;
 
+/** Map stored calibration CSV snapshot to snake_case public profile metrics. */
+export function legacyMatchMetricsToPresentedMetrics(
+  legacy: LegacyMatchMetricsDto
+): Record<string, number> {
+  const metrics: Record<string, number> = {};
+  const assign = (key: string, value: number | undefined) => {
+    if (value != null && Number.isFinite(value)) metrics[key] = value;
+  };
+
+  assign("first_step_accelerations", legacy.first_step_accelerations);
+  assign("intense_accelerations", legacy.intense_accelerations);
+  assign("sprints", legacy.sprints);
+  assign("intense_turns", legacy.intense_turns);
+  assign("intense_turns_with_ball", legacy.intense_turns_with_ball);
+  assign("total_distance", legacy.total_distance);
+  assign("kicking_power", legacy.kicking_power);
+  assign("top_speed", legacy.top_speed);
+  assign("top_speed_with_ball", legacy.top_speed_with_ball);
+  assign("distance_with_ball", legacy.distance_with_ball);
+  assign("sprint_distance", legacy.sprint_distance);
+  assign("left_foot_kicking_power_mph", legacy.left_foot_kicking_power_mph);
+  assign("right_foot_kicking_power_mph", legacy.right_foot_kicking_power_mph);
+  assign("one_touch_possessions_percentage", legacy.one_touch_possessions_percentage);
+  assign("multi_touch_possessions_percentage", legacy.multi_touch_possessions__percentage);
+  assign("possession_duration_seconds", legacy.possession_duration_seconds);
+  assign("release_laces_percentage", legacy.release_laces_percentage);
+  assign("quick_release_score", legacy.quick_release_score);
+  assign("turn_efficiency", legacy.turn_efficiency);
+  assign("left_foot_touch_percentage", legacy.left_foot_touch_percentage);
+  assign("right_foot_touch_percentage", legacy.right_foot_touch_percentage);
+  assign("left_foot_release_percentage", legacy.left_foot_release_percentage);
+  assign("right_foot_release_percentage", legacy.right_foot_release_percentage);
+  assign("left_foot_receive_percentage", legacy.left_foot_receive_percentage);
+  assign("right_foot_receive_percentage", legacy.right_foot_receive_percentage);
+
+  if (
+    metrics.multi_touch_possessions_percentage == null &&
+    metrics.one_touch_possessions_percentage != null &&
+    metrics.one_touch_possessions_percentage > 0 &&
+    metrics.one_touch_possessions_percentage <= 100
+  ) {
+    metrics.multi_touch_possessions_percentage =
+      100 - metrics.one_touch_possessions_percentage;
+  }
+
+  if (
+    (metrics.quick_release_score == null || metrics.quick_release_score <= 0) &&
+    metrics.one_touch_possessions_percentage != null &&
+    metrics.one_touch_possessions_percentage > 0
+  ) {
+    metrics.quick_release_score = metrics.one_touch_possessions_percentage;
+  }
+
+  for (const key of [
+    "quick_release_score",
+    "one_touch_possessions_percentage",
+    "left_foot_release_percentage",
+    "right_foot_release_percentage",
+    "left_foot_touch_percentage",
+    "right_foot_touch_percentage",
+    "left_foot_receive_percentage",
+    "right_foot_receive_percentage",
+    "release_laces_percentage",
+  ] as const) {
+    if (metrics[key] === 0) delete metrics[key];
+  }
+
+  return metrics;
+}
+
 export function toCalibrationMetricsFallback(
   legacy?: LegacyMatchMetricsDto | null
 ): CalibrationMetricsFallback | null {

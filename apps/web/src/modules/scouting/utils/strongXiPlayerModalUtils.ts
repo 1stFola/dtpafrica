@@ -1,6 +1,20 @@
 import type { PublicPlayerProfile } from "../../../api/client";
 import type { CategoryScore } from "../../directopro/components/playerProfile/PlayerCategoryRadar";
 import { isGoalkeeper } from "../../../utils/position";
+import {
+  withCalibratedMetrics,
+  type CalibratedPlayerInput,
+} from "./resolveCalibratedPlayerMetrics";
+
+type RadarPlayerInput = Pick<
+  PublicPlayerProfile,
+  | "overallRating"
+  | "offensiveRating"
+  | "defensiveRating"
+  | "ratingAttributes"
+  | "tacticalSummary"
+> &
+  CalibratedPlayerInput;
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -61,32 +75,28 @@ export function buildAttributeMap(
   };
 }
 
-/** Five-axis radar: Pace, Passing, Technical, Physical, Defending. */
-export function buildPerformanceRadarScores(
-  player: Pick<
-    PublicPlayerProfile,
-    "overallRating" | "offensiveRating" | "defensiveRating" | "ratingAttributes" | "tacticalSummary"
-  >
-): CategoryScore[] {
-  const overall = player.overallRating ?? 62;
-  const att = clampScore(player.offensiveRating ?? overall);
-  const def = clampScore(player.defensiveRating ?? overall);
-  const attributes = buildAttributeMap(player);
+/** Five-axis radar: composite category blends (not single attributes). */
+export function buildPerformanceRadarScores(player: RadarPlayerInput): CategoryScore[] {
+  const calibrated = withCalibratedMetrics(player);
+  const overall = calibrated.overallRating ?? 62;
+  const att = clampScore(calibrated.offensiveRating ?? overall);
+  const def = clampScore(calibrated.defensiveRating ?? overall);
+  const attributes = buildAttributeMap(calibrated);
 
   return [
     {
       key: "pace",
-      label: "PACE",
+      label: "SPEED PROFILE",
       score: readAttr(attributes, ["pace", "acceleration", "sprint_speed"], att),
     },
     {
       key: "passing",
-      label: "PASSING",
+      label: "DISTRIBUTION",
       score: readAttr(attributes, ["passing", "vision", "team_play"], att),
     },
     {
       key: "technical",
-      label: "TECHNICAL",
+      label: "BALL SKILLS",
       score: readAttr(
         attributes,
         ["dribbling", "ball_control", "finishing", "technique", "first_touch"],
@@ -95,12 +105,12 @@ export function buildPerformanceRadarScores(
     },
     {
       key: "physical",
-      label: "PHYSICAL",
+      label: "PHYSICALITY",
       score: readAttr(attributes, ["stamina", "strength", "agility"], overall),
     },
     {
       key: "defending",
-      label: "DEFENDING",
+      label: "DEFENSIVE IQ",
       score: readAttr(
         attributes,
         ["positioning", "work_rate", "decision_making", "composure"],

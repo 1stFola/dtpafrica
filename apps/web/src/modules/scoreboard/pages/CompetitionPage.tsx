@@ -13,6 +13,7 @@ import { MatchCenterCard } from "../components/MatchCenterCard";
 import { MatchTicker } from "../components/MatchTicker";
 import { StatLeadersWidget } from "../components/StatLeadersWidget";
 import { TeamCrest } from "../components/TeamCrest";
+import { matchCenterPath } from "../utils/matchPath";
 import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
@@ -577,7 +578,7 @@ function HistoryMilestoneItem({ milestone }: { milestone: HistoryMilestone }) {
         <p className="sbc-milestone__body">{milestone.body}</p>
         {milestone.match && milestone.match.status === "finished" && (
           <Link
-            to={`/scoreboard/match/${milestone.match.id}`}
+            to={matchCenterPath(milestone.match)}
             className="sbc-milestone__scoreline text-link"
           >
             {milestone.match.homeTeam.name} {milestone.match.homeScore}–{milestone.match.awayScore}{" "}

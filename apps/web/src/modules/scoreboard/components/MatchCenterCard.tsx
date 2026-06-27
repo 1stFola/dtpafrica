@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { SbMatchGoal, SbMatchListItem } from "../../../api/scoreboard";
+import { matchCenterPath } from "../utils/matchPath";
 import { TeamCrest } from "./TeamCrest";
 
 type StatusKind = "live" | "ht" | "ft" | "scheduled" | "other";
@@ -47,7 +48,7 @@ export function MatchCenterCard({
 
   return (
     <Link
-      to={`/scoreboard/match/${match.id}`}
+      to={matchCenterPath(match)}
       className={`sb-mc-card${compact ? " sb-mc-card--compact" : ""}`}
       data-status={kind}
     >

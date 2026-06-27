@@ -110,9 +110,9 @@ export class ScoreboardController {
     });
   }
 
-  @Get("matches/:id")
-  match(@Param("id") id: string) {
-    return this.sb.matchById(id, true);
+  @Get("matches/:slugOrId")
+  match(@Param("slugOrId") slugOrId: string) {
+    return this.sb.matchBySlugOrId(slugOrId, true);
   }
 
   @Get("standings/:competitionId")

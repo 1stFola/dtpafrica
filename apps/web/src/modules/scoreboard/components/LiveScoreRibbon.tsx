@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMatches, type SbMatchListItem } from "../../../api/scoreboard";
+import { matchCenterPath } from "../utils/matchPath";
 
 function compactTeamName(match: SbMatchListItem, side: "home" | "away") {
   const team = side === "home" ? match.homeTeam : match.awayTeam;
@@ -33,7 +34,7 @@ export function LiveScoreRibbon() {
         {ribbonItems.map((match, index) => (
           <Link
             key={`${match.id}-${index}`}
-            to={`/scoreboard/match/${match.id}`}
+            to={matchCenterPath(match)}
             className="sb-live-ribbon__item"
           >
             <strong>{ribbonLabel(match)}</strong>

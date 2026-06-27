@@ -71,6 +71,7 @@ export type AcademySquadPlayer = {
 
 export type AcademyFixture = {
   id: string;
+  slug: string;
   status: string;
   minute: number | null;
   kickoffAt: string | null;

@@ -126,7 +126,8 @@ export function PlayerCategoryRadar({ scores, expandLabels = false }: Props) {
   return (
     <div
       className={`player-profile-cat-radar${expandLabels ? " player-profile-cat-radar--expanded" : ""}`}
-      aria-label="Attribute category overview"
+      aria-label="Category blend overview"
+      title="Composite averages across related attributes"
     >
       <svg
         className={chartClassName}

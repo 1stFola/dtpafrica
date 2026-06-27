@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   fetchMatch,
   type SbMatchDetail,
@@ -11,6 +11,7 @@ import { MatchSquadsGrid, MatchSquadsSkeleton } from "../components/MatchSquadPa
 import { MatchStatsBars } from "../components/MatchStatsBars";
 import { MatchTicker } from "../components/MatchTicker";
 import { TeamCrest } from "../components/TeamCrest";
+import { isMatchUuid, matchCenterPath } from "../utils/matchPath";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 
@@ -167,7 +168,8 @@ function MatchCenterSkeleton({ squadsTab }: { squadsTab?: boolean }) {
 }
 
 export function MatchCenterPage() {
-  const { id } = useParams<{ id: string }>();
+  const { matchSlug } = useParams<{ matchSlug: string }>();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<MatchTab>(
@@ -192,15 +194,20 @@ export function MatchCenterPage() {
   );
 
   useEffect(() => {
-    if (!id) return;
+    if (!matchSlug) return;
     const controller = new AbortController();
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | undefined;
 
     const load = () =>
-      fetchMatch(id, controller.signal)
+      fetchMatch(matchSlug, controller.signal)
         .then((data) => {
           if (cancelled) return;
+          if (isMatchUuid(matchSlug) && data.slug && data.slug !== matchSlug) {
+            const qs = searchParams.toString();
+            navigate(`${matchCenterPath(data)}${qs ? `?${qs}` : ""}`, { replace: true });
+            return;
+          }
           setMatch(data);
           setLoading(false);
           if (data.status === "finished" && timer) {
@@ -225,7 +232,7 @@ export function MatchCenterPage() {
       controller.abort();
       if (timer) clearInterval(timer);
     };
-  }, [id]);
+  }, [matchSlug, navigate, searchParams]);
 
   const compLabel = useMemo(
     () => (match ? competitionLabel(match.competition.name) : ""),

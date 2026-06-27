@@ -14,6 +14,7 @@ import { PlayerPitchGraphic } from "../components/playerProfile/PlayerPitchGraph
 import { PlayerRoleProfileSection } from "../components/playerProfile/PlayerRoleProfileSection";
 import { ScoutingDetailsTab } from "../components/playerProfile/ScoutingDetailsTab";
 import { PositionScoutingMetricsRow } from "../../scouting/components/PositionScoutingMetricsRow";
+import { matchCenterPath } from "../../scoreboard/utils/matchPath";
 import { buildPerformanceRadarScores } from "../../scouting/utils/strongXiPlayerModalUtils";
 
 /**
@@ -960,7 +961,10 @@ function ScoreboardHistorySection({
             <ul className="profile-card-list">
               {history.appearances.slice(0, 6).map((match) => (
                 <li key={match.matchId}>
-                  <Link to={`/scoreboard/match/${match.matchId}`} className="text-link">
+                  <Link
+                    to={matchCenterPath({ slug: match.matchSlug, id: match.matchId })}
+                    className="text-link"
+                  >
                     {match.homeTeam.shortName ?? match.homeTeam.name} {match.score.home} -{" "}
                     {match.score.away} {match.awayTeam.shortName ?? match.awayTeam.name}
                   </Link>

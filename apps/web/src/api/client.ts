@@ -88,6 +88,9 @@ export type FeaturedPlayer = {
   interceptions?: number | null;
   /** Rolling match-metric averages in snake_case CSV field names. */
   metrics?: Record<string, number> | null;
+  benchmarkMetadata?: {
+    calibrationMetrics?: Record<string, number> | null;
+  } | null;
 };
 
 export type HomeVideoHighlight = {
@@ -126,6 +129,8 @@ export type PublicPlayerProfile = FeaturedPlayer & {
     nearest?: Record<string, unknown> | null;
     alternatives?: Record<string, unknown>[];
     filterInfo?: { poolSize?: number };
+    /** Full calibration CSV snapshot saved at benchmark time. */
+    calibrationMetrics?: Record<string, number> | null;
   } | null;
   mediaItems?: {
     type?: string;
@@ -188,6 +193,7 @@ export type PublicPlayerProfile = FeaturedPlayer & {
     }[];
     appearances: {
       matchId: string;
+      matchSlug: string;
       competitionName: string;
       competitionSlug: string;
       season: string;
@@ -212,6 +218,7 @@ export type PublicPlayerProfile = FeaturedPlayer & {
       team: { id: string; name: string; slug: string; shortName: string | null } | null;
       match: {
         id: string;
+        slug: string;
         competitionName: string;
         competitionSlug: string;
         season: string;

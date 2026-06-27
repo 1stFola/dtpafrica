@@ -20,6 +20,7 @@ import {
   resolvePlayerAge,
   resolvePlayerClub,
 } from "../utils/strongXiPlayerModalUtils";
+import { withCalibratedMetrics } from "../utils/resolveCalibratedPlayerMetrics";
 
 const MAX_PLAYERS = 4;
 const MIN_PLAYERS = 2;
@@ -133,7 +134,7 @@ export function ComparePage() {
       profiles.map((player) => ({
         playerId: player.id,
         displayName: player.displayName,
-        scores: buildPerformanceRadarScores(player),
+        scores: buildPerformanceRadarScores(withCalibratedMetrics(player)),
       })),
     [profiles]
   );

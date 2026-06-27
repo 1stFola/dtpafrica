@@ -18,7 +18,7 @@ export function ScoreboardApp() {
         <Route path="browse" element={<BrowsePage />} />
         <Route path="competition/:slug" element={<CompetitionPage />} />
         <Route path="team/:id" element={<TeamPage />} />
-        <Route path="match/:id" element={<MatchCenterPage />} />
+        <Route path="match/:matchSlug" element={<MatchCenterPage />} />
         <Route path="highlights" element={<HighlightsPage />} />
         <Route path="supervisor" element={<SupervisorPage />} />
       </Route>

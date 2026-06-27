@@ -10,6 +10,7 @@ import {
   type SbMatchListItem,
 } from "../../../api/scoreboard";
 import { AdminApiKeyGate } from "../../admin/components/AdminApiKeyGate";
+import { matchCenterPath } from "../utils/matchPath";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
 export function SupervisorPage() {
@@ -126,7 +127,7 @@ export function SupervisorPage() {
               <h2>
                 {selected.homeTeam.name} vs {selected.awayTeam.name}
               </h2>
-              <Link to={`/scoreboard/match/${selected.id}`} className="text-link">
+              <Link to={matchCenterPath(selected)} className="text-link">
                 Open match center
               </Link>
               <p className="muted">
