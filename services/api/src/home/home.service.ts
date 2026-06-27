@@ -14,6 +14,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
 import { resolveUniquePlayerSlug } from "../players/player-slug";
 import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
+import { matchPathSegment } from "../scoreboard/match-slug";
 import { ContactDto } from "./dto/contact.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
 import {
@@ -705,7 +706,7 @@ export class HomeService {
         matchMap.get(match.id) ??
         {
           matchId: match.id,
-          matchSlug: match.slug,
+          matchSlug: matchPathSegment(match.slug, match.id),
           competitionName: match.competition.name,
           competitionSlug: match.competition.slug,
           season: match.competition.season,
@@ -754,7 +755,7 @@ export class HomeService {
           : null,
         match: {
           id: match.id,
-          slug: match.slug,
+          slug: matchPathSegment(match.slug, match.id),
           competitionName: match.competition.name,
           competitionSlug: match.competition.slug,
           season: match.competition.season,

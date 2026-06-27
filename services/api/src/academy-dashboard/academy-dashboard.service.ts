@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { normalizeClubName } from "@dtp/engines";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { matchPathSegment } from "../scoreboard/match-slug";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -461,7 +462,7 @@ export class AcademyDashboardService {
 
     return {
       id: match.id,
-      slug: match.slug,
+      slug: matchPathSegment(match.slug, match.id),
       status: match.status,
       minute: match.minute,
       kickoffAt: match.kickoffAt,
@@ -530,7 +531,7 @@ export class AcademyDashboardService {
         title: `${player.displayName}: ${event.type.replace(/_/g, " ")}`,
         detail: `${event.minute}' · ${event.match.competition.name}`,
         at: event.createdAt,
-        href: `/scoreboard/match/${event.match.slug}`,
+        href: `/scoreboard/match/${matchPathSegment(event.match.slug, event.match.id)}`,
       }))
     );
     const matchItems = matches.slice(0, 5).map((match) => ({
@@ -539,7 +540,7 @@ export class AcademyDashboardService {
       title: `${match.homeTeam.name} ${match.homeScore}-${match.awayScore} ${match.awayTeam.name}`,
       detail: `${match.status} · ${match.competition.name}`,
       at: match.kickoffAt ?? match.updatedAt,
-      href: `/scoreboard/match/${match.slug}`,
+      href: `/scoreboard/match/${matchPathSegment(match.slug, match.id)}`,
     }));
     const highlightItems = highlights.slice(0, 4).map((highlight) => ({
       id: `highlight-${highlight.id}`,
