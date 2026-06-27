@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMatches, type SbMatchListItem } from "../../../api/scoreboard";
+import { matchCenterPath } from "../utils/matchPath";
 
 /** Human, high-contrast state label for the marquee (COMPLETED, LIVE, …). */
 function tickerState(status: string): string {
@@ -68,7 +69,7 @@ export function MatchTicker() {
           {loop.map((match, index) => (
             <Link
               key={`${match.id}-${index}`}
-              to={`/scoreboard/match/${match.id}`}
+              to={matchCenterPath(match)}
               className="dbx-ticker__item"
               aria-hidden={index >= matches.length ? true : undefined}
               tabIndex={index >= matches.length ? -1 : undefined}

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { SbMatchListItem } from "../../../api/scoreboard";
+import { matchCenterPath } from "../utils/matchPath";
 
 function statusLabel(status: string) {
   if (status === "live") return "LIVE";
@@ -12,7 +13,7 @@ export function MatchCard({ match }: { match: SbMatchListItem }) {
   const live = match.status === "live" || match.status === "halftime";
 
   return (
-    <Link to={`/scoreboard/match/${match.id}`} className="sb-match-card">
+    <Link to={matchCenterPath(match)} className="sb-match-card">
       <div className="sb-match-card__top">
         <span className="muted">{match.competition.name}</span>
         {match.roundLabel && <span className="muted">{match.roundLabel}</span>}

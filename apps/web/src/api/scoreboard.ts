@@ -90,6 +90,7 @@ export type SbMatchGoal = {
 
 export type SbMatchListItem = {
   id: string;
+  slug: string;
   status: string;
   minute: number | null;
   homeScore: number;
@@ -351,8 +352,8 @@ export function fetchMatches(
   return apiGet<SbMatchListItem[]>(`/scoreboard/matches${qs ? `?${qs}` : ""}`, signal);
 }
 
-export function fetchMatch(id: string, signal?: AbortSignal) {
-  return apiGet<SbMatchDetail>(`/scoreboard/matches/${id}`, signal);
+export function fetchMatch(slugOrId: string, signal?: AbortSignal) {
+  return apiGet<SbMatchDetail>(`/scoreboard/matches/${slugOrId}`, signal);
 }
 
 export type StatLeaderMetric = "goals" | "assists" | "yellow" | "red";

@@ -538,9 +538,10 @@ function buildSnakeCaseMetrics(
   raw: Record<string, unknown> | null | undefined,
   derived: Record<string, unknown> | null | undefined
 ): Record<string, number> {
-  if (isRatingAttributesPayload(raw)) return {};
-
-  const rawMetrics = raw ?? {};
+  const rawMetrics =
+    raw && typeof raw === "object" && !Array.isArray(raw) && !isRatingAttributesPayload(raw)
+      ? raw
+      : {};
   const derivedMetrics = derived ?? {};
   const metrics: Record<string, number> = {};
 
@@ -711,13 +712,112 @@ function buildSnakeCaseMetrics(
   return metrics;
 }
 
+type CalibrationLegacyMetrics = Record<string, number | undefined>;
+
+function readCalibrationMetricsFromBenchmark(
+  benchmarkMetadata: PublicPlayerProfile["benchmarkMetadata"]
+): CalibrationLegacyMetrics | null {
+  if (!benchmarkMetadata || typeof benchmarkMetadata !== "object") return null;
+  const calibrationMetrics = (benchmarkMetadata as Record<string, unknown>).calibrationMetrics;
+  if (
+    !calibrationMetrics ||
+    typeof calibrationMetrics !== "object" ||
+    Array.isArray(calibrationMetrics)
+  ) {
+    return null;
+  }
+  return calibrationMetrics as CalibrationLegacyMetrics;
+}
+
+function legacyCalibrationToSnakeCaseMetrics(
+  legacy: CalibrationLegacyMetrics
+): Record<string, number> {
+  const metrics: Record<string, number> = {};
+  const assign = (key: string, ...sourceKeys: string[]) => {
+    for (const sourceKey of sourceKeys) {
+      const value = legacy[sourceKey];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        metrics[key] = value;
+        return;
+      }
+    }
+  };
+
+  assign("first_step_accelerations", "first_step_accelerations");
+  assign("intense_accelerations", "intense_accelerations");
+  assign("sprints", "sprints");
+  assign("intense_turns", "intense_turns");
+  assign("intense_turns_with_ball", "intense_turns_with_ball");
+  assign("total_distance", "total_distance");
+  assign("kicking_power", "kicking_power");
+  assign("top_speed", "top_speed");
+  assign("top_speed_with_ball", "top_speed_with_ball");
+  assign("distance_with_ball", "distance_with_ball");
+  assign("sprint_distance", "sprint_distance");
+  assign("left_foot_kicking_power_mph", "left_foot_kicking_power_mph");
+  assign("right_foot_kicking_power_mph", "right_foot_kicking_power_mph");
+  assign("one_touch_possessions_percentage", "one_touch_possessions_percentage");
+  assign("multi_touch_possessions_percentage", "multi_touch_possessions__percentage");
+  assign("possession_duration_seconds", "possession_duration_seconds");
+  assign("release_laces_percentage", "release_laces_percentage");
+  assign("quick_release_score", "quick_release_score");
+  assign("turn_efficiency", "turn_efficiency");
+  assign("left_foot_touch_percentage", "left_foot_touch_percentage");
+  assign("right_foot_touch_percentage", "right_foot_touch_percentage");
+  assign("left_foot_release_percentage", "left_foot_release_percentage");
+  assign("right_foot_release_percentage", "right_foot_release_percentage");
+  assign("left_foot_receive_percentage", "left_foot_receive_percentage");
+  assign("right_foot_receive_percentage", "right_foot_receive_percentage");
+
+  if (
+    metrics.multi_touch_possessions_percentage == null &&
+    metrics.one_touch_possessions_percentage != null &&
+    metrics.one_touch_possessions_percentage > 0 &&
+    metrics.one_touch_possessions_percentage <= 100
+  ) {
+    metrics.multi_touch_possessions_percentage =
+      100 - metrics.one_touch_possessions_percentage;
+  }
+
+  if (
+    (metrics.quick_release_score == null || metrics.quick_release_score <= 0) &&
+    metrics.one_touch_possessions_percentage != null &&
+    metrics.one_touch_possessions_percentage > 0
+  ) {
+    metrics.quick_release_score = metrics.one_touch_possessions_percentage;
+  }
+
+  return metrics;
+}
+
+function applyCalibrationLegacyFallback(
+  metrics: Record<string, number>,
+  legacy: CalibrationLegacyMetrics
+): void {
+  for (const [key, value] of Object.entries(legacyCalibrationToSnakeCaseMetrics(legacy))) {
+    const current = metrics[key];
+    if (key === "turn_efficiency") {
+      metrics[key] = value;
+      continue;
+    }
+    if (key === "possession_duration_seconds") {
+      if (current == null || current < 1) metrics[key] = value;
+      continue;
+    }
+    if (current == null || current <= 0) {
+      metrics[key] = value;
+    }
+  }
+}
+
 /** Normalize API `player.metrics` or aggregate scouting metrics into snake_case values. */
 export function resolvePlayerMetrics(
   player: Pick<
     PublicPlayerProfile,
-    "positionPrimary" | "role" | "metrics" | "scoutingIntelligence"
+    "positionPrimary" | "role" | "metrics" | "scoutingIntelligence" | "benchmarkMetadata"
   >
 ): Record<string, number> {
+  const calibrationLegacy = readCalibrationMetricsFromBenchmark(player.benchmarkMetadata);
   const aggregate = player.scoutingIntelligence?.aggregateMetrics;
   const fromAggregate = aggregate
     ? buildSnakeCaseMetrics(
@@ -726,11 +826,15 @@ export function resolvePlayerMetrics(
       )
     : {};
 
-  if (!player.metrics || Object.keys(player.metrics).length === 0) {
-    return fromAggregate;
+  const merged =
+    !player.metrics || Object.keys(player.metrics).length === 0
+      ? { ...fromAggregate }
+      : { ...fromAggregate, ...player.metrics };
+
+  if (calibrationLegacy) {
+    applyCalibrationLegacyFallback(merged, calibrationLegacy);
   }
 
-  const merged = { ...fromAggregate, ...player.metrics };
   const positionGroup = resolvePositionGroup(player.positionPrimary, player.role);
   const workRate = computeWorkRate(merged, positionGroup);
   if (workRate != null) {
@@ -871,7 +975,7 @@ function scoutingMetricTierClass(barPercent: number): string {
 export function buildPositionScoutingMetrics(
   player: Pick<
     PublicPlayerProfile,
-    "positionPrimary" | "role" | "metrics" | "scoutingIntelligence"
+    "positionPrimary" | "role" | "metrics" | "scoutingIntelligence" | "benchmarkMetadata"
   >
 ): PositionScoutingMetric[] {
   const group = resolvePositionGroup(player.positionPrimary, player.role);

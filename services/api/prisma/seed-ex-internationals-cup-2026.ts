@@ -7,6 +7,7 @@ import {
   shouldPreserveSbMatch,
   type SeedOptions,
 } from "../src/seed/seed-options";
+import { allocateMatchSlug } from "../src/scoreboard/match-slug";
 
 /** Shared dev password for all Ex Internationals seeded academy accounts. */
 export const EX_INTL_ACADEMY_SEED_PASSWORD = "ExIntl-Cup2026";
@@ -1146,6 +1147,7 @@ export async function seedExInternationalsCup2026(
 
   const r32StageId = stageByKey.get("r32");
   let eventCount = 0;
+  const usedMatchSlugs = new Set<string>();
   for (const m of MATCHES) {
     const preserve = await shouldPreserveSbMatch(prisma, m.id, options);
     const status = m.status ?? "scheduled";
@@ -1168,11 +1170,13 @@ export async function seedExInternationalsCup2026(
     };
     const roundLabel =
       leg === "second_leg" ? `${roundBase} — Leg 2` : roundBase;
+    const slug = allocateMatchSlug(m.homeSlug, m.awaySlug, usedMatchSlugs, leg);
 
     if (!preserve) {
       await prisma.sbMatch.upsert({
         where: { id: m.id },
         update: {
+          slug,
           homeScore,
           awayScore,
           status,
@@ -1190,6 +1194,7 @@ export async function seedExInternationalsCup2026(
         },
         create: {
           id: m.id,
+          slug,
           competitionId: comp.id,
           stageId,
           stageKey,
