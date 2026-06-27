@@ -3,6 +3,7 @@ import test from "node:test";
 import type { PlayerMatchMetrics } from "@prisma/client";
 import {
   legacyMatchMetricsToPlayerMatchRecord,
+  legacyMatchMetricsToPresentedMetrics,
   mergeCalibrationExtrasIntoRaw,
   playerMatchMetricsToLegacyMetrics,
   readCalibrationMetricsFromBenchmark,
@@ -162,4 +163,25 @@ test("readCalibrationMetricsFromBenchmark returns stored snapshot", () => {
   });
 
   assert.deepEqual(legacy, snapshot);
+});
+
+test("legacyMatchMetricsToPresentedMetrics maps CSV tracking and possession fields", () => {
+  const presented = legacyMatchMetricsToPresentedMetrics({
+    sprints: 14,
+    top_speed: 18.4,
+    kicking_power: 62,
+    turn_efficiency: 1.15,
+    quick_release_score: 36.36,
+    one_touch_possessions_percentage: 36.36,
+    multi_touch_possessions__percentage: 63.6,
+    left_foot_release_percentage: 42,
+    right_foot_release_percentage: 58,
+  });
+
+  assert.equal(presented.sprints, 14);
+  assert.equal(presented.top_speed, 18.4);
+  assert.equal(presented.turn_efficiency, 1.15);
+  assert.equal(presented.quick_release_score, 36.36);
+  assert.equal(presented.one_touch_possessions_percentage, 36.36);
+  assert.equal(presented.left_foot_release_percentage, 42);
 });

@@ -100,7 +100,7 @@ export function CompareRadarOverlay({ series }: Props) {
   const gridLevels = [25, 50, 75, 100];
 
   return (
-    <div className="scouting-compare__radar" aria-label="Attribute category comparison">
+    <div className="scouting-compare__radar" aria-label="Category blend comparison">
       <div className="scouting-compare__radar-chart-wrap">
         <svg
           className="scouting-compare__radar-chart"

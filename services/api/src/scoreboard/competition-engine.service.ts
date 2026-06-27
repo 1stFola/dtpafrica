@@ -13,6 +13,7 @@ import {
   normalizeClubName,
 } from "@dtp/engines";
 import { presentScoreboardPayload } from "./present-scoreboard";
+import { resolveUniqueMatchSlug } from "./match-slug";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -134,6 +135,7 @@ export class CompetitionEngineService {
     const stageByKey = new Map(stages.map((s) => [s.key, s]));
 
     const createdTeams: FixtureTeamInput[] = [];
+    const teamSlugById = new Map<string, string>();
     if (input.teams?.length) {
       for (const t of input.teams) {
         const name = normalizeClubName(t.name);
@@ -148,6 +150,7 @@ export class CompetitionEngineService {
             groupKey: t.groupKey,
           },
         });
+        teamSlugById.set(row.id, teamSlug);
         createdTeams.push({
           id: row.id,
           name: row.name,
@@ -161,8 +164,13 @@ export class CompetitionEngineService {
       const fixtures = generateFixtures(comp.id, input.formatType, createdTeams);
       for (const f of fixtures) {
         const stage = stageByKey.get(f.stageKey);
+        const homeSlug = teamSlugById.get(f.homeTeamId);
+        const awaySlug = teamSlugById.get(f.awayTeamId);
+        if (!homeSlug || !awaySlug) continue;
+        const slug = await resolveUniqueMatchSlug(this.prisma, homeSlug, awaySlug);
         await this.prisma.sbMatch.create({
           data: {
+            slug,
             competitionId: comp.id,
             stageId: stage?.id,
             stageKey: f.stageKey,

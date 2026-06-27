@@ -11,6 +11,7 @@ import { isAbortError } from "../../api/client";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { InfoTip } from "../../components/InfoTip";
 import { useAcademyAuth } from "./AcademyAuthContext";
+import { matchCenterPath } from "../scoreboard/utils/matchPath";
 
 const navItems = [
   { id: "overview", label: "Dashboard" },
@@ -570,7 +571,7 @@ function MatchesSection({ fixtures }: { fixtures: AcademyFixture[] }) {
                 </li>
               ))}
             </ul>
-            <Link to={`/scoreboard/match/${fixture.id}`} className="text-link">
+            <Link to={matchCenterPath(fixture)} className="text-link">
               Open match centre
             </Link>
           </article>

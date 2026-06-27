@@ -24,6 +24,7 @@ import {
   resolvePlayerClub,
 } from "../utils/strongXiPlayerModalUtils";
 import { PositionScoutingMetricsRow } from "./PositionScoutingMetricsRow";
+import { withCalibratedMetrics } from "../utils/resolveCalibratedPlayerMetrics";
 
 export type StrongXiPlayerSelection = {
   playerId: string;
@@ -289,6 +290,7 @@ export function StrongXiPlayerModal({
     offensiveRating: selection.offensiveRating ?? null,
     defensiveRating: selection.defensiveRating ?? null,
   };
+  const displayProfile = withCalibratedMetrics(mergedProfile);
 
   const photoUrl = mergedProfile.playerPhotoUrl ?? selection.photoUrl;
   const positionLabel = resolvePositionFullLabel(
@@ -297,7 +299,7 @@ export function StrongXiPlayerModal({
   );
   const isGk = isGkProfile(mergedProfile);
   const stats = mergedProfile.stats;
-  const radarScores = buildPerformanceRadarScores(mergedProfile);
+  const radarScores = buildPerformanceRadarScores(displayProfile);
   const profileLink = playerProfilePath({
     slug: mergedProfile.slug,
     displayName: mergedProfile.displayName,
@@ -445,7 +447,7 @@ export function StrongXiPlayerModal({
             </div>
           </div>
 
-          <PositionScoutingMetricsRow player={mergedProfile} compact />
+          <PositionScoutingMetricsRow player={displayProfile} compact />
         </header>
 
         <div className="strong-xi-modal__body">

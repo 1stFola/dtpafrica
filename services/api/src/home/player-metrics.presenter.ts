@@ -1,4 +1,9 @@
-import type { CalibrationMetricsFallback } from "../sip/legacy-match-metrics-mapper";
+import type { LegacyMatchMetricsDto } from "../admin/dto/calibration-player-info.dto";
+import {
+  legacyMatchMetricsToPresentedMetrics,
+  toCalibrationMetricsFallback,
+  type CalibrationMetricsFallback,
+} from "../sip/legacy-match-metrics-mapper";
 
 /** Snake_case scouting metrics exposed on public player profiles. */
 export type PublicPlayerMetrics = Record<string, number>;
@@ -76,6 +81,27 @@ function readNumber(source: Record<string, unknown>, ...keys: string[]): number 
   return undefined;
 }
 
+function fillMissingFromLegacyCalibration(
+  metrics: PublicPlayerMetrics,
+  legacy?: LegacyMatchMetricsDto | null
+): void {
+  if (!legacy) return;
+  for (const [key, value] of Object.entries(legacyMatchMetricsToPresentedMetrics(legacy))) {
+    const current = metrics[key];
+    if (key === "turn_efficiency") {
+      metrics[key] = value;
+      continue;
+    }
+    if (key === "possession_duration_seconds") {
+      if (current == null || current < 1) metrics[key] = value;
+      continue;
+    }
+    if (current == null || current <= 0) {
+      metrics[key] = value;
+    }
+  }
+}
+
 function applyCalibrationFallback(
   metrics: PublicPlayerMetrics,
   fallback?: CalibrationMetricsFallback | null
@@ -138,14 +164,17 @@ export function isCalibrationMetricsIncomplete(
 export function presentPlayerMetrics(
   raw: Record<string, unknown> | null | undefined,
   derived: Record<string, unknown> | null | undefined,
-  calibrationFallback?: CalibrationMetricsFallback | null
+  calibrationLegacy?: LegacyMatchMetricsDto | null
 ): PublicPlayerMetrics | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  if (isRatingAttributesPayload(raw)) return null;
+  const calibrationFallback = toCalibrationMetricsFallback(calibrationLegacy);
+  const rawSource =
+    raw && typeof raw === "object" && !Array.isArray(raw) && !isRatingAttributesPayload(raw)
+      ? raw
+      : {};
 
   const metrics: PublicPlayerMetrics = {};
   const assign = (snakeKey: string, ...sourceKeys: string[]) => {
-    const value = readNumber(raw, ...sourceKeys);
+    const value = readNumber(rawSource, ...sourceKeys);
     if (value != null) metrics[snakeKey] = value;
   };
 
@@ -193,13 +222,13 @@ export function presentPlayerMetrics(
     if (metrics[key] === 0) delete metrics[key];
   }
 
-  const legacyAccelerations = readNumber(raw, "accelerations");
+  const legacyAccelerations = readNumber(rawSource, "accelerations");
   if (metrics.first_step_accelerations == null && legacyAccelerations != null) {
     metrics.first_step_accelerations = legacyAccelerations;
   }
 
-  const oneTouch = readNumber(raw, "oneTouchPossessions", "one_touch_possessions");
-  const multiTouch = readNumber(raw, "multiTouchPossessions", "multi_touch_possessions");
+  const oneTouch = readNumber(rawSource, "oneTouchPossessions", "one_touch_possessions");
+  const multiTouch = readNumber(rawSource, "multiTouchPossessions", "multi_touch_possessions");
   if (
     metrics.one_touch_possessions_percentage == null &&
     oneTouch != null &&
@@ -220,9 +249,9 @@ export function presentPlayerMetrics(
       (multiTouch / (oneTouch + multiTouch)) * 100;
   }
 
-  const releaseLaces = readNumber(raw, "releaseLacesCount", "release_laces_count");
-  const releaseInside = readNumber(raw, "releaseInsideFootCount", "release_inside_foot_count");
-  const releaseOther = readNumber(raw, "releaseOtherFootzoneCount", "release_other_footzone_count");
+  const releaseLaces = readNumber(rawSource, "releaseLacesCount", "release_laces_count");
+  const releaseInside = readNumber(rawSource, "releaseInsideFootCount", "release_inside_foot_count");
+  const releaseOther = readNumber(rawSource, "releaseOtherFootzoneCount", "release_other_footzone_count");
   if (
     metrics.release_laces_percentage == null &&
     releaseLaces != null &&
@@ -233,8 +262,8 @@ export function presentPlayerMetrics(
     if (total > 0) metrics.release_laces_percentage = (releaseLaces / total) * 100;
   }
 
-  const leftTouch = readNumber(raw, "leftFootTouchCount", "left_foot_touch_count");
-  const rightTouch = readNumber(raw, "rightFootTouchCount", "right_foot_touch_count");
+  const leftTouch = readNumber(rawSource, "leftFootTouchCount", "left_foot_touch_count");
+  const rightTouch = readNumber(rawSource, "rightFootTouchCount", "right_foot_touch_count");
   if (leftTouch != null && rightTouch != null && leftTouch + rightTouch > 0) {
     if (metrics.left_foot_touch_percentage == null) {
       metrics.left_foot_touch_percentage = (leftTouch / (leftTouch + rightTouch)) * 100;
@@ -244,8 +273,8 @@ export function presentPlayerMetrics(
     }
   }
 
-  const leftRelease = readNumber(raw, "leftFootReleaseCount", "left_foot_release_count");
-  const rightRelease = readNumber(raw, "rightFootReleaseCount", "right_foot_release_count");
+  const leftRelease = readNumber(rawSource, "leftFootReleaseCount", "left_foot_release_count");
+  const rightRelease = readNumber(rawSource, "rightFootReleaseCount", "right_foot_release_count");
   if (leftRelease != null && rightRelease != null && leftRelease + rightRelease > 0) {
     if (metrics.left_foot_release_percentage == null) {
       metrics.left_foot_release_percentage =
@@ -257,8 +286,8 @@ export function presentPlayerMetrics(
     }
   }
 
-  const leftReceive = readNumber(raw, "leftFootReceiveCount", "left_foot_receive_count");
-  const rightReceive = readNumber(raw, "rightFootReceiveCount", "right_foot_receive_count");
+  const leftReceive = readNumber(rawSource, "leftFootReceiveCount", "left_foot_receive_count");
+  const rightReceive = readNumber(rawSource, "rightFootReceiveCount", "right_foot_receive_count");
   if (leftReceive != null && rightReceive != null && leftReceive + rightReceive > 0) {
     if (metrics.left_foot_receive_percentage == null) {
       metrics.left_foot_receive_percentage =
@@ -275,8 +304,8 @@ export function presentPlayerMetrics(
     if (derivedTurn != null && derivedTurn > 0) {
       metrics.turn_efficiency = derivedTurn;
     } else {
-      const entry = readNumber(raw, "avg_turn_entry", "avgTurnEntrySpeedMph");
-      const exit = readNumber(raw, "avg_turn_exit", "avgTurnExitSpeedMph");
+      const entry = readNumber(rawSource, "avg_turn_entry", "avgTurnEntrySpeedMph");
+      const exit = readNumber(rawSource, "avg_turn_exit", "avgTurnExitSpeedMph");
       if (entry != null && exit != null && entry > 0) {
         metrics.turn_efficiency = exit / entry;
       }
@@ -302,6 +331,7 @@ export function presentPlayerMetrics(
     metrics.quick_release_score = metrics.one_touch_possessions_percentage;
   }
 
+  fillMissingFromLegacyCalibration(metrics, calibrationLegacy);
   applyCalibrationFallback(metrics, calibrationFallback);
 
   if (

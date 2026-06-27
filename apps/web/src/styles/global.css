@@ -1248,14 +1248,14 @@ a {
 }
 
 .strong-xi-modal__module .player-profile-cat-radar__label--compact {
-  font-size: 7px;
+  font-size: 6.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
 .strong-xi-modal__module .player-profile-cat-radar__label--compact .player-profile-cat-radar__label-score {
-  font-size: 6.5px;
-  letter-spacing: 0.08em;
+  font-size: 6px;
+  letter-spacing: 0.07em;
 }
 
 .strong-xi-modal__module .player-profile-cat-radar--expanded .player-profile-cat-radar__chart {
@@ -2037,9 +2037,9 @@ a {
 }
 
 .scouting-compare__radar-axis-label {
-  font-size: 4.1px;
+  font-size: 3.9px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   fill: rgba(148, 163, 184, 0.85);
 }
 
@@ -5756,9 +5756,9 @@ a {
 
 .player-profile-cat-radar__label {
   font-family: inherit;
-  font-size: 7px;
+  font-size: 6.5px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   dominant-baseline: middle;
 }
@@ -5768,9 +5768,9 @@ a {
 }
 
 .player-profile-cat-radar__label-score {
-  font-size: 6.5px;
+  font-size: 6px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   font-variant-numeric: tabular-nums;
   fill: currentColor;
   opacity: 0.9;
@@ -6497,11 +6497,11 @@ a {
   }
 
   .player-profile-cat-radar__label {
-    font-size: 7px;
+    font-size: 6.5px;
   }
 
   .player-profile-cat-radar__label-score {
-    font-size: 6.5px;
+    font-size: 6px;
   }
 
   .player-profile-tabs {
@@ -6623,11 +6623,11 @@ a {
   }
 
   .player-profile-cat-radar__label {
-    font-size: 7px;
+    font-size: 6.5px;
   }
 
   .player-profile-cat-radar__label-score {
-    font-size: 6.5px;
+    font-size: 6px;
   }
 
   .player-profile-rating-badge__value {

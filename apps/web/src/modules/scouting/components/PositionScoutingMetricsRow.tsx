@@ -4,11 +4,12 @@ import {
   buildPositionScoutingMetrics,
   type ScoutingMetricKey,
 } from "../utils/positionScoutingMetrics";
+import { withCalibratedMetrics } from "../utils/resolveCalibratedPlayerMetrics";
 
 type Props = {
   player: Pick<
     PublicPlayerProfile,
-    "positionPrimary" | "role" | "metrics" | "scoutingIntelligence"
+    "positionPrimary" | "role" | "metrics" | "scoutingIntelligence" | "benchmarkMetadata"
   >;
   className?: string;
   compact?: boolean;
@@ -211,7 +212,7 @@ export function PositionScoutingMetricsRow({
   limit,
   showInfo = true,
 }: Props) {
-  const allMetrics = buildPositionScoutingMetrics(player);
+  const allMetrics = buildPositionScoutingMetrics(withCalibratedMetrics(player));
   const metrics = limit != null ? allMetrics.slice(0, limit) : allMetrics;
   const isStrip = variant === "strip";
 

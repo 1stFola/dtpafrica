@@ -11,7 +11,6 @@ import {
   legacyMatchMetricsToPlayerMatchRecord,
   playerMatchMetricsToLegacyMetrics,
   readCalibrationMetricsFromBenchmark,
-  toCalibrationMetricsFallback,
 } from "../sip/legacy-match-metrics-mapper";
 import { syncPhilosophyFitsForPlayer } from "../scouting/philosophy-fit-sync";
 
@@ -45,7 +44,17 @@ export class PlayerProfileIntelligenceService {
     if (snapshot._count.matchMetrics > 0 && (await this.needsSipRecalculation(playerId))) {
       try {
         await this.repairMatchMetricsFromCalibration(playerId);
-        await this.sipRecalc.recalculatePlayer(playerId);
+        const calibrationLegacy = readCalibrationMetricsFromBenchmark(
+          (
+            await this.prisma.player.findUnique({
+              where: { id: playerId },
+              select: { benchmarkMetadata: true },
+            })
+          )?.benchmarkMetadata ?? null
+        );
+        await this.sipRecalc.recalculatePlayer(playerId, {
+          preserveHeadlineRatings: calibrationLegacy != null,
+        });
       } catch (error) {
         this.logger.warn(
           `SIP recalculation skipped for ${playerId}: ${error instanceof Error ? error.message : error}`
@@ -98,13 +107,11 @@ export class PlayerProfileIntelligenceService {
     const raw = aggregate.rawAverages as Record<string, unknown>;
     if (isRatingAttributesPayload(raw)) return true;
 
-    const calibrationFallback = toCalibrationMetricsFallback(
-      readCalibrationMetricsFromBenchmark(player?.benchmarkMetadata ?? null)
-    );
+    const calibrationLegacy = readCalibrationMetricsFromBenchmark(player?.benchmarkMetadata ?? null);
     const presented = presentPlayerMetrics(
       raw,
       aggregate.derivedMetrics as Record<string, unknown> | null,
-      calibrationFallback
+      calibrationLegacy
     );
     if (presented == null) return true;
     return isCalibrationMetricsIncomplete(presented);

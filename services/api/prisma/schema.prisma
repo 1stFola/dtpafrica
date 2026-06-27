@@ -412,6 +412,7 @@ model SbTeamSquad {
 
 model SbMatch {
   id            String    @id @default(uuid())
+  slug          String    @unique
   competitionId String    @map("competition_id")
   stageId       String?   @map("stage_id")
   homeTeamId    String    @map("home_team_id")

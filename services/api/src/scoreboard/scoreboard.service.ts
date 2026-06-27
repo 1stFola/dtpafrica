@@ -18,6 +18,7 @@ import {
   type SkeletonProfileQuery,
 } from "../home/player-profile.presenter";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
+import { resolveMatchBySlugOrId } from "./match-resolve";
 import { slugifyPlayerName } from "../players/player-slug";
 import { presentHighlight, presentMatchDetail } from "./present-media";
 import { presentScoreboardPayload } from "./present-scoreboard";
@@ -682,6 +683,7 @@ export class ScoreboardService {
           isPublished: true,
           competition: { isPublished: true },
           OR: [
+            { slug: contains },
             { venue: contains },
             { roundLabel: contains },
             { homeTeam: { name: contains } },
@@ -764,6 +766,12 @@ export class ScoreboardService {
       },
     });
     return presentScoreboardPayload(rows);
+  }
+
+  async matchBySlugOrId(slugOrId: string, publicOnly = true) {
+    const resolved = await resolveMatchBySlugOrId(this.prisma, slugOrId);
+    if (!resolved) throw new NotFoundException("Match not found");
+    return this.matchById(resolved.id, publicOnly);
   }
 
   async matchById(id: string, publicOnly = true) {

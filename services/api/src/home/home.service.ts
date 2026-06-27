@@ -26,7 +26,6 @@ import { presentPlayerMetrics } from "./player-metrics.presenter";
 import {
   playerMatchMetricsToLegacyMetrics,
   readCalibrationMetricsFromBenchmark,
-  toCalibrationMetricsFallback,
 } from "../sip/legacy-match-metrics-mapper";
 import {
   buildSeedByTeamSlug,
@@ -90,6 +89,7 @@ export class HomeService {
           take: 1,
           select: { rawAverages: true, derivedMetrics: true, minutesPlayed: true },
         },
+        benchmarkMetadata: true,
       },
     });
 
@@ -100,6 +100,7 @@ export class HomeService {
         playingPhilosophies,
         positionFull,
         careerMinutes,
+        benchmarkMetadata,
         ...player
       }) => ({
         ...player,
@@ -117,8 +118,15 @@ export class HomeService {
         ),
         metrics: presentPlayerMetrics(
           aggregatedMetrics[0]?.rawAverages as Record<string, unknown> | null,
-          aggregatedMetrics[0]?.derivedMetrics as Record<string, unknown> | null
+          aggregatedMetrics[0]?.derivedMetrics as Record<string, unknown> | null,
+          readCalibrationMetricsFromBenchmark(benchmarkMetadata)
         ),
+        benchmarkMetadata: benchmarkMetadata
+          ? {
+              calibrationMetrics:
+                readCalibrationMetricsFromBenchmark(benchmarkMetadata) ?? null,
+            }
+          : null,
       })
     );
   }
@@ -246,12 +254,10 @@ export class HomeService {
       metrics: presentPlayerMetrics(
         aggregatedMetrics[0]?.rawAverages as Record<string, unknown> | null,
         aggregatedMetrics[0]?.derivedMetrics as Record<string, unknown> | null,
-        toCalibrationMetricsFallback(
-          readCalibrationMetricsFromBenchmark(profile.benchmarkMetadata) ??
-            (matchMetrics[0]
-              ? playerMatchMetricsToLegacyMetrics(matchMetrics[0])
-              : null)
-        )
+        readCalibrationMetricsFromBenchmark(profile.benchmarkMetadata) ??
+          (matchMetrics[0]
+            ? playerMatchMetricsToLegacyMetrics(matchMetrics[0])
+            : null)
       ),
       scoutingIntelligence: this.buildScoutingIntelligence({
         tacticalScores,
@@ -675,6 +681,7 @@ export class HomeService {
       string,
       {
         matchId: string;
+        matchSlug: string;
         competitionName: string;
         competitionSlug: string;
         season: string;
@@ -698,6 +705,7 @@ export class HomeService {
         matchMap.get(match.id) ??
         {
           matchId: match.id,
+          matchSlug: match.slug,
           competitionName: match.competition.name,
           competitionSlug: match.competition.slug,
           season: match.competition.season,
@@ -746,6 +754,7 @@ export class HomeService {
           : null,
         match: {
           id: match.id,
+          slug: match.slug,
           competitionName: match.competition.name,
           competitionSlug: match.competition.slug,
           season: match.competition.season,

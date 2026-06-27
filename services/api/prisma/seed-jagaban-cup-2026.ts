@@ -12,6 +12,7 @@ import {
   type SeedOptions,
 } from "../src/seed/seed-options";
 import { JAGABAN_MATCH_MEDIA } from "./seed-jagaban-media-data";
+import { allocateMatchSlug } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "jagaban-cup-2026";
 const COMP_ID = "00000000-0000-4000-8jc0-000000000001";
@@ -739,14 +740,17 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
   await seedSquads(prisma, teamIds);
 
   let eventCount = 0;
+  const usedMatchSlugs = new Set<string>();
   for (const m of MATCHES) {
     const preserve = await shouldPreserveSbMatch(prisma, m.id, options);
     const stageId = stageByKey.get(m.stageKey);
+    const slug = allocateMatchSlug(m.homeSlug, m.awaySlug, usedMatchSlugs);
 
     if (!preserve) {
       await prisma.sbMatch.upsert({
         where: { id: m.id },
         update: {
+          slug,
           homeScore: m.homeScore,
           awayScore: m.awayScore,
           status: "finished",
@@ -763,6 +767,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
         },
         create: {
           id: m.id,
+          slug,
           competitionId: comp.id,
           stageId,
           stageKey: m.stageKey,
