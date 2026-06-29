@@ -2,6 +2,7 @@ import { getAdminApiKey } from "./admin";
 import { AdminApiError } from "./admin";
 import type {
   AdminSbCompetition,
+  AdminSbMatchInput,
   AdminSbPlayerDirectoryRow,
   AdminSbStats,
   AdminSbTeam,
@@ -146,6 +147,12 @@ export const adminScoreboardApi = {
     const qs = competitionId ? `?competitionId=${competitionId}` : "";
     return sbFetch<SbMatchListItem[]>(`/admin/scoreboard/matches${qs}`);
   },
+
+  createMatch: (body: AdminSbMatchInput) =>
+    sbFetch<{ ok: boolean; match: SbMatchListItem }>("/admin/scoreboard/matches", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   patchMatchGameday: (
     matchId: string,

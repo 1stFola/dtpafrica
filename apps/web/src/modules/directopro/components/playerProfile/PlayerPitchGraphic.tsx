@@ -1,9 +1,12 @@
 import { useId } from "react";
 import {
+  pitchMarkerBadgeParts,
   resolveHybridPitchLabel,
   resolveHybridPitchMarker,
   resolveMarkerLabelTransform,
+  resolvePrimaryPitchLabel,
   resolvePrimaryPitchMarker,
+  resolveSecondaryPitchLabel,
   resolveSecondaryPitchMarker,
   type PitchMarkerCoords,
   type PitchMarkerRole,
@@ -18,6 +21,29 @@ type Props = SecondaryPitchInput & {
 
 function formatMarkerAria(x: number, y: number): string {
   return `${Math.round(x)}%, ${Math.round(y)}%`;
+}
+
+function PitchMarkerBadge({
+  role,
+  label,
+}: {
+  role: PitchMarkerRole;
+  label?: string | null;
+}) {
+  const { prefix, token } = pitchMarkerBadgeParts(role, label);
+  return (
+    <>
+      <span className="player-profile-pitch__role-prefix">{prefix}</span>
+      {token ? (
+        <>
+          <span className="player-profile-pitch__role-sep" aria-hidden="true">
+            ·
+          </span>
+          <span className="player-profile-pitch__role-token">{token}</span>
+        </>
+      ) : null}
+    </>
+  );
 }
 
 function buildLabelSiblings(
@@ -62,6 +88,10 @@ export function PlayerPitchGraphic({
   const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull, role);
   const secondaryMarker = resolveSecondaryPitchMarker(pitchInput, primaryMarker);
   const hybridMarker = resolveHybridPitchMarker(pitchInput, primaryMarker, secondaryMarker);
+  const primaryLabel = resolvePrimaryPitchLabel(positionPrimary, positionFull, role);
+  const secondaryLabel = secondaryMarker
+    ? resolveSecondaryPitchLabel(pitchInput, primaryMarker)
+    : null;
   const hybridLabel = resolveHybridPitchLabel(pitchInput, primaryMarker, secondaryMarker);
   const labelSiblings = buildLabelSiblings(primaryMarker, secondaryMarker, hybridMarker);
 
@@ -210,7 +240,7 @@ export function PlayerPitchGraphic({
         }}
         aria-hidden="true"
       >
-        Main Role
+        <PitchMarkerBadge role="primary" label={primaryLabel} />
       </span>
       {secondaryMarker && (
         <>
@@ -228,7 +258,7 @@ export function PlayerPitchGraphic({
             }}
             aria-hidden="true"
           >
-            Alt. Role
+            <PitchMarkerBadge role="secondary" label={secondaryLabel} />
           </span>
         </>
       )}
@@ -253,7 +283,7 @@ export function PlayerPitchGraphic({
             }}
             aria-hidden="true"
           >
-            Hybrid{hybridLabel ? ` · ${hybridLabel}` : " Role"}
+            <PitchMarkerBadge role="hybrid" label={hybridLabel} />
           </span>
         </>
       )}

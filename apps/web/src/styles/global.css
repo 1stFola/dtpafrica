@@ -5469,6 +5469,9 @@ a {
 
 .player-profile-pitch__main-role-label {
   position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.08em;
   padding: 0.05rem 0.28rem;
   border-radius: 999px;
   font-size: 0.42rem;
@@ -5487,6 +5490,9 @@ a {
 
 .player-profile-pitch__alt-role-label {
   position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.08em;
   padding: 0.05rem 0.28rem;
   border-radius: 999px;
   font-size: 0.42rem;
@@ -5554,6 +5560,9 @@ a {
 
 .player-profile-pitch__hybrid-role-label {
   position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.08em;
   padding: 0.05rem 0.28rem;
   border-radius: 999px;
   font-size: 0.4rem;
@@ -5573,6 +5582,13 @@ a {
   max-width: 92%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.player-profile-pitch__role-sep {
+  flex-shrink: 0;
+  line-height: 1;
+  font-size: 0.95em;
+  opacity: 0.85;
 }
 
 @keyframes player-profile-pitch-secondary-pulse {
@@ -5765,6 +5781,7 @@ a {
 
 .player-profile-cat-radar__label-name {
   fill: currentColor;
+  white-space: nowrap;
 }
 
 .player-profile-cat-radar__label-score {
@@ -6398,7 +6415,7 @@ a {
   }
 
   .player-profile-pitch {
-    max-width: 120px;
+    max-width: 128px;
   }
 
   .player-profile-banner__bio-grid {
@@ -6483,7 +6500,7 @@ a {
 
   .player-profile-pitch {
     max-width: 100%;
-    width: min(108px, 100%);
+    width: min(120px, 100%);
     justify-self: center;
   }
 
@@ -6497,11 +6514,26 @@ a {
   }
 
   .player-profile-cat-radar__label {
-    font-size: 6.5px;
+    font-size: 5.25px;
+    letter-spacing: 0.05em;
+  }
+
+  .player-profile-cat-radar__label-name {
+    letter-spacing: 0.04em;
   }
 
   .player-profile-cat-radar__label-score {
-    font-size: 6px;
+    font-size: 4.75px;
+    letter-spacing: 0.04em;
+  }
+
+  .player-profile-pitch__main-role-label,
+  .player-profile-pitch__alt-role-label {
+    font-size: 0.48rem;
+  }
+
+  .player-profile-pitch__hybrid-role-label {
+    font-size: 0.46rem;
   }
 
   .player-profile-tabs {
@@ -6615,7 +6647,7 @@ a {
   }
 
   .player-profile-pitch {
-    max-width: 120px;
+    max-width: 132px;
   }
 
   .player-profile-cat-radar__chart {
@@ -6623,11 +6655,26 @@ a {
   }
 
   .player-profile-cat-radar__label {
-    font-size: 6.5px;
+    font-size: 4.85px;
+    letter-spacing: 0.04em;
+  }
+
+  .player-profile-cat-radar__label-name {
+    letter-spacing: 0.03em;
   }
 
   .player-profile-cat-radar__label-score {
-    font-size: 6px;
+    font-size: 4.5px;
+    letter-spacing: 0.03em;
+  }
+
+  .player-profile-pitch__main-role-label,
+  .player-profile-pitch__alt-role-label {
+    font-size: 0.5rem;
+  }
+
+  .player-profile-pitch__hybrid-role-label {
+    font-size: 0.48rem;
   }
 
   .player-profile-rating-badge__value {
@@ -16791,5 +16838,179 @@ a.dbx-comp-card:hover {
 
   .sbm-timeline__minute {
     font-size: 0.8rem;
+  }
+}
+
+/* —— Admin RBAC —— */
+.admin-topbar__role {
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.admin-sb-sidebar-divider {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 0.75rem 0 0.35rem;
+}
+
+.admin-sb-sidebar-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 0.75rem 0.35rem;
+}
+
+.admin-login-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.admin-login-tabs button {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.admin-login-tabs button.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+.admin-rbac-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+}
+
+.admin-rbac-role-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-rbac-role-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  width: 100%;
+}
+
+.admin-rbac-role-btn:hover,
+.admin-rbac-role-btn.active {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.admin-rbac-role-btn__name {
+  display: block;
+  font-weight: 600;
+}
+
+.admin-rbac-role-btn__meta {
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.admin-rbac-editor__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.admin-rbac-perm-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-rbac-perm-group {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  margin: 0;
+  padding: 0.75rem 1rem;
+}
+
+.admin-rbac-perm-group legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.admin-rbac-perm-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.admin-rbac-perm-list li + li {
+  margin-top: 0.35rem;
+}
+
+.admin-rbac-note {
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.85rem;
+}
+
+.admin-rbac-session-badge {
+  font-size: 0.85rem;
+}
+
+.admin-rbac-users-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+}
+
+.admin-rbac-user-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-rbac-users-table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.admin-rbac-users-table th,
+.admin-rbac-users-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.55rem 0.4rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.admin-rbac-status {
+  color: #f87171;
+  font-size: 0.8rem;
+}
+
+.admin-rbac-status.active {
+  color: #4ade80;
+}
+
+@media (max-width: 900px) {
+  .admin-rbac-layout,
+  .admin-rbac-users-grid {
+    grid-template-columns: 1fr;
   }
 }

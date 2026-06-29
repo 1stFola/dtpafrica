@@ -31,13 +31,17 @@ import { PublishBlogDto } from "./dto/publish-blog.dto";
 import { UpsertAcademyDto } from "./dto/upsert-academy.dto";
 import { UpsertStaticContentDto } from "./dto/upsert-static-content.dto";
 import { UpsertBlogPostDto } from "./dto/upsert-blog-post.dto";
-import { AdminApiKeyGuard } from "./guards/admin-api-key.guard";
+import { AdminAuthGuard } from "./guards/admin-auth.guard";
+import { PermissionsGuard } from "./guards/permissions.guard";
+import { RequirePermissions } from "./decorators/require-permissions.decorator";
+import { AdminAuth } from "./decorators/admin-auth.decorator";
+import type { AdminAuthContext } from "./auth/admin-auth.types";
 import { AdminSeedService } from "./admin-seed.service";
 import { AdsConfigService } from "../ads/ads-config.service";
 import { PatchAdsConfigDto } from "../ads/dto/patch-ads-config.dto";
 
 @Controller("admin")
-@UseGuards(AdminApiKeyGuard)
+@UseGuards(AdminAuthGuard, PermissionsGuard)
 export class AdminController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -52,11 +56,13 @@ export class AdminController {
   ) {}
 
   @Get("session")
-  session() {
-    return { ok: true, role: "admin" };
+  @RequirePermissions("admin.session.read")
+  session(@AdminAuth() auth: AdminAuthContext) {
+    return { ok: true, ...auth };
   }
 
   @Get("stats")
+  @RequirePermissions("admin.stats.read")
   async stats() {
     const [
       players,
@@ -96,6 +102,7 @@ export class AdminController {
   }
 
   @Get("players")
+  @RequirePermissions("players.read")
   listPlayers(
     @Query("id") id?: string,
     @Query("q") q?: string,
@@ -125,11 +132,13 @@ export class AdminController {
   }
 
   @Patch("players/bulk")
+  @RequirePermissions("players.write")
   bulkUpdatePlayers(@Body() dto: BulkUpdatePlayersDto) {
     return this.players.bulkUpdate(dto);
   }
 
   @Get("players/slug-preview")
+  @RequirePermissions("players.read")
   previewPlayerSlug(
     @Query("name") name?: string,
     @Query("excludeId") excludeId?: string
@@ -138,26 +147,31 @@ export class AdminController {
   }
 
   @Patch("players/:id")
+  @RequirePermissions("players.write")
   updatePlayer(@Param("id") id: string, @Body() dto: UpdatePlayerAdminDto) {
     return this.players.update(id, dto);
   }
 
   @Get("players/:id/quick-edit")
+  @RequirePermissions("players.read")
   getPlayerQuickEdit(@Param("id") id: string) {
     return this.players.getQuickEditContext(id);
   }
 
   @Patch("players/:id/quick-edit")
+  @RequirePermissions("players.write")
   quickEditPlayer(@Param("id") id: string, @Body() dto: QuickEditPlayerDto) {
     return this.players.quickEdit(id, dto);
   }
 
   @Get("calibration/players/:id")
+  @RequirePermissions("players.read", "calibration.run")
   getCalibrationContext(@Param("id") id: string) {
     return this.calibration.getPlayerMetrics(id);
   }
 
   @Post("calibration/preview")
+  @RequirePermissions("calibration.run")
   previewCalibration(@Body() body: CalibrationPreviewDto) {
     if (body.playerId) {
       return this.calibration.runForPlayer(body.playerId, {
@@ -176,6 +190,7 @@ export class AdminController {
   }
 
   @Post("calibration/players")
+  @RequirePermissions("calibration.create")
   createCalibratedPlayer(@Body() body: CreateCalibratedPlayerDto) {
     return this.calibration.createPlayerFromCalibration(
       body.player,
@@ -185,6 +200,7 @@ export class AdminController {
   }
 
   @Post("players/:id/calibrate")
+  @RequirePermissions("players.calibrate")
   calibratePlayer(@Param("id") id: string, @Body() body: CalibratePlayerDto) {
     return this.calibration.runForPlayer(id, {
       save: body.save !== false,
@@ -195,6 +211,7 @@ export class AdminController {
   }
 
   @Get("inbox")
+  @RequirePermissions("inbox.read")
   listInbox(
     @Query("status") status?: string,
     @Query("q") q?: string,
@@ -208,16 +225,19 @@ export class AdminController {
   }
 
   @Get("inbox/:id")
+  @RequirePermissions("inbox.read")
   getInboxMessage(@Param("id") id: string) {
     return this.inbox.get(id);
   }
 
   @Patch("inbox/:id/read")
+  @RequirePermissions("inbox.write")
   setInboxRead(@Param("id") id: string, @Body() body: UpdateContactMessageReadDto) {
     return this.inbox.setRead(id, body.read !== false);
   }
 
   @Patch("inbox/:id/archive")
+  @RequirePermissions("inbox.write")
   setInboxArchived(
     @Param("id") id: string,
     @Body() body: UpdateContactMessageArchiveDto
@@ -226,91 +246,109 @@ export class AdminController {
   }
 
   @Delete("inbox/:id")
+  @RequirePermissions("inbox.write")
   deleteInboxMessage(@Param("id") id: string) {
     return this.inbox.remove(id);
   }
 
   @Get("academies")
+  @RequirePermissions("academies.read")
   listAcademies() {
     return this.academies.list();
   }
 
   @Get("academies/:id")
+  @RequirePermissions("academies.read")
   getAcademy(@Param("id") id: string) {
     return this.academies.get(id);
   }
 
   @Post("academies")
+  @RequirePermissions("academies.write")
   createAcademy(@Body() dto: UpsertAcademyDto) {
     return this.academies.create(dto);
   }
 
   @Put("academies/:id")
+  @RequirePermissions("academies.write")
   updateAcademy(@Param("id") id: string, @Body() dto: UpsertAcademyDto) {
     return this.academies.update(id, dto);
   }
 
   @Delete("academies/:id")
+  @RequirePermissions("academies.write")
   deleteAcademy(@Param("id") id: string) {
     return this.academies.remove(id);
   }
 
   @Get("blog")
+  @RequirePermissions("blog.read")
   listBlog() {
     return this.blog.list();
   }
 
   @Get("blog/:id")
+  @RequirePermissions("blog.read")
   getBlog(@Param("id") id: string) {
     return this.blog.get(id);
   }
 
   @Post("blog")
+  @RequirePermissions("blog.write")
   createBlog(@Body() dto: UpsertBlogPostDto) {
     return this.blog.create(dto);
   }
 
   @Put("blog/:id")
+  @RequirePermissions("blog.write")
   updateBlog(@Param("id") id: string, @Body() dto: UpsertBlogPostDto) {
     return this.blog.update(id, dto);
   }
 
   @Patch("blog/:id/publish")
+  @RequirePermissions("blog.write")
   publishBlog(@Param("id") id: string, @Body() body: PublishBlogDto) {
     return this.blog.setPublished(id, body.isPublished);
   }
 
   @Delete("blog/:id")
+  @RequirePermissions("blog.write")
   deleteBlog(@Param("id") id: string) {
     return this.blog.remove(id);
   }
 
   @Get("content")
+  @RequirePermissions("content.read")
   listContent() {
     return this.content.list();
   }
 
   @Put("content/:key")
+  @RequirePermissions("content.write")
   upsertContent(@Param("key") key: string, @Body() dto: UpsertStaticContentDto) {
     return this.content.upsert(key, dto);
   }
 
   @Get("ads")
+  @RequirePermissions("ads.write")
   getAdsConfig() {
     return this.ads.getConfig();
   }
 
   @Patch("ads")
+  @RequirePermissions("ads.write")
   patchAdsConfig(@Body() dto: PatchAdsConfigDto) {
     return this.ads.updateConfig(dto);
   }
 
   @Get("database/seed/status")
+  @RequirePermissions("database.seed")
   getDatabaseSeedStatus() {
     return this.seed.getStatus();
   }
 
   @Post("database/seed")
+  @RequirePermissions("database.seed")
   runDatabaseSeed(@Body() dto: RunDatabaseSeedDto) {
     return this.seed.run(dto.mode ?? "incremental");
   }
