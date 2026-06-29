@@ -14,6 +14,7 @@ import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { MatchCsvIngestModal } from "../components/MatchCsvIngestModal";
+import { FixtureFormModal } from "../components/FixtureFormModal";
 import { QuickScoreUpdatePanel } from "../components/QuickScoreUpdatePanel";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 
@@ -36,6 +37,10 @@ export function AdminScoreboardMatchCenterPage() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [fixtureOpen, setFixtureOpen] = useState(false);
+  const [competitionOptions, setCompetitionOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
 
   const refresh = useCallback(() => {
     fetchSupervisorLive()
@@ -73,6 +78,12 @@ export function AdminScoreboardMatchCenterPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (fixtureOpen) {
+      adminScoreboardApi.competitionPicker().then(setCompetitionOptions).catch(() => {});
+    }
+  }, [fixtureOpen]);
 
   const selected = [...live, ...all].find((m) => m.id === selectedId) ?? live[0] ?? all[0];
 
@@ -134,6 +145,11 @@ export function AdminScoreboardMatchCenterPage() {
         title="Match center"
         description="Canonical timeline and live match controls. Full time updates standings for group-stage fixtures."
         crumbs={[{ label: "Match center" }]}
+        actions={
+          <button type="button" className="btn btn-primary" onClick={() => setFixtureOpen(true)}>
+            Create fixture
+          </button>
+        }
       />
 
       <div className="admin-sb-supervisor-hook admin-sb-panel">
@@ -340,7 +356,7 @@ export function AdminScoreboardMatchCenterPage() {
             </div>
           </div>
 
-          {csvModalOpen && (
+          {csvModalOpen && selected && (
             <MatchCsvIngestModal
               matchId={selected.id}
               matchLabel={`${selected.homeTeam.name} vs ${selected.awayTeam.name}`}
@@ -354,6 +370,16 @@ export function AdminScoreboardMatchCenterPage() {
           )}
         </>
       )}
+
+      <FixtureFormModal
+        open={fixtureOpen}
+        competitions={competitionOptions}
+        onClose={() => setFixtureOpen(false)}
+        onCreated={(matchId) => {
+          refresh();
+          setSelectedId(matchId);
+        }}
+      />
     </section>
   );
 }

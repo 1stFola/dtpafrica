@@ -50,6 +50,21 @@ export type AdminSbTeamInput = {
   groupKey?: string;
 };
 
+export type AdminSbMatchInput = {
+  competitionId: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  kickoffDate: string;
+  kickoffTime: string;
+  venue?: string;
+  stageKey?: string;
+  knockoutRound?: "R32" | "R16" | "QF" | "SF" | "F";
+  leg?: "first_leg" | "second_leg";
+  roundLabel?: string;
+  matchday?: number;
+  status?: "scheduled" | "postponed";
+};
+
 export type AdminSbTeam = {
   id: string;
   slug: string;

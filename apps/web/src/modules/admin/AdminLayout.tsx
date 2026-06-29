@@ -1,6 +1,7 @@
 import { NavLink, Outlet, Link, useLocation } from "react-router-dom";
 import { BrandLogo } from "../../components/BrandLogo";
 import { useAdminAuth } from "./AdminAuthContext";
+import { ADMIN_NAV_PERMISSIONS, canAccessNav } from "./admin-permissions";
 
 const links = [
   { to: "/admin", end: true, label: "Dashboard", icon: "◆" },
@@ -16,10 +17,27 @@ const links = [
   { to: "/admin/scoreboard", label: "ScoreBoard", icon: "⏱" },
 ];
 
+const settingsLinks = [
+  { to: "/admin/settings/roles", label: "Roles", icon: "⚿", permission: "admin.roles.manage" },
+  { to: "/admin/settings/users", label: "Users", icon: "👤", permission: "admin.users.manage" },
+];
+
 export function AdminLayout() {
-  const { logout } = useAdminAuth();
+  const { logout, session } = useAdminAuth();
   const location = useLocation();
   const isScoreboard = location.pathname.startsWith("/admin/scoreboard");
+
+  const visibleLinks = links.filter((l) =>
+    canAccessNav(
+      session?.permissions ?? [],
+      session?.method ?? "jwt",
+      ADMIN_NAV_PERMISSIONS[l.to]
+    )
+  );
+
+  const visibleSettings = settingsLinks.filter((l) =>
+    session?.method === "api_key" || session?.permissions.includes(l.permission)
+  );
 
   return (
     <div className="admin-shell">
@@ -29,6 +47,9 @@ export function AdminLayout() {
             <BrandLogo variant="white-horizontal" size="admin" />
           </Link>
           <span className="admin-badge">CMS</span>
+          {session?.roleName && (
+            <span className="admin-topbar__role muted">{session.roleName}</span>
+          )}
         </div>
         <div className="admin-topbar__actions">
           <Link to="/" className="text-link">
@@ -44,7 +65,7 @@ export function AdminLayout() {
         {!isScoreboard && (
           <aside className="admin-sb-sidebar admin-cms-sidebar" aria-label="Admin sections">
             <nav className="admin-sb-sidebar-nav">
-              {links.map((l) => (
+              {visibleLinks.map((l) => (
                 <NavLink
                   key={l.to}
                   to={l.to}
@@ -59,6 +80,26 @@ export function AdminLayout() {
                   {l.label}
                 </NavLink>
               ))}
+              {visibleSettings.length > 0 && (
+                <>
+                  <div className="admin-sb-sidebar-divider" aria-hidden="true" />
+                  <p className="admin-sb-sidebar-label muted">Settings</p>
+                  {visibleSettings.map((l) => (
+                    <NavLink
+                      key={l.to}
+                      to={l.to}
+                      className={({ isActive }) =>
+                        isActive ? "admin-sb-sidebar-link active" : "admin-sb-sidebar-link"
+                      }
+                    >
+                      <span className="admin-sb-sidebar-link__icon" aria-hidden="true">
+                        {l.icon}
+                      </span>
+                      {l.label}
+                    </NavLink>
+                  ))}
+                </>
+              )}
             </nav>
           </aside>
         )}

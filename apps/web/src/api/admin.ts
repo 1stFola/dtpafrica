@@ -1,6 +1,7 @@
 import { cachedFetch, invalidateCachePrefix } from "./fetch-cache";
 
 const STORAGE_KEY = "dtp_admin_api_key";
+const TOKEN_STORAGE_KEY = "dtp_admin_jwt";
 
 const ADMIN_PLAYERS_CACHE_TTL_MS = 45_000;
 const ADMIN_ACADEMIES_CACHE_TTL_MS = 120_000;
@@ -35,7 +36,55 @@ export function setAdminApiKey(key: string) {
 
 export function clearAdminApiKey() {
   sessionStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
 }
+
+export function getAdminJwt(): string | null {
+  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setAdminJwt(token: string) {
+  sessionStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
+  sessionStorage.removeItem(STORAGE_KEY);
+}
+
+export type AdminSession = {
+  ok: boolean;
+  method: "api_key" | "jwt";
+  roleSlug: string | null;
+  roleName: string | null;
+  permissions: string[];
+  userId?: string;
+  email?: string;
+  displayName?: string;
+};
+
+export type AdminPermission = {
+  slug: string;
+  resource: string;
+  action: string;
+  description: string;
+};
+
+export type AdminRole = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  userCount: number;
+  permissions: string[];
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  isActive: boolean;
+  roleSlug: string | null;
+  roleName: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 export class AdminApiError extends Error {
   constructor(
@@ -51,11 +100,13 @@ async function adminFetch<T>(
   init?: RequestInit
 ): Promise<T> {
   const key = getAdminApiKey();
+  const jwt = getAdminJwt();
   const res = await fetch(`/api/v1${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
       ...(key ? { "x-admin-api-key": key } : {}),
+      ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
       ...init?.headers,
     },
   });
@@ -68,7 +119,14 @@ async function adminFetch<T>(
 }
 
 export function verifyAdminSession() {
-  return adminFetch<{ ok: boolean }>("/admin/session");
+  return adminFetch<AdminSession>("/admin/auth/session");
+}
+
+export function adminLoginWithPassword(email: string, password: string) {
+  return adminFetch<{ token: string; session: AdminSession }>("/admin/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
 }
 
 export type AdminStats = {
@@ -590,5 +648,38 @@ export const adminApi = {
     adminFetch<AdminSeedResult>("/admin/database/seed", {
       method: "POST",
       body: JSON.stringify({ mode }),
+    }),
+  rbacPermissions: () => adminFetch<AdminPermission[]>("/admin/rbac/permissions"),
+  rbacRoles: () => adminFetch<AdminRole[]>("/admin/rbac/roles"),
+  rbacRole: (slug: string) => adminFetch<AdminRole>(`/admin/rbac/roles/${slug}`),
+  rbacUpdateRolePermissions: (slug: string, permissions: string[]) =>
+    adminFetch<AdminRole>(`/admin/rbac/roles/${slug}/permissions`, {
+      method: "PATCH",
+      body: JSON.stringify({ permissions }),
+    }),
+  rbacUsers: () => adminFetch<AdminUser[]>("/admin/rbac/users"),
+  rbacCreateUser: (body: {
+    email: string;
+    name?: string;
+    password: string;
+    roleSlug: string;
+  }) =>
+    adminFetch<AdminUser>("/admin/rbac/users", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  rbacUpdateUser: (
+    id: string,
+    body: {
+      email?: string;
+      name?: string;
+      password?: string;
+      roleSlug?: string;
+      isActive?: boolean;
+    }
+  ) =>
+    adminFetch<AdminUser>(`/admin/rbac/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
     }),
 };
