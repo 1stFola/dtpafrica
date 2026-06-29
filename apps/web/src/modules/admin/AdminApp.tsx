@@ -17,6 +17,9 @@ import { AdminHomeVideoHighlightsPage } from "./pages/AdminHomeVideoHighlightsPa
 import { AdminInboxPage } from "./pages/AdminInboxPage";
 import { AdminPlayersPage } from "./pages/AdminPlayersPage";
 import { AdminScoreboardApp } from "./scoreboard/AdminScoreboardApp";
+import { AdminRequirePermission } from "./AdminRequirePermission";
+import { AdminRolesPage } from "./settings/AdminRolesPage";
+import { AdminUsersPage } from "./settings/AdminUsersPage";
 
 export function AdminApp() {
   return (
@@ -40,6 +43,12 @@ export function AdminApp() {
             <Route path="blog/new" element={<AdminBlogEditPage />} />
             <Route path="blog/:id" element={<AdminBlogEditPage />} />
             <Route path="scoreboard/*" element={<AdminScoreboardApp />} />
+            <Route element={<AdminRequirePermission permission="admin.roles.manage" />}>
+              <Route path="settings/roles" element={<AdminRolesPage />} />
+            </Route>
+            <Route element={<AdminRequirePermission permission="admin.users.manage" />}>
+              <Route path="settings/users" element={<AdminUsersPage />} />
+            </Route>
           </Route>
         </Route>
       </Routes>

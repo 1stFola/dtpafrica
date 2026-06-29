@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { ADS_CONFIG_KEY, DEFAULT_AD_SLOTS } from "../ads/ads.constants";
+import { seedRbac } from "./seed-rbac";
 import {
   seedLegacyAcademies,
   seedLegacyPlayers,
@@ -228,6 +229,12 @@ export async function runDatabaseSeed(
   const staticContentKeyCount = 28;
 
   const phases: SeedPhase[] = [
+    {
+      name: "rbac",
+      run: async () => {
+        await seedRbac(prisma);
+      },
+    },
     {
       name: "core-player",
       run: async () => {

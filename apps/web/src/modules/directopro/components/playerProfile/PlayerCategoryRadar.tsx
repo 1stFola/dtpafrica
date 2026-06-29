@@ -29,21 +29,14 @@ function radarVertex(angleDeg: number, radiusPct: number, progress: number) {
   };
 }
 
-function buildSmoothClosedPath(points: { x: number; y: number }[], tension = 0.32): string {
-  const n = points.length;
-  if (n < 3) return "";
+/** Straight-line polygon — spline curves overshoot vertices and balloon toward the grid edge. */
+function buildClosedPolygonPath(points: { x: number; y: number }[]): string {
+  if (points.length < 2) return "";
 
-  let path = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-  for (let i = 0; i < n; i += 1) {
-    const p0 = points[(i - 1 + n) % n];
-    const p1 = points[i];
-    const p2 = points[(i + 1) % n];
-    const p3 = points[(i + 2) % n];
-    const cp1x = p1.x + (p2.x - p0.x) * tension;
-    const cp1y = p1.y + (p2.y - p0.y) * tension;
-    const cp2x = p2.x - (p3.x - p1.x) * tension;
-    const cp2y = p2.y - (p3.y - p1.y) * tension;
-    path += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  const [first, ...rest] = points;
+  let path = `M ${first.x.toFixed(2)} ${first.y.toFixed(2)}`;
+  for (const point of rest) {
+    path += ` L ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
   }
   return `${path} Z`;
 }
@@ -113,7 +106,7 @@ export function PlayerCategoryRadar({ scores, expandLabels = false }: Props) {
   );
 
   const dataPath = useMemo(
-    () => buildSmoothClosedPath(dataVertices),
+    () => buildClosedPolygonPath(dataVertices),
     [dataVertices]
   );
 
@@ -131,7 +124,7 @@ export function PlayerCategoryRadar({ scores, expandLabels = false }: Props) {
     >
       <svg
         className={chartClassName}
-        viewBox={expandLabels ? "-18 -18 136 136" : "-12 -12 124 124"}
+        viewBox={expandLabels ? "-18 -18 136 136" : "-14 -14 128 128"}
         role="img"
         aria-hidden="true"
       >

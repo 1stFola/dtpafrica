@@ -4,10 +4,16 @@ import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { useDebouncedValue } from "../../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
-import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
+import type { SbMatchListItem } from "../../../../api/scoreboard";
+import {
+  formatKickoffWat,
+  formatAdminScoreboardError,
+  sortRosterMatches,
+} from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { AdminSbTableShell } from "../components/AdminSbTableShell";
 import { CreateCompetitionModal } from "../components/CreateCompetitionModal";
+import { FixtureFormModal } from "../components/FixtureFormModal";
 import { TeamFormModal } from "../components/TeamFormModal";
 import { CsvDropzone } from "../components/CsvDropzone";
 import { StatusBadge } from "../components/StatusBadge";
@@ -20,7 +26,7 @@ import {
   type AdminSbTeam,
 } from "../types";
 
-type Tab = "competitions" | "teams" | "players" | "seeders";
+type Tab = "competitions" | "teams" | "fixtures" | "players" | "seeders";
 
 export function AdminScoreboardEntitiesPage() {
   usePageTitle("Admin — ScoreBoard entities");
@@ -29,6 +35,8 @@ export function AdminScoreboardEntitiesPage() {
   const [tab, setTab] = useState<Tab>("competitions");
   const [competitions, setCompetitions] = useState<AdminSbCompetition[]>([]);
   const [teams, setTeams] = useState<AdminSbTeam[]>([]);
+  const [fixtures, setFixtures] = useState<SbMatchListItem[]>([]);
+  const [fixtureCompId, setFixtureCompId] = useState("");
   const [players, setPlayers] = useState<AdminSbPlayerDirectoryRow[]>([]);
   const [picker, setPicker] = useState<Array<{ id: string; name: string }>>([]);
   const [statusFilter, setStatusFilter] = useState("");
@@ -38,6 +46,7 @@ export function AdminScoreboardEntitiesPage() {
   const [playerQ, setPlayerQ] = useState("");
   const [seedCompId, setSeedCompId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [fixtureOpen, setFixtureOpen] = useState(false);
   const [teamModal, setTeamModal] = useState<"create" | "edit" | null>(null);
   const [editingTeam, setEditingTeam] = useState<AdminSbTeam | null>(null);
   const [competitionOptions, setCompetitionOptions] = useState<
@@ -46,12 +55,14 @@ export function AdminScoreboardEntitiesPage() {
   const [loading, setLoading] = useState<Record<Tab, boolean>>({
     competitions: false,
     teams: false,
+    fixtures: false,
     players: false,
     seeders: false,
   });
   const loadedRef = useRef<Record<Tab, boolean>>({
     competitions: false,
     teams: false,
+    fixtures: false,
     players: false,
     seeders: false,
   });
@@ -90,6 +101,19 @@ export function AdminScoreboardEntitiesPage() {
     }
   }, [debouncedTeamQ]);
 
+  const loadFixtures = useCallback(async () => {
+    setLoading((s) => ({ ...s, fixtures: true }));
+    try {
+      const rows = await adminScoreboardApi.matches(fixtureCompId || undefined);
+      setFixtures(sortRosterMatches(rows));
+      loadedRef.current.fixtures = true;
+    } catch {
+      setFixtures([]);
+    } finally {
+      setLoading((s) => ({ ...s, fixtures: false }));
+    }
+  }, [fixtureCompId]);
+
   const loadPlayers = useCallback(async () => {
     setLoading((s) => ({ ...s, players: true }));
     try {
@@ -120,14 +144,24 @@ export function AdminScoreboardEntitiesPage() {
   }, [tab, loadCompetitions]);
 
   useEffect(() => {
-    if (tab === "teams" || teamModal) {
+    if (tab === "teams" || teamModal || tab === "fixtures" || fixtureOpen) {
       adminScoreboardApi.competitionPicker().then(setCompetitionOptions).catch(() => {});
     }
-  }, [tab, teamModal]);
+  }, [tab, teamModal, fixtureOpen]);
+
+  useEffect(() => {
+    if (tab === "fixtures" && competitionOptions.length && !fixtureCompId) {
+      setFixtureCompId(competitionOptions[0].id);
+    }
+  }, [tab, competitionOptions, fixtureCompId]);
 
   useEffect(() => {
     if (tab === "teams") void loadTeams();
   }, [tab, loadTeams]);
+
+  useEffect(() => {
+    if (tab === "fixtures") void loadFixtures();
+  }, [tab, loadFixtures]);
 
   useEffect(() => {
     if (tab === "players") void loadPlayers();
@@ -162,6 +196,10 @@ export function AdminScoreboardEntitiesPage() {
             >
               Create team
             </button>
+          ) : tab === "fixtures" ? (
+            <button type="button" className="btn btn-primary" onClick={() => setFixtureOpen(true)}>
+              Create fixture
+            </button>
           ) : undefined
         }
       />
@@ -171,6 +209,7 @@ export function AdminScoreboardEntitiesPage() {
           [
             ["competitions", "Competitions"],
             ["teams", "Teams"],
+            ["fixtures", "Fixtures"],
             ["players", "Players"],
             ["seeders", "CSV seeders"],
           ] as const
@@ -212,6 +251,18 @@ export function AdminScoreboardEntitiesPage() {
           toast.success(teamModal === "edit" ? "Team updated" : "Team created");
           loadedRef.current.teams = false;
           void loadTeams();
+          void refreshStats();
+        }}
+      />
+
+      <FixtureFormModal
+        open={fixtureOpen}
+        competitions={competitionOptions}
+        initialCompetitionId={fixtureCompId || undefined}
+        onClose={() => setFixtureOpen(false)}
+        onCreated={() => {
+          loadedRef.current.fixtures = false;
+          void loadFixtures();
           void refreshStats();
         }}
       />
@@ -379,6 +430,68 @@ export function AdminScoreboardEntitiesPage() {
               </tbody>
             </table>
           </AdminSbTableShell>
+          </div>
+        </>
+      )}
+
+      {tab === "fixtures" && (
+        <>
+          <div className="admin-sb-sticky-bar">
+            <div className="admin-filters admin-filters--with-action">
+              <select
+                value={fixtureCompId}
+                onChange={(e) => setFixtureCompId(e.target.value)}
+                aria-label="Filter fixtures by competition"
+              >
+                <option value="">All competitions</option>
+                {competitionOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="admin-sb-content-panel">
+            <AdminSbTableShell
+              loading={loading.fixtures}
+              empty={!loading.fixtures && fixtures.length === 0}
+              emptyTitle="No fixtures yet"
+              emptyHint="Create a fixture for teams in an existing competition."
+              columns={6}
+            >
+              <table className="admin-table admin-sb-table">
+                <thead>
+                  <tr>
+                    <th>Fixture</th>
+                    <th>Competition</th>
+                    <th>Kickoff (WAT)</th>
+                    <th>Venue</th>
+                    <th>Round</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fixtures.map((m) => (
+                    <tr key={m.id}>
+                      <td>
+                        {m.homeTeam.name} vs {m.awayTeam.name}
+                        <small className="muted admin-sb-code">{m.slug}</small>
+                      </td>
+                      <td>{m.competition.name}</td>
+                      <td>{formatKickoffWat(m.kickoffAt)}</td>
+                      <td>{m.venue?.trim() ? m.venue : "—"}</td>
+                      <td>{m.roundLabel ?? m.stageKey ?? "—"}</td>
+                      <td>
+                        <span className={`admin-sb-status admin-sb-status--${m.status === "live" ? "live" : m.status === "finished" ? "finished" : "upcoming"}`}>
+                          {m.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </AdminSbTableShell>
           </div>
         </>
       )}

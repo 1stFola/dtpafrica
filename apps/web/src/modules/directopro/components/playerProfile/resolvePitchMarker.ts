@@ -1,4 +1,5 @@
 export type PitchMarkerCoords = { x: number; y: number };
+export type PitchMarkerRole = "primary" | "secondary" | "hybrid";
 
 type PositionSlot = { tokens: string[]; x: number; y: number };
 
@@ -69,6 +70,43 @@ function normalizePositionHaystack(
 function normalizeRoleToken(value?: string | null): string {
   if (!value?.trim()) return "";
   return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Short position token for pitch marker badges (e.g. LW, CDM, DMF). */
+function pitchLabelToken(label?: string | null): string {
+  const haystack = normalizeRoleToken(label);
+  if (!haystack) return "";
+
+  const slot = pickBestSlot(haystack);
+  if (!slot) {
+    const first = haystack.split(" ")[0];
+    return first && first.length <= 5 ? first : haystack.slice(0, 4);
+  }
+
+  const preferred = slot.tokens.find(
+    (token) => token.length <= 4 && !token.includes(" ") && matchesToken(haystack, token)
+  );
+  if (preferred) return preferred;
+
+  const fallback = slot.tokens.find((token) => token.length <= 4 && !token.includes(" "));
+  return fallback ?? slot.tokens[0] ?? haystack;
+}
+
+export function pitchMarkerBadgeParts(
+  role: PitchMarkerRole,
+  label?: string | null
+): { prefix: string; token: string | null } {
+  const prefix = role === "primary" ? "MAIN" : role === "secondary" ? "ALT" : "HYBRID";
+  const token = pitchLabelToken(label) || null;
+  return { prefix, token };
+}
+
+export function formatPitchMarkerBadge(
+  role: PitchMarkerRole,
+  label?: string | null
+): string {
+  const { prefix, token } = pitchMarkerBadgeParts(role, label);
+  return token ? `${prefix} · ${token}` : prefix;
 }
 
 function matchesToken(haystack: string, token: string): boolean {
@@ -229,6 +267,29 @@ export function resolvePrimaryPitchMarker(
   }
 
   return mapCoordsToPitchInset({ x: 50, y: 50 });
+}
+
+/** Label token for the primary pitch marker badge. */
+export function resolvePrimaryPitchLabel(
+  positionPrimary?: string | null,
+  positionFull?: string | null,
+  role?: string | null
+): string {
+  const primary = positionPrimary?.trim() ?? "";
+  const full = positionFull?.trim() ?? "";
+  const roleToken = role?.trim() ?? "";
+
+  const candidates =
+    isVaguePrimaryToken(primary) && full
+      ? [full, primary, roleToken]
+      : [primary, full, roleToken].filter(Boolean);
+
+  for (const label of candidates) {
+    const token = pitchLabelToken(label);
+    if (token) return token;
+  }
+
+  return pitchLabelToken(primary) || pitchLabelToken(full) || pitchLabelToken(roleToken);
 }
 
 /** Resolve marker coords from a single role label (e.g. secondary fit token). */
@@ -414,6 +475,59 @@ export function resolveSecondaryPitchMarker(
   return null;
 }
 
+/** Label token that produced the active secondary marker, if any. */
+export function resolveSecondaryPitchLabel(
+  input: SecondaryPitchInput,
+  primaryMarker: PitchMarkerCoords
+): string | null {
+  if (isGoalkeeperInput(input)) return null;
+
+  const primaryHaystack = primaryRoleHaystack(input);
+
+  const apiCandidates = [
+    input.positionSecondary,
+    input.positionFitSecondary,
+    input.scoutingSecondaryPositionFit,
+  ];
+
+  for (const label of apiCandidates) {
+    if (!label?.trim()) continue;
+    if (!isDistinctSecondaryRole(label, primaryHaystack, primaryMarker)) continue;
+    if (resolvePitchMarkerFromLabel(label)) return label.trim();
+  }
+
+  if (input.ratingAttributes && Object.keys(input.ratingAttributes).length > 0) {
+    const attributeRole = deriveSecondaryRoleFromAttributes(
+      input.ratingAttributes,
+      primaryHaystack,
+      primaryMarker
+    );
+    if (
+      attributeRole &&
+      isDistinctSecondaryRole(attributeRole, primaryHaystack, primaryMarker)
+    ) {
+      return attributeRole;
+    }
+  }
+
+  if (input.tacticalSummary) {
+    const tacticalRole = deriveSecondaryRoleFromTactical(
+      input.tacticalSummary,
+      primaryHaystack,
+      primaryMarker,
+      input.positionPrimary
+    );
+    if (
+      tacticalRole &&
+      isDistinctSecondaryRole(tacticalRole, primaryHaystack, primaryMarker)
+    ) {
+      return tacticalRole;
+    }
+  }
+
+  return null;
+}
+
 function isDistinctFromMarkers(
   label: string | null | undefined,
   primaryHaystack: string,
@@ -471,8 +585,6 @@ export function resolveHybridPitchLabel(
 
   return null;
 }
-
-export type PitchMarkerRole = "primary" | "secondary" | "hybrid";
 
 /** Nudge role labels when markers share a pitch zone to reduce overlap. */
 export function resolveMarkerLabelTransform(

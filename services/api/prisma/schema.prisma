@@ -515,6 +515,63 @@ model SbHighlight {
   @@map("sb_highlights")
 }
 
+// —— Admin RBAC ——
+
+model AdminRole {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  permissions AdminRolePermission[]
+  users       AdminUser[]
+
+  @@map("admin_roles")
+}
+
+model AdminPermission {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  resource    String
+  action      String
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles AdminRolePermission[]
+
+  @@index([resource, action])
+  @@map("admin_permissions")
+}
+
+model AdminRolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       AdminRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission AdminPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("admin_role_permissions")
+}
+
+model AdminUser {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?  @map("password_hash")
+  roleId       String?  @map("role_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  role AdminRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@index([roleId])
+  @@map("admin_users")
+}
+
 model MvceValuationRun {
   id                String   @id @default(uuid())
   playerId          String   @map("player_id")

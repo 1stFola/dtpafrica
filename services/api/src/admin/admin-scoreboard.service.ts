@@ -21,9 +21,36 @@ import {
   academyFieldsForTeamSync,
   scoreboardTeamSlugForAcademy,
 } from "../academy/academy-team-sync.util";
+import type { CreateAdminMatchDto } from "./dto/create-admin-match.dto";
 import type { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
 import type { PatchMatchScoreDto } from "./dto/patch-match-score.dto";
+import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
+import {
+  resolveUniqueMatchSlug,
+  type MatchSlugLeg,
+} from "../scoreboard/match-slug";
 import { parseKickoffAtIso, parseWatKickoff } from "../shared/wat-datetime";
+
+const SCOREBOARD_TIMEZONE = "Africa/Lagos";
+
+const KNOCKOUT_ROUND_LABELS: Record<string, string> = {
+  R32: "Round of 32",
+  R16: "Round of 16",
+  QF: "Quarter-final",
+  SF: "Semi-final",
+  F: "Final",
+};
+
+function deriveRoundLabel(
+  knockoutRound: string | undefined,
+  leg: MatchSlugLeg | undefined,
+  explicit?: string
+): string | null {
+  if (explicit?.trim()) return explicit.trim();
+  if (!knockoutRound) return null;
+  const base = KNOCKOUT_ROUND_LABELS[knockoutRound] ?? knockoutRound;
+  return leg === "second_leg" ? `${base} — Leg 2` : base;
+}
 
 export type SbCompetitionStatus = "active" | "upcoming" | "draft" | "archived";
 
@@ -541,6 +568,109 @@ export class AdminScoreboardService {
       competitionId,
       publicOnly: false,
     });
+  }
+
+  async createMatch(dto: CreateAdminMatchDto) {
+    if (dto.homeTeamId === dto.awayTeamId) {
+      throw new BadRequestException("Home and away teams must be different");
+    }
+
+    const competition = await this.prisma.sbCompetition.findUnique({
+      where: { id: dto.competitionId },
+      include: { stages: true },
+    });
+    if (!competition) throw new NotFoundException("Competition not found");
+
+    const teams = await this.prisma.sbTeam.findMany({
+      where: {
+        id: { in: [dto.homeTeamId, dto.awayTeamId] },
+        competitionId: dto.competitionId,
+      },
+      select: { id: true, slug: true },
+    });
+    if (teams.length !== 2) {
+      throw new BadRequestException("Both teams must belong to the selected competition");
+    }
+
+    const homeTeam = teams.find((t) => t.id === dto.homeTeamId);
+    const awayTeam = teams.find((t) => t.id === dto.awayTeamId);
+    if (!homeTeam || !awayTeam) {
+      throw new BadRequestException("Both teams must belong to the selected competition");
+    }
+
+    const kickoffAt = parseWatKickoff(dto.kickoffDate, dto.kickoffTime);
+    const venue = dto.venue?.trim() ? dto.venue.trim() : null;
+    const leg = dto.leg ?? null;
+    const stageKey = dto.stageKey?.trim() || null;
+    const stage = stageKey
+      ? competition.stages.find((s) => s.key === stageKey)
+      : undefined;
+    if (stageKey && !stage) {
+      throw new BadRequestException(`Unknown stageKey "${stageKey}" for this competition`);
+    }
+
+    const roundLabel = deriveRoundLabel(dto.knockoutRound, leg ?? undefined, dto.roundLabel);
+    const meta: Prisma.InputJsonValue | undefined =
+      dto.knockoutRound || leg
+        ? {
+            ...(dto.knockoutRound
+              ? { knockoutRound: dto.knockoutRound, round: dto.knockoutRound }
+              : {}),
+            timezone: SCOREBOARD_TIMEZONE,
+            ...(leg ? { leg } : {}),
+          }
+        : undefined;
+
+    const slug = await resolveUniqueMatchSlug(
+      this.prisma,
+      homeTeam.slug,
+      awayTeam.slug,
+      { leg }
+    );
+
+    try {
+      const created = await this.prisma.sbMatch.create({
+        data: {
+          slug,
+          competitionId: dto.competitionId,
+          stageId: stage?.id,
+          stageKey,
+          homeTeamId: dto.homeTeamId,
+          awayTeamId: dto.awayTeamId,
+          kickoffAt,
+          venue,
+          roundLabel,
+          matchday: dto.matchday ?? null,
+          status: dto.status ?? "scheduled",
+          meta,
+        },
+        include: {
+          homeTeam: true,
+          awayTeam: true,
+          competition: true,
+          _count: { select: { events: true } },
+          events: {
+            where: { type: { in: ["goal", "own_goal"] } },
+            orderBy: { minute: "asc" },
+            select: {
+              id: true,
+              minute: true,
+              type: true,
+              teamId: true,
+              playerLabel: true,
+              player: { select: { displayName: true, slug: true } },
+            },
+          },
+        },
+      });
+      this.statsCache = null;
+      return { ok: true, match: presentScoreboardPayload(created) };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("A match with this slug already exists");
+      }
+      throw err;
+    }
   }
 
   patchMatchScore(matchId: string, dto: PatchMatchScoreDto) {
