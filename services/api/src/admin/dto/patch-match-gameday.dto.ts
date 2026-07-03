@@ -22,4 +22,9 @@ export class PatchMatchGamedayDto {
   @IsOptional()
   @IsString()
   kickoffAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  roundLabel?: string;
 }

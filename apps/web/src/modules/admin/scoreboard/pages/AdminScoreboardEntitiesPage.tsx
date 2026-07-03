@@ -8,6 +8,7 @@ import type { SbMatchListItem } from "../../../../api/scoreboard";
 import {
   formatKickoffWat,
   formatAdminScoreboardError,
+  kickoffAtToWatParts,
   sortRosterMatches,
 } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
@@ -27,6 +28,13 @@ import {
 } from "../types";
 
 type Tab = "competitions" | "teams" | "fixtures" | "players" | "seeders";
+type FixtureEditState = {
+  match: SbMatchListItem;
+  venue: string;
+  kickoffDate: string;
+  kickoffTime: string;
+  roundLabel: string;
+};
 
 export function AdminScoreboardEntitiesPage() {
   usePageTitle("Admin — ScoreBoard entities");
@@ -47,6 +55,8 @@ export function AdminScoreboardEntitiesPage() {
   const [seedCompId, setSeedCompId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
+  const [editingFixture, setEditingFixture] = useState<FixtureEditState | null>(null);
+  const [fixtureSaving, setFixtureSaving] = useState(false);
   const [teamModal, setTeamModal] = useState<"create" | "edit" | null>(null);
   const [editingTeam, setEditingTeam] = useState<AdminSbTeam | null>(null);
   const [competitionOptions, setCompetitionOptions] = useState<
@@ -126,6 +136,53 @@ export function AdminScoreboardEntitiesPage() {
       setLoading((s) => ({ ...s, players: false }));
     }
   }, [debouncedPlayerQ]);
+
+  const openFixtureEditor = (match: SbMatchListItem) => {
+    const parts = kickoffAtToWatParts(match.kickoffAt);
+    setEditingFixture({
+      match,
+      venue: match.venue ?? "",
+      kickoffDate: parts.date,
+      kickoffTime: parts.time,
+      roundLabel: match.roundLabel ?? "",
+    });
+  };
+
+  const saveFixtureEdit = async () => {
+    if (!editingFixture) return;
+    if (!editingFixture.kickoffDate || !editingFixture.kickoffTime) {
+      toast.error("Kickoff date and time are required (WAT)");
+      return;
+    }
+
+    setFixtureSaving(true);
+    try {
+      const res = await adminScoreboardApi.patchMatchGameday(editingFixture.match.id, {
+        venue: editingFixture.venue,
+        kickoffDate: editingFixture.kickoffDate,
+        kickoffTime: editingFixture.kickoffTime,
+        roundLabel: editingFixture.roundLabel,
+      });
+      setFixtures((rows) =>
+        rows.map((row) =>
+          row.id === editingFixture.match.id
+            ? {
+                ...row,
+                venue: res.match.venue,
+                kickoffAt: res.match.kickoffAt,
+                roundLabel: res.match.roundLabel,
+              }
+            : row
+        )
+      );
+      toast.success("Fixture details updated");
+      setEditingFixture(null);
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setFixtureSaving(false);
+    }
+  };
 
   const loadPicker = useCallback(async () => {
     setLoading((s) => ({ ...s, seeders: true }));
@@ -266,6 +323,115 @@ export function AdminScoreboardEntitiesPage() {
           void refreshStats();
         }}
       />
+
+      {editingFixture && (
+        <div
+          className="admin-sb-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!fixtureSaving) setEditingFixture(null);
+          }}
+        >
+          <div
+            className="admin-sb-modal"
+            role="dialog"
+            aria-labelledby="fixture-edit-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="admin-sb-modal__header">
+              <h2 id="fixture-edit-title">Edit fixture</h2>
+              <button
+                type="button"
+                className="admin-sb-modal__close"
+                onClick={() => setEditingFixture(null)}
+                disabled={fixtureSaving}
+                aria-label="Close fixture editor"
+              >
+                ×
+              </button>
+            </header>
+            <form
+              className="admin-sb-modal__body"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveFixtureEdit();
+              }}
+            >
+              <p className="admin-sb-modal__desc">
+                {editingFixture.match.homeTeam.name} vs {editingFixture.match.awayTeam.name}
+              </p>
+              <div className="admin-sb-gameday__datetime">
+                <label className="admin-sb-field">
+                  <span>Date (WAT)</span>
+                  <input
+                    type="date"
+                    value={editingFixture.kickoffDate}
+                    onChange={(e) =>
+                      setEditingFixture((current) =>
+                        current ? { ...current, kickoffDate: e.target.value } : current
+                      )
+                    }
+                    required
+                  />
+                </label>
+                <label className="admin-sb-field">
+                  <span>Kickoff time (WAT)</span>
+                  <input
+                    type="time"
+                    value={editingFixture.kickoffTime}
+                    onChange={(e) =>
+                      setEditingFixture((current) =>
+                        current ? { ...current, kickoffTime: e.target.value } : current
+                      )
+                    }
+                    required
+                  />
+                </label>
+              </div>
+              <label className="admin-sb-field">
+                <span>Venue</span>
+                <input
+                  type="text"
+                  value={editingFixture.venue}
+                  onChange={(e) =>
+                    setEditingFixture((current) =>
+                      current ? { ...current, venue: e.target.value } : current
+                    )
+                  }
+                  maxLength={200}
+                  placeholder="e.g. Onikan Stadium, Lagos"
+                />
+              </label>
+              <label className="admin-sb-field">
+                <span>Round</span>
+                <input
+                  type="text"
+                  value={editingFixture.roundLabel}
+                  onChange={(e) =>
+                    setEditingFixture((current) =>
+                      current ? { ...current, roundLabel: e.target.value } : current
+                    )
+                  }
+                  maxLength={120}
+                  placeholder="e.g. Round of 16, Matchday 3"
+                />
+              </label>
+              <footer className="admin-sb-modal__footer">
+                <button
+                  type="button"
+                  onClick={() => setEditingFixture(null)}
+                  disabled={fixtureSaving}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={fixtureSaving}>
+                  {fixtureSaving ? "Saving…" : "Save fixture"}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
 
       {tab === "competitions" && (
         <>
@@ -458,7 +624,7 @@ export function AdminScoreboardEntitiesPage() {
               empty={!loading.fixtures && fixtures.length === 0}
               emptyTitle="No fixtures yet"
               emptyHint="Create a fixture for teams in an existing competition."
-              columns={6}
+              columns={7}
             >
               <table className="admin-table admin-sb-table">
                 <thead>
@@ -469,6 +635,7 @@ export function AdminScoreboardEntitiesPage() {
                     <th>Venue</th>
                     <th>Round</th>
                     <th>Status</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -486,6 +653,15 @@ export function AdminScoreboardEntitiesPage() {
                         <span className={`admin-sb-status admin-sb-status--${m.status === "live" ? "live" : m.status === "finished" ? "finished" : "upcoming"}`}>
                           {m.status}
                         </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="admin-inline-button"
+                          onClick={() => openFixtureEditor(m)}
+                        >
+                          Edit
+                        </button>
                       </td>
                     </tr>
                   ))}

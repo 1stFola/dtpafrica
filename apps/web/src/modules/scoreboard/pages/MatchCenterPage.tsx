@@ -84,6 +84,73 @@ function formatKickoff(iso: string | null): string | null {
   });
 }
 
+function renderInlineReportText(text: string) {
+  const parts: Array<string | JSX.Element> = [];
+  const pattern = /(\*\*[^*]+\*\*|_[^_]+_)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text))) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    const token = match[0];
+    const content = token.startsWith("**") ? token.slice(2, -2) : token.slice(1, -1);
+    parts.push(
+      token.startsWith("**") ? (
+        <strong key={`${match.index}-b`}>{content}</strong>
+      ) : (
+        <em key={`${match.index}-i`}>{content}</em>
+      )
+    );
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
+function renderMatchReport(comment: string) {
+  const blocks = comment.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+
+  return blocks.map((block, index) => {
+    const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) return null;
+
+    if (lines.every((line) => line.startsWith("- "))) {
+      return (
+        <ul key={`list-${index}`} className="sbc-narrative__list">
+          {lines.map((line, lineIndex) => (
+            <li key={lineIndex}>{renderInlineReportText(line.slice(2).trim())}</li>
+          ))}
+        </ul>
+      );
+    }
+
+    if (lines.every((line) => line.startsWith("> "))) {
+      return (
+        <blockquote key={`quote-${index}`} className="sbc-narrative__quote">
+          {lines.map((line, lineIndex) => (
+            <p key={lineIndex}>{renderInlineReportText(line.slice(2).trim())}</p>
+          ))}
+        </blockquote>
+      );
+    }
+
+    if (lines.length === 1 && lines[0].startsWith("## ")) {
+      return (
+        <h3 key={`heading-${index}`} className="sbc-narrative__heading">
+          {renderInlineReportText(lines[0].slice(3).trim())}
+        </h3>
+      );
+    }
+
+    return (
+      <p key={`paragraph-${index}`} className="sbc-narrative__text">
+        {renderInlineReportText(lines.join(" "))}
+      </p>
+    );
+  });
+}
+
 function parseMatchPhotos(meta: SbMatchDetail["meta"]): MatchPhoto[] {
   if (!meta || typeof meta !== "object" || !("photos" in meta)) return [];
   const photos = (meta as { photos?: unknown }).photos;
@@ -393,7 +460,7 @@ export function MatchCenterPage() {
               <>
                 <h2 className="sbc-block__title">Match Report</h2>
                 <article className="sbc-narrative sbm-narrative">
-                  <p className="sbc-narrative__text">{gameComment}</p>
+                  {renderMatchReport(gameComment)}
                 </article>
               </>
             )}

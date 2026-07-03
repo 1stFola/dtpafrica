@@ -118,6 +118,24 @@ async function adminFetch<T>(
   return res.json() as Promise<T>;
 }
 
+async function adminFormFetch<T>(path: string, body: FormData): Promise<T> {
+  const key = getAdminApiKey();
+  const jwt = getAdminJwt();
+  const res = await fetch(`/api/v1${path}`, {
+    method: "POST",
+    body,
+    headers: {
+      ...(key ? { "x-admin-api-key": key } : {}),
+      ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new AdminApiError(text || res.statusText, res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
 export function verifyAdminSession() {
   return adminFetch<AdminSession>("/admin/auth/session");
 }
@@ -271,6 +289,55 @@ export type LegacyMatchMetrics = {
   right_foot_release_percentage?: number;
   right_foot_receive_percentage?: number;
   right_foot_kicking_power_mph?: number;
+};
+
+export const PLAYER_STATS_CSV_HEADERS = [
+  "duration",
+  "ball_touches",
+  "total_distance",
+  "sprint_distance",
+  "first_step_accelerations",
+  "intense_accelerations",
+  "top_speed",
+  "sprints",
+  "intense_turns",
+  "avg_turn_entry",
+  "avg_turn_exit",
+  "left_turns",
+  "right_turns",
+  "back_turns",
+  "kicking_power",
+  "distance_with_ball",
+  "top_speed_with_ball",
+  "intense_turns_with_ball",
+  "one_touch_possessions_percentage",
+  "multi_touch_possessions__percentage",
+  "possession_duration_seconds",
+  "release_inside_foot_percentage",
+  "release_laces_percentage",
+  "release_other_footzone_percentage",
+  "turn_efficiency",
+  "quick_release_score",
+  "left_foot_touch_percentage",
+  "right_foot_touch_percentage",
+  "left_foot_release_percentage",
+  "right_foot_release_percentage",
+  "left_foot_receive_percentage",
+  "right_foot_receive_percentage",
+  "left_foot_kicking_power_mph",
+  "right_foot_kicking_power_mph",
+] as const;
+
+export type PlayerStatsCsvRow = Record<
+  (typeof PLAYER_STATS_CSV_HEADERS)[number],
+  string | number | null
+>;
+
+export type PlayerStatsExtractionResult = {
+  extracted: unknown;
+  row: PlayerStatsCsvRow;
+  csv: string;
+  warnings: string[];
 };
 
 export type CalibrationPlayerInfo = {
@@ -642,6 +709,17 @@ export const adminApi = {
       invalidateAdminPlayersCache();
       return result;
     }),
+  extractPlayerStatsFromImages: (duration: number | string, files: File[]) => {
+    const form = new FormData();
+    form.append("duration", String(duration));
+    for (const file of files) {
+      form.append("images", file);
+    }
+    return adminFormFetch<PlayerStatsExtractionResult>(
+      "/admin/player-stats/extract",
+      form
+    );
+  },
   databaseSeedStatus: () =>
     adminFetch<AdminSeedStatus>("/admin/database/seed/status"),
   runDatabaseSeed: (mode: "incremental" | "full" = "incremental") =>
