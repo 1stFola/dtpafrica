@@ -12,6 +12,7 @@ import { ScoutingModule } from "./scouting/scouting.module";
 import { SipModule } from "./sip/sip.module";
 import { AcademyAuthModule } from "./academy-auth/academy-auth.module";
 import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.module";
+import { PlayerStatsModule } from "./player-stats/player-stats.module";
 
 @Module({
   controllers: [HealthController],
@@ -28,6 +29,7 @@ import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.mo
     BenchmarksModule,
     AcademyAuthModule,
     AcademyDashboardModule,
+    PlayerStatsModule,
   ],
 })
 export class AppModule {}

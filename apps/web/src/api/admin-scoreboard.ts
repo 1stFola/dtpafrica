@@ -161,6 +161,7 @@ export const adminScoreboardApi = {
       kickoffDate?: string;
       kickoffTime?: string;
       kickoffAt?: string | null;
+      roundLabel?: string;
     }
   ) =>
     sbFetch<{
@@ -169,6 +170,7 @@ export const adminScoreboardApi = {
         id: string;
         venue: string | null;
         kickoffAt: string | null;
+        roundLabel: string | null;
         status: string;
         homeTeam: { id: string; name: string };
         awayTeam: { id: string; name: string };

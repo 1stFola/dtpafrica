@@ -5,6 +5,12 @@ import { ADMIN_NAV_PERMISSIONS, canAccessNav } from "./admin-permissions";
 
 const links = [
   { to: "/admin", end: true, label: "Dashboard", icon: "◆" },
+  {
+    to: "/admin/player-stats-extractor",
+    label: "Tracker Stats Extractor",
+    icon: "CSV",
+    variant: "outline",
+  },
   { to: "/admin/inbox", label: "Inbox", icon: "✉" },
   { to: "/admin/players", label: "Players", icon: "⚽" },
   { to: "/admin/calibration", label: "Calibration", icon: "◎" },
@@ -71,7 +77,13 @@ export function AdminLayout() {
                   to={l.to}
                   end={l.end}
                   className={({ isActive }) =>
-                    isActive ? "admin-sb-sidebar-link active" : "admin-sb-sidebar-link"
+                    [
+                      "admin-sb-sidebar-link",
+                      l.variant === "outline" ? "admin-sb-sidebar-link--outline" : "",
+                      isActive ? "active" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
                   }
                 >
                   <span className="admin-sb-sidebar-link__icon" aria-hidden="true">

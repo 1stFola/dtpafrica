@@ -63,6 +63,7 @@ export function MatchCsvIngestModal({
 }: Props) {
   const toast = useAdminToast();
   const inputRef = useRef<HTMLInputElement>(null);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
   const [csv, setCsv] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [replace, setReplace] = useState(false);
@@ -88,6 +89,43 @@ export function MatchCsvIngestModal({
   };
 
   const previewLines = csv.trim() ? csv.trim().split(/\r?\n/).length - 1 : 0;
+
+  const applyCommentFormat = (
+    before: string,
+    after = before,
+    placeholder = "match report text"
+  ) => {
+    const textarea = commentRef.current;
+    if (!textarea || busy) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = matchComment.slice(start, end) || placeholder;
+    const next = `${matchComment.slice(0, start)}${before}${selected}${after}${matchComment.slice(end)}`;
+    setMatchComment(next);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + before.length, start + before.length + selected.length);
+    });
+  };
+
+  const applyLinePrefix = (prefix: string) => {
+    const textarea = commentRef.current;
+    if (!textarea || busy) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const lineStart = matchComment.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const selected = matchComment.slice(lineStart, end) || "match report point";
+    const formatted = selected
+      .split(/\r?\n/)
+      .map((line) => `${prefix}${line}`)
+      .join("\n");
+    const next = `${matchComment.slice(0, lineStart)}${formatted}${matchComment.slice(end)}`;
+    setMatchComment(next);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(lineStart, lineStart + formatted.length);
+    });
+  };
 
   const submit = async () => {
     if (!csv.trim()) {
@@ -199,13 +237,34 @@ export function MatchCsvIngestModal({
           {csv.trim() && (
             <label className="admin-sb-field admin-sb-field--wide admin-sb-csv-ingest-comment">
               <span>Match comment</span>
+              <div className="admin-sb-rich-text-toolbar" aria-label="Match comment formatting">
+                <button type="button" onClick={() => applyCommentFormat("**")} disabled={busy}>
+                  B
+                </button>
+                <button type="button" onClick={() => applyCommentFormat("_")} disabled={busy}>
+                  I
+                </button>
+                <button type="button" onClick={() => applyLinePrefix("## ")} disabled={busy}>
+                  H2
+                </button>
+                <button type="button" onClick={() => applyLinePrefix("- ")} disabled={busy}>
+                  List
+                </button>
+                <button type="button" onClick={() => applyLinePrefix("> ")} disabled={busy}>
+                  Quote
+                </button>
+              </div>
               <textarea
+                ref={commentRef}
                 value={matchComment}
                 onChange={(e) => setMatchComment(e.target.value)}
-                rows={3}
-                placeholder="Optional note about this match (e.g. context, corrections, admin remarks)"
+                rows={7}
+                placeholder="Optional match report. Use toolbar formatting, blank lines for paragraphs, and lists for key moments."
                 disabled={busy}
               />
+              <small className="admin-sb-field-hint">
+                Supports bold, italic, subheadings, bullet lists, and quotes in the public Match Report.
+              </small>
             </label>
           )}
 
