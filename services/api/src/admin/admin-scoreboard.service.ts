@@ -688,6 +688,11 @@ export class AdminScoreboardService {
       data.venue = trimmed.length ? trimmed : null;
     }
 
+    if (dto.roundLabel !== undefined) {
+      const trimmed = dto.roundLabel.trim();
+      data.roundLabel = trimmed.length ? trimmed : null;
+    }
+
     const hasDate = dto.kickoffDate !== undefined;
     const hasTime = dto.kickoffTime !== undefined;
     if (hasDate !== hasTime) {
@@ -720,6 +725,7 @@ export class AdminScoreboardService {
         id: true,
         venue: true,
         kickoffAt: true,
+        roundLabel: true,
         status: true,
         homeTeam: { select: { id: true, name: true } },
         awayTeam: { select: { id: true, name: true } },
