@@ -2,8 +2,7 @@ import { useId, useState } from "react";
 import { InfoTip } from "../../../../components/InfoTip";
 import { PlayerAttributeMicroGrid } from "./PlayerAttributeMicroGrid";
 import {
-  resolveCoreRoleAttributeKeys,
-  resolveRemainingAttributeKeys,
+  resolveIntelligentRoleProfileKeys,
   resolveRoleProfileHeading,
 } from "./roleProfileAttributes";
 
@@ -11,6 +10,7 @@ type PlayerRoleProfileSectionProps = {
   attributes: Record<string, number>;
   positionPrimary?: string | null;
   role?: string | null;
+  secondaryRole?: string | null;
   dataSourceLabel: string;
 };
 
@@ -18,12 +18,17 @@ export function PlayerRoleProfileSection({
   attributes,
   positionPrimary,
   role,
+  secondaryRole,
   dataSourceLabel,
 }: PlayerRoleProfileSectionProps) {
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
-  const coreKeys = resolveCoreRoleAttributeKeys(positionPrimary, role);
-  const remainingKeys = resolveRemainingAttributeKeys(coreKeys);
+  const { coreKeys, remainingKeys } = resolveIntelligentRoleProfileKeys({
+    attributes,
+    positionPrimary,
+    role,
+    secondaryRole,
+  });
   const heading = resolveRoleProfileHeading(positionPrimary, role);
 
   return (
