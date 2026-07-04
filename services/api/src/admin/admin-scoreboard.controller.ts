@@ -204,6 +204,21 @@ export class AdminScoreboardController {
     return this.sb.saveMatchRoster(matchId, body);
   }
 
+  @Post("matches/:matchId/squads/upload")
+  @RequirePermissions("scoreboard.matches.write")
+  uploadMatchSquads(
+    @Param("matchId") matchId: string,
+    @Body() body: { teamId: string; csv: string }
+  ) {
+    if (!body.teamId?.trim()) {
+      throw new BadRequestException("teamId body field is required");
+    }
+    if (!body.csv?.trim()) {
+      throw new BadRequestException("csv body field is required");
+    }
+    return this.sb.uploadMatchSquadCsv(matchId, body.teamId, body.csv);
+  }
+
   @Get("matches/:matchId/spotter")
   @RequirePermissions("scoreboard.read")
   spotterState(@Param("matchId") matchId: string) {

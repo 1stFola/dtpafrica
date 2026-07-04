@@ -63,6 +63,24 @@ export type SbMatchdayRoster = {
   subs: SbMatchdayRosterSlot[];
 };
 
+export type SbMatchSquadPlayer = SbSquadPlayer & {
+  isStarter: boolean;
+};
+
+export type SbMatchSquadTeam = {
+  team: SbTeamRef;
+  starting: SbMatchSquadPlayer[];
+  bench: SbMatchSquadPlayer[];
+  players: SbMatchSquadPlayer[];
+};
+
+export type SbMatchSquadsResponse = {
+  matchId: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  teams: Record<string, SbMatchSquadTeam>;
+};
+
 export type SbMatchStats = {
   possession?: { home: number; away: number };
   saves?: { home: number | null; away: number | null };
@@ -354,6 +372,10 @@ export function fetchMatches(
 
 export function fetchMatch(slugOrId: string, signal?: AbortSignal) {
   return apiGet<SbMatchDetail>(`/scoreboard/matches/${slugOrId}`, signal);
+}
+
+export function fetchMatchSquads(slugOrId: string, signal?: AbortSignal) {
+  return apiGet<SbMatchSquadsResponse>(`/scoreboard/matches/${slugOrId}/squads`, signal);
 }
 
 export type StatLeaderMetric = "goals" | "assists" | "yellow" | "red";

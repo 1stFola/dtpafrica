@@ -115,6 +115,11 @@ export class ScoreboardController {
     return this.sb.matchBySlugOrId(slugOrId, true);
   }
 
+  @Get("matches/:slugOrId/squads")
+  matchSquads(@Param("slugOrId") slugOrId: string) {
+    return this.sb.matchSquadsBySlugOrId(slugOrId, true);
+  }
+
   @Get("standings/:competitionId")
   standings(@Param("competitionId") competitionId: string) {
     return this.sb.standings(competitionId);
