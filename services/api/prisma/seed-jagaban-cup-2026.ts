@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
@@ -248,7 +248,19 @@ function splitDisplayName(displayName: string) {
 }
 
 function readFullSquadRows(): SquadSeed[] {
-  const text = readFileSync(join(__dirname, SQUAD_ROSTER_ASSET), "utf8");
+  const candidatePaths = [
+    join(__dirname, SQUAD_ROSTER_ASSET),
+    join(__dirname, "../../../..", "prisma", SQUAD_ROSTER_ASSET),
+    join(process.cwd(), "prisma", SQUAD_ROSTER_ASSET),
+    join(process.cwd(), "services/api/prisma", SQUAD_ROSTER_ASSET),
+  ];
+  const assetPath = candidatePaths.find((path) => existsSync(path));
+  if (!assetPath) {
+    throw new Error(
+      `Missing ${SQUAD_ROSTER_ASSET}. Checked: ${candidatePaths.join(", ")}`
+    );
+  }
+  const text = readFileSync(assetPath, "utf8");
   let teamSlug: string | null = null;
   const rows: SquadSeed[] = [];
 
