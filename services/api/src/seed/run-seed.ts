@@ -393,6 +393,89 @@ export async function runDatabaseSeed(
     {
       name: "blog-posts",
       run: async () => {
+        const suppliedBlogPosts = [
+          {
+            slug: "when-a-dream-becomes-a-trap",
+            title: "When a Dream Becomes a Trap",
+            excerpt:
+              "How young footballers and families can spot exploitation, fake trials, and unsafe pathways before dreams are hijacked.",
+            body: `Across Africa, football is more than a game. For millions of young players, it is a dream, a way out, a family hope, and sometimes the only visible road to a different future.
+
+That dream is powerful. It is also vulnerable.
+
+Too often, talented players and their families are pushed into unsafe football pathways by people who promise trials, contracts, travel, exposure, or agent connections without proof. Some players pay money they cannot afford. Some travel without proper documentation. Some disappear into systems where nobody can verify who they are, what they have achieved, or whether the opportunity is real.
+
+The problem is not ambition. The problem is the absence of trusted structure.
+
+At DirectToPro Africa, we believe talent should not have to depend on chance, guesswork, or desperate introductions. A player should be visible through verified data, credible scouting context, match evidence, and transparent football information.
+
+Warning signs every player and family should know
+
+Be careful when anyone asks for money before showing verifiable details about the club, competition, scout, or trial. Be careful when a promised opportunity has no official email, no written invitation, no clear location, no responsible contact, and no way to check the source.
+
+A serious football pathway should be traceable. It should protect the player. It should explain the next step clearly.
+
+What a safer pathway looks like
+
+A safer pathway starts with documentation. Players need accurate profiles, age records, position data, match footage, verified statistics, and a clear sporting history. Scouts need context that helps them compare players fairly. Families need confidence that the process is not built on pressure or secrecy.
+
+This is why DTP Africa focuses on verified player profiles, role-based ratings, match data, and transparent scouting intelligence.
+
+The dream should remain a dream
+
+Football can still open doors. It can still change lives. But the pathway must become safer, more accountable, and more professional.
+
+Our mission is simple: help African talent be seen the right way, by the right people, through a process that respects the player and protects the dream.`,
+            publishedAt: new Date("2026-07-02"),
+          },
+          {
+            slug: "inside-the-directtopro-africa-rating-system",
+            title: "Inside the DirectToPro Africa Rating System",
+            excerpt:
+              "How DTP Africa evaluates players by role using physical, technical, mental, and tactical pillars.",
+            body: `Talent is not one thing.
+
+A winger, a centre back, a goalkeeper, and an attacking midfielder should not be judged by the same football questions. Speed may matter differently for each role. Decision-making may show up in different ways. Technical quality depends on what the position demands.
+
+That is why the DirectToPro Africa rating system is built around role-based evaluation.
+
+The four evaluation pillars
+
+Our framework studies players through four major pillars: physical, technical, mental, and tactical.
+
+Physical data helps us understand movement, speed, intensity, acceleration, and athletic output. Technical data looks at ball contact, control, foot usage, release habits, and execution. Mental indicators focus on consistency, resilience, discipline, and response under pressure. Tactical evaluation considers role understanding, positioning, team function, and decision quality.
+
+Why role-based scoring matters
+
+A 78 rating for a defensive midfielder does not mean the same thing as a 78 rating for a striker. The system weights categories based on what a player is being asked to do on the pitch.
+
+For example, a fullback may be judged heavily on repeated running, defensive actions, recovery speed, and wide-ball contribution. A striker may be judged more on movement, finishing threat, acceleration, and attacking decisions.
+
+The goal is not to flatten football into one number. The goal is to make player comparison more honest.
+
+What the rating levels mean
+
+DTP ratings help scouts and coaches quickly understand where a player sits in their development journey. A lower score can still represent a player with strong potential if the role context and age profile support it. A higher score indicates stronger evidence across the weighted pillars for that position.
+
+The rating should always be read with match footage, player history, and scouting notes.
+
+Data supports the eye, it does not replace it
+
+We believe the best scouting combines human football judgment with verified information. Data can reveal patterns, reduce bias, and make hidden talent easier to compare. But the game still needs experienced eyes.
+
+DTP Africa is building that bridge: verified data, role context, match evidence, and opportunity in one place.`,
+            publishedAt: new Date("2026-07-01"),
+          },
+        ];
+
+        for (const post of suppliedBlogPosts) {
+          await prisma.blogPost.upsert({
+            where: { slug: post.slug },
+            update: post,
+            create: post,
+          });
+        }
+
         await prisma.blogPost.upsert({
           where: { slug: "dtp-platform-launch" },
           update: {},
@@ -545,7 +628,7 @@ Parents and guardians can register minors with consent workflows built for youth
           {
             key: "about.mission",
             value:
-              "Connect African grassroots football talent to global opportunity through verified data, transparent ratings, and trusted scouting tools.",
+              "At DirectToPro Africa, we digitally identify and connect African football talent to verified opportunities through trusted data, responsible scouting, and transparent player development pathways.",
           },
           {
             key: "about.vision",

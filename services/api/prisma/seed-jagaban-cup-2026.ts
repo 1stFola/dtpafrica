@@ -1,8 +1,12 @@
 // @ts-nocheck
+import { readFileSync } from "fs";
+import { join } from "path";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   buildJagabanCupStages,
   normalizeClubName,
+  normalizePlayerName,
+  playerLookupKey,
   toGoogleDrivePreviewUrl,
   toMatchPhotoEntries,
 } from "@dtp/engines";
@@ -13,6 +17,7 @@ import {
 } from "../src/seed/seed-options";
 import { JAGABAN_MATCH_MEDIA } from "./seed-jagaban-media-data";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { resolveUniquePlayerSlug } from "../src/players/player-slug";
 
 const COMP_SLUG = "jagaban-cup-2026";
 const COMP_ID = "00000000-0000-4000-8jc0-000000000001";
@@ -27,7 +32,25 @@ type TeamSeed = {
   logoUrl: string;
 };
 
-type SquadSeed = { teamSlug: string; displayName: string; position?: string; shirtNumber?: number };
+type SquadSeed = {
+  teamSlug: string;
+  displayName: string;
+  position?: string;
+  shirtNumber?: number;
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string | null;
+  imageUrl?: string | null;
+};
+
+type SeededSquadRow = {
+  id: string;
+  teamId: string;
+  playerId: string | null;
+  displayName: string;
+  position: string | null;
+  shirtNumber: number | null;
+};
 
 type EventSeed = {
   type: string;
@@ -177,6 +200,113 @@ const SQUAD: SquadSeed[] = [
   { teamSlug: "broad-city-fc", displayName: "Solomon Agbalaka", position: "FW", shirtNumber: 19 },
   { teamSlug: "broad-city-fc", displayName: "Muiz Lawal", position: "FW", shirtNumber: 20 },
 ];
+
+const SQUAD_ROSTER_ASSET = "seed-jagaban-squad-rosters.txt";
+const SQUAD_TEAM_SLUGS: Record<string, string> = {
+  "36 Lion FC": "36-lions-fc",
+  "FC Bethel Sporting": "fc-bethel",
+  "Mavlon FC": "mavlon-fc",
+  "SGFC ATHLETICS SC": "sgfc-athletics",
+  "Smart City FC": "smart-city-fc",
+  "Broad City FC": "broad-city-fc",
+};
+
+function normalizeSeedDate(raw?: string | null): Date | null {
+  if (!raw?.trim()) return null;
+  const normalized = raw
+    .trim()
+    .replace(/\bSept\.\b/i, "Sep")
+    .replace(/\bSept\b/i, "Sep")
+    .replace(/\bJan\.\b/i, "Jan")
+    .replace(/\bFeb\.\b/i, "Feb")
+    .replace(/\bMar\.\b/i, "Mar")
+    .replace(/\bApr\.\b/i, "Apr")
+    .replace(/\bJun\.\b/i, "Jun")
+    .replace(/\bJul\.\b/i, "Jul")
+    .replace(/\bAug\.\b/i, "Aug")
+    .replace(/\bOct\.\b/i, "Oct")
+    .replace(/\bNov\.\b/i, "Nov")
+    .replace(/\bDec\.\b/i, "Dec")
+    .replace(/\./g, "");
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function titleCaseName(raw?: string | null) {
+  return (raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function splitDisplayName(displayName: string) {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] ?? displayName,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : "",
+  };
+}
+
+function readFullSquadRows(): SquadSeed[] {
+  const text = readFileSync(join(__dirname, SQUAD_ROSTER_ASSET), "utf8");
+  let teamSlug: string | null = null;
+  const rows: SquadSeed[] = [];
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith("Team Name - ")) {
+      const teamName = line.slice("Team Name - ".length).trim();
+      teamSlug = SQUAD_TEAM_SLUGS[teamName] ?? null;
+      continue;
+    }
+    if (!teamSlug || line.toLowerCase().startsWith("jersey number")) continue;
+
+    const parts = line.split(",").map((part) => part.trim());
+    const shirtNumber = Number.parseInt(parts[0] ?? "", 10);
+    if (!Number.isFinite(shirtNumber)) continue;
+
+    let firstName = parts[1] ?? "";
+    let lastName = parts[2] ?? "";
+    let dateOfBirth = parts[3] ?? "";
+    let position = parts[4] ?? "";
+    let imageUrl = parts.slice(5).join(",").trim() || null;
+
+    // Repair a known Broad City row with an accidental empty DOB column.
+    if (!dateOfBirth && /^\d{1,2}-/.test(parts[4] ?? "")) {
+      dateOfBirth = parts[4] ?? "";
+      position = parts[5] ?? "";
+      imageUrl = parts.slice(6).join(",").trim() || null;
+    }
+
+    const displayName = normalizePlayerName(`${firstName} ${lastName}`.trim());
+    if (!displayName) continue;
+
+    rows.push({
+      teamSlug,
+      displayName,
+      firstName: titleCaseName(firstName),
+      lastName: titleCaseName(lastName),
+      dateOfBirth: dateOfBirth || null,
+      position: position || undefined,
+      shirtNumber,
+      imageUrl,
+    });
+  }
+
+  return rows;
+}
+
+function mergedSquadRows() {
+  const byKey = new Map<string, SquadSeed>();
+  for (const row of SQUAD) {
+    byKey.set(`${row.teamSlug}:${normalizePlayerName(row.displayName)}`, row);
+  }
+  for (const row of readFullSquadRows()) {
+    byKey.set(`${row.teamSlug}:${normalizePlayerName(row.displayName)}`, row);
+  }
+  return [...byKey.values()];
+}
 
 function matchStats(opts: {
   homePoss: number;
@@ -614,24 +744,186 @@ async function seedSquads(
   teamIds: Record<string, string>
 ): Promise<Map<string, string>> {
   const squadByLabel = new Map<string, string>();
-  for (const row of SQUAD) {
+  for (const row of mergedSquadRows()) {
     const teamId = teamIds[row.teamSlug];
+    if (!teamId) continue;
+
+    const displayName = normalizePlayerName(row.displayName);
+    const nameParts = splitDisplayName(displayName);
+    const firstName = row.firstName ? titleCaseName(row.firstName) : nameParts.firstName;
+    const lastName = row.lastName ? titleCaseName(row.lastName) : nameParts.lastName;
+    const normalizedName = playerLookupKey(displayName);
+    const dateOfBirth = normalizeSeedDate(row.dateOfBirth);
+    const position = row.position || "MF";
+
+    let player = await prisma.player.findUnique({
+      where: { normalizedName },
+    });
+    if (player) {
+      player = await prisma.player.update({
+        where: { id: player.id },
+        data: {
+          firstName,
+          lastName,
+          displayName,
+          positionPrimary: position,
+          ...(dateOfBirth ? { dateOfBirth } : {}),
+          ...(row.imageUrl ? { playerPhotoUrl: row.imageUrl } : {}),
+          registrationStatus: "approved",
+          isPublic: true,
+        },
+      });
+    } else {
+      player = await prisma.player.create({
+        data: {
+          firstName,
+          lastName,
+          displayName,
+          normalizedName,
+          slug: await resolveUniquePlayerSlug(prisma, displayName),
+          positionPrimary: position,
+          dateOfBirth,
+          playerPhotoUrl: row.imageUrl || null,
+          registrationStatus: "approved",
+          isPublic: true,
+        },
+      });
+    }
+
     const existing = await prisma.sbTeamSquad.findFirst({
-      where: { teamId, displayName: row.displayName },
+      where: {
+        teamId,
+        OR: [
+          { playerId: player.id },
+          {
+            displayName: { equals: displayName, mode: "insensitive" },
+            ...(row.shirtNumber == null ? {} : { shirtNumber: row.shirtNumber }),
+          },
+        ],
+      },
     });
     const squad =
       existing ??
       (await prisma.sbTeamSquad.create({
         data: {
           teamId,
-          displayName: row.displayName,
-          position: row.position,
+          playerId: player.id,
+          displayName,
+          position,
           shirtNumber: row.shirtNumber,
         },
       }));
-    squadByLabel.set(`${row.teamSlug}:${row.displayName}`, squad.id);
+    if (existing) {
+      await prisma.sbTeamSquad.update({
+        where: { id: existing.id },
+        data: {
+          playerId: player.id,
+          displayName,
+          position,
+          shirtNumber: row.shirtNumber,
+        },
+      });
+    }
+    squadByLabel.set(`${row.teamSlug}:${displayName}`, squad.id);
   }
   return squadByLabel;
+}
+
+function rosterSlot(row: SeededSquadRow, role: "xi" | "sub") {
+  return {
+    squadId: row.id,
+    displayName: row.displayName,
+    position: row.position,
+    shirtNumber: row.shirtNumber,
+    playerId: row.playerId,
+    playerSlug: null,
+    role,
+  };
+}
+
+async function buildTeamRoster(prisma: PrismaClient, teamId: string) {
+  const rows = await prisma.sbTeamSquad.findMany({
+    where: { teamId },
+    orderBy: [{ shirtNumber: "asc" }, { displayName: "asc" }],
+    select: {
+      id: true,
+      teamId: true,
+      playerId: true,
+      displayName: true,
+      position: true,
+      shirtNumber: true,
+    },
+  });
+  return {
+    teamId,
+    xi: rows.slice(0, 11).map((row) => rosterSlot(row, "xi")),
+    subs: rows.slice(11).map((row) => rosterSlot(row, "sub")),
+  };
+}
+
+async function seedMatchSquads(
+  prisma: PrismaClient,
+  match: MatchSeed,
+  teamIds: Record<string, string>,
+  options?: SeedOptions
+) {
+  if (await shouldPreserveSbMatch(prisma, match.id, options)) return;
+
+  const homeTeamId = teamIds[match.homeSlug];
+  const awayTeamId = teamIds[match.awaySlug];
+  if (!homeTeamId || !awayTeamId) return;
+
+  const [homeRoster, awayRoster, existingMatch] = await Promise.all([
+    buildTeamRoster(prisma, homeTeamId),
+    buildTeamRoster(prisma, awayTeamId),
+    prisma.sbMatch.findUnique({ where: { id: match.id }, select: { stats: true } }),
+  ]);
+  if (!existingMatch) return;
+
+  const stats =
+    existingMatch.stats && typeof existingMatch.stats === "object" && !Array.isArray(existingMatch.stats)
+      ? (existingMatch.stats as Record<string, unknown>)
+      : {};
+
+  await prisma.$transaction(async (tx) => {
+    await tx.sbMatch.update({
+      where: { id: match.id },
+      data: {
+        stats: {
+          ...stats,
+          matchdayRosters: {
+            ...((stats.matchdayRosters as Record<string, unknown> | undefined) ?? {}),
+            [homeTeamId]: homeRoster,
+            [awayTeamId]: awayRoster,
+          },
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    for (const roster of [homeRoster, awayRoster]) {
+      const slots = [
+        ...roster.xi.map((slot, index) => ({ ...slot, isStarter: true, sortOrder: index })),
+        ...roster.subs.map((slot, index) => ({ ...slot, isStarter: false, sortOrder: index })),
+      ];
+      await tx.sbMatchSquadPlayer.deleteMany({
+        where: { matchId: match.id, teamId: roster.teamId },
+      });
+      if (!slots.length) continue;
+      await tx.sbMatchSquadPlayer.createMany({
+        data: slots.map((slot) => ({
+          matchId: match.id,
+          teamId: roster.teamId,
+          squadId: slot.squadId,
+          playerId: slot.playerId,
+          playerName: slot.displayName,
+          jerseyNumber: slot.shirtNumber,
+          position: slot.position,
+          isStarter: slot.isStarter,
+          sortOrder: slot.sortOrder,
+        })),
+      });
+    }
+  });
 }
 
 export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOptions) {
@@ -804,6 +1096,10 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
         eventCount += 1;
       }
     }
+  }
+
+  for (const m of MATCHES) {
+    await seedMatchSquads(prisma, m, teamIds, options);
   }
 
   const [matchCount, squadCount] = await Promise.all([

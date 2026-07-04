@@ -1,0 +1,173 @@
+Team Name - 36 Lion FC
+Jersey Number,Name,Surname,Date of Birth,Position,imageUrl
+1,EMMANUEL,IGAGA,26-March-2005,GK
+31,AYOMIDE,FADARE,14-Sept.-2009,RB,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4579-scaled-ri4dsazrtxizog0dqr46lzsmdjkyrjgm6wbufpc9m4.jpg
+12,SUNKANMI,DARAMOLA,1-April-2011,LB,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4573-scaled-ri4dsa1xn3hpcu1qw8pk1i15s5pljucvurocyfdnsc.jpg
+46,JOHN,ONYEMA,13-Sept.-2010,DM,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4552-scaled-ri4ds78f2ldue05ucphoc0qs003hwr1oudpwilhub0.jpg
+5,NNAMDI,ORIAKU,25-July-2006,CB
+18,SOUMAH,MOHAMED,7-March-2007,RB,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4564-scaled-ri4ds943g9gf18341qaxh09p6ru8c595in0vh5f1yk.jpg
+35,SEUN,LAWAL,28-Dec.-2006,RWF/LWF,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4625-scaled-ri4dsiihclta9bpgiud75xwb4mjwh4agvxjq9x148c.jpg
+16,OPEYEMI,OGUNLADE,12-July-2008,CM,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4543-scaled-ri4ds6akvrck2e77i731rizbem84p1xyi92f1bj8h8.jpg
+17,UCHE,EMERIBE,8-Oct.-2008,RWF/LWF
+37,AZUKA,ALATAN,6-April-2008,LB
+14,GABRIEL,KENNEDY,9-Sept.-2007,RWF/LWF
+21,JOEL,ANTHONY,18-Feb.-2009,RB,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4538-scaled-ri4ds5cqoxb9qs8knoof717ut8crhcu864exk1kmng.jpg
+38,JOSHUA,EZE,13-March-2009,CB,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4617-scaled-ri4dsgmsyxqpm3s6ttjy0yddxut61q307o8rbd3wks.jpg
+33,SAMUEL,STEPHEN,1-Jan.-2009,CB,https://36lionfc.com/wp-content/uploads/elementor/thumbs/STEPHEN-SAMUEL-rkhny1nyx8xn517e1m26wpibfy9us9zp2iv5opq10s.jpeg
+3,BENJAMIN,MEGBUNIWE,18-July-2006,LB
+42,AMINU,IBRAHIM,10-Jan.-2008,DM,https://36lionfc.com/wp-content/uploads/elementor/thumbs/IBRHAIM-AMINU-rkhnyjiwj3m39mhg5bs3q302q9ttuiylgz9dsyzjqk.jpeg
+4,AREMU,RILIWAN,9-Oct.-2006,AM
+2,LEKAN,JAMES,8-April-2009,DM,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4577-scaled-ri4dsazrtxizog0dqr46lzsmdjkyrjgm6wbufpc9m4.jpg
+6,BLESSING,EMEHINOLA,19-Nov.-2008,RB
+25,NEZIF,MOHAMMED,5-March-2009,RWF/LWF,https://36lionfc.com/wp-content/uploads/elementor/thumbs/MOHAMMED-NEZIF-rkhnycy179d30cr07qxpqmnukkq9cn8h42ozg19ay4.jpeg
+10,MICHEAL,HUNSA,11-June-2009,RWF/LWF,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4605-scaled-ri4dsfoys3pfahtjzb5bgglxcgxsu0z9vjl9u35ar0.jpg
+29,COLLINS,KADIRI,4-March-2008,CF,https://36lionfc.com/wp-content/uploads/elementor/thumbs/EAM_4609-scaled-ri4dsfoys3pfahtjzb5bgglxcgxsu0z9vjl9u35ar0.jpg
+32,MATTHEW,OBED,10-Oct.-2008,CF
+30,AKOR,FELIX,27-March-2006,GK
+
+
+Team Name - FC Bethel Sporting
+Jersey Number,Name,Surname,Date of Birth,Position
+30,STEPHEN,UCHE,22-November-2006,GK
+2,NAZEEM,TAYESE,26-April-2006,RB
+3,OLUWATOBI,FAREDE,13-October-2008,LB
+14,SOLOMON,FRIDAY,30-May-2005,DM
+4,SOPURUCHI,EKUMA,29-April-2009,CB
+5,AMOWIA,SAMUEL,06-September-2006,CB/LB
+7,MOSES,STEPHEN,19-May-2009,RW
+6,EBUKA,EMMANUEL,01-March-2008,DM/AM
+17,SAMMY,UDOH,12-January-2008,CF
+10,JOSHUA,OKEREKE,25-June-2009,CM
+11,AKOREDE,AZEEZ,09-December-2006,LW
+16,AMOS,AKINSIPE,23-May-2008,DM
+8,CHIJOKE,GODWIN,28-August-2008,DM
+13,PAUL,EKERETE,24-August-2007,DM
+15,MUHAMMED,ADEIZA,28-April-2006,DM
+9,EDWIN,ABAH,16-August-2008,CF
+23,AL-HASSAN,ISAIKU,07-January-2006,LB
+20,IKECHUKWU,HENRY,07-January-2006,AM
+22,OZODUEH HENRY,CHIDERA,27-November-2007,LCB
+21,TIJANI,RIDWAN,27-June-2007,LW
+19,ABUBAKAR,ADAMS,30-December-2007,CF
+18,EZEKIEL,VICTOR,05-April-2008,RW
+1,BALOGUN HAMMED,AYOMIDE,15-July-2006,GK
+24,ADIGUN,HASSAN,20-May-2009,AM
+25,OLEH EMMANUEL,CHIAGBANWE,18-February-2009,RW/LB
+
+
+
+Team Name - Mavlon FC
+Jersey Number,Name,Surname,Date of Birth,Position
+1,Sunday,Kufre,07-December-2006,GK
+2,Tobiloba,Ajala,03-January-2009,GK
+3,Oladele,Daniel,07-February-2011,AM
+4,Benjamin,Akachi,10-April-2008,LB/RB
+5,Samson,Egbedokun,10-April-2007,AM/DM
+6,Owie,Idoko,02-January-2011,CF
+7,Noah,Idris,16-January-2013,AM
+8,Ebuka,Onuorah,30-January-2010,CF
+9,Onalo,Prosper,28-January-2011,DM
+10,Isacc,Lognie,26-February-2010,AM
+11,Charles,Okoliko,01-January-2012,CB
+12,David,Steygar,19-January-2012,CF
+13,Uche,Ofiagu,28-January-2012,DM
+14,Destiny,Enyinda,02-January-2009,CB
+15,Shaibu,Umar,03-March-2011,CF
+16,CHRISTIAN,NWIGWE,18-March-2008,CB
+17,FARUQ OLOLADE,IRINOYE,01-February-2008,DM
+18,Husa,Jeremiah,08-January-2012,LB
+19,Chinedu,Nworie,27-July-2009,DM
+20,Mololuwa,Adesanya,04-July-2009,AM
+21,Malik,Atobatile,18-November-2009,DM
+22,Quadri,Adewale,07-August-2007,RB
+23,Sunday,Abarighofue,04-January-2012,CF
+24,Ifeanyi,Onyene,19-February-2009,CF
+25,Adamu,Aminu,07-January-2012,CF
+
+Team Name - SGFC ATHLETICS SC
+Jersey Number,Name,Surname,Date of Birth,Position
+1,GBADAMOSI,SULEIMAN,17-April-2008,GK
+15,AKINOLA,KEHINDE,17-May-2009,RB
+18,YUNUS,ADAMS,16-October-2009,RB
+2,ADEBIYI,OPEYEMI,10-April-2009,RB/RW
+3,ONOMINE,SUNDAY,08-August-2008,LB
+21,MAKINDE,RASHEED,12-November-2008,LB/LW
+4,OBASI,EMEKA,17-August-2005,CB
+6,DANIEL,AKINSANYA,19-December-2007,CB
+5,OGANI,MICHEAL,16-November-2006,DM
+16,HASSAN,BASHER,10-October-2009,DM
+10,AYODEJI,ABAYOMI,03-October-2006,AM/LW
+8,JOHN,SALAKO,14-September-2009,AM
+12,OLORUNYOMI,ABAYO,01-September-2009,AM
+7,USMAN,SOKYARA,16-March-2009,RW
+11,AFI,PAUL,10-October-2006,RW
+14,JIROME,VICTOR,09-May-2005,LW/AM
+9,OKWUOSA,CHUKWUDI,26-September-2006,CF
+19,SAKA,RAHMAN,30-December-2006,CF
+23,SUNDAY,OJEKA,06-August-2007,CF
+17,PRECIOUS,OLOWU,27-July-2009,CF
+21,ABUBAKAR,MUSA,01-January-2008,CF
+13,MUHAMMAD,ALIU,03-January-2010,CF
+20,JOSEPH,NZUBECHUKWU,01-May-2009,CF
+24,KABIRU,SADIQ,01-January-2007,CF
+37,Daniel,Isodje,30-May-2005,GK
+
+Team Name - Smart City FC
+Jersey Number,Name,Surname,Date of Birth,Position
+1,TAOFEEK,OLADEJI,16-August-2007,GK
+2,EMMANUEL,AGBO,11-December-2007,GK
+3,OWOLABI,OLANIYI,15-December-2006,CB
+4,DANIEL,ADETUNJI,15-December-2007,CB
+5,HASAN,SHUAIB,22-February-2008,CB
+6,ISIAKA,IBRAHIM,31-March-2006,CB
+7,AJIA,KEHINDE,19-May-2007,RW
+8,YUSUF,FAWAZ,12-February-2009,AM
+9,DONALD,OBIAJULU,18-October-2008,ST
+10,MUIZ,LAWAL,16-July-2008,ST
+11,IBRAHIM,FUAD,05-October-2005,RW
+12,HASSAN,HADDI,14-November-2007,LW
+13,JACOB,BENJAMIN,07-June-2006,MF
+14,OLORUNFEMI,MICHEAL,08-August-2007,RW
+15,MUSTAPHA,MUBARAK,15-March-2008,LW
+16,LEMON,BUSAYO,30-November-2007,RB
+17,OLADAPO,AKINTOLA,11-February-2005,LB
+18,JAMIU,ABDULLAHI,03-March-2010,MF
+19,CHIGOZIE,CHIGBO,26-August-2009,MF
+20,FAWAZ,ADENIYI,21-May-2010,RW
+21,OLANREWAJU,OYEYODE,10-May-2007,CB
+22,SALAMI,AZEEZ,17-March-2010,DM
+23,PAUL,EMMANUEL,25-March-2005,ST
+24,PRECIOUS,ANAMAYE,27-March-2008,DF
+25,WARITH,OLAOYE,05-May-2009,ST
+26,AFEEZ,SHITTU,20-October-2006,GK
+27,LUKMAN,IWALOYE,14-January-2007,JF
+
+Team Name - Broad City FC
+Jersey Number,Name,Surname,Date of Birth,Position
+15,MATHEW,OYETUNBI,01-January-2009,CB,https://static.wixstatic.com/media/f54d0c_bd6af73c6b2c438fbd5fbe2cfb20fe68~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+2,EMMANUEL,ODAH,01-January-2009,RB,https://static.wixstatic.com/media/f54d0c_a18925daef5648d6933ede554170816c~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+4,EMMANUEL,UDEOGU,01-January-2009,CB,https://static.wixstatic.com/media/f54d0c_e9bbecebf83c47c58b5fae3e5769848d~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+5,TOHEEB,ADEGBITE,01-January-2009,LB,https://static.wixstatic.com/media/f54d0c_1442282c28234e8fbc69637ea9931615~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+6,VINCENT,ASOR,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_e4d51c0f10a74587910cb143f0a5741b~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+10,CHIDIEBERE,CHIMA,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_ecb68a8279964a298540c8215e204244~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+11,HANIF,SANUSI,01-January-2009,RW,https://static.wixstatic.com/media/f54d0c_0f9870641a854da990e0e8a52190ea1b~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+9,CHRISTOPHER,JEREMIAH,01-January-2009,ST,https://static.wixstatic.com/media/f54d0c_7be9bed2a1a94345b2d04bd3c63c12fd~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+7,UCHE,EZUGWU,01-January-2009,LW,https://static.wixstatic.com/media/f54d0c_244e774c7fc34037800b41dbaafb330c~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+39,MOSES,TERHIDE,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_8bca227b1300407bbf8d4135e2d77d3f~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+36,FREEDOM,ISTIFANUS,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_fb3564bba4094422aea00ff1b6c14c7b~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+39,KAREEM,KOULIBALLY,,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_25cb22afaa60407f8717b563ceb68f20~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+82,EMMANUEL,UDEOGU,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_e9bbecebf83c47c58b5fae3e5769848d~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+67,CHIDUBEM,OHAEGBULEM,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_f05242bcedac4058829f12df75e19429~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+57,AKUDEEN,ADERITAN,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_af5adb070639414799ed5dfc881f96ad~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+74,RAHMON,GASALI,01-January-2009,GK,https://static.wixstatic.com/media/f54d0c_e5a1ff82aabb4f16902aefec86284c08~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+63,MICHEAL,FAMUYEGUN,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_85eca61680d54db1a6ad7d790842f012~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+81,VICTORY,EDEBI,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_6f29577b9ec946b79286dc8f05635f46~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+82,VICTORY,CHUKWUMA,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_d087ea78ac12405dbe6d203091240a56~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+87,BOLUWATIFE,IWUAJOKU,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_7789fbf1db6d4751b26cbaa734b852ab~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+69,GODSWIL,AKPABIO,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_f72d4630443844348e59e0d5a4f4353b~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+98,EMMANUEL,ADEKUNLE,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_e52943ff33d343599fe0c8e83f033867~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+39,EMMANUEL,AKINRINDE,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_50434157ed734d29b626eccd5025b667~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+74,EMMANUEL,OBI,01-January-2009,GK,https://static.wixstatic.com/media/f54d0c_a2acb5e3817642619e339e68a5a22e23~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+96,MICHEAL,ADEYEMI,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_437d17726f0e45bcbb13bef75e4ffb40~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+36,CHIBUZOR,OKONKWO,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_798b84887be44bcc9d59a126d8f5de58~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png
+58,CHIDI,FIDELIX,01-January-2009,CM,https://static.wixstatic.com/media/f54d0c_aec75031e5f4483eb5d503ca598b7036~mv2.png/v1/fill/w_420,h_534,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Image-empty-state.png

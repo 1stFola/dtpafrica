@@ -59,6 +59,7 @@ model Player {
   philosophyFitRows  PhilosophyFitProfile[]
   positionFit        PositionFitSnapshot?
   scoreboardSquad    SbTeamSquad[]
+  scoreboardMatchSquad SbMatchSquadPlayer[]
   scoreboardEvents   SbMatchEvent[] @relation("SbEventPlayer")
   scoreboardAssists  SbMatchEvent[] @relation("SbEventAssistPlayer")
   competitionStats   SbPlayerCompetitionStats[]
@@ -389,6 +390,7 @@ model SbTeam {
   awayMatches  SbMatch[]     @relation("SbAwayTeam")
   squad        SbTeamSquad[]
   events       SbMatchEvent[]
+  matchSquadPlayers SbMatchSquadPlayer[]
 
   @@unique([competitionId, slug])
   @@map("sb_teams")
@@ -404,10 +406,37 @@ model SbTeamSquad {
 
   team   SbTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)
   player Player? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  matchSquadPlayers SbMatchSquadPlayer[]
 
   @@index([teamId])
   @@index([playerId])
   @@map("sb_team_squad")
+}
+
+model SbMatchSquadPlayer {
+  id           String   @id @default(uuid())
+  matchId      String   @map("match_id")
+  teamId       String   @map("team_id")
+  squadId      String?  @map("squad_id")
+  playerId     String?  @map("player_id")
+  playerName   String   @map("player_name")
+  jerseyNumber Int?     @map("jersey_number")
+  position     String?
+  isStarter    Boolean  @default(false) @map("is_starter")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  match  SbMatch      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team   SbTeam       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  squad  SbTeamSquad? @relation(fields: [squadId], references: [id], onDelete: SetNull)
+  player Player?      @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([matchId, teamId])
+  @@index([teamId])
+  @@index([playerId])
+  @@index([squadId])
+  @@map("sb_match_squad_players")
 }
 
 model SbMatch {
@@ -427,6 +456,8 @@ model SbMatch {
   roundLabel    String?   @map("round_label")
   stageKey      String?   @map("stage_key")
   matchday      Int?
+  formationHome String    @default("4-3-3") @map("formation_home")
+  formationAway String    @default("4-3-3") @map("formation_away")
   meta          Json?
   stats         Json?
   isPublished   Boolean   @default(true) @map("is_published")
@@ -444,6 +475,7 @@ model SbMatch {
   events      SbMatchEvent[]
   highlights  SbHighlight[]
   ingestAudits SbSipIngestAudit[]
+  squadPlayers SbMatchSquadPlayer[]
 
   @@index([competitionId, status])
   @@index([stageKey])

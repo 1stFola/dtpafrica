@@ -1,0 +1,3 @@
+ALTER TABLE "sb_matches"
+  ADD COLUMN IF NOT EXISTS "formation_home" TEXT NOT NULL DEFAULT '4-3-3',
+  ADD COLUMN IF NOT EXISTS "formation_away" TEXT NOT NULL DEFAULT '4-3-3';

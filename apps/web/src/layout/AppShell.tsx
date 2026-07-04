@@ -69,7 +69,6 @@ export function AppShell() {
               </NavLink>
             ))}
           </div>
-          <div className="app-nav__divider" aria-hidden="true" />
           <div className="app-nav__group app-nav__group--secondary" aria-label="Site">
             {MARKETING_LINKS.map((link) => (
               <NavLink
