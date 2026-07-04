@@ -489,6 +489,12 @@ export function PlayerProfilePage() {
               attributes={attributes}
               positionPrimary={player.positionPrimary}
               role={player.role}
+              secondaryRole={
+                player.positionSecondary ??
+                player.positionFit?.secondaryPositionFit ??
+                player.scoutingIntelligence?.positionFit?.secondaryPositionFit ??
+                null
+              }
               dataSourceLabel={
                 player.ratingAttributes ? "From match data" : "Estimated from profile"
               }

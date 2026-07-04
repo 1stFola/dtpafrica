@@ -66,6 +66,8 @@ export const ROLE_CORE_ATTRIBUTE_KEYS: Record<
   ],
 };
 
+const ROLE_PROFILE_SUBSTITUTION_THRESHOLD = 55;
+
 export function resolveCoreRoleAttributeKeys(
   positionPrimary?: string | null,
   role?: string | null
@@ -79,6 +81,56 @@ export function resolveCoreRoleAttributeKeys(
 
   const group = resolvePositionGroup(positionPrimary, role);
   return ROLE_CORE_ATTRIBUTE_KEYS[group];
+}
+
+export function resolveIntelligentRoleProfileKeys({
+  attributes,
+  positionPrimary,
+  role,
+  secondaryRole,
+}: {
+  attributes: Record<string, number>;
+  positionPrimary?: string | null;
+  role?: string | null;
+  secondaryRole?: string | null;
+}): {
+  coreKeys: readonly RatingAttributeKey[];
+  remainingKeys: readonly RatingAttributeKey[];
+} {
+  const coreKeys = [...resolveCoreRoleAttributeKeys(positionPrimary, role)];
+  const remainingKeys = new Set(resolveRemainingAttributeKeys(coreKeys));
+  const secondaryCoreKeys = secondaryRole?.trim()
+    ? resolveCoreRoleAttributeKeys(secondaryRole, secondaryRole)
+    : [];
+  const originalRemainingKeys = new Set(remainingKeys);
+  const usedReplacementKeys = new Set<RatingAttributeKey>();
+
+  for (let index = 0; index < coreKeys.length; index += 1) {
+    const currentKey = coreKeys[index];
+    const currentScore = attributes[currentKey] ?? 0;
+    if (currentScore >= ROLE_PROFILE_SUBSTITUTION_THRESHOLD) continue;
+
+    const replacementKey = secondaryCoreKeys
+      .filter(
+        (key) =>
+          originalRemainingKeys.has(key) &&
+          remainingKeys.has(key) &&
+          !usedReplacementKeys.has(key)
+      )
+      .sort((a, b) => (attributes[b] ?? 0) - (attributes[a] ?? 0))[0];
+
+    if (!replacementKey) continue;
+
+    coreKeys[index] = replacementKey;
+    usedReplacementKeys.add(replacementKey);
+    remainingKeys.delete(replacementKey);
+    remainingKeys.add(currentKey);
+  }
+
+  return {
+    coreKeys,
+    remainingKeys: ALL_ATTRIBUTE_KEYS.filter((key) => remainingKeys.has(key)),
+  };
 }
 
 export function resolveRemainingAttributeKeys(
