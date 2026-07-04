@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   fetchMatch,
+  fetchMatchSquads,
   type SbMatchDetail,
+  type SbMatchSquadsResponse,
 } from "../../../api/scoreboard";
 import { isAbortError } from "../../../api/client";
 import { EventTimeline } from "../components/EventTimeline";
@@ -243,6 +245,8 @@ export function MatchCenterPage() {
     initialTab && TAB_IDS.has(initialTab) ? (initialTab as MatchTab) : "timeline"
   );
   const [match, setMatch] = useState<SbMatchDetail | null>(null);
+  const [matchSquads, setMatchSquads] = useState<SbMatchSquadsResponse | null>(null);
+  const [squadsLoading, setSquadsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -300,6 +304,20 @@ export function MatchCenterPage() {
       if (timer) clearInterval(timer);
     };
   }, [matchSlug, navigate, searchParams]);
+
+  useEffect(() => {
+    if (!matchSlug || activeTab !== "squads") return;
+    const controller = new AbortController();
+    setSquadsLoading(true);
+    fetchMatchSquads(matchSlug, controller.signal)
+      .then((data) => setMatchSquads(data))
+      .catch((e) => {
+        if (!isAbortError(e)) setError(String(e));
+      })
+      .finally(() => setSquadsLoading(false));
+
+    return () => controller.abort();
+  }, [matchSlug, activeTab]);
 
   const compLabel = useMemo(
     () => (match ? competitionLabel(match.competition.name) : ""),
@@ -518,12 +536,17 @@ export function MatchCenterPage() {
             aria-labelledby="sbm-tab-squads"
           >
             <h2 className="sbc-block__title">Squads</h2>
-            <MatchSquadsGrid
-              homeTeam={match.homeTeam}
-              awayTeam={match.awayTeam}
-              competition={compLabel}
-              stats={match.stats}
-            />
+            {squadsLoading ? (
+              <MatchSquadsSkeleton />
+            ) : (
+              <MatchSquadsGrid
+                homeTeam={match.homeTeam}
+                awayTeam={match.awayTeam}
+                competition={compLabel}
+                stats={match.stats}
+                matchSquads={matchSquads}
+              />
+            )}
           </section>
         )}
       </div>

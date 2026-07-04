@@ -244,6 +244,19 @@ export const adminScoreboardApi = {
       body: JSON.stringify(roster),
     }),
 
+  uploadMatchSquadsCsv: (matchId: string, teamId: string, csv: string) =>
+    sbFetch<{
+      ok: boolean;
+      matchId: string;
+      teamId: string;
+      imported: number;
+      starters: number;
+      bench: number;
+    }>(`/admin/scoreboard/matches/${matchId}/squads/upload`, {
+      method: "POST",
+      body: JSON.stringify({ teamId, csv }),
+    }),
+
   getSpotter: (matchId: string) =>
     sbFetch<{
       match: {
@@ -268,7 +281,8 @@ export const adminScoreboardApi = {
 
   patchSpotter: (
     matchId: string,
-    body: Partial<SpotterOps> & {
+    body: Omit<Partial<SpotterOps>, "formation"> & {
+      formation?: Partial<SpotterOps["formation"]>;
       lockLineups?: boolean;
       pushOfflineEvent?: { type: string; minute: number };
       popOfflineQueue?: boolean;

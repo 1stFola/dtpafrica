@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { normalizeClubName } from "@dtp/engines";
+import { normalizeClubName, normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import { isAllowedImageMediaUrl, normalizeVideoMediaUrl } from "../shared/media-url";
 import type { CreateAdminHighlightDto } from "./dto/create-admin-highlight.dto";
 import { Prisma } from "@prisma/client";
@@ -30,8 +30,10 @@ import {
   type MatchSlugLeg,
 } from "../scoreboard/match-slug";
 import { parseKickoffAtIso, parseWatKickoff } from "../shared/wat-datetime";
+import { parseMatchSquadCsv, type ParsedMatchSquadCsvRow } from "./match-squad-csv";
 
 const SCOREBOARD_TIMEZONE = "Africa/Lagos";
+const DEFAULT_FORMATION = "4-3-3";
 
 const KNOCKOUT_ROUND_LABELS: Record<string, string> = {
   R32: "Round of 32",
@@ -109,6 +111,33 @@ function slugify(name: string) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function splitPlayerName(displayName: string) {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] ?? displayName,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : "",
+  };
+}
+
+function normalizeFormation(value?: string | null) {
+  const raw = value?.trim();
+  if (!raw) return DEFAULT_FORMATION;
+  const parts = raw
+    .split("-")
+    .map((part) => Number.parseInt(part.trim(), 10))
+    .filter((part) => Number.isFinite(part) && part > 0);
+  if (parts.length < 2 || parts.reduce((sum, part) => sum + part, 0) !== 10) {
+    return DEFAULT_FORMATION;
+  }
+  return parts.join("-");
+}
+
+function sideForTeam(match: { homeTeamId: string; awayTeamId: string }, teamId: string): "home" | "away" {
+  if (match.homeTeamId === teamId) return "home";
+  if (match.awayTeamId === teamId) return "away";
+  throw new BadRequestException("Team not in this match");
 }
 
 function deriveCompetitionStatus(
@@ -796,16 +825,259 @@ export class AdminScoreboardService {
     const resolved = await this.resolveRosterPlayerIds(payload);
 
     const stats = ((match.stats ?? {}) as MatchStatsJson) ?? {};
+    const side = sideForTeam(match, payload.teamId);
+    const currentFormation = {
+      home: match.formationHome ?? stats.spotter?.formation?.home ?? DEFAULT_FORMATION,
+      away: match.formationAway ?? stats.spotter?.formation?.away ?? DEFAULT_FORMATION,
+    };
+    const nextFormation = {
+      home: normalizeFormation(currentFormation.home),
+      away: normalizeFormation(currentFormation.away),
+      [side]: normalizeFormation(currentFormation[side]),
+    };
     stats.matchdayRosters = {
       ...(stats.matchdayRosters ?? {}),
       [payload.teamId]: resolved,
     };
+    stats.spotter = {
+      ...(stats.spotter ?? defaultSpotterState()),
+      formation: nextFormation,
+    };
 
-    await this.prisma.sbMatch.update({
-      where: { id: matchId },
-      data: { stats: stats as Prisma.InputJsonValue },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.sbMatch.update({
+        where: { id: matchId },
+        data: {
+          stats: stats as Prisma.InputJsonValue,
+          formationHome: nextFormation.home,
+          formationAway: nextFormation.away,
+        },
+      });
+      await this.syncMatchSquadPlayers(tx, matchId, payload.teamId, resolved);
     });
     return { ok: true, roster: resolved };
+  }
+
+  async uploadMatchSquadCsv(matchId: string, teamId: string, csv: string) {
+    const rows = parseMatchSquadCsv(csv);
+    if (rows.filter((row) => row.isStarter).length > 11) {
+      throw new BadRequestException("CSV cannot contain more than 11 starters.");
+    }
+    if (rows.length > 30) {
+      throw new BadRequestException("CSV cannot contain more than 30 players for one team.");
+    }
+
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true,
+        stats: true,
+        homeTeamId: true,
+        awayTeamId: true,
+        formationHome: true,
+        formationAway: true,
+      },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+    if (match.homeTeamId !== teamId && match.awayTeamId !== teamId) {
+      throw new BadRequestException("Team not in this match");
+    }
+
+    const roster = await this.prisma.$transaction(async (tx) => {
+      const slots = await Promise.all(
+        rows.map(async (row) => {
+          const squad = await this.findOrCreateTeamSquadRow(tx, teamId, row);
+          return {
+            squadId: squad.id,
+            displayName: squad.displayName,
+            position: squad.position,
+            shirtNumber: squad.shirtNumber,
+            playerId: squad.playerId,
+            playerSlug: null,
+            role: row.isStarter ? "xi" : "sub",
+          } satisfies MatchdayRosterSlot;
+        })
+      );
+
+      const resolved: MatchdayRosterPayload = {
+        teamId,
+        xi: slots.filter((slot) => slot.role === "xi"),
+        subs: slots.filter((slot) => slot.role === "sub"),
+      };
+      const stats = ((match.stats ?? {}) as MatchStatsJson) ?? {};
+      const side = sideForTeam(match, teamId);
+      const currentFormation = {
+        home: match.formationHome ?? stats.spotter?.formation?.home ?? DEFAULT_FORMATION,
+        away: match.formationAway ?? stats.spotter?.formation?.away ?? DEFAULT_FORMATION,
+      };
+      const nextFormation = {
+        home: normalizeFormation(currentFormation.home),
+        away: normalizeFormation(currentFormation.away),
+        [side]: normalizeFormation(currentFormation[side]),
+      };
+      stats.matchdayRosters = {
+        ...(stats.matchdayRosters ?? {}),
+        [teamId]: resolved,
+      };
+      stats.spotter = {
+        ...(stats.spotter ?? defaultSpotterState()),
+        formation: nextFormation,
+      };
+
+      await tx.sbMatch.update({
+        where: { id: matchId },
+        data: {
+          stats: stats as Prisma.InputJsonValue,
+          formationHome: nextFormation.home,
+          formationAway: nextFormation.away,
+        },
+      });
+      await this.syncMatchSquadPlayers(tx, matchId, teamId, resolved);
+      return resolved;
+    });
+
+    return {
+      ok: true,
+      matchId,
+      teamId,
+      imported: rows.length,
+      starters: roster.xi.length,
+      bench: roster.subs.length,
+    };
+  }
+
+  private async findOrCreateTeamSquadRow(
+    tx: Prisma.TransactionClient,
+    teamId: string,
+    row: ParsedMatchSquadCsvRow
+  ) {
+    const player = await this.findOrCreateCsvSquadPlayer(tx, row);
+    const existing = await tx.sbTeamSquad.findFirst({
+      where: {
+        teamId,
+        displayName: { equals: row.playerName, mode: "insensitive" },
+        ...(row.jerseyNumber == null ? {} : { shirtNumber: row.jerseyNumber }),
+      },
+    });
+    if (existing) {
+      if (existing.position !== row.position || existing.shirtNumber !== row.jerseyNumber) {
+        return tx.sbTeamSquad.update({
+          where: { id: existing.id },
+          data: {
+            playerId: player.id,
+            position: row.position,
+            shirtNumber: row.jerseyNumber,
+          },
+        });
+      }
+      if (existing.playerId !== player.id) {
+        return tx.sbTeamSquad.update({
+          where: { id: existing.id },
+          data: { playerId: player.id },
+        });
+      }
+      return existing;
+    }
+
+    return tx.sbTeamSquad.create({
+      data: {
+        teamId,
+        playerId: player.id,
+        displayName: row.playerName,
+        position: row.position,
+        shirtNumber: row.jerseyNumber,
+      },
+    });
+  }
+
+  private async findOrCreateCsvSquadPlayer(
+    tx: Prisma.TransactionClient,
+    row: ParsedMatchSquadCsvRow
+  ) {
+    const displayName = normalizePlayerName(row.playerName);
+    const normalizedName = playerLookupKey(displayName);
+    const nameParts = splitPlayerName(displayName);
+    const existing = await tx.player.findUnique({ where: { normalizedName } });
+    const data = {
+      firstName: nameParts.firstName,
+      lastName: nameParts.lastName,
+      displayName,
+      positionPrimary: row.position || "MF",
+      ...(row.dateOfBirth ? { dateOfBirth: row.dateOfBirth } : {}),
+      ...(row.imageUrl ? { playerPhotoUrl: row.imageUrl } : {}),
+      registrationStatus: "approved",
+      isPublic: true,
+    };
+
+    if (existing) {
+      return tx.player.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+
+    return tx.player.create({
+      data: {
+        ...data,
+        normalizedName,
+        slug: await this.resolveUniqueCsvPlayerSlug(tx, displayName),
+      },
+    });
+  }
+
+  private async resolveUniqueCsvPlayerSlug(tx: Prisma.TransactionClient, displayName: string) {
+    const base = slugify(displayName) || "player";
+    let slug = base;
+    let n = 0;
+    while (true) {
+      const clash = await tx.player.findFirst({ where: { slug }, select: { id: true } });
+      if (!clash) return slug;
+      n += 1;
+      slug = `${base}-${n}`;
+    }
+  }
+
+  private async syncMatchSquadPlayers(
+    tx: Prisma.TransactionClient,
+    matchId: string,
+    teamId: string,
+    roster: MatchdayRosterPayload
+  ) {
+    const slots = [
+      ...roster.xi.map((slot, index) => ({ ...slot, isStarter: true, sortOrder: index })),
+      ...roster.subs.map((slot, index) => ({ ...slot, isStarter: false, sortOrder: index })),
+    ];
+    const squadRows = await tx.sbTeamSquad.findMany({
+      where: { id: { in: slots.map((slot) => slot.squadId) } },
+      select: {
+        id: true,
+        playerId: true,
+        displayName: true,
+        position: true,
+        shirtNumber: true,
+      },
+    });
+    const squadById = new Map(squadRows.map((row) => [row.id, row]));
+
+    await tx.sbMatchSquadPlayer.deleteMany({ where: { matchId, teamId } });
+    if (!slots.length) return;
+
+    await tx.sbMatchSquadPlayer.createMany({
+      data: slots.map((slot) => {
+        const squad = squadById.get(slot.squadId);
+        return {
+          matchId,
+          teamId,
+          squadId: slot.squadId,
+          playerId: slot.playerId ?? squad?.playerId ?? null,
+          playerName: slot.displayName || squad?.displayName || "Unknown player",
+          jerseyNumber: slot.shirtNumber ?? squad?.shirtNumber ?? null,
+          position: slot.position ?? squad?.position ?? null,
+          isStarter: slot.isStarter,
+          sortOrder: slot.sortOrder,
+        };
+      }),
+    });
   }
 
   private async resolveRosterPlayerIds(payload: MatchdayRosterPayload) {
@@ -883,7 +1155,10 @@ export class AdminScoreboardService {
         addedTime: spotter.addedTime ?? 0,
         offlineQueueCount: spotter.offlineQueue?.length ?? 0,
         lastUndoAt: null,
-        formation: spotter.formation ?? { home: "4-3-3", away: "4-3-3" },
+        formation: {
+          home: normalizeFormation(match.formationHome ?? spotter.formation?.home),
+          away: normalizeFormation(match.formationAway ?? spotter.formation?.away),
+        },
         pitchSelection: spotter.pitchSelection ?? null,
       } satisfies SpotterOpsState & {
         formation: { home: string; away: string };
@@ -917,6 +1192,13 @@ export class AdminScoreboardService {
       spotter.officialsConfirmed = Math.min(4, Math.max(0, patch.officialsConfirmed));
     }
     if (patch.addedTime !== undefined) spotter.addedTime = patch.addedTime;
+    if ((patch as { formation?: { home?: string; away?: string } }).formation) {
+      const formation = (patch as { formation?: { home?: string; away?: string } }).formation;
+      spotter.formation = {
+        home: normalizeFormation(formation?.home ?? match.formationHome ?? spotter.formation?.home),
+        away: normalizeFormation(formation?.away ?? match.formationAway ?? spotter.formation?.away),
+      };
+    }
     if (patch.pushOfflineEvent) {
       spotter.offlineQueue = [
         ...(spotter.offlineQueue ?? []),
@@ -934,7 +1216,11 @@ export class AdminScoreboardService {
     stats.spotter = spotter;
     await this.prisma.sbMatch.update({
       where: { id: matchId },
-      data: { stats: stats as Prisma.InputJsonValue },
+      data: {
+        stats: stats as Prisma.InputJsonValue,
+        formationHome: normalizeFormation(spotter.formation?.home ?? match.formationHome),
+        formationAway: normalizeFormation(spotter.formation?.away ?? match.formationAway),
+      },
     });
     return this.getSpotterOps(matchId);
   }

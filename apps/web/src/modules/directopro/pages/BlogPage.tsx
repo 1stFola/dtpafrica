@@ -1,11 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, type BlogPostSummary } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
+const categories = ["All", "Insights", "Success stories", "Expert tips"] as const;
+
+function classifyPost(post: BlogPostSummary) {
+  const text = `${post.title} ${post.excerpt ?? ""}`.toLowerCase();
+  if (text.includes("rating") || text.includes("system")) return "Expert tips";
+  if (text.includes("dream") || text.includes("trap") || text.includes("scouting")) return "Insights";
+  return "Success stories";
+}
+
 export function BlogPage() {
   usePageTitle("Blog");
   const [posts, setPosts] = useState<BlogPostSummary[]>([]);
+  const [active, setActive] = useState<(typeof categories)[number]>("All");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -14,26 +24,68 @@ export function BlogPage() {
       .catch((e) => setError(String(e)));
   }, []);
 
+  const filtered = useMemo(
+    () => (active === "All" ? posts : posts.filter((post) => classifyPost(post) === active)),
+    [active, posts]
+  );
+  const featured = filtered[0];
+  const rest = filtered.slice(1);
+
   return (
-    <div className="home-page">
-      <header className="page-header">
-        <h1>News & updates</h1>
-        <p className="muted">Platform news, pathways, and announcements.</p>
+    <main className="home-page blog-premium">
+      <header className="blog-hero">
+        <span className="about-kicker">DTP Africa Blog</span>
+        <h1>Insights for football families, academies, scouts, and the next generation.</h1>
+        <p>
+          Practical thinking on football development, transparent scouting, player protection,
+          data-led evaluation, and the future of African talent discovery.
+        </p>
       </header>
-      {error && <p className="form-error">{error}</p>}
-      <ul className="blog-list">
-        {posts.map((post) => (
-          <li key={post.id}>
-            <Link to={`/blog/${post.slug}`} className="blog-list-item">
-              <h3>{post.title}</h3>
-              {post.excerpt && <p>{post.excerpt}</p>}
-              <time className="muted">
-                {new Date(post.publishedAt).toLocaleDateString()}
-              </time>
-            </Link>
-          </li>
+
+      <div className="blog-filters" role="tablist" aria-label="Blog categories">
+        {categories.map((category) => (
+          <button
+            key={category}
+            type="button"
+            className={category === active ? "active" : ""}
+            onClick={() => setActive(category)}
+          >
+            {category}
+          </button>
         ))}
-      </ul>
-    </div>
+      </div>
+
+      {error && <p className="form-error">{error}</p>}
+
+      {featured ? (
+        <>
+          <Link to={`/blog/${featured.slug}`} className="blog-featured">
+            <div>
+              <span>{classifyPost(featured)}</span>
+              <h2>{featured.title}</h2>
+              {featured.excerpt && <p>{featured.excerpt}</p>}
+              <time>{new Date(featured.publishedAt).toLocaleDateString()}</time>
+            </div>
+            <strong>Read article</strong>
+          </Link>
+
+          <section className="blog-card-grid">
+            {rest.map((post) => (
+              <Link to={`/blog/${post.slug}`} className="blog-card" key={post.id}>
+                <span>{classifyPost(post)}</span>
+                <h3>{post.title}</h3>
+                {post.excerpt && <p>{post.excerpt}</p>}
+                <time>{new Date(post.publishedAt).toLocaleDateString()}</time>
+              </Link>
+            ))}
+          </section>
+        </>
+      ) : (
+        <div className="blog-empty">
+          <h2>No posts published yet</h2>
+          <p>Fresh DTP Africa insights will appear here once published.</p>
+        </div>
+      )}
+    </main>
   );
 }

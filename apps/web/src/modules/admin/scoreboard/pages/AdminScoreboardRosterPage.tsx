@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import type { SbMatchListItem } from "../../../../api/scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
@@ -10,9 +10,30 @@ import { RosterReadinessBar } from "../components/RosterReadinessBar";
 import {
   isGoalkeeper,
   positionTag,
+  type MatchFormation,
   type MatchdayRosterSlot,
   type PositionTag,
 } from "../types";
+
+const FORMATION_OPTIONS: MatchFormation[] = [
+  "4-3-3",
+  "4-2-3-1",
+  "4-1-2-3",
+  "4-4-2",
+  "3-5-2",
+  "3-4-3",
+  "5-3-2",
+];
+
+function selectedTeamSide(
+  match: SbMatchListItem | undefined,
+  selectedTeamId: string
+): "home" | "away" | null {
+  if (!match) return null;
+  if (match.homeTeam.id === selectedTeamId) return "home";
+  if (match.awayTeam.id === selectedTeamId) return "away";
+  return null;
+}
 
 function toSlot(
   row: {
@@ -39,6 +60,7 @@ function toSlot(
 export function AdminScoreboardRosterPage() {
   usePageTitle("Admin — Matchday roster");
   const toast = useAdminToast();
+  const squadCsvInputRef = useRef<HTMLInputElement>(null);
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(true);
   const [matchId, setMatchId] = useState("");
@@ -57,6 +79,8 @@ export function AdminScoreboardRosterPage() {
   const [subs, setSubs] = useState<MatchdayRosterSlot[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [formation, setFormation] = useState<MatchFormation>("4-3-3");
   const [readiness, setReadiness] = useState<
     Awaited<ReturnType<typeof adminScoreboardApi.getSpotter>>["rosterReadiness"] | null
   >(null);
@@ -124,6 +148,13 @@ export function AdminScoreboardRosterPage() {
         setXi(rosterData.roster.xi ?? []);
         setSubs(rosterData.roster.subs ?? []);
         setReadiness(spotter.rosterReadiness);
+        const side = selectedTeamSide(selectedMatch, teamId);
+        const savedFormation = side ? spotter.ops.formation?.[side] : null;
+        setFormation(
+          FORMATION_OPTIONS.includes(savedFormation as MatchFormation)
+            ? (savedFormation as MatchFormation)
+            : "4-3-3"
+        );
       })
       .catch(() => {
         setDirectory([]);
@@ -131,7 +162,7 @@ export function AdminScoreboardRosterPage() {
         setSubs([]);
       })
       .finally(() => setLoading(false));
-  }, [matchId, teamId]);
+  }, [matchId, selectedMatch, teamId]);
 
   useEffect(() => {
     loadRoster();
@@ -181,12 +212,18 @@ export function AdminScoreboardRosterPage() {
   const save = async () => {
     if (!matchId || !teamId) return;
     setSaving(true);
+    const side = selectedTeamSide(selectedMatch, teamId);
     const payload = {
       teamId,
       xi: stripNonGkCleanSheets(xi),
       subs: stripNonGkCleanSheets(subs),
     };
     try {
+      if (side) {
+        await adminScoreboardApi.patchSpotter(matchId, {
+          formation: { [side]: formation },
+        });
+      }
       await adminScoreboardApi.saveRoster(matchId, payload);
       toast.success("Matchday roster saved — player IDs linked to master directory");
       loadRoster();
@@ -195,6 +232,44 @@ export function AdminScoreboardRosterPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const uploadSquadCsv = async (file: File) => {
+    if (!matchId || !teamId) return;
+    setCsvUploading(true);
+    const side = selectedTeamSide(selectedMatch, teamId);
+    try {
+      const csv = await file.text();
+      if (side) {
+        await adminScoreboardApi.patchSpotter(matchId, {
+          formation: { [side]: formation },
+        });
+      }
+      const result = await adminScoreboardApi.uploadMatchSquadsCsv(matchId, teamId, csv);
+      toast.success(
+        `Imported ${result.imported} players (${result.starters} starters, ${result.bench} bench)`
+      );
+      loadRoster();
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setCsvUploading(false);
+    }
+  };
+
+  const downloadSquadTemplate = () => {
+    const csv = [
+      "jersey_number,player_name,position,is_starter,date_of_birth,image_url",
+      "1,Player Name,GK,TRUE,2009-01-31,https://example.com/player-photo.jpg",
+      "9,Striker Name,ST,TRUE,31-January-2009,",
+      "14,Bench Player,MF,FALSE,,",
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "match-squad-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const renderRosterList = (
@@ -331,6 +406,57 @@ export function AdminScoreboardRosterPage() {
           homeLabel={selectedMatch.homeTeam.name}
           awayLabel={selectedMatch.awayTeam.name}
         />
+      )}
+
+      {selectedMatch && (
+        <div className="admin-sb-panel admin-sb-squad-upload">
+          <div>
+            <h3>Upload squad CSV</h3>
+            <p className="muted">
+              Replaces the selected team's matchday squad for this fixture. Required columns:
+              jersey_number, player_name, position, is_starter. Optional columns: date_of_birth,
+              image_url.
+            </p>
+          </div>
+          <div className="admin-sb-squad-upload__actions">
+            <label className="admin-sb-formation-select">
+              Formation
+              <select
+                value={formation}
+                onChange={(e) => setFormation(e.target.value as MatchFormation)}
+                aria-label="Team formation"
+              >
+                {FORMATION_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="admin-inline-button" onClick={downloadSquadTemplate}>
+              Download template
+            </button>
+            <button
+              type="button"
+              className="admin-inline-button admin-inline-button--primary"
+              disabled={csvUploading || loading || !teamId}
+              onClick={() => squadCsvInputRef.current?.click()}
+            >
+              {csvUploading ? "Uploading…" : "Upload CSV"}
+            </button>
+            <input
+              ref={squadCsvInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadSquadCsv(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {loading ? (

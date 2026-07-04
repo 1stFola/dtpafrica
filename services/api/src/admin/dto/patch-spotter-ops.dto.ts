@@ -26,4 +26,7 @@ export class PatchSpotterOpsDto {
   @IsOptional()
   @IsBoolean()
   popOfflineQueue?: boolean;
+
+  @IsOptional()
+  formation?: { home?: string; away?: string };
 }

@@ -785,7 +785,105 @@ export class ScoreboardService {
       include: MATCH_INCLUDE,
     });
     if (!match) throw new NotFoundException("Match not found");
-    return presentMatchDetail(presentScoreboardPayload(match));
+    const stats =
+      match.stats && typeof match.stats === "object" && !Array.isArray(match.stats)
+        ? (match.stats as Record<string, unknown>)
+        : {};
+    const spotter =
+      stats.spotter && typeof stats.spotter === "object" && !Array.isArray(stats.spotter)
+        ? (stats.spotter as Record<string, unknown>)
+        : {};
+    return presentMatchDetail(
+      presentScoreboardPayload({
+        ...match,
+        stats: {
+          ...stats,
+          spotter: {
+            ...spotter,
+            formation: {
+              home: match.formationHome || "4-3-3",
+              away: match.formationAway || "4-3-3",
+            },
+          },
+        },
+      })
+    );
+  }
+
+  async matchSquadsBySlugOrId(slugOrId: string, publicOnly = true) {
+    const resolved = await resolveMatchBySlugOrId(this.prisma, slugOrId);
+    if (!resolved) throw new NotFoundException("Match not found");
+
+    const match = await this.prisma.sbMatch.findFirst({
+      where: {
+        id: resolved.id,
+        ...(publicOnly
+          ? { isPublished: true, competition: { isPublished: true } }
+          : {}),
+      },
+      select: {
+        id: true,
+        homeTeamId: true,
+        awayTeamId: true,
+        homeTeam: true,
+        awayTeam: true,
+        squadPlayers: {
+          orderBy: [
+            { isStarter: "desc" },
+            { sortOrder: "asc" },
+            { jerseyNumber: "asc" },
+            { playerName: "asc" },
+          ],
+          include: {
+            player: {
+              select: {
+                id: true,
+                slug: true,
+                displayName: true,
+                positionPrimary: true,
+                positionSecondary: true,
+                playerPhotoUrl: true,
+                overallRating: true,
+                isPublic: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+
+    const toPlayer = (row: (typeof match.squadPlayers)[number]) => ({
+      id: row.id,
+      teamId: row.teamId,
+      playerId: row.playerId,
+      shirtNumber: row.jerseyNumber,
+      displayName: row.playerName,
+      position: row.position,
+      isStarter: row.isStarter,
+      player: row.player,
+    });
+    const teamPayload = (teamId: string, team: typeof match.homeTeam) => {
+      const rows = match.squadPlayers.filter((row) => row.teamId === teamId);
+      const starting = rows.filter((row) => row.isStarter).map(toPlayer);
+      const bench = rows.filter((row) => !row.isStarter).map(toPlayer);
+      return {
+        team: presentScoreboardPayload(team),
+        starting,
+        bench,
+        players: [...starting, ...bench],
+      };
+    };
+
+    return presentScoreboardPayload({
+      matchId: match.id,
+      homeTeamId: match.homeTeamId,
+      awayTeamId: match.awayTeamId,
+      teams: {
+        [match.homeTeamId]: teamPayload(match.homeTeamId, match.homeTeam),
+        [match.awayTeamId]: teamPayload(match.awayTeamId, match.awayTeam),
+      },
+    });
   }
 
   async standings(competitionId: string) {
