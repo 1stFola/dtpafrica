@@ -16,6 +16,12 @@ export type XiSlotPick = {
   fit: PhilosophyFitResult;
 };
 
+type SlotCandidate = {
+  player: PhilosophyFitPlayer;
+  fit: PhilosophyFitResult;
+  matchTier: 0 | 1 | 2;
+};
+
 export type StrongXiResult = {
   formation: FormationId;
   philosophy: PhilosophyId;
@@ -28,6 +34,28 @@ export type StrongXiResult = {
   }[];
   insights: string[];
 };
+
+function slotMatchTier(
+  player: PhilosophyFitPlayer,
+  slot: (typeof FORMATIONS)[FormationId][number]
+): 0 | 1 | 2 {
+  if (positionMatchesSlot(player.positionPrimary, slot)) return 2;
+  if (player.positionSecondary && positionMatchesSlot(player.positionSecondary, slot)) {
+    return 1;
+  }
+  return 0;
+}
+
+function sortCandidates(a: SlotCandidate, b: SlotCandidate) {
+  if (a.matchTier !== b.matchTier) return b.matchTier - a.matchTier;
+  if (a.fit.positionFitScore !== b.fit.positionFitScore) {
+    return b.fit.positionFitScore - a.fit.positionFitScore;
+  }
+  if (a.fit.philosophyFitScore !== b.fit.philosophyFitScore) {
+    return b.fit.philosophyFitScore - a.fit.philosophyFitScore;
+  }
+  return b.player.overallRating - a.player.overallRating;
+}
 
 export function generateStrongXi(
   players: PhilosophyFitPlayer[],
@@ -44,23 +72,18 @@ export function generateStrongXi(
       .map((p) => ({
         player: p,
         fit: computePhilosophyFit(p, philosophy, formation, slot),
-        posMatch:
-          positionMatchesSlot(p.positionPrimary, slot) ||
-          (p.positionSecondary != null &&
-            positionMatchesSlot(p.positionSecondary, slot)),
+        matchTier: slotMatchTier(p, slot),
       }))
-      .sort((a, b) => {
-        const posBoost = (b.posMatch ? 8 : 0) - (a.posMatch ? 8 : 0);
-        return posBoost + (b.fit.philosophyFitScore - a.fit.philosophyFitScore);
-      });
-    const eligibleCount = fits.filter((f) => f.posMatch).length;
+      .filter((candidate) => candidate.matchTier > 0)
+      .sort(sortCandidates);
+    const eligibleCount = fits.length;
     return { slot, fits, eligibleCount };
   });
 
   rankedBySlot.sort((a, b) => a.eligibleCount - b.eligibleCount);
 
   for (const { slot, fits } of rankedBySlot) {
-    const pick = fits.find((f) => !used.has(f.player.id)) ?? fits[0];
+    const pick = fits.find((f) => !used.has(f.player.id));
     if (!pick) continue;
     used.add(pick.player.id);
     xi.push({
@@ -71,7 +94,9 @@ export function generateStrongXi(
       player: pick.player,
       fit: pick.fit,
     });
-    const alternates = fits.filter((f) => f.player.id !== pick.player.id).slice(0, 2);
+    const alternates = fits
+      .filter((f) => f.player.id !== pick.player.id && !used.has(f.player.id))
+      .slice(0, 2);
     for (const alt of alternates) {
       bench.push({
         slotId: slot.id,
@@ -91,7 +116,7 @@ export function generateStrongXi(
     `${formation} · ${philosophy} — average philosophy fit ${avgFit.toFixed(1)}`,
     xi.length === slots.length
       ? "Full XI selected from eligible squad."
-      : `Only ${xi.length}/${slots.length} slots filled — add more players with tactical scores.`,
+      : `Only ${xi.length}/${slots.length} slots filled — add more players with matching primary or secondary roles.`,
   ];
 
   if (avgFit >= 70) {

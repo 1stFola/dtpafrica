@@ -7,6 +7,7 @@ import {
 import {
   playerToLegacyMeta,
   normalizeClubName,
+  positionFullFromAbbreviation,
   runCalibration,
   type MatchMetricsRow,
   type PlayerCalibrationMeta,
@@ -490,6 +491,7 @@ export class AdminCalibrationService {
         lastName,
         displayName: playerInfo.fullName.trim(),
         positionPrimary: playerInfo.position,
+        positionFull: positionFullFromAbbreviation(playerInfo.position),
         dominantFoot: playerInfo.preferredFoot?.trim() || undefined,
         nationality: playerInfo.nationality,
         dateOfBirth: dob,

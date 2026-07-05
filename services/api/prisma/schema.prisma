@@ -521,8 +521,12 @@ model SbMatchEvent {
   highlights SbHighlight[]
 
   @@index([matchId, minute])
+  @@index([teamId])
   @@index([playerId])
   @@index([assistPlayerId])
+  @@index([playerLabel])
+  @@index([playerLabel2])
+  @@index([assistLabel])
   @@map("sb_match_events")
 }
 

@@ -129,6 +129,28 @@ function computeAgeGroup(dateOfBirth: string, age: number | null): string | null
   return "Senior";
 }
 
+function normalizeLegacyPrimaryPosition(row: LegacyPlayerSeedRow): string {
+  const primary = row.position?.trim().toUpperCase() || "";
+  const full = row.position_full?.trim().toUpperCase() || "";
+  const combined = `${primary} ${full}`;
+  if (/\bLEFT\b.*\bWING|\bWING\b.*\bLEFT\b/.test(combined)) return "LW";
+  if (/\bRIGHT\b.*\bWING|\bWING\b.*\bRIGHT\b/.test(combined)) return "RW";
+  if (/\bLEFT\b.*\bBACK|\bBACK\b.*\bLEFT\b/.test(combined)) return "LB";
+  if (/\bRIGHT\b.*\bBACK|\bBACK\b.*\bRIGHT\b/.test(combined)) return "RB";
+  if (primary === "WINGER") return "RW";
+  if (primary === "FB") return "RB";
+  return primary;
+}
+
+function normalizeLegacyFullPosition(row: LegacyPlayerSeedRow): string | null {
+  const primary = normalizeLegacyPrimaryPosition(row);
+  if (primary === "LW") return "LEFT WINGER";
+  if (primary === "RW") return "RIGHT WINGER";
+  if (primary === "LB") return "LEFT BACK";
+  if (primary === "RB") return "RIGHT BACK";
+  return row.position_full?.trim() || null;
+}
+
 function rowToPlayerData(
   row: LegacyPlayerSeedRow,
   academyId: string | null
@@ -160,8 +182,8 @@ function rowToPlayerData(
     heightCm: row.height_cm ?? null,
     weightKg: row.weight_kg ?? null,
     dominantFoot: row.dominant_foot?.trim() || null,
-    positionPrimary: row.position,
-    positionFull: row.position_full?.trim() || null,
+    positionPrimary: normalizeLegacyPrimaryPosition(row),
+    positionFull: normalizeLegacyFullPosition(row),
     playerPhotoUrl: row.photo_url,
     videoUrl: primaryVideo,
     overallRating: row.overall_rating ?? null,
