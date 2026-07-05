@@ -26,12 +26,24 @@ function playerInitials(name: string): string {
     .toUpperCase();
 }
 
+function hasPositionToken(pos: string, token: string): boolean {
+  return new RegExp(`(^|[^A-Z])${token}([^A-Z]|$)`).test(pos);
+}
+
 function positionBadge(pos: string | null | undefined): string {
   const p = (pos ?? "").toUpperCase();
-  if (p.includes("GK") || p.includes("GOAL")) return "GK";
+  if (hasPositionToken(p, "GK") || p.includes("GOAL")) return "GK";
+  if (hasPositionToken(p, "LWB")) return "LWB";
+  if (hasPositionToken(p, "RWB")) return "RWB";
+  if (p.includes("LEFT BACK") || hasPositionToken(p, "LB")) return "LB";
+  if (p.includes("RIGHT BACK") || hasPositionToken(p, "RB")) return "RB";
+  if (p.includes("FULL BACK") || hasPositionToken(p, "FB")) return "FB";
+  if (p.includes("LEFT WING") || hasPositionToken(p, "LW")) return "LW";
+  if (p.includes("RIGHT WING") || hasPositionToken(p, "RW")) return "RW";
+  if (p.includes("WINGER") || p.includes("WING")) return "WG";
   if (p.includes("DF") || p.includes("DEF")) return "DF";
-  if (p.includes("FW") || p.includes("FOR") || p.includes("ST")) return "FW";
-  if (p.includes("MF") || p.includes("MID")) return "MF";
+  if (hasPositionToken(p, "FW") || p.includes("FOR") || hasPositionToken(p, "ST")) return "FW";
+  if (hasPositionToken(p, "MF") || p.includes("MID")) return "MF";
   if (p.length >= 2) return p.slice(0, 2);
   return "";
 }
@@ -157,32 +169,34 @@ function normalizedPosition(row: SbSquadPlayer) {
 
 function playerLine(row: SbSquadPlayer): PitchLine {
   const pos = normalizedPosition(row);
-  if (pos.includes("GK") || pos.includes("GOAL")) return "gk";
-  if (pos.includes("LW") || pos.includes("RW") || pos.includes("CF") || pos.includes("ST") || pos.includes("FW") || pos.includes("FOR")) return "fw";
-  if (pos.includes("DM") || pos.includes("CM") || pos.includes("AM") || pos.includes("LM") || pos.includes("RM") || pos.includes("MF") || pos.includes("MID")) return "mf";
-  if (pos.includes("LB") || pos.includes("RB") || pos.includes("LWB") || pos.includes("RWB") || pos.includes("CB") || pos.includes("DF") || pos.includes("DEF")) return "df";
+  if (hasPositionToken(pos, "GK") || pos.includes("GOAL")) return "gk";
+  if (pos.includes("LEFT BACK") || pos.includes("RIGHT BACK") || pos.includes("FULL BACK") || hasPositionToken(pos, "LB") || hasPositionToken(pos, "RB") || hasPositionToken(pos, "FB") || hasPositionToken(pos, "LWB") || hasPositionToken(pos, "RWB") || hasPositionToken(pos, "CB") || hasPositionToken(pos, "DF") || pos.includes("DEF")) return "df";
+  if (hasPositionToken(pos, "DM") || hasPositionToken(pos, "CM") || hasPositionToken(pos, "AM") || hasPositionToken(pos, "LM") || hasPositionToken(pos, "RM") || hasPositionToken(pos, "MF") || pos.includes("MID")) return "mf";
+  if (hasPositionToken(pos, "LW") || hasPositionToken(pos, "RW") || pos.includes("WINGER") || pos.includes("WING") || hasPositionToken(pos, "CF") || hasPositionToken(pos, "ST") || hasPositionToken(pos, "FW") || pos.includes("FOR")) return "fw";
   return "mf";
 }
 
 function slotPreferences(row: SbSquadPlayer): string[] {
   const pos = normalizedPosition(row);
-  if (pos.includes("GK") || pos.includes("GOAL")) return ["gk"];
-  if (pos.includes("LWB")) return ["lwb", "lb", "lm"];
-  if (pos.includes("RWB")) return ["rwb", "rb", "rm"];
-  if (pos.includes("LB")) return ["lb", "lwb", "lcb"];
-  if (pos.includes("RB")) return ["rb", "rwb", "rcb"];
-  if (pos.includes("CB")) return ["cb", "lcb", "rcb"];
-  if (pos.includes("DF") || pos.includes("DEF")) return ["lcb", "rcb", "cb", "lb", "rb", "lwb", "rwb"];
-  if (pos.includes("DM")) return ["dm", "ldm", "rdm", "cm", "lcm", "rcm"];
-  if (pos.includes("AM")) return ["am", "lam", "ram", "lcm", "rcm", "cm"];
-  if (pos.includes("CM")) return ["cm", "lcm", "rcm", "dm", "ldm", "rdm"];
-  if (pos.includes("LM")) return ["lm", "lam", "lw", "lwb"];
-  if (pos.includes("RM")) return ["rm", "ram", "rw", "rwb"];
-  if (pos.includes("MF") || pos.includes("MID")) return ["cm", "lcm", "rcm", "dm", "ldm", "rdm", "lm", "rm", "am"];
-  if (pos.includes("LW")) return ["lw", "lam", "lm"];
-  if (pos.includes("RW")) return ["rw", "ram", "rm"];
-  if (pos.includes("CF") || pos.includes("ST")) return ["cf", "lcf", "rcf"];
-  if (pos.includes("FW") || pos.includes("FOR")) return ["cf", "lcf", "rcf", "lw", "rw"];
+  if (hasPositionToken(pos, "GK") || pos.includes("GOAL")) return ["gk"];
+  if (hasPositionToken(pos, "LWB")) return ["lwb", "lb", "lm"];
+  if (hasPositionToken(pos, "RWB")) return ["rwb", "rb", "rm"];
+  if (pos.includes("LEFT BACK") || hasPositionToken(pos, "LB")) return ["lb", "lwb", "lcb"];
+  if (pos.includes("RIGHT BACK") || hasPositionToken(pos, "RB")) return ["rb", "rwb", "rcb"];
+  if (pos.includes("FULL BACK") || hasPositionToken(pos, "FB")) return ["rb", "lb", "rwb", "lwb"];
+  if (hasPositionToken(pos, "CB")) return ["cb", "lcb", "rcb"];
+  if (hasPositionToken(pos, "DF") || pos.includes("DEF")) return ["lcb", "rcb", "cb", "lb", "rb", "lwb", "rwb"];
+  if (hasPositionToken(pos, "DM")) return ["dm", "ldm", "rdm", "cm", "lcm", "rcm"];
+  if (hasPositionToken(pos, "AM")) return ["am", "lam", "ram", "lcm", "rcm", "cm"];
+  if (hasPositionToken(pos, "CM")) return ["cm", "lcm", "rcm", "dm", "ldm", "rdm"];
+  if (hasPositionToken(pos, "LM")) return ["lm", "lam", "lw", "lwb"];
+  if (hasPositionToken(pos, "RM")) return ["rm", "ram", "rw", "rwb"];
+  if (hasPositionToken(pos, "MF") || pos.includes("MID")) return ["cm", "lcm", "rcm", "dm", "ldm", "rdm", "lm", "rm", "am"];
+  if (pos.includes("LEFT WING") || hasPositionToken(pos, "LW")) return ["lw", "lam", "lm"];
+  if (pos.includes("RIGHT WING") || hasPositionToken(pos, "RW")) return ["rw", "ram", "rm"];
+  if (pos.includes("WINGER") || pos.includes("WING")) return ["rw", "lw", "ram", "lam", "rm", "lm"];
+  if (hasPositionToken(pos, "CF") || hasPositionToken(pos, "ST")) return ["cf", "lcf", "rcf"];
+  if (hasPositionToken(pos, "FW") || pos.includes("FOR")) return ["cf", "lcf", "rcf", "lw", "rw"];
   return [];
 }
 

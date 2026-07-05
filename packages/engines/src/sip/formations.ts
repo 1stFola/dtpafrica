@@ -126,12 +126,18 @@ export const FORMATIONS: Record<FormationId, FormationSlot[]> = {
 
 export function normalizePosition(code: string): string {
   const u = code.trim().toUpperCase();
+  if (/\bLEFT\b.*\bWING|\bWING\b.*\bLEFT\b/.test(u)) return "LW";
+  if (/\bRIGHT\b.*\bWING|\bWING\b.*\bRIGHT\b/.test(u)) return "RW";
+  if (/\bLEFT\b.*\bBACK|\bBACK\b.*\bLEFT\b/.test(u)) return "LB";
+  if (/\bRIGHT\b.*\bBACK|\bBACK\b.*\bRIGHT\b/.test(u)) return "RB";
   const map: Record<string, string> = {
     GOALKEEPER: "GK",
     GKP: "GK",
     DEFENDER: "CB",
     MIDFIELDER: "CM",
     FORWARD: "ST",
+    FULLBACK: "FB",
+    "FULL BACK": "FB",
     WING: "WINGER",
     WINGER: "WINGER",
     LWING: "LW",

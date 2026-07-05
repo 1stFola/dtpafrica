@@ -35,6 +35,7 @@ export function positionAbbreviationOptions(): { value: string; label: string }[
   const seen = new Set<string>();
   const options: { value: string; label: string }[] = [];
   for (const [abbr, full] of Object.entries(POSITION_FULL_LABELS)) {
+    if (abbr === "WINGER" || abbr === "FB") continue;
     if (seen.has(abbr)) continue;
     seen.add(abbr);
     options.push({ value: abbr, label: `${abbr} — ${full}` });

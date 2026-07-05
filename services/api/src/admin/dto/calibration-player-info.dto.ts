@@ -1,6 +1,6 @@
 import { IsIn, IsNumber, IsOptional, IsString, MaxLength } from "class-validator";
 
-const POSITIONS = ["ST", "WINGER", "AM", "CM", "CDM", "FB", "CB"] as const;
+const POSITIONS = ["GK", "ST", "RW", "LW", "AM", "CM", "CDM", "LB", "RB", "CB"] as const;
 const DOMINANT_FOOT_OPTIONS = ["Left", "Right", "Both"] as const;
 
 export class CalibrationPlayerInfoDto {
