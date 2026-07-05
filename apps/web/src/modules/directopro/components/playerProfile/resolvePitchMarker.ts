@@ -14,6 +14,7 @@ const POSITION_SLOTS: PositionSlot[] = [
   { tokens: ["RWB", "RIGHT WING BACK"], x: 84, y: 74 },
   { tokens: ["LEFT BACK", "LB"], x: 18, y: 72 },
   { tokens: ["RIGHT BACK", "RB"], x: 82, y: 72 },
+  { tokens: ["FB", "FULL BACK", "FULLBACK"], x: 50, y: 72 },
   { tokens: ["LCB"], x: 34, y: 76 },
   { tokens: ["RCB"], x: 66, y: 76 },
   { tokens: ["CB", "CENTRE BACK", "CENTER BACK", "CENTRAL DEFENDER", "CENTRAL BACK"], x: 50, y: 76 },

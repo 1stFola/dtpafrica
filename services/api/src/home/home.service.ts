@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { normalizeClubName, clampPercent } from "@dtp/engines";
+import { normalizeClubName, clampPercent, playerLookupKey } from "@dtp/engines";
 import {
   resolvePositionFull,
   resolveTopPhilosophies,
@@ -55,6 +55,14 @@ type ScoreboardEventRow = Prisma.SbMatchEventGetPayload<{
     match: { include: { competition: true; homeTeam: true; awayTeam: true } };
   };
 }>;
+
+type ScoreboardHistoryEventRole = "primary" | "assist" | "secondary";
+
+type ScoreboardHistoryEventRow = ScoreboardEventRow & {
+  historyRole: ScoreboardHistoryEventRole;
+  historyLabel: string | null;
+  historyMatchedBy: "link" | "label";
+};
 
 @Injectable()
 export class HomeService {
@@ -189,7 +197,6 @@ export class HomeService {
       aggregatedMetrics,
       matchMetrics,
       scoreboardSquad,
-      scoreboardEvents,
       mvceValuations,
       careerGoals,
       careerAssists,
@@ -203,6 +210,13 @@ export class HomeService {
     const latestClub = scoreboardSquad[0]?.team.name
       ? normalizeClubName(scoreboardSquad[0].team.name)
       : null;
+    const scoreboardEvents = await this.findScoreboardHistoryEvents(
+      {
+        id: player.id,
+        displayName: profile.displayName,
+      },
+      scoreboardSquad
+    );
 
     return {
       isSkeleton: false as const,
@@ -512,25 +526,101 @@ export class HomeService {
           },
         },
       },
-      scoreboardEvents: {
-        take: SCOREBOARD_HISTORY_EVENT_LIMIT,
-        orderBy: [{ createdAt: "desc" }],
-        include: {
-          team: true,
-          match: {
-            include: {
-              competition: true,
-              homeTeam: true,
-              awayTeam: true,
-            },
-          },
-        },
-      },
       mvceValuations: {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
     } satisfies Prisma.PlayerSelect;
+  }
+
+  private async findScoreboardHistoryEvents(
+    player: { id: string; displayName: string },
+    squadRows: ScoreboardSquadRow[]
+  ): Promise<ScoreboardHistoryEventRow[]> {
+    const teamIds = Array.from(new Set(squadRows.map((row) => row.teamId)));
+    const lookupKeys = new Set(
+      [
+        player.displayName,
+        ...squadRows.map((row) => row.displayName),
+      ]
+        .filter((name): name is string => Boolean(name?.trim()))
+        .map((name) => playerLookupKey(name))
+        .filter(Boolean)
+    );
+
+    const hasLabelMatch = (value: string | null | undefined) =>
+      Boolean(value?.trim() && lookupKeys.has(playerLookupKey(value)));
+
+    const labelFields: Prisma.SbMatchEventWhereInput = {
+      OR: [
+        { playerLabel: { not: null } },
+        { playerLabel2: { not: null } },
+        { assistLabel: { not: null } },
+      ],
+    };
+
+    const rows = await this.prisma.sbMatchEvent.findMany({
+      where: {
+        match: { isPublished: true, competition: { isPublished: true } },
+        OR: [
+          { playerId: player.id },
+          { assistPlayerId: player.id },
+          ...(teamIds.length
+            ? [{ teamId: { in: teamIds }, ...labelFields }]
+            : [labelFields]),
+        ],
+      },
+      orderBy: [{ createdAt: "desc" }],
+      take: Math.max(SCOREBOARD_HISTORY_EVENT_LIMIT * 6, 150),
+      include: {
+        team: true,
+        match: {
+          include: {
+            competition: true,
+            homeTeam: true,
+            awayTeam: true,
+          },
+        },
+      },
+    });
+
+    const matched: ScoreboardHistoryEventRow[] = [];
+    for (const event of rows) {
+      let historyRole: ScoreboardHistoryEventRole | null = null;
+      let historyLabel: string | null = null;
+      let historyMatchedBy: "link" | "label" = "link";
+
+      if (event.playerId === player.id) {
+        historyRole = "primary";
+        historyLabel = event.playerLabel ?? player.displayName;
+      } else if (event.assistPlayerId === player.id) {
+        historyRole = "assist";
+        historyLabel = event.assistLabel ?? player.displayName;
+      } else if (hasLabelMatch(event.playerLabel)) {
+        historyRole = "primary";
+        historyLabel = event.playerLabel;
+        historyMatchedBy = "label";
+      } else if (hasLabelMatch(event.assistLabel)) {
+        historyRole = "assist";
+        historyLabel = event.assistLabel;
+        historyMatchedBy = "label";
+      } else if (hasLabelMatch(event.playerLabel2)) {
+        historyRole = "secondary";
+        historyLabel = event.playerLabel2;
+        historyMatchedBy = "label";
+      }
+
+      if (!historyRole) continue;
+      matched.push({ ...event, historyRole, historyLabel, historyMatchedBy });
+    }
+
+    return matched
+      .sort((a, b) => {
+        const aTime = a.match.kickoffAt?.getTime() ?? a.createdAt.getTime();
+        const bTime = b.match.kickoffAt?.getTime() ?? b.createdAt.getTime();
+        return bTime - aTime || b.minute - a.minute;
+      })
+      .slice(0, SCOREBOARD_HISTORY_EVENT_LIMIT);
   }
 
   private buildScoutingIntelligence(args: {
@@ -659,7 +749,7 @@ export class HomeService {
 
   private buildScoreboardHistory(
     squadRows: ScoreboardSquadRow[],
-    eventRows: ScoreboardEventRow[]
+    eventRows: ScoreboardHistoryEventRow[]
   ) {
     const teams = squadRows.map((row) => ({
       teamId: row.team.id,
@@ -695,6 +785,7 @@ export class HomeService {
         score: { home: number; away: number };
         events: number;
         goals: number;
+        assists: number;
         yellowCards: number;
         redCards: number;
       }
@@ -729,14 +820,16 @@ export class HomeService {
           score: { home: match.homeScore, away: match.awayScore },
           events: 0,
           goals: 0,
+          assists: 0,
           yellowCards: 0,
           redCards: 0,
         };
 
       existing.events += 1;
-      if (event.type === "goal") existing.goals += 1;
-      if (event.type === "yellow_card") existing.yellowCards += 1;
-      if (event.type === "red_card") existing.redCards += 1;
+      if (event.type === "goal" && event.historyRole === "primary") existing.goals += 1;
+      if (event.type === "goal" && event.historyRole === "assist") existing.assists += 1;
+      if (event.type === "yellow_card" && event.historyRole === "primary") existing.yellowCards += 1;
+      if (event.type === "red_card" && event.historyRole === "primary") existing.redCards += 1;
       matchMap.set(match.id, existing);
 
       return {
@@ -744,7 +837,9 @@ export class HomeService {
         type: event.type,
         minute: event.minute,
         detail: event.detail,
-        playerLabel: event.playerLabel,
+        playerLabel: event.historyLabel ?? event.playerLabel,
+        role: event.historyRole,
+        matchedBy: event.historyMatchedBy,
         team: event.team
           ? {
               id: event.team.id,
@@ -783,9 +878,14 @@ export class HomeService {
         competitions: new Set(teams.map((team) => team.competition.id)).size,
         appearances: appearances.length,
         events: events.length,
-        goals: events.filter((event) => event.type === "goal").length,
-        yellowCards: events.filter((event) => event.type === "yellow_card").length,
-        redCards: events.filter((event) => event.type === "red_card").length,
+        goals: events.filter((event) => event.type === "goal" && event.role === "primary").length,
+        assists: events.filter((event) => event.type === "goal" && event.role === "assist").length,
+        yellowCards: events.filter(
+          (event) => event.type === "yellow_card" && event.role === "primary"
+        ).length,
+        redCards: events.filter(
+          (event) => event.type === "red_card" && event.role === "primary"
+        ).length,
       },
     });
   }

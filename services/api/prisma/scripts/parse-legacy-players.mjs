@@ -326,11 +326,16 @@ console.log("parsed", records.length, "unique", unique.length);
 
 function normalizePosition(pos) {
   const u = (pos || "").toUpperCase();
-  const m = u.match(/\b(GK|CB|LB|RB|LWB|RWB|CDM|CM|CAM|AM|LW|RW|ST|CF|MF|DF)\b/);
-  if (m) return m[1];
+  const m = u.match(/\b(GK|CB|FB|LB|RB|LWB|RWB|CDM|CM|CAM|AM|LW|RW|ST|CF|MF|DF)\b/);
+  if (m) return m[1] === "FB" ? "RB" : m[1];
   if (u.includes("MIDFIELD")) return "CM";
   if (u.includes("DEFENS")) return "CB";
   if (u.includes("FORWARD") || u.includes("STRIKER")) return "ST";
+  if (/\bLEFT\b.*\bWING|\bWING\b.*\bLEFT\b/.test(u)) return "LW";
+  if (/\bRIGHT\b.*\bWING|\bWING\b.*\bRIGHT\b/.test(u)) return "RW";
+  if (/\bLEFT\b.*\bBACK|\bBACK\b.*\bLEFT\b/.test(u)) return "LB";
+  if (/\bRIGHT\b.*\bBACK|\bBACK\b.*\bRIGHT\b/.test(u)) return "RB";
+  if (u.includes("FULL BACK") || u.includes("FULLBACK")) return "RB";
   if (u.includes("WING")) return "RW";
   if (u.includes("GOAL")) return "GK";
   return u.slice(0, 6) || "CM";

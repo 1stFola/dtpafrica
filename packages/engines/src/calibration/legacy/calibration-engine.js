@@ -6,13 +6,24 @@ const EVIDENCE_WEIGHT = {
 
 const POSITION_GROUPS = {
   ST: ["ST"],
-  WINGER: ["WINGER"],
+  WINGER: ["WINGER", "RW", "LW"],
+  RW: ["WINGER", "RW", "LW"],
+  LW: ["WINGER", "RW", "LW"],
   AM: ["AM"],
   CM: ["CM"],
   CDM: ["CDM"],
-  FB: ["FB"],
+  FB: ["FB", "LB", "RB"],
+  LB: ["FB", "LB", "RB"],
+  RB: ["FB", "LB", "RB"],
   CB: ["CB"]
 };
+
+function benchmarkPosition(position) {
+  const normalized = String(position || "").trim().toUpperCase();
+  if (normalized === "RW" || normalized === "LW" || normalized === "WINGER") return "WINGER";
+  if (normalized === "RB" || normalized === "LB" || normalized === "RWB" || normalized === "LWB" || normalized === "FB") return "FB";
+  return normalized;
+}
 
 function benchmarkAgeLabel(player) {
   const age = getAgeFromDOB(player.date_of_birth);
@@ -366,7 +377,8 @@ function profileDistance(raw, bench){
 }
 
 function getFilteredBenchmarkPool(position, meta) {
-  let pool = REAL_BENCHMARKS.filter(p => p.position === position);
+  const benchmark = benchmarkPosition(position);
+  let pool = REAL_BENCHMARKS.filter(p => p.position === benchmark);
 
   return {
     pool,
@@ -399,6 +411,7 @@ function buildBenchmarkNorms(position, meta) {
 }
 
 function buildPositionPrior(position, attr, normMean) {
+  const benchmark = benchmarkPosition(position);
   const priorOffsets = {
     ST: { finishing: 4, positioning: 3, passing: -2, vision: -2, team_play: -1 },
     WINGER: { pace: 3, acceleration: 3, sprint_speed: 3, agility: 3, dribbling: 3, strength: -3 },
@@ -409,15 +422,16 @@ function buildPositionPrior(position, attr, normMean) {
     CB: { positioning: 5, strength: 4, composure: 2, finishing: -6, dribbling: -4 }
   };
 
-  const offset = (priorOffsets[position] && priorOffsets[position][attr]) || 0;
+  const offset = (priorOffsets[benchmark] && priorOffsets[benchmark][attr]) || 0;
   return clamp(round(normMean + offset));
 }
 
 function findNearestBenchmark(position, raw, meta){
-  let pool = REAL_BENCHMARKS.filter(p => p.position === position);
+  const benchmark = benchmarkPosition(position);
+  let pool = REAL_BENCHMARKS.filter(p => p.position === benchmark);
 
   if (pool.length < 3) {
-    pool = REAL_BENCHMARKS.filter(p => p.position === position);
+    pool = REAL_BENCHMARKS.filter(p => p.position === benchmark);
   }
 
   const ranked = pool.map(p => {

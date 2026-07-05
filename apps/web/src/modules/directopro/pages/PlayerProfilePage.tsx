@@ -45,6 +45,16 @@ const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
   injury: "Injury",
 };
 
+function scoreboardHistoryEventLabel(
+  event: NonNullable<PublicPlayerProfile["scoreboardHistory"]>["events"][number]
+): string {
+  if (event.type === "goal" && event.role === "assist") return "Assist";
+  if (event.role === "secondary") {
+    return `${SCOREBOARD_EVENT_LABELS[event.type] ?? event.type} involvement`;
+  }
+  return SCOREBOARD_EVENT_LABELS[event.type] ?? event.type;
+}
+
 /** Turn a route slug/name param into a readable display name ("ahmed-adesanu" → "Ahmed Adesanu"). */
 function deslugifyName(value: string): string {
   const cleaned = value.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
@@ -401,6 +411,8 @@ export function PlayerProfilePage() {
     tactical ? "Tactical scores available" : "Awaiting tactical recalculation",
     scoreboard?.aggregates.goals
       ? `${scoreboard.aggregates.goals} ScoreBoard goal${scoreboard.aggregates.goals === 1 ? "" : "s"}`
+      : scoreboard?.aggregates.assists
+        ? `${scoreboard.aggregates.assists} ScoreBoard assist${scoreboard.aggregates.assists === 1 ? "" : "s"}`
       : "ScoreBoard history pending",
   ];
 
@@ -936,6 +948,10 @@ function ScoreboardHistorySection({
           <span>Goals</span>
           <strong>{history.aggregates.goals}</strong>
         </div>
+        <div>
+          <span>Assists</span>
+          <strong>{history.aggregates.assists}</strong>
+        </div>
       </div>
 
       <div className="profile-integration-grid">
@@ -977,6 +993,9 @@ function ScoreboardHistorySection({
                   <span>
                     {match.competitionName} · {formatDate(match.kickoffAt)}
                     {match.goals ? ` · ${match.goals} goal${match.goals === 1 ? "" : "s"}` : ""}
+                    {match.assists
+                      ? ` · ${match.assists} assist${match.assists === 1 ? "" : "s"}`
+                      : ""}
                   </span>
                 </li>
               ))}
@@ -994,10 +1013,12 @@ function ScoreboardHistorySection({
             {history.events.slice(0, 10).map((event) => (
               <li key={event.id}>
                 <span>{event.minute}&apos;</span>
-                <strong>{SCOREBOARD_EVENT_LABELS[event.type] ?? event.type}</strong>
+                <strong>{scoreboardHistoryEventLabel(event)}</strong>
                 <em>
+                  {event.playerLabel ? `${event.playerLabel} · ` : ""}
                   {event.match.homeTeam} vs {event.match.awayTeam} ·{" "}
                   {event.match.competitionName}
+                  {event.matchedBy === "label" ? " · matched from timeline name" : ""}
                 </em>
               </li>
             ))}

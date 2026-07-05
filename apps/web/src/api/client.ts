@@ -206,6 +206,7 @@ export type PublicPlayerProfile = FeaturedPlayer & {
       score: { home: number; away: number };
       events: number;
       goals: number;
+      assists: number;
       yellowCards: number;
       redCards: number;
     }[];
@@ -215,6 +216,8 @@ export type PublicPlayerProfile = FeaturedPlayer & {
       minute: number;
       detail: string | null;
       playerLabel: string | null;
+      role: "primary" | "assist" | "secondary";
+      matchedBy: "link" | "label";
       team: { id: string; name: string; slug: string; shortName: string | null } | null;
       match: {
         id: string;
@@ -235,6 +238,7 @@ export type PublicPlayerProfile = FeaturedPlayer & {
       appearances: number;
       events: number;
       goals: number;
+      assists: number;
       yellowCards: number;
       redCards: number;
     };
