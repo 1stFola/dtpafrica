@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  fetchSupervisorLive,
   ingestMatchSip,
   patchMatch,
   postMatchEvent,
@@ -43,7 +42,8 @@ export function AdminScoreboardMatchCenterPage() {
   >([]);
 
   const refresh = useCallback(() => {
-    fetchSupervisorLive()
+    adminScoreboardApi
+      .supervisorLive()
       .then((rows) => {
         setLive(rows);
         setSupervisorOk(true);

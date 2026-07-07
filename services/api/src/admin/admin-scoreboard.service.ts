@@ -15,6 +15,7 @@ import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { CompetitionEngineService } from "../scoreboard/competition-engine.service";
 import { ScoreboardService } from "../scoreboard/scoreboard.service";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
+import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
 import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
 import type { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
 import {
@@ -599,6 +600,10 @@ export class AdminScoreboardService {
     });
   }
 
+  async supervisorLive() {
+    return this.scoreboard.supervisorFeed();
+  }
+
   async createMatch(dto: CreateAdminMatchDto) {
     if (dto.homeTeamId === dto.awayTeamId) {
       throw new BadRequestException("Home and away teams must be different");
@@ -704,6 +709,14 @@ export class AdminScoreboardService {
 
   patchMatchScore(matchId: string, dto: PatchMatchScoreDto) {
     return this.scoreboard.patchMatchScore(matchId, dto);
+  }
+
+  updateMatch(matchId: string, dto: UpdateMatchDto) {
+    return this.scoreboard.updateMatch(matchId, dto);
+  }
+
+  ingestSipMetrics(matchId: string) {
+    return this.scoreboard.ingestSipMetricsFromMatch(matchId);
   }
 
   async patchMatchGameday(matchId: string, dto: PatchMatchGamedayDto) {

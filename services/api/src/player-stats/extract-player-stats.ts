@@ -16,6 +16,6 @@ export async function extractPlayerStatsFromUploads(
     return extractPlayerStatsFromImages(files);
   }
   throw new ServiceUnavailableException(
-    "No OCR provider is configured. Set OCR_SPACE_API_KEY or OPENAI_API_KEY in services/api/.env and restart pnpm dev:api."
+    "No OCR provider is configured. Set OCR_SPACE_API_KEY or OPENAI_API_KEY in the API service environment and restart or redeploy the API process."
   );
 }
