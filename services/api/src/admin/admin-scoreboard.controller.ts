@@ -24,6 +24,7 @@ import { CreateLandingHighlightDto } from "./dto/create-landing-highlight.dto";
 import { PublishHighlightDto } from "./dto/publish-highlight.dto";
 import { UpdateAdminHighlightDto } from "./dto/update-admin-highlight.dto";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
+import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
 import {
   CreateCompetitionFromTemplateDto,
   isCompetitionFormat,
@@ -141,6 +142,12 @@ export class AdminScoreboardController {
     return this.sb.listMatches(competitionId);
   }
 
+  @Get("supervisor/live")
+  @RequirePermissions("scoreboard.read")
+  supervisorLive() {
+    return this.sb.supervisorLive();
+  }
+
   @Post("matches")
   @RequirePermissions("scoreboard.matches.write")
   createMatch(@Body() dto: CreateAdminMatchDto) {
@@ -193,6 +200,18 @@ export class AdminScoreboardController {
     @Body() dto: PatchMatchScoreDto
   ) {
     return this.sb.patchMatchScore(matchId, dto);
+  }
+
+  @Patch("matches/:matchId")
+  @RequirePermissions("scoreboard.matches.write")
+  updateMatch(@Param("matchId") matchId: string, @Body() dto: UpdateMatchDto) {
+    return this.sb.updateMatch(matchId, dto);
+  }
+
+  @Post("matches/:matchId/ingest-sip")
+  @RequirePermissions("scoreboard.matches.write")
+  ingestSipMetrics(@Param("matchId") matchId: string) {
+    return this.sb.ingestSipMetrics(matchId);
   }
 
   @Put("matches/:matchId/roster")

@@ -1243,7 +1243,7 @@ function buildOcrForm(file: PlayerStatsImageUpload, apiKey: string) {
   const form = new FormData();
   form.append("apikey", apiKey);
   form.append("language", "eng");
-  form.append("OCREngine", process.env.OCR_SPACE_ENGINE?.trim() || "2");
+  form.append("OCREngine", process.env.OCR_SPACE_ENGINE?.trim() || "3");
   form.append("scale", "true");
   form.append("isTable", "false");
   form.append(
