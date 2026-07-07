@@ -1,4 +1,4 @@
-import { getAdminApiKey } from "./admin";
+import { getAdminApiKey, getAdminJwt } from "./admin";
 import { AdminApiError } from "./admin";
 import type {
   AdminSbCompetition,
@@ -37,11 +37,13 @@ export type AdminHighlightRow = {
 
 async function sbFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const key = getAdminApiKey();
+  const jwt = getAdminJwt();
   const res = await fetch(`/api/v1${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
       ...(key ? { "x-admin-api-key": key } : {}),
+      ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
       ...init?.headers,
     },
   });
@@ -147,6 +149,9 @@ export const adminScoreboardApi = {
     const qs = competitionId ? `?competitionId=${competitionId}` : "";
     return sbFetch<SbMatchListItem[]>(`/admin/scoreboard/matches${qs}`);
   },
+
+  supervisorLive: () =>
+    sbFetch<SbMatchListItem[]>("/admin/scoreboard/supervisor/live"),
 
   createMatch: (body: AdminSbMatchInput) =>
     sbFetch<{ ok: boolean; match: SbMatchListItem }>("/admin/scoreboard/matches", {

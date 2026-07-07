@@ -1,4 +1,4 @@
-import { getAdminApiKey } from "./admin";
+import { getAdminApiKey, getAdminJwt } from "./admin";
 import { ApiError, apiGet } from "./client";
 
 export type SbTeamRef = {
@@ -426,9 +426,11 @@ export function fetchHighlights(competitionId?: string) {
 
 function adminHeaders() {
   const key = getAdminApiKey();
+  const jwt = getAdminJwt();
   return {
     "Content-Type": "application/json",
     ...(key ? { "x-admin-api-key": key } : {}),
+    ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
   };
 }
 
@@ -455,7 +457,7 @@ async function apiAdminPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 export function fetchSupervisorLive() {
-  return apiAdminGet<SbMatchListItem[]>("/scoreboard/supervisor/live");
+  return apiAdminGet<SbMatchListItem[]>("/admin/scoreboard/supervisor/live");
 }
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
@@ -486,18 +488,21 @@ export function postMatchEvent(
     metadata?: Record<string, unknown>;
   }
 ) {
-  return apiAdminPost<SbMatchEvent>(`/scoreboard/matches/${matchId}/events`, body);
+  return apiAdminPost<SbMatchEvent>(`/admin/scoreboard/matches/${matchId}/events`, body);
 }
 
 export function patchMatch(
   matchId: string,
   body: { status?: string; minute?: number; homeScore?: number; awayScore?: number }
 ) {
-  return apiPatch<SbMatchDetail>(`/scoreboard/matches/${matchId}`, body);
+  return apiPatch<SbMatchDetail>(`/admin/scoreboard/matches/${matchId}`, body);
 }
 
 export function ingestMatchSip(matchId: string) {
-  return apiAdminPost<SipIngestResult>(`/scoreboard/matches/${matchId}/ingest-sip`, {});
+  return apiAdminPost<SipIngestResult>(
+    `/admin/scoreboard/matches/${matchId}/ingest-sip`,
+    {}
+  );
 }
 
 export const EVENT_LABELS: Record<string, string> = {
