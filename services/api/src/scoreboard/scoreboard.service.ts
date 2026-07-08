@@ -853,7 +853,65 @@ export class ScoreboardService {
     });
     if (!match) throw new NotFoundException("Match not found");
 
-    const toPlayer = (row: (typeof match.squadPlayers)[number]) => ({
+    type MatchSquadRow = (typeof match.squadPlayers)[number];
+    const isGoalkeeperRow = (row: MatchSquadRow) => {
+      const position = `${row.position ?? ""} ${row.player?.positionPrimary ?? ""}`.toUpperCase();
+      return /(^|[^A-Z])GK([^A-Z]|$)/.test(position) || position.includes("GOAL");
+    };
+    const normalizeStartingRows = (rows: MatchSquadRow[]) => {
+      const starting: MatchSquadRow[] = [];
+      const bench: MatchSquadRow[] = [];
+      let hasGoalkeeper = false;
+
+      for (const row of rows) {
+        if (!row.isStarter) {
+          bench.push(row);
+          continue;
+        }
+        if (isGoalkeeperRow(row)) {
+          if (hasGoalkeeper) {
+            bench.push(row);
+            continue;
+          }
+          hasGoalkeeper = true;
+        }
+        if (starting.length < 11) {
+          starting.push(row);
+        } else {
+          bench.push(row);
+        }
+      }
+
+      if (!hasGoalkeeper) {
+        const benchGkIndex = bench.findIndex(isGoalkeeperRow);
+        if (benchGkIndex >= 0) {
+          const [goalkeeper] = bench.splice(benchGkIndex, 1);
+          if (starting.length >= 11) {
+            let demoteIndex = 0;
+            for (let index = starting.length - 1; index >= 0; index -= 1) {
+              if (!isGoalkeeperRow(starting[index])) {
+                demoteIndex = index;
+                break;
+              }
+            }
+            bench.unshift(starting.splice(demoteIndex, 1)[0]);
+          }
+          starting.unshift(goalkeeper);
+          hasGoalkeeper = true;
+        }
+      }
+
+      while (starting.length < 11 && bench.length > 0) {
+        const nextIndex = bench.findIndex((row) => !isGoalkeeperRow(row));
+        if (nextIndex < 0) break;
+        const [next] = bench.splice(nextIndex, 1);
+        starting.push(next);
+      }
+
+      return { starting, bench };
+    };
+
+    const toPlayer = (row: MatchSquadRow) => ({
       id: row.id,
       teamId: row.teamId,
       playerId: row.playerId,
@@ -865,8 +923,9 @@ export class ScoreboardService {
     });
     const teamPayload = (teamId: string, team: typeof match.homeTeam) => {
       const rows = match.squadPlayers.filter((row) => row.teamId === teamId);
-      const starting = rows.filter((row) => row.isStarter).map(toPlayer);
-      const bench = rows.filter((row) => !row.isStarter).map(toPlayer);
+      const normalized = normalizeStartingRows(rows);
+      const starting = normalized.starting.map(toPlayer);
+      const bench = normalized.bench.map(toPlayer);
       return {
         team: presentScoreboardPayload(team),
         starting,
