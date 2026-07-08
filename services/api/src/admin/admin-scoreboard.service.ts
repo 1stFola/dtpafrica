@@ -965,6 +965,20 @@ export class AdminScoreboardService {
     row: ParsedMatchSquadCsvRow
   ) {
     const player = await this.findOrCreateCsvSquadPlayer(tx, row);
+    const activeSquad = await tx.sbTeamSquad.findUnique({
+      where: { playerId: player.id },
+    });
+    if (activeSquad && activeSquad.teamId !== teamId) {
+      return tx.sbTeamSquad.update({
+        where: { id: activeSquad.id },
+        data: {
+          teamId,
+          displayName: row.playerName,
+          position: row.position,
+          shirtNumber: row.jerseyNumber,
+        },
+      });
+    }
     const existing = await tx.sbTeamSquad.findFirst({
       where: {
         teamId,
@@ -1658,10 +1672,29 @@ export class AdminScoreboardService {
       const position = posIdx >= 0 ? row[posIdx] : null;
       const shirtNumber = numIdx >= 0 && row[numIdx] ? Number(row[numIdx]) : null;
       const player = await this.playerDirectory.resolveOrCreatePlayer(displayName, position);
-
-      const existing = await this.prisma.sbTeamSquad.findFirst({
-        where: { teamId, displayName: { equals: displayName, mode: "insensitive" } },
+      const activeSquad = await this.prisma.sbTeamSquad.findUnique({
+        where: { playerId: player.id },
       });
+
+      if (activeSquad && activeSquad.teamId !== teamId) {
+        await this.prisma.sbTeamSquad.update({
+          where: { id: activeSquad.id },
+          data: {
+            teamId,
+            displayName,
+            position: position ?? activeSquad.position,
+            shirtNumber: Number.isFinite(shirtNumber) ? shirtNumber : activeSquad.shirtNumber,
+          },
+        });
+        imported++;
+        continue;
+      }
+
+      const existing =
+        activeSquad ??
+        (await this.prisma.sbTeamSquad.findFirst({
+          where: { teamId, displayName: { equals: displayName, mode: "insensitive" } },
+        }));
       if (existing) {
         await this.prisma.sbTeamSquad.update({
           where: { id: existing.id },

@@ -409,7 +409,7 @@ model SbTeamSquad {
   matchSquadPlayers SbMatchSquadPlayer[]
 
   @@index([teamId])
-  @@index([playerId])
+  @@unique([playerId])
   @@map("sb_team_squad")
 }
 
