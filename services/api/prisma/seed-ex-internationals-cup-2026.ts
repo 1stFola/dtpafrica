@@ -28,6 +28,20 @@ const COMP_SLUG = "ex-internationals-cup-2026";
 const COMP_ID = "00000000-0000-4000-8e1c-000000000000";
 const BRACKET_ASSET = "/scoreboard/ex-internationals-cup-2026-bracket.png";
 const TIMEZONE = "Africa/Lagos";
+const KNOCKOUT_ROUND_BY_STAGE = {
+  r32: "R32",
+  r16: "R16",
+  qf: "QF",
+  sf: "SF",
+  final: "F",
+} as const;
+const ROUND_LABEL_BY_STAGE = {
+  r32: "Round of 32",
+  r16: "Round of 16",
+  qf: "Quarter-Finals",
+  sf: "Semi-Finals",
+  final: "Final",
+} as const;
 
 type TeamSeed = {
   seed: number;
@@ -55,7 +69,7 @@ type MatchSeed = {
   kickoffAt: string;
   venue: string;
   matchday: number;
-  stageKey?: "r32" | "r16";
+  stageKey?: "r32" | "r16" | "qf" | "sf" | "final";
   leg?: "first_leg" | "second_leg";
   firstLegMatchId?: string;
   homeScore?: number;
@@ -185,7 +199,7 @@ const TEAMS: TeamSeed[] = [
     seed: 8,
     id: teamId(8),
     slug: "fc-aloy",
-    name: "FC ALOY",
+    name: "FC ALLOY",
     shortName: "ALY",
     logoUrl:
       "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjI5zMRCZuAnDhnpG8kPxOkNH2dAf5j6KVJT2c4RL6ejPnZqW5jKXHFnX7TRQSlL1agKYH-o-043j5xmcmGvglDLIt74vUa5ak8fVwuXCw8WUzhRAELmCPOBKJm0H1gvolUHDmK77qKMuc/s1600/Alloy+Agu.jpg",
@@ -983,6 +997,48 @@ const MATCHES: MatchSeed[] = [
     leg: "second_leg",
     firstLegMatchId: matchId(35),
   },
+  // Semi-finals first legs
+  {
+    id: matchId(49),
+    homeSlug: "fc-aloy",
+    awaySlug: "fc-babington",
+    kickoffAt: watKickoff("2026-07-08", "09:00"),
+    venue: "Gospel Mission Field, Command Road, Ipaja",
+    matchday: 1,
+    stageKey: "sf",
+  },
+  {
+    id: matchId(50),
+    homeSlug: "fc-enegwea",
+    awaySlug: "fc-okpara",
+    kickoffAt: watKickoff("2026-07-10", "16:00"),
+    venue: "Maracana Arena, Ajegunle",
+    matchday: 1,
+    stageKey: "sf",
+  },
+  // Semi-finals second legs
+  {
+    id: matchId(51),
+    homeSlug: "fc-babington",
+    awaySlug: "fc-aloy",
+    kickoffAt: watKickoff("2026-07-10", "16:00"),
+    venue: "Mobolaji Johnson Arena, Onikan",
+    matchday: 2,
+    stageKey: "sf",
+    leg: "second_leg",
+    firstLegMatchId: matchId(49),
+  },
+  {
+    id: matchId(52),
+    homeSlug: "fc-okpara",
+    awaySlug: "fc-enegwea",
+    kickoffAt: watKickoff("2026-07-11", "15:00"),
+    venue: "Gospel Mission Field, Command Road, Ipaja",
+    matchday: 2,
+    stageKey: "sf",
+    leg: "second_leg",
+    firstLegMatchId: matchId(50),
+  },
 ];
 
 const BRACKET_LAYOUT = {
@@ -1157,8 +1213,8 @@ export async function seedExInternationalsCup2026(
     const leg = m.leg ?? "first_leg";
     const stageKey = m.stageKey ?? "r32";
     const stageId = stageByKey.get(stageKey) ?? r32StageId;
-    const knockoutRound = stageKey === "r16" ? "R16" : "R32";
-    const roundBase = stageKey === "r16" ? "Round of 16" : "Round of 32";
+    const knockoutRound = KNOCKOUT_ROUND_BY_STAGE[stageKey] ?? "R32";
+    const roundBase = ROUND_LABEL_BY_STAGE[stageKey] ?? "Round of 32";
     const meta: Prisma.InputJsonValue = {
       knockoutRound,
       round: knockoutRound,
@@ -1241,7 +1297,7 @@ export async function seedExInternationalsCup2026(
 
   console.log("Ex Internationals Cup 2026 seeded:", COMP_SLUG);
   console.log("  teams:", teamCount, "(expected 32)");
-  console.log("  matches:", matchCount, "(expected 48 — 32 R32 + 16 R16)");
+  console.log("  matches:", matchCount, "(expected 52 - 32 R32 + 16 R16 + 4 SF)");
   console.log("  events:", eventCount);
   console.log("  academies:", academyCount);
   console.log(
