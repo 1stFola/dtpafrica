@@ -2,8 +2,10 @@ import { getAdminApiKey, getAdminJwt } from "./admin";
 import { AdminApiError } from "./admin";
 import type {
   AdminSbCompetition,
+  AdminSbCompetitionInput,
   AdminSbMatchInput,
   AdminSbPlayerDirectoryRow,
+  AdminSbSquadRowInput,
   AdminSbStats,
   AdminSbTeam,
   AdminSbTeamInput,
@@ -112,6 +114,17 @@ export const adminScoreboardApi = {
     );
   },
 
+  updateCompetition: (competitionId: string, body: AdminSbCompetitionInput) =>
+    sbFetch<AdminSbCompetition>(`/admin/scoreboard/competitions/${competitionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteCompetition: (competitionId: string) =>
+    sbFetch<{ ok: boolean }>(`/admin/scoreboard/competitions/${competitionId}`, {
+      method: "DELETE",
+    }),
+
   teams: (params?: { q?: string; competitionId?: string }) => {
     const q = new URLSearchParams();
     if (params?.q) q.set("q", params.q);
@@ -145,6 +158,17 @@ export const adminScoreboardApi = {
     return sbFetch<AdminSbPlayerDirectoryRow[]>(`/admin/scoreboard/players${qs}`);
   },
 
+  updateSquadRow: (squadId: string, body: AdminSbSquadRowInput) =>
+    sbFetch<AdminSbPlayerDirectoryRow>(`/admin/scoreboard/squad/${squadId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteSquadRow: (squadId: string) =>
+    sbFetch<{ ok: boolean }>(`/admin/scoreboard/squad/${squadId}`, {
+      method: "DELETE",
+    }),
+
   matches: (competitionId?: string) => {
     const qs = competitionId ? `?competitionId=${competitionId}` : "";
     return sbFetch<SbMatchListItem[]>(`/admin/scoreboard/matches${qs}`);
@@ -157,6 +181,11 @@ export const adminScoreboardApi = {
     sbFetch<{ ok: boolean; match: SbMatchListItem }>("/admin/scoreboard/matches", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+
+  deleteMatch: (matchId: string) =>
+    sbFetch<{ ok: boolean }>(`/admin/scoreboard/matches/${matchId}`, {
+      method: "DELETE",
     }),
 
   patchMatchGameday: (

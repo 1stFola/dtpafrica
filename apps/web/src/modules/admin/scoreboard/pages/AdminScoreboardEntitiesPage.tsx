@@ -23,7 +23,9 @@ import {
   COMPETITION_STATUSES,
   COMPETITION_TYPES,
   type AdminSbCompetition,
+  type AdminSbCompetitionInput,
   type AdminSbPlayerDirectoryRow,
+  type AdminSbSquadRowInput,
   type AdminSbTeam,
 } from "../types";
 
@@ -36,6 +38,17 @@ type FixtureEditState = {
   roundLabel: string;
 };
 
+type CompetitionEditState = {
+  competition: AdminSbCompetition;
+  draft: AdminSbCompetitionInput;
+};
+
+type SquadEditState = {
+  row: AdminSbPlayerDirectoryRow;
+  squadId: string;
+  draft: AdminSbSquadRowInput;
+};
+
 export function AdminScoreboardEntitiesPage() {
   usePageTitle("Admin — ScoreBoard entities");
   const toast = useAdminToast();
@@ -46,6 +59,7 @@ export function AdminScoreboardEntitiesPage() {
   const [fixtures, setFixtures] = useState<SbMatchListItem[]>([]);
   const [fixtureCompId, setFixtureCompId] = useState("");
   const [players, setPlayers] = useState<AdminSbPlayerDirectoryRow[]>([]);
+  const [playerTeamOptions, setPlayerTeamOptions] = useState<AdminSbTeam[]>([]);
   const [picker, setPicker] = useState<Array<{ id: string; name: string }>>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -56,7 +70,12 @@ export function AdminScoreboardEntitiesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
   const [editingFixture, setEditingFixture] = useState<FixtureEditState | null>(null);
+  const [editingCompetition, setEditingCompetition] =
+    useState<CompetitionEditState | null>(null);
+  const [editingSquadRow, setEditingSquadRow] = useState<SquadEditState | null>(null);
   const [fixtureSaving, setFixtureSaving] = useState(false);
+  const [competitionSaving, setCompetitionSaving] = useState(false);
+  const [squadSaving, setSquadSaving] = useState(false);
   const [teamModal, setTeamModal] = useState<"create" | "edit" | null>(null);
   const [editingTeam, setEditingTeam] = useState<AdminSbTeam | null>(null);
   const [competitionOptions, setCompetitionOptions] = useState<
@@ -148,6 +167,99 @@ export function AdminScoreboardEntitiesPage() {
     });
   };
 
+  const openCompetitionEditor = (competition: AdminSbCompetition) => {
+    setEditingCompetition({
+      competition,
+      draft: {
+        name: competition.name,
+        slug: competition.slug,
+        season: competition.season,
+        type: competition.type,
+        formatType: competition.formatType ?? "",
+        country: competition.region ?? "",
+        description: "",
+        isPublished: competition.isPublished,
+      },
+    });
+  };
+
+  const openSquadEditor = (row: AdminSbPlayerDirectoryRow) => {
+    const team = row.teams[0];
+    if (!team) return;
+    setEditingSquadRow({
+      row,
+      squadId: team.squadId,
+      draft: {
+        teamId: team.teamId,
+        displayName: row.displayName,
+        position: team.position ?? row.positionPrimary ?? "",
+        shirtNumber: team.shirtNumber,
+      },
+    });
+  };
+
+  const saveCompetitionEdit = async () => {
+    if (!editingCompetition) return;
+    const draft = editingCompetition.draft;
+    if (!draft.name.trim() || !draft.season.trim()) {
+      toast.error("Competition name and season are required");
+      return;
+    }
+
+    setCompetitionSaving(true);
+    try {
+      await adminScoreboardApi.updateCompetition(editingCompetition.competition.id, {
+        ...draft,
+        name: draft.name.trim(),
+        slug: draft.slug?.trim() || undefined,
+        season: draft.season.trim(),
+        type: draft.type.trim() || "tournament",
+        formatType: draft.formatType?.trim() || undefined,
+        country: draft.country?.trim() || undefined,
+        description: draft.description?.trim() || undefined,
+      });
+      toast.success("Competition updated");
+      setEditingCompetition(null);
+      loadedRef.current.competitions = false;
+      void loadCompetitions();
+      void refreshStats();
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setCompetitionSaving(false);
+    }
+  };
+
+  const saveSquadEdit = async () => {
+    if (!editingSquadRow) return;
+    const draft = editingSquadRow.draft;
+    if (!draft.displayName.trim()) {
+      toast.error("Player name is required");
+      return;
+    }
+
+    setSquadSaving(true);
+    try {
+      await adminScoreboardApi.updateSquadRow(editingSquadRow.squadId, {
+        teamId: draft.teamId,
+        displayName: draft.displayName.trim(),
+        position: draft.position?.trim() || undefined,
+        shirtNumber:
+          draft.shirtNumber == null || Number.isNaN(Number(draft.shirtNumber))
+            ? null
+            : Number(draft.shirtNumber),
+      });
+      toast.success("Scoreboard player updated");
+      setEditingSquadRow(null);
+      void loadPlayers();
+      void refreshStats();
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setSquadSaving(false);
+    }
+  };
+
   const saveFixtureEdit = async () => {
     if (!editingFixture) return;
     if (!editingFixture.kickoffDate || !editingFixture.kickoffTime) {
@@ -223,6 +335,14 @@ export function AdminScoreboardEntitiesPage() {
   useEffect(() => {
     if (tab === "players") void loadPlayers();
   }, [tab, loadPlayers]);
+
+  useEffect(() => {
+    if (tab !== "players") return;
+    adminScoreboardApi
+      .teams()
+      .then(setPlayerTeamOptions)
+      .catch(() => setPlayerTeamOptions([]));
+  }, [tab]);
 
   useEffect(() => {
     if (tab === "seeders" && !loadedRef.current.seeders) void loadPicker();
@@ -323,6 +443,284 @@ export function AdminScoreboardEntitiesPage() {
           void refreshStats();
         }}
       />
+
+      {editingCompetition && (
+        <div
+          className="admin-sb-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!competitionSaving) setEditingCompetition(null);
+          }}
+        >
+          <div
+            className="admin-sb-modal"
+            role="dialog"
+            aria-labelledby="competition-edit-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="admin-sb-modal__header">
+              <h2 id="competition-edit-title">Edit competition</h2>
+              <button
+                type="button"
+                className="admin-sb-modal__close"
+                onClick={() => setEditingCompetition(null)}
+                disabled={competitionSaving}
+                aria-label="Close competition editor"
+              >
+                ×
+              </button>
+            </header>
+            <form
+              className="admin-sb-modal__body"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveCompetitionEdit();
+              }}
+            >
+              <label className="admin-sb-field">
+                <span>Name</span>
+                <input
+                  value={editingCompetition.draft.name}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? { ...current, draft: { ...current.draft, name: e.target.value } }
+                        : current
+                    )
+                  }
+                  required
+                />
+              </label>
+              <label className="admin-sb-field">
+                <span>Slug</span>
+                <input
+                  value={editingCompetition.draft.slug ?? ""}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? { ...current, draft: { ...current.draft, slug: e.target.value } }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <div className="admin-sb-gameday__datetime">
+                <label className="admin-sb-field">
+                  <span>Season</span>
+                  <input
+                    value={editingCompetition.draft.season}
+                    onChange={(e) =>
+                      setEditingCompetition((current) =>
+                        current
+                          ? { ...current, draft: { ...current.draft, season: e.target.value } }
+                          : current
+                      )
+                    }
+                    required
+                  />
+                </label>
+                <label className="admin-sb-field">
+                  <span>Type</span>
+                  <select
+                    value={editingCompetition.draft.type}
+                    onChange={(e) =>
+                      setEditingCompetition((current) =>
+                        current
+                          ? { ...current, draft: { ...current.draft, type: e.target.value } }
+                          : current
+                      )
+                    }
+                  >
+                    {COMPETITION_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="admin-sb-field">
+                <span>Format</span>
+                <input
+                  value={editingCompetition.draft.formatType ?? ""}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? { ...current, draft: { ...current.draft, formatType: e.target.value } }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <label className="admin-sb-field">
+                <span>Country / region</span>
+                <input
+                  value={editingCompetition.draft.country ?? ""}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? { ...current, draft: { ...current.draft, country: e.target.value } }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <label className="admin-sb-check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editingCompetition.draft.isPublished)}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: { ...current.draft, isPublished: e.target.checked },
+                          }
+                        : current
+                    )
+                  }
+                />
+                Published
+              </label>
+              <footer className="admin-sb-modal__footer">
+                <button
+                  type="button"
+                  onClick={() => setEditingCompetition(null)}
+                  disabled={competitionSaving}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={competitionSaving}>
+                  {competitionSaving ? "Saving..." : "Save competition"}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingSquadRow && (
+        <div
+          className="admin-sb-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!squadSaving) setEditingSquadRow(null);
+          }}
+        >
+          <div
+            className="admin-sb-modal"
+            role="dialog"
+            aria-labelledby="squad-edit-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="admin-sb-modal__header">
+              <h2 id="squad-edit-title">Edit scoreboard player</h2>
+              <button
+                type="button"
+                className="admin-sb-modal__close"
+                onClick={() => setEditingSquadRow(null)}
+                disabled={squadSaving}
+                aria-label="Close player editor"
+              >
+                ×
+              </button>
+            </header>
+            <form
+              className="admin-sb-modal__body"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveSquadEdit();
+              }}
+            >
+              <label className="admin-sb-field">
+                <span>Team</span>
+                <select
+                  value={editingSquadRow.draft.teamId ?? ""}
+                  onChange={(e) =>
+                    setEditingSquadRow((current) =>
+                      current
+                        ? { ...current, draft: { ...current.draft, teamId: e.target.value } }
+                        : current
+                    )
+                  }
+                >
+                  {playerTeamOptions.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name} · {team.competition.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-sb-field">
+                <span>Display name</span>
+                <input
+                  value={editingSquadRow.draft.displayName}
+                  onChange={(e) =>
+                    setEditingSquadRow((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: { ...current.draft, displayName: e.target.value },
+                          }
+                        : current
+                    )
+                  }
+                  required
+                />
+              </label>
+              <div className="admin-sb-gameday__datetime">
+                <label className="admin-sb-field">
+                  <span>Position</span>
+                  <input
+                    value={editingSquadRow.draft.position ?? ""}
+                    onChange={(e) =>
+                      setEditingSquadRow((current) =>
+                        current
+                          ? {
+                              ...current,
+                              draft: { ...current.draft, position: e.target.value },
+                            }
+                          : current
+                      )
+                    }
+                    placeholder="GK, CB, RW..."
+                  />
+                </label>
+                <label className="admin-sb-field">
+                  <span>Shirt number</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={999}
+                    value={editingSquadRow.draft.shirtNumber ?? ""}
+                    onChange={(e) =>
+                      setEditingSquadRow((current) =>
+                        current
+                          ? {
+                              ...current,
+                              draft: {
+                                ...current.draft,
+                                shirtNumber: e.target.value === "" ? null : Number(e.target.value),
+                              },
+                            }
+                          : current
+                      )
+                    }
+                  />
+                </label>
+              </div>
+              <footer className="admin-sb-modal__footer">
+                <button type="button" onClick={() => setEditingSquadRow(null)} disabled={squadSaving}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={squadSaving}>
+                  {squadSaving ? "Saving..." : "Save player"}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
 
       {editingFixture && (
         <div
@@ -476,7 +874,7 @@ export function AdminScoreboardEntitiesPage() {
             empty={!loading.competitions && competitions.length === 0}
             emptyTitle="No competitions match your filters"
             emptyHint="Create a competition or adjust search filters."
-            columns={6}
+            columns={7}
           >
             <table className="admin-table admin-sb-table">
               <thead>
@@ -487,6 +885,7 @@ export function AdminScoreboardEntitiesPage() {
                   <th>Region</th>
                   <th>Teams</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -501,6 +900,32 @@ export function AdminScoreboardEntitiesPage() {
                     <td>{c.teamsCount}</td>
                     <td>
                       <StatusBadge status={c.status} />
+                    </td>
+                    <td className="admin-sb-row-actions">
+                      <button
+                        type="button"
+                        className="admin-inline-button"
+                        onClick={() => openCompetitionEditor(c)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-inline-button admin-inline-button--danger"
+                        onClick={async () => {
+                          if (!window.confirm(`Delete ${c.name}?`)) return;
+                          try {
+                            await adminScoreboardApi.deleteCompetition(c.id);
+                            toast.success("Competition deleted");
+                            void loadCompetitions();
+                            void refreshStats();
+                          } catch (err) {
+                            toast.error(formatAdminScoreboardError(err));
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -662,6 +1087,25 @@ export function AdminScoreboardEntitiesPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          className="admin-inline-button admin-inline-button--danger"
+                          onClick={async () => {
+                            if (!window.confirm(`Delete ${m.homeTeam.name} vs ${m.awayTeam.name}?`)) {
+                              return;
+                            }
+                            try {
+                              await adminScoreboardApi.deleteMatch(m.id);
+                              toast.success("Fixture deleted");
+                              void loadFixtures();
+                              void refreshStats();
+                            } catch (err) {
+                              toast.error(formatAdminScoreboardError(err));
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -691,29 +1135,67 @@ export function AdminScoreboardEntitiesPage() {
             empty={!loading.players && players.length === 0}
             emptyTitle="No players in directory"
             emptyHint="Import squad CSV per team or link players when saving rosters."
-            columns={4}
+            columns={5}
           >
             <table className="admin-table admin-sb-table">
               <thead>
                 <tr>
                   <th>Player</th>
+                  <th>#</th>
                   <th>Position</th>
                   <th>Clubs</th>
-                  <th />
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {players.map((p) => (
-                  <tr key={p.playerId ?? p.slug ?? p.displayName}>
+                  <tr key={p.teams[0]?.squadId ?? p.playerId ?? p.slug ?? p.displayName}>
                     <td>{p.displayName}</td>
-                    <td>{p.positionPrimary ?? "—"}</td>
+                    <td>{p.teams[0]?.shirtNumber ?? "-"}</td>
+                    <td>{p.teams[0]?.position ?? p.positionPrimary ?? "-"}</td>
                     <td className="admin-sb-clubs-cell">
-                      {p.teams.map((t) => t.teamName).join(", ")}
+                      {p.teams
+                        .map((t) => `${t.teamName} (${t.competitionName})`)
+                        .join(", ")}
                     </td>
-                    <td>
+                    <td className="admin-sb-row-actions">
                       <Link to={playerPath(p.slug, p.displayName)} className="text-link">
                         Profile
                       </Link>
+                      {p.teams[0] && (
+                        <>
+                          <button
+                            type="button"
+                            className="admin-inline-button"
+                            onClick={() => openSquadEditor(p)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-inline-button admin-inline-button--danger"
+                            onClick={async () => {
+                              const squadId = p.teams[0]?.squadId;
+                              if (
+                                !squadId ||
+                                !window.confirm(`Delete ${p.displayName} from scoreboard squads?`)
+                              ) {
+                                return;
+                              }
+                              try {
+                                await adminScoreboardApi.deleteSquadRow(squadId);
+                                toast.success("Scoreboard player removed");
+                                void loadPlayers();
+                                void refreshStats();
+                              } catch (err) {
+                                toast.error(formatAdminScoreboardError(err));
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
