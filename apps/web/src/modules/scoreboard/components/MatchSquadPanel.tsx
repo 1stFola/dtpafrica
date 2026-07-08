@@ -38,8 +38,8 @@ function positionBadge(pos: string | null | undefined): string {
   if (p.includes("LEFT BACK") || hasPositionToken(p, "LB")) return "LB";
   if (p.includes("RIGHT BACK") || hasPositionToken(p, "RB")) return "RB";
   if (p.includes("FULL BACK") || hasPositionToken(p, "FB")) return "FB";
-  if (p.includes("LEFT WING") || hasPositionToken(p, "LW")) return "LW";
-  if (p.includes("RIGHT WING") || hasPositionToken(p, "RW")) return "RW";
+  if (p.includes("LEFT WING") || p.includes("LWF") || hasPositionToken(p, "LW")) return "LW";
+  if (p.includes("RIGHT WING") || p.includes("RWF") || hasPositionToken(p, "RW")) return "RW";
   if (p.includes("WINGER") || p.includes("WING")) return "WG";
   if (p.includes("DF") || p.includes("DEF")) return "DF";
   if (hasPositionToken(p, "FW") || p.includes("FOR") || hasPositionToken(p, "ST")) return "FW";
@@ -164,7 +164,12 @@ const FORMATION_LAYOUTS: Record<string, FormationSlot[]> = {
 };
 
 function normalizedPosition(row: SbSquadPlayer) {
-  return `${row.position ?? ""} ${row.player?.positionPrimary ?? ""}`.toUpperCase();
+  return `${row.position ?? ""} ${row.player?.positionPrimary ?? ""} ${row.player?.positionSecondary ?? ""}`.toUpperCase();
+}
+
+function isGoalkeeper(row: SbSquadPlayer) {
+  const pos = normalizedPosition(row);
+  return hasPositionToken(pos, "GK") || pos.includes("GOAL");
 }
 
 function playerLine(row: SbSquadPlayer): PitchLine {
@@ -172,7 +177,7 @@ function playerLine(row: SbSquadPlayer): PitchLine {
   if (hasPositionToken(pos, "GK") || pos.includes("GOAL")) return "gk";
   if (pos.includes("LEFT BACK") || pos.includes("RIGHT BACK") || pos.includes("FULL BACK") || hasPositionToken(pos, "LB") || hasPositionToken(pos, "RB") || hasPositionToken(pos, "FB") || hasPositionToken(pos, "LWB") || hasPositionToken(pos, "RWB") || hasPositionToken(pos, "CB") || hasPositionToken(pos, "DF") || pos.includes("DEF")) return "df";
   if (hasPositionToken(pos, "DM") || hasPositionToken(pos, "CM") || hasPositionToken(pos, "AM") || hasPositionToken(pos, "LM") || hasPositionToken(pos, "RM") || hasPositionToken(pos, "MF") || pos.includes("MID")) return "mf";
-  if (hasPositionToken(pos, "LW") || hasPositionToken(pos, "RW") || pos.includes("WINGER") || pos.includes("WING") || hasPositionToken(pos, "CF") || hasPositionToken(pos, "ST") || hasPositionToken(pos, "FW") || pos.includes("FOR")) return "fw";
+  if (hasPositionToken(pos, "LW") || hasPositionToken(pos, "RW") || pos.includes("LWF") || pos.includes("RWF") || pos.includes("WINGER") || pos.includes("WING") || hasPositionToken(pos, "CF") || hasPositionToken(pos, "ST") || hasPositionToken(pos, "FW") || pos.includes("FOR")) return "fw";
   return "mf";
 }
 
@@ -192,8 +197,8 @@ function slotPreferences(row: SbSquadPlayer): string[] {
   if (hasPositionToken(pos, "LM")) return ["lm", "lam", "lw", "lwb"];
   if (hasPositionToken(pos, "RM")) return ["rm", "ram", "rw", "rwb"];
   if (hasPositionToken(pos, "MF") || pos.includes("MID")) return ["cm", "lcm", "rcm", "dm", "ldm", "rdm", "lm", "rm", "am"];
-  if (pos.includes("LEFT WING") || hasPositionToken(pos, "LW")) return ["lw", "lam", "lm"];
-  if (pos.includes("RIGHT WING") || hasPositionToken(pos, "RW")) return ["rw", "ram", "rm"];
+  if (pos.includes("LEFT WING") || pos.includes("LWF") || hasPositionToken(pos, "LW")) return ["lw", "lam", "lm"];
+  if (pos.includes("RIGHT WING") || pos.includes("RWF") || hasPositionToken(pos, "RW")) return ["rw", "ram", "rm"];
   if (pos.includes("WINGER") || pos.includes("WING")) return ["rw", "lw", "ram", "lam", "rm", "lm"];
   if (hasPositionToken(pos, "CF") || hasPositionToken(pos, "ST")) return ["cf", "lcf", "rcf"];
   if (hasPositionToken(pos, "FW") || pos.includes("FOR")) return ["cf", "lcf", "rcf", "lw", "rw"];
@@ -209,58 +214,90 @@ function toFullPitchY(halfY: number, topHalf: boolean) {
   return topHalf ? orientedHalfY / 2 : 50 + orientedHalfY / 2;
 }
 
-function placeTeamOnPitch(players: SbSquadPlayer[], topHalf: boolean, formation?: string | null) {
-  const slots = formationSlots(formation);
-  const usedPlayers = new Set<string>();
-  const usedSlots = new Set<number>();
-  const placed: Array<{ player: SbSquadPlayer; x: number; y: number }> = [];
-
-  for (const player of players.slice(0, 11)) {
-    const preferences = slotPreferences(player);
-    const slotIndex = slots.findIndex(
-      (slot, index) => !usedSlots.has(index) && preferences.includes(slot.key)
-    );
-    if (slotIndex < 0) continue;
-    const slot = slots[slotIndex];
-    placed.push({ player, x: slot.x, y: toFullPitchY(slot.y, topHalf) });
-    usedPlayers.add(player.id);
-    usedSlots.add(slotIndex);
+function slotFitScore(
+  row: SbSquadPlayer,
+  slot: FormationSlot,
+  source: "starter" | "sub",
+  emergency = false
+) {
+  const goalkeeper = isGoalkeeper(row);
+  if (slot.line === "gk") {
+    if (goalkeeper) return 1000 + (source === "starter" ? 25 : 0);
+    return emergency ? 1 : Number.NEGATIVE_INFINITY;
   }
+  if (goalkeeper) return emergency ? 1 : Number.NEGATIVE_INFINITY;
 
-  for (const line of ["gk", "df", "mf", "fw"] as PitchLine[]) {
-    const linePlayers = players
-      .slice(0, 11)
-      .filter((player) => !usedPlayers.has(player.id) && playerLine(player) === line);
-    const lineSlots = slots
-      .map((slot, index) => ({ slot, index }))
-      .filter(({ slot, index }) => slot.line === line && !usedSlots.has(index))
-      .sort((a, b) => a.slot.x - b.slot.x);
-    for (const player of linePlayers) {
-      const next = lineSlots.shift();
-      if (!next) break;
-      placed.push({
-        player,
-        x: next.slot.x,
-        y: toFullPitchY(next.slot.y, topHalf),
-      });
-      usedPlayers.add(player.id);
-      usedSlots.add(next.index);
+  const preferences = slotPreferences(row);
+  const exact = preferences.indexOf(slot.key);
+  let score = Number.NEGATIVE_INFINITY;
+  if (exact >= 0) {
+    score = 900 - exact * 25;
+  } else if (playerLine(row) === slot.line) {
+    score = 520;
+  } else if (slot.line === "mf" && playerLine(row) === "fw") {
+    score = 300;
+  } else if (slot.line === "df" && playerLine(row) === "mf") {
+    score = 260;
+  } else if (slot.line === "fw" && playerLine(row) === "mf") {
+    score = 240;
+  } else if (emergency) {
+    score = 1;
+  }
+  return score + (source === "starter" ? 25 : 0);
+}
+
+function uniquePitchPool(starters: SbSquadPlayer[], subs: SbSquadPlayer[]) {
+  const seen = new Set<string>();
+  const pool: Array<{ player: SbSquadPlayer; source: "starter" | "sub" }> = [];
+  for (const [rows, source] of [
+    [starters, "starter"],
+    [subs, "sub"],
+  ] as const) {
+    for (const player of rows) {
+      const key = player.playerId ?? player.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pool.push({ player, source });
     }
   }
+  return pool;
+}
 
-  const stillUnplaced = players.slice(0, 11).filter((player) => !usedPlayers.has(player.id));
-  const openSlots = slots
-    .map((slot, index) => ({ slot, index }))
-    .filter(({ index }) => !usedSlots.has(index))
-    .sort((a, b) => b.slot.y - a.slot.y || a.slot.x - b.slot.x);
-  for (const player of stillUnplaced) {
-    const next = openSlots.shift();
-    if (!next) break;
+function placeTeamOnPitch(
+  starters: SbSquadPlayer[],
+  subs: SbSquadPlayer[],
+  topHalf: boolean,
+  formation?: string | null
+) {
+  const slots = formationSlots(formation);
+  const pool = uniquePitchPool(starters, subs);
+  const usedPlayers = new Set<string>();
+  const placed: Array<{ player: SbSquadPlayer; x: number; y: number }> = [];
+
+  for (const slot of slots) {
+    const candidate = pool
+      .filter(({ player }) => !usedPlayers.has(player.playerId ?? player.id))
+      .map((entry) => ({ ...entry, score: slotFitScore(entry.player, slot, entry.source) }))
+      .filter((entry) => Number.isFinite(entry.score))
+      .sort((a, b) => b.score - a.score || a.player.displayName.localeCompare(b.player.displayName))[0];
+    const emergencyCandidate =
+      candidate ??
+      pool
+        .filter(({ player }) => !usedPlayers.has(player.playerId ?? player.id))
+        .map((entry) => ({
+          ...entry,
+          score: slotFitScore(entry.player, slot, entry.source, true),
+        }))
+        .filter((entry) => Number.isFinite(entry.score))
+        .sort((a, b) => b.score - a.score || a.player.displayName.localeCompare(b.player.displayName))[0];
+
+    if (!emergencyCandidate) continue;
     placed.push({
-      player,
-      x: next.slot.x,
-      y: toFullPitchY(next.slot.y, topHalf),
+      player: emergencyCandidate.player,
+      x: slot.x,
+      y: toFullPitchY(slot.y, topHalf),
     });
+    usedPlayers.add(emergencyCandidate.player.playerId ?? emergencyCandidate.player.id);
   }
 
   return placed;
@@ -425,6 +462,8 @@ function UnifiedMatchPitch({
   awayTeam,
   homePlayers,
   awayPlayers,
+  homeSubs,
+  awaySubs,
   homeFormation,
   awayFormation,
   competition,
@@ -433,13 +472,15 @@ function UnifiedMatchPitch({
   awayTeam: SbTeamWithSquad;
   homePlayers: SbSquadPlayer[];
   awayPlayers: SbSquadPlayer[];
+  homeSubs: SbSquadPlayer[];
+  awaySubs: SbSquadPlayer[];
   homeFormation?: string | null;
   awayFormation?: string | null;
   competition: string;
 }) {
-  if (!homePlayers.length && !awayPlayers.length) return null;
-  const homePlaced = placeTeamOnPitch(homePlayers, true, homeFormation);
-  const awayPlaced = placeTeamOnPitch(awayPlayers, false, awayFormation);
+  if (!homePlayers.length && !awayPlayers.length && !homeSubs.length && !awaySubs.length) return null;
+  const homePlaced = placeTeamOnPitch(homePlayers, homeSubs, true, homeFormation);
+  const awayPlaced = placeTeamOnPitch(awayPlayers, awaySubs, false, awayFormation);
   return (
     <section className="sbm-unified-lineup">
       <div className="sbm-unified-lineup__head">
@@ -614,6 +655,8 @@ export function MatchSquadsGrid({
         awayTeam={awayTeam}
         homePlayers={homeGroups.starters}
         awayPlayers={awayGroups.starters}
+        homeSubs={homeGroups.subs}
+        awaySubs={awayGroups.subs}
         homeFormation={formation?.home}
         awayFormation={formation?.away}
         competition={competition}

@@ -22,6 +22,7 @@ async function main() {
   console.log("Public profile: /player/alli-o-sanni");
   console.log("ScoreBoard: /scoreboard/competition/jagaban-cup-2026");
   console.log("ScoreBoard: /scoreboard/competition/ex-internationals-cup-2026");
+  console.log("ScoreBoard: /scoreboard/competition/lagos-queens-cup-2026");
   console.log("MVCE: /valuation/player/" + result.seedPlayerId);
   console.log("Run: POST /api/v1/sip/players/" + result.seedPlayerId + "/recalculate");
 }
