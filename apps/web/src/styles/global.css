@@ -9104,6 +9104,33 @@ a {
   font-size: 1.05rem;
 }
 
+.admin-sb-form-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.admin-sb-form-heading-row p {
+  margin: var(--space-1) 0 0;
+}
+
+.admin-about-content-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 800px) {
+  .admin-sb-form-heading-row {
+    flex-direction: column;
+  }
+
+  .admin-about-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .admin-message-body {
   white-space: pre-wrap;
   background: var(--color-surface-2);

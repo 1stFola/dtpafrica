@@ -24,4 +24,4 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=builder /app /app
 
 EXPOSE 3000
-CMD ["sh", "-c", "pnpm --filter @dtp/api db:push && pnpm --filter @dtp/api start"]
+CMD ["sh", "-c", "pnpm --filter @dtp/api db:repair:squad-duplicates && pnpm --filter @dtp/api db:push && pnpm --filter @dtp/api start"]
