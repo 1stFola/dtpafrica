@@ -40,6 +40,17 @@ export type AdminSbCompetition = {
   logoUrl: string | null;
 };
 
+export type AdminSbCompetitionInput = {
+  name: string;
+  slug?: string;
+  season: string;
+  type: string;
+  formatType?: string;
+  country?: string;
+  description?: string;
+  isPublished?: boolean;
+};
+
 export type AdminSbTeamInput = {
   competitionId: string;
   name: string;
@@ -82,7 +93,22 @@ export type AdminSbPlayerDirectoryRow = {
   slug: string | null;
   displayName: string;
   positionPrimary: string | null;
-  teams: Array<{ teamId: string; teamName: string; competitionSlug: string }>;
+  teams: Array<{
+    squadId: string;
+    teamId: string;
+    teamName: string;
+    competitionSlug: string;
+    competitionName: string;
+    position: string | null;
+    shirtNumber: number | null;
+  }>;
+};
+
+export type AdminSbSquadRowInput = {
+  teamId?: string;
+  displayName: string;
+  position?: string;
+  shirtNumber?: number | null;
 };
 
 export type MatchdayRosterSlot = {

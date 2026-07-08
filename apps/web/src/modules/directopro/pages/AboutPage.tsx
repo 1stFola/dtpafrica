@@ -1,6 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { apiGet } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+
+const ABOUT_CONTENT_KEYS = [
+  "about.hero.kicker",
+  "about.hero.title",
+  "about.hero.body",
+  "about.story.kicker",
+  "about.story.title",
+  "about.story.body1",
+  "about.story.body2",
+  "about.framework.kicker",
+  "about.framework.title",
+  "about.framework.body",
+  "about.founder.kicker",
+  "about.founder.name",
+  "about.founder.role",
+  "about.founder.body1",
+  "about.founder.body2",
+] as const;
+
+const ABOUT_DEFAULTS: Record<(typeof ABOUT_CONTENT_KEYS)[number], string> = {
+  "about.hero.kicker": "DirectToPro Africa",
+  "about.hero.title": "Bridging African football talent with verified global opportunity.",
+  "about.hero.body":
+    "We digitally identify and connect African football talents to professional clubs worldwide using technology, objective data, AI-driven analysis, and shareable player profiles built for scouts.",
+  "about.story.kicker": "About us",
+  "about.story.title": "We do not just find players. We build futures.",
+  "about.story.body1":
+    "DirectToPro Africa operates at the intersection of traditional scouting and cutting-edge technology, identifying and nurturing the next generation of superstars from grassroots academies to professional leagues abroad.",
+  "about.story.body2":
+    "Our mission is clear: provide a data-driven pathway for local talents to achieve their global dreams through unbiased evaluation, professional player profiling, and strategic guidance.",
+  "about.framework.kicker": "Player identification and rating",
+  "about.framework.title": "A 1-99 framework for measurable football development.",
+  "about.framework.body":
+    "Our framework combines traditional scouting, video review, modern data analytics, and AI-supported performance insight to evaluate players at every development stage.",
+  "about.founder.kicker": "Meet our founder",
+  "about.founder.name": "Fola Sanni",
+  "about.founder.role": "Founder and CEO, DirectToPro Africa",
+  "about.founder.body1":
+    "Fola Sanni is a visionary entrepreneur, strategist, and football innovation advocate dedicated to transforming how African talents are discovered and developed.",
+  "about.founder.body2":
+    "Through DirectToPro Africa, Fola leads a mission to make football scouting transparent, data-based, and globally accessible by integrating AI-powered video analysis and structured player profiling with trusted international representation.",
+};
 
 const ratingLevels = [
   {
@@ -76,18 +119,29 @@ const frameworkDetails = [
 export function AboutPage() {
   usePageTitle("About");
   const [showFramework, setShowFramework] = useState(false);
+  const [content, setContent] =
+    useState<Record<(typeof ABOUT_CONTENT_KEYS)[number], string>>(ABOUT_DEFAULTS);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    apiGet<Record<string, string>>(
+      `/home/content?keys=${ABOUT_CONTENT_KEYS.join(",")}`,
+      controller.signal
+    )
+      .then((rows) => {
+        setContent((current) => ({ ...current, ...rows }));
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
 
   return (
     <main className="home-page about-premium">
       <section className="about-hero">
         <div className="about-hero__copy">
-          <span className="about-kicker">DirectToPro Africa</span>
-          <h1>Bridging African football talent with verified global opportunity.</h1>
-          <p>
-            We digitally identify and connect African football talents to professional clubs
-            worldwide using technology, objective data, AI-driven analysis, and shareable
-            player profiles built for scouts.
-          </p>
+          <span className="about-kicker">{content["about.hero.kicker"]}</span>
+          <h1>{content["about.hero.title"]}</h1>
+          <p>{content["about.hero.body"]}</p>
           <div className="about-hero__actions">
             <Link to="/featured-players" className="button button-primary">
               Explore players
@@ -113,20 +167,12 @@ export function AboutPage() {
 
       <section className="about-story">
         <div>
-          <span className="about-kicker">About us</span>
-          <h2>We do not just find players. We build futures.</h2>
+          <span className="about-kicker">{content["about.story.kicker"]}</span>
+          <h2>{content["about.story.title"]}</h2>
         </div>
         <div className="about-story__body">
-          <p>
-            DirectToPro Africa operates at the intersection of traditional scouting and
-            cutting-edge technology, identifying and nurturing the next generation of
-            superstars from grassroots academies to professional leagues abroad.
-          </p>
-          <p>
-            Our mission is clear: provide a data-driven pathway for local talents to achieve
-            their global dreams through unbiased evaluation, professional player profiling,
-            and strategic guidance.
-          </p>
+          <p>{content["about.story.body1"]}</p>
+          <p>{content["about.story.body2"]}</p>
         </div>
       </section>
 
@@ -146,12 +192,9 @@ export function AboutPage() {
 
       <section className="about-framework">
         <div className="about-framework__intro">
-          <span className="about-kicker">Player identification and rating</span>
-          <h2>A 1-99 framework for measurable football development.</h2>
-          <p>
-            Our framework combines traditional scouting, video review, modern data analytics,
-            and AI-supported performance insight to evaluate players at every development stage.
-          </p>
+          <span className="about-kicker">{content["about.framework.kicker"]}</span>
+          <h2>{content["about.framework.title"]}</h2>
+          <p>{content["about.framework.body"]}</p>
           <button type="button" className="button button-secondary" onClick={() => setShowFramework(true)}>
             Read the framework
           </button>
@@ -172,18 +215,11 @@ export function AboutPage() {
           <img src="/images/Fola Sanni.png" alt="Fola Sanni, Founder and CEO of DirectToPro Africa" />
         </div>
         <div className="about-founder__copy">
-          <span className="about-kicker">Meet our founder</span>
-          <h2>Fola Sanni</h2>
-          <p className="about-founder__role">Founder and CEO, DirectToPro Africa</p>
-          <p>
-            Fola Sanni is a visionary entrepreneur, strategist, and football innovation advocate
-            dedicated to transforming how African talents are discovered and developed.
-          </p>
-          <p>
-            Through DirectToPro Africa, Fola leads a mission to make football scouting
-            transparent, data-based, and globally accessible by integrating AI-powered video
-            analysis and structured player profiling with trusted international representation.
-          </p>
+          <span className="about-kicker">{content["about.founder.kicker"]}</span>
+          <h2>{content["about.founder.name"]}</h2>
+          <p className="about-founder__role">{content["about.founder.role"]}</p>
+          <p>{content["about.founder.body1"]}</p>
+          <p>{content["about.founder.body2"]}</p>
         </div>
       </section>
 

@@ -32,6 +32,8 @@ import {
 } from "../scoreboard/match-slug";
 import { parseKickoffAtIso, parseWatKickoff } from "../shared/wat-datetime";
 import { parseMatchSquadCsv, type ParsedMatchSquadCsvRow } from "./match-squad-csv";
+import type { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
+import type { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
 
 const SCOREBOARD_TIMEZONE = "Africa/Lagos";
 const DEFAULT_FORMATION = "4-3-3";
@@ -312,6 +314,89 @@ export class AdminScoreboardService {
       .filter((c) => !filters?.status || c.status === filters.status);
   }
 
+  async updateCompetition(competitionId: string, dto: UpdateAdminCompetitionDto) {
+    const existing = await this.prisma.sbCompetition.findUnique({
+      where: { id: competitionId },
+      include: { _count: { select: { teams: true, matches: true } } },
+    });
+    if (!existing) throw new NotFoundException("Competition not found");
+
+    const data: Prisma.SbCompetitionUpdateInput = {};
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      if (!name) throw new BadRequestException("Competition name is required");
+      data.name = name;
+    }
+    if (dto.slug !== undefined) {
+      const slug = dto.slug.trim() || slugify(String(data.name ?? existing.name));
+      data.slug = slug;
+    }
+    if (dto.season !== undefined) {
+      const season = dto.season.trim();
+      if (!season) throw new BadRequestException("Season is required");
+      data.season = season;
+    }
+    if (dto.type !== undefined) data.type = dto.type.trim() || existing.type;
+    if (dto.formatType !== undefined) data.formatType = dto.formatType.trim() || null;
+    if (dto.country !== undefined) data.country = dto.country.trim() || null;
+    if (dto.description !== undefined) data.description = dto.description.trim() || null;
+    if (dto.isPublished !== undefined) data.isPublished = dto.isPublished;
+
+    try {
+      const row = await this.prisma.sbCompetition.update({
+        where: { id: competitionId },
+        data,
+        include: { _count: { select: { teams: true, matches: true } } },
+      });
+      this.statsCache = null;
+      return {
+        id: row.id,
+        slug: row.slug,
+        name: row.name,
+        type: row.type,
+        region: row.country,
+        season: row.season,
+        teamsCount: row._count.teams,
+        matchesCount: row._count.matches,
+        status: deriveCompetitionStatus(row.isPublished, []),
+        isPublished: row.isPublished,
+        isFeatured: (row.description ?? "").includes("[featured]"),
+        formatType: row.formatType,
+        logoUrl: null as string | null,
+      };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("A competition with this slug already exists");
+      }
+      throw err;
+    }
+  }
+
+  async deleteCompetition(competitionId: string) {
+    const competition = await this.prisma.sbCompetition.findUnique({
+      where: { id: competitionId },
+      include: {
+        _count: {
+          select: { teams: true, matches: true, highlights: true, playerStats: true },
+        },
+      },
+    });
+    if (!competition) throw new NotFoundException("Competition not found");
+    const linked =
+      competition._count.teams +
+      competition._count.matches +
+      competition._count.highlights +
+      competition._count.playerStats;
+    if (linked > 0) {
+      throw new BadRequestException(
+        "Cannot delete a competition with teams, fixtures, highlights, or player stats. Remove those records first."
+      );
+    }
+    await this.prisma.sbCompetition.delete({ where: { id: competitionId } });
+    this.statsCache = null;
+    return { ok: true };
+  }
+
   async listTeams(filters?: { q?: string; competitionId?: string }) {
     const where: Prisma.SbTeamWhereInput = {};
     if (filters?.competitionId) where.competitionId = filters.competitionId;
@@ -567,7 +652,15 @@ export class AdminScoreboardService {
         slug: string | null;
         displayName: string;
         positionPrimary: string | null;
-        teams: Array<{ teamId: string; teamName: string; competitionSlug: string }>;
+        teams: Array<{
+          squadId: string;
+          teamId: string;
+          teamName: string;
+          competitionSlug: string;
+          competitionName: string;
+          position: string | null;
+          shirtNumber: number | null;
+        }>;
       }
     >();
 
@@ -583,14 +676,84 @@ export class AdminScoreboardService {
         teams: [],
       };
       existing.teams.push({
+        squadId: row.id,
         teamId: row.team.id,
         teamName: normalizeClubName(row.team.name),
         competitionSlug: row.team.competition.slug,
+        competitionName: row.team.competition.name,
+        position: row.position,
+        shirtNumber: row.shirtNumber,
       });
       byPlayer.set(key, existing);
     }
 
     return [...byPlayer.values()];
+  }
+
+  async updateSquadRow(squadId: string, dto: UpsertScoreboardSquadRowDto) {
+    const existing = await this.prisma.sbTeamSquad.findUnique({
+      where: { id: squadId },
+      include: { team: { include: { competition: true } }, player: true },
+    });
+    if (!existing) throw new NotFoundException("Squad row not found");
+
+    const displayName = dto.displayName?.trim();
+    if (!displayName) throw new BadRequestException("displayName is required");
+
+    if (dto.teamId && dto.teamId !== existing.teamId) {
+      const team = await this.prisma.sbTeam.findUnique({ where: { id: dto.teamId } });
+      if (!team) throw new NotFoundException("Target team not found");
+    }
+
+    const updated = await this.prisma.sbTeamSquad.update({
+      where: { id: squadId },
+      data: {
+        teamId: dto.teamId ?? existing.teamId,
+        displayName,
+        position: dto.position?.trim() || null,
+        shirtNumber: Number.isFinite(dto.shirtNumber) ? dto.shirtNumber : null,
+      },
+      include: {
+        team: { include: { competition: true } },
+        player: { select: { id: true, slug: true, displayName: true, positionPrimary: true } },
+      },
+    });
+    this.statsCache = null;
+    return {
+      squadId: updated.id,
+      playerId: updated.playerId,
+      slug: updated.player?.slug ?? null,
+      displayName: updated.player?.displayName ?? updated.displayName,
+      positionPrimary: updated.position ?? updated.player?.positionPrimary ?? null,
+      teams: [
+        {
+          squadId: updated.id,
+          teamId: updated.team.id,
+          teamName: normalizeClubName(updated.team.name),
+          competitionSlug: updated.team.competition.slug,
+          competitionName: updated.team.competition.name,
+          position: updated.position,
+          shirtNumber: updated.shirtNumber,
+        },
+      ],
+    };
+  }
+
+  async deleteSquadRow(squadId: string) {
+    const existing = await this.prisma.sbTeamSquad.findUnique({
+      where: { id: squadId },
+      include: { _count: { select: { matchSquadPlayers: true } } },
+    });
+    if (!existing) throw new NotFoundException("Squad row not found");
+    if (existing._count.matchSquadPlayers > 0) {
+      await this.prisma.sbMatchSquadPlayer.updateMany({
+        where: { squadId },
+        data: { squadId: null },
+      });
+    }
+    await this.prisma.sbTeamSquad.delete({ where: { id: squadId } });
+    this.statsCache = null;
+    return { ok: true };
   }
 
   async listMatches(competitionId?: string) {
@@ -713,6 +876,24 @@ export class AdminScoreboardService {
 
   updateMatch(matchId: string, dto: UpdateMatchDto) {
     return this.scoreboard.updateMatch(matchId, dto);
+  }
+
+  async deleteMatch(matchId: string) {
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: { _count: { select: { highlights: true } } },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+    if (match.status === "live" || match.status === "halftime") {
+      throw new BadRequestException("Cannot delete a live match");
+    }
+    await this.prisma.sbHighlight.updateMany({
+      where: { matchId },
+      data: { matchId: null, eventId: null },
+    });
+    await this.prisma.sbMatch.delete({ where: { id: matchId } });
+    this.statsCache = null;
+    return { ok: true };
   }
 
   ingestSipMetrics(matchId: string) {

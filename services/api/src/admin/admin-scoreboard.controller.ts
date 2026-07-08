@@ -34,6 +34,8 @@ import { CreateAdminMatchDto } from "./dto/create-admin-match.dto";
 import { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
 import { PatchMatchScoreDto } from "./dto/patch-match-score.dto";
 import { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
+import { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
+import { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
 
 @Controller("admin/scoreboard")
 @UseGuards(AdminAuthGuard, PermissionsGuard)
@@ -94,6 +96,21 @@ export class AdminScoreboardController {
     return this.sb.listCompetitions({ status, type, q });
   }
 
+  @Patch("competitions/:competitionId")
+  @RequirePermissions("scoreboard.competitions.write")
+  updateCompetition(
+    @Param("competitionId") competitionId: string,
+    @Body() dto: UpdateAdminCompetitionDto
+  ) {
+    return this.sb.updateCompetition(competitionId, dto);
+  }
+
+  @Delete("competitions/:competitionId")
+  @RequirePermissions("scoreboard.competitions.write")
+  deleteCompetition(@Param("competitionId") competitionId: string) {
+    return this.sb.deleteCompetition(competitionId);
+  }
+
   @Get("teams")
   @RequirePermissions("scoreboard.read")
   teams(@Query("q") q?: string, @Query("competitionId") competitionId?: string) {
@@ -134,6 +151,21 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.read")
   players(@Query("q") q?: string) {
     return this.sb.listScoreboardPlayers(q);
+  }
+
+  @Patch("squad/:squadId")
+  @RequirePermissions("scoreboard.competitions.write")
+  updateSquadRow(
+    @Param("squadId") squadId: string,
+    @Body() dto: UpsertScoreboardSquadRowDto
+  ) {
+    return this.sb.updateSquadRow(squadId, dto);
+  }
+
+  @Delete("squad/:squadId")
+  @RequirePermissions("scoreboard.competitions.write")
+  deleteSquadRow(@Param("squadId") squadId: string) {
+    return this.sb.deleteSquadRow(squadId);
   }
 
   @Get("matches")
@@ -206,6 +238,12 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.matches.write")
   updateMatch(@Param("matchId") matchId: string, @Body() dto: UpdateMatchDto) {
     return this.sb.updateMatch(matchId, dto);
+  }
+
+  @Delete("matches/:matchId")
+  @RequirePermissions("scoreboard.matches.write")
+  deleteMatch(@Param("matchId") matchId: string) {
+    return this.sb.deleteMatch(matchId);
   }
 
   @Post("matches/:matchId/ingest-sip")
