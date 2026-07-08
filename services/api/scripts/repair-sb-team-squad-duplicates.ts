@@ -29,32 +29,57 @@ async function main() {
     return;
   }
 
-  await prisma.$executeRaw`
-    WITH ranked AS (
-      SELECT
-        squad.id,
-        ROW_NUMBER() OVER (
-          PARTITION BY squad.player_id
-          ORDER BY
-            (
-              SELECT COUNT(*)
-              FROM sb_match_squad_players match_squad
-              WHERE match_squad.squad_id = squad.id
-            ) DESC,
-            squad.updated_at DESC,
-            squad.id ASC
-        ) AS keep_rank
-      FROM sb_team_squad squad
-      WHERE squad.player_id IS NOT NULL
-    )
-    UPDATE sb_team_squad
-    SET player_id = NULL
-    WHERE id IN (
-      SELECT id
-      FROM ranked
-      WHERE keep_rank > 1
-    )
+  const matchSquadRows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+    SELECT to_regclass('public.sb_match_squad_players') IS NOT NULL AS exists
   `;
+
+  if (matchSquadRows[0]?.exists) {
+    await prisma.$executeRaw`
+      WITH ranked AS (
+        SELECT
+          squad.id,
+          ROW_NUMBER() OVER (
+            PARTITION BY squad.player_id
+            ORDER BY
+              (
+                SELECT COUNT(*)
+                FROM sb_match_squad_players match_squad
+                WHERE match_squad.squad_id = squad.id
+              ) DESC,
+              squad.id ASC
+          ) AS keep_rank
+        FROM sb_team_squad squad
+        WHERE squad.player_id IS NOT NULL
+      )
+      UPDATE sb_team_squad
+      SET player_id = NULL
+      WHERE id IN (
+        SELECT id
+        FROM ranked
+        WHERE keep_rank > 1
+      )
+    `;
+  } else {
+    await prisma.$executeRaw`
+      WITH ranked AS (
+        SELECT
+          squad.id,
+          ROW_NUMBER() OVER (
+            PARTITION BY squad.player_id
+            ORDER BY squad.id ASC
+          ) AS keep_rank
+        FROM sb_team_squad squad
+        WHERE squad.player_id IS NOT NULL
+      )
+      UPDATE sb_team_squad
+      SET player_id = NULL
+      WHERE id IN (
+        SELECT id
+        FROM ranked
+        WHERE keep_rank > 1
+      )
+    `;
+  }
 
   console.log(
     `sb_team_squad duplicate player links repaired: ${duplicateCount} duplicate link(s) cleared`
