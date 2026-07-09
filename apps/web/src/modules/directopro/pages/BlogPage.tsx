@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, type BlogPostSummary } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
 
 const categories = ["All", "Insights", "Success stories", "Expert tips"] as const;
 
@@ -14,6 +15,7 @@ function classifyPost(post: BlogPostSummary) {
 
 export function BlogPage() {
   usePageTitle("Blog");
+  const content = useStaticContent(["blog.hero.kicker", "blog.hero.title", "blog.hero.body"]);
   const [posts, setPosts] = useState<BlogPostSummary[]>([]);
   const [active, setActive] = useState<(typeof categories)[number]>("All");
   const [error, setError] = useState<string | null>(null);
@@ -34,11 +36,14 @@ export function BlogPage() {
   return (
     <main className="home-page evidence-page evidence-page--blog blog-premium">
       <header className="evidence-hero blog-hero">
-        <span className="about-kicker">DTP Africa Blog</span>
-        <h1>Football intelligence deserves a stronger public record.</h1>
+        <span className="about-kicker">{contentValue(content, "blog.hero.kicker", "DTP Africa Blog")}</span>
+        <h1>{contentValue(content, "blog.hero.title", "Football intelligence deserves a stronger public record.")}</h1>
         <p>
-          Practical thinking on football development, transparent scouting, player protection,
-          data-led evaluation, and the future of African talent discovery.
+          {contentValue(
+            content,
+            "blog.hero.body",
+            "Practical thinking on football development, transparent scouting, player protection, data-led evaluation, and the future of African talent discovery."
+          )}
         </p>
         <div className="evidence-hero__signals" aria-label="Editorial focus">
           <span>Scouting context</span>

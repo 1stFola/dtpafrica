@@ -9,14 +9,27 @@ import {
   EVENT_LABELS,
   type SbMatchListItem,
 } from "../../../api/scoreboard";
+import {
+  adminScoreboardApi,
+  type AdminHighlightRow,
+} from "../../../api/admin-scoreboard";
+import { MediaUrlPreview } from "../../../components/MediaUrlPreview";
 import { AdminApiKeyGate } from "../../admin/components/AdminApiKeyGate";
 import { matchCenterPath } from "../utils/matchPath";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+
+function highlightMatchLabel(row: AdminHighlightRow) {
+  if (!row.match) return "Match clip";
+  return `${row.match.homeTeam.name} vs ${row.match.awayTeam.name}`;
+}
 
 export function SupervisorPage() {
   usePageTitle("Supervisor");
   const [live, setLive] = useState<SbMatchListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingHighlights, setPendingHighlights] = useState<AdminHighlightRow[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(true);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -28,11 +41,30 @@ export function SupervisorPage() {
       .catch(() => {});
   }, [selectedId]);
 
+  const refreshHighlightQueue = useCallback(() => {
+    setReviewLoading(true);
+    adminScoreboardApi
+      .listHighlights()
+      .then((rows) => {
+        setPendingHighlights(
+          rows.filter((row) => row.matchId && !row.duration && !row.isPublished)
+        );
+      })
+      .catch((err) => {
+        setMessage(`Highlight review queue unavailable: ${String(err)}`);
+      })
+      .finally(() => setReviewLoading(false));
+  }, []);
+
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, 10000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  useEffect(() => {
+    refreshHighlightQueue();
+  }, [refreshHighlightQueue]);
 
   const selected = live.find((m) => m.id === selectedId);
 
@@ -84,6 +116,19 @@ export function SupervisorPage() {
       refresh();
     } catch (err) {
       setMessage(String(err));
+    }
+  };
+
+  const approveHighlight = async (row: AdminHighlightRow) => {
+    try {
+      setReviewingId(row.id);
+      await adminScoreboardApi.publishHighlight(row.id, true);
+      setMessage(`Published ${row.mediaType} highlight: ${row.title}`);
+      refreshHighlightQueue();
+    } catch (err) {
+      setMessage(String(err));
+    } finally {
+      setReviewingId(null);
     }
   };
 
@@ -197,6 +242,56 @@ export function SupervisorPage() {
           )}
         </div>
       )}
+
+      <section className="sb-supervisor-review">
+        <div className="sb-supervisor-review__header">
+          <div>
+            <h2>Pending highlight review</h2>
+            <p className="muted">
+              Uploaded match clips and photos stay hidden until a supervisor approves them.
+            </p>
+          </div>
+          <Button type="button" variant="secondary" onClick={refreshHighlightQueue}>
+            Refresh queue
+          </Button>
+        </div>
+
+        {reviewLoading ? (
+          <p className="muted">Checking review queue...</p>
+        ) : pendingHighlights.length === 0 ? (
+          <p className="muted">No unpublished match highlights are waiting for review.</p>
+        ) : (
+          <div className="sb-supervisor-review__grid">
+            {pendingHighlights.map((row) => (
+              <article key={row.id} className="sb-supervisor-review-card">
+                <div className="sb-supervisor-review-card__preview">
+                  <MediaUrlPreview
+                    url={row.youtubeUrl}
+                    kind={row.mediaType === "photo" ? "image" : "video"}
+                  />
+                </div>
+                <div className="sb-supervisor-review-card__body">
+                  <span className="sb-supervisor-review-card__type">
+                    {row.mediaType === "photo" ? "Photo" : "Video"}
+                  </span>
+                  <h3>{row.title}</h3>
+                  <p className="muted">{highlightMatchLabel(row)}</p>
+                  <a href={row.youtubeUrl} className="text-link" target="_blank" rel="noreferrer">
+                    Open source
+                  </a>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => void approveHighlight(row)}
+                  disabled={reviewingId === row.id}
+                >
+                  {reviewingId === row.id ? "Publishing..." : "Approve & publish"}
+                </Button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       {message && <p className="muted">{message}</p>}
     </div>
