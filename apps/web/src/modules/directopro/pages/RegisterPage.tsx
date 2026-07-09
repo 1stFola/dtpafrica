@@ -45,8 +45,8 @@ export function RegisterPage() {
 
   if (submitted) {
     return (
-      <div className="home-page">
-        <div className="success-panel">
+      <div className="home-page evidence-page evidence-page--register">
+        <div className="success-panel evidence-success-panel">
           <h1>Registration received</h1>
           <p>{submitted.message}</p>
           <p className="muted">Reference: {submitted.displayName}</p>
@@ -56,15 +56,23 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="home-page">
-      <header className="page-header">
-        <h1>Register talent</h1>
-        <p className="muted">
-          Submit your profile for DTP review. Players under 18 require a parent or guardian on the form.
+    <div className="home-page evidence-page evidence-page--register">
+      <header className="evidence-hero register-hero">
+        <span className="about-kicker">Player evidence intake</span>
+        <h1>Start building a football identity that can be trusted.</h1>
+        <p>
+          Submit a player profile for DTP review. Players under 18 require a parent or guardian on
+          the form so the process stays clear, responsible, and properly documented.
         </p>
+        <div className="evidence-hero__signals" aria-label="Registration review signals">
+          <span>Identity</span>
+          <span>Position context</span>
+          <span>Video evidence</span>
+          <span>Guardian consent</span>
+        </div>
       </header>
 
-      <form className="home-form" onSubmit={onSubmit}>
+      <form className="home-form evidence-form register-evidence-form" onSubmit={onSubmit}>
         <div className="form-row">
           <label>
             First name
@@ -145,7 +153,7 @@ export function RegisterPage() {
         {error && <p className="form-error">{error}</p>}
 
         <Button type="submit" disabled={loading}>
-          {loading ? "Submitting…" : "Submit registration"}
+          {loading ? "Submitting..." : "Submit registration"}
         </Button>
       </form>
     </div>
