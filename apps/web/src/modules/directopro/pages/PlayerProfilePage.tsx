@@ -45,14 +45,25 @@ const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
   injury: "Injury",
 };
 
+function humanizeScoreboardEventType(type: string): string {
+  return (
+    SCOREBOARD_EVENT_LABELS[type] ??
+    type
+      .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ")
+  );
+}
+
 function scoreboardHistoryEventLabel(
   event: NonNullable<PublicPlayerProfile["scoreboardHistory"]>["events"][number]
 ): string {
   if (event.type === "goal" && event.role === "assist") return "Assist";
   if (event.role === "secondary") {
-    return `${SCOREBOARD_EVENT_LABELS[event.type] ?? event.type} involvement`;
+    return `${humanizeScoreboardEventType(event.type)} involvement`;
   }
-  return SCOREBOARD_EVENT_LABELS[event.type] ?? event.type;
+  return humanizeScoreboardEventType(event.type);
 }
 
 /** Turn a route slug/name param into a readable display name ("ahmed-adesanu" → "Ahmed Adesanu"). */
