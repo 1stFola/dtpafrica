@@ -1,45 +1,69 @@
 /** CSV `event_type` values accepted by match timeline ingest. */
 export const CSV_EVENT_TYPES = [
-  "kick_off",
-  "match_flow",
-  "freekick",
-  "pressure",
-  "corner_kick",
-  "save",
-  "yellow_card",
-  "goal_penalty",
-  "chance",
-  "half_time",
-  "substitution",
-  "second_half_kickoff",
-  "blocked_shot",
-  "goal",
-  "throw_in",
-  "offside",
   "added_time",
-  "possession",
-  "foul",
-  "clearance",
+  "aerial_duel_won",
+  "blocked_shot",
+  "chance",
   "close_chance",
-  "shot_off_target",
-  "score_update",
-  "own_goal",
-  "red_card",
+  "clearance",
+  "corner_kick",
+  "counter_attack",
+  "dangerous_attack",
+  "dangerous_cross",
+  "dangerous_run",
+  "disallowed_goal",
+  "dominance",
+  "double_save",
+  "foul",
+  "freekick",
+  "game_management",
+  "goal",
+  "goal_kick",
+  "goal_line_clearance",
+  "goal_penalty",
+  "goal_scorers_update",
+  "goalkeeper_claim",
+  "goalkeeper_command",
+  "goalkeeper_distribution",
+  "goalkeeper_error",
+  "goalkeeper_intervention",
+  "half_time",
+  "header_missed",
   "injury",
+  "injury_substitution",
+  "interception",
+  "kick_off",
+  "late_defense",
+  "long_throw",
+  "match_control",
+  "match_flow",
+  "medical_timeout",
+  "midfield_battle",
+  "missed_chance",
+  "offside",
+  "one_on_one",
+  "own_goal",
   "penalty_awarded",
   "penalty_saved",
-  "woodwork",
-  "midfield_battle",
-  "double_save",
-  "long_throw",
+  "poor_delivery",
+  "possession",
+  "possession_lost",
+  "pressure",
+  "recovery_tackle",
+  "red_card",
+  "restart_play",
+  "save",
+  "score_update",
+  "second_half_kickoff",
+  "shot_off_target",
+  "substitution",
+  "sustained_pressure",
+  "tactical_substitution",
+  "throw_in",
+  "volley_missed",
   "water_break",
-  "interception",
-  "match_control",
-  "goal_scorers_update",
-  "missed_chance",
-  "disallowed_goal",
-  "counter_attack",
-  "late_defense",
+  "woodwork",
+  "yellow_card",
 ] as const;
 
 export type CsvEventType = (typeof CSV_EVENT_TYPES)[number];
@@ -79,6 +103,7 @@ export const NEUTRAL_EVENT_TYPES = new Set<CsvEventType>([
   "second_half_kickoff",
   "added_time",
   "water_break",
+  "medical_timeout",
 ]);
 
 export const NEUTRAL_SPECIAL_EVENT_TYPES = ["full_time", "penalty_shootout"] as const;
@@ -90,6 +115,9 @@ const FLOW_CSV_TYPES = new Set<CsvEventType>([
   "midfield_battle",
   "match_control",
   "goal_scorers_update",
+  "dominance",
+  "game_management",
+  "sustained_pressure",
 ]);
 
 const TEAM_OPTIONAL_TYPES = new Set<CsvEventType>([
@@ -97,15 +125,36 @@ const TEAM_OPTIONAL_TYPES = new Set<CsvEventType>([
   "possession",
   "throw_in",
   "offside",
+  "goal_kick",
+  "restart_play",
 ]);
 
 const PLAYER_OPTIONAL_TYPES = new Set<CsvEventType>([
   ...TEAM_OPTIONAL_TYPES,
+  "aerial_duel_won",
+  "dangerous_attack",
+  "dangerous_cross",
+  "dangerous_run",
   "corner_kick",
   "foul",
   "clearance",
+  "game_management",
+  "goal_kick",
+  "goal_line_clearance",
+  "goalkeeper_claim",
+  "goalkeeper_command",
+  "goalkeeper_distribution",
+  "goalkeeper_error",
+  "goalkeeper_intervention",
   "long_throw",
   "counter_attack",
+  "medical_timeout",
+  "one_on_one",
+  "poor_delivery",
+  "possession_lost",
+  "recovery_tackle",
+  "restart_play",
+  "sustained_pressure",
 ]);
 
 const SHOT_CSV_TYPES = new Set<CsvEventType>([
@@ -115,10 +164,13 @@ const SHOT_CSV_TYPES = new Set<CsvEventType>([
   "chance",
   "close_chance",
   "shot_off_target",
+  "header_missed",
   "blocked_shot",
   "woodwork",
   "missed_chance",
   "disallowed_goal",
+  "volley_missed",
+  "one_on_one",
 ]);
 
 const SOT_CSV_TYPES = new Set<CsvEventType>([
@@ -129,31 +181,55 @@ const SOT_CSV_TYPES = new Set<CsvEventType>([
   "blocked_shot",
   "woodwork",
   "missed_chance",
+  "one_on_one",
 ]);
 
-const SAVE_CSV_TYPES = new Set<CsvEventType>(["save", "double_save", "penalty_saved"]);
+const SAVE_CSV_TYPES = new Set<CsvEventType>([
+  "save",
+  "double_save",
+  "penalty_saved",
+  "goalkeeper_intervention",
+]);
 
 /** Only these event types contribute a possession tick (team_side column). */
 export const POSSESSION_EVENT_TYPES = new Set<CsvEventType>([
   "possession",
   "pressure",
   "counter_attack",
+  "dangerous_attack",
+  "dangerous_cross",
+  "dangerous_run",
+  "dominance",
+  "game_management",
   "midfield_battle",
   "match_control",
+  "sustained_pressure",
   "chance",
   "close_chance",
+  "one_on_one",
   "missed_chance",
+  "header_missed",
+  "volley_missed",
   "shot_off_target",
   "blocked_shot",
   "save",
   "double_save",
+  "goalkeeper_claim",
+  "goalkeeper_command",
+  "goalkeeper_distribution",
+  "goalkeeper_intervention",
+  "goal_line_clearance",
   "woodwork",
   "clearance",
   "interception",
+  "aerial_duel_won",
+  "recovery_tackle",
+  "possession_lost",
   "throw_in",
   "long_throw",
   "corner_kick",
   "freekick",
+  "goal_kick",
   "kick_off",
   "second_half_kickoff",
 ]);
@@ -164,8 +240,12 @@ export const POSSESSION_EXCLUDE_EVENT_TYPES = new Set<CsvEventType>([
   "added_time",
   "half_time",
   "water_break",
+  "medical_timeout",
   "injury",
   "substitution",
+  "injury_substitution",
+  "tactical_substitution",
+  "restart_play",
   "score_update",
   "goal_scorers_update",
   "foul",
@@ -187,12 +267,16 @@ const XG_WEIGHT: Partial<Record<CsvEventType, number>> = {
   close_chance: 0.35,
   chance: 0.15,
   shot_off_target: 0.05,
+  header_missed: 0.08,
+  volley_missed: 0.08,
   blocked_shot: 0.1,
   save: 0.25,
   double_save: 0.25,
+  goalkeeper_intervention: 0.15,
   penalty_saved: 0.76,
   woodwork: 0.2,
   missed_chance: 0.12,
+  one_on_one: 0.45,
   disallowed_goal: 0.85,
 };
 
@@ -269,12 +353,20 @@ function flowDefaultDetail(csvType: CsvEventType): string | undefined {
       return "Pressure";
     case "water_break":
       return "Water break";
+    case "medical_timeout":
+      return "Medical timeout";
     case "midfield_battle":
       return "Midfield battle";
     case "match_control":
       return "Match control";
     case "goal_scorers_update":
       return "Goal scorers update";
+    case "dominance":
+      return "Dominance";
+    case "game_management":
+      return "Game management";
+    case "sustained_pressure":
+      return "Sustained pressure";
     case "score_update":
       return undefined;
     default:
