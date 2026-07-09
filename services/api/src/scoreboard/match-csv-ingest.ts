@@ -260,9 +260,14 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
         errors.push(`Row ${rowNum}: player_name is required for ${eventType} events`);
         continue;
       }
-      if (csvType === "substitution" && !assistLabel) {
+      if (
+        (csvType === "substitution" ||
+          csvType === "injury_substitution" ||
+          csvType === "tactical_substitution") &&
+        !assistLabel
+      ) {
         errors.push(
-          `Row ${rowNum}: assist_name (player coming on) is required for substitution events`
+          `Row ${rowNum}: assist_name (player coming on) is required for ${eventType} events`
         );
         continue;
       }
