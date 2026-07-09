@@ -1,20 +1,23 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { Button } from "@dtp/ui";
-import { apiGet, apiPost } from "../../../api/client";
+import { apiPost } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
 
 export function ContactPage() {
   usePageTitle("Contact");
-  const [contact, setContact] = useState<Record<string, string>>({});
+  const contact = useStaticContent([
+    "contact.hero.kicker",
+    "contact.hero.title",
+    "contact.hero.body",
+    "contact.panel.kicker",
+    "contact.panel.title",
+    "contact.email",
+    "contact.whatsapp",
+  ]);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    apiGet<Record<string, string>>(
-      "/home/content?keys=contact.email,contact.whatsapp"
-    ).then(setContact);
-  }, []);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -41,18 +44,27 @@ export function ContactPage() {
   return (
     <div className="home-page evidence-page evidence-page--contact">
       <header className="evidence-hero contact-hero">
-        <span className="about-kicker">Start the conversation</span>
-        <h1>Bring the right football evidence into view.</h1>
+        <span className="about-kicker">{contentValue(contact, "contact.hero.kicker", "Start the conversation")}</span>
+        <h1>{contentValue(contact, "contact.hero.title", "Bring the right football evidence into view.")}</h1>
         <p>
-          Reach the DTP Africa team for partnerships, scouting conversations, club onboarding,
-          media, or platform support.
+          {contentValue(
+            contact,
+            "contact.hero.body",
+            "Reach the DTP Africa team for partnerships, scouting conversations, club onboarding, media, or platform support."
+          )}
         </p>
       </header>
 
       <section className="contact-evidence-grid">
         <aside className="contact-evidence-panel">
-          <span>Direct channels</span>
-          <h2>For clubs, scouts, academies, partners, and football families.</h2>
+          <span>{contentValue(contact, "contact.panel.kicker", "Direct channels")}</span>
+          <h2>
+            {contentValue(
+              contact,
+              "contact.panel.title",
+              "For clubs, scouts, academies, partners, and football families."
+            )}
+          </h2>
           <div className="contact-channels">
             {contact["contact.email"] && (
               <p>

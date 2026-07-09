@@ -4,10 +4,16 @@ import { fetchFeaturedPlayers, type FeaturedPlayer } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { useAdSlot } from "../../../context/AdConfigContext";
+import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
 
 export function FeaturedPlayersPage() {
   const adInterval = 8;
   const inlineAd = useAdSlot("featuredPlayersInline");
+  const content = useStaticContent([
+    "featured_players.hero.kicker",
+    "featured_players.hero.title",
+    "featured_players.hero.body",
+  ]);
   usePageTitle("Featured players");
   const [players, setPlayers] = useState<FeaturedPlayer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +44,18 @@ export function FeaturedPlayersPage() {
   return (
     <div className="home-page evidence-page evidence-page--players">
       <header className="evidence-hero featured-players-hero">
-        <span className="about-kicker">Verified talent intelligence</span>
-        <h1>Featured players with proof behind the promise.</h1>
+        <span className="about-kicker">
+          {contentValue(content, "featured_players.hero.kicker", "Verified talent intelligence")}
+        </span>
+        <h1>
+          {contentValue(content, "featured_players.hero.title", "Featured players with proof behind the promise.")}
+        </h1>
         <p>
-          Explore player profiles shaped by ratings, tactical summaries, performance history, and
-          scouting context from the DTP Africa intelligence ecosystem.
+          {contentValue(
+            content,
+            "featured_players.hero.body",
+            "Explore player profiles shaped by ratings, tactical summaries, performance history, and scouting context from the DTP Africa intelligence ecosystem."
+          )}
         </p>
         <div className="evidence-hero__metrics" aria-label="Featured player signals">
           <article>

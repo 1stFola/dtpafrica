@@ -5,23 +5,79 @@ import { useAdminToast } from "../components/AdminToast";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { AdminTableShell } from "../components/AdminTableShell";
 
-const ABOUT_FIELDS = [
-  { key: "about.hero.kicker", label: "Hero kicker", rows: 2 },
-  { key: "about.hero.title", label: "Hero headline", rows: 3 },
-  { key: "about.hero.body", label: "Hero body", rows: 5 },
-  { key: "about.story.kicker", label: "Story kicker", rows: 2 },
-  { key: "about.story.title", label: "Story headline", rows: 3 },
-  { key: "about.story.body1", label: "Story paragraph 1", rows: 5 },
-  { key: "about.story.body2", label: "Story paragraph 2", rows: 5 },
-  { key: "about.framework.kicker", label: "Framework kicker", rows: 2 },
-  { key: "about.framework.title", label: "Framework headline", rows: 3 },
-  { key: "about.framework.body", label: "Framework body", rows: 5 },
-  { key: "about.founder.kicker", label: "Founder kicker", rows: 2 },
-  { key: "about.founder.name", label: "Founder name", rows: 2 },
-  { key: "about.founder.role", label: "Founder role", rows: 2 },
-  { key: "about.founder.body1", label: "Founder paragraph 1", rows: 5 },
-  { key: "about.founder.body2", label: "Founder paragraph 2", rows: 5 },
-] as const;
+type ManagedContentField = {
+  key: string;
+  label: string;
+  rows: number;
+};
+
+type ManagedContentSection = {
+  title: string;
+  description: string;
+  fields: ManagedContentField[];
+};
+
+const CONTENT_SECTIONS: ManagedContentSection[] = [
+  {
+    title: "About page",
+    description: "Copy used by the current cinematic /about page.",
+    fields: [
+      { key: "about.hero.kicker", label: "Hero kicker", rows: 2 },
+      { key: "about.hero.position", label: "Hero position line", rows: 2 },
+      { key: "about.hero.title_line1", label: "Hero title line 1", rows: 2 },
+      { key: "about.hero.title_line2", label: "Hero title line 2", rows: 2 },
+      { key: "about.hero.body", label: "Hero body", rows: 5 },
+      { key: "about.hero.change_line", label: "Hero change line", rows: 2 },
+      { key: "about.hero.belief", label: "Hero belief line", rows: 2 },
+      { key: "about.problem.kicker", label: "Problem kicker", rows: 2 },
+      { key: "about.problem.title_line1", label: "Problem title line 1", rows: 2 },
+      { key: "about.problem.title_line2", label: "Problem title line 2", rows: 2 },
+      { key: "about.problem.intro1", label: "Problem intro paragraph 1", rows: 3 },
+      { key: "about.problem.intro2", label: "Problem intro paragraph 2", rows: 3 },
+      { key: "about.problem.close_lead", label: "Problem closing lead", rows: 2 },
+      { key: "about.problem.close_body", label: "Problem closing body", rows: 2 },
+      { key: "about.manifesto.title", label: "Manifesto title", rows: 4 },
+      { key: "about.manifesto.body", label: "Manifesto body", rows: 4 },
+      { key: "about.manifesto.emphasis", label: "Manifesto emphasis", rows: 2 },
+      { key: "about.founder.kicker", label: "Founder kicker", rows: 2 },
+      { key: "about.founder.name", label: "Founder name", rows: 2 },
+      { key: "about.founder.role", label: "Founder role", rows: 2 },
+      { key: "about.founder.body", label: "Founder body", rows: 12 },
+      { key: "about.founder.quote", label: "Founder closing quote", rows: 4 },
+      { key: "about.mission", label: "Mission", rows: 4 },
+      { key: "about.vision", label: "Vision", rows: 4 },
+      { key: "about.final.kicker", label: "Final CTA kicker", rows: 2 },
+      { key: "about.final.title", label: "Final CTA title", rows: 2 },
+      { key: "about.final.body1", label: "Final CTA body 1", rows: 2 },
+      { key: "about.final.body2", label: "Final CTA body 2", rows: 2 },
+      { key: "about.final.emphasis", label: "Final CTA emphasis", rows: 2 },
+    ],
+  },
+  {
+    title: "Public page heroes",
+    description: "Copy for the About-inspired frontend pages outside /about.",
+    fields: [
+      { key: "blog.hero.kicker", label: "Blog kicker", rows: 2 },
+      { key: "blog.hero.title", label: "Blog title", rows: 3 },
+      { key: "blog.hero.body", label: "Blog body", rows: 4 },
+      { key: "featured_players.hero.kicker", label: "Featured players kicker", rows: 2 },
+      { key: "featured_players.hero.title", label: "Featured players title", rows: 3 },
+      { key: "featured_players.hero.body", label: "Featured players body", rows: 4 },
+      { key: "register.hero.kicker", label: "Register kicker", rows: 2 },
+      { key: "register.hero.title", label: "Register title", rows: 3 },
+      { key: "register.hero.body", label: "Register body", rows: 4 },
+      { key: "contact.hero.kicker", label: "Contact kicker", rows: 2 },
+      { key: "contact.hero.title", label: "Contact title", rows: 3 },
+      { key: "contact.hero.body", label: "Contact body", rows: 4 },
+      { key: "contact.panel.kicker", label: "Contact panel kicker", rows: 2 },
+      { key: "contact.panel.title", label: "Contact panel title", rows: 3 },
+      { key: "contact.email", label: "Contact email", rows: 2 },
+      { key: "contact.whatsapp", label: "Contact WhatsApp", rows: 2 },
+    ],
+  },
+];
+
+const MANAGED_FIELDS = CONTENT_SECTIONS.flatMap((section) => section.fields);
 
 export function AdminContentPage() {
   usePageTitle("Admin — Content");
@@ -58,11 +114,11 @@ export function AdminContentPage() {
     setSavingAbout(true);
     try {
       await Promise.all(
-        ABOUT_FIELDS.map((field) =>
+        MANAGED_FIELDS.map((field) =>
           adminApi.contentUpsert(field.key, aboutDraft[field.key] ?? "")
         )
       );
-      toast.success("About page content saved");
+      toast.success("Managed public content saved");
       await load();
     } catch (err) {
       toast.error(String(err));
@@ -103,16 +159,17 @@ export function AdminContentPage() {
     <section className="admin-page admin-sb-section">
       <AdminPageHeader
         title="Static content"
-        description="Edit key/value copy used by the public marketing pages."
+        description="Edit managed public-page copy and one-off static content keys."
         crumbs={[{ label: "Content" }]}
       />
 
       <form className="admin-content-form admin-sb-panel" onSubmit={saveAbout}>
         <div className="admin-sb-form-heading-row">
           <div>
-            <h2 className="admin-sb-form-heading">About page editor</h2>
+            <h2 className="admin-sb-form-heading">Managed frontend content</h2>
             <p className="muted">
-              These fields feed the public /about page and are also stored as static content keys.
+              These fields correspond to the current public About, Blog, Featured Players,
+              Register, and Contact pages.
             </p>
           </div>
           <button
@@ -120,25 +177,36 @@ export function AdminContentPage() {
             className="admin-inline-button admin-inline-button--primary"
             disabled={savingAbout}
           >
-            {savingAbout ? "Saving..." : "Save About page"}
+            {savingAbout ? "Saving..." : "Save managed content"}
           </button>
         </div>
-        <div className="admin-about-content-grid">
-          {ABOUT_FIELDS.map((field) => (
-            <label key={field.key} className="admin-sb-field admin-sb-field--wide">
-              <span>{field.label}</span>
-              <textarea
-                rows={field.rows}
-                value={aboutDraft[field.key] ?? ""}
-                onChange={(e) =>
-                  setAboutDraft((current) => ({
-                    ...current,
-                    [field.key]: e.target.value,
-                  }))
-                }
-                placeholder={field.key}
-              />
-            </label>
+        <div className="admin-content-section-stack">
+          {CONTENT_SECTIONS.map((section) => (
+            <section key={section.title} className="admin-content-managed-section">
+              <div className="admin-content-managed-section__header">
+                <h3>{section.title}</h3>
+                <p className="muted">{section.description}</p>
+              </div>
+              <div className="admin-about-content-grid">
+                {section.fields.map((field) => (
+                  <label key={field.key} className="admin-sb-field admin-sb-field--wide">
+                    <span>{field.label}</span>
+                    <textarea
+                      rows={field.rows}
+                      value={aboutDraft[field.key] ?? ""}
+                      onChange={(e) =>
+                        setAboutDraft((current) => ({
+                          ...current,
+                          [field.key]: e.target.value,
+                        }))
+                      }
+                      placeholder={field.key}
+                    />
+                    <small className="admin-sb-field-hint">{field.key}</small>
+                  </label>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </form>
@@ -205,7 +273,7 @@ export function AdminContentPage() {
               className="admin-inline-button admin-inline-button--primary"
               disabled={saving}
             >
-              {saving ? "Saving…" : "Save content"}
+              {saving ? "Saving..." : "Save content"}
             </button>
           </div>
         </form>
