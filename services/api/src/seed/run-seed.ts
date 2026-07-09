@@ -226,7 +226,7 @@ export async function runDatabaseSeed(
   let legacyAcademyLinks = 0;
   let legacySampleSlugs: string[] = [];
   let legacyAcademyCount = 0;
-  const staticContentKeyCount = 28;
+  const staticContentKeyCount = 70;
 
   const phases: SeedPhase[] = [
     {
@@ -634,6 +634,109 @@ Parents and guardians can register minors with consent workflows built for youth
             key: "about.vision",
             value:
               "Every talented player — regardless of postcode — has a verifiable pathway to professional opportunity.",
+          },
+          { key: "about.hero.kicker", value: "About DTP Africa" },
+          {
+            key: "about.hero.position",
+            value: "African football intelligence, visibility, and evidence infrastructure.",
+          },
+          { key: "about.hero.title_line1", value: "Talent is everywhere." },
+          { key: "about.hero.title_line2", value: "Evidence is not." },
+          {
+            key: "about.hero.body",
+            value:
+              "Across Africa, exceptional footballers compete every day on community pitches, academy grounds, school fields, and local stadiums. Many have ability. Far fewer have access to the consistent documentation, credible performance evidence, structured visibility, and professional context that help football decision-makers evaluate potential with confidence.",
+          },
+          { key: "about.hero.change_line", value: "DTP Africa exists to change that." },
+          { key: "about.hero.belief", value: "Make Talent Visible. Make Potential Verifiable." },
+          { key: "about.problem.kicker", value: "The information gap" },
+          { key: "about.problem.title_line1", value: "The talent is not missing." },
+          { key: "about.problem.title_line2", value: "The visibility is." },
+          { key: "about.problem.intro1", value: "Africa has never had a shortage of football talent." },
+          {
+            key: "about.problem.intro2",
+            value:
+              "The deeper challenge is that too much potential remains difficult to evaluate beyond the moment in which it is seen.",
+          },
+          {
+            key: "about.problem.close_lead",
+            value: "The result is an information gap between potential and opportunity.",
+          },
+          { key: "about.problem.close_body", value: "DTP Africa is working to close that gap." },
+          {
+            key: "about.manifesto.title",
+            value:
+              "We are building the infrastructure between grassroots football and professional decision-making.",
+          },
+          {
+            key: "about.manifesto.body",
+            value:
+              "DTP Africa brings together football data, performance intelligence, match documentation, player profiling, digital visibility, and scouting context within a growing ecosystem.",
+          },
+          {
+            key: "about.manifesto.emphasis",
+            value: "Potential becomes more actionable when it is supported by better evidence.",
+          },
+          { key: "about.founder.kicker", value: "The Founder / CEO" },
+          { key: "about.founder.name", value: "Fola Sanni" },
+          { key: "about.founder.role", value: "Founder and CEO, DTP Africa" },
+          {
+            key: "about.founder.body",
+            value:
+              "Growing up in Nigeria and remaining deeply connected to its football culture, I saw a recurring problem that talent alone could not solve.\n\nAcross Africa, thousands of gifted young footballers compete, develop, and dedicate themselves to the game, yet too many remain outside the view of professional scouts, clubs, and academies. Not because the talent is absent, but because the evidence around that talent is often fragmented, inconsistent, or difficult to trust.\n\nAs a software and data engineer, I came to understand that the challenge was bigger than exposure.\n\nIt was also a problem of credibility.\n\nScouts and football decision-makers need more than potential. They need context, reliable performance information, structured player histories, and evidence they can evaluate with confidence.\n\nThat realization became the foundation for DTP Africa.\n\nI set out to help build infrastructure that gives grassroots players and local clubs a stronger, more credible digital presence-one capable of turning match activity, performance data, player records, and development history into a more verifiable football identity.\n\nFor me, this work is deeply personal.\n\nFootball can represent far more than competition. For many young players and their families, it can become a pathway to economic mobility, professional opportunity, education, travel, and a different future.\n\nWhat drives me is the belief that geography, limited visibility, or the absence of the right connection should not be the reason genuine potential goes unseen.\n\nThrough DTP Africa, I am applying my background in software, data, and systems thinking to a human challenge: building better infrastructure around grassroots football so that talent can be documented more clearly, evaluated more fairly, and discovered with greater confidence.",
+          },
+          {
+            key: "about.founder.quote",
+            value:
+              "To help ensure that a player's future is shaped more by their ability, evidence, character, and drive-and less by how far they are from opportunity.",
+          },
+          { key: "about.final.kicker", value: "From Potential to Proof" },
+          { key: "about.final.title", value: "From Potential to Proof." },
+          { key: "about.final.body1", value: "The next exceptional player may already be playing." },
+          {
+            key: "about.final.body2",
+            value:
+              "The question is whether the football world will have enough evidence to recognize the opportunity.",
+          },
+          { key: "about.final.emphasis", value: "DTP Africa is building for that moment." },
+          { key: "blog.hero.kicker", value: "DTP Africa Blog" },
+          { key: "blog.hero.title", value: "Football intelligence deserves a stronger public record." },
+          {
+            key: "blog.hero.body",
+            value:
+              "Practical thinking on football development, transparent scouting, player protection, data-led evaluation, and the future of African talent discovery.",
+          },
+          { key: "featured_players.hero.kicker", value: "Verified talent intelligence" },
+          {
+            key: "featured_players.hero.title",
+            value: "Featured players with proof behind the promise.",
+          },
+          {
+            key: "featured_players.hero.body",
+            value:
+              "Explore player profiles shaped by ratings, tactical summaries, performance history, and scouting context from the DTP Africa intelligence ecosystem.",
+          },
+          { key: "register.hero.kicker", value: "Player evidence intake" },
+          {
+            key: "register.hero.title",
+            value: "Start building a football identity that can be trusted.",
+          },
+          {
+            key: "register.hero.body",
+            value:
+              "Submit a player profile for DTP review. Players under 18 require a parent or guardian on the form so the process stays clear, responsible, and properly documented.",
+          },
+          { key: "contact.hero.kicker", value: "Start the conversation" },
+          { key: "contact.hero.title", value: "Bring the right football evidence into view." },
+          {
+            key: "contact.hero.body",
+            value:
+              "Reach the DTP Africa team for partnerships, scouting conversations, club onboarding, media, or platform support.",
+          },
+          { key: "contact.panel.kicker", value: "Direct channels" },
+          {
+            key: "contact.panel.title",
+            value: "For clubs, scouts, academies, partners, and football families.",
           },
           { key: "contact.whatsapp", value: "+2348000000000" },
           { key: "contact.email", value: "hello@dtp.africa" },

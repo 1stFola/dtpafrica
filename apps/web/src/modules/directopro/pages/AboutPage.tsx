@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { contentParagraphs, contentValue, useStaticContent, type StaticContentMap } from "../../../hooks/useStaticContent";
 
 const processSteps = [
   {
@@ -122,6 +123,38 @@ const progressLinks = [
   ["Principles", "about-principles"],
 ] as const;
 
+const aboutContentKeys = [
+  "about.hero.kicker",
+  "about.hero.position",
+  "about.hero.title_line1",
+  "about.hero.title_line2",
+  "about.hero.body",
+  "about.hero.change_line",
+  "about.hero.belief",
+  "about.problem.kicker",
+  "about.problem.title_line1",
+  "about.problem.title_line2",
+  "about.problem.intro1",
+  "about.problem.intro2",
+  "about.problem.close_lead",
+  "about.problem.close_body",
+  "about.manifesto.title",
+  "about.manifesto.body",
+  "about.manifesto.emphasis",
+  "about.founder.kicker",
+  "about.founder.name",
+  "about.founder.role",
+  "about.founder.body",
+  "about.founder.quote",
+  "about.mission",
+  "about.vision",
+  "about.final.kicker",
+  "about.final.title",
+  "about.final.body1",
+  "about.final.body2",
+  "about.final.emphasis",
+] as const;
+
 function SectionEyebrow({ children }: { children: React.ReactNode }) {
   return <p className="about2-eyebrow">{children}</p>;
 }
@@ -239,7 +272,7 @@ function SectionProgress() {
   );
 }
 
-function AboutHero() {
+function AboutHero({ content }: { content: StaticContentMap }) {
   return (
     <section className="about2-hero" id="about-belief">
       <div className="about2-hero__image" aria-hidden="true" />
@@ -251,22 +284,29 @@ function AboutHero() {
         <i style={{ left: "72%", top: "54%" }} />
       </div>
       <div className="about2-hero__copy">
-        <SectionEyebrow>About DTP Africa</SectionEyebrow>
+        <SectionEyebrow>{contentValue(content, "about.hero.kicker", "About DTP Africa")}</SectionEyebrow>
         <p className="about2-hero__position">
-          African football intelligence, visibility, and evidence infrastructure.
+          {contentValue(
+            content,
+            "about.hero.position",
+            "African football intelligence, visibility, and evidence infrastructure."
+          )}
         </p>
         <h1>
-          <span>Talent is everywhere.</span>
-          <span>Evidence is not.</span>
+          <span>{contentValue(content, "about.hero.title_line1", "Talent is everywhere.")}</span>
+          <span>{contentValue(content, "about.hero.title_line2", "Evidence is not.")}</span>
         </h1>
         <p>
-          Across Africa, exceptional footballers compete every day on community pitches, academy
-          grounds, school fields, and local stadiums. Many have ability. Far fewer have access to
-          the consistent documentation, credible performance evidence, structured visibility, and
-          professional context that help football decision-makers evaluate potential with confidence.
+          {contentValue(
+            content,
+            "about.hero.body",
+            "Across Africa, exceptional footballers compete every day on community pitches, academy grounds, school fields, and local stadiums. Many have ability. Far fewer have access to the consistent documentation, credible performance evidence, structured visibility, and professional context that help football decision-makers evaluate potential with confidence."
+          )}
         </p>
-        <strong>DTP Africa exists to change that.</strong>
-        <p className="about2-hero__belief">Make Talent Visible. Make Potential Verifiable.</p>
+        <strong>{contentValue(content, "about.hero.change_line", "DTP Africa exists to change that.")}</strong>
+        <p className="about2-hero__belief">
+          {contentValue(content, "about.hero.belief", "Make Talent Visible. Make Potential Verifiable.")}
+        </p>
         <div className="about2-actions">
           <a href="#about-ecosystem" className="button button-primary">
             Explore the DTP Ecosystem
@@ -283,7 +323,7 @@ function AboutHero() {
   );
 }
 
-function ProblemStory() {
+function ProblemStory({ content }: { content: StaticContentMap }) {
   const problems = [
     "A player may perform brilliantly in a local competition but leave behind little structured evidence.",
     "A club may develop an exceptional prospect without the digital infrastructure to present that player professionally.",
@@ -296,13 +336,19 @@ function ProblemStory() {
     <section className="about2-section about2-problem" id="about-problem">
       <MediaFrame image="/images/about/about-problem.webp" label="Grassroots football reality, structured into evidence." />
       <div className="about2-problem__copy">
-        <SectionEyebrow>The information gap</SectionEyebrow>
+        <SectionEyebrow>{contentValue(content, "about.problem.kicker", "The information gap")}</SectionEyebrow>
         <h2>
-          <span>The talent is not missing.</span>
-          <span>The visibility is.</span>
+          <span>{contentValue(content, "about.problem.title_line1", "The talent is not missing.")}</span>
+          <span>{contentValue(content, "about.problem.title_line2", "The visibility is.")}</span>
         </h2>
-        <p>Africa has never had a shortage of football talent.</p>
-        <p>The deeper challenge is that too much potential remains difficult to evaluate beyond the moment in which it is seen.</p>
+        <p>{contentValue(content, "about.problem.intro1", "Africa has never had a shortage of football talent.")}</p>
+        <p>
+          {contentValue(
+            content,
+            "about.problem.intro2",
+            "The deeper challenge is that too much potential remains difficult to evaluate beyond the moment in which it is seen."
+          )}
+        </p>
         <div
           className="about2-problem__steps"
           style={{ "--about-active-step": active } as React.CSSProperties}
@@ -323,25 +369,44 @@ function ProblemStory() {
           ))}
         </div>
         <p className="about2-problem__close">
-          <strong>The result is an information gap between potential and opportunity.</strong>
-          <span>DTP Africa is working to close that gap.</span>
+          <strong>
+            {contentValue(
+              content,
+              "about.problem.close_lead",
+              "The result is an information gap between potential and opportunity."
+            )}
+          </strong>
+          <span>{contentValue(content, "about.problem.close_body", "DTP Africa is working to close that gap.")}</span>
         </p>
       </div>
     </section>
   );
 }
 
-function ManifestoSection() {
+function ManifestoSection({ content }: { content: StaticContentMap }) {
   return (
     <section className="about2-manifesto" aria-labelledby="about-manifesto-heading">
       <h2 id="about-manifesto-heading">
-        We are building the infrastructure between grassroots football and professional decision-making.
+        {contentValue(
+          content,
+          "about.manifesto.title",
+          "We are building the infrastructure between grassroots football and professional decision-making."
+        )}
       </h2>
       <p>
-        DTP Africa brings together football data, performance intelligence, match documentation,
-        player profiling, digital visibility, and scouting context within a growing ecosystem.
+        {contentValue(
+          content,
+          "about.manifesto.body",
+          "DTP Africa brings together football data, performance intelligence, match documentation, player profiling, digital visibility, and scouting context within a growing ecosystem."
+        )}
       </p>
-      <strong>Potential becomes more actionable when it is supported by better evidence.</strong>
+      <strong>
+        {contentValue(
+          content,
+          "about.manifesto.emphasis",
+          "Potential becomes more actionable when it is supported by better evidence."
+        )}
+      </strong>
     </section>
   );
 }
@@ -625,83 +690,70 @@ function OurStory() {
   );
 }
 
-function FounderSection() {
+function FounderSection({ content }: { content: StaticContentMap }) {
+  const founderParagraphs = contentParagraphs(content, "about.founder.body", [
+    "Growing up in Nigeria and remaining deeply connected to its football culture, I saw a recurring problem that talent alone could not solve.",
+    "Across Africa, thousands of gifted young footballers compete, develop, and dedicate themselves to the game, yet too many remain outside the view of professional scouts, clubs, and academies. Not because the talent is absent, but because the evidence around that talent is often fragmented, inconsistent, or difficult to trust.",
+    "As a software and data engineer, I came to understand that the challenge was bigger than exposure.",
+    "It was also a problem of credibility.",
+    "Scouts and football decision-makers need more than potential. They need context, reliable performance information, structured player histories, and evidence they can evaluate with confidence.",
+    "That realization became the foundation for DTP Africa.",
+    "I set out to help build infrastructure that gives grassroots players and local clubs a stronger, more credible digital presence-one capable of turning match activity, performance data, player records, and development history into a more verifiable football identity.",
+    "For me, this work is deeply personal.",
+    "Football can represent far more than competition. For many young players and their families, it can become a pathway to economic mobility, professional opportunity, education, travel, and a different future.",
+    "What drives me is the belief that geography, limited visibility, or the absence of the right connection should not be the reason genuine potential goes unseen.",
+    "Through DTP Africa, I am applying my background in software, data, and systems thinking to a human challenge: building better infrastructure around grassroots football so that talent can be documented more clearly, evaluated more fairly, and discovered with greater confidence.",
+  ]);
+
   return (
     <section className="about2-founder" id="about-founder">
       <div className="about2-founder__media">
         <img src="/images/about/fola-sanni-ceo.webp" alt="Fola Sanni, Founder and CEO of DTP Africa" loading="lazy" />
       </div>
       <div className="about2-founder__copy">
-        <SectionEyebrow>The Founder / CEO</SectionEyebrow>
-        <h2>Fola Sanni</h2>
-        <p className="about2-founder__role">Founder and CEO, DTP Africa</p>
+        <SectionEyebrow>{contentValue(content, "about.founder.kicker", "The Founder / CEO")}</SectionEyebrow>
+        <h2>{contentValue(content, "about.founder.name", "Fola Sanni")}</h2>
+        <p className="about2-founder__role">
+          {contentValue(content, "about.founder.role", "Founder and CEO, DTP Africa")}
+        </p>
         <div className="about2-founder__body">
-          <p>
-            Growing up in Nigeria and remaining deeply connected to its football culture, I saw a
-            recurring problem that talent alone could not solve.
-          </p>
-          <p>
-            Across Africa, thousands of gifted young footballers compete, develop, and dedicate
-            themselves to the game, yet too many remain outside the view of professional scouts,
-            clubs, and academies. Not because the talent is absent, but because the evidence around
-            that talent is often fragmented, inconsistent, or difficult to trust.
-          </p>
-          <p>As a software and data engineer, I came to understand that the challenge was bigger than exposure.</p>
-          <p>It was also a problem of credibility.</p>
-          <p>
-            Scouts and football decision-makers need more than potential. They need context,
-            reliable performance information, structured player histories, and evidence they can
-            evaluate with confidence.
-          </p>
-          <p>That realization became the foundation for DTP Africa.</p>
-          <p>
-            I set out to help build infrastructure that gives grassroots players and local clubs a
-            stronger, more credible digital presence-one capable of turning match activity,
-            performance data, player records, and development history into a more verifiable
-            football identity.
-          </p>
-          <p>For me, this work is deeply personal.</p>
-          <p>
-            Football can represent far more than competition. For many young players and their
-            families, it can become a pathway to economic mobility, professional opportunity,
-            education, travel, and a different future.
-          </p>
-          <p>
-            What drives me is the belief that geography, limited visibility, or the absence of the
-            right connection should not be the reason genuine potential goes unseen.
-          </p>
-          <p>
-            Through DTP Africa, I am applying my background in software, data, and systems thinking
-            to a human challenge: building better infrastructure around grassroots football so that
-            talent can be documented more clearly, evaluated more fairly, and discovered with
-            greater confidence.
-          </p>
+          {founderParagraphs.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
         </div>
         <blockquote>
-          To help ensure that a player's future is shaped more by their ability, evidence,
-          character, and drive-and less by how far they are from opportunity.
+          {contentValue(
+            content,
+            "about.founder.quote",
+            "To help ensure that a player's future is shaped more by their ability, evidence, character, and drive-and less by how far they are from opportunity."
+          )}
         </blockquote>
       </div>
     </section>
   );
 }
 
-function MissionVision() {
+function MissionVision({ content }: { content: StaticContentMap }) {
   return (
     <section className="about2-mission" aria-label="DTP Africa mission and vision">
       <article>
         <span>Mission</span>
         <p>
-          To make African grassroots football talent more visible, verifiable, and accessible
-          through better data, documentation, intelligence, and digital infrastructure.
+          {contentValue(
+            content,
+            "about.mission",
+            "To make African grassroots football talent more visible, verifiable, and accessible through better data, documentation, intelligence, and digital infrastructure."
+          )}
         </p>
       </article>
       <article>
         <span>Vision</span>
         <p>
-          To build one of Africa's most trusted football talent intelligence ecosystems-where
-          credible player evidence can travel further than geography, and where potential can be
-          evaluated with greater context, continuity, and confidence.
+          {contentValue(
+            content,
+            "about.vision",
+            "To build one of Africa's most trusted football talent intelligence ecosystems-where credible player evidence can travel further than geography, and where potential can be evaluated with greater context, continuity, and confidence."
+          )}
         </p>
       </article>
     </section>
@@ -757,17 +809,20 @@ function BeliefsCarousel() {
   );
 }
 
-function AboutFinalCTA() {
+function AboutFinalCTA({ content }: { content: StaticContentMap }) {
   return (
     <section className="about2-final">
-      <SectionEyebrow>From Potential to Proof</SectionEyebrow>
-      <h2>From Potential to Proof.</h2>
-      <p>The next exceptional player may already be playing.</p>
+      <SectionEyebrow>{contentValue(content, "about.final.kicker", "From Potential to Proof")}</SectionEyebrow>
+      <h2>{contentValue(content, "about.final.title", "From Potential to Proof.")}</h2>
+      <p>{contentValue(content, "about.final.body1", "The next exceptional player may already be playing.")}</p>
       <p>
-        The question is whether the football world will have enough evidence to recognize the
-        opportunity.
+        {contentValue(
+          content,
+          "about.final.body2",
+          "The question is whether the football world will have enough evidence to recognize the opportunity."
+        )}
       </p>
-      <strong>DTP Africa is building for that moment.</strong>
+      <strong>{contentValue(content, "about.final.emphasis", "DTP Africa is building for that moment.")}</strong>
       <div className="about2-actions">
         <Link to="/featured-players" className="button button-primary">
           Explore Players
@@ -786,6 +841,7 @@ function AboutFinalCTA() {
 
 export function AboutPage() {
   usePageTitle("About");
+  const content = useStaticContent(aboutContentKeys);
   const jsonLd = useMemo(
     () =>
       JSON.stringify({
@@ -804,19 +860,19 @@ export function AboutPage() {
     <div className="about2-page">
       <script type="application/ld+json">{jsonLd}</script>
       <SectionProgress />
-      <AboutHero />
-      <ProblemStory />
-      <ManifestoSection />
+      <AboutHero content={content} />
+      <ProblemStory content={content} />
+      <ManifestoSection content={content} />
       <IntelligencePathway />
       <EcosystemCarousel />
       <TechnologyStory />
       <AudiencePathway />
       <HumanPrinciple />
       <OurStory />
-      <FounderSection />
-      <MissionVision />
+      <FounderSection content={content} />
+      <MissionVision content={content} />
       <BeliefsCarousel />
-      <AboutFinalCTA />
+      <AboutFinalCTA content={content} />
     </div>
   );
 }

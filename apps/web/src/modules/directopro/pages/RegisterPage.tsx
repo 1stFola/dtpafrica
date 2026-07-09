@@ -2,9 +2,11 @@ import { FormEvent, useState } from "react";
 import { Button } from "@dtp/ui";
 import { apiPost, type RegisterResponse } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
 
 export function RegisterPage() {
   usePageTitle("Register talent");
+  const content = useStaticContent(["register.hero.kicker", "register.hero.title", "register.hero.body"]);
   const [submitted, setSubmitted] = useState<RegisterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -58,11 +60,14 @@ export function RegisterPage() {
   return (
     <div className="home-page evidence-page evidence-page--register">
       <header className="evidence-hero register-hero">
-        <span className="about-kicker">Player evidence intake</span>
-        <h1>Start building a football identity that can be trusted.</h1>
+        <span className="about-kicker">{contentValue(content, "register.hero.kicker", "Player evidence intake")}</span>
+        <h1>{contentValue(content, "register.hero.title", "Start building a football identity that can be trusted.")}</h1>
         <p>
-          Submit a player profile for DTP review. Players under 18 require a parent or guardian on
-          the form so the process stays clear, responsible, and properly documented.
+          {contentValue(
+            content,
+            "register.hero.body",
+            "Submit a player profile for DTP review. Players under 18 require a parent or guardian on the form so the process stays clear, responsible, and properly documented."
+          )}
         </p>
         <div className="evidence-hero__signals" aria-label="Registration review signals">
           <span>Identity</span>

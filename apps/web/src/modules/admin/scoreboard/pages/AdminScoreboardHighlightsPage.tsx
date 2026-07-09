@@ -15,12 +15,31 @@ import { MediaUrlFieldHint } from "../../../../components/MediaUrlFieldHint";
 import { MediaUrlPreview } from "../../../../components/MediaUrlPreview";
 
 function matchLabel(row: AdminHighlightRow) {
-  if (!row.match) return "—";
+  if (!row.match) return "-";
   return `${row.match.homeTeam.name} vs ${row.match.awayTeam.name}`;
 }
 
+function matchOptionLabel(match: SbMatchListItem) {
+  const kickoff = match.kickoffAt ? new Date(match.kickoffAt).toLocaleString() : "";
+  return [
+    `${match.homeTeam.name} vs ${match.awayTeam.name}`,
+    match.competition.name,
+    match.roundLabel,
+    match.venue,
+    kickoff,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function filterMatches(matches: SbMatchListItem[], query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return matches;
+  return matches.filter((match) => matchOptionLabel(match).toLowerCase().includes(normalized));
+}
+
 export function AdminScoreboardHighlightsPage() {
-  usePageTitle("Admin — Match highlights");
+  usePageTitle("Admin - Match highlights");
   const toast = useAdminToast();
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
   const [rows, setRows] = useState<AdminHighlightRow[]>([]);
@@ -28,6 +47,8 @@ export function AdminScoreboardHighlightsPage() {
   const [videoUrl, setVideoUrl] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
+  const [videoMatchSearch, setVideoMatchSearch] = useState("");
+  const [photoMatchSearch, setPhotoMatchSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,10 +79,19 @@ export function AdminScoreboardHighlightsPage() {
     () => rows.filter((row) => row.mediaType === "photo"),
     [rows]
   );
+  const videoMatches = useMemo(
+    () => filterMatches(matches, videoMatchSearch),
+    [matches, videoMatchSearch]
+  );
+  const photoMatches = useMemo(
+    () => filterMatches(matches, photoMatchSearch),
+    [matches, photoMatchSearch]
+  );
 
   const onVideoSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
     const matchId = String(fd.get("matchId"));
     const title = String(fd.get("title"));
     const youtubeUrl = String(fd.get("youtubeUrl"));
@@ -79,9 +109,10 @@ export function AdminScoreboardHighlightsPage() {
         thumbnailUrl: thumb,
       });
       toast.success("Video clip queued (unpublished until reviewed)");
-      e.currentTarget.reset();
+      form.reset();
       setVideoUrl("");
       setThumbnailUrl("");
+      setVideoMatchSearch("");
       await load();
     } catch (err) {
       toast.error(formatAdminScoreboardError(err));
@@ -90,7 +121,8 @@ export function AdminScoreboardHighlightsPage() {
 
   const onPhotoSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
     const matchId = String(fd.get("matchId"));
     const title = String(fd.get("title"));
     const imageUrl = String(fd.get("imageUrl"));
@@ -102,8 +134,9 @@ export function AdminScoreboardHighlightsPage() {
         imageUrl,
       });
       toast.success("Match photo queued (unpublished until reviewed)");
-      e.currentTarget.reset();
+      form.reset();
       setPhotoUrl("");
+      setPhotoMatchSearch("");
       await load();
     } catch (err) {
       toast.error(formatAdminScoreboardError(err));
@@ -121,7 +154,7 @@ export function AdminScoreboardHighlightsPage() {
   };
 
   const remove = async (row: AdminHighlightRow) => {
-    if (!window.confirm(`Delete “${row.title}”?`)) return;
+    if (!window.confirm(`Delete "${row.title}"?`)) return;
     try {
       await adminScoreboardApi.deleteHighlight(row.id);
       toast.success("Deleted");
@@ -139,7 +172,7 @@ export function AdminScoreboardHighlightsPage() {
         crumbs={[{ label: "Highlights" }]}
         actions={
           <Link to="/admin/scoreboard/highlights-manager" className="text-link">
-            Latest videos manager →
+            Latest videos manager &rarr;
           </Link>
         }
       />
@@ -165,20 +198,35 @@ export function AdminScoreboardHighlightsPage() {
             onSubmit={onVideoSubmit}
           >
             <h3 className="admin-sb-form-heading">New match clip</h3>
+            <label className="admin-sb-field admin-sb-field--wide">
+              <span>Match search</span>
+              <input
+                type="search"
+                value={videoMatchSearch}
+                onChange={(e) => setVideoMatchSearch(e.target.value)}
+                placeholder="Search by team, competition, venue, round, or kickoff"
+                aria-label="Search video clip match"
+              />
+            </label>
             <label className="admin-sb-field">
               <span>Match reference</span>
               <select name="matchId" required>
-                <option value="">Select match…</option>
-                {matches.map((m) => (
+                <option value="">Select match...</option>
+                {videoMatches.length === 0 && (
+                  <option value="" disabled>
+                    No matches found
+                  </option>
+                )}
+                {videoMatches.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.homeTeam.name} vs {m.awayTeam.name} — {m.competition.name}
+                    {matchOptionLabel(m)}
                   </option>
                 ))}
               </select>
             </label>
             <label className="admin-sb-field">
               <span>Title</span>
-              <input name="title" required placeholder="e.g. Opening goal — 23'" />
+              <input name="title" required placeholder="e.g. Opening goal - 23'" />
             </label>
             <label className="admin-sb-field">
               <span>Timeline minute</span>
@@ -192,7 +240,7 @@ export function AdminScoreboardHighlightsPage() {
                 required
                 value={videoUrl}
                 onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="YouTube or Google Drive /file/d/…/view"
+                placeholder="YouTube or Google Drive /file/d/.../view"
               />
               <MediaUrlFieldHint kind="video" />
               <MediaUrlPreview url={videoUrl} kind="video" />
@@ -204,7 +252,7 @@ export function AdminScoreboardHighlightsPage() {
                 type="url"
                 value={thumbnailUrl}
                 onChange={(e) => setThumbnailUrl(e.target.value)}
-                placeholder="Google Photos or https://… image"
+                placeholder="Google Photos or https://... image"
               />
               <MediaUrlFieldHint kind="image" />
               <MediaUrlPreview url={thumbnailUrl} kind="image" />
@@ -221,13 +269,28 @@ export function AdminScoreboardHighlightsPage() {
             onSubmit={onPhotoSubmit}
           >
             <h3 className="admin-sb-form-heading">New match photo</h3>
+            <label className="admin-sb-field admin-sb-field--wide">
+              <span>Match search</span>
+              <input
+                type="search"
+                value={photoMatchSearch}
+                onChange={(e) => setPhotoMatchSearch(e.target.value)}
+                placeholder="Search by team, competition, venue, round, or kickoff"
+                aria-label="Search match photo match"
+              />
+            </label>
             <label className="admin-sb-field">
               <span>Match reference</span>
               <select name="matchId" required>
-                <option value="">Select match…</option>
-                {matches.map((m) => (
+                <option value="">Select match...</option>
+                {photoMatches.length === 0 && (
+                  <option value="" disabled>
+                    No matches found
+                  </option>
+                )}
+                {photoMatches.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.homeTeam.name} vs {m.awayTeam.name} — {m.competition.name}
+                    {matchOptionLabel(m)}
                   </option>
                 ))}
               </select>
@@ -244,7 +307,7 @@ export function AdminScoreboardHighlightsPage() {
                 required
                 value={photoUrl}
                 onChange={(e) => setPhotoUrl(e.target.value)}
-                placeholder="Google Photos or https://… image"
+                placeholder="Google Photos or https://... image"
               />
               <MediaUrlFieldHint kind="image" />
               <MediaUrlPreview url={photoUrl} kind="image" />
@@ -270,7 +333,7 @@ export function AdminScoreboardHighlightsPage() {
             loading={false}
             empty={videoRows.length === 0}
             emptyTitle="No match video clips yet"
-            emptyHint="Upload a video clip above — it stays hidden until you publish."
+            emptyHint="Upload a video clip above - it stays hidden until you publish."
             columns={5}
           >
             <table className="admin-table admin-sb-table">
@@ -290,7 +353,7 @@ export function AdminScoreboardHighlightsPage() {
                       <strong>{row.title}</strong>
                       <br />
                       <a href={row.youtubeUrl} className="text-link" target="_blank" rel="noreferrer">
-                        Video ↗
+                        Video &rarr;
                       </a>
                     </td>
                     <td className="muted">{matchLabel(row)}</td>
@@ -328,7 +391,7 @@ export function AdminScoreboardHighlightsPage() {
             loading={false}
             empty={photoRows.length === 0}
             emptyTitle="No match photos yet"
-            emptyHint="Add a photo above — it stays hidden until you publish."
+            emptyHint="Add a photo above - it stays hidden until you publish."
             columns={5}
           >
             <table className="admin-table admin-sb-table">
@@ -348,7 +411,7 @@ export function AdminScoreboardHighlightsPage() {
                       <strong>{row.title}</strong>
                       <br />
                       <a href={row.youtubeUrl} className="text-link" target="_blank" rel="noreferrer">
-                        Image ↗
+                        Image &rarr;
                       </a>
                     </td>
                     <td className="muted">{matchLabel(row)}</td>
