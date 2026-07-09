@@ -33,13 +33,31 @@ export function FeaturedPlayersPage() {
     };
   }, []);
 
+  const publishedCount = players.length;
+
   return (
-    <div className="home-page">
-      <header className="page-header">
-        <h1>Featured players</h1>
-        <p className="muted">
-          Verified profiles with ratings and tactical summaries from the Scouting Intelligence Platform.
+    <div className="home-page evidence-page evidence-page--players">
+      <header className="evidence-hero featured-players-hero">
+        <span className="about-kicker">Verified talent intelligence</span>
+        <h1>Featured players with proof behind the promise.</h1>
+        <p>
+          Explore player profiles shaped by ratings, tactical summaries, performance history, and
+          scouting context from the DTP Africa intelligence ecosystem.
         </p>
+        <div className="evidence-hero__metrics" aria-label="Featured player signals">
+          <article>
+            <strong>{loading ? "--" : publishedCount}</strong>
+            <span>Published profiles</span>
+          </article>
+          <article>
+            <strong>360</strong>
+            <span>Role context</span>
+          </article>
+          <article>
+            <strong>DTP</strong>
+            <span>Verified evidence</span>
+          </article>
+        </div>
       </header>
       {error && (
         <p className="dtp-error-banner" role="alert">

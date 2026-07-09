@@ -39,68 +39,79 @@ export function ContactPage() {
   };
 
   return (
-    <div className="home-page">
-      <header className="page-header">
-        <h1>Contact</h1>
-        <p className="muted">Reach the DTP team for partnerships, scouting, or support.</p>
+    <div className="home-page evidence-page evidence-page--contact">
+      <header className="evidence-hero contact-hero">
+        <span className="about-kicker">Start the conversation</span>
+        <h1>Bring the right football evidence into view.</h1>
+        <p>
+          Reach the DTP Africa team for partnerships, scouting conversations, club onboarding,
+          media, or platform support.
+        </p>
       </header>
 
-      <div className="contact-channels">
-        {contact["contact.email"] && (
-          <p>
-            Email:{" "}
-            <a href={`mailto:${contact["contact.email"]}`} className="text-link">
-              {contact["contact.email"]}
-            </a>
-          </p>
-        )}
-        {contact["contact.whatsapp"] && (
-          <p>
-            WhatsApp:{" "}
-            <a
-              href={`https://wa.me/${contact["contact.whatsapp"].replace(/\D/g, "")}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-link"
-            >
-              {contact["contact.whatsapp"]}
-            </a>
-          </p>
-        )}
-      </div>
+      <section className="contact-evidence-grid">
+        <aside className="contact-evidence-panel">
+          <span>Direct channels</span>
+          <h2>For clubs, scouts, academies, partners, and football families.</h2>
+          <div className="contact-channels">
+            {contact["contact.email"] && (
+              <p>
+                Email:{" "}
+                <a href={`mailto:${contact["contact.email"]}`} className="text-link">
+                  {contact["contact.email"]}
+                </a>
+              </p>
+            )}
+            {contact["contact.whatsapp"] && (
+              <p>
+                WhatsApp:{" "}
+                <a
+                  href={`https://wa.me/${contact["contact.whatsapp"].replace(/\D/g, "")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-link"
+                >
+                  {contact["contact.whatsapp"]}
+                </a>
+              </p>
+            )}
+          </div>
+        </aside>
 
-      {sent ? (
-        <div className="success-panel">
-          <p>Message sent. We will respond as soon as possible.</p>
-        </div>
-      ) : (
-        <form className="home-form" onSubmit={onSubmit}>
-          <label>
-            Name
-            <input name="name" required />
-          </label>
-          <label>
-            Email
-            <input name="email" type="email" required />
-          </label>
-          <label>
-            Phone
-            <input name="phone" type="tel" />
-          </label>
-          <label>
-            Subject
-            <input name="subject" />
-          </label>
-          <label>
-            Message
-            <textarea name="message" rows={5} required minLength={10} />
-          </label>
-          {error && <p className="form-error">{error}</p>}
-          <Button type="submit" disabled={loading}>
-            {loading ? "Sending…" : "Send message"}
-          </Button>
-        </form>
-      )}
+        {sent ? (
+          <div className="success-panel evidence-success-panel">
+            <h2>Message sent</h2>
+            <p>We will respond as soon as possible.</p>
+          </div>
+        ) : (
+          <form className="home-form evidence-form" onSubmit={onSubmit}>
+            <label>
+              Name
+              <input name="name" required />
+            </label>
+            <label>
+              Email
+              <input name="email" type="email" required />
+            </label>
+            <label>
+              Phone
+              <input name="phone" type="tel" />
+            </label>
+            <label>
+              Subject
+              <input name="subject" />
+            </label>
+            <label>
+              Message
+              <textarea name="message" rows={5} required minLength={10} />
+            </label>
+            {error && <p className="form-error">{error}</p>}
+            <Button type="submit" disabled={loading}>
+              {loading ? "Sending..." : "Send message"}
+            </Button>
+          </form>
+        )}
+      </section>
     </div>
   );
 }

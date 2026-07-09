@@ -32,14 +32,19 @@ export function BlogPage() {
   const rest = filtered.slice(1);
 
   return (
-    <main className="home-page blog-premium">
-      <header className="blog-hero">
+    <main className="home-page evidence-page evidence-page--blog blog-premium">
+      <header className="evidence-hero blog-hero">
         <span className="about-kicker">DTP Africa Blog</span>
-        <h1>Insights for football families, academies, scouts, and the next generation.</h1>
+        <h1>Football intelligence deserves a stronger public record.</h1>
         <p>
           Practical thinking on football development, transparent scouting, player protection,
           data-led evaluation, and the future of African talent discovery.
         </p>
+        <div className="evidence-hero__signals" aria-label="Editorial focus">
+          <span>Scouting context</span>
+          <span>Player protection</span>
+          <span>Evidence-led development</span>
+        </div>
       </header>
 
       <div className="blog-filters" role="tablist" aria-label="Blog categories">
