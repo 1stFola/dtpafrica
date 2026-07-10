@@ -49,6 +49,19 @@ type SquadEditState = {
   draft: AdminSbSquadRowInput;
 };
 
+const COMPETITION_CSV_TEMPLATE = `name,type,region,status,isFeatured
+Lagos Queens Cup,tournament,Nigeria,active,true`;
+
+const TEAM_CSV_TEMPLATE = `name,slug,region,logo
+SGFC Athletics,sgfc-athletics,Lagos,https://example.com/sgfc.png
+36 Lions FC,36-lions-fc,Lagos,https://example.com/36-lions.png`;
+
+const SQUAD_CSV_TEMPLATE = `shirtNumber,displayName,position
+1,Goalkeeper Name,GK
+2,Right Back Name,RB
+5,Centre Back Name,CB
+9,Striker Name,ST`;
+
 export function AdminScoreboardEntitiesPage() {
   usePageTitle("Admin — ScoreBoard entities");
   const toast = useAdminToast();
@@ -67,6 +80,8 @@ export function AdminScoreboardEntitiesPage() {
   const [teamQ, setTeamQ] = useState("");
   const [playerQ, setPlayerQ] = useState("");
   const [seedCompId, setSeedCompId] = useState("");
+  const [seedTeamId, setSeedTeamId] = useState("");
+  const [seedTeams, setSeedTeams] = useState<AdminSbTeam[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
   const [editingFixture, setEditingFixture] = useState<FixtureEditState | null>(null);
@@ -308,6 +323,24 @@ export function AdminScoreboardEntitiesPage() {
     }
   }, [seedCompId]);
 
+  const loadSeedTeams = useCallback(async () => {
+    if (!seedCompId) {
+      setSeedTeams([]);
+      setSeedTeamId("");
+      return;
+    }
+    try {
+      const rows = await adminScoreboardApi.teams({ competitionId: seedCompId });
+      setSeedTeams(rows);
+      setSeedTeamId((current) =>
+        current && rows.some((team) => team.id === current) ? current : rows[0]?.id ?? ""
+      );
+    } catch {
+      setSeedTeams([]);
+      setSeedTeamId("");
+    }
+  }, [seedCompId]);
+
   useEffect(() => {
     if (tab === "competitions") void loadCompetitions();
   }, [tab, loadCompetitions]);
@@ -347,6 +380,10 @@ export function AdminScoreboardEntitiesPage() {
   useEffect(() => {
     if (tab === "seeders" && !loadedRef.current.seeders) void loadPicker();
   }, [tab, loadPicker]);
+
+  useEffect(() => {
+    if (tab === "seeders") void loadSeedTeams();
+  }, [tab, loadSeedTeams]);
 
   const playerPath = (slug: string | null, displayName: string) =>
     slug ? `/player/${slug}` : `/player/${encodeURIComponent(displayName.toLowerCase().replace(/\s+/g, "-"))}`;
@@ -1208,15 +1245,56 @@ export function AdminScoreboardEntitiesPage() {
 
       {tab === "seeders" && (
         <div className="admin-sb-seed-grid">
+          <label className="admin-sb-field admin-sb-panel">
+            <span>Target competition</span>
+            <select
+              value={seedCompId}
+              onChange={(e) => {
+                setSeedCompId(e.target.value);
+                setSeedTeamId("");
+              }}
+              disabled={loading.seeders}
+            >
+              <option value="">Select competition...</option>
+              {picker.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <small className="muted">
+              Used for team imports, squad exports, and team-scoped squad CSV uploads.
+            </small>
+          </label>
+          <label className="admin-sb-field admin-sb-panel">
+            <span>Target team for squad import</span>
+            <select
+              value={seedTeamId}
+              onChange={(e) => setSeedTeamId(e.target.value)}
+              disabled={!seedCompId || seedTeams.length === 0}
+            >
+              <option value="">Select team...</option>
+              {seedTeams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </select>
+            <small className="muted">Importing a squad CSV upserts players into this club only.</small>
+          </label>
           <CsvDropzone
             label="Competitions"
             hint='Headers: name, type, region, status, isFeatured'
+            templateCsv={COMPETITION_CSV_TEMPLATE}
+            templateFileName="competition-seed-template.csv"
             onExport={async () => (await adminScoreboardApi.exportCompetitionsCsv()).csv}
             onImport={async (csv) => {
               try {
                 const r = await adminScoreboardApi.importCompetitionsCsv(csv);
                 toast.success(`Imported ${r.imported} competition(s)`);
                 loadedRef.current.competitions = false;
+                loadedRef.current.seeders = false;
+                void loadPicker();
                 void refreshStats();
               } catch (e) {
                 throw new Error(formatAdminScoreboardError(e));
@@ -1225,6 +1303,10 @@ export function AdminScoreboardEntitiesPage() {
           />
           <CsvDropzone
             label="Teams"
+            disabled={!seedCompId}
+            disabledReason="Select a target competition before importing teams."
+            templateCsv={TEAM_CSV_TEMPLATE}
+            templateFileName="team-seed-template.csv"
             hint="Headers: name, slug, region — pick competition below"
             onExport={async () =>
               (await adminScoreboardApi.exportTeamsCsv(seedCompId || undefined)).csv
@@ -1234,27 +1316,38 @@ export function AdminScoreboardEntitiesPage() {
               try {
                 const r = await adminScoreboardApi.importTeamsCsv(csv, seedCompId);
                 toast.success(`Imported ${r.imported} team(s)`);
+                void loadSeedTeams();
                 void refreshStats();
               } catch (e) {
                 throw new Error(formatAdminScoreboardError(e));
               }
             }}
           />
-          <label className="admin-sb-field admin-sb-panel">
-            <span>Team import competition</span>
-            <select
-              value={seedCompId}
-              onChange={(e) => setSeedCompId(e.target.value)}
-              disabled={loading.seeders}
-            >
-              <option value="">Select…</option>
-              {picker.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <CsvDropzone
+            label="Team squad"
+            hint="Required: displayName or name. Optional: shirtNumber/number, position."
+            disabled={!seedTeamId}
+            disabledReason="Select a target competition and team before importing squad rows."
+            templateCsv={SQUAD_CSV_TEMPLATE}
+            templateFileName="team-squad-seed-template.csv"
+            onExport={async () => {
+              if (!seedCompId) throw new Error("Select a competition before exporting squads");
+              const r = await adminScoreboardApi.exportCompetitionSquad(seedCompId, "csv");
+              return r.csv ?? "";
+            }}
+            onImport={async (csv) => {
+              if (!seedTeamId) throw new Error("Select a team before importing squad rows");
+              try {
+                const r = await adminScoreboardApi.importSquadCsv(seedTeamId, csv);
+                toast.success(`Imported ${r.imported} squad row(s)`);
+                loadedRef.current.players = false;
+                void loadSeedTeams();
+                void refreshStats();
+              } catch (e) {
+                throw new Error(formatAdminScoreboardError(e));
+              }
+            }}
+          />
           {seedCompId && (
             <div className="admin-sb-export-actions admin-sb-panel">
               <p className="muted admin-sb-export-hint">
