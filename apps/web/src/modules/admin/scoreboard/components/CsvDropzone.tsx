@@ -7,14 +7,42 @@ type Props = {
   hint: string;
   onImport: (csv: string) => Promise<void>;
   onExport: () => Promise<string>;
+  disabled?: boolean;
+  disabledReason?: string;
+  templateCsv?: string;
+  templateFileName?: string;
 };
 
-export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
+function downloadTextFile(fileName: string, text: string) {
+  const url = URL.createObjectURL(
+    new Blob([text], { type: "text/csv;charset=utf-8" })
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function CsvDropzone({
+  label,
+  hint,
+  onImport,
+  onExport,
+  disabled,
+  disabledReason,
+  templateCsv,
+  templateFileName,
+}: Props) {
   const toast = useAdminToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
   const handleFile = async (file: File) => {
+    if (disabled) {
+      toast.error(disabledReason ?? "Select the required context before importing.");
+      return;
+    }
     setBusy(true);
     try {
       const csv = await file.text();
@@ -31,14 +59,7 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
     setBusy(true);
     try {
       const csv = await onExport();
-      const url = URL.createObjectURL(
-        new Blob([csv], { type: "text/csv;charset=utf-8" })
-      );
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${label.toLowerCase().replace(/\s+/g, "-")}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadTextFile(`${label.toLowerCase().replace(/\s+/g, "-")}.csv`, csv);
       toast.success("Export downloaded");
     } catch (e) {
       toast.error(formatAdminScoreboardError(e));
@@ -59,14 +80,33 @@ export function CsvDropzone({ label, hint, onImport, onExport }: Props) {
     >
       <strong>{label}</strong>
       <p className="muted">{hint}</p>
+      {disabled && disabledReason ? (
+        <p className="admin-sb-dropzone-msg">{disabledReason}</p>
+      ) : null}
       <div className="admin-sb-dropzone-actions">
         <button type="button" className="admin-inline-button" disabled={busy} onClick={exportCsv}>
           Export CSV
         </button>
+        {templateCsv ? (
+          <button
+            type="button"
+            className="admin-inline-button"
+            disabled={busy}
+            onClick={() => {
+              downloadTextFile(
+                templateFileName ?? `${label.toLowerCase().replace(/\s+/g, "-")}-template.csv`,
+                templateCsv
+              );
+              toast.success("Template downloaded");
+            }}
+          >
+            Template
+          </button>
+        ) : null}
         <button
           type="button"
           className="admin-inline-button"
-          disabled={busy}
+          disabled={busy || disabled}
           onClick={() => inputRef.current?.click()}
         >
           Import CSV
