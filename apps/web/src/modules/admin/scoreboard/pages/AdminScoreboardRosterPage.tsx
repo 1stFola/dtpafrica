@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import type { SbMatchListItem } from "../../../../api/scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
@@ -85,6 +85,8 @@ export function AdminScoreboardRosterPage() {
     Awaited<ReturnType<typeof adminScoreboardApi.getSpotter>>["rosterReadiness"] | null
   >(null);
   const [competitionId, setCompetitionId] = useState("");
+  const [matchSearch, setMatchSearch] = useState("");
+  const [playerSearch, setPlayerSearch] = useState("");
   const [competitions, setCompetitions] = useState<
     Array<{ id: string; name: string; slug: string; season: string }>
   >([]);
@@ -120,6 +122,43 @@ export function AdminScoreboardRosterPage() {
   }, [competitionId, loadMatches]);
 
   const selectedMatch = matches.find((m) => m.id === matchId);
+  const filteredMatches = useMemo(() => {
+    const q = matchSearch.trim().toLowerCase();
+    if (!q) return matches;
+    return matches.filter((m) =>
+      [
+        m.homeTeam.name,
+        m.awayTeam.name,
+        m.competition.name,
+        m.venue,
+        m.roundLabel,
+        m.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [matchSearch, matches]);
+
+  const filteredDirectory = useMemo(() => {
+    const q = playerSearch.trim().toLowerCase();
+    if (!q) return directory;
+    return directory.filter((row) =>
+      [row.displayName, row.position, row.shirtNumber?.toString()]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [directory, playerSearch]);
+
+  useEffect(() => {
+    if (!filteredMatches.length) return;
+    if (!filteredMatches.some((m) => m.id === matchId)) {
+      setMatchId(filteredMatches[0].id);
+    }
+  }, [filteredMatches, matchId]);
 
   useEffect(() => {
     if (!selectedMatch) return;
@@ -355,12 +394,27 @@ export function AdminScoreboardRosterPage() {
                   ))}
                 </select>
               )}
-              <select value={matchId} onChange={(e) => setMatchId(e.target.value)} aria-label="Match">
-                {matches.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {formatMatchOptionLabel(m)}
-                  </option>
-                ))}
+              <input
+                type="search"
+                value={matchSearch}
+                onChange={(e) => setMatchSearch(e.target.value)}
+                placeholder="Search fixtures"
+                aria-label="Search fixtures"
+              />
+              <select
+                value={filteredMatches.some((m) => m.id === matchId) ? matchId : ""}
+                onChange={(e) => setMatchId(e.target.value)}
+                aria-label="Match"
+              >
+                {filteredMatches.length === 0 ? (
+                  <option value="">No matching fixtures</option>
+                ) : (
+                  filteredMatches.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {formatMatchOptionLabel(m)}
+                    </option>
+                  ))
+                )}
               </select>
               {selectedMatch && (
                 <select value={teamId} onChange={(e) => setTeamId(e.target.value)} aria-label="Team">
@@ -467,12 +521,23 @@ export function AdminScoreboardRosterPage() {
       ) : (
         <div className="admin-sb-roster-split">
           <div className="admin-sb-directory admin-sb-panel">
-            <h3>Club directory</h3>
+            <div className="admin-sb-directory__header">
+              <h3>Club directory</h3>
+              <input
+                type="search"
+                value={playerSearch}
+                onChange={(e) => setPlayerSearch(e.target.value)}
+                placeholder="Search players"
+                aria-label="Search club directory players"
+              />
+            </div>
             {directory.length === 0 ? (
               <p className="admin-sb-empty muted">No squad rows for this team.</p>
+            ) : filteredDirectory.length === 0 ? (
+              <p className="admin-sb-empty muted">No players match that search.</p>
             ) : (
               <ul>
-                {directory.map((row) => (
+                {filteredDirectory.map((row) => (
                   <li key={row.squadId} className={inRoster(row.squadId) ? "picked" : ""}>
                     <span
                       className={`admin-sb-pos admin-sb-pos--${positionTag(row.position).toLowerCase()}`}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ingestMatchSip,
@@ -37,6 +37,7 @@ export function AdminScoreboardMatchCenterPage() {
   const [busy, setBusy] = useState(false);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
+  const [matchSearch, setMatchSearch] = useState("");
   const [competitionOptions, setCompetitionOptions] = useState<
     Array<{ id: string; name: string }>
   >([]);
@@ -85,7 +86,43 @@ export function AdminScoreboardMatchCenterPage() {
     }
   }, [fixtureOpen]);
 
-  const selected = [...live, ...all].find((m) => m.id === selectedId) ?? live[0] ?? all[0];
+  const matchOptions = useMemo(
+    () => [...new Map([...live, ...all].map((m) => [m.id, m])).values()],
+    [all, live]
+  );
+  const filteredMatchOptions = useMemo(() => {
+    const q = matchSearch.trim().toLowerCase();
+    if (!q) return matchOptions;
+    return matchOptions.filter((m) =>
+      [
+        m.homeTeam.name,
+        m.awayTeam.name,
+        m.competition.name,
+        m.venue,
+        m.roundLabel,
+        m.status,
+        m.stageKey,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [matchOptions, matchSearch]);
+
+  useEffect(() => {
+    if (!filteredMatchOptions.length) return;
+    if (!selectedId || !filteredMatchOptions.some((m) => m.id === selectedId)) {
+      setSelectedId(filteredMatchOptions[0].id);
+    }
+  }, [filteredMatchOptions, selectedId]);
+
+  const hasMatchSearch = matchSearch.trim().length > 0;
+  const selected =
+    filteredMatchOptions.find((m) => m.id === selectedId) ??
+    filteredMatchOptions[0] ??
+    (hasMatchSearch ? undefined : matchOptions.find((m) => m.id === selectedId)) ??
+    (hasMatchSearch ? undefined : matchOptions[0]);
 
   const patchSelectedMatch = (patch: Partial<SbMatchListItem>) => {
     const apply = (rows: SbMatchListItem[]) =>
@@ -129,8 +166,6 @@ export function AdminScoreboardMatchCenterPage() {
       toast.error(formatAdminScoreboardError(e));
     }
   };
-
-  const matchOptions = [...new Map([...live, ...all].map((m) => [m.id, m])).values()];
 
   const matchStatusClass = (status: string) => {
     if (status === "live") return "admin-sb-status--live";
@@ -180,22 +215,37 @@ export function AdminScoreboardMatchCenterPage() {
           {matchesLoading ? (
             <span className="admin-sb-skeleton admin-sb-skeleton--bar" aria-busy="true" />
           ) : (
-            <select
-              value={selected?.id ?? ""}
-              onChange={(e) => setSelectedId(e.target.value)}
-              aria-label="Select match"
-              disabled={matchOptions.length === 0}
-            >
-              {matchOptions.length === 0 ? (
-                <option value="">No matches available</option>
-              ) : (
-                matchOptions.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.homeTeam.name} vs {m.awayTeam.name} ({m.status})
-                  </option>
-                ))
-              )}
-            </select>
+            <>
+              <input
+                type="search"
+                value={matchSearch}
+                onChange={(e) => setMatchSearch(e.target.value)}
+                placeholder="Search matches"
+                aria-label="Search matches"
+              />
+              <select
+                value={
+                  filteredMatchOptions.some((m) => m.id === selected?.id)
+                    ? (selected?.id ?? "")
+                    : ""
+                }
+                onChange={(e) => setSelectedId(e.target.value)}
+                aria-label="Select match"
+                disabled={matchOptions.length === 0 || filteredMatchOptions.length === 0}
+              >
+                {matchOptions.length === 0 ? (
+                  <option value="">No matches available</option>
+                ) : filteredMatchOptions.length === 0 ? (
+                  <option value="">No matching matches</option>
+                ) : (
+                  filteredMatchOptions.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.homeTeam.name} vs {m.awayTeam.name} ({m.status})
+                    </option>
+                  ))
+                )}
+              </select>
+            </>
           )}
         </div>
       </div>
