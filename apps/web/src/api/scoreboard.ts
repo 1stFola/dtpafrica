@@ -130,6 +130,7 @@ export type SbMatchListItem = {
     leg?: "first_leg" | "second_leg";
     penaltyShootout?: { home: number; away: number; winner: "home" | "away" };
     regulationScore?: { home: number; away: number };
+    goalScorers?: string | null;
   } | null;
   stats: SbMatchStats | null;
   homeTeam: SbTeamRef;

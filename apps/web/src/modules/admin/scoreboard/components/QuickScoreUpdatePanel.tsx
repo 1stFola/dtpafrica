@@ -29,6 +29,7 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
   const [penaltyAway, setPenaltyAway] = useState(
     match.meta?.penaltyShootout ? String(match.meta.penaltyShootout.away) : ""
   );
+  const [goalScorers, setGoalScorers] = useState(match.meta?.goalScorers ?? "");
   const [showPenalties, setShowPenalties] = useState(
     Boolean(match.meta?.penaltyShootout) || isKnockoutStage(match.stageKey)
   );
@@ -45,6 +46,7 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
     setPenaltyAway(
       match.meta?.penaltyShootout ? String(match.meta.penaltyShootout.away) : ""
     );
+    setGoalScorers(match.meta?.goalScorers ?? "");
     setShowPenalties(Boolean(match.meta?.penaltyShootout) || knockout);
     setEditing(false);
   }, [match.id, match.homeScore, match.awayScore, match.meta, knockout]);
@@ -58,6 +60,7 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
     setPenaltyAway(
       match.meta?.penaltyShootout ? String(match.meta.penaltyShootout.away) : ""
     );
+    setGoalScorers(match.meta?.goalScorers ?? "");
     setEditing(false);
   };
 
@@ -85,6 +88,8 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
       awayScore: away,
       status: "finished",
     };
+    const scorerText = goalScorers.trim();
+    body.goalScorers = scorerText;
 
     const penHomeTrim = penaltyHome.trim();
     const penAwayTrim = penaltyAway.trim();
@@ -114,7 +119,12 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
       if (res.penaltyShootout) {
         meta.penaltyShootout = res.penaltyShootout;
         meta.regulationScore = { home: res.homeScore, away: res.awayScore };
+      } else {
+        delete meta.penaltyShootout;
+        delete meta.regulationScore;
       }
+      if (res.goalScorers) meta.goalScorers = res.goalScorers;
+      else delete meta.goalScorers;
       onSaved({
         homeScore: res.homeScore,
         awayScore: res.awayScore,
@@ -173,6 +183,12 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
               <dd>{penaltyLabel}</dd>
             </div>
           ) : null}
+          {match.meta?.goalScorers ? (
+            <div>
+              <dt>Goal scorers</dt>
+              <dd>{match.meta.goalScorers}</dd>
+            </div>
+          ) : null}
         </dl>
       ) : (
         <form
@@ -213,6 +229,17 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
               />
             </label>
           </div>
+
+          <label className="admin-sb-score-update__scorers">
+            <span>Goal scorer names</span>
+            <textarea
+              value={goalScorers}
+              onChange={(e) => setGoalScorers(e.target.value)}
+              rows={3}
+              maxLength={1500}
+              placeholder={`${match.homeTeam.name}: Name 12', Name 88'\n${match.awayTeam.name}: Name 45'`}
+            />
+          </label>
 
           {(knockout || showPenalties) && (
             <div className="admin-sb-score-update__penalties">

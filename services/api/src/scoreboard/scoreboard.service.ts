@@ -1287,8 +1287,21 @@ export class ScoreboardService {
 
     const existingMeta = (match.meta ?? {}) as Record<string, unknown>;
     const meta: Record<string, unknown> = { ...existingMeta };
+    let goalScorers =
+      typeof meta.goalScorers === "string" ? meta.goalScorers : null;
+    if (dto.goalScorers !== undefined) {
+      const nextGoalScorers = dto.goalScorers.trim();
+      if (nextGoalScorers) {
+        meta.goalScorers = nextGoalScorers;
+        goalScorers = nextGoalScorers;
+      } else {
+        delete meta.goalScorers;
+        goalScorers = null;
+      }
+    }
 
     let penaltyShootout: { home: number; away: number; winner: "home" | "away" } | null =
+      (meta.penaltyShootout as { home: number; away: number; winner: "home" | "away" } | undefined) ??
       null;
 
     if (hasPenaltyHome && hasPenaltyAway) {
@@ -1301,6 +1314,10 @@ export class ScoreboardService {
       penaltyShootout = { home, away, winner };
       meta.penaltyShootout = penaltyShootout;
       meta.regulationScore = { home: dto.homeScore, away: dto.awayScore };
+    } else {
+      delete meta.penaltyShootout;
+      delete meta.regulationScore;
+      penaltyShootout = null;
     }
 
     const updated = await this.prisma.sbMatch.update({
@@ -1330,6 +1347,7 @@ export class ScoreboardService {
       homeScore: updated.homeScore,
       awayScore: updated.awayScore,
       penaltyShootout,
+      goalScorers,
       standingsRefresh: newStatus === "finished" ? ("scheduled" as const) : null,
       match: presentScoreboardPayload(updated),
     };
