@@ -345,6 +345,28 @@ function partitionSquad(team: SbTeamWithSquad, roster?: SbMatchdayRoster): Squad
   };
 }
 
+function hasPublishedSquadRows(
+  squad?: { starting: SbSquadPlayer[]; bench: SbSquadPlayer[] } | null
+) {
+  return Boolean(squad && (squad.starting.length > 0 || squad.bench.length > 0));
+}
+
+function resolveDisplaySquadGroups(
+  team: SbTeamWithSquad,
+  roster: SbMatchdayRoster | undefined,
+  publishedSquad: { starting: SbSquadPlayer[]; bench: SbSquadPlayer[] } | null | undefined,
+  hasMatchSquadsResponse: boolean
+): SquadGroups {
+  if (hasMatchSquadsResponse && hasPublishedSquadRows(publishedSquad)) {
+    return {
+      starters: publishedSquad?.starting ?? [],
+      subs: publishedSquad?.bench ?? [],
+      grouped: true,
+    };
+  }
+  return partitionSquad(team, roster);
+}
+
 function SquadPlayerCard({
   row,
   club,
@@ -548,15 +570,9 @@ export function MatchSquadPanel({
   side: "home" | "away";
 }) {
   const fromPublished = publishedSquad !== undefined;
-  const groups = fromPublished
-    ? {
-        starters: publishedSquad?.starting ?? [],
-        subs: publishedSquad?.bench ?? [],
-        grouped: true,
-      }
-    : partitionSquad(team, matchdayRoster);
+  const groups = resolveDisplaySquadGroups(team, matchdayRoster, publishedSquad, fromPublished);
   const { starters, subs, grouped } = groups;
-  const hasPublishedPlayers = starters.length > 0 || subs.length > 0;
+  const hasPlayers = starters.length > 0 || subs.length > 0;
 
   return (
     <article className={`sbm-squad-panel sbm-squad-panel--${side}`}>
@@ -572,7 +588,7 @@ export function MatchSquadPanel({
         </div>
       </header>
 
-      {(fromPublished && !hasPublishedPlayers) || (!fromPublished && team.squad.length === 0) ? (
+      {!hasPlayers ? (
         <div className="sbm-squad-empty">
           <p className="sbm-squad-empty__title">No squad published</p>
           <p>Match-day roster for this team will appear here once confirmed.</p>
@@ -626,12 +642,18 @@ export function MatchSquadsGrid({
   const rosters = stats?.matchdayRosters;
   const homeSquad = matchSquads?.teams?.[homeTeam.id] ?? null;
   const awaySquad = matchSquads?.teams?.[awayTeam.id] ?? null;
-  const homeGroups = matchSquads
-    ? { starters: homeSquad?.starting ?? [], subs: homeSquad?.bench ?? [], grouped: true }
-    : partitionSquad(homeTeam, rosters?.[homeTeam.id]);
-  const awayGroups = matchSquads
-    ? { starters: awaySquad?.starting ?? [], subs: awaySquad?.bench ?? [], grouped: true }
-    : partitionSquad(awayTeam, rosters?.[awayTeam.id]);
+  const homeGroups = resolveDisplaySquadGroups(
+    homeTeam,
+    rosters?.[homeTeam.id],
+    homeSquad,
+    Boolean(matchSquads)
+  );
+  const awayGroups = resolveDisplaySquadGroups(
+    awayTeam,
+    rosters?.[awayTeam.id],
+    awaySquad,
+    Boolean(matchSquads)
+  );
 
   return (
     <div className="sbm-squad-shell">
