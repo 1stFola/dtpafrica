@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsIn, IsInt, IsOptional, Min } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
 
 export class PatchMatchScoreDto {
   @Type(() => Number)
@@ -28,4 +28,9 @@ export class PatchMatchScoreDto {
   @IsInt()
   @Min(0)
   penaltyAway?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1500)
+  goalScorers?: string;
 }

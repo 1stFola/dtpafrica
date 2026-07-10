@@ -222,6 +222,7 @@ export const adminScoreboardApi = {
       status?: "finished";
       penaltyHome?: number;
       penaltyAway?: number;
+      goalScorers?: string;
     }
   ) =>
     sbFetch<{
@@ -231,6 +232,7 @@ export const adminScoreboardApi = {
       homeScore: number;
       awayScore: number;
       penaltyShootout: { home: number; away: number; winner: "home" | "away" } | null;
+      goalScorers: string | null;
       standingsRefresh: "scheduled" | null;
     }>(`/admin/scoreboard/matches/${matchId}/score`, {
       method: "PATCH",

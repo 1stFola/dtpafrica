@@ -428,6 +428,9 @@ export function MatchCenterPage() {
         {match.roundLabel && <span className="sbm-pill">{match.roundLabel}</span>}
         {match.venue && <span className="sbm-pill">{match.venue}</span>}
         {kickoff && hasScore && <span className="sbm-pill">{kickoff}</span>}
+        {match.meta?.goalScorers && (
+          <span className="sbm-pill">Scorers: {match.meta.goalScorers}</span>
+        )}
       </div>
 
       <AdPlacement slotKey="matchCenterInline" />
