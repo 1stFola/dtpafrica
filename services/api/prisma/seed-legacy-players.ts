@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
+import { normalizePlayerAgeCategory } from "../src/players/age-category";
 import { slugifyPlayerName } from "../src/players/player-slug";
 import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
 import { LEGACY_PLAYER_ROWS, type LegacyPlayerSeedRow } from "./seed-legacy-players-data";
@@ -111,22 +112,7 @@ function buildBenchmarkMetadata(row: LegacyPlayerSeedRow): Prisma.InputJsonValue
 }
 
 function computeAgeGroup(dateOfBirth: string, age: number | null): string | null {
-  if (age != null && age > 0) {
-    if (age <= 15) return "U15";
-    if (age <= 17) return "U17";
-    if (age <= 18) return "U18";
-    if (age <= 21) return "U21";
-    return "Senior";
-  }
-  const year = Number(dateOfBirth.slice(0, 4));
-  if (!year) return null;
-  const currentYear = new Date().getFullYear();
-  const computed = currentYear - year;
-  if (computed <= 15) return "U15";
-  if (computed <= 17) return "U17";
-  if (computed <= 18) return "U18";
-  if (computed <= 21) return "U21";
-  return "Senior";
+  return normalizePlayerAgeCategory({ age, dateOfBirth });
 }
 
 function normalizeLegacyPrimaryPosition(row: LegacyPlayerSeedRow): string {

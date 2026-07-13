@@ -13,8 +13,12 @@
     "prisma/seed-legacy-players.ts",
     "prisma/seed-legacy-players-data.ts",
     "prisma/seed-ex-internationals-cup-2026.ts",
+    "prisma/seed-goalkeeper-profiles.ts",
     "prisma/seed-jagaban-cup-2026.ts",
-    "prisma/seed-jagaban-media-data.ts"
+    "prisma/seed-jagaban-media-data.ts",
+    "prisma/sync-player-age-categories.ts",
+    "prisma/sync-scoreboard-event-player-links.ts",
+    "prisma/sync-scoreboard-timeline-player-profiles.ts"
   ],
   "exclude": ["node_modules", "dist", "prisma/seed.ts"]
 }

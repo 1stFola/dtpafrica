@@ -14,6 +14,7 @@ import {
 } from "@dtp/engines";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizePlayerAgeCategory } from "../players/age-category";
 import { resolveUniquePlayerSlug } from "../players/player-slug";
 import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import {
@@ -468,18 +469,7 @@ export class AdminCalibrationService {
       dob != null
         ? new Date().getFullYear() - dob.getFullYear()
         : undefined;
-    const ageGroup =
-      age == null
-        ? undefined
-        : age <= 15
-          ? "U15"
-          : age <= 17
-            ? "U17"
-            : age <= 20
-              ? "U20"
-              : age <= 23
-                ? "U23"
-                : "Senior";
+    const ageGroup = normalizePlayerAgeCategory({ age, dateOfBirth: dob });
 
     const slug = await resolveUniquePlayerSlug(
       this.prisma,

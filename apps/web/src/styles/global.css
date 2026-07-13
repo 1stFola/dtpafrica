@@ -4849,6 +4849,27 @@ a {
   font-weight: 700;
 }
 
+.goalkeeper-profile__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.goalkeeper-profile__summary p {
+  color: var(--color-muted);
+  line-height: 1.65;
+  margin: 0 0 1rem;
+}
+
+.goalkeeper-profile__facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.goalkeeper-profile__events li {
+  grid-template-columns: auto minmax(8rem, auto) 1fr;
+}
+
 .profile-list {
   margin: 0;
   padding-left: 1.1rem;
@@ -6765,6 +6786,11 @@ a {
 
 @media (max-width: 540px) {
   .profile-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .goalkeeper-profile__grid,
+  .goalkeeper-profile__facts {
     grid-template-columns: 1fr;
   }
 }

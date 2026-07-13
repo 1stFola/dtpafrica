@@ -10,6 +10,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { normalizePlayerAgeCategory } from "../players/age-category";
 import { PrismaService } from "../prisma/prisma.service";
 import { GenerateValuationDto } from "./dto/generate-valuation.dto";
 
@@ -128,6 +129,8 @@ export class MvceService {
             positionPrimary: true,
             playerPhotoUrl: true,
             age: true,
+            ageGroup: true,
+            dateOfBirth: true,
             nationality: true,
           },
         },
@@ -212,13 +215,20 @@ export class MvceService {
       positionPrimary: string;
       playerPhotoUrl: string | null;
       age?: number | null;
+      ageGroup?: string | null;
+      dateOfBirth?: Date | null;
       nationality?: string | null;
     };
   }) {
+    const { age, ageGroup, dateOfBirth, ...player } = row.player;
+
     return {
       runId: row.id,
       createdAt: row.createdAt,
-      player: row.player,
+      player: {
+        ...player,
+        ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
+      },
       inputs: row.inputs,
       result: {
         baseScore: row.baseScore,

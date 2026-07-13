@@ -2,8 +2,11 @@ import type { PrismaClient } from "@prisma/client";
 import type { SeedOptions } from "../src/seed/seed-options";
 import { backfillMissingMatchSlugs } from "../src/scoreboard/match-slug";
 import { seedExInternationalsCup2026 } from "./seed-ex-internationals-cup-2026";
+import { seedGoalkeeperProfiles } from "./seed-goalkeeper-profiles";
 import { seedJagabanCup2026 } from "./seed-jagaban-cup-2026";
 import { seedLagosQueensCup2026 } from "./seed-lagos-queens-cup-2026";
+import { syncScoreboardEventPlayerLinks } from "./sync-scoreboard-event-player-links";
+import { syncScoreboardTimelinePlayerProfiles } from "./sync-scoreboard-timeline-player-profiles";
 
 /** ScoreBoard seed: Jagaban Cup 2026, Ex Internationals Cup 2026, Lagos Queens Cup 2026. */
 export async function seedScoreboard(
@@ -19,6 +22,12 @@ export async function seedScoreboard(
   await seedJagabanCup2026(prisma, options);
   await seedExInternationalsCup2026(prisma, options);
   await seedLagosQueensCup2026(prisma, options);
+  const goalkeeperProfiles = await seedGoalkeeperProfiles(prisma);
+  console.log("Seeded goalkeeper profiles:", goalkeeperProfiles);
+  const timelineProfiles = await syncScoreboardTimelinePlayerProfiles(prisma);
+  console.log("Synced ScoreBoard timeline player profiles:", timelineProfiles);
+  const linkedEvents = await syncScoreboardEventPlayerLinks(prisma);
+  console.log("Synced ScoreBoard event player links:", linkedEvents);
 
   const postBackfill = await backfillMissingMatchSlugs(prisma);
   if (postBackfill > 0) {

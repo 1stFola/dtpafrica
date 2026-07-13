@@ -10,6 +10,8 @@ import {
 import { isFullSeed, type SeedOptions } from "./seed-options";
 import { legacyMatchMetricsToPlayerMatchRecord } from "../sip/legacy-match-metrics-mapper";
 import type { LegacyMatchMetricsDto } from "../admin/dto/calibration-player-info.dto";
+import { normalizePlayerAgeCategory } from "../players/age-category";
+import { syncPlayerAgeCategories } from "../../prisma/sync-player-age-categories";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
@@ -256,7 +258,7 @@ export async function runDatabaseSeed(
           benchmarkMetadata: SEED_BENCHMARK_METADATA,
           mediaItems: SEED_MEDIA_ITEMS,
           scoutingSummary:
-            "ALLI O. SANNI profiles as a U18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
+            "ALLI O. SANNI profiles as an Under 18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
           ...(mode === "full"
             ? {
                 isFeatured: true,
@@ -282,7 +284,7 @@ export async function runDatabaseSeed(
             city: "Lagos",
             state: "Lagos",
             age: 17,
-            ageGroup: "U18",
+            ageGroup: normalizePlayerAgeCategory({ age: 17 }),
             dominantFoot: "Right",
             isFeatured: true,
             isPublic: true,
@@ -301,7 +303,7 @@ export async function runDatabaseSeed(
             benchmarkMetadata: SEED_BENCHMARK_METADATA,
             mediaItems: SEED_MEDIA_ITEMS,
             scoutingSummary:
-              "ALLI O. SANNI profiles as a U18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
+              "ALLI O. SANNI profiles as an Under 18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
           },
         });
         seedPlayerId = player.id;
@@ -802,6 +804,15 @@ Parents and guardians can register minors with consent workflows built for youth
           "ismael-salisu",
           ISMAEL_SALISU_CALIBRATION_METRICS
         );
+      },
+    },
+    {
+      name: "player-age-categories",
+      run: async () => {
+        const updated = await syncPlayerAgeCategories(prisma);
+        if (updated > 0) {
+          console.log("Synced player age categories:", updated);
+        }
       },
     },
   ];
