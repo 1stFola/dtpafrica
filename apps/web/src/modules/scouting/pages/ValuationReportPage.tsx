@@ -60,7 +60,7 @@ export function ValuationReportPage() {
           <h2>{player.displayName}</h2>
           <p className="muted">
             {player.positionPrimary}
-            {player.age != null ? ` · ${player.age} yrs` : ""}
+            {player.ageGroup ? ` · ${player.ageGroup}` : ""}
             {player.nationality ? ` · ${player.nationality}` : ""}
           </p>
           <p className="muted">

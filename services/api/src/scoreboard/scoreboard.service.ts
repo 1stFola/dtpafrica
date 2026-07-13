@@ -11,7 +11,7 @@ import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
 import type { PatchMatchScoreDto } from "../admin/dto/patch-match-score.dto";
-import { computeGroupStandings, normalizeClubName } from "@dtp/engines";
+import { computeGroupStandings, normalizeClubName, playerLookupKey } from "@dtp/engines";
 import {
   buildSkeletonProfile,
   presentProfileStats,
@@ -128,6 +128,30 @@ const TEAM_MATCH_LIST_INCLUDE = {
 
 const LIVE_STATUSES = ["live", "halftime"];
 const SCOREBOARD_EXTERNAL_REF_PREFIX = "scoreboard:";
+
+type ScoreboardEventPlayerResolver = {
+  resolvePrimary: (
+    label: string | null | undefined,
+    teamId: string | null | undefined
+  ) => string | null;
+  resolveAssist: (
+    label: string | null | undefined,
+    teamId: string | null | undefined
+  ) => string | null;
+  resolveAny: (label: string | null | undefined) => string | null;
+};
+
+type ScoreboardRosterAliasRow = {
+  teamId: string;
+  playerId: string | null;
+  displayName: string;
+  player?: {
+    id: string;
+    displayName: string;
+    normalizedName: string | null;
+    slug: string;
+  } | null;
+};
 const EVENT_TYPES = new Set([
   "goal",
   "own_goal",
@@ -156,6 +180,118 @@ export class ScoreboardService {
     @Inject(CompetitionEngineService)
     private readonly competitionEngine: CompetitionEngineService
   ) {}
+
+  private async buildMatchEventPlayerResolver(
+    matchId: string,
+    teamIds: string[],
+    prisma: Pick<PrismaService, "sbTeamSquad" | "sbMatchSquadPlayer"> = this.prisma
+  ): Promise<ScoreboardEventPlayerResolver> {
+    const teamSquadRows = await prisma.sbTeamSquad.findMany({
+      where: { teamId: { in: teamIds }, playerId: { not: null } },
+      include: {
+        player: {
+          select: {
+            id: true,
+            displayName: true,
+            normalizedName: true,
+            slug: true,
+          },
+        },
+      },
+    });
+    const matchSquadRows = await prisma.sbMatchSquadPlayer.findMany({
+      where: { matchId, teamId: { in: teamIds }, playerId: { not: null } },
+      include: {
+        player: {
+          select: {
+            id: true,
+            displayName: true,
+            normalizedName: true,
+            slug: true,
+          },
+        },
+      },
+    });
+
+    const aliasesByTeam = new Map<string, Map<string, Set<string>>>();
+    const aliasesGlobal = new Map<string, Set<string>>();
+
+    const addAlias = (
+      index: Map<string, Set<string>>,
+      rawName: string | null | undefined,
+      playerId: string
+    ) => {
+      const key = playerLookupKey(rawName ?? "");
+      if (!key) return;
+      const existing = index.get(key) ?? new Set<string>();
+      existing.add(playerId);
+      index.set(key, existing);
+    };
+
+    const addRow = (row: ScoreboardRosterAliasRow) => {
+      const playerId = row.playerId ?? row.player?.id ?? null;
+      if (!playerId) return;
+
+      const teamIndex = aliasesByTeam.get(row.teamId) ?? new Map<string, Set<string>>();
+      aliasesByTeam.set(row.teamId, teamIndex);
+
+      const aliases = [
+        row.displayName,
+        row.player?.displayName,
+        row.player?.normalizedName,
+        row.player?.slug?.replace(/-/g, " "),
+      ];
+
+      for (const alias of aliases) {
+        addAlias(teamIndex, alias, playerId);
+        addAlias(aliasesGlobal, alias, playerId);
+      }
+
+      const displayParts = row.displayName.trim().split(/\s+/);
+      if (displayParts.length === 2) {
+        const reversed = `${displayParts[1]} ${displayParts[0]}`;
+        addAlias(teamIndex, reversed, playerId);
+        addAlias(aliasesGlobal, reversed, playerId);
+      }
+    };
+
+    for (const row of teamSquadRows) addRow(row);
+    for (const row of matchSquadRows) {
+      addRow({
+        teamId: row.teamId,
+        playerId: row.playerId,
+        displayName: row.playerName,
+        player: row.player,
+      });
+    }
+
+    const resolveFromIndex = (
+      index: Map<string, Set<string>> | undefined,
+      label: string | null | undefined
+    ) => {
+      const key = playerLookupKey(label ?? "");
+      if (!key || !index) return null;
+      const matches = index.get(key);
+      if (!matches || matches.size !== 1) return null;
+      return Array.from(matches)[0] ?? null;
+    };
+
+    const resolveWithTeamPreference = (
+      label: string | null | undefined,
+      teamId: string | null | undefined
+    ) => {
+      return (
+        resolveFromIndex(teamId ? aliasesByTeam.get(teamId) : undefined, label) ??
+        (!teamId ? resolveFromIndex(aliasesGlobal, label) : null)
+      );
+    };
+
+    return {
+      resolvePrimary: resolveWithTeamPreference,
+      resolveAssist: resolveWithTeamPreference,
+      resolveAny: (label) => resolveFromIndex(aliasesGlobal, label),
+    };
+  }
 
   async competitions() {
     const rows = await this.prisma.sbCompetition.findMany({
@@ -1195,6 +1331,10 @@ export class ScoreboardService {
     const derivedStats = deriveMatchStatsFromCsvEvents(parsed.events, {
       narrative: parsed.narrative,
     });
+    const playerResolver = await this.buildMatchEventPlayerResolver(matchId, [
+      match.homeTeamId,
+      match.awayTeamId,
+    ]);
 
     const createdEvents = await this.prisma.$transaction(async (tx) => {
       await tx.sbMatchEvent.deleteMany({ where: { matchId } });
@@ -1206,17 +1346,25 @@ export class ScoreboardService {
             ? match.homeTeamId
             : match.awayTeamId
           : null;
+        const playerId = playerResolver.resolvePrimary(ev.playerLabel, teamId);
+        const assistPlayerId = playerResolver.resolveAssist(ev.assistLabel, teamId);
+        const secondaryPlayerId = playerResolver.resolveAny(ev.playerLabel2);
         const created = await tx.sbMatchEvent.create({
           data: {
             matchId,
             type: ev.type,
             minute: ev.minute,
             teamId,
+            playerId: playerId ?? undefined,
+            assistPlayerId: assistPlayerId ?? undefined,
             playerLabel2: ev.playerLabel2,
             playerLabel: ev.playerLabel,
             assistLabel: ev.assistLabel,
             detail: ev.detail,
-            metadata: (ev.metadata ?? { source: "csv-ingest" }) as Prisma.InputJsonValue,
+            metadata: {
+              ...(ev.metadata ?? { source: "csv-ingest" }),
+              ...(secondaryPlayerId ? { secondaryPlayerId } : {}),
+            } as Prisma.InputJsonValue,
           },
         });
         rows.push(created);

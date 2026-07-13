@@ -251,7 +251,7 @@ export function ComparePage() {
                   </p>
                   <dl className="scouting-compare__card-meta">
                     <div>
-                      <dt>Age</dt>
+                      <dt>Category</dt>
                       <dd>{resolvePlayerAge(player)}</dd>
                     </div>
                     <div>

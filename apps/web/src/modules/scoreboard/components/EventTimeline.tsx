@@ -82,6 +82,36 @@ const PAREN_SECONDARY_TYPES = new Set([
   "save",
 ]);
 
+const SAVE_DISPLAY_TYPES = new Set(["save"]);
+
+const EVENT_ICON_FALLBACKS: Record<string, string> = {
+  aerial_duel_won: "^",
+  dangerous_attack: "!",
+  dangerous_cross: "x",
+  dangerous_run: ">>",
+  dominance: "%",
+  game_management: "G",
+  goal_kick: "GK",
+  goal_line_clearance: "GL",
+  goal_penalty: "P",
+  goalkeeper_claim: "GC",
+  goalkeeper_command: "CMD",
+  goalkeeper_distribution: "GD",
+  goalkeeper_error: "GE",
+  goalkeeper_intervention: "GI",
+  header_missed: "H",
+  injury_substitution: "+/-",
+  medical_timeout: "+",
+  one_on_one: "1v1",
+  poor_delivery: "x",
+  possession_lost: "-",
+  recovery_tackle: "T",
+  restart_play: ">",
+  sustained_pressure: "!!",
+  tactical_substitution: "T/S",
+  volley_missed: "V",
+};
+
 const UNKNOWN_PLAYER_RE = /^unknown$/i;
 
 function isUnknownPlayer(name: string | null | undefined): boolean {
@@ -194,7 +224,10 @@ function resolveEventIcon(ev: SbMatchEvent): string {
   if (typeof flowKind === "string" && EVENT_ICONS[flowKind]) {
     return EVENT_ICONS[flowKind];
   }
-  return EVENT_ICONS[ev.type] ?? "•";
+  if (typeof flowKind === "string" && EVENT_ICON_FALLBACKS[flowKind]) {
+    return EVENT_ICON_FALLBACKS[flowKind];
+  }
+  return EVENT_ICONS[ev.type] ?? EVENT_ICON_FALLBACKS[ev.type] ?? "•";
 }
 
 function isNarrativeEvent(ev: SbMatchEvent): boolean {
@@ -215,6 +248,79 @@ function parentheticalPlayerName(
   return assistLabel ?? playerLabel;
 }
 
+function isSaveDisplayEvent(ev: SbMatchEvent, csvType: string): boolean {
+  return SAVE_DISPLAY_TYPES.has(csvType) || SAVE_DISPLAY_TYPES.has(ev.type);
+}
+
+function namesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+}
+
+function extractShooterFromSaveDetail(detail: string | null | undefined): string | null {
+  if (!detail) return null;
+  const match = detail.match(
+    /\bfrom\s+(.+?)(?:'s|\s+(?:low|high|driven|curling|point-blank|free-kick|freekick|shot|effort|attempt|strike|header)\b|[.,;:]|$)/i
+  );
+  const value = match?.[1]?.replace(/\s+/g, " ").trim();
+  return value || null;
+}
+
+type SaveDisplay = {
+  kickerLabel: string | null;
+  kickerSlug: string | null | undefined;
+  goalkeeperLabel: string | null;
+  goalkeeperSlug: string | null | undefined;
+  goalkeeperClub?: string;
+};
+
+function resolveSaveDisplay(
+  ev: SbMatchEvent,
+  playerLabel: string | null,
+  playerLabel2: string | null,
+  assistLabel: string | null,
+  club?: string
+): SaveDisplay | null {
+  const detailShooter = extractShooterFromSaveDetail(ev.detail);
+  let kickerLabel = detailShooter ?? playerLabel2 ?? assistLabel;
+  let goalkeeperLabel = playerLabel;
+  let kickerSlug: string | null | undefined = null;
+  let goalkeeperSlug: string | null | undefined = ev.player?.slug;
+
+  if (detailShooter) {
+    if (namesMatch(detailShooter, playerLabel)) {
+      kickerSlug = ev.player?.slug;
+      goalkeeperLabel = playerLabel2 ?? assistLabel;
+      goalkeeperSlug = null;
+    } else if (namesMatch(detailShooter, playerLabel2)) {
+      goalkeeperLabel = playerLabel ?? assistLabel;
+    } else if (namesMatch(detailShooter, assistLabel)) {
+      goalkeeperLabel = playerLabel ?? playerLabel2;
+    }
+  }
+
+  if (!kickerLabel && playerLabel && playerLabel2 && !namesMatch(playerLabel, playerLabel2)) {
+    kickerLabel = playerLabel2;
+  }
+
+  if (kickerLabel && namesMatch(kickerLabel, goalkeeperLabel)) {
+    const fallbackGoalkeeper = [playerLabel, assistLabel, playerLabel2].find(
+      (label) => label && !namesMatch(label, kickerLabel)
+    );
+    goalkeeperLabel = fallbackGoalkeeper ?? null;
+    goalkeeperSlug = namesMatch(goalkeeperLabel, playerLabel) ? ev.player?.slug : null;
+  }
+
+  if (!kickerLabel) return null;
+
+  return {
+    kickerLabel,
+    kickerSlug,
+    goalkeeperLabel,
+    goalkeeperSlug,
+    goalkeeperClub: club,
+  };
+}
+
 type ParsedEvent = {
   ev: SbMatchEvent;
   side: EventSide;
@@ -228,6 +334,7 @@ type ParsedEvent = {
   showDetail: boolean;
   showPrimary: boolean;
   showAssist: boolean;
+  saveDisplay: SaveDisplay | null;
   club?: string;
 };
 
@@ -242,7 +349,10 @@ function parseEvent(
   const playerLabel = visiblePlayerLabel(ev.player?.displayName ?? ev.playerLabel);
   const playerLabel2 = visiblePlayerLabel(ev.playerLabel2);
   const assistLabel = visiblePlayerLabel(ev.assistPlayer?.displayName ?? ev.assistLabel);
-  const parenFormat = usesParenSecondaryFormat(ev);
+  const saveDisplay = isSaveDisplayEvent(ev, csvType)
+    ? resolveSaveDisplay(ev, playerLabel, playerLabel2, assistLabel, club)
+    : null;
+  const parenFormat = !saveDisplay && usesParenSecondaryFormat(ev);
   const parenName = parenFormat ? parentheticalPlayerName(playerLabel, assistLabel) : null;
   const baseLabel = resolveEventLabel(ev);
   const typeLabel = parenName ? `${baseLabel} (${parenName})` : baseLabel;
@@ -264,6 +374,7 @@ function parseEvent(
     showDetail,
     showPrimary,
     showAssist,
+    saveDisplay,
     club,
   };
 }
@@ -277,8 +388,17 @@ function EventCard({
   competition?: string;
   align: "home" | "away";
 }) {
-  const { ev, typeLabel, showDetail, showPrimary, showAssist, playerLabel, assistLabel, club } =
-    parsed;
+  const {
+    ev,
+    typeLabel,
+    showDetail,
+    showPrimary,
+    showAssist,
+    playerLabel,
+    assistLabel,
+    saveDisplay,
+    club,
+  } = parsed;
 
   return (
     <div className={`sbm-event__card sbm-event__card--${align}`}>
@@ -286,8 +406,29 @@ function EventCard({
         <span className="sbm-event__type">{typeLabel}</span>
         {showDetail && <span className="sbm-event__detail">{ev.detail}</span>}
       </div>
-      {(showPrimary || showAssist || (ev.highlights?.length ?? 0) > 0) && (
+      {(saveDisplay || showPrimary || showAssist || (ev.highlights?.length ?? 0) > 0) && (
         <div className="sbm-event__body">
+          {saveDisplay?.kickerLabel && (
+            <>
+              <PlayerLink
+                slug={saveDisplay.kickerSlug}
+                label={saveDisplay.kickerLabel}
+                club={club}
+                competition={competition}
+              />
+              {saveDisplay.goalkeeperLabel && (
+                <span className="sbm-event__assist">
+                  Saved by{" "}
+                  <PlayerLink
+                    slug={saveDisplay.goalkeeperSlug}
+                    label={saveDisplay.goalkeeperLabel}
+                    club={saveDisplay.goalkeeperClub}
+                    competition={competition}
+                  />
+                </span>
+              )}
+            </>
+          )}
           {showPrimary && playerLabel && (
             <PlayerLink
               slug={ev.player?.slug}
@@ -393,7 +534,7 @@ function TeamTimelineRow({
   const { ev, side, csvType, playerLabel2 } = parsed;
   const icon = resolveEventIcon(ev);
   const opp = oppositeSide(side);
-  const player2Side = opp && playerLabel2 ? opp : null;
+  const player2Side = opp && playerLabel2 && !parsed.saveDisplay ? opp : null;
 
   return (
     <li

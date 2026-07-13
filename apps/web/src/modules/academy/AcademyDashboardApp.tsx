@@ -460,7 +460,7 @@ function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
           <thead>
             <tr>
               <th>Player</th>
-              <th>Age</th>
+              <th>Category</th>
               <th>Foot</th>
               <th>Status</th>
               <th>Development</th>
@@ -481,7 +481,7 @@ function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
                     {player.positionSecondary ? ` / ${player.positionSecondary}` : ""}
                   </small>
                 </td>
-                <td>{player.ageGroup ?? player.age ?? "Pending"}</td>
+                <td>{player.ageGroup ?? "Pending"}</td>
                 <td>{player.dominantFoot ?? "Pending"}</td>
                 <td>
                   <span className="academy-pill">{player.status}</span>

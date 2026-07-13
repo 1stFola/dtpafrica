@@ -43,7 +43,31 @@ const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
   red_card: "Red card",
   substitution: "Substitution",
   injury: "Injury",
+  save: "Save",
+  double_save: "Double save",
+  penalty_saved: "Penalty saved",
+  goalkeeper_claim: "Claim",
+  goalkeeper_command: "Command",
+  goalkeeper_distribution: "Distribution",
+  goalkeeper_error: "Goalkeeper error",
+  goalkeeper_intervention: "Intervention",
+  goal_line_clearance: "Goal-line clearance",
+  clearance: "Clearance",
 };
+
+const GOALKEEPER_SCOREBOARD_EVENT_TYPES = new Set([
+  "save",
+  "double_save",
+  "penalty_saved",
+  "goalkeeper_claim",
+  "goalkeeper_command",
+  "goalkeeper_distribution",
+  "goalkeeper_intervention",
+  "goal_line_clearance",
+  "clearance",
+]);
+
+const GOALKEEPER_NEGATIVE_EVENT_TYPES = new Set(["goalkeeper_error", "red_card"]);
 
 function humanizeScoreboardEventType(type: string): string {
   return (
@@ -175,11 +199,7 @@ function buildBioFacts(
   const facts: BioFact[] = [];
   if (player.club) facts.push({ label: "Club", value: player.club });
   if (player.nationality) facts.push({ label: "Nationality", value: player.nationality });
-  if (player.age != null) {
-    facts.push({ label: "Age", value: String(player.age) });
-  } else if (player.ageGroup) {
-    facts.push({ label: "Squad", value: player.ageGroup });
-  }
+  if (player.ageGroup) facts.push({ label: "Category", value: player.ageGroup });
   if (player.heightCm != null && player.heightCm >= 100 && player.heightCm <= 230) {
     facts.push({ label: "Height", value: `${player.heightCm} cm` });
   }
@@ -219,18 +239,38 @@ function buildBioFacts(
 function buildCareerStatBoxes(
   player: PublicPlayerProfile,
   minutesPlayed: number | null,
-  isGk: boolean
+  isGk: boolean,
+  history: PublicPlayerProfile["scoreboardHistory"]
 ): CareerStatBox[] {
+  if (isGk) {
+    return [
+      { label: "Appearances", value: String(player.stats?.appearances ?? 0) },
+      { label: "Clean sheets", value: String(player.stats?.cleanSheets ?? 0) },
+      { label: "Keeper actions", value: String(countGoalkeeperEvidenceEvents(history)) },
+      { label: "Minutes played", value: formatMinutesPlayed(minutesPlayed) },
+    ];
+  }
+
   const boxes: CareerStatBox[] = [
     { label: "Appearances", value: String(player.stats?.appearances ?? 0) },
     { label: "Goals", value: String(player.stats?.goals ?? 0) },
     { label: "Assists", value: String(player.stats?.assists ?? 0) },
     { label: "Minutes played", value: formatMinutesPlayed(minutesPlayed) },
   ];
-  if (isGk) {
-    boxes.push({ label: "Clean sheets", value: String(player.stats?.cleanSheets ?? 0) });
-  }
   return boxes;
+}
+
+function countEventsByType(
+  history: PublicPlayerProfile["scoreboardHistory"],
+  types: Set<string>
+): number {
+  return history?.events.filter((event) => types.has(event.type)).length ?? 0;
+}
+
+function countGoalkeeperEvidenceEvents(
+  history: PublicPlayerProfile["scoreboardHistory"]
+): number {
+  return countEventsByType(history, GOALKEEPER_SCOREBOARD_EVENT_TYPES);
 }
 
 function formatDate(value?: string | null) {
@@ -414,11 +454,11 @@ export function PlayerProfilePage() {
   const scoreboard = player.scoreboardHistory;
   const minutesPlayed = resolveProfileMinutes(player);
   const isGk = isGkProfile(player);
-  const careerStatBoxes = buildCareerStatBoxes(player, minutesPlayed, isGk);
+  const careerStatBoxes = buildCareerStatBoxes(player, minutesPlayed, isGk, scoreboard);
   const positionLabel = resolvePositionFullLabel(player.positionPrimary.trim(), null);
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
-    player.ageGroup ? `${player.ageGroup} pathway candidate` : "Open age-band profile",
+    player.ageGroup ? `${player.ageGroup} pathway candidate` : "Open category profile",
     tactical ? "Tactical scores available" : "Awaiting tactical recalculation",
     scoreboard?.aggregates.goals
       ? `${scoreboard.aggregates.goals} ScoreBoard goal${scoreboard.aggregates.goals === 1 ? "" : "s"}`
@@ -566,6 +606,7 @@ export function PlayerProfilePage() {
       {activeTab === "scoreboard" && (
         <>
           <CareerStatBoxesSection stats={careerStatBoxes} />
+          {isGk && <GoalkeeperScoreboardProfileSection history={scoreboard} />}
           <ScoreboardHistorySection history={scoreboard} />
         </>
       )}
@@ -775,6 +816,105 @@ function CareerStatBoxesSection({ stats }: { stats: CareerStatBox[] }) {
             <strong className="player-profile-stat-box__value">{stat.value}</strong>
           </article>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function GoalkeeperScoreboardProfileSection({
+  history,
+}: {
+  history: PublicPlayerProfile["scoreboardHistory"];
+}) {
+  const events = history?.events ?? [];
+  const keeperEvents = events.filter((event) =>
+    GOALKEEPER_SCOREBOARD_EVENT_TYPES.has(event.type)
+  );
+  const negativeEvents = events.filter((event) =>
+    GOALKEEPER_NEGATIVE_EVENT_TYPES.has(event.type)
+  );
+  const saves = events.filter((event) =>
+    event.type === "save" ||
+    event.type === "double_save" ||
+    event.type === "penalty_saved"
+  ).length;
+  const claimsAndCommand = events.filter((event) =>
+    event.type === "goalkeeper_claim" || event.type === "goalkeeper_command"
+  ).length;
+  const distribution = events.filter((event) => event.type === "goalkeeper_distribution").length;
+  const interventions = events.filter((event) =>
+    event.type === "goalkeeper_intervention" ||
+    event.type === "goal_line_clearance" ||
+    event.type === "clearance"
+  ).length;
+  const recentKeeperEvents = [...keeperEvents, ...negativeEvents]
+    .sort((a, b) => {
+      const aDate = a.match.kickoffAt ? new Date(a.match.kickoffAt).getTime() : 0;
+      const bDate = b.match.kickoffAt ? new Date(b.match.kickoffAt).getTime() : 0;
+      return bDate - aDate || b.minute - a.minute;
+    })
+    .slice(0, 8);
+
+  return (
+    <section className="profile-section goalkeeper-profile">
+      <div className="profile-section-heading">
+        <div>
+          <span className="profile-section__eyebrow">Goalkeeper profile</span>
+          <h2>Shot-stopping and box control</h2>
+        </div>
+        <span className="profile-data-note">ScoreBoard event-backed</span>
+      </div>
+
+      <div className="goalkeeper-profile__grid">
+        <article className="profile-panel goalkeeper-profile__summary">
+          <h3>Keeper evidence</h3>
+          <p>
+            This profile prioritizes goalkeeper actions recorded in ScoreBoard timelines:
+            saves, claims, command moments, distribution, interventions, and goal-line
+            defending.
+          </p>
+          <div className="profile-facts profile-facts--wide goalkeeper-profile__facts">
+            <div>
+              <span>Saves</span>
+              <strong>{saves}</strong>
+            </div>
+            <div>
+              <span>Claims / command</span>
+              <strong>{claimsAndCommand}</strong>
+            </div>
+            <div>
+              <span>Distribution</span>
+              <strong>{distribution}</strong>
+            </div>
+            <div>
+              <span>Interventions</span>
+              <strong>{interventions}</strong>
+            </div>
+          </div>
+        </article>
+
+        <article className="profile-panel">
+          <h3>Recent keeper moments</h3>
+          {recentKeeperEvents.length === 0 ? (
+            <p className="muted">
+              Goalkeeper-specific ScoreBoard actions will appear here once linked.
+            </p>
+          ) : (
+            <ul className="profile-event-list goalkeeper-profile__events">
+              {recentKeeperEvents.map((event) => (
+                <li key={event.id}>
+                  <span>{event.minute}&apos;</span>
+                  <strong>{humanizeScoreboardEventType(event.type)}</strong>
+                  <em>
+                    {event.match.homeTeam} vs {event.match.awayTeam} -{" "}
+                    {event.match.competitionName}
+                    {event.detail ? ` - ${event.detail}` : ""}
+                  </em>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
       </div>
     </section>
   );

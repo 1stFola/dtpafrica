@@ -9,7 +9,7 @@ export type ValuationReport = {
     displayName: string;
     positionPrimary: string;
     playerPhotoUrl?: string | null;
-    age?: number | null;
+    ageGroup?: string | null;
     nationality?: string | null;
   };
   inputs: Record<string, unknown>;
