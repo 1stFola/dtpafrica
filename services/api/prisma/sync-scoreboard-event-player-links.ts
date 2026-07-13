@@ -56,6 +56,14 @@ export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
       },
     },
   });
+  const players = await prisma.player.findMany({
+    select: {
+      id: true,
+      displayName: true,
+      normalizedName: true,
+      slug: true,
+    },
+  });
 
   const byTeam = new Map<string, AliasIndex>();
   const global = new Map<string, Set<string>>();
@@ -101,6 +109,15 @@ export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
       player: row.player,
     });
   }
+  for (const player of players) {
+    const aliases = [
+      player.displayName,
+      player.normalizedName,
+      player.slug?.replace(/-/g, " "),
+    ];
+    for (const alias of aliases) addAlias(global, alias, player.id);
+    addReversedTwoPartAlias(global, player.displayName, player.id);
+  }
 
   const events = await prisma.sbMatchEvent.findMany({
     where: {
@@ -119,12 +136,21 @@ export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
       assistLabel: true,
       playerLabel2: true,
       metadata: true,
+      type: true,
+      match: {
+        select: {
+          homeTeamId: true,
+          awayTeamId: true,
+        },
+      },
     },
   });
 
   let updated = 0;
   for (const event of events) {
     const teamIndex = event.teamId ? byTeam.get(event.teamId) : undefined;
+    const secondaryTeamId = inferSecondaryTeamId(event.type, event.teamId, event.match);
+    const secondaryTeamIndex = secondaryTeamId ? byTeam.get(secondaryTeamId) : undefined;
     const playerId =
       event.playerId ??
       resolveAlias(teamIndex, event.playerLabel) ??
@@ -133,7 +159,9 @@ export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
       event.assistPlayerId ??
       resolveAlias(teamIndex, event.assistLabel) ??
       (!event.teamId ? resolveAlias(global, event.assistLabel) : null);
-    const secondaryPlayerId = resolveAlias(global, event.playerLabel2);
+    const secondaryPlayerId =
+      resolveAlias(secondaryTeamIndex, event.playerLabel2) ??
+      resolveAlias(global, event.playerLabel2);
     const metadata = (event.metadata ?? {}) as Record<string, unknown>;
 
     const data: Prisma.SbMatchEventUpdateInput = {};
@@ -154,4 +182,27 @@ export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
   }
 
   return updated;
+}
+
+const SECONDARY_OPPONENT_EVENT_TYPES = new Set([
+  "save",
+  "penalty_saved",
+  "double_save",
+  "goalkeeper_claim",
+  "goalkeeper_distribution",
+  "goalkeeper_error",
+  "goalkeeper_intervention",
+  "goalkeeper_command",
+  "one_on_one",
+]);
+
+function inferSecondaryTeamId(
+  eventType: string,
+  teamId: string | null,
+  match: { homeTeamId: string; awayTeamId: string }
+) {
+  if (!teamId || !SECONDARY_OPPONENT_EVENT_TYPES.has(eventType.toLowerCase())) return null;
+  if (teamId === match.homeTeamId) return match.awayTeamId;
+  if (teamId === match.awayTeamId) return match.homeTeamId;
+  return null;
 }
