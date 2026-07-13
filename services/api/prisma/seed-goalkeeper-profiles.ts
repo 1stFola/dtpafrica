@@ -225,19 +225,70 @@ async function upsertGoalkeeperPlayer(prisma: PrismaClient, seed: GoalkeeperSeed
       OR: [{ slug: seed.slug }, { normalizedName }],
     },
   });
-  if (existing) {
-    return prisma.player.update({
+  const player = existing
+    ? await prisma.player.update({
       where: { id: existing.id },
       data: { ...update, slug: seed.slug },
+    })
+    : await prisma.player.create({
+      data: {
+        slug: seed.slug,
+        ...update,
+      },
+    });
+
+  await mergeGoalkeeperAliasPlayer(prisma, player.id, seed.squadDisplayName);
+  return player;
+}
+
+async function mergeGoalkeeperAliasPlayer(
+  prisma: PrismaClient,
+  canonicalPlayerId: string,
+  aliasName: string
+) {
+  const aliasNormalizedName = playerLookupKey(aliasName);
+  if (!aliasNormalizedName) return;
+  const duplicate = await prisma.player.findUnique({
+    where: { normalizedName: aliasNormalizedName },
+    select: { id: true },
+  });
+  if (!duplicate || duplicate.id === canonicalPlayerId) return;
+
+  await prisma.sbMatchEvent.updateMany({
+    where: { playerId: duplicate.id },
+    data: { playerId: canonicalPlayerId },
+  });
+  await prisma.sbMatchEvent.updateMany({
+    where: { assistPlayerId: duplicate.id },
+    data: { assistPlayerId: canonicalPlayerId },
+  });
+
+  const secondaryEvents = await prisma.sbMatchEvent.findMany({
+    where: { metadata: { path: ["secondaryPlayerId"], equals: duplicate.id } },
+    select: { id: true, metadata: true },
+  });
+  for (const event of secondaryEvents) {
+    await prisma.sbMatchEvent.update({
+      where: { id: event.id },
+      data: {
+        metadata: {
+          ...((event.metadata ?? {}) as Record<string, unknown>),
+          secondaryPlayerId: canonicalPlayerId,
+        },
+      },
     });
   }
 
-  return prisma.player.create({
-    data: {
-      slug: seed.slug,
-      ...update,
-    },
+  await prisma.sbTeamSquad.deleteMany({ where: { playerId: duplicate.id } });
+  await prisma.sbMatchSquadPlayer.updateMany({
+    where: { playerId: duplicate.id },
+    data: { playerId: canonicalPlayerId },
   });
+  await prisma.playerMatchMetrics.updateMany({
+    where: { playerId: duplicate.id },
+    data: { playerId: canonicalPlayerId },
+  });
+  await prisma.player.delete({ where: { id: duplicate.id } });
 }
 
 async function upsertSquadRow(

@@ -11,7 +11,12 @@ import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
 import type { PatchMatchScoreDto } from "../admin/dto/patch-match-score.dto";
-import { computeGroupStandings, normalizeClubName, playerLookupKey } from "@dtp/engines";
+import {
+  computeGroupStandings,
+  normalizeClubName,
+  normalizePlayerName,
+  playerLookupKey,
+} from "@dtp/engines";
 import {
   buildSkeletonProfile,
   presentProfileStats,
@@ -19,7 +24,7 @@ import {
 } from "../home/player-profile.presenter";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
 import { resolveMatchBySlugOrId } from "./match-resolve";
-import { slugifyPlayerName } from "../players/player-slug";
+import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
 import { presentHighlight, presentMatchDetail } from "./present-media";
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
@@ -128,6 +133,26 @@ const TEAM_MATCH_LIST_INCLUDE = {
 
 const LIVE_STATUSES = ["live", "halftime"];
 const SCOREBOARD_EXTERNAL_REF_PREFIX = "scoreboard:";
+const SECONDARY_OPPONENT_EVENT_TYPES = new Set([
+  "save",
+  "penalty_saved",
+  "double_save",
+  "goalkeeper_claim",
+  "goalkeeper_distribution",
+  "goalkeeper_error",
+  "goalkeeper_intervention",
+  "goalkeeper_command",
+  "one_on_one",
+]);
+const PLACEHOLDER_TIMELINE_LABELS = new Set([
+  "player",
+  "goalkeeper",
+  "keeper",
+  "unknown",
+  "unknown player",
+  "n/a",
+  "na",
+]);
 
 type ScoreboardEventPlayerResolver = {
   resolvePrimary: (
@@ -135,6 +160,10 @@ type ScoreboardEventPlayerResolver = {
     teamId: string | null | undefined
   ) => string | null;
   resolveAssist: (
+    label: string | null | undefined,
+    teamId: string | null | undefined
+  ) => string | null;
+  resolveSecondary: (
     label: string | null | undefined,
     teamId: string | null | undefined
   ) => string | null;
@@ -181,10 +210,154 @@ export class ScoreboardService {
     private readonly competitionEngine: CompetitionEngineService
   ) {}
 
+  private splitTimelineDisplayName(displayName: string) {
+    const parts = displayName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return { firstName: "Player", lastName: "Profile" };
+    if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
+    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+  }
+
+  private reversedTwoPartLookupKey(displayName: string) {
+    const parts = displayName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length !== 2) return null;
+    return playerLookupKey(`${parts[1]} ${parts[0]}`);
+  }
+
+  private isUsableTimelinePlayerLabel(rawName: string | null | undefined) {
+    const normalized = normalizePlayerName(rawName ?? "");
+    const lookupKey = playerLookupKey(normalized);
+    if (!lookupKey) return false;
+    if (PLACEHOLDER_TIMELINE_LABELS.has(lookupKey)) return false;
+    if (/^no\.?\s*\d+$/i.test(normalized)) return false;
+    if (/^#?\d+$/.test(normalized)) return false;
+    return true;
+  }
+
+  private inferTimelinePosition(role: "primary" | "assist" | "secondary", eventType: string) {
+    const type = eventType.toLowerCase();
+    if (role === "secondary" && /save|goalkeeper/.test(type)) return "GK";
+    if (/save|goalkeeper/.test(type) && role === "primary") return "GK";
+    if (/goal|shot|chance|penalty|offside/.test(type)) return "FW";
+    if (/assist|cross|corner|freekick|throw_in|long_throw/.test(type)) return "MF";
+    if (/clearance|interception|tackle|blocked|defense/.test(type)) return "DF";
+    return "MF";
+  }
+
+  private inferSecondaryTeamId(
+    eventType: string,
+    teamId: string | null | undefined,
+    match: { homeTeamId: string; awayTeamId: string }
+  ) {
+    if (!teamId || !SECONDARY_OPPONENT_EVENT_TYPES.has(eventType.toLowerCase())) return null;
+    if (teamId === match.homeTeamId) return match.awayTeamId;
+    if (teamId === match.awayTeamId) return match.homeTeamId;
+    return null;
+  }
+
+  private async resolveOrCreateTimelinePlayer(args: {
+    label: string | null | undefined;
+    teamId: string | null | undefined;
+    role: "primary" | "assist" | "secondary";
+    eventType: string;
+  }) {
+    if (!this.isUsableTimelinePlayerLabel(args.label)) return null;
+    const displayName = normalizePlayerName(args.label ?? "");
+    const normalizedName = playerLookupKey(displayName);
+    const position = this.inferTimelinePosition(args.role, args.eventType);
+    const nameParts = this.splitTimelineDisplayName(displayName);
+
+    const reversedLookupKey = this.reversedTwoPartLookupKey(displayName);
+    let player = await this.prisma.player.findFirst({
+      where: {
+        OR: [
+          { normalizedName },
+          ...(reversedLookupKey ? [{ normalizedName: reversedLookupKey }] : []),
+        ],
+      },
+    });
+    if (player) {
+      const isDirectNameMatch = player.normalizedName === normalizedName;
+      player = await this.prisma.player.update({
+        where: { id: player.id },
+        data: {
+          firstName: isDirectNameMatch ? player.firstName || nameParts.firstName : player.firstName,
+          lastName: isDirectNameMatch ? player.lastName || nameParts.lastName : player.lastName,
+          displayName: isDirectNameMatch ? displayName : player.displayName,
+          positionPrimary: player.positionPrimary || position,
+          registrationStatus: "approved",
+          isPublic: true,
+        },
+      });
+    } else {
+      player = await this.prisma.player.create({
+        data: {
+          firstName: nameParts.firstName,
+          lastName: nameParts.lastName,
+          displayName,
+          normalizedName,
+          slug: await resolveUniquePlayerSlug(this.prisma, displayName),
+          positionPrimary: position,
+          registrationStatus: "approved",
+          isPublic: true,
+        },
+      });
+    }
+
+    if (args.teamId) {
+      await this.ensureTimelinePlayerSquadLink({
+        teamId: args.teamId,
+        playerId: player.id,
+        displayName,
+        position,
+      });
+    }
+
+    return player;
+  }
+
+  private async ensureTimelinePlayerSquadLink(args: {
+    teamId: string;
+    playerId: string;
+    displayName: string;
+    position: string;
+  }) {
+    const existingForPlayer = await this.prisma.sbTeamSquad.findUnique({
+      where: { playerId: args.playerId },
+      select: { id: true, teamId: true },
+    });
+    if (existingForPlayer) return;
+
+    const existingByName = await this.prisma.sbTeamSquad.findFirst({
+      where: {
+        teamId: args.teamId,
+        displayName: { equals: args.displayName, mode: "insensitive" },
+      },
+      select: { id: true, playerId: true },
+    });
+    if (existingByName) {
+      if (existingByName.playerId) return;
+      await this.prisma.sbTeamSquad.update({
+        where: { id: existingByName.id },
+        data: { playerId: args.playerId, position: args.position },
+      });
+      return;
+    }
+
+    await this.prisma.sbTeamSquad.create({
+      data: {
+        teamId: args.teamId,
+        playerId: args.playerId,
+        displayName: args.displayName,
+        position: args.position,
+      },
+    });
+  }
+
   private async buildMatchEventPlayerResolver(
     matchId: string,
     teamIds: string[],
-    prisma: Pick<PrismaService, "sbTeamSquad" | "sbMatchSquadPlayer"> = this.prisma
+    prisma: Pick<PrismaService, "sbTeamSquad" | "sbMatchSquadPlayer" | "player"> =
+      this.prisma
   ): Promise<ScoreboardEventPlayerResolver> {
     const teamSquadRows = await prisma.sbTeamSquad.findMany({
       where: { teamId: { in: teamIds }, playerId: { not: null } },
@@ -264,6 +437,27 @@ export class ScoreboardService {
         player: row.player,
       });
     }
+    const players = await prisma.player.findMany({
+      select: {
+        id: true,
+        displayName: true,
+        normalizedName: true,
+        slug: true,
+      },
+    });
+    for (const player of players) {
+      const aliases = [
+        player.displayName,
+        player.normalizedName,
+        player.slug?.replace(/-/g, " "),
+      ];
+      for (const alias of aliases) addAlias(aliasesGlobal, alias, player.id);
+
+      const displayParts = player.displayName.trim().split(/\s+/);
+      if (displayParts.length === 2) {
+        addAlias(aliasesGlobal, `${displayParts[1]} ${displayParts[0]}`, player.id);
+      }
+    }
 
     const resolveFromIndex = (
       index: Map<string, Set<string>> | undefined,
@@ -289,6 +483,7 @@ export class ScoreboardService {
     return {
       resolvePrimary: resolveWithTeamPreference,
       resolveAssist: resolveWithTeamPreference,
+      resolveSecondary: resolveWithTeamPreference,
       resolveAny: (label) => resolveFromIndex(aliasesGlobal, label),
     };
   }
@@ -1192,18 +1387,55 @@ export class ScoreboardService {
       }
     }
 
+    const primaryTeamId = dto.teamId ?? null;
+    const secondaryTeamId = this.inferSecondaryTeamId(dto.type, primaryTeamId, match);
+    await this.resolveOrCreateTimelinePlayer({
+      label: dto.playerLabel,
+      teamId: primaryTeamId,
+      role: "primary",
+      eventType: dto.type,
+    });
+    await this.resolveOrCreateTimelinePlayer({
+      label: dto.assistLabel,
+      teamId: primaryTeamId,
+      role: "assist",
+      eventType: dto.type,
+    });
+    await this.resolveOrCreateTimelinePlayer({
+      label: dto.playerLabel2,
+      teamId: secondaryTeamId,
+      role: "secondary",
+      eventType: dto.type,
+    });
+    const playerResolver = await this.buildMatchEventPlayerResolver(matchId, [
+      match.homeTeamId,
+      match.awayTeamId,
+    ]);
+    const resolvedPlayerId =
+      dto.playerId ?? playerResolver.resolvePrimary(dto.playerLabel, primaryTeamId);
+    const resolvedAssistPlayerId =
+      dto.assistPlayerId ?? playerResolver.resolveAssist(dto.assistLabel, primaryTeamId);
+    const secondaryPlayerId = playerResolver.resolveSecondary(
+      dto.playerLabel2,
+      secondaryTeamId
+    ) ?? playerResolver.resolveAny(dto.playerLabel2);
+    const metadata = {
+      ...((dto.metadata ?? {}) as Record<string, unknown>),
+      ...(secondaryPlayerId ? { secondaryPlayerId } : {}),
+    };
+
     const eventData = {
       matchId,
       type: dto.type,
       minute: dto.minute,
       teamId: dto.teamId,
-      playerId: dto.playerId,
-      assistPlayerId: dto.assistPlayerId,
+      playerId: resolvedPlayerId ?? undefined,
+      assistPlayerId: resolvedAssistPlayerId ?? undefined,
       playerLabel: dto.playerLabel?.trim() || undefined,
       playerLabel2: dto.playerLabel2?.trim() || undefined,
       assistLabel: dto.assistLabel?.trim() || undefined,
       detail: dto.detail?.trim() || undefined,
-      metadata: dto.metadata as Prisma.InputJsonValue | undefined,
+      metadata: Object.keys(metadata).length ? (metadata as Prisma.InputJsonValue) : undefined,
     };
     const duplicate = await this.prisma.sbMatchEvent.findFirst({
       where: {
@@ -1211,8 +1443,8 @@ export class ScoreboardService {
         type: dto.type,
         minute: dto.minute,
         teamId: dto.teamId ?? null,
-        playerId: dto.playerId ?? null,
-        assistPlayerId: dto.assistPlayerId ?? null,
+        playerId: resolvedPlayerId ?? null,
+        assistPlayerId: resolvedAssistPlayerId ?? null,
       },
     });
     if (duplicate) {
@@ -1331,6 +1563,34 @@ export class ScoreboardService {
     const derivedStats = deriveMatchStatsFromCsvEvents(parsed.events, {
       narrative: parsed.narrative,
     });
+
+    for (const ev of parsed.events) {
+      const teamId = ev.teamSide
+        ? ev.teamSide === "home"
+          ? match.homeTeamId
+          : match.awayTeamId
+        : null;
+      const secondaryTeamId = this.inferSecondaryTeamId(ev.type, teamId, match);
+      await this.resolveOrCreateTimelinePlayer({
+        label: ev.playerLabel,
+        teamId,
+        role: "primary",
+        eventType: ev.type,
+      });
+      await this.resolveOrCreateTimelinePlayer({
+        label: ev.assistLabel,
+        teamId,
+        role: "assist",
+        eventType: ev.type,
+      });
+      await this.resolveOrCreateTimelinePlayer({
+        label: ev.playerLabel2,
+        teamId: secondaryTeamId,
+        role: "secondary",
+        eventType: ev.type,
+      });
+    }
+
     const playerResolver = await this.buildMatchEventPlayerResolver(matchId, [
       match.homeTeamId,
       match.awayTeamId,
@@ -1348,7 +1608,11 @@ export class ScoreboardService {
           : null;
         const playerId = playerResolver.resolvePrimary(ev.playerLabel, teamId);
         const assistPlayerId = playerResolver.resolveAssist(ev.assistLabel, teamId);
-        const secondaryPlayerId = playerResolver.resolveAny(ev.playerLabel2);
+        const secondaryTeamId = this.inferSecondaryTeamId(ev.type, teamId, match);
+        const secondaryPlayerId = playerResolver.resolveSecondary(
+          ev.playerLabel2,
+          secondaryTeamId
+        ) ?? playerResolver.resolveAny(ev.playerLabel2);
         const created = await tx.sbMatchEvent.create({
           data: {
             matchId,

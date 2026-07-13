@@ -30,6 +30,12 @@ function splitDisplayName(displayName: string) {
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
 
+function reversedTwoPartLookupKey(displayName: string) {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length !== 2) return null;
+  return playerLookupKey(`${parts[1]} ${parts[0]}`);
+}
+
 function isUsableTimelineName(rawName: string | null | undefined) {
   const normalized = normalizePlayerName(rawName ?? "");
   const lookupKey = playerLookupKey(normalized);
@@ -88,8 +94,14 @@ async function createOrUpdateTimelinePlayer(
     isPublic: true,
   };
 
-  const existing = await prisma.player.findUnique({
-    where: { normalizedName: label.lookupKey },
+  const reversedLookupKey = reversedTwoPartLookupKey(label.normalizedName);
+  const existing = await prisma.player.findFirst({
+    where: {
+      OR: [
+        { normalizedName: label.lookupKey },
+        ...(reversedLookupKey ? [{ normalizedName: reversedLookupKey }] : []),
+      ],
+    },
     select: {
       id: true,
       positionPrimary: true,
@@ -98,14 +110,20 @@ async function createOrUpdateTimelinePlayer(
       firstName: true,
       lastName: true,
       displayName: true,
+      normalizedName: true,
     },
   });
 
   if (existing) {
+    const isDirectNameMatch = existing.normalizedName === label.lookupKey;
     return prisma.player.update({
       where: { id: existing.id },
       data: {
-        ...data,
+        firstName: isDirectNameMatch ? data.firstName : existing.firstName,
+        lastName: isDirectNameMatch ? data.lastName : existing.lastName,
+        displayName: isDirectNameMatch ? data.displayName : existing.displayName,
+        registrationStatus: data.registrationStatus,
+        isPublic: data.isPublic,
         positionPrimary: existing.positionPrimary || data.positionPrimary,
       },
     });
@@ -179,6 +197,12 @@ export async function syncScoreboardTimelinePlayerProfiles(prisma: PrismaClient)
       playerLabel: true,
       assistLabel: true,
       playerLabel2: true,
+      match: {
+        select: {
+          homeTeamId: true,
+          awayTeamId: true,
+        },
+      },
     },
   });
 
@@ -198,7 +222,7 @@ export async function syncScoreboardTimelinePlayerProfiles(prisma: PrismaClient)
     });
     collectLabel(labels, {
       rawName: event.playerLabel2,
-      teamId: null,
+      teamId: inferSecondaryTeamId(event.type, event.teamId, event.match),
       role: "secondary",
       eventType: event.type,
     });
@@ -224,4 +248,27 @@ export async function syncScoreboardTimelinePlayerProfiles(prisma: PrismaClient)
     createdOrUpdated,
     squadLinks,
   };
+}
+
+const SECONDARY_OPPONENT_EVENT_TYPES = new Set([
+  "save",
+  "penalty_saved",
+  "double_save",
+  "goalkeeper_claim",
+  "goalkeeper_distribution",
+  "goalkeeper_error",
+  "goalkeeper_intervention",
+  "goalkeeper_command",
+  "one_on_one",
+]);
+
+function inferSecondaryTeamId(
+  eventType: string,
+  teamId: string | null,
+  match: { homeTeamId: string; awayTeamId: string }
+) {
+  if (!teamId || !SECONDARY_OPPONENT_EVENT_TYPES.has(eventType.toLowerCase())) return null;
+  if (teamId === match.homeTeamId) return match.awayTeamId;
+  if (teamId === match.awayTeamId) return match.homeTeamId;
+  return null;
 }
