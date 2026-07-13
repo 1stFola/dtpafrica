@@ -126,7 +126,6 @@ export function formatStatValue(value: number | null | undefined): string {
 }
 
 export function resolvePlayerAge(player: PublicPlayerProfile): string {
-  if (player.age != null && player.age > 0) return String(player.age);
   if (player.ageGroup?.trim()) return player.ageGroup.trim();
   return "—";
 }

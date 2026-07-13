@@ -191,7 +191,12 @@ const SAVE_CSV_TYPES = new Set<CsvEventType>([
   "goalkeeper_intervention",
 ]);
 
-/** Only these event types contribute a possession tick (team_side column). */
+/**
+ * Only these event types contribute a possession/control tick.
+ *
+ * CSV `team_side` is the attacking / in-control side for possession purposes.
+ * Save-card player-name swapping is presentation-only and does not affect this.
+ */
 export const POSSESSION_EVENT_TYPES = new Set<CsvEventType>([
   "possession",
   "pressure",
@@ -208,12 +213,20 @@ export const POSSESSION_EVENT_TYPES = new Set<CsvEventType>([
   "close_chance",
   "one_on_one",
   "missed_chance",
+  "goal",
+  "goal_penalty",
+  "disallowed_goal",
+  "offside",
+  "own_goal",
+  "penalty_awarded",
+  "poor_delivery",
   "header_missed",
   "volley_missed",
   "shot_off_target",
   "blocked_shot",
   "save",
   "double_save",
+  "penalty_saved",
   "goalkeeper_claim",
   "goalkeeper_command",
   "goalkeeper_distribution",
@@ -230,35 +243,13 @@ export const POSSESSION_EVENT_TYPES = new Set<CsvEventType>([
   "corner_kick",
   "freekick",
   "goal_kick",
-  "kick_off",
   "second_half_kickoff",
 ]);
 
 /** Documented exclusions — not counted toward possession %. */
-export const POSSESSION_EXCLUDE_EVENT_TYPES = new Set<CsvEventType>([
-  "match_flow",
-  "added_time",
-  "half_time",
-  "water_break",
-  "medical_timeout",
-  "injury",
-  "substitution",
-  "injury_substitution",
-  "tactical_substitution",
-  "restart_play",
-  "score_update",
-  "goal_scorers_update",
-  "foul",
-  "offside",
-  "yellow_card",
-  "red_card",
-  "penalty_awarded",
-  "own_goal",
-  "disallowed_goal",
-  "goal_penalty",
-  "penalty_saved",
-  "late_defense",
-]);
+export const POSSESSION_EXCLUDE_EVENT_TYPES = new Set<CsvEventType>(
+  CSV_EVENT_TYPES.filter((eventType) => !POSSESSION_EVENT_TYPES.has(eventType))
+);
 
 const XG_WEIGHT: Partial<Record<CsvEventType, number>> = {
   goal: 1,

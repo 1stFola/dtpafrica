@@ -13,6 +13,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
 import { resolveUniquePlayerSlug } from "../players/player-slug";
+import { normalizePlayerAgeCategory } from "../players/age-category";
 import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
 import { matchPathSegment } from "../scoreboard/match-slug";
 import { ContactDto } from "./dto/contact.dto";
@@ -35,7 +36,6 @@ import {
 
 const SCOREBOARD_HISTORY_EVENT_LIMIT = 50;
 const HOMEPAGE_VIDEO_HIGHLIGHTS_KEY = "homepage.video-highlights";
-
 export type HomeVideoHighlight = {
   id: string;
   playerName: string;
@@ -110,9 +110,13 @@ export class HomeService {
         positionFull,
         careerMinutes,
         benchmarkMetadata,
+        age,
+        ageGroup,
+        dateOfBirth,
         ...player
       }) => ({
         ...player,
+        ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
         positionFull: resolvePositionFull(player.positionPrimary, positionFull),
         philosophies: resolveTopPhilosophies({
           playingPhilosophies,
@@ -203,6 +207,9 @@ export class HomeService {
       careerAppearances,
       careerMinutes,
       careerCleanSheets,
+      age,
+      ageGroup,
+      dateOfBirth,
       ...profile
     } = player;
 
@@ -221,6 +228,7 @@ export class HomeService {
     return {
       isSkeleton: false as const,
       ...profile,
+      ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
       minutesPlayed: this.resolveMinutesPlayed(
         careerMinutes,
         aggregatedMetrics[0]?.minutesPlayed
@@ -251,7 +259,7 @@ export class HomeService {
         this.buildScoutingSummary({
           displayName: profile.displayName,
           position: profile.positionPrimary,
-          ageGroup: profile.ageGroup,
+          ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
           overallRating: profile.overallRating,
           offensiveRating: profile.offensiveRating,
           defensiveRating: profile.defensiveRating,
@@ -301,16 +309,7 @@ export class HomeService {
     }
 
     const displayName = `${dto.firstName} ${dto.lastName}`.trim();
-    const ageGroup =
-      dto.age != null
-        ? dto.age <= 15
-          ? "U15"
-          : dto.age <= 17
-            ? "U17"
-            : dto.age <= 19
-              ? "U19"
-              : "Senior"
-        : undefined;
+    const ageGroup = normalizePlayerAgeCategory({ age: dto.age });
 
     const slug = await resolveUniquePlayerSlug(this.prisma, displayName);
     const player = await this.prisma.player.create({
@@ -453,7 +452,9 @@ export class HomeService {
       positionPrimary: true,
       positionSecondary: true,
       nationality: true,
+      age: true,
       ageGroup: true,
+      dateOfBirth: true,
       playerPhotoUrl: true,
       overallRating: true,
       offensiveRating: true,
@@ -485,6 +486,7 @@ export class HomeService {
       displayName: true,
       age: true,
       ageGroup: true,
+      dateOfBirth: true,
       nationality: true,
       city: true,
       state: true,
@@ -565,6 +567,7 @@ export class HomeService {
         OR: [
           { playerId: player.id },
           { assistPlayerId: player.id },
+          { metadata: { path: ["secondaryPlayerId"], equals: player.id } },
           ...(teamIds.length
             ? [{ teamId: { in: teamIds }, ...labelFields }]
             : [labelFields]),
@@ -596,6 +599,13 @@ export class HomeService {
       } else if (event.assistPlayerId === player.id) {
         historyRole = "assist";
         historyLabel = event.assistLabel ?? player.displayName;
+      } else if (
+        typeof ((event.metadata ?? {}) as Record<string, unknown>).secondaryPlayerId ===
+          "string" &&
+        ((event.metadata ?? {}) as Record<string, unknown>).secondaryPlayerId === player.id
+      ) {
+        historyRole = "secondary";
+        historyLabel = event.playerLabel2 ?? player.displayName;
       } else if (hasLabelMatch(event.playerLabel)) {
         historyRole = "primary";
         historyLabel = event.playerLabel;
