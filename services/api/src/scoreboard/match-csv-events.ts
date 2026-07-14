@@ -69,9 +69,11 @@ export const CSV_EVENT_TYPES = [
 export type CsvEventType = (typeof CSV_EVENT_TYPES)[number];
 
 export const CSV_SPECIAL_TYPES = ["full_time", "penalty_shootout"] as const;
+export type CsvSpecialType = (typeof CSV_SPECIAL_TYPES)[number];
+export type CsvTimelineType = CsvEventType | CsvSpecialType;
 
 export type ParsedCsvEvent = {
-  csvType: CsvEventType;
+  csvType: CsvTimelineType;
   type: string;
   minute: number;
   teamSide?: "home" | "away";
@@ -296,7 +298,7 @@ export function csvTypeRequiresPlayer(csvType: CsvEventType): boolean {
 }
 
 export function mapCsvEventToStorage(ev: {
-  csvType: CsvEventType;
+  csvType: CsvTimelineType;
   teamSide?: "home" | "away";
   playerLabel?: string;
   assistLabel?: string;
@@ -307,15 +309,25 @@ export function mapCsvEventToStorage(ev: {
     source: "csv-ingest",
   };
 
-  if (isFlowCsvType(ev.csvType)) {
+  if (ev.csvType === "penalty_shootout") {
     return {
       type: "match_flow",
-      detail: ev.detail || flowDefaultDetail(ev.csvType),
+      detail: ev.detail || "Penalty shootout",
       metadata: { ...baseMeta, flowKind: ev.csvType },
     };
   }
 
-  if (ev.csvType === "goal_penalty") {
+  const csvType = ev.csvType as CsvEventType;
+
+  if (isFlowCsvType(csvType)) {
+    return {
+      type: "match_flow",
+      detail: ev.detail || flowDefaultDetail(csvType),
+      metadata: { ...baseMeta, flowKind: csvType },
+    };
+  }
+
+  if (csvType === "goal_penalty") {
     return {
       type: "goal",
       detail: ev.detail || "penalty",
@@ -324,7 +336,7 @@ export function mapCsvEventToStorage(ev: {
   }
 
   return {
-    type: ev.csvType,
+    type: csvType,
     detail: ev.detail,
     metadata: baseMeta,
   };
@@ -407,6 +419,11 @@ export function deriveMatchStatsFromCsvEvents(
   const narrativeParts: string[] = [];
 
   for (const ev of events) {
+    if (ev.csvType === "full_time" || ev.csvType === "penalty_shootout") {
+      if (ev.detail?.trim()) narrativeParts.push(ev.detail.trim());
+      continue;
+    }
+
     const csvType = ev.csvType;
     const side = ev.teamSide;
     if (!side && csvType !== "match_flow") continue;
