@@ -122,6 +122,11 @@ function visiblePlayerLabel(name: string | null | undefined): string | null {
   return name.trim();
 }
 
+function hasCompletePlayerName(name: string | null | undefined): boolean {
+  const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
+  return parts.length >= 2;
+}
+
 function resolveCsvEventType(ev: SbMatchEvent): string {
   const meta = ev.metadata;
   if (meta?.csvEventType && typeof meta.csvEventType === "string") return meta.csvEventType;
@@ -153,6 +158,10 @@ function PlayerLink({
   club?: string;
   competition?: string;
 }) {
+  if (!hasCompletePlayerName(label)) {
+    return <span className="sbm-event__player sbm-event__player--plain">{label}</span>;
+  }
+
   const resolvedSlug = slug ?? slugifyName(label);
   return (
     <Link
@@ -210,6 +219,13 @@ function teamNameForEvent(
 
 function resolveEventLabel(ev: SbMatchEvent): string {
   const flowKind = ev.metadata?.flowKind ?? ev.metadata?.csvEventType;
+  if (
+    flowKind === "penalty_shootout" &&
+    typeof ev.metadata?.penaltyShootoutSequence === "number" &&
+    ev.metadata.penaltyShootoutSequence > 1
+  ) {
+    return ev.detail?.trim() || "Penalty shootout";
+  }
   if (typeof flowKind === "string" && EVENT_LABELS[flowKind]) {
     return EVENT_LABELS[flowKind];
   }
@@ -405,7 +421,6 @@ function EventCard({
       </div>
       {(saveDisplay || showPrimary || showAssist || showDetail || (ev.highlights?.length ?? 0) > 0) && (
         <div className="sbm-event__body">
-          {showDetail && <p className="sbm-event__comment">{ev.detail}</p>}
           {saveDisplay?.kickerLabel && (
             <>
               <PlayerLink
@@ -446,6 +461,7 @@ function EventCard({
               />
             </span>
           )}
+          {showDetail && <p className="sbm-event__comment">{ev.detail}</p>}
           {ev.highlights && ev.highlights.length > 0 && (
             <a
               href={ev.highlights[0].youtubeUrl}
@@ -483,19 +499,63 @@ function OppositePlayerTag({
   );
 }
 
-function NeutralEventCard({ parsed }: { parsed: ParsedEvent }) {
-  const { ev, typeLabel, showDetail } = parsed;
+function NeutralEventCard({
+  parsed,
+  competition,
+}: {
+  parsed: ParsedEvent;
+  competition?: string;
+}) {
+  const {
+    ev,
+    typeLabel,
+    showDetail,
+    showPrimary,
+    showAssist,
+    playerLabel,
+    assistLabel,
+    club,
+  } = parsed;
   return (
     <article className="sbm-event__neutral-card">
       <div className="sbm-event__neutral-head">
         <span className="sbm-event__type">{typeLabel}</span>
       </div>
-      {showDetail && <p className="sbm-event__detail sbm-event__detail--neutral">{ev.detail}</p>}
+      {(showPrimary || showAssist || showDetail) && (
+        <div className="sbm-event__body">
+          {showPrimary && playerLabel && (
+            <PlayerLink
+              slug={ev.player?.slug}
+              label={playerLabel}
+              club={club}
+              competition={competition}
+            />
+          )}
+          {showAssist && assistLabel && (
+            <span className="sbm-event__assist">
+              {assistPrefixForEvent(ev)}
+              <PlayerLink
+                slug={ev.assistPlayer?.slug}
+                label={assistLabel}
+                club={club}
+                competition={competition}
+              />
+            </span>
+          )}
+          {showDetail && <p className="sbm-event__comment">{ev.detail}</p>}
+        </div>
+      )}
     </article>
   );
 }
 
-function NeutralTimelineRow({ parsed }: { parsed: ParsedEvent }) {
+function NeutralTimelineRow({
+  parsed,
+  competition,
+}: {
+  parsed: ParsedEvent;
+  competition?: string;
+}) {
   const { ev, csvType } = parsed;
   const icon = resolveEventIcon(ev);
 
@@ -512,7 +572,7 @@ function NeutralTimelineRow({ parsed }: { parsed: ParsedEvent }) {
             </span>
           </span>
         </div>
-        <NeutralEventCard parsed={parsed} />
+        <NeutralEventCard parsed={parsed} competition={competition} />
       </div>
     </li>
   );
@@ -624,7 +684,7 @@ export function EventTimeline({
       {sorted.map((ev) => {
         const parsed = parseEvent(ev, homeTeam, awayTeam);
         if (parsed.side === "neutral") {
-          return <NeutralTimelineRow key={ev.id} parsed={parsed} />;
+          return <NeutralTimelineRow key={ev.id} parsed={parsed} competition={competition} />;
         }
         return (
           <TeamTimelineRow

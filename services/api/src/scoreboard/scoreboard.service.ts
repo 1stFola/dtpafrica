@@ -227,6 +227,7 @@ export class ScoreboardService {
     const normalized = normalizePlayerName(rawName ?? "");
     const lookupKey = playerLookupKey(normalized);
     if (!lookupKey) return false;
+    if (normalized.split(/\s+/).filter(Boolean).length < 2) return false;
     if (PLACEHOLDER_TIMELINE_LABELS.has(lookupKey)) return false;
     if (/^no\.?\s*\d+$/i.test(normalized)) return false;
     if (/^#?\d+$/.test(normalized)) return false;
@@ -472,6 +473,7 @@ export class ScoreboardService {
       index: Map<string, Set<string>> | undefined,
       label: string | null | undefined
     ) => {
+      if (!this.isUsableTimelinePlayerLabel(label)) return null;
       const key = playerLookupKey(label ?? "");
       if (!key || !index) return null;
       const matches = index.get(key);
