@@ -179,6 +179,7 @@ export type PublicPlayerProfile = FeaturedPlayer & {
       teamName: string;
       teamSlug: string;
       shortName: string | null;
+      logoUrl: string | null;
       shirtNumber: number | null;
       displayName: string;
       position: string | null;
@@ -200,8 +201,20 @@ export type PublicPlayerProfile = FeaturedPlayer & {
       venue: string | null;
       roundLabel: string | null;
       status: string;
-      homeTeam: { id: string; name: string; slug: string; shortName: string | null };
-      awayTeam: { id: string; name: string; slug: string; shortName: string | null };
+      homeTeam: {
+        id: string;
+        name: string;
+        slug: string;
+        shortName: string | null;
+        logoUrl: string | null;
+      };
+      awayTeam: {
+        id: string;
+        name: string;
+        slug: string;
+        shortName: string | null;
+        logoUrl: string | null;
+      };
       score: { home: number; away: number };
       events: number;
       goals: number;
@@ -217,7 +230,13 @@ export type PublicPlayerProfile = FeaturedPlayer & {
       playerLabel: string | null;
       role: "primary" | "assist" | "secondary";
       matchedBy: "link" | "label";
-      team: { id: string; name: string; slug: string; shortName: string | null } | null;
+      team: {
+        id: string;
+        name: string;
+        slug: string;
+        shortName: string | null;
+        logoUrl: string | null;
+      } | null;
       match: {
         id: string;
         slug: string;

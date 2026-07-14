@@ -77,8 +77,6 @@ const ASSIST_LABEL_BY_TYPE: Record<string, string> = {
 const PAREN_SECONDARY_TYPES = new Set([
   "yellow_card",
   "red_card",
-  "clearance",
-  "counter_attack",
   "save",
 ]);
 
@@ -357,7 +355,7 @@ function parseEvent(
   const baseLabel = resolveEventLabel(ev);
   const typeLabel = parenName ? `${baseLabel} (${parenName})` : baseLabel;
   const narrative = isNarrativeEvent(ev);
-  const showDetail = Boolean(ev.detail && (!narrative || ev.detail !== baseLabel));
+  const showDetail = Boolean(ev.detail?.trim());
   const showPrimary = !parenFormat && Boolean(playerLabel);
   const showAssist = !parenFormat && Boolean(assistLabel);
 
@@ -404,10 +402,10 @@ function EventCard({
     <div className={`sbm-event__card sbm-event__card--${align}`}>
       <div className="sbm-event__head">
         <span className="sbm-event__type">{typeLabel}</span>
-        {showDetail && <span className="sbm-event__detail">{ev.detail}</span>}
       </div>
-      {(saveDisplay || showPrimary || showAssist || (ev.highlights?.length ?? 0) > 0) && (
+      {(saveDisplay || showPrimary || showAssist || showDetail || (ev.highlights?.length ?? 0) > 0) && (
         <div className="sbm-event__body">
+          {showDetail && <p className="sbm-event__comment">{ev.detail}</p>}
           {saveDisplay?.kickerLabel && (
             <>
               <PlayerLink
