@@ -279,7 +279,10 @@ async function mergeGoalkeeperAliasPlayer(
     });
   }
 
-  await prisma.sbTeamSquad.deleteMany({ where: { playerId: duplicate.id } });
+  await prisma.sbTeamSquad.updateMany({
+    where: { playerId: duplicate.id },
+    data: { playerId: null },
+  });
   await prisma.sbMatchSquadPlayer.updateMany({
     where: { playerId: duplicate.id },
     data: { playerId: canonicalPlayerId },
@@ -312,7 +315,12 @@ async function upsertSquadRow(
   });
   if (!team) return null;
 
-  const existing = await prisma.sbTeamSquad.findUnique({ where: { playerId } });
+  const existing = await prisma.sbTeamSquad.findFirst({
+    where: {
+      playerId,
+      team: { competitionId: competition.id },
+    },
+  });
   if (existing) {
     return prisma.sbTeamSquad.update({
       where: { id: existing.id },

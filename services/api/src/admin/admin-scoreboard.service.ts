@@ -703,6 +703,23 @@ export class AdminScoreboardService {
     if (dto.teamId && dto.teamId !== existing.teamId) {
       const team = await this.prisma.sbTeam.findUnique({ where: { id: dto.teamId } });
       if (!team) throw new NotFoundException("Target team not found");
+      if (existing.playerId) {
+        const conflict = await this.prisma.sbTeamSquad.findFirst({
+          where: {
+            id: { not: existing.id },
+            playerId: existing.playerId,
+            team: { competitionId: team.competitionId },
+          },
+          include: { team: true },
+        });
+        if (conflict) {
+          throw new BadRequestException(
+            `${existing.player?.displayName ?? existing.displayName} is already registered for ${normalizeClubName(
+              conflict.team.name
+            )} in this competition.`
+          );
+        }
+      }
     }
 
     const updated = await this.prisma.sbTeamSquad.update({
@@ -1146,14 +1163,30 @@ export class AdminScoreboardService {
     row: ParsedMatchSquadCsvRow
   ) {
     const player = await this.findOrCreateCsvSquadPlayer(tx, row);
-    const activeSquad = await tx.sbTeamSquad.findUnique({
-      where: { playerId: player.id },
+    const targetTeam = await tx.sbTeam.findUnique({
+      where: { id: teamId },
+      select: { competitionId: true, name: true },
+    });
+    if (!targetTeam) throw new NotFoundException("Target team not found");
+
+    const activeSquad = await tx.sbTeamSquad.findFirst({
+      where: {
+        playerId: player.id,
+        team: { competitionId: targetTeam.competitionId },
+      },
+      include: { team: true },
     });
     if (activeSquad && activeSquad.teamId !== teamId) {
+      throw new BadRequestException(
+        `${player.displayName} is already registered for ${normalizeClubName(
+          activeSquad.team.name
+        )} in this competition. Remove that squad row before assigning another team.`
+      );
+    }
+    if (activeSquad) {
       return tx.sbTeamSquad.update({
         where: { id: activeSquad.id },
         data: {
-          teamId,
           displayName: row.playerName,
           position: row.position,
           shirtNumber: row.jerseyNumber,
@@ -1853,22 +1886,21 @@ export class AdminScoreboardService {
       const position = posIdx >= 0 ? row[posIdx] : null;
       const shirtNumber = numIdx >= 0 && row[numIdx] ? Number(row[numIdx]) : null;
       const player = await this.playerDirectory.resolveOrCreatePlayer(displayName, position);
-      const activeSquad = await this.prisma.sbTeamSquad.findUnique({
-        where: { playerId: player.id },
+      const activeSquad = await this.prisma.sbTeamSquad.findFirst({
+        where: {
+          playerId: player.id,
+          team: { competitionId: team.competitionId },
+        },
+        include: { team: true },
       });
 
       if (activeSquad && activeSquad.teamId !== teamId) {
-        await this.prisma.sbTeamSquad.update({
-          where: { id: activeSquad.id },
-          data: {
-            teamId,
-            displayName,
-            position: position ?? activeSquad.position,
-            shirtNumber: Number.isFinite(shirtNumber) ? shirtNumber : activeSquad.shirtNumber,
-          },
-        });
-        imported++;
-        continue;
+        throw csvError(
+          "Squad import",
+          `${player.displayName} is already registered for ${normalizeClubName(
+            activeSquad.team.name
+          )} in this competition`
+        );
       }
 
       const existing =
