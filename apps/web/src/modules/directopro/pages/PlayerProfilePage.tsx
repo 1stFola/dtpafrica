@@ -90,6 +90,33 @@ function scoreboardHistoryEventLabel(
   return humanizeScoreboardEventType(event.type);
 }
 
+type ScoreboardAppearanceTeam = NonNullable<
+  PublicPlayerProfile["scoreboardHistory"]
+>["appearances"][number]["homeTeam"];
+
+function scoreboardTeamName(team: Pick<ScoreboardAppearanceTeam, "name" | "shortName">): string {
+  return team.shortName ?? team.name;
+}
+
+function ScoreboardTeamLogo({
+  team,
+  className = "",
+}: {
+  team: Pick<ScoreboardAppearanceTeam, "name" | "shortName" | "logoUrl">;
+  className?: string;
+}) {
+  const name = scoreboardTeamName(team);
+  return (
+    <span className={`scoreboard-history-team-logo ${className}`} aria-hidden="true">
+      {team.logoUrl ? (
+        <img src={team.logoUrl} alt="" loading="lazy" />
+      ) : (
+        <span>{initialsFromName(name)}</span>
+      )}
+    </span>
+  );
+}
+
 /** Turn a route slug/name param into a readable display name ("ahmed-adesanu" → "Ahmed Adesanu"). */
 function deslugifyName(value: string): string {
   const cleaned = value.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
@@ -893,7 +920,7 @@ function GoalkeeperScoreboardProfileSection({
           </div>
         </article>
 
-        <article className="profile-panel">
+        <article className="profile-panel scoreboard-history-panel">
           <h3>Recent keeper moments</h3>
           {recentKeeperEvents.length === 0 ? (
             <p className="muted">
@@ -1070,6 +1097,18 @@ function ScoreboardHistorySection({
     );
   }
 
+  return <ScoreboardHistoryDashboard history={history} />;
+}
+
+function ScoreboardHistoryDashboard({
+  history,
+}: {
+  history: NonNullable<PublicPlayerProfile["scoreboardHistory"]>;
+}) {
+  const latestAppearance = history.appearances[0];
+  const leadingCompetition =
+    latestAppearance?.competitionName ?? history.teams[0]?.competition.name ?? "ScoreBoard";
+
   return (
     <section className="profile-section">
       <div className="profile-section-heading">
@@ -1082,38 +1121,60 @@ function ScoreboardHistorySection({
         </span>
       </div>
 
-      <div className="profile-facts profile-facts--wide">
+      <div className="scoreboard-history-hero">
         <div>
+          <span className="scoreboard-history-hero__eyebrow">Verified match record</span>
+          <strong>{leadingCompetition}</strong>
+          <p>
+            Timeline mentions, squad rows, and match appearances connected to this
+            player profile.
+          </p>
+        </div>
+        <div className="scoreboard-history-hero__score">
+          <span>{history.aggregates.events}</span>
+          <small>events tracked</small>
+        </div>
+      </div>
+
+      <div className="scoreboard-history-kpis">
+        <div className="scoreboard-history-kpi">
           <span>Teams</span>
           <strong>{history.aggregates.teams}</strong>
         </div>
-        <div>
+        <div className="scoreboard-history-kpi">
           <span>Competitions</span>
           <strong>{history.aggregates.competitions}</strong>
         </div>
-        <div>
+        <div className="scoreboard-history-kpi">
           <span>Appearances</span>
           <strong>{history.aggregates.appearances}</strong>
         </div>
-        <div>
+        <div className="scoreboard-history-kpi">
           <span>Goals</span>
           <strong>{history.aggregates.goals}</strong>
         </div>
-        <div>
+        <div className="scoreboard-history-kpi">
           <span>Assists</span>
           <strong>{history.aggregates.assists}</strong>
         </div>
       </div>
 
       <div className="profile-integration-grid">
-        <article className="profile-panel">
+        <article className="profile-panel scoreboard-history-panel">
           <h3>Team links</h3>
           {history.teams.length === 0 ? (
             <p className="muted">No squad rows are linked yet.</p>
           ) : (
-            <ul className="profile-card-list">
+            <ul className="profile-card-list scoreboard-history-team-list">
               {history.teams.map((team) => (
                 <li key={`${team.competition.id}-${team.teamId}`}>
+                  <ScoreboardTeamLogo
+                    team={{
+                      name: team.teamName,
+                      shortName: team.shortName,
+                      logoUrl: team.logoUrl,
+                    }}
+                  />
                   <strong>{team.teamName}</strong>
                   <span>
                     {team.competition.name} {team.competition.season}
@@ -1126,20 +1187,29 @@ function ScoreboardHistorySection({
           )}
         </article>
 
-        <article className="profile-panel">
+        <article className="profile-panel scoreboard-history-panel scoreboard-history-panel--appearances">
           <h3>Recent appearances</h3>
           {history.appearances.length === 0 ? (
             <p className="muted">No event-backed appearances are linked yet.</p>
           ) : (
-            <ul className="profile-card-list">
+            <ul className="profile-card-list scoreboard-history-appearance-list">
               {history.appearances.slice(0, 6).map((match) => (
                 <li key={match.matchId}>
                   <Link
                     to={matchCenterPath({ slug: match.matchSlug, id: match.matchId })}
-                    className="text-link"
+                    className="scoreboard-history-appearance"
                   >
-                    {match.homeTeam.shortName ?? match.homeTeam.name} {match.score.home} -{" "}
-                    {match.score.away} {match.awayTeam.shortName ?? match.awayTeam.name}
+                    <span className="scoreboard-history-appearance__team">
+                      <ScoreboardTeamLogo team={match.homeTeam} />
+                      <strong>{scoreboardTeamName(match.homeTeam)}</strong>
+                    </span>
+                    <span className="scoreboard-history-appearance__score">
+                      {match.score.home} - {match.score.away}
+                    </span>
+                    <span className="scoreboard-history-appearance__team scoreboard-history-appearance__team--away">
+                      <ScoreboardTeamLogo team={match.awayTeam} />
+                      <strong>{scoreboardTeamName(match.awayTeam)}</strong>
+                    </span>
                   </Link>
                   <span>
                     {match.competitionName} · {formatDate(match.kickoffAt)}
@@ -1155,12 +1225,12 @@ function ScoreboardHistorySection({
         </article>
       </div>
 
-      <article className="profile-panel profile-benchmark">
+      <article className="profile-panel profile-benchmark scoreboard-history-panel">
         <h3>Event timeline</h3>
         {history.events.length === 0 ? (
           <p className="muted">No player events are linked yet.</p>
         ) : (
-          <ul className="profile-event-list">
+          <ul className="profile-event-list scoreboard-history-event-list">
             {history.events.slice(0, 10).map((event) => (
               <li key={event.id}>
                 <span>{event.minute}&apos;</span>

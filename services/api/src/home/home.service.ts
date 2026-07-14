@@ -771,6 +771,7 @@ export class HomeService {
       teamName: normalizeClubName(row.team.name),
       teamSlug: row.team.slug,
       shortName: row.team.shortName,
+      logoUrl: row.team.logoUrl,
       shirtNumber: row.shirtNumber,
       displayName: row.displayName,
       position: row.position,
@@ -795,8 +796,20 @@ export class HomeService {
         venue: string | null;
         roundLabel: string | null;
         status: string;
-        homeTeam: { id: string; name: string; slug: string; shortName: string | null };
-        awayTeam: { id: string; name: string; slug: string; shortName: string | null };
+        homeTeam: {
+          id: string;
+          name: string;
+          slug: string;
+          shortName: string | null;
+          logoUrl: string | null;
+        };
+        awayTeam: {
+          id: string;
+          name: string;
+          slug: string;
+          shortName: string | null;
+          logoUrl: string | null;
+        };
         score: { home: number; away: number };
         events: number;
         goals: number;
@@ -825,12 +838,14 @@ export class HomeService {
             name: normalizeClubName(match.homeTeam.name),
             slug: match.homeTeam.slug,
             shortName: match.homeTeam.shortName,
+            logoUrl: match.homeTeam.logoUrl,
           },
           awayTeam: {
             id: match.awayTeam.id,
             name: normalizeClubName(match.awayTeam.name),
             slug: match.awayTeam.slug,
             shortName: match.awayTeam.shortName,
+            logoUrl: match.awayTeam.logoUrl,
           },
           score: { home: match.homeScore, away: match.awayScore },
           events: 0,
@@ -861,6 +876,7 @@ export class HomeService {
               name: normalizeClubName(event.team.name),
               slug: event.team.slug,
               shortName: event.team.shortName,
+              logoUrl: event.team.logoUrl,
             }
           : null,
         match: {

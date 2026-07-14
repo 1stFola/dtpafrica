@@ -327,9 +327,6 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
   } else if (fullTimeCount > 1) {
     errors.push('CSV must include exactly one "full_time" row');
   }
-  if (penaltyCount > 1) {
-    errors.push('CSV must include at most one "penalty_shootout" row');
-  }
   if (homeScore == null || awayScore == null) {
     errors.push("full_time row must provide valid home_score and away_score");
   }
