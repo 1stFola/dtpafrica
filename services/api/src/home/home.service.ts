@@ -520,6 +520,11 @@ export class HomeService {
         orderBy: { createdAt: "desc" },
       },
       scoreboardSquad: {
+        orderBy: [
+          { team: { competition: { season: "desc" } } },
+          { team: { competition: { name: "asc" } } },
+          { team: { name: "asc" } },
+        ],
         include: {
           team: {
             include: {
