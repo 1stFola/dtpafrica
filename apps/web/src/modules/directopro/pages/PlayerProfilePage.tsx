@@ -1109,6 +1109,8 @@ function ScoreboardHistoryDashboard({
   const leadingCompetition =
     latestAppearance?.competitionName ?? history.teams[0]?.competition.name ?? "ScoreBoard";
 
+  return <ScoreboardHistoryEventDashboard history={history} />;
+
   return (
     <section className="profile-section">
       <div className="profile-section-heading">
@@ -1244,6 +1246,136 @@ function ScoreboardHistoryDashboard({
               </li>
             ))}
           </ul>
+        )}
+      </article>
+    </section>
+  );
+}
+
+function ScoreboardHistoryEventDashboard({
+  history,
+}: {
+  history: NonNullable<PublicPlayerProfile["scoreboardHistory"]>;
+}) {
+  const latestAppearance = history.appearances[0];
+  const leadingCompetition =
+    latestAppearance?.competitionName ?? history.teams[0]?.competition.name ?? "ScoreBoard";
+  const eventsByMatch = new Map<string, typeof history.events>();
+
+  for (const event of history.events) {
+    const current = eventsByMatch.get(event.match.id) ?? [];
+    current.push(event);
+    eventsByMatch.set(event.match.id, current);
+  }
+
+  const appearanceGroups = history.appearances
+    .map((match) => ({
+      match,
+      events: (eventsByMatch.get(match.matchId) ?? []).sort(
+        (a, b) => a.minute - b.minute || a.id.localeCompare(b.id)
+      ),
+    }))
+    .filter((group) => group.events.length > 0);
+
+  return (
+    <section className="profile-section">
+      <div className="profile-section-heading">
+        <div>
+          <span className="profile-section__eyebrow">ScoreBoard history</span>
+          <h2>Event-backed match record</h2>
+        </div>
+        <span className="profile-data-note">
+          {history.aggregates.events} event{history.aggregates.events === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div className="scoreboard-history-hero">
+        <div>
+          <span className="scoreboard-history-hero__eyebrow">Verified match record</span>
+          <strong>{leadingCompetition}</strong>
+          <p>
+            Match appearances are grouped with the exact timeline comments where this
+            player was mentioned or linked.
+          </p>
+        </div>
+        <div className="scoreboard-history-hero__score">
+          <span>{history.aggregates.events}</span>
+          <small>events tracked</small>
+        </div>
+      </div>
+
+      <div className="scoreboard-history-kpis">
+        <div className="scoreboard-history-kpi">
+          <span>Teams</span>
+          <strong>{history.aggregates.teams}</strong>
+        </div>
+        <div className="scoreboard-history-kpi">
+          <span>Competitions</span>
+          <strong>{history.aggregates.competitions}</strong>
+        </div>
+        <div className="scoreboard-history-kpi">
+          <span>Appearances</span>
+          <strong>{history.aggregates.appearances}</strong>
+        </div>
+        <div className="scoreboard-history-kpi">
+          <span>Goals</span>
+          <strong>{history.aggregates.goals}</strong>
+        </div>
+        <div className="scoreboard-history-kpi">
+          <span>Assists</span>
+          <strong>{history.aggregates.assists}</strong>
+        </div>
+      </div>
+
+      <article className="profile-panel profile-benchmark scoreboard-history-panel scoreboard-history-panel--events">
+        <h3>Event timeline</h3>
+        {appearanceGroups.length === 0 ? (
+          <p className="muted">No player events are linked yet.</p>
+        ) : (
+          <div className="scoreboard-history-match-groups">
+            {appearanceGroups.slice(0, 6).map(({ match, events }) => (
+              <article key={match.matchId} className="scoreboard-history-match-group">
+                <Link
+                  to={matchCenterPath({ slug: match.matchSlug, id: match.matchId })}
+                  className="scoreboard-history-appearance"
+                >
+                  <span className="scoreboard-history-appearance__team">
+                    <ScoreboardTeamLogo team={match.homeTeam} />
+                    <strong>{scoreboardTeamName(match.homeTeam)}</strong>
+                  </span>
+                  <span className="scoreboard-history-appearance__score">
+                    {match.score.home} - {match.score.away}
+                  </span>
+                  <span className="scoreboard-history-appearance__team scoreboard-history-appearance__team--away">
+                    <ScoreboardTeamLogo team={match.awayTeam} />
+                    <strong>{scoreboardTeamName(match.awayTeam)}</strong>
+                  </span>
+                </Link>
+                <p className="scoreboard-history-match-group__meta">
+                  {match.competitionName} - {formatDate(match.kickoffAt)}
+                  {match.goals ? ` - ${match.goals} goal${match.goals === 1 ? "" : "s"}` : ""}
+                  {match.assists
+                    ? ` - ${match.assists} assist${match.assists === 1 ? "" : "s"}`
+                    : ""}
+                </p>
+                <ul className="profile-event-list scoreboard-history-event-list">
+                  {events.map((event) => (
+                    <li key={event.id}>
+                      <span>{event.minute}&apos;</span>
+                      <strong>{scoreboardHistoryEventLabel(event)}</strong>
+                      <em>
+                        {event.detail?.trim()
+                          ? event.detail.trim()
+                          : event.matchedBy === "label"
+                            ? "Matched from timeline name"
+                            : ""}
+                      </em>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
         )}
       </article>
     </section>

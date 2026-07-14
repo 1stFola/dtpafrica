@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { useDebouncedValue } from "../../../../hooks/useDebouncedValue";
@@ -29,7 +29,7 @@ import {
   type AdminSbTeam,
 } from "../types";
 
-type Tab = "competitions" | "teams" | "fixtures" | "players" | "seeders";
+type Tab = "competitions" | "teams" | "fixtures" | "players" | "nameQa" | "seeders";
 type FixtureEditState = {
   match: SbMatchListItem;
   venue: string;
@@ -101,6 +101,7 @@ export function AdminScoreboardEntitiesPage() {
     teams: false,
     fixtures: false,
     players: false,
+    nameQa: false,
     seeders: false,
   });
   const loadedRef = useRef<Record<Tab, boolean>>({
@@ -108,6 +109,7 @@ export function AdminScoreboardEntitiesPage() {
     teams: false,
     fixtures: false,
     players: false,
+    nameQa: false,
     seeders: false,
   });
 
@@ -164,6 +166,7 @@ export function AdminScoreboardEntitiesPage() {
       const rows = await adminScoreboardApi.players(debouncedPlayerQ || undefined);
       setPlayers(rows);
       loadedRef.current.players = true;
+      loadedRef.current.nameQa = true;
     } catch {
       setPlayers([]);
     } finally {
@@ -366,11 +369,11 @@ export function AdminScoreboardEntitiesPage() {
   }, [tab, loadFixtures]);
 
   useEffect(() => {
-    if (tab === "players") void loadPlayers();
+    if (tab === "players" || tab === "nameQa") void loadPlayers();
   }, [tab, loadPlayers]);
 
   useEffect(() => {
-    if (tab !== "players") return;
+    if (tab !== "players" && tab !== "nameQa") return;
     adminScoreboardApi
       .teams()
       .then(setPlayerTeamOptions)
@@ -387,6 +390,45 @@ export function AdminScoreboardEntitiesPage() {
 
   const playerPath = (slug: string | null, displayName: string) =>
     slug ? `/player/${slug}` : `/player/${encodeURIComponent(displayName.toLowerCase().replace(/\s+/g, "-"))}`;
+
+  const normalizeNameKey = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const nameQaRows = useMemo(() => {
+    const byName = new Map<string, AdminSbPlayerDirectoryRow[]>();
+    const byReversed = new Map<string, AdminSbPlayerDirectoryRow[]>();
+
+    for (const player of players) {
+      const key = normalizeNameKey(player.displayName);
+      if (!key) continue;
+      byName.set(key, [...(byName.get(key) ?? []), player]);
+      const parts = key.split(" ").filter(Boolean);
+      if (parts.length === 2) {
+        const reversed = `${parts[1]} ${parts[0]}`;
+        byReversed.set(reversed, [...(byReversed.get(reversed) ?? []), player]);
+      }
+    }
+
+    return players
+      .map((player) => {
+        const key = normalizeNameKey(player.displayName);
+        const parts = key.split(" ").filter(Boolean);
+        const flags: string[] = [];
+        if (parts.length < 2) flags.push("Name completion needed");
+        if ((byName.get(key)?.length ?? 0) > 1) flags.push("Possible duplicate normalized name");
+        if ((byReversed.get(key)?.length ?? 0) > 0) flags.push("Possible first/last-name reversal");
+        if (/[^a-zA-Z\s.'-]/.test(player.displayName)) flags.push("Unusual name appearance");
+        if (player.displayName.length <= 3 || parts.some((part) => part.length <= 1)) {
+          flags.push("Unusual short name");
+        }
+        return { player, flags };
+      })
+      .filter((row) => row.flags.length > 0);
+  }, [players]);
 
   return (
     <section className="admin-sb-section">
@@ -425,6 +467,7 @@ export function AdminScoreboardEntitiesPage() {
             ["teams", "Teams"],
             ["fixtures", "Fixtures"],
             ["players", "Players"],
+            ["nameQa", "Name QA"],
             ["seeders", "CSV seeders"],
           ] as const
         ).map(([id, label]) => (
@@ -1239,6 +1282,109 @@ export function AdminScoreboardEntitiesPage() {
               </tbody>
             </table>
           </AdminSbTableShell>
+          </div>
+        </>
+      )}
+
+      {tab === "nameQa" && (
+        <>
+          <div className="admin-sb-sticky-bar">
+            <div className="admin-filters">
+              <input
+                type="search"
+                placeholder="Search names to review..."
+                value={playerQ}
+                onChange={(e) => setPlayerQ(e.target.value)}
+                aria-label="Search names to review"
+              />
+            </div>
+          </div>
+          <div className="admin-sb-content-panel">
+            <AdminSbTableShell
+              loading={loading.players}
+              empty={!loading.players && nameQaRows.length === 0}
+              emptyTitle="No name issues found"
+              emptyHint="Single names, duplicate normalized names, reversed names, close spelling concerns, and unusual entries appear here."
+              columns={5}
+            >
+              <table className="admin-table admin-sb-table">
+                <thead>
+                  <tr>
+                    <th>Player name</th>
+                    <th>Review flags</th>
+                    <th>Club context</th>
+                    <th>Suggested action</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nameQaRows.map(({ player, flags }) => (
+                    <tr key={`name-qa-${player.teams[0]?.squadId ?? player.playerId ?? player.displayName}`}>
+                      <td>{player.displayName}</td>
+                      <td>
+                        <div className="admin-sb-name-flags">
+                          {flags.map((flag) => (
+                            <span key={flag} className="admin-sb-status admin-sb-status--upcoming">
+                              {flag}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="admin-sb-clubs-cell">
+                        {player.teams
+                          .map((team) => `${team.teamName} (${team.competitionName})`)
+                          .join(", ") || "-"}
+                      </td>
+                      <td className="muted">
+                        Complete first and last name, normalize spelling, then merge or delete
+                        duplicate squad rows where needed.
+                      </td>
+                      <td className="admin-sb-row-actions">
+                        {player.teams[0] && (
+                          <>
+                            <button
+                              type="button"
+                              className="admin-inline-button"
+                              onClick={() => openSquadEditor(player)}
+                            >
+                              Edit name
+                            </button>
+                            <button
+                              type="button"
+                              className="admin-inline-button admin-inline-button--danger"
+                              onClick={async () => {
+                                const squadId = player.teams[0]?.squadId;
+                                if (
+                                  !squadId ||
+                                  !window.confirm(`Delete ${player.displayName} from scoreboard squads?`)
+                                ) {
+                                  return;
+                                }
+                                try {
+                                  await adminScoreboardApi.deleteSquadRow(squadId);
+                                  toast.success("Scoreboard player removed");
+                                  void loadPlayers();
+                                  void refreshStats();
+                                } catch (err) {
+                                  toast.error(formatAdminScoreboardError(err));
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                        {player.slug && (
+                          <Link to={playerPath(player.slug, player.displayName)} className="text-link">
+                            Profile
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </AdminSbTableShell>
           </div>
         </>
       )}

@@ -135,6 +135,12 @@ function parseMinute(value: string | undefined, rowNum: number): number {
   return n;
 }
 
+function parseOptionalMinute(value: string | undefined, fallback: number, rowNum: number): number {
+  const raw = (value ?? "").trim();
+  if (!raw) return fallback;
+  return parseMinute(raw, rowNum);
+}
+
 export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
   const table = parseCsv(csv.trim());
   if (table.length < 2) {
@@ -174,7 +180,7 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
   let narrative: string | null = null;
   const events: ParsedCsvEvent[] = [];
   let fullTimeCount = 0;
-  let penaltyCount = 0;
+  let shootoutEventCount = 0;
   let inShootoutPhase = false;
 
   for (let r = 1; r < table.length; r++) {
@@ -201,32 +207,61 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
     }
 
     if (eventType === "penalty_shootout") {
-      penaltyCount++;
       inShootoutPhase = true;
+      shootoutEventCount++;
+      const minute = parseOptionalMinute(minuteIdx >= 0 ? row[minuteIdx] : undefined, 120, rowNum);
+      const teamSide = parseTeamSide(teamIdx >= 0 ? row[teamIdx] : undefined, rowNum, true);
+      const playerLabel2 = player2Idx >= 0 ? (row[player2Idx] ?? "").trim() : "";
+      const playerLabel = playerIdx >= 0 ? (row[playerIdx] ?? "").trim() : "";
+      const assistLabel = assistIdx >= 0 ? (row[assistIdx] ?? "").trim() : "";
+      const detail = detailIdx >= 0 ? (row[detailIdx] ?? "").trim() : "";
+
       if (hasPenaltyShootoutHeader(penHomeIdx, penAwayIdx, penWinnerIdx)) {
         try {
-          const home = parseIntCell(
-            penHomeIdx >= 0 ? row[penHomeIdx] : undefined,
-            "pen_home",
-            rowNum
-          );
-          const away = parseIntCell(
-            penAwayIdx >= 0 ? row[penAwayIdx] : undefined,
-            "pen_away",
-            rowNum
-          );
+          const penHomeRaw = penHomeIdx >= 0 ? row[penHomeIdx] : undefined;
+          const penAwayRaw = penAwayIdx >= 0 ? row[penAwayIdx] : undefined;
+          const penWinnerRaw = penWinnerIdx >= 0 ? row[penWinnerIdx] : undefined;
+          const hasSummary =
+            Boolean(penHomeRaw?.trim()) ||
+            Boolean(penAwayRaw?.trim()) ||
+            Boolean(penWinnerRaw?.trim());
+          const home = hasSummary ? parseIntCell(penHomeRaw, "pen_home", rowNum) : null;
+          const away = hasSummary ? parseIntCell(penAwayRaw, "pen_away", rowNum) : null;
           const winnerRaw = ((penWinnerIdx >= 0 ? row[penWinnerIdx] : undefined) ?? "")
             .trim()
             .toLowerCase();
-          if (winnerRaw !== "home" && winnerRaw !== "away") {
+          if (hasSummary && winnerRaw !== "home" && winnerRaw !== "away") {
             errors.push(`Row ${rowNum}: pen_winner must be "home" or "away"`);
-          } else {
+          } else if (home != null && away != null && (winnerRaw === "home" || winnerRaw === "away")) {
             penaltyShootout = { home, away, winner: winnerRaw };
           }
         } catch (e) {
           if (e instanceof BadRequestException) errors.push(e.message);
         }
       }
+
+      const mapped = mapCsvEventToStorage({
+        csvType: "penalty_shootout",
+        teamSide,
+        playerLabel: playerLabel || undefined,
+        assistLabel: assistLabel || undefined,
+        detail: detail || undefined,
+      });
+
+      events.push({
+        csvType: "penalty_shootout",
+        type: mapped.type,
+        minute,
+        teamSide,
+        playerLabel2: playerLabel2 || undefined,
+        playerLabel: playerLabel || undefined,
+        assistLabel: assistLabel || undefined,
+        detail: mapped.detail,
+        metadata: {
+          ...(mapped.metadata ?? {}),
+          penaltyShootoutSequence: shootoutEventCount,
+        },
+      });
       continue;
     }
 

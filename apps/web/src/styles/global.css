@@ -5106,6 +5106,43 @@ a {
   padding: 0.7rem 0;
 }
 
+.scoreboard-history-panel--events {
+  margin-top: 1rem;
+}
+
+.scoreboard-history-match-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+.scoreboard-history-match-group {
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.scoreboard-history-match-group__meta {
+  margin: 0.65rem 0 0.5rem;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
+.scoreboard-history-match-group .scoreboard-history-event-list {
+  margin-top: 0.25rem;
+}
+
+.scoreboard-history-match-group .scoreboard-history-event-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.admin-sb-name-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
 @media (max-width: 760px) {
   .scoreboard-history-heading {
     align-items: flex-start;
@@ -15578,6 +15615,12 @@ a.dbx-comp-card:hover {
 
 .sbm-event__player:hover {
   color: #93c5fd;
+}
+
+.sbm-event__player--plain,
+.sbm-event__player--plain:hover {
+  color: var(--color-text);
+  cursor: default;
 }
 
 .sbm-event__assist {
