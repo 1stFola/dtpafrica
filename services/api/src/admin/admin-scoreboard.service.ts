@@ -697,18 +697,26 @@ export class AdminScoreboardService {
     });
     if (!existing) throw new NotFoundException("Squad row not found");
 
-    const displayName = dto.displayName?.trim();
+    const displayName = normalizePlayerName(dto.displayName?.trim() ?? "");
     if (!displayName) throw new BadRequestException("displayName is required");
+    const normalizedName = playerLookupKey(displayName);
+    const nameParts = splitPlayerName(displayName);
+    const targetTeamId = dto.teamId ?? existing.teamId;
+    let targetCompetitionId = existing.team.competitionId;
 
     if (dto.teamId && dto.teamId !== existing.teamId) {
-      const team = await this.prisma.sbTeam.findUnique({ where: { id: dto.teamId } });
+      const team = await this.prisma.sbTeam.findUnique({
+        where: { id: dto.teamId },
+        select: { id: true, name: true, competitionId: true },
+      });
       if (!team) throw new NotFoundException("Target team not found");
+      targetCompetitionId = team.competitionId;
       if (existing.playerId) {
         const conflict = await this.prisma.sbTeamSquad.findFirst({
           where: {
             id: { not: existing.id },
             playerId: existing.playerId,
-            team: { competitionId: team.competitionId },
+            team: { competitionId: targetCompetitionId },
           },
           include: { team: true },
         });
@@ -722,18 +730,59 @@ export class AdminScoreboardService {
       }
     }
 
-    const updated = await this.prisma.sbTeamSquad.update({
-      where: { id: squadId },
-      data: {
-        teamId: dto.teamId ?? existing.teamId,
-        displayName,
-        position: dto.position?.trim() || null,
-        shirtNumber: Number.isFinite(dto.shirtNumber) ? dto.shirtNumber : null,
-      },
-      include: {
-        team: { include: { competition: true } },
-        player: { select: { id: true, slug: true, displayName: true, positionPrimary: true } },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      let playerId = existing.playerId;
+      const matchingPlayer = normalizedName
+        ? await tx.player.findUnique({
+            where: { normalizedName },
+            select: { id: true, displayName: true },
+          })
+        : null;
+
+      if (matchingPlayer && matchingPlayer.id !== existing.playerId) {
+        const conflict = await tx.sbTeamSquad.findFirst({
+          where: {
+            id: { not: existing.id },
+            playerId: matchingPlayer.id,
+            team: { competitionId: targetCompetitionId },
+          },
+          include: { team: true },
+        });
+        if (conflict) {
+          throw new BadRequestException(
+            `${matchingPlayer.displayName} is already registered for ${normalizeClubName(
+              conflict.team.name
+            )} in this competition.`
+          );
+        }
+        playerId = matchingPlayer.id;
+      } else if (existing.playerId) {
+        await tx.player.update({
+          where: { id: existing.playerId },
+          data: {
+            firstName: nameParts.firstName,
+            lastName: nameParts.lastName,
+            displayName,
+            normalizedName: normalizedName || null,
+            ...(dto.position?.trim() ? { positionPrimary: dto.position.trim() } : {}),
+          },
+        });
+      }
+
+      return tx.sbTeamSquad.update({
+        where: { id: squadId },
+        data: {
+          teamId: targetTeamId,
+          playerId,
+          displayName,
+          position: dto.position?.trim() || null,
+          shirtNumber: Number.isFinite(dto.shirtNumber) ? dto.shirtNumber : null,
+        },
+        include: {
+          team: { include: { competition: true } },
+          player: { select: { id: true, slug: true, displayName: true, positionPrimary: true } },
+        },
+      });
     });
     this.statsCache = null;
     return {
