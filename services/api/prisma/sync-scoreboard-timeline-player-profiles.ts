@@ -144,12 +144,21 @@ async function ensureTeamSquadLink(
 ) {
   if (!args.teamId) return false;
 
-  const existingForPlayer = await prisma.sbTeamSquad.findUnique({
-    where: { playerId: args.playerId },
+  const targetTeam = await prisma.sbTeam.findUnique({
+    where: { id: args.teamId },
+    select: { competitionId: true },
+  });
+  if (!targetTeam) return false;
+
+  const existingInCompetition = await prisma.sbTeamSquad.findFirst({
+    where: {
+      playerId: args.playerId,
+      team: { competitionId: targetTeam.competitionId },
+    },
     select: { id: true, teamId: true },
   });
-  if (existingForPlayer) {
-    if (existingForPlayer.teamId === args.teamId) return false;
+  if (existingInCompetition) {
+    if (existingInCompetition.teamId === args.teamId) return false;
     return false;
   }
 

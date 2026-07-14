@@ -759,6 +759,11 @@ async function seedSquads(
   for (const row of mergedSquadRows()) {
     const teamId = teamIds[row.teamSlug];
     if (!teamId) continue;
+    const team = await prisma.sbTeam.findUnique({
+      where: { id: teamId },
+      select: { competitionId: true },
+    });
+    if (!team) continue;
 
     const displayName = normalizePlayerName(row.displayName);
     const nameParts = splitDisplayName(displayName);
@@ -767,10 +772,6 @@ async function seedSquads(
     const normalizedName = playerLookupKey(displayName);
     const dateOfBirth = normalizeSeedDate(row.dateOfBirth);
     const position = row.position || "MF";
-    const authoritativeRow = Boolean(
-      row.dateOfBirth || row.imageUrl || row.firstName || row.lastName
-    );
-
     let player = await prisma.player.findUnique({
       where: { normalizedName },
     });
@@ -805,24 +806,13 @@ async function seedSquads(
       });
     }
 
-    const existingForPlayer = await prisma.sbTeamSquad.findUnique({
-      where: { playerId: player.id },
+    const existingForPlayer = await prisma.sbTeamSquad.findFirst({
+      where: {
+        playerId: player.id,
+        team: { competitionId: team.competitionId },
+      },
     });
     if (existingForPlayer && existingForPlayer.teamId !== teamId) {
-      if (!authoritativeRow) {
-        squadByLabel.set(`${row.teamSlug}:${displayName}`, existingForPlayer.id);
-        continue;
-      }
-      const squad = await prisma.sbTeamSquad.update({
-        where: { id: existingForPlayer.id },
-        data: {
-          teamId,
-          displayName,
-          position,
-          shirtNumber: row.shirtNumber,
-        },
-      });
-      squadByLabel.set(`${row.teamSlug}:${displayName}`, squad.id);
       continue;
     }
 

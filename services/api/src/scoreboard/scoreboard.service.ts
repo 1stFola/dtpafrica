@@ -321,8 +321,17 @@ export class ScoreboardService {
     displayName: string;
     position: string;
   }) {
-    const existingForPlayer = await this.prisma.sbTeamSquad.findUnique({
-      where: { playerId: args.playerId },
+    const targetTeam = await this.prisma.sbTeam.findUnique({
+      where: { id: args.teamId },
+      select: { competitionId: true },
+    });
+    if (!targetTeam) return;
+
+    const existingForPlayer = await this.prisma.sbTeamSquad.findFirst({
+      where: {
+        playerId: args.playerId,
+        team: { competitionId: targetTeam.competitionId },
+      },
       select: { id: true, teamId: true },
     });
     if (existingForPlayer) return;
