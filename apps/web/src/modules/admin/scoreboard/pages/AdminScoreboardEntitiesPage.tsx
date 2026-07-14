@@ -258,7 +258,7 @@ export function AdminScoreboardEntitiesPage() {
 
     setSquadSaving(true);
     try {
-      await adminScoreboardApi.updateSquadRow(editingSquadRow.squadId, {
+      const updated = await adminScoreboardApi.updateSquadRow(editingSquadRow.squadId, {
         teamId: draft.teamId,
         displayName: draft.displayName.trim(),
         position: draft.position?.trim() || undefined,
@@ -267,6 +267,22 @@ export function AdminScoreboardEntitiesPage() {
             ? null
             : Number(draft.shirtNumber),
       });
+      setPlayers((rows) =>
+        rows.map((row) =>
+          row.teams.some((team) => team.squadId === updated.squadId)
+            ? {
+                ...row,
+                playerId: updated.playerId,
+                slug: updated.slug,
+                displayName: updated.displayName,
+                positionPrimary: updated.positionPrimary,
+                teams: row.teams.map((team) =>
+                  team.squadId === updated.squadId ? updated.teams[0] : team
+                ),
+              }
+            : row
+        )
+      );
       toast.success("Scoreboard player updated");
       setEditingSquadRow(null);
       void loadPlayers();

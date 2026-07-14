@@ -34,7 +34,6 @@ type ProfileTab = "overview" | "scoreboard" | "scouting" | "videos" | "photos" |
 type ProfileMediaItem = NonNullable<PublicPlayerProfile["mediaItems"]>[number] & {
   url: string;
 };
-type CareerStatBox = { label: string; value: string };
 
 const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
   goal: "Goal",
@@ -263,43 +262,6 @@ function buildBioFacts(
   return facts;
 }
 
-function buildCareerStatBoxes(
-  player: PublicPlayerProfile,
-  minutesPlayed: number | null,
-  isGk: boolean,
-  history: PublicPlayerProfile["scoreboardHistory"]
-): CareerStatBox[] {
-  if (isGk) {
-    return [
-      { label: "Appearances", value: String(player.stats?.appearances ?? 0) },
-      { label: "Clean sheets", value: String(player.stats?.cleanSheets ?? 0) },
-      { label: "Keeper actions", value: String(countGoalkeeperEvidenceEvents(history)) },
-      { label: "Minutes played", value: formatMinutesPlayed(minutesPlayed) },
-    ];
-  }
-
-  const boxes: CareerStatBox[] = [
-    { label: "Appearances", value: String(player.stats?.appearances ?? 0) },
-    { label: "Goals", value: String(player.stats?.goals ?? 0) },
-    { label: "Assists", value: String(player.stats?.assists ?? 0) },
-    { label: "Minutes played", value: formatMinutesPlayed(minutesPlayed) },
-  ];
-  return boxes;
-}
-
-function countEventsByType(
-  history: PublicPlayerProfile["scoreboardHistory"],
-  types: Set<string>
-): number {
-  return history?.events.filter((event) => types.has(event.type)).length ?? 0;
-}
-
-function countGoalkeeperEvidenceEvents(
-  history: PublicPlayerProfile["scoreboardHistory"]
-): number {
-  return countEventsByType(history, GOALKEEPER_SCOREBOARD_EVENT_TYPES);
-}
-
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleDateString() : "Date pending";
 }
@@ -481,7 +443,6 @@ export function PlayerProfilePage() {
   const scoreboard = player.scoreboardHistory;
   const minutesPlayed = resolveProfileMinutes(player);
   const isGk = isGkProfile(player);
-  const careerStatBoxes = buildCareerStatBoxes(player, minutesPlayed, isGk, scoreboard);
   const positionLabel = resolvePositionFullLabel(player.positionPrimary.trim(), null);
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
@@ -632,9 +593,8 @@ export function PlayerProfilePage() {
 
       {activeTab === "scoreboard" && (
         <>
-          <CareerStatBoxesSection stats={careerStatBoxes} />
           {isGk && <GoalkeeperScoreboardProfileSection history={scoreboard} />}
-          <ScoreboardHistorySection history={scoreboard} />
+          <ScoreboardHistorySection history={scoreboard} minutesPlayed={minutesPlayed} />
         </>
       )}
 
@@ -824,27 +784,6 @@ function PlayerBioGrid({ facts }: { facts: BioFact[] }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-function CareerStatBoxesSection({ stats }: { stats: CareerStatBox[] }) {
-  return (
-    <section className="profile-section" aria-label="Career totals">
-      <div className="profile-section-heading">
-        <div>
-          <span className="player-profile-eyebrow">ScoreBoard metrics</span>
-          <h2 className="player-profile-heading">Career totals</h2>
-        </div>
-      </div>
-      <div className="player-profile-stat-grid">
-        {stats.map((stat) => (
-          <article key={stat.label} className="player-profile-stat-box">
-            <span className="player-profile-stat-box__label">{stat.label}</span>
-            <strong className="player-profile-stat-box__value">{stat.value}</strong>
-          </article>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -1082,8 +1021,10 @@ function PremiumSkeletonProfile({
 
 function ScoreboardHistorySection({
   history,
+  minutesPlayed,
 }: {
   history: PublicPlayerProfile["scoreboardHistory"];
+  minutesPlayed: number | null;
 }) {
   if (!history || (history.teams.length === 0 && history.appearances.length === 0)) {
     return (
@@ -1097,19 +1038,21 @@ function ScoreboardHistorySection({
     );
   }
 
-  return <ScoreboardHistoryDashboard history={history} />;
+  return <ScoreboardHistoryDashboard history={history} minutesPlayed={minutesPlayed} />;
 }
 
 function ScoreboardHistoryDashboard({
   history,
+  minutesPlayed,
 }: {
   history: NonNullable<PublicPlayerProfile["scoreboardHistory"]>;
+  minutesPlayed: number | null;
 }) {
   const latestAppearance = history.appearances[0];
   const leadingCompetition =
     latestAppearance?.competitionName ?? history.teams[0]?.competition.name ?? "ScoreBoard";
 
-  return <ScoreboardHistoryEventDashboard history={history} />;
+  return <ScoreboardHistoryEventDashboard history={history} minutesPlayed={minutesPlayed} />;
 
   return (
     <section className="profile-section">
@@ -1254,8 +1197,10 @@ function ScoreboardHistoryDashboard({
 
 function ScoreboardHistoryEventDashboard({
   history,
+  minutesPlayed,
 }: {
   history: NonNullable<PublicPlayerProfile["scoreboardHistory"]>;
+  minutesPlayed: number | null;
 }) {
   const latestAppearance = history.appearances[0];
   const leadingCompetition =
@@ -1324,6 +1269,10 @@ function ScoreboardHistoryEventDashboard({
         <div className="scoreboard-history-kpi">
           <span>Assists</span>
           <strong>{history.aggregates.assists}</strong>
+        </div>
+        <div className="scoreboard-history-kpi">
+          <span>Minutes played</span>
+          <strong>{formatMinutesPlayed(minutesPlayed)}</strong>
         </div>
       </div>
 

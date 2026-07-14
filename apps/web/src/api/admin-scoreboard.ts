@@ -18,6 +18,15 @@ import type { SbMatchListItem } from "./scoreboard";
 
 export type HighlightMediaType = "video" | "photo";
 
+type AdminSbSquadRowUpdateResponse = {
+  squadId: string;
+  playerId: string | null;
+  slug: string | null;
+  displayName: string;
+  positionPrimary: string | null;
+  teams: AdminSbPlayerDirectoryRow["teams"];
+};
+
 export type AdminHighlightRow = {
   id: string;
   title: string;
@@ -159,7 +168,7 @@ export const adminScoreboardApi = {
   },
 
   updateSquadRow: (squadId: string, body: AdminSbSquadRowInput) =>
-    sbFetch<AdminSbPlayerDirectoryRow>(`/admin/scoreboard/squad/${squadId}`, {
+    sbFetch<AdminSbSquadRowUpdateResponse>(`/admin/scoreboard/squad/${squadId}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
