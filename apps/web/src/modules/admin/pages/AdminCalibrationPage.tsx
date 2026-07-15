@@ -127,6 +127,7 @@ export function AdminCalibrationPage() {
   const toast = useAdminToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const csvRef = useRef<HTMLInputElement>(null);
+  const clearConfirmRef = useRef<HTMLDivElement>(null);
 
   const [selectedPlayer, setSelectedPlayer] = useState<AdminPlayerRow | null>(null);
   const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
@@ -144,6 +145,15 @@ export function AdminCalibrationPage() {
   useEffect(() => {
     adminScoreboardApi.teams().then((rows) => setTeams(rows)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!showClearConfirm) return;
+    const frame = window.requestAnimationFrame(() => {
+      clearConfirmRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      clearConfirmRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [showClearConfirm]);
 
   useEffect(() => {
     const id = searchParams.get("playerId");
@@ -598,17 +608,22 @@ export function AdminCalibrationPage() {
               type="button"
               className="admin-link-danger"
               disabled={loading}
-              onClick={() => setShowClearConfirm(true)}
+              onClick={() => {
+                setMessage(null);
+                setShowClearConfirm(true);
+              }}
             >
               Clear All
             </button>
           </div>
           {showClearConfirm && (
             <div
+              ref={clearConfirmRef}
               className="admin-calibration__confirm"
               role="alertdialog"
               aria-modal="false"
               aria-labelledby="admin-calibration-clear-title"
+              tabIndex={-1}
             >
               <div>
                 <strong id="admin-calibration-clear-title">Clear all calibration fields?</strong>
