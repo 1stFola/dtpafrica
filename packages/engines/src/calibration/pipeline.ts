@@ -9,13 +9,18 @@ import {
   type MatchMetricsRow,
   type PlayerCalibrationMeta,
 } from "./map-metrics";
+import {
+  summarizeCalibratedRatings,
+  type CalibrationRatingSummary,
+} from "./rating-summary";
+import { applyCalibrationRealityControls } from "./reality-controls";
 
 export type CalibrationResult = {
   meta: Record<string, unknown>;
   raw: Record<string, number>;
   calibrated: Record<string, number>;
-  rawSummary: { offensive_score: number; defensive_score: number; overall_rating: number };
-  calibratedSummary: { offensive_score: number; defensive_score: number; overall_rating: number };
+  rawSummary: CalibrationRatingSummary;
+  calibratedSummary: CalibrationRatingSummary;
   nearestBenchmark: Record<string, unknown>;
   alternativeBenchmarks: Record<string, unknown>[];
   rankedCandidates: Record<string, unknown>[];
@@ -42,7 +47,7 @@ export function runCalibration(
   const meta = legacy.getPlayerMeta(playerMeta as Record<string, unknown>);
   const raw = legacy.computeRawRatings(matchData);
   const calResult = legacy.calibrate(meta, raw);
-  const calibrated = calResult.calibrated;
+  const calibrated = applyCalibrationRealityControls(raw, calResult.calibrated);
 
   const rankedCandidates =
     calResult.rankedCandidates?.length > 0
@@ -61,7 +66,7 @@ export function runCalibration(
     raw,
     calibrated,
     rawSummary,
-    calibratedSummary: legacy.summaryRatings(calibrated),
+    calibratedSummary: summarizeCalibratedRatings(calibrated),
     nearestBenchmark: selection.nearest,
     alternativeBenchmarks: selection.alternativeBenchmarks,
     rankedCandidates,
