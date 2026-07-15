@@ -103,6 +103,7 @@ export default function App() {
         </Route>
         <Route path="comparison" element={<Navigate to="/scouting/compare" replace />} />
         <Route path="scouting/*" element={<LazyRoute><ScoutingApp /></LazyRoute>} />
+        <Route path="scoreboard/" element={<Navigate to="/scoreboard" replace />} />
         <Route path="scoreboard/*" element={<LazyRoute><ScoreboardApp /></LazyRoute>} />
         <Route path="valuation" element={<Navigate to="/scouting" replace />} />
         <Route path="valuation/generate" element={<Navigate to="/scouting/generate" replace />} />
