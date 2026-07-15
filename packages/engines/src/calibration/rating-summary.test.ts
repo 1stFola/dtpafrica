@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   calibrationCategoryScoresFromAttributes,
   summarizeCalibratedRatings,
+  speedProfileScoreFromAttributes,
 } from "./rating-summary";
 
 function attributesFromCategories(input: {
@@ -66,4 +67,72 @@ test("calibrated headline ratings stay aligned with pentagon category scores", (
   assert.equal(summaryB.overall_rating, 71);
   assert.ok(Math.abs(summaryA.offensive_score - summaryB.offensive_score) <= 1);
   assert.ok(Math.abs(summaryA.defensive_score - summaryB.defensive_score) <= 2);
+});
+
+test("speed profile rewards balanced pace, acceleration, and sprint speed", () => {
+  assert.equal(
+    speedProfileScoreFromAttributes({
+      pace: 69,
+      acceleration: 69,
+      sprint_speed: 69,
+    }),
+    69,
+  );
+
+  assert.equal(
+    speedProfileScoreFromAttributes({
+      pace: 92,
+      acceleration: 88,
+      sprint_speed: 45,
+    }),
+    69,
+  );
+});
+
+test("radar categories do not hide weak core traits behind high averages", () => {
+  const scores = Object.fromEntries(
+    calibrationCategoryScoresFromAttributes({
+      pace: 92,
+      acceleration: 88,
+      sprint_speed: 45,
+      passing: 92,
+      vision: 88,
+      team_play: 45,
+      dribbling: 92,
+      ball_control: 88,
+      first_touch: 85,
+      technique: 84,
+      finishing: 45,
+      stamina: 92,
+      agility: 88,
+      strength: 45,
+      positioning: 92,
+      decision_making: 88,
+      work_rate: 84,
+      composure: 45,
+    }).map((item) => [item.key, item.score]),
+  );
+
+  assert.ok(scores.speed < 75);
+  assert.ok(scores.distribution < 75);
+  assert.ok(scores.ball_skills < 80);
+  assert.ok(scores.physicality < 75);
+  assert.ok(scores.defensive_iq < 80);
+});
+
+test("overall rating is role-weighted while pentagon evidence remains unchanged", () => {
+  const attributes = attributesFromCategories({
+    speed: 35,
+    distribution: 72,
+    ballSkills: 68,
+    physicality: 58,
+    defensiveIq: 70,
+  });
+
+  assert.deepEqual(
+    calibrationCategoryScoresFromAttributes(attributes).map((item) => item.score),
+    [35, 72, 68, 58, 70],
+  );
+  assert.equal(summarizeCalibratedRatings(attributes, "AM").overall_rating, 64);
+  assert.equal(summarizeCalibratedRatings(attributes, "RW").overall_rating, 57);
 });

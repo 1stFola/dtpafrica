@@ -37,6 +37,115 @@ function readAttr(
   return clampScore(average(values));
 }
 
+function weightedAttrScore(
+  attributes: Record<string, number>,
+  entries: readonly { key: string; weight: number }[],
+  fallback: number,
+  options: {
+    supportFloorWeight?: number;
+    spreadAllowance?: number;
+    spreadPenalty?: number;
+  } = {}
+) {
+  const available = entries
+    .map((entry) => ({ ...entry, value: attributes[entry.key] }))
+    .filter((entry): entry is { key: string; weight: number; value: number } =>
+      typeof entry.value === "number" && Number.isFinite(entry.value)
+    );
+
+  if (available.length === 0) return fallback;
+  if (available.length < entries.length) {
+    return readAttr(
+      attributes,
+      entries.map((entry) => entry.key),
+      fallback
+    );
+  }
+
+  const totalWeight = available.reduce((sum, entry) => sum + entry.weight, 0);
+  const weightedScore =
+    available.reduce((sum, entry) => sum + entry.value * entry.weight, 0) / totalWeight;
+  const values = available.map((entry) => entry.value);
+  const supportFloor = Math.min(...values);
+  const spread = Math.max(...values) - supportFloor;
+  const supportFloorWeight = options.supportFloorWeight ?? 0.1;
+  const spreadAllowance = options.spreadAllowance ?? 18;
+  const spreadPenalty = options.spreadPenalty ?? 0.15;
+  const weakTraitPenalty = Math.max(0, spread - spreadAllowance) * spreadPenalty;
+
+  return clampScore(
+    weightedScore * (1 - supportFloorWeight) + supportFloor * supportFloorWeight - weakTraitPenalty
+  );
+}
+
+function speedProfileScore(attributes: Record<string, number>, fallback: number) {
+  return weightedAttrScore(
+    attributes,
+    [
+      { key: "pace", weight: 0.34 },
+      { key: "acceleration", weight: 0.36 },
+      { key: "sprint_speed", weight: 0.3 },
+    ],
+    fallback,
+    { supportFloorWeight: 0.08, spreadAllowance: 16, spreadPenalty: 0.16 }
+  );
+}
+
+function distributionScore(attributes: Record<string, number>, fallback: number) {
+  return weightedAttrScore(
+    attributes,
+    [
+      { key: "passing", weight: 0.42 },
+      { key: "vision", weight: 0.32 },
+      { key: "team_play", weight: 0.26 },
+    ],
+    fallback,
+    { supportFloorWeight: 0.08, spreadAllowance: 20, spreadPenalty: 0.1 }
+  );
+}
+
+function ballSkillsScore(attributes: Record<string, number>, fallback: number) {
+  return weightedAttrScore(
+    attributes,
+    [
+      { key: "dribbling", weight: 0.22 },
+      { key: "ball_control", weight: 0.24 },
+      { key: "first_touch", weight: 0.2 },
+      { key: "technique", weight: 0.2 },
+      { key: "finishing", weight: 0.14 },
+    ],
+    fallback,
+    { supportFloorWeight: 0.06, spreadAllowance: 20, spreadPenalty: 0.08 }
+  );
+}
+
+function physicalityScore(attributes: Record<string, number>, fallback: number) {
+  return weightedAttrScore(
+    attributes,
+    [
+      { key: "stamina", weight: 0.38 },
+      { key: "agility", weight: 0.34 },
+      { key: "strength", weight: 0.28 },
+    ],
+    fallback,
+    { supportFloorWeight: 0.08, spreadAllowance: 18, spreadPenalty: 0.1 }
+  );
+}
+
+function defensiveIqScore(attributes: Record<string, number>, fallback: number) {
+  return weightedAttrScore(
+    attributes,
+    [
+      { key: "positioning", weight: 0.32 },
+      { key: "decision_making", weight: 0.28 },
+      { key: "work_rate", weight: 0.24 },
+      { key: "composure", weight: 0.16 },
+    ],
+    fallback,
+    { supportFloorWeight: 0.08, spreadAllowance: 20, spreadPenalty: 0.08 }
+  );
+}
+
 export function buildAttributeMap(
   player: Pick<
     PublicPlayerProfile,
@@ -87,35 +196,27 @@ export function buildPerformanceRadarScores(player: RadarPlayerInput): CategoryS
     {
       key: "pace",
       label: "SPEED PROFILE",
-      score: readAttr(attributes, ["pace", "acceleration", "sprint_speed"], att),
+      score: speedProfileScore(attributes, att),
     },
     {
       key: "passing",
       label: "DISTRIBUTION",
-      score: readAttr(attributes, ["passing", "vision", "team_play"], att),
+      score: distributionScore(attributes, att),
     },
     {
       key: "technical",
       label: "BALL SKILLS",
-      score: readAttr(
-        attributes,
-        ["dribbling", "ball_control", "finishing", "technique", "first_touch"],
-        att
-      ),
+      score: ballSkillsScore(attributes, att),
     },
     {
       key: "physical",
       label: "PHYSICALITY",
-      score: readAttr(attributes, ["stamina", "strength", "agility"], overall),
+      score: physicalityScore(attributes, overall),
     },
     {
       key: "defending",
       label: "DEFENSIVE IQ",
-      score: readAttr(
-        attributes,
-        ["positioning", "work_rate", "decision_making", "composure"],
-        def
-      ),
+      score: defensiveIqScore(attributes, def),
     },
   ];
 }

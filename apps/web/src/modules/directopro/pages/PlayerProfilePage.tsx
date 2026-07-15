@@ -15,7 +15,10 @@ import { PlayerRoleProfileSection } from "../components/playerProfile/PlayerRole
 import { ScoutingDetailsTab } from "../components/playerProfile/ScoutingDetailsTab";
 import { PositionScoutingMetricsRow } from "../../scouting/components/PositionScoutingMetricsRow";
 import { matchCenterPath } from "../../scoreboard/utils/matchPath";
-import { buildPerformanceRadarScores } from "../../scouting/utils/strongXiPlayerModalUtils";
+import {
+  buildAttributeMap as buildProfileAttributeMap,
+  buildPerformanceRadarScores,
+} from "../../scouting/utils/strongXiPlayerModalUtils";
 
 /**
  * Navigation context a linking surface (e.g. Top Scorers, squad rows) can pass
@@ -135,41 +138,6 @@ function initialsFromName(name: string): string {
     .map((word) => word.charAt(0).toUpperCase())
     .join("");
   return initials || "?";
-}
-
-function buildAttributeFallback(player: PublicPlayerProfile) {
-  const overall = player.overallRating ?? 62;
-  const offensive = player.offensiveRating ?? overall;
-  const defensive = player.defensiveRating ?? overall;
-  const tactical = player.tacticalSummary;
-
-  return {
-    pace: overall,
-    acceleration: overall,
-    sprint_speed: overall,
-    stamina: defensive,
-    strength: defensive,
-    agility: offensive,
-    dribbling: offensive,
-    ball_control: offensive,
-    passing: tactical ? tactical.tikiTakaScore : offensive,
-    finishing: offensive,
-    technique: offensive,
-    first_touch: offensive,
-    vision: tactical ? tactical.totalFootballScore : overall,
-    composure: overall,
-    decision_making: overall,
-    work_rate: defensive,
-    positioning: defensive,
-    team_play: tactical ? tactical.counterAttackScore : overall,
-  };
-}
-
-function buildAttributeMap(player: PublicPlayerProfile) {
-  return {
-    ...buildAttributeFallback(player),
-    ...(player.ratingAttributes ?? {}),
-  };
 }
 
 function ratingTier(rating?: number | null) {
@@ -429,7 +397,7 @@ export function PlayerProfilePage() {
   }
 
   const tactical = player.tacticalSummary;
-  const attributes = buildAttributeMap(player);
+  const attributes = buildProfileAttributeMap(player);
   const mediaItems = buildMediaItems(player);
   const videoItems = mediaItems.filter((item) => item.type === "video");
   const photoItems = mediaItems.filter((item) => item.type === "photo");

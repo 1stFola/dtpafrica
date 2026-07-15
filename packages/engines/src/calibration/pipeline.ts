@@ -47,6 +47,7 @@ export function runCalibration(
   const legacy = loadLegacyCalibration();
   const matchData = legacy.estimateMissingFields(matchMetricsToLegacyInput(metrics));
   const meta = legacy.getPlayerMeta(playerMeta as Record<string, unknown>);
+  const position = typeof meta.position === "string" ? meta.position : playerMeta.position;
   const raw = legacy.computeRawRatings(matchData);
   const calResult = legacy.calibrate(meta, raw);
 
@@ -55,7 +56,7 @@ export function runCalibration(
       ? calResult.rankedCandidates
       : [calResult.nearest, ...calResult.alternatives].filter(Boolean);
 
-  const rawSummary = legacy.summaryRatings(raw);
+  const rawSummary = summarizeCalibratedRatings(raw, position);
   const autoIndex = resolvePrimaryBenchmarkIndex(rawSummary.overall_rating);
   const selection = selectBenchmarkFromPool(
     rankedCandidates,
@@ -66,14 +67,14 @@ export function runCalibration(
     selection.nearest,
     rawSummary.overall_rating,
   );
-  const calibrated = applyCalibrationRealityControls(raw, benchmarkAdjusted);
+  const calibrated = applyCalibrationRealityControls(raw, benchmarkAdjusted, position);
 
   return {
     meta,
     raw,
     calibrated,
     rawSummary,
-    calibratedSummary: summarizeCalibratedRatings(calibrated),
+    calibratedSummary: summarizeCalibratedRatings(calibrated, position),
     nearestBenchmark: selection.nearest,
     alternativeBenchmarks: selection.alternativeBenchmarks,
     rankedCandidates,
