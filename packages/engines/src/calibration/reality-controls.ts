@@ -28,8 +28,9 @@ function blendForRawOverall(rawOverall: number) {
 export function applyCalibrationRealityControls(
   raw: Record<string, number>,
   calibrated: Record<string, number>,
+  position?: string,
 ): Record<string, number> {
-  const rawSummary = summarizeCalibratedRatings(raw);
+  const rawSummary = summarizeCalibratedRatings(raw, position);
   const rawOverall = rawSummary.overall_rating;
   const maxLift = maxLiftForRawOverall(rawOverall);
   const blend = blendForRawOverall(rawOverall);

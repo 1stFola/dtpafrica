@@ -37,7 +37,7 @@ export type PlayerCalibrationMeta = {
 export function matchMetricsToLegacyInput(m: MatchMetricsRow): Record<string, number> {
   const accelerations = m.firstStepAccelerations + m.intenseAccelerations;
   return {
-    duration: m.minutesPlayed,
+    duration: 90,
     ball_touches: m.ballTouches,
     total_distance: m.totalDistanceMiles,
     sprint_distance: m.sprintDistanceYards,
