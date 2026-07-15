@@ -7266,6 +7266,83 @@ a {
   max-width: 1180px;
 }
 
+.featured-players-filterbar {
+  width: min(1180px, calc(100% - 2rem));
+  margin: -1.25rem auto 2rem;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(5, minmax(140px, 1fr)) auto;
+  gap: 0.75rem;
+  align-items: end;
+  padding: 0.85rem;
+  border: 1px solid rgba(244, 241, 232, 0.12);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(69, 211, 107, 0.14), transparent 16rem),
+    rgba(7, 11, 9, 0.82);
+  box-shadow: 0 1.25rem 3rem rgba(0, 0, 0, 0.18);
+}
+
+.featured-players-filterbar label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.featured-players-filterbar label span {
+  color: rgba(244, 241, 232, 0.6);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.featured-players-filterbar input,
+.featured-players-filterbar select {
+  width: 100%;
+  min-height: 2.65rem;
+  border: 1px solid rgba(244, 241, 232, 0.14);
+  border-radius: 10px;
+  background: rgba(5, 7, 6, 0.7);
+  color: #f4f1e8;
+  padding: 0 0.85rem;
+  font: inherit;
+}
+
+.featured-players-filterbar__clear {
+  min-height: 2.65rem;
+  border: 1px solid rgba(244, 241, 232, 0.18);
+  border-radius: 10px;
+  background: rgba(244, 241, 232, 0.06);
+  color: #f4f1e8;
+  font-weight: 900;
+  padding: 0 1rem;
+}
+
+.featured-players-filterbar__clear:hover {
+  border-color: rgba(69, 211, 107, 0.5);
+}
+
+.featured-players-grid {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto clamp(3rem, 7vw, 5rem);
+}
+
+.featured-players-grid .player-grid-ad {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1120px) {
+  .featured-players-filterbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .featured-players-filterbar {
+    grid-template-columns: 1fr;
+    margin-top: -0.75rem;
+  }
+}
+
 .evidence-form,
 .contact-evidence-panel,
 .evidence-success-panel {
@@ -10247,6 +10324,47 @@ a {
 
 .admin-calibration__actions--wide {
   flex-wrap: wrap;
+}
+
+.admin-calibration__confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, rgba(127, 29, 29, 0.34), rgba(15, 23, 42, 0.92)),
+    rgba(15, 23, 42, 0.92);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
+}
+
+.admin-calibration__confirm strong {
+  display: block;
+  color: #fecaca;
+  font-size: 0.95rem;
+}
+
+.admin-calibration__confirm p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.admin-calibration__confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.admin-inline-button--danger {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(185, 28, 28, 0.2);
+  color: #fecaca;
 }
 
 /* Utility-style classes for V3 dashboard layout */

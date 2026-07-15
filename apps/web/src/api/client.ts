@@ -18,8 +18,12 @@ export function isAbortError(error: unknown): boolean {
   ) || (error instanceof Error && error.name === "AbortError");
 }
 
-export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_PREFIX}${path}`, signal ? { signal } : undefined);
+export async function apiGet<T>(
+  path: string,
+  signal?: AbortSignal,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${API_PREFIX}${path}`, { ...init, ...(signal ? { signal } : {}) });
   if (!res.ok) {
     const text = await res.text();
     throw new ApiError(text || res.statusText, res.status);
@@ -367,11 +371,16 @@ export type ComparisonResponse = {
   values: Record<string, number[]>;
 };
 
-const FEATURED_PLAYERS_CACHE_TTL_MS = 60_000;
+const FEATURED_PLAYERS_CACHE_TTL_MS = 15_000;
 
-export function fetchFeaturedPlayers(limit?: number, signal?: AbortSignal) {
+export function fetchFeaturedPlayers(
+  limit?: number,
+  signal?: AbortSignal,
+  options: { cache?: boolean } = {}
+) {
   const path =
     limit != null ? `/home/featured-players?limit=${limit}` : "/home/featured-players";
+  if (options.cache === false) return apiGet<FeaturedPlayer[]>(path, signal, { cache: "no-store" });
   const cacheKey = `public:featured-players:${limit ?? "default"}`;
   return cachedFetch(cacheKey, FEATURED_PLAYERS_CACHE_TTL_MS, () =>
     apiGet<FeaturedPlayer[]>(path, signal)
