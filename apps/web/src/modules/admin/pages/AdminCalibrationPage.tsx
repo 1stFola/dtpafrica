@@ -346,8 +346,26 @@ export function AdminCalibrationPage() {
     poolSize: result?.filterInfo.poolSize ?? 0,
   };
 
-  const setPrimaryBenchmark = (candidateIndex: number) => {
+  const setPrimaryBenchmark = async (candidateIndex: number) => {
     setSelectedPrimaryIndex(candidateIndex);
+    if (!result) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const body = buildPayload();
+      const out = await adminApi.calibrationPreview({
+        ...body,
+        playerId: playerId || undefined,
+        primaryBenchmarkIndex: candidateIndex,
+      });
+      setResult(out);
+      setSelectedPrimaryIndex(out.primaryBenchmarkIndex ?? candidateIndex);
+      setHasGenerated(true);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const summaryMetrics = [
@@ -665,7 +683,8 @@ export function AdminCalibrationPage() {
                           <button
                             type="button"
                             className="admin-inline-button admin-calibration-v3__swap-btn"
-                            onClick={() => setPrimaryBenchmark(i)}
+                            disabled={loading}
+                            onClick={() => void setPrimaryBenchmark(i)}
                           >
                             Set as Primary
                           </button>
