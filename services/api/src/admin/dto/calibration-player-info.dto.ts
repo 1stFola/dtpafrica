@@ -1,4 +1,5 @@
 import { IsIn, IsNumber, IsOptional, IsString, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
 
 const POSITIONS = ["GK", "ST", "RW", "LW", "AM", "CM", "CDM", "LB", "RB", "CB"] as const;
 const DOMINANT_FOOT_OPTIONS = ["Left", "Right", "Both"] as const;
@@ -42,6 +43,7 @@ export class CalibrationPlayerInfoDto {
   heightFt?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   weightKg?: number;
 

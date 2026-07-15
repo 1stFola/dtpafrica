@@ -2,6 +2,7 @@ import {
   resolvePrimaryBenchmarkIndex,
   selectBenchmarkFromPool,
 } from "./benchmark-selection";
+import { CALIBRATION_ATTRIBUTE_KEYS } from "./attribute-keys";
 import { loadLegacyCalibration } from "./load-legacy";
 import {
   matchMetricsToLegacyInput,
@@ -14,6 +15,7 @@ import {
   type CalibrationRatingSummary,
 } from "./rating-summary";
 import { applyCalibrationRealityControls } from "./reality-controls";
+import { applySelectedBenchmarkInfluence } from "./benchmark-influence";
 
 export type CalibrationResult = {
   meta: Record<string, unknown>;
@@ -34,7 +36,7 @@ export type RunCalibrationOptions = {
 };
 
 export function getCalibrationAttributeKeys(): string[] {
-  return loadLegacyCalibration().ATTRS;
+  return [...CALIBRATION_ATTRIBUTE_KEYS];
 }
 
 export function runCalibration(
@@ -47,7 +49,6 @@ export function runCalibration(
   const meta = legacy.getPlayerMeta(playerMeta as Record<string, unknown>);
   const raw = legacy.computeRawRatings(matchData);
   const calResult = legacy.calibrate(meta, raw);
-  const calibrated = applyCalibrationRealityControls(raw, calResult.calibrated);
 
   const rankedCandidates =
     calResult.rankedCandidates?.length > 0
@@ -60,6 +61,12 @@ export function runCalibration(
     rankedCandidates,
     options.primaryBenchmarkIndex ?? autoIndex,
   );
+  const benchmarkAdjusted = applySelectedBenchmarkInfluence(
+    calResult.calibrated,
+    selection.nearest,
+    rawSummary.overall_rating,
+  );
+  const calibrated = applyCalibrationRealityControls(raw, benchmarkAdjusted);
 
   return {
     meta,
