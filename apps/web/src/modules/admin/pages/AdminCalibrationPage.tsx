@@ -139,6 +139,7 @@ export function AdminCalibrationPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [csvStatus, setCsvStatus] = useState(CSV_HEADER_HINT);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     adminScoreboardApi.teams().then((rows) => setTeams(rows)).catch(() => {});
@@ -260,8 +261,7 @@ export function AdminCalibrationPage() {
     }
   };
 
-  const clearAll = () => {
-    if (!window.confirm("Clear all fields and reset? This cannot be undone.")) return;
+  const confirmClearAll = () => {
     setPlayerId("");
     setSelectedPlayer(null);
     setSearchParams({});
@@ -272,6 +272,7 @@ export function AdminCalibrationPage() {
     setHasGenerated(false);
     setMessage(null);
     setCsvStatus(CSV_HEADER_HINT);
+    setShowClearConfirm(false);
     if (csvRef.current) csvRef.current.value = "";
   };
 
@@ -593,10 +594,49 @@ export function AdminCalibrationPage() {
             >
               Create Player / Save
             </button>
-            <button type="button" className="admin-link-danger" disabled={loading} onClick={clearAll}>
+            <button
+              type="button"
+              className="admin-link-danger"
+              disabled={loading}
+              onClick={() => setShowClearConfirm(true)}
+            >
               Clear All
             </button>
           </div>
+          {showClearConfirm && (
+            <div
+              className="admin-calibration__confirm"
+              role="alertdialog"
+              aria-modal="false"
+              aria-labelledby="admin-calibration-clear-title"
+            >
+              <div>
+                <strong id="admin-calibration-clear-title">Clear all calibration fields?</strong>
+                <p>
+                  This resets the selected player, entered metrics, generated results, and CSV
+                  upload state on this page.
+                </p>
+              </div>
+              <div className="admin-calibration__confirm-actions">
+                <button
+                  type="button"
+                  className="admin-inline-button admin-inline-button--danger"
+                  disabled={loading}
+                  onClick={confirmClearAll}
+                >
+                  Clear fields
+                </button>
+                <button
+                  type="button"
+                  className="admin-inline-button"
+                  disabled={loading}
+                  onClick={() => setShowClearConfirm(false)}
+                >
+                  Keep editing
+                </button>
+              </div>
+            </div>
+          )}
           {message && <p className="dtp-error-banner admin-calibration__message" role="alert">{message}</p>}
         </div>
 
