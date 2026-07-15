@@ -379,14 +379,15 @@ export class AdminCalibrationService {
     const result = runCalibration(metrics, meta, {
       primaryBenchmarkIndex: options.primaryBenchmarkIndex,
     });
+    const headline = result.calibratedSummary;
 
     if (options.save) {
       await this.prisma.player.update({
         where: { id: playerId },
         data: {
-          overallRating: result.rawSummary.overall_rating,
-          offensiveRating: result.rawSummary.offensive_score,
-          defensiveRating: result.rawSummary.defensive_score,
+          overallRating: headline.overall_rating,
+          offensiveRating: headline.offensive_score,
+          defensiveRating: headline.defensive_score,
           displayName: options.playerInfo?.fullName ?? player.displayName,
           positionPrimary: options.playerInfo?.position ?? player.positionPrimary,
           dominantFoot: options.playerInfo?.preferredFoot?.trim()
@@ -421,9 +422,9 @@ export class AdminCalibrationService {
               displayName: options.playerInfo?.fullName ?? player.displayName,
               position: options.playerInfo?.position ?? player.positionPrimary,
               ageGroup: player.ageGroup,
-              overallRating: result.rawSummary.overall_rating,
-              offensiveRating: result.rawSummary.offensive_score,
-              defensiveRating: result.rawSummary.defensive_score,
+              overallRating: headline.overall_rating,
+              offensiveRating: headline.offensive_score,
+              defensiveRating: headline.defensive_score,
             }),
         },
       });
@@ -463,6 +464,7 @@ export class AdminCalibrationService {
     const result = runCalibration(metricsRow, this.infoToLegacyMeta(playerInfo), {
       primaryBenchmarkIndex,
     });
+    const headline = result.calibratedSummary;
     const { firstName, lastName } = this.splitFullName(playerInfo.fullName);
     const dob = playerInfo.dateOfBirth ? new Date(playerInfo.dateOfBirth) : null;
     const age =
@@ -493,9 +495,9 @@ export class AdminCalibrationService {
         playerPhotoUrl: playerInfo.photoUrl,
         videoUrl: playerInfo.videoUrl,
         slug,
-        overallRating: result.rawSummary.overall_rating,
-        offensiveRating: result.rawSummary.offensive_score,
-        defensiveRating: result.rawSummary.defensive_score,
+        overallRating: headline.overall_rating,
+        offensiveRating: headline.offensive_score,
+        defensiveRating: headline.defensive_score,
         ratingAttributes: this.toJson(result.calibrated),
         benchmarkMetadata: this.toJson(this.buildBenchmarkMetadata(result, metrics)),
         mediaItems: this.toJson(
@@ -505,9 +507,9 @@ export class AdminCalibrationService {
           displayName: playerInfo.fullName.trim(),
           position: playerInfo.position,
           ageGroup,
-          overallRating: result.rawSummary.overall_rating,
-          offensiveRating: result.rawSummary.offensive_score,
-          defensiveRating: result.rawSummary.defensive_score,
+          overallRating: headline.overall_rating,
+          offensiveRating: headline.offensive_score,
+          defensiveRating: headline.defensive_score,
         }),
         isPublic: false,
         isFeatured: false,

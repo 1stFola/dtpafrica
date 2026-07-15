@@ -20,6 +20,8 @@ export * from "./mvce/multipliers";
 export * from "./calibration/map-metrics";
 export * from "./calibration/benchmark-selection";
 export * from "./calibration/pipeline";
+export * from "./calibration/rating-summary";
+export * from "./calibration/reality-controls";
 export { loadLegacyCalibration } from "./calibration/load-legacy";
 export { getCalibrationAttributeKeys } from "./calibration/pipeline";
 export * from "./scoreboard/competition-types";
