@@ -290,6 +290,7 @@ export function apiMetricsToLegacy(m: CalibrationMetrics): LegacyMetricsForm {
 }
 
 export function playerInfoToApiPayload(info: PlayerInfoForm) {
+  const weightKg = Number(info.weight_kg);
   return {
     fullName: info.full_name.trim(),
     gender: info.gender || "Male",
@@ -300,7 +301,7 @@ export function playerInfoToApiPayload(info: PlayerInfoForm) {
     benchmarkAgeBand: info.benchmark_age_band || "Auto",
     nationality: info.nationality || undefined,
     heightFt: info.height_ft || undefined,
-    weightKg: info.weight_kg ? Number(info.weight_kg) : undefined,
+    weightKg: info.weight_kg.trim() && Number.isFinite(weightKg) ? weightKg : undefined,
     currentClub: info.current_club || undefined,
     photoUrl: info.photo_url || undefined,
     videoUrl: info.video_url || undefined,
@@ -308,8 +309,11 @@ export function playerInfoToApiPayload(info: PlayerInfoForm) {
 }
 
 export function parseHeightFtToCm(heightFt: string): number | undefined {
-  if (!heightFt.trim()) return undefined;
-  const feetMatch = heightFt.trim().match(/(\d+)['']?(\d+)?/);
+  const raw = heightFt.trim().toLowerCase();
+  if (!raw) return undefined;
+  const cmMatch = raw.match(/^(\d+(?:\.\d+)?)\s*cm$/);
+  if (cmMatch) return Math.round(Number(cmMatch[1]));
+  const feetMatch = raw.match(/(\d+)\s*(?:ft|feet|')?\s*(?:\.|\s|-)??\s*(\d+)?\s*(?:in|")?/);
   if (!feetMatch) return undefined;
   const feet = parseInt(feetMatch[1], 10) || 0;
   const inches = parseInt(feetMatch[2] ?? "0", 10) || 0;

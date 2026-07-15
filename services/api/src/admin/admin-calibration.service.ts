@@ -58,8 +58,11 @@ export class AdminCalibrationService {
   ) {}
 
   private parseHeightFt(heightFt?: string): number | undefined {
-    if (!heightFt?.trim()) return undefined;
-    const match = heightFt.trim().match(/(\d+)['']?(\d+)?/);
+    const raw = heightFt?.trim().toLowerCase();
+    if (!raw) return undefined;
+    const cmMatch = raw.match(/^(\d+(?:\.\d+)?)\s*cm$/);
+    if (cmMatch) return Math.round(Number(cmMatch[1]));
+    const match = raw.match(/(\d+)\s*(?:ft|feet|')?\s*(?:\.|\s|-)??\s*(\d+)?\s*(?:in|")?/);
     if (!match) return undefined;
     const feet = parseInt(match[1], 10) || 0;
     const inches = parseInt(match[2] ?? "0", 10) || 0;
