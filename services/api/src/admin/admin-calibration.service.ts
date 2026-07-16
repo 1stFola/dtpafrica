@@ -196,6 +196,7 @@ export class AdminCalibrationService {
     calibrationMetrics?: LegacyMatchMetricsDto | null
   ) {
     return {
+      meta: result.meta,
       nearest: result.nearestBenchmark,
       alternatives: result.alternativeBenchmarks,
       rankedCandidates: result.rankedCandidates,
@@ -203,6 +204,19 @@ export class AdminCalibrationService {
       filterInfo: result.filterInfo,
       ...(calibrationMetrics ? { calibrationMetrics } : {}),
     };
+  }
+
+  private readCalibrationMeta(
+    benchmarkMetadata: unknown
+  ): Record<string, unknown> | null {
+    if (!benchmarkMetadata || typeof benchmarkMetadata !== "object") return null;
+    const meta = (benchmarkMetadata as Record<string, unknown>).meta;
+    return meta && typeof meta === "object" ? (meta as Record<string, unknown>) : null;
+  }
+
+  private readCalibrationGender(benchmarkMetadata: unknown): string {
+    const gender = this.readCalibrationMeta(benchmarkMetadata)?.gender;
+    return typeof gender === "string" && gender.trim() ? gender.trim() : "Male";
   }
 
   private buildMediaItems(photoUrl?: string | null, videoUrl?: string | null) {
@@ -291,7 +305,7 @@ export class AdminCalibrationService {
       player: {
         id: player.id,
         fullName: player.displayName,
-        gender: "Male",
+        gender: this.readCalibrationGender(player.benchmarkMetadata),
         dateOfBirth: player.dateOfBirth?.toISOString().slice(0, 10) ?? null,
         position: player.positionPrimary,
         preferredFoot: player.dominantFoot,
@@ -377,7 +391,10 @@ export class AdminCalibrationService {
 
     const meta = options.playerInfo
       ? this.infoToLegacyMeta(options.playerInfo)
-      : playerToLegacyMeta(player);
+      : {
+          ...playerToLegacyMeta(player),
+          gender: this.readCalibrationGender(player.benchmarkMetadata),
+        };
 
     const result = runCalibration(metrics, meta, {
       primaryBenchmarkIndex: options.primaryBenchmarkIndex,

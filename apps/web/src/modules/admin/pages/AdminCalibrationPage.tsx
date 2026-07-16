@@ -122,12 +122,16 @@ function benchName(b: CalibrationBenchmarkProfile): string {
   return String(b.full_name ?? "Unknown Player");
 }
 
+function benchPhotoUrl(b: CalibrationBenchmarkProfile): string | null {
+  const value = b.photo_url ?? b.imageUrl ?? b.playerPhotoUrl;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export function AdminCalibrationPage() {
   usePageTitle("Admin — Calibration");
   const toast = useAdminToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const csvRef = useRef<HTMLInputElement>(null);
-  const clearConfirmRef = useRef<HTMLDivElement>(null);
 
   const [selectedPlayer, setSelectedPlayer] = useState<AdminPlayerRow | null>(null);
   const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
@@ -145,15 +149,6 @@ export function AdminCalibrationPage() {
   useEffect(() => {
     adminScoreboardApi.teams().then((rows) => setTeams(rows)).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (!showClearConfirm) return;
-    const frame = window.requestAnimationFrame(() => {
-      clearConfirmRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      clearConfirmRef.current?.focus({ preventScroll: true });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [showClearConfirm]);
 
   useEffect(() => {
     const id = searchParams.get("playerId");
@@ -616,42 +611,6 @@ export function AdminCalibrationPage() {
               Clear All
             </button>
           </div>
-          {showClearConfirm && (
-            <div
-              ref={clearConfirmRef}
-              className="admin-calibration__confirm"
-              role="alertdialog"
-              aria-modal="false"
-              aria-labelledby="admin-calibration-clear-title"
-              tabIndex={-1}
-            >
-              <div>
-                <strong id="admin-calibration-clear-title">Clear all calibration fields?</strong>
-                <p>
-                  This resets the selected player, entered metrics, generated results, and CSV
-                  upload state on this page.
-                </p>
-              </div>
-              <div className="admin-calibration__confirm-actions">
-                <button
-                  type="button"
-                  className="admin-inline-button admin-inline-button--danger"
-                  disabled={loading}
-                  onClick={confirmClearAll}
-                >
-                  Clear fields
-                </button>
-                <button
-                  type="button"
-                  className="admin-inline-button"
-                  disabled={loading}
-                  onClick={() => setShowClearConfirm(false)}
-                >
-                  Keep editing
-                </button>
-              </div>
-            </div>
-          )}
           {message && <p className="dtp-error-banner admin-calibration__message" role="alert">{message}</p>}
         </div>
 
@@ -690,7 +649,15 @@ export function AdminCalibrationPage() {
                     grounded in plausible development pathways.
                   </p>
                   <div className="admin-calibration-v3__benchmark-head">
-                    <strong>{benchName(benchmarkOutput.nearestBenchmark)}</strong>
+                    {benchPhotoUrl(benchmarkOutput.nearestBenchmark) ? (
+                      <img
+                        src={benchPhotoUrl(benchmarkOutput.nearestBenchmark) ?? ""}
+                        alt=""
+                        loading="lazy"
+                      />
+                    ) : null}
+                    <div>
+                      <strong>{benchName(benchmarkOutput.nearestBenchmark)}</strong>
                     <p className="muted">
                       {result.positionPrimary} •{" "}
                       {String(benchmarkOutput.nearestBenchmark.development_stage ?? "EARLY_PRO")} •
@@ -698,6 +665,7 @@ export function AdminCalibrationPage() {
                       {String(benchmarkOutput.nearestBenchmark.overall_rating ?? "—")} • Similarity{" "}
                       {String(benchmarkOutput.nearestBenchmark.__similarity ?? "—")}%
                     </p>
+                    </div>
                   </div>
                   <p className="admin-calibration-v3__disclaimer">
                     This benchmark profile is shown at the player's early professional development
@@ -792,6 +760,62 @@ export function AdminCalibrationPage() {
           )}
         </section>
       </div>
+
+      {showClearConfirm && (
+        <div
+          className="admin-sb-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!loading) setShowClearConfirm(false);
+          }}
+        >
+          <div
+            className="admin-sb-modal admin-calibration-clear-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="admin-calibration-clear-title"
+            aria-describedby="admin-calibration-clear-description"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="admin-sb-modal__header">
+              <h2 id="admin-calibration-clear-title">Clear all calibration fields?</h2>
+              <button
+                type="button"
+                className="admin-sb-modal__close"
+                aria-label="Close clear confirmation"
+                disabled={loading}
+                onClick={() => setShowClearConfirm(false)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="admin-sb-modal__body">
+              <p id="admin-calibration-clear-description" className="admin-sb-modal__desc">
+                This resets the selected player, entered metrics, generated results, and CSV
+                upload state on this page.
+              </p>
+              <footer className="admin-sb-modal__footer">
+                <button
+                  type="button"
+                  className="admin-inline-button"
+                  disabled={loading}
+                  onClick={() => setShowClearConfirm(false)}
+                >
+                  Keep editing
+                </button>
+                <button
+                  type="button"
+                  className="admin-inline-button admin-inline-button--danger"
+                  disabled={loading}
+                  onClick={confirmClearAll}
+                >
+                  Clear fields
+                </button>
+              </footer>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
