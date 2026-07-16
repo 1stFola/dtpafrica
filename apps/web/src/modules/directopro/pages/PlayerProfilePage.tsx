@@ -14,6 +14,11 @@ import { PlayerPitchGraphic } from "../components/playerProfile/PlayerPitchGraph
 import { PlayerRoleProfileSection } from "../components/playerProfile/PlayerRoleProfileSection";
 import { ScoutingDetailsTab } from "../components/playerProfile/ScoutingDetailsTab";
 import { PositionScoutingMetricsRow } from "../../scouting/components/PositionScoutingMetricsRow";
+import {
+  detectVideoMediaType,
+  highlightThumbnailUrl,
+  videoEmbedUrl,
+} from "../../../utils/media-url";
 import { matchCenterPath } from "../../scoreboard/utils/matchPath";
 import {
   buildAttributeMap as buildProfileAttributeMap,
@@ -36,6 +41,16 @@ export type PlayerProfileLinkState = {
 type ProfileTab = "overview" | "scoreboard" | "scouting" | "videos" | "photos" | "publications";
 type ProfileMediaItem = NonNullable<PublicPlayerProfile["mediaItems"]>[number] & {
   url: string;
+};
+type ProfilePlayableVideo = {
+  item: ProfileMediaItem;
+  embedUrl: string;
+  mode: "iframe" | "video";
+  thumbnailUrl: string | null;
+};
+type ProfilePhotoPreview = {
+  item: ProfileMediaItem;
+  imageUrl: string;
 };
 
 const SCOREBOARD_EVENT_LABELS: Record<string, string> = {
@@ -262,6 +277,7 @@ function formatCurrencyRange(min?: number | null, max?: number | null) {
 
 function buildMediaItems(player: PublicPlayerProfile): ProfileMediaItem[] {
   const items: ProfileMediaItem[] = [];
+  const profilePhotoUrl = resolveProfilePhotoUrl(player);
 
   for (const item of player.mediaItems ?? []) {
     if (item.url) items.push({ ...item, url: item.url });
@@ -271,11 +287,43 @@ function buildMediaItems(player: PublicPlayerProfile): ProfileMediaItem[] {
     items.push({ type: "video", title: "Highlight video", url: player.videoUrl });
   }
 
-  if (player.playerPhotoUrl && !items.some((item) => item.url === player.playerPhotoUrl)) {
-    items.push({ type: "photo", title: "Profile photo", url: player.playerPhotoUrl });
+  if (profilePhotoUrl && !items.some((item) => item.url === profilePhotoUrl)) {
+    items.push({ type: "photo", title: "Profile photo", url: profilePhotoUrl });
   }
 
   return items;
+}
+
+function resolveProfilePhotoUrl(player: PublicPlayerProfile): string | null {
+  const primary = player.playerPhotoUrl?.trim();
+  if (primary) return primary;
+  const mediaPhoto = player.mediaItems?.find(
+    (item) => item.type === "photo" && item.url?.trim()
+  )?.url;
+  return mediaPhoto?.trim() || null;
+}
+
+function isDirectVideoUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return /\.(mp4|webm|ogg|mov)(?:$|\?)/i.test(pathname);
+  } catch {
+    return /\.(mp4|webm|ogg|mov)(?:$|\?)/i.test(url);
+  }
+}
+
+function buildPlayableVideo(item: ProfileMediaItem): ProfilePlayableVideo | null {
+  const url = item.url.trim();
+  if (!url) return null;
+  const mediaType = detectVideoMediaType(url);
+  const embedUrl = videoEmbedUrl(url, mediaType);
+  if (!embedUrl) return null;
+  return {
+    item,
+    embedUrl,
+    mode: mediaType === "external" && isDirectVideoUrl(url) ? "video" : "iframe",
+    thumbnailUrl: item.thumbnailUrl?.trim() || highlightThumbnailUrl(url) || null,
+  };
 }
 
 export function PlayerProfilePage() {
@@ -401,6 +449,7 @@ export function PlayerProfilePage() {
   const mediaItems = buildMediaItems(player);
   const videoItems = mediaItems.filter((item) => item.type === "video");
   const photoItems = mediaItems.filter((item) => item.type === "photo");
+  const profilePhotoUrl = resolveProfilePhotoUrl(player);
   const publicationItems = mediaItems.filter(
     (item) =>
       item.type === "article" ||
@@ -465,6 +514,7 @@ export function PlayerProfilePage() {
 
       <PlayerCardBanner
         player={player}
+        photoUrl={profilePhotoUrl}
         positionLabel={positionLabel}
         tierLabel={ratingTier(player.overallRating)}
         bioFacts={bioFacts}
@@ -551,7 +601,7 @@ export function PlayerProfilePage() {
 
             <BenchmarkPlaystyleComparison
               playerName={player.displayName}
-              playerPhotoUrl={player.playerPhotoUrl}
+              playerPhotoUrl={profilePhotoUrl}
               benchmark={benchmark}
               attributes={attributes}
             />
@@ -607,6 +657,7 @@ const PENDING_SYNC_CAPTION =
 
 function PlayerCardBanner({
   player,
+  photoUrl,
   positionLabel,
   tierLabel,
   bioFacts,
@@ -615,6 +666,7 @@ function PlayerCardBanner({
   shareStatus,
 }: {
   player: PublicPlayerProfile;
+  photoUrl: string | null;
   positionLabel: string;
   tierLabel: string;
   bioFacts: BioFact[];
@@ -627,9 +679,9 @@ function PlayerCardBanner({
       <div className="player-profile-banner__top">
         <div className="player-profile-banner__hero">
           <div className="player-profile-banner__portrait">
-            {player.playerPhotoUrl ? (
+            {photoUrl ? (
               <img
-                src={player.playerPhotoUrl}
+                src={photoUrl}
                 alt=""
                 className="player-profile-banner__photo"
               />
@@ -1313,6 +1365,8 @@ function MediaSection({
   embedded?: boolean;
 }) {
   const sectionClass = embedded ? "player-profile-media-block" : "profile-section";
+  const [activeVideo, setActiveVideo] = useState<ProfilePlayableVideo | null>(null);
+  const [activePhoto, setActivePhoto] = useState<ProfilePhotoPreview | null>(null);
 
   return (
     <div className={sectionClass}>
@@ -1326,25 +1380,166 @@ function MediaSection({
         ) : null
       ) : (
         <div className={gallery ? "profile-media-grid profile-media-grid--photos" : "profile-media-grid"}>
-          {items.map((item) => (
-            <a
-              key={item.url}
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="profile-media-card player-profile-media-card"
-            >
-              {gallery ? (
-                <img src={item.thumbnailUrl ?? item.url} alt={item.title ?? "Player media"} />
-              ) : (
-                <span className="profile-media-card__icon">Play</span>
-              )}
-              <strong>{item.title ?? "Profile media"}</strong>
-              {item.caption && <span>{item.caption}</span>}
-            </a>
-          ))}
+          {items.map((item) => {
+            const playableVideo =
+              item.type === "video" ? buildPlayableVideo(item) : null;
+            if (playableVideo) {
+              return (
+                <button
+                  key={item.url}
+                  type="button"
+                  className="profile-media-card player-profile-media-card profile-media-card--button"
+                  onClick={() => setActiveVideo(playableVideo)}
+                >
+                  {playableVideo.thumbnailUrl ? (
+                    <img
+                      src={playableVideo.thumbnailUrl}
+                      alt=""
+                      loading="lazy"
+                      className="profile-media-card__thumb"
+                    />
+                  ) : null}
+                  <span className="profile-media-card__icon">Play</span>
+                  <strong>{item.title ?? "Highlight video"}</strong>
+                  {item.caption && <span>{item.caption}</span>}
+                </button>
+              );
+            }
+
+            if (gallery && item.url) {
+              return (
+                <button
+                  key={item.url}
+                  type="button"
+                  className="profile-media-card player-profile-media-card profile-media-card--button"
+                  onClick={() =>
+                    setActivePhoto({
+                      item,
+                      imageUrl: item.url,
+                    })
+                  }
+                >
+                  <img src={item.thumbnailUrl ?? item.url} alt="" loading="lazy" />
+                  <span className="profile-media-card__icon">View</span>
+                  <strong>{item.title ?? "Player photo"}</strong>
+                  {item.caption && <span>{item.caption}</span>}
+                </button>
+              );
+            }
+
+            return (
+              <a
+                key={item.url}
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="profile-media-card player-profile-media-card"
+              >
+                {gallery ? (
+                  <img src={item.thumbnailUrl ?? item.url} alt={item.title ?? "Player media"} />
+                ) : (
+                  <span className="profile-media-card__icon">Open</span>
+                )}
+                <strong>{item.title ?? "Profile media"}</strong>
+                {item.caption && <span>{item.caption}</span>}
+              </a>
+            );
+          })}
         </div>
       )}
+      {activeVideo && (
+        <ProfileVideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+      )}
+      {activePhoto && (
+        <ProfilePhotoModal photo={activePhoto} onClose={() => setActivePhoto(null)} />
+      )}
+    </div>
+  );
+}
+
+function ProfilePhotoModal({
+  photo,
+  onClose,
+}: {
+  photo: ProfilePhotoPreview;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="profile-video-modal profile-photo-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={photo.item.title ?? "Player photo"}
+      onClick={onClose}
+    >
+      <div className="profile-video-modal__panel profile-photo-modal__panel" onClick={(event) => event.stopPropagation()}>
+        <div className="profile-video-modal__head">
+          <div>
+            <span className="player-profile-eyebrow">Photo</span>
+            <h3>{photo.item.title ?? "Player photo"}</h3>
+          </div>
+          <button
+            type="button"
+            className="profile-video-modal__close"
+            onClick={onClose}
+            aria-label="Close photo"
+          >
+            x
+          </button>
+        </div>
+        <div className="profile-photo-modal__frame">
+          <img src={photo.imageUrl} alt={photo.item.title ?? "Player photo"} />
+        </div>
+        {photo.item.caption && <p className="profile-video-modal__caption">{photo.item.caption}</p>}
+      </div>
+    </div>
+  );
+}
+
+function ProfileVideoModal({
+  video,
+  onClose,
+}: {
+  video: ProfilePlayableVideo;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="profile-video-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={video.item.title ?? "Player video"}
+      onClick={onClose}
+    >
+      <div className="profile-video-modal__panel" onClick={(event) => event.stopPropagation()}>
+        <div className="profile-video-modal__head">
+          <div>
+            <span className="player-profile-eyebrow">Video</span>
+            <h3>{video.item.title ?? "Highlight video"}</h3>
+          </div>
+          <button
+            type="button"
+            className="profile-video-modal__close"
+            onClick={onClose}
+            aria-label="Close video"
+          >
+            x
+          </button>
+        </div>
+        <div className="profile-video-modal__frame">
+          {video.mode === "video" ? (
+            <video src={video.embedUrl} controls playsInline autoPlay />
+          ) : (
+            <iframe
+              src={video.embedUrl}
+              title={video.item.title ?? "Player video"}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          )}
+        </div>
+        {video.item.caption && <p className="profile-video-modal__caption">{video.item.caption}</p>}
+      </div>
     </div>
   );
 }

@@ -167,6 +167,34 @@ export const adminScoreboardApi = {
     return sbFetch<AdminSbPlayerDirectoryRow[]>(`/admin/scoreboard/players${qs}`);
   },
 
+  mergePlayers: (body: {
+    sourcePlayerId?: string | null;
+    targetPlayerId?: string | null;
+    sourceSquadId?: string | null;
+    targetSquadId?: string | null;
+    removeSource?: boolean;
+  }) =>
+    sbFetch<{
+      ok: boolean;
+      source: { id: string; displayName: string; slug: string | null };
+      target: { id: string; displayName: string; slug: string | null };
+      moved: {
+        eventPlayer: number;
+        eventAssist: number;
+        labeledPrimaryEvents: number;
+        labeledSecondaryEvents: number;
+        labeledAssistEvents: number;
+        teamSquad: number;
+        matchSquad: number;
+        competitionStats: number;
+        matchMetrics: number;
+        duplicateMatchMetricsDropped: number;
+      };
+    }>("/admin/scoreboard/players/merge", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   updateSquadRow: (squadId: string, body: AdminSbSquadRowInput) =>
     sbFetch<AdminSbSquadRowUpdateResponse>(`/admin/scoreboard/squad/${squadId}`, {
       method: "PATCH",

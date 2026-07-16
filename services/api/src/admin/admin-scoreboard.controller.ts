@@ -153,6 +153,21 @@ export class AdminScoreboardController {
     return this.sb.listScoreboardPlayers(q);
   }
 
+  @Post("players/merge")
+  @RequirePermissions("scoreboard.competitions.write")
+  mergePlayers(
+    @Body()
+    body: {
+      sourcePlayerId?: string;
+      targetPlayerId?: string;
+      sourceSquadId?: string;
+      targetSquadId?: string;
+      removeSource?: boolean;
+    }
+  ) {
+    return this.sb.mergeScoreboardPlayers(body);
+  }
+
   @Patch("squad/:squadId")
   @RequirePermissions("scoreboard.competitions.write")
   updateSquadRow(
