@@ -379,6 +379,13 @@ function profileDistance(raw, bench){
 function getFilteredBenchmarkPool(position, meta) {
   const benchmark = benchmarkPosition(position);
   let pool = REAL_BENCHMARKS.filter(p => p.position === benchmark);
+  const requestedGender = typeof meta?.gender === "string" ? meta.gender.trim().toLowerCase() : "";
+  if (requestedGender) {
+    const sameGender = pool.filter(p => String(p.gender || "").trim().toLowerCase() === requestedGender);
+    if (sameGender.length > 0) {
+      pool = sameGender;
+    }
+  }
 
   return {
     pool,
@@ -428,7 +435,7 @@ function buildPositionPrior(position, attr, normMean) {
 
 function findNearestBenchmark(position, raw, meta){
   const benchmark = benchmarkPosition(position);
-  let pool = REAL_BENCHMARKS.filter(p => p.position === benchmark);
+  let { pool } = getFilteredBenchmarkPool(position, meta);
 
   if (pool.length < 3) {
     pool = REAL_BENCHMARKS.filter(p => p.position === benchmark);

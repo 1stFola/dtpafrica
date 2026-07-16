@@ -22,11 +22,13 @@ import { useAdminScoreboardContext } from "../AdminScoreboardLayout";
 import {
   COMPETITION_STATUSES,
   COMPETITION_TYPES,
+  POSITION_TAGS,
   type AdminSbCompetition,
   type AdminSbCompetitionInput,
   type AdminSbPlayerDirectoryRow,
   type AdminSbSquadRowInput,
   type AdminSbTeam,
+  positionTag,
 } from "../types";
 
 type Tab = "competitions" | "teams" | "fixtures" | "players" | "nameQa" | "seeders";
@@ -47,6 +49,12 @@ type SquadEditState = {
   row: AdminSbPlayerDirectoryRow;
   squadId: string;
   draft: AdminSbSquadRowInput;
+};
+
+type MergePlayersState = {
+  source: AdminSbPlayerDirectoryRow;
+  targetPlayerId: string;
+  removeSource: boolean;
 };
 
 const COMPETITION_CSV_TEMPLATE = `name,type,region,status,isFeatured
@@ -76,9 +84,19 @@ export function AdminScoreboardEntitiesPage() {
   const [picker, setPicker] = useState<Array<{ id: string; name: string }>>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [publishedFilter, setPublishedFilter] = useState("");
+  const [featuredFilter, setFeaturedFilter] = useState("");
   const [q, setQ] = useState("");
   const [teamQ, setTeamQ] = useState("");
+  const [teamCompId, setTeamCompId] = useState("");
+  const [teamGroupFilter, setTeamGroupFilter] = useState("");
   const [playerQ, setPlayerQ] = useState("");
+  const [fixtureStatusFilter, setFixtureStatusFilter] = useState("");
+  const [fixtureQ, setFixtureQ] = useState("");
+  const [playerTeamFilter, setPlayerTeamFilter] = useState("");
+  const [playerPositionFilter, setPlayerPositionFilter] = useState("");
+  const [playerLinkFilter, setPlayerLinkFilter] = useState("");
+  const [nameQaFlagFilter, setNameQaFlagFilter] = useState("");
   const [seedCompId, setSeedCompId] = useState("");
   const [seedTeamId, setSeedTeamId] = useState("");
   const [seedTeams, setSeedTeams] = useState<AdminSbTeam[]>([]);
@@ -88,9 +106,11 @@ export function AdminScoreboardEntitiesPage() {
   const [editingCompetition, setEditingCompetition] =
     useState<CompetitionEditState | null>(null);
   const [editingSquadRow, setEditingSquadRow] = useState<SquadEditState | null>(null);
+  const [mergingPlayers, setMergingPlayers] = useState<MergePlayersState | null>(null);
   const [fixtureSaving, setFixtureSaving] = useState(false);
   const [competitionSaving, setCompetitionSaving] = useState(false);
   const [squadSaving, setSquadSaving] = useState(false);
+  const [mergeSaving, setMergeSaving] = useState(false);
   const [teamModal, setTeamModal] = useState<"create" | "edit" | null>(null);
   const [editingTeam, setEditingTeam] = useState<AdminSbTeam | null>(null);
   const [competitionOptions, setCompetitionOptions] = useState<
@@ -137,7 +157,10 @@ export function AdminScoreboardEntitiesPage() {
   const loadTeams = useCallback(async () => {
     setLoading((s) => ({ ...s, teams: true }));
     try {
-      const rows = await adminScoreboardApi.teams({ q: debouncedTeamQ || undefined });
+      const rows = await adminScoreboardApi.teams({
+        q: debouncedTeamQ || undefined,
+        competitionId: teamCompId || undefined,
+      });
       setTeams(rows);
       loadedRef.current.teams = true;
     } catch {
@@ -145,7 +168,7 @@ export function AdminScoreboardEntitiesPage() {
     } finally {
       setLoading((s) => ({ ...s, teams: false }));
     }
-  }, [debouncedTeamQ]);
+  }, [debouncedTeamQ, teamCompId]);
 
   const loadFixtures = useCallback(async () => {
     setLoading((s) => ({ ...s, fixtures: true }));
@@ -213,6 +236,27 @@ export function AdminScoreboardEntitiesPage() {
         position: team.position ?? row.positionPrimary ?? "",
         shirtNumber: team.shirtNumber,
       },
+    });
+  };
+
+  const openPlayerMerge = (source: AdminSbPlayerDirectoryRow) => {
+    if (!source.playerId) {
+      toast.error("Edit this row first so it links to a player profile before merging.");
+      return;
+    }
+    const sourceKey = normalizeNameKey(source.displayName);
+    const suggestedTarget =
+      players.find(
+        (player) =>
+          player.playerId &&
+          player.playerId !== source.playerId &&
+          normalizeNameKey(player.displayName) === sourceKey
+      ) ??
+      players.find((player) => player.playerId && player.playerId !== source.playerId);
+    setMergingPlayers({
+      source,
+      targetPlayerId: suggestedTarget?.playerId ?? "",
+      removeSource: true,
     });
   };
 
@@ -294,6 +338,38 @@ export function AdminScoreboardEntitiesPage() {
     }
   };
 
+  const savePlayerMerge = async () => {
+    if (!mergingPlayers?.source.playerId || !mergingPlayers.targetPlayerId) {
+      toast.error("Choose the duplicate source and canonical target profile.");
+      return;
+    }
+    setMergeSaving(true);
+    try {
+      const source = mergingPlayers.source;
+      const result = await adminScoreboardApi.mergePlayers({
+        sourcePlayerId: source.playerId,
+        targetPlayerId: mergingPlayers.targetPlayerId,
+        sourceSquadId: source.teams[0]?.squadId,
+        removeSource: mergingPlayers.removeSource,
+      });
+      toast.success(
+        `Merged ${result.source.displayName} into ${result.target.displayName}. Events moved: ${
+          result.moved.eventPlayer +
+          result.moved.eventAssist +
+          result.moved.labeledPrimaryEvents +
+          result.moved.labeledAssistEvents
+        }`
+      );
+      setMergingPlayers(null);
+      void loadPlayers();
+      void refreshStats();
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setMergeSaving(false);
+    }
+  };
+
   const saveFixtureEdit = async () => {
     if (!editingFixture) return;
     if (!editingFixture.kickoffDate || !editingFixture.kickoffTime) {
@@ -371,12 +447,6 @@ export function AdminScoreboardEntitiesPage() {
   }, [tab, teamModal, fixtureOpen]);
 
   useEffect(() => {
-    if (tab === "fixtures" && competitionOptions.length && !fixtureCompId) {
-      setFixtureCompId(competitionOptions[0].id);
-    }
-  }, [tab, competitionOptions, fixtureCompId]);
-
-  useEffect(() => {
     if (tab === "teams") void loadTeams();
   }, [tab, loadTeams]);
 
@@ -445,6 +515,102 @@ export function AdminScoreboardEntitiesPage() {
       })
       .filter((row) => row.flags.length > 0);
   }, [players]);
+
+  const filteredCompetitions = useMemo(
+    () =>
+      competitions.filter((competition) => {
+        if (publishedFilter === "published" && !competition.isPublished) return false;
+        if (publishedFilter === "unpublished" && competition.isPublished) return false;
+        if (featuredFilter === "featured" && !competition.isFeatured) return false;
+        if (featuredFilter === "notFeatured" && competition.isFeatured) return false;
+        return true;
+      }),
+    [competitions, featuredFilter, publishedFilter]
+  );
+
+  const teamGroupOptions = useMemo(
+    () =>
+      Array.from(new Set(teams.map((team) => team.groupKey).filter(Boolean) as string[])).sort(),
+    [teams]
+  );
+
+  const filteredTeams = useMemo(
+    () =>
+      teams.filter((team) => {
+        if (teamGroupFilter && team.groupKey !== teamGroupFilter) return false;
+        return true;
+      }),
+    [teamGroupFilter, teams]
+  );
+
+  const fixtureSearch = fixtureQ.trim().toLowerCase();
+  const filteredFixtures = useMemo(
+    () =>
+      fixtures.filter((match) => {
+        if (fixtureStatusFilter && match.status !== fixtureStatusFilter) return false;
+        if (!fixtureSearch) return true;
+        const haystack = [
+          match.homeTeam.name,
+          match.awayTeam.name,
+          match.competition.name,
+          match.slug,
+          match.venue,
+          match.roundLabel,
+          match.stageKey,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(fixtureSearch);
+      }),
+    [fixtureSearch, fixtureStatusFilter, fixtures]
+  );
+
+  const filteredPlayers = useMemo(
+    () =>
+      players.filter((player) => {
+        if (playerTeamFilter && !player.teams.some((team) => team.teamId === playerTeamFilter)) {
+          return false;
+        }
+        if (
+          playerPositionFilter &&
+          !player.teams.some(
+            (team) => positionTag(team.position ?? player.positionPrimary) === playerPositionFilter
+          )
+        ) {
+          return false;
+        }
+        if (playerLinkFilter === "linked" && !player.playerId) return false;
+        if (playerLinkFilter === "unlinked" && player.playerId) return false;
+        return true;
+      }),
+    [playerLinkFilter, playerPositionFilter, playerTeamFilter, players]
+  );
+
+  const filteredNameQaRows = useMemo(
+    () =>
+      nameQaRows.filter(({ flags, player }) => {
+        if (nameQaFlagFilter && !flags.includes(nameQaFlagFilter)) return false;
+        if (playerTeamFilter && !player.teams.some((team) => team.teamId === playerTeamFilter)) {
+          return false;
+        }
+        return true;
+      }),
+    [nameQaFlagFilter, nameQaRows, playerTeamFilter]
+  );
+
+  const nameQaFlagOptions = useMemo(
+    () => Array.from(new Set(nameQaRows.flatMap((row) => row.flags))).sort(),
+    [nameQaRows]
+  );
+
+  const mergeTargetOptions = useMemo(
+    () =>
+      players
+        .filter((player) => player.playerId && player.playerId !== mergingPlayers?.source.playerId)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [mergingPlayers?.source.playerId, players]
+  );
 
   return (
     <section className="admin-sb-section">
@@ -818,6 +984,119 @@ export function AdminScoreboardEntitiesPage() {
         </div>
       )}
 
+      {mergingPlayers && (
+        <div
+          className="admin-sb-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!mergeSaving) setMergingPlayers(null);
+          }}
+        >
+          <div
+            className="admin-sb-modal"
+            role="dialog"
+            aria-labelledby="player-merge-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="admin-sb-modal__header">
+              <h2 id="player-merge-title">Merge duplicate player names</h2>
+              <button
+                type="button"
+                className="admin-sb-modal__close"
+                onClick={() => setMergingPlayers(null)}
+                disabled={mergeSaving}
+                aria-label="Close merge player modal"
+              >
+                x
+              </button>
+            </header>
+            <form
+              className="admin-sb-modal__body"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void savePlayerMerge();
+              }}
+            >
+              <div className="admin-sb-merge-summary">
+                <div>
+                  <span className="muted">Duplicate source</span>
+                  <strong>{mergingPlayers.source.displayName}</strong>
+                  <small>
+                    {mergingPlayers.source.teams
+                      .map((team) => `${team.teamName} (${team.competitionName})`)
+                      .join(", ") || "No club context"}
+                  </small>
+                </div>
+                <div>
+                  <span className="muted">What will move</span>
+                  <strong>ScoreBoard history and events</strong>
+                  <small>
+                    Primary events, assist events, match squads, team squads, competition stats,
+                    and linked performance rows move to the target profile.
+                  </small>
+                </div>
+              </div>
+              <label className="admin-sb-field">
+                <span>Canonical target profile</span>
+                <select
+                  value={mergingPlayers.targetPlayerId}
+                  onChange={(e) =>
+                    setMergingPlayers((current) =>
+                      current ? { ...current, targetPlayerId: e.target.value } : current
+                    )
+                  }
+                  required
+                >
+                  <option value="">Select the profile to keep...</option>
+                  {mergeTargetOptions.map((player) => (
+                    <option key={player.playerId ?? player.displayName} value={player.playerId ?? ""}>
+                      {player.displayName}
+                      {player.teams.length
+                        ? ` - ${player.teams
+                            .map((team) => `${team.teamName} (${team.competitionName})`)
+                            .join(", ")}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-sb-check">
+                <input
+                  type="checkbox"
+                  checked={mergingPlayers.removeSource}
+                  onChange={(e) =>
+                    setMergingPlayers((current) =>
+                      current ? { ...current, removeSource: e.target.checked } : current
+                    )
+                  }
+                />
+                Delete the duplicate player profile after references are moved
+              </label>
+              <p className="admin-sb-warning-note">
+                Review carefully: this is a database merge. The target profile becomes the single
+                owner of the source player's ScoreBoard history.
+              </p>
+              <footer className="admin-sb-modal__footer">
+                <button
+                  type="button"
+                  onClick={() => setMergingPlayers(null)}
+                  disabled={mergeSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={mergeSaving || !mergingPlayers.targetPlayerId}
+                >
+                  {mergeSaving ? "Merging..." : "Merge players"}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
+
       {editingFixture && (
         <div
           className="admin-sb-modal-backdrop"
@@ -962,12 +1241,30 @@ export function AdminScoreboardEntitiesPage() {
                   </option>
                 ))}
               </select>
+              <select
+                value={publishedFilter}
+                onChange={(e) => setPublishedFilter(e.target.value)}
+                aria-label="Filter by publish state"
+              >
+                <option value="">Any publish state</option>
+                <option value="published">Published</option>
+                <option value="unpublished">Unpublished</option>
+              </select>
+              <select
+                value={featuredFilter}
+                onChange={(e) => setFeaturedFilter(e.target.value)}
+                aria-label="Filter by featured state"
+              >
+                <option value="">Any featured state</option>
+                <option value="featured">Featured</option>
+                <option value="notFeatured">Not featured</option>
+              </select>
             </div>
           </div>
           <div className="admin-sb-content-panel">
           <AdminSbTableShell
             loading={loading.competitions}
-            empty={!loading.competitions && competitions.length === 0}
+            empty={!loading.competitions && filteredCompetitions.length === 0}
             emptyTitle="No competitions match your filters"
             emptyHint="Create a competition or adjust search filters."
             columns={7}
@@ -985,7 +1282,7 @@ export function AdminScoreboardEntitiesPage() {
                 </tr>
               </thead>
               <tbody>
-                {competitions.map((c) => (
+                {filteredCompetitions.map((c) => (
                   <tr key={c.id}>
                     <td>{c.name}</td>
                     <td>{c.type}</td>
@@ -1043,12 +1340,36 @@ export function AdminScoreboardEntitiesPage() {
                 onChange={(e) => setTeamQ(e.target.value)}
                 aria-label="Search teams"
               />
+              <select
+                value={teamCompId}
+                onChange={(e) => setTeamCompId(e.target.value)}
+                aria-label="Filter teams by competition"
+              >
+                <option value="">All competitions</option>
+                {competitionOptions.map((competition) => (
+                  <option key={competition.id} value={competition.id}>
+                    {competition.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={teamGroupFilter}
+                onChange={(e) => setTeamGroupFilter(e.target.value)}
+                aria-label="Filter teams by group"
+              >
+                <option value="">All groups</option>
+                {teamGroupOptions.map((group) => (
+                  <option key={group} value={group}>
+                    Group {group}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="admin-sb-content-panel">
           <AdminSbTableShell
             loading={loading.teams}
-            empty={!loading.teams && teams.length === 0}
+            empty={!loading.teams && filteredTeams.length === 0}
             emptyTitle="No teams found"
             columns={5}
           >
@@ -1063,7 +1384,7 @@ export function AdminScoreboardEntitiesPage() {
                 </tr>
               </thead>
               <tbody>
-                {teams.map((t) => (
+                {filteredTeams.map((t) => (
                   <tr key={t.id}>
                     <td>
                       <div className="admin-sb-team-cell">
@@ -1137,12 +1458,31 @@ export function AdminScoreboardEntitiesPage() {
                   </option>
                 ))}
               </select>
+              <input
+                type="search"
+                placeholder="Search fixture, venue, round..."
+                value={fixtureQ}
+                onChange={(e) => setFixtureQ(e.target.value)}
+                aria-label="Search fixtures"
+              />
+              <select
+                value={fixtureStatusFilter}
+                onChange={(e) => setFixtureStatusFilter(e.target.value)}
+                aria-label="Filter fixtures by status"
+              >
+                <option value="">All statuses</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="live">Live</option>
+                <option value="halftime">Halftime</option>
+                <option value="finished">Finished</option>
+                <option value="postponed">Postponed</option>
+              </select>
             </div>
           </div>
           <div className="admin-sb-content-panel">
             <AdminSbTableShell
               loading={loading.fixtures}
-              empty={!loading.fixtures && fixtures.length === 0}
+              empty={!loading.fixtures && filteredFixtures.length === 0}
               emptyTitle="No fixtures yet"
               emptyHint="Create a fixture for teams in an existing competition."
               columns={7}
@@ -1160,7 +1500,7 @@ export function AdminScoreboardEntitiesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {fixtures.map((m) => (
+                  {filteredFixtures.map((m) => (
                     <tr key={m.id}>
                       <td>
                         {m.homeTeam.name} vs {m.awayTeam.name}
@@ -1223,12 +1563,45 @@ export function AdminScoreboardEntitiesPage() {
                 onChange={(e) => setPlayerQ(e.target.value)}
                 aria-label="Search players"
               />
+              <select
+                value={playerTeamFilter}
+                onChange={(e) => setPlayerTeamFilter(e.target.value)}
+                aria-label="Filter players by team"
+              >
+                <option value="">All teams</option>
+                {playerTeamOptions.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name} · {team.competition.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={playerPositionFilter}
+                onChange={(e) => setPlayerPositionFilter(e.target.value)}
+                aria-label="Filter players by position group"
+              >
+                <option value="">All positions</option>
+                {POSITION_TAGS.map((position) => (
+                  <option key={position} value={position}>
+                    {position}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={playerLinkFilter}
+                onChange={(e) => setPlayerLinkFilter(e.target.value)}
+                aria-label="Filter players by profile link"
+              >
+                <option value="">Any profile link</option>
+                <option value="linked">Linked profile</option>
+                <option value="unlinked">No profile link</option>
+              </select>
             </div>
           </div>
           <div className="admin-sb-content-panel">
           <AdminSbTableShell
             loading={loading.players}
-            empty={!loading.players && players.length === 0}
+            empty={!loading.players && filteredPlayers.length === 0}
             emptyTitle="No players in directory"
             emptyHint="Import squad CSV per team or link players when saving rosters."
             columns={5}
@@ -1244,7 +1617,7 @@ export function AdminScoreboardEntitiesPage() {
                 </tr>
               </thead>
               <tbody>
-                {players.map((p) => (
+                {filteredPlayers.map((p) => (
                   <tr key={p.teams[0]?.squadId ?? p.playerId ?? p.slug ?? p.displayName}>
                     <td>{p.displayName}</td>
                     <td>{p.teams[0]?.shirtNumber ?? "-"}</td>
@@ -1266,6 +1639,19 @@ export function AdminScoreboardEntitiesPage() {
                             onClick={() => openSquadEditor(p)}
                           >
                             Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-inline-button"
+                            onClick={() => openPlayerMerge(p)}
+                            disabled={!p.playerId}
+                            title={
+                              p.playerId
+                                ? "Merge this profile into another player"
+                                : "Edit this row first to link it to a player profile"
+                            }
+                          >
+                            Merge
                           </button>
                           <button
                             type="button"
@@ -1313,12 +1699,36 @@ export function AdminScoreboardEntitiesPage() {
                 onChange={(e) => setPlayerQ(e.target.value)}
                 aria-label="Search names to review"
               />
+              <select
+                value={nameQaFlagFilter}
+                onChange={(e) => setNameQaFlagFilter(e.target.value)}
+                aria-label="Filter name QA by issue type"
+              >
+                <option value="">All issue types</option>
+                {nameQaFlagOptions.map((flag) => (
+                  <option key={flag} value={flag}>
+                    {flag}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={playerTeamFilter}
+                onChange={(e) => setPlayerTeamFilter(e.target.value)}
+                aria-label="Filter name QA by team"
+              >
+                <option value="">All teams</option>
+                {playerTeamOptions.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name} · {team.competition.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="admin-sb-content-panel">
             <AdminSbTableShell
               loading={loading.players}
-              empty={!loading.players && nameQaRows.length === 0}
+              empty={!loading.players && filteredNameQaRows.length === 0}
               emptyTitle="No name issues found"
               emptyHint="Single names, duplicate normalized names, reversed names, close spelling concerns, and unusual entries appear here."
               columns={5}
@@ -1334,7 +1744,7 @@ export function AdminScoreboardEntitiesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {nameQaRows.map(({ player, flags }) => (
+                  {filteredNameQaRows.map(({ player, flags }) => (
                     <tr key={`name-qa-${player.teams[0]?.squadId ?? player.playerId ?? player.displayName}`}>
                       <td>{player.displayName}</td>
                       <td>
@@ -1364,6 +1774,19 @@ export function AdminScoreboardEntitiesPage() {
                               onClick={() => openSquadEditor(player)}
                             >
                               Edit name
+                            </button>
+                            <button
+                              type="button"
+                              className="admin-inline-button"
+                              onClick={() => openPlayerMerge(player)}
+                              disabled={!player.playerId}
+                              title={
+                                player.playerId
+                                  ? "Merge this profile into another player"
+                                  : "Edit name first to link this row to a player profile"
+                              }
+                            >
+                              Merge
                             </button>
                             <button
                               type="button"
