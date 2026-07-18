@@ -4,6 +4,7 @@ import { AcademyAuthModule } from "../academy-auth/academy-auth.module";
 import { AdsModule } from "../ads/ads.module";
 import { ScoreboardModule } from "../scoreboard/scoreboard.module";
 import { SipModule } from "../sip/sip.module";
+import { SupportModule } from "../support/support.module";
 import { AdminAcademiesService } from "./admin-academies.service";
 import { AdminAuthController } from "./admin-auth.controller";
 import { AdminAuthService } from "./auth/admin-auth.service";
@@ -19,6 +20,7 @@ import { AdminRbacService } from "./admin-rbac.service";
 import { AdminScoreboardController } from "./admin-scoreboard.controller";
 import { AdminScoreboardService } from "./admin-scoreboard.service";
 import { AdminSeedService } from "./admin-seed.service";
+import { AdminSupportController } from "./admin-support.controller";
 import { AdminAuthGuard } from "./guards/admin-auth.guard";
 import { PermissionsGuard } from "./guards/permissions.guard";
 
@@ -28,6 +30,7 @@ import { PermissionsGuard } from "./guards/permissions.guard";
     AdsModule,
     ScoreboardModule,
     SipModule,
+    SupportModule,
     JwtModule.register({
       secret: adminJwtSecret(),
       signOptions: { expiresIn: "7d" },
@@ -36,6 +39,7 @@ import { PermissionsGuard } from "./guards/permissions.guard";
   controllers: [
     AdminController,
     AdminScoreboardController,
+    AdminSupportController,
     AdminRbacController,
     AdminAuthController,
   ],

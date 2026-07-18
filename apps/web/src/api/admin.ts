@@ -505,6 +505,165 @@ export type AdminSeedStatus = {
   lastRun: AdminSeedResult | null;
 };
 
+export type SupportPlaybookEntry = {
+  key: string;
+  title: string;
+  category: string;
+  tier: "tier_1_known" | "tier_2_assisted" | "tier_3_human";
+  severity: "low" | "medium" | "high" | "critical";
+  symptoms: string[];
+  diagnostics: string[];
+  recommendation: string;
+  playbookPath: string;
+};
+
+export type SupportReport = {
+  id: string;
+  audience: string;
+  reporterName: string | null;
+  reporterEmail: string | null;
+  category: string;
+  severity: string;
+  status: string;
+  subject: string;
+  description: string;
+  pageUrl: string | null;
+  recommendationKey: string | null;
+  recommendation: SupportPlaybookEntry | null;
+  adminNotes: string | null;
+  resolutionSummary: string | null;
+  playbookOutcome: "not_reviewed" | "confirmed" | "updated" | "new_entry_needed";
+  playbookProposal: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+};
+
+export type SupportTriagePacket = {
+  report: SupportReport;
+  generatedAt: string;
+  mode: "recommend_only";
+  recommendedTier: SupportPlaybookEntry["tier"];
+  escalationRequired: boolean;
+  likelyCause: string;
+  evidence: Array<{
+    label: string;
+    value: string | number;
+    status: "ok" | "warning" | "critical";
+  }>;
+  diagnosticChecklist: string[];
+  recommendedActions: string[];
+  similarReports: SupportReport[];
+  humanApprovalRequiredFor: string[];
+  learningLoopPrompt: string;
+};
+
+export type DeploymentLogAnalysis = {
+  pattern:
+    | "prisma_unique_constraint"
+    | "missing_seed_asset"
+    | "health_check_timeout"
+    | "missing_environment"
+    | "container_boot_failure"
+    | "database_setup_failure"
+    | "unknown_deployment_failure";
+  severity: "high" | "critical";
+  recommendationKey: string;
+  suspectedRootCause: string;
+  safeToRetry: boolean;
+  matchedSignals: string[];
+  recommendedActions: string[];
+};
+
+export type CreateDeploymentIncidentInput = {
+  githubRunUrl?: string;
+  branch?: string;
+  commitSha?: string;
+  failingStep?: string;
+  productionHost?: string;
+  logExcerpt: string;
+  notes?: string;
+};
+
+export type DeploymentIncidentResult = {
+  ok: boolean;
+  report: SupportReport;
+  recommendation: SupportPlaybookEntry;
+  analysis: DeploymentLogAnalysis;
+};
+
+export type SupportDiagnostics = {
+  generatedAt: string;
+  supportMode: "recommend_only";
+  signals: Array<{
+    key: string;
+    label: string;
+    value: string | number;
+    status: "ok" | "warning" | "critical";
+    recommendation: string;
+  }>;
+  recentReports: SupportReport[];
+  playbook: SupportPlaybookEntry[];
+};
+
+export type SupportReviewQueue = {
+  generatedAt: string;
+  mode: "recommend_only";
+  learningQueue: SupportReport[];
+  repeatedPatterns: Array<{
+    category: string;
+    recommendationKey: string | null;
+    recommendation: SupportPlaybookEntry | null;
+    total: number;
+    openCount: number;
+    criticalCount: number;
+    latestAt: string;
+    suggestedReview: string;
+  }>;
+  routingRules: Array<{
+    category: string;
+    owner: string;
+    escalation: string;
+    humanApprovalRequiredFor: string[];
+  }>;
+};
+
+export type SupportSummary = {
+  ready: boolean;
+  open: number;
+  critical: number;
+  latestCreatedAt: string | null;
+  setupRequired?: string;
+};
+
+export type CreateSupportReportInput = {
+  audience?: string;
+  reporterName?: string;
+  reporterEmail?: string;
+  category: string;
+  severity?: string;
+  subject: string;
+  description: string;
+  pageUrl?: string;
+};
+
+export async function createSupportReport(body: CreateSupportReportInput) {
+  const res = await fetch("/api/v1/support/reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new AdminApiError(text || res.statusText, res.status);
+  }
+  return res.json() as Promise<{
+    ok: boolean;
+    report: SupportReport;
+    recommendation: SupportPlaybookEntry;
+  }>;
+}
+
 export type AdminAcademyInput = {
   name: string;
   slug?: string;
@@ -727,6 +886,41 @@ export const adminApi = {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),
+  supportDiagnostics: () => adminFetch<SupportDiagnostics>("/admin/support/diagnostics"),
+  supportSummary: () => adminFetch<SupportSummary>("/admin/support/summary"),
+  supportReviewQueue: () => adminFetch<SupportReviewQueue>("/admin/support/review"),
+  createDeploymentIncident: (body: CreateDeploymentIncidentInput) =>
+    adminFetch<DeploymentIncidentResult>("/admin/support/deployment-intake", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  supportReports: (
+    query: { status?: string; category?: string; q?: string; limit?: number } = {}
+  ) => {
+    const params = new URLSearchParams();
+    if (query.status) params.set("status", query.status);
+    if (query.category) params.set("category", query.category);
+    if (query.q) params.set("q", query.q);
+    if (query.limit != null) params.set("limit", String(query.limit));
+    const qs = params.toString();
+    return adminFetch<SupportReport[]>(`/admin/support/reports${qs ? `?${qs}` : ""}`);
+  },
+  updateSupportReport: (
+    id: string,
+    body: {
+      status?: string;
+      adminNotes?: string;
+      resolutionSummary?: string;
+      playbookOutcome?: SupportReport["playbookOutcome"];
+      playbookProposal?: string;
+    }
+  ) =>
+    adminFetch<SupportReport>(`/admin/support/reports/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  supportReportTriage: (id: string) =>
+    adminFetch<SupportTriagePacket>(`/admin/support/reports/${id}/triage`),
   rbacPermissions: () => adminFetch<AdminPermission[]>("/admin/rbac/permissions"),
   rbacRoles: () => adminFetch<AdminRole[]>("/admin/rbac/roles"),
   rbacRole: (slug: string) => adminFetch<AdminRole>(`/admin/rbac/roles/${slug}`),

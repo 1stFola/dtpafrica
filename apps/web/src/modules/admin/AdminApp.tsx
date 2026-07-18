@@ -17,6 +17,7 @@ import { AdminHomeVideoHighlightsPage } from "./pages/AdminHomeVideoHighlightsPa
 import { AdminInboxPage } from "./pages/AdminInboxPage";
 import { AdminPlayersPage } from "./pages/AdminPlayersPage";
 import { AdminPlayerStatsExtractorPage } from "./pages/AdminPlayerStatsExtractorPage";
+import { AdminOpsSupportPage } from "./pages/AdminOpsSupportPage";
 import { AdminScoreboardApp } from "./scoreboard/AdminScoreboardApp";
 import { AdminRequirePermission } from "./AdminRequirePermission";
 import { AdminRolesPage } from "./settings/AdminRolesPage";
@@ -35,6 +36,7 @@ export function AdminApp() {
             <Route path="players" element={<AdminPlayersPage />} />
             <Route path="calibration" element={<AdminCalibrationPage />} />
             <Route path="player-stats-extractor" element={<AdminPlayerStatsExtractorPage />} />
+            <Route path="ops-support" element={<AdminOpsSupportPage />} />
             <Route path="homepage" element={<AdminHomepagePage />} />
             <Route path="homepage/video-highlights" element={<AdminHomeVideoHighlightsPage />} />
             <Route path="ads" element={<AdminAdsPage />} />

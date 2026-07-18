@@ -138,6 +138,34 @@ model ContactMessage {
   @@map("contact_messages")
 }
 
+model SupportReport {
+  id                String    @id @default(uuid())
+  audience          String    @default("internal_admin")
+  reporterName      String?   @map("reporter_name")
+  reporterEmail     String?   @map("reporter_email")
+  category          String
+  severity          String    @default("medium")
+  status            String    @default("open")
+  subject           String
+  description       String    @db.Text
+    pageUrl           String?   @map("page_url")
+    recommendationKey String?   @map("recommendation_key")
+    context           Json?
+    adminNotes        String?   @map("admin_notes") @db.Text
+    resolutionSummary String?   @map("resolution_summary") @db.Text
+    playbookOutcome   String    @default("not_reviewed") @map("playbook_outcome")
+    playbookProposal  String?   @map("playbook_proposal") @db.Text
+    createdAt         DateTime  @default(now()) @map("created_at")
+    updatedAt         DateTime  @updatedAt @map("updated_at")
+    resolvedAt        DateTime? @map("resolved_at")
+
+    @@index([status, severity])
+    @@index([category])
+    @@index([playbookOutcome])
+    @@index([createdAt])
+    @@map("support_reports")
+  }
+
 model Match {
   id           String   @id @default(uuid())
   externalRef  String?  @map("external_ref")

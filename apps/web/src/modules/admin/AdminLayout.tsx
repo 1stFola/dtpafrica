@@ -1,5 +1,7 @@
 import { NavLink, Outlet, Link, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { BrandLogo } from "../../components/BrandLogo";
+import { adminApi, type SupportSummary } from "../../api/admin";
 import { useAdminAuth } from "./AdminAuthContext";
 import { ADMIN_NAV_PERMISSIONS, canAccessNav } from "./admin-permissions";
 
@@ -19,6 +21,7 @@ const links = [
   { to: "/admin/academies", label: "Academies", icon: "▦" },
   { to: "/admin/content", label: "Content", icon: "⎘" },
   { to: "/admin/database", label: "Database", icon: "⛁" },
+  { to: "/admin/ops-support", label: "Ops Support", icon: "AI" },
   { to: "/admin/blog", label: "Blog", icon: "✎" },
   { to: "/admin/scoreboard", label: "ScoreBoard", icon: "⏱" },
 ];
@@ -32,6 +35,7 @@ export function AdminLayout() {
   const { logout, session } = useAdminAuth();
   const location = useLocation();
   const isScoreboard = location.pathname.startsWith("/admin/scoreboard");
+  const [supportSummary, setSupportSummary] = useState<SupportSummary | null>(null);
 
   const visibleLinks = links.filter((l) =>
     canAccessNav(
@@ -44,6 +48,32 @@ export function AdminLayout() {
   const visibleSettings = settingsLinks.filter((l) =>
     session?.method === "api_key" || session?.permissions.includes(l.permission)
   );
+
+  useEffect(() => {
+    const canReadSupport =
+      session?.method === "api_key" || session?.permissions.includes("ops.support.read");
+    if (!canReadSupport) {
+      setSupportSummary(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      adminApi
+        .supportSummary()
+        .then((summary) => {
+          if (!cancelled) setSupportSummary(summary);
+        })
+        .catch(() => {
+          if (!cancelled) setSupportSummary(null);
+        });
+    };
+    load();
+    const interval = window.setInterval(load, 45_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [session?.method, session?.permissions]);
 
   return (
     <div className="admin-shell">
@@ -90,6 +120,28 @@ export function AdminLayout() {
                     {l.icon}
                   </span>
                   {l.label}
+                  {l.to === "/admin/ops-support" && supportSummary && (
+                    <span
+                      className={[
+                        "admin-support-nav-badge",
+                        supportSummary.critical > 0 ? "is-critical" : "",
+                        !supportSummary.ready ? "is-setup" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      title={
+                        supportSummary.ready
+                          ? `${supportSummary.open} open support report(s)`
+                          : supportSummary.setupRequired
+                      }
+                    >
+                      {supportSummary.ready
+                        ? supportSummary.critical > 0
+                          ? `${supportSummary.critical}!`
+                          : supportSummary.open
+                        : "!"}
+                    </span>
+                  )}
                 </NavLink>
               ))}
               {visibleSettings.length > 0 && (

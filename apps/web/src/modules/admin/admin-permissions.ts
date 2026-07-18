@@ -48,6 +48,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
   "/admin/academies": "academies.read",
   "/admin/content": "content.read",
   "/admin/database": "database.seed",
+  "/admin/ops-support": "ops.support.read",
   "/admin/blog": "blog.read",
   "/admin/scoreboard": "scoreboard.read",
   "/admin/settings/roles": "admin.roles.manage",

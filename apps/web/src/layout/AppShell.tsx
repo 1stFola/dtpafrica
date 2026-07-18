@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { PRODUCT_MODULES } from "@dtp/domain";
 import { BrandLogo } from "../components/BrandLogo";
+import { SupportReportButton } from "../components/SupportReportButton";
 
 const FOOTER_SOCIAL_LINKS = [
   {
@@ -118,6 +119,7 @@ export function AppShell() {
         </div>
         <p>© {new Date().getFullYear()} DirectToPro Africa</p>
       </footer>
+      <SupportReportButton />
     </div>
   );
 }
