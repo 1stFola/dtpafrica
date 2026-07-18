@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { resolveUniquePlayerSlug } from "../players/player-slug";
+import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
 
 function splitDisplayName(displayName: string) {
   const parts = displayName.trim().split(/\s+/);
@@ -44,6 +44,21 @@ export class PlayerDirectoryService {
         });
       }
       return this.prisma.player.findUniqueOrThrow({ where: { id: byDisplay.id } });
+    }
+
+    const slugBase = slugifyPlayerName(normalized);
+    const bySlug = await this.prisma.player.findUnique({
+      where: { slug: slugBase },
+      select: { id: true, displayName: true, normalizedName: true },
+    });
+    if (bySlug && playerLookupKey(bySlug.displayName) === key) {
+      if (!bySlug.normalizedName) {
+        return this.prisma.player.update({
+          where: { id: bySlug.id },
+          data: { normalizedName: key },
+        });
+      }
+      return this.prisma.player.findUniqueOrThrow({ where: { id: bySlug.id } });
     }
 
     const { firstName, lastName } = splitDisplayName(normalized);

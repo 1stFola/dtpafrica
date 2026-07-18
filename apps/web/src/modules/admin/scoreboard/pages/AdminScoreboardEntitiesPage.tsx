@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { adminApi, type AdminPlayerRow } from "../../../../api/admin";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { useDebouncedValue } from "../../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
@@ -57,6 +58,15 @@ type MergePlayersState = {
   removeSource: boolean;
 };
 
+type MergeTargetOption = {
+  playerId: string;
+  displayName: string;
+  slug: string | null;
+  positionPrimary: string | null;
+  context: string;
+  source: "scoreboard" | "players";
+};
+
 const COMPETITION_CSV_TEMPLATE = `name,type,region,status,isFeatured
 Lagos Queens Cup,tournament,Nigeria,active,true`;
 
@@ -107,6 +117,9 @@ export function AdminScoreboardEntitiesPage() {
     useState<CompetitionEditState | null>(null);
   const [editingSquadRow, setEditingSquadRow] = useState<SquadEditState | null>(null);
   const [mergingPlayers, setMergingPlayers] = useState<MergePlayersState | null>(null);
+  const [mergeTargetQ, setMergeTargetQ] = useState("");
+  const [mergeMasterTargets, setMergeMasterTargets] = useState<AdminPlayerRow[]>([]);
+  const [mergeTargetsLoading, setMergeTargetsLoading] = useState(false);
   const [fixtureSaving, setFixtureSaving] = useState(false);
   const [competitionSaving, setCompetitionSaving] = useState(false);
   const [squadSaving, setSquadSaving] = useState(false);
@@ -136,6 +149,7 @@ export function AdminScoreboardEntitiesPage() {
   const debouncedQ = useDebouncedValue(q);
   const debouncedTeamQ = useDebouncedValue(teamQ);
   const debouncedPlayerQ = useDebouncedValue(playerQ);
+  const debouncedMergeTargetQ = useDebouncedValue(mergeTargetQ);
 
   const loadCompetitions = useCallback(async () => {
     setLoading((s) => ({ ...s, competitions: true }));
@@ -258,6 +272,8 @@ export function AdminScoreboardEntitiesPage() {
       targetPlayerId: suggestedTarget?.playerId ?? "",
       removeSource: true,
     });
+    setMergeTargetQ(source.displayName);
+    setMergeMasterTargets([]);
   };
 
   const saveCompetitionEdit = async () => {
@@ -459,6 +475,39 @@ export function AdminScoreboardEntitiesPage() {
   }, [tab, loadPlayers]);
 
   useEffect(() => {
+    const sourceName = mergingPlayers?.source.displayName;
+    if (!sourceName) {
+      setMergeMasterTargets([]);
+      setMergeTargetsLoading(false);
+      return;
+    }
+
+    const query = debouncedMergeTargetQ.trim() || sourceName;
+    let cancelled = false;
+    setMergeTargetsLoading(true);
+    adminApi
+      .players({
+        q: query,
+        sort: "name",
+        sortDir: "asc",
+        limit: 40,
+      })
+      .then((page) => {
+        if (!cancelled) setMergeMasterTargets(page.items);
+      })
+      .catch(() => {
+        if (!cancelled) setMergeMasterTargets([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMergeTargetsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedMergeTargetQ, mergingPlayers?.source.displayName]);
+
+  useEffect(() => {
     if (tab !== "players" && tab !== "nameQa") return;
     adminScoreboardApi
       .teams()
@@ -604,13 +653,48 @@ export function AdminScoreboardEntitiesPage() {
     [nameQaRows]
   );
 
-  const mergeTargetOptions = useMemo(
-    () =>
-      players
-        .filter((player) => player.playerId && player.playerId !== mergingPlayers?.source.playerId)
-        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
-    [mergingPlayers?.source.playerId, players]
-  );
+  const mergeTargetOptions = useMemo(() => {
+    const sourcePlayerId = mergingPlayers?.source.playerId;
+    const byId = new Map<string, MergeTargetOption>();
+
+    for (const player of players) {
+      if (!player.playerId || player.playerId === sourcePlayerId) continue;
+      byId.set(player.playerId, {
+        playerId: player.playerId,
+        displayName: player.displayName,
+        slug: player.slug,
+        positionPrimary: player.positionPrimary,
+        context: player.teams.length
+          ? player.teams
+              .map((team) => `${team.teamName} (${team.competitionName})`)
+              .join(", ")
+          : "ScoreBoard player",
+        source: "scoreboard",
+      });
+    }
+
+    for (const player of mergeMasterTargets) {
+      if (!player.id || player.id === sourcePlayerId || byId.has(player.id)) continue;
+      byId.set(player.id, {
+        playerId: player.id,
+        displayName: player.displayName,
+        slug: player.slug,
+        positionPrimary: player.positionPrimary,
+        context: player.academy?.name
+          ? `${player.academy.name} - master player profile`
+          : "Master player profile",
+        source: "players",
+      });
+    }
+
+    const exactName = normalizeNameKey(mergingPlayers?.source.displayName ?? "");
+    return [...byId.values()].sort((a, b) => {
+      const aExact = normalizeNameKey(a.displayName) === exactName ? 0 : 1;
+      const bExact = normalizeNameKey(b.displayName) === exactName ? 0 : 1;
+      if (aExact !== bExact) return aExact - bExact;
+      return a.displayName.localeCompare(b.displayName);
+    });
+  }, [mergeMasterTargets, mergingPlayers?.source.displayName, mergingPlayers?.source.playerId, players]);
 
   return (
     <section className="admin-sb-section">
@@ -1037,6 +1121,20 @@ export function AdminScoreboardEntitiesPage() {
                 </div>
               </div>
               <label className="admin-sb-field">
+                <span>Find canonical target profile</span>
+                <input
+                  type="search"
+                  value={mergeTargetQ}
+                  onChange={(e) => setMergeTargetQ(e.target.value)}
+                  placeholder="Search all master players, including profiles with no ScoreBoard history"
+                  disabled={mergeSaving}
+                />
+                <small className="muted">
+                  This searches the full `/admin/players` database, so the target can have no
+                  ScoreBoard events yet and can use a different listed position.
+                </small>
+              </label>
+              <label className="admin-sb-field">
                 <span>Canonical target profile</span>
                 <select
                   value={mergingPlayers.targetPlayerId}
@@ -1049,16 +1147,19 @@ export function AdminScoreboardEntitiesPage() {
                 >
                   <option value="">Select the profile to keep...</option>
                   {mergeTargetOptions.map((player) => (
-                    <option key={player.playerId ?? player.displayName} value={player.playerId ?? ""}>
+                    <option key={player.playerId} value={player.playerId}>
                       {player.displayName}
-                      {player.teams.length
-                        ? ` - ${player.teams
-                            .map((team) => `${team.teamName} (${team.competitionName})`)
-                            .join(", ")}`
-                        : ""}
+                      {player.positionPrimary ? ` (${player.positionPrimary})` : ""}
+                      {` - ${player.context}`}
+                      {player.source === "players" ? " - no ScoreBoard link required" : ""}
                     </option>
                   ))}
                 </select>
+                {mergeTargetsLoading ? (
+                  <small className="muted">Searching master player profiles...</small>
+                ) : mergeTargetOptions.length === 0 ? (
+                  <small className="muted">No merge target found. Try a broader name search.</small>
+                ) : null}
               </label>
               <label className="admin-sb-check">
                 <input

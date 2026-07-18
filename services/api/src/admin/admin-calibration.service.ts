@@ -58,15 +58,47 @@ export class AdminCalibrationService {
   ) {}
 
   private parseHeightFt(heightFt?: string): number | undefined {
-    const raw = heightFt?.trim().toLowerCase();
+    const raw = heightFt
+      ?.trim()
+      .toLowerCase()
+      .replace(/[‘’‛`´]/g, "'")
+      .replace(/[“”″]/g, "\"");
     if (!raw) return undefined;
     const cmMatch = raw.match(/^(\d+(?:\.\d+)?)\s*cm$/);
-    if (cmMatch) return Math.round(Number(cmMatch[1]));
-    const match = raw.match(/(\d+)\s*(?:ft|feet|')?\s*(?:\.|\s|-)??\s*(\d+)?\s*(?:in|")?/);
-    if (!match) return undefined;
+    const meterMatch = raw.match(/^(\d+(?:\.\d+)?)\s*m$/);
+    const cm = cmMatch
+      ? Math.round(Number(cmMatch[1]))
+      : meterMatch
+        ? Math.round(Number(meterMatch[1]) * 100)
+        : undefined;
+    if (cm != null) return cm >= 100 && cm <= 230 ? cm : undefined;
+
+    const match =
+      raw.match(/^(\d+)\s*(?:ft|feet|foot|')\s*(\d{1,2})?\s*(?:in|inch|inches|")?$/) ??
+      raw.match(/^(\d+)\s*[-.\s]\s*(\d{1,2})$/);
+    if (!match) {
+      const feetOnly = raw.match(/^(\d+)\s*(?:ft|feet|foot)$/);
+      if (!feetOnly) return undefined;
+      const feet = parseInt(feetOnly[1], 10) || 0;
+      const feetOnlyCm = Math.round(feet * 12 * 2.54);
+      return feetOnlyCm >= 100 && feetOnlyCm <= 230 ? feetOnlyCm : undefined;
+    }
     const feet = parseInt(match[1], 10) || 0;
     const inches = parseInt(match[2] ?? "0", 10) || 0;
-    return Math.round((feet * 12 + inches) * 2.54);
+    if (inches < 0 || inches > 11) return undefined;
+    const parsedCm = Math.round((feet * 12 + inches) * 2.54);
+    return parsedCm >= 100 && parsedCm <= 230 ? parsedCm : undefined;
+  }
+
+  private parseRequiredHeightFt(heightFt?: string): number | undefined {
+    if (!heightFt?.trim()) return undefined;
+    const heightCm = this.parseHeightFt(heightFt);
+    if (heightCm == null) {
+      throw new BadRequestException(
+        "Height must be entered as feet/inches like 5'11\", 5ft 11in, or centimeters like 180cm."
+      );
+    }
+    return heightCm;
   }
 
   private splitFullName(fullName: string): { firstName: string; lastName: string } {
@@ -400,6 +432,7 @@ export class AdminCalibrationService {
       primaryBenchmarkIndex: options.primaryBenchmarkIndex,
     });
     const headline = result.calibratedSummary;
+    const parsedHeightCm = this.parseRequiredHeightFt(options.playerInfo?.heightFt);
 
     if (options.save) {
       await this.prisma.player.update({
@@ -418,7 +451,7 @@ export class AdminCalibrationService {
             ? new Date(options.playerInfo.dateOfBirth)
             : player.dateOfBirth,
           heightCm: options.playerInfo?.heightFt
-            ? this.parseHeightFt(options.playerInfo.heightFt)
+            ? parsedHeightCm
             : player.heightCm,
           weightKg: options.playerInfo?.weightKg ?? player.weightKg,
           city: options.playerInfo?.currentClub
@@ -492,6 +525,7 @@ export class AdminCalibrationService {
         ? new Date().getFullYear() - dob.getFullYear()
         : undefined;
     const ageGroup = normalizePlayerAgeCategory({ age, dateOfBirth: dob });
+    const parsedHeightCm = this.parseRequiredHeightFt(playerInfo.heightFt);
 
     const slug = await resolveUniquePlayerSlug(
       this.prisma,
@@ -509,7 +543,7 @@ export class AdminCalibrationService {
         dateOfBirth: dob,
         age,
         ageGroup,
-        heightCm: this.parseHeightFt(playerInfo.heightFt),
+        heightCm: parsedHeightCm,
         weightKg: playerInfo.weightKg,
         city: playerInfo.currentClub ? normalizeClubName(playerInfo.currentClub) : undefined,
         playerPhotoUrl: playerInfo.photoUrl,
