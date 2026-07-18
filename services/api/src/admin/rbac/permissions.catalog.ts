@@ -31,6 +31,8 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { slug: "inbox.read", resource: "inbox", action: "read", description: "View contact inbox" },
   { slug: "inbox.write", resource: "inbox", action: "write", description: "Manage contact messages" },
   { slug: "database.seed", resource: "database", action: "seed", description: "Run database seed" },
+  { slug: "ops.support.read", resource: "ops_support", action: "read", description: "View support diagnostics and reports" },
+  { slug: "ops.support.write", resource: "ops_support", action: "write", description: "Triage support reports" },
 ];
 
 export const ALL_PERMISSION_SLUGS = ADMIN_PERMISSIONS.map((p) => p.slug);
@@ -47,6 +49,7 @@ export const SCOREBOARD_OPS_PERMISSION_SLUGS = [
   "scoreboard.matches.write",
   "scoreboard.competitions.write",
   "scoreboard.highlights.write",
+  "ops.support.read",
 ];
 
 export const CALIBRATION_EDITOR_PERMISSION_SLUGS = [
@@ -56,6 +59,7 @@ export const CALIBRATION_EDITOR_PERMISSION_SLUGS = [
   "players.calibrate",
   "calibration.run",
   "calibration.create",
+  "ops.support.read",
 ];
 
 export type DefaultRoleDef = {

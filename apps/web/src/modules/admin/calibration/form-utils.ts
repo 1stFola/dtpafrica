@@ -309,15 +309,36 @@ export function playerInfoToApiPayload(info: PlayerInfoForm) {
 }
 
 export function parseHeightFtToCm(heightFt: string): number | undefined {
-  const raw = heightFt.trim().toLowerCase();
+  const raw = heightFt
+    .trim()
+    .toLowerCase()
+    .replace(/[‘’‛`´]/g, "'")
+    .replace(/[“”″]/g, "\"");
   if (!raw) return undefined;
   const cmMatch = raw.match(/^(\d+(?:\.\d+)?)\s*cm$/);
-  if (cmMatch) return Math.round(Number(cmMatch[1]));
-  const feetMatch = raw.match(/(\d+)\s*(?:ft|feet|')?\s*(?:\.|\s|-)??\s*(\d+)?\s*(?:in|")?/);
-  if (!feetMatch) return undefined;
+  const meterMatch = raw.match(/^(\d+(?:\.\d+)?)\s*m$/);
+  const cm = cmMatch
+    ? Math.round(Number(cmMatch[1]))
+    : meterMatch
+      ? Math.round(Number(meterMatch[1]) * 100)
+      : undefined;
+  if (cm != null) return cm >= 100 && cm <= 230 ? cm : undefined;
+
+  const feetMatch =
+    raw.match(/^(\d+)\s*(?:ft|feet|foot|')\s*(\d{1,2})?\s*(?:in|inch|inches|")?$/) ??
+    raw.match(/^(\d+)\s*[-.\s]\s*(\d{1,2})$/);
+  if (!feetMatch) {
+    const feetOnly = raw.match(/^(\d+)\s*(?:ft|feet|foot)$/);
+    if (!feetOnly) return undefined;
+    const feet = parseInt(feetOnly[1], 10) || 0;
+    const feetOnlyCm = Math.round(feet * 12 * 2.54);
+    return feetOnlyCm >= 100 && feetOnlyCm <= 230 ? feetOnlyCm : undefined;
+  }
   const feet = parseInt(feetMatch[1], 10) || 0;
   const inches = parseInt(feetMatch[2] ?? "0", 10) || 0;
-  return Math.round((feet * 12 + inches) * 2.54);
+  if (inches < 0 || inches > 11) return undefined;
+  const parsedCm = Math.round((feet * 12 + inches) * 2.54);
+  return parsedCm >= 100 && parsedCm <= 230 ? parsedCm : undefined;
 }
 
 export function legacyMetricsFromForm(form: LegacyMetricsForm): Record<string, number> {
