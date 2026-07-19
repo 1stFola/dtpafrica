@@ -1,7 +1,6 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   adminApi,
-  type DeploymentIncidentResult,
   type SupportDiagnostics,
   type SupportPlaybookEntry,
   type SupportReport,
@@ -274,148 +273,6 @@ function RecommendationQuickActions({ actions }: { actions: RecommendationQuickA
         </a>
       ))}
     </div>
-  );
-}
-
-function DeploymentIncidentIntake({ onCreated }: { onCreated: () => void }) {
-  const toast = useAdminToast();
-  const [githubRunUrl, setGithubRunUrl] = useState("");
-  const [branch, setBranch] = useState("");
-  const [commitSha, setCommitSha] = useState("");
-  const [failingStep, setFailingStep] = useState("");
-  const [productionHost, setProductionHost] = useState("");
-  const [notes, setNotes] = useState("");
-  const [logExcerpt, setLogExcerpt] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<DeploymentIncidentResult | null>(null);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    try {
-      const nextResult = await adminApi.createDeploymentIncident({
-        githubRunUrl,
-        branch,
-        commitSha,
-        failingStep,
-        productionHost,
-        notes,
-        logExcerpt,
-      });
-      setResult(nextResult);
-      toast.success("Deployment incident captured");
-      setLogExcerpt("");
-      onCreated();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to capture deployment incident");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <section className="admin-sb-panel admin-support-panel admin-support-deployment">
-      <header className="admin-support-section-head">
-        <div>
-          <p className="admin-support-kicker">Phase 6</p>
-          <h2>Deployment log intake</h2>
-          <p className="muted">
-            Paste a GitHub Actions failure excerpt to create a recommendation-only deployment
-            incident.
-          </p>
-        </div>
-      </header>
-      <form className="admin-support-deployment-form" onSubmit={submit}>
-        <label>
-          <span>GitHub Actions run URL</span>
-          <input
-            value={githubRunUrl}
-            onChange={(event) => setGithubRunUrl(event.target.value)}
-            placeholder="https://github.com/.../actions/runs/..."
-          />
-        </label>
-        <label>
-          <span>Failing step</span>
-          <input
-            value={failingStep}
-            onChange={(event) => setFailingStep(event.target.value)}
-            placeholder="Ansible deploy, db push, seed, health check"
-          />
-        </label>
-        <label>
-          <span>Branch</span>
-          <input value={branch} onChange={(event) => setBranch(event.target.value)} />
-        </label>
-        <label>
-          <span>Commit SHA</span>
-          <input value={commitSha} onChange={(event) => setCommitSha(event.target.value)} />
-        </label>
-        <label>
-          <span>Production host</span>
-          <input
-            value={productionHost}
-            onChange={(event) => setProductionHost(event.target.value)}
-            placeholder="Optional"
-          />
-        </label>
-        <label>
-          <span>Notes</span>
-          <input
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            placeholder="What were you trying to deploy?"
-          />
-        </label>
-        <label className="admin-support-deployment-form__log">
-          <span>Log excerpt</span>
-          <textarea
-            required
-            minLength={20}
-            value={logExcerpt}
-            onChange={(event) => setLogExcerpt(event.target.value)}
-            rows={8}
-            placeholder="Paste the first failing GitHub Actions log section here."
-          />
-        </label>
-        <button type="submit" className="btn btn-primary" disabled={submitting}>
-          {submitting ? "Analyzing..." : "Create deployment incident"}
-        </button>
-      </form>
-      {result && (
-        <div className="admin-support-deployment-result">
-          <header>
-            <div>
-              <p className="admin-support-kicker">{pretty(result.analysis.pattern)}</p>
-              <h3>{result.analysis.suspectedRootCause}</h3>
-            </div>
-            <span
-              className={`admin-support-pill ${
-                result.analysis.severity === "critical"
-                  ? "admin-support-pill--critical"
-                  : "admin-support-pill--high"
-              }`}
-            >
-              {result.analysis.safeToRetry ? "Retry maybe safe" : "Do not retry yet"}
-            </span>
-          </header>
-          <div className="admin-support-triage__evidence">
-            {result.analysis.matchedSignals.map((signal) => (
-              <span key={signal} className="is-warning">
-                {signal}
-              </span>
-            ))}
-          </div>
-          <ul>
-            {result.analysis.recommendedActions.map((action) => (
-              <li key={action}>{action}</li>
-            ))}
-          </ul>
-          <p className="muted">
-            Created report: <strong>{result.report.subject}</strong>
-          </p>
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -802,8 +659,6 @@ export function AdminOpsSupportPage() {
         ))}
       </section>
 
-      <DeploymentIncidentIntake onCreated={() => void load()} />
-
       <section className="admin-sb-panel admin-support-panel">
         <header className="admin-support-section-head">
           <div>
@@ -812,10 +667,27 @@ export function AdminOpsSupportPage() {
               Repeated issues, routing rules, and resolved reports that should improve support docs.
             </p>
           </div>
+          <div className="admin-support-review-summary" aria-label="Playbook review summary">
+            <span>
+              <strong>{reviewQueue?.learningQueue.length ?? 0}</strong>
+              Learning
+            </span>
+            <span>
+              <strong>{reviewQueue?.repeatedPatterns.length ?? 0}</strong>
+              Patterns
+            </span>
+            <span>
+              <strong>{reviewQueue?.routingRules.length ?? 0}</strong>
+              Routes
+            </span>
+          </div>
         </header>
         <div className="admin-support-review-grid">
-          <div className="admin-support-review-column">
-            <h3>Learning queue</h3>
+          <div className="admin-support-review-column admin-support-review-column--primary">
+            <div className="admin-support-review-column__head">
+              <h3>Learning queue</h3>
+              <span>{reviewQueue?.learningQueue.length ?? 0}</span>
+            </div>
             {reviewQueue?.learningQueue.length ? (
               reviewQueue.learningQueue.map((report) => (
                 <LearningQueueCard
@@ -825,11 +697,17 @@ export function AdminOpsSupportPage() {
                 />
               ))
             ) : (
-              <p className="muted">No playbook updates are waiting for review.</p>
+              <div className="admin-support-empty-card">
+                <strong>No playbook updates</strong>
+                <p className="muted">Resolved reports will appear here when they need review.</p>
+              </div>
             )}
           </div>
           <div className="admin-support-review-column">
-            <h3>Repeated patterns</h3>
+            <div className="admin-support-review-column__head">
+              <h3>Repeated patterns</h3>
+              <span>{reviewQueue?.repeatedPatterns.length ?? 0}</span>
+            </div>
             {reviewQueue?.repeatedPatterns.length ? (
               reviewQueue.repeatedPatterns.map((pattern) => (
                 <article
@@ -850,15 +728,28 @@ export function AdminOpsSupportPage() {
                 </article>
               ))
             ) : (
-              <p className="muted">No repeated issue patterns found in the last 90 days.</p>
+              <div className="admin-support-empty-card">
+                <strong>No repeated patterns</strong>
+                <p className="muted">The last 90 days do not show recurring issues yet.</p>
+              </div>
             )}
           </div>
-          <div className="admin-support-review-column">
-            <h3>Routing rules</h3>
+        </div>
+        <div className="admin-support-routing-panel">
+          <div className="admin-support-review-column__head">
+            <div>
+              <h3>Routing rules</h3>
+              <p className="muted">Human owners and approval boundaries for support categories.</p>
+            </div>
+            <span>{reviewQueue?.routingRules.length ?? 0}</span>
+          </div>
+          <div className="admin-support-route-grid">
             {reviewQueue?.routingRules.map((rule) => (
               <article key={rule.category} className="admin-support-route-card">
-                <p className="admin-support-kicker">{pretty(rule.category)}</p>
-                <h4>{rule.owner}</h4>
+                <div>
+                  <p className="admin-support-kicker">{pretty(rule.category)}</p>
+                  <h4>{rule.owner}</h4>
+                </div>
                 <p>{rule.escalation}</p>
                 <small>{rule.humanApprovalRequiredFor.join(", ")}</small>
               </article>

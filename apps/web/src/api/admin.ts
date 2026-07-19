@@ -558,40 +558,6 @@ export type SupportTriagePacket = {
   learningLoopPrompt: string;
 };
 
-export type DeploymentLogAnalysis = {
-  pattern:
-    | "prisma_unique_constraint"
-    | "missing_seed_asset"
-    | "health_check_timeout"
-    | "missing_environment"
-    | "container_boot_failure"
-    | "database_setup_failure"
-    | "unknown_deployment_failure";
-  severity: "high" | "critical";
-  recommendationKey: string;
-  suspectedRootCause: string;
-  safeToRetry: boolean;
-  matchedSignals: string[];
-  recommendedActions: string[];
-};
-
-export type CreateDeploymentIncidentInput = {
-  githubRunUrl?: string;
-  branch?: string;
-  commitSha?: string;
-  failingStep?: string;
-  productionHost?: string;
-  logExcerpt: string;
-  notes?: string;
-};
-
-export type DeploymentIncidentResult = {
-  ok: boolean;
-  report: SupportReport;
-  recommendation: SupportPlaybookEntry;
-  analysis: DeploymentLogAnalysis;
-};
-
 export type SupportDiagnostics = {
   generatedAt: string;
   supportMode: "recommend_only";
@@ -889,11 +855,6 @@ export const adminApi = {
   supportDiagnostics: () => adminFetch<SupportDiagnostics>("/admin/support/diagnostics"),
   supportSummary: () => adminFetch<SupportSummary>("/admin/support/summary"),
   supportReviewQueue: () => adminFetch<SupportReviewQueue>("/admin/support/review"),
-  createDeploymentIncident: (body: CreateDeploymentIncidentInput) =>
-    adminFetch<DeploymentIncidentResult>("/admin/support/deployment-intake", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
   supportReports: (
     query: { status?: string; category?: string; q?: string; limit?: number } = {}
   ) => {

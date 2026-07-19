@@ -1,8 +1,7 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Query, UseGuards } from "@nestjs/common";
 import { RequirePermissions } from "./decorators/require-permissions.decorator";
 import { AdminAuthGuard } from "./guards/admin-auth.guard";
 import { PermissionsGuard } from "./guards/permissions.guard";
-import { CreateDeploymentIncidentDto } from "../support/dto/create-deployment-incident.dto";
 import { UpdateSupportReportDto } from "../support/dto/update-support-report.dto";
 import { SupportService } from "../support/support.service";
 
@@ -33,12 +32,6 @@ export class AdminSupportController {
   @RequirePermissions("ops.support.read")
   reviewQueue() {
     return this.support.reviewQueue();
-  }
-
-  @Post("deployment-intake")
-  @RequirePermissions("ops.support.write")
-  createDeploymentIncident(@Body() dto: CreateDeploymentIncidentDto) {
-    return this.support.createDeploymentIncident(dto);
   }
 
   @Get("reports")

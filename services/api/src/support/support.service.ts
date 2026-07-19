@@ -1,7 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { CreateDeploymentIncidentDto } from "./dto/create-deployment-incident.dto";
 import { CreateSupportReportDto } from "./dto/create-support-report.dto";
 import { UpdateSupportReportDto } from "./dto/update-support-report.dto";
 import {
@@ -116,23 +115,6 @@ type SupportReviewQueue = {
   }>;
 };
 
-type DeploymentLogAnalysis = {
-  pattern:
-    | "prisma_unique_constraint"
-    | "missing_seed_asset"
-    | "health_check_timeout"
-    | "missing_environment"
-    | "container_boot_failure"
-    | "database_setup_failure"
-    | "unknown_deployment_failure";
-  severity: "high" | "critical";
-  recommendationKey: string;
-  suspectedRootCause: string;
-  safeToRetry: boolean;
-  matchedSignals: string[];
-  recommendedActions: string[];
-};
-
 @Injectable()
 export class SupportService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -202,52 +184,6 @@ export class SupportService {
     return {
       ok: true,
       report: this.presentReport(report, recommendation),
-      recommendation,
-    };
-  }
-
-  async createDeploymentIncident(dto: CreateDeploymentIncidentDto) {
-    const analysis = this.analyzeDeploymentLog(dto.logExcerpt);
-    const recommendation =
-      SUPPORT_PLAYBOOK.find((entry) => entry.key === analysis.recommendationKey) ??
-      SUPPORT_PLAYBOOK.find((entry) => entry.category === "deployment") ??
-      SUPPORT_PLAYBOOK[0];
-    const subject = `${recommendation.title}${dto.failingStep ? ` - ${dto.failingStep}` : ""}`;
-    const details = [
-      dto.notes?.trim(),
-      dto.githubRunUrl ? `GitHub Actions run: ${dto.githubRunUrl.trim()}` : null,
-      dto.branch ? `Branch: ${dto.branch.trim()}` : null,
-      dto.commitSha ? `Commit: ${dto.commitSha.trim()}` : null,
-      dto.failingStep ? `Failing step: ${dto.failingStep.trim()}` : null,
-      dto.productionHost ? `Production host: ${dto.productionHost.trim()}` : null,
-      "",
-      "Log excerpt:",
-      dto.logExcerpt.trim(),
-    ].filter((item): item is string => item != null);
-
-    const result = await this.createReport(
-      {
-        audience: "internal_admin",
-        category: "deployment",
-        severity: analysis.severity,
-        subject,
-        description: details.join("\n"),
-        pageUrl: cleanString(dto.githubRunUrl),
-      },
-      {
-        source: "deployment_log_intake",
-        githubRunUrl: cleanString(dto.githubRunUrl) ?? null,
-        branch: cleanString(dto.branch) ?? null,
-        commitSha: cleanString(dto.commitSha) ?? null,
-        failingStep: cleanString(dto.failingStep) ?? null,
-        productionHost: cleanString(dto.productionHost) ?? null,
-        analysis,
-      }
-    );
-
-    return {
-      ...result,
-      analysis,
       recommendation,
     };
   }
@@ -716,129 +652,6 @@ export class SupportService {
         humanApprovalRequiredFor: ["public content change", "SEO metadata update"],
       },
     ];
-  }
-
-  private analyzeDeploymentLog(logExcerpt: string): DeploymentLogAnalysis {
-    const text = logExcerpt.toLowerCase();
-    const signals: string[] = [];
-    const has = (pattern: RegExp, label: string) => {
-      if (!pattern.test(text)) return false;
-      signals.push(label);
-      return true;
-    };
-
-    const prismaP2002 = has(/p2002|unique constraint|unique index/i, "Prisma unique constraint");
-    const enoent = has(/enoent|no such file or directory|cannot find module/i, "Missing file/asset");
-    const healthTimeout = has(/health check|timed out|timeout after|unhealthy/i, "Health check timeout");
-    const missingEnv = has(
-      /environment variable|env var|not configured|missing .*key|no .*provider|secret/i,
-      "Missing environment/secret"
-    );
-    const containerBoot = has(
-      /container .*exited|api-1.*exited|cannot start|failed to start|listen eaddrinuse/i,
-      "Container boot failure"
-    );
-    const dbSetup = has(/prisma db push|database setup|migration|db push|schema push/i, "Database setup");
-
-    if (prismaP2002) {
-      return {
-        pattern: "prisma_unique_constraint",
-        severity: "critical",
-        recommendationKey: "ci-prisma-constraint",
-        suspectedRootCause:
-          "Prisma attempted to enforce a unique constraint while production data already contains duplicates.",
-        safeToRetry: false,
-        matchedSignals: signals,
-        recommendedActions: [
-          "Do not retry until duplicate rows are identified and a human-approved cleanup plan exists.",
-          "Capture the exact constraint/column and duplicate count from the failing log.",
-          "Prepare a read-only duplicate inspection query before any database repair.",
-        ],
-      };
-    }
-
-    if (enoent) {
-      return {
-        pattern: "missing_seed_asset",
-        severity: "high",
-        recommendationKey: "production-seed-failure",
-        suspectedRootCause:
-          "The deployed API image or seed process is referencing a file that was not copied into the runtime path.",
-        safeToRetry: false,
-        matchedSignals: signals,
-        recommendedActions: [
-          "Verify the seed asset exists in the repository and is included in the API build/dist output.",
-          "Check whether the runtime path is double-prefixed or points at a source path unavailable inside the container.",
-          "Rerun deployment only after the asset path/copy behavior is fixed.",
-        ],
-      };
-    }
-
-    if (missingEnv) {
-      return {
-        pattern: "missing_environment",
-        severity: "high",
-        recommendationKey: "deployment-env-missing",
-        suspectedRootCause:
-          "A required production environment variable or secret appears to be missing for the service.",
-        safeToRetry: false,
-        matchedSignals: signals,
-        recommendedActions: [
-          "Identify the exact missing variable from the log.",
-          "Confirm it is set for the correct production service/container.",
-          "Restart or redeploy only after the secret is available to the running API process.",
-        ],
-      };
-    }
-
-    if (dbSetup) {
-      return {
-        pattern: "database_setup_failure",
-        severity: "high",
-        recommendationKey: "ci-prisma-constraint",
-        suspectedRootCause:
-          "The API database setup step failed before the service could become healthy.",
-        safeToRetry: false,
-        matchedSignals: signals,
-        recommendedActions: [
-          "Inspect the first Prisma/database error, not only the final health-check timeout.",
-          "Confirm whether the failure requires data cleanup, schema adjustment, or seed asset repair.",
-          "Only retry after the database setup root cause is resolved.",
-        ],
-      };
-    }
-
-    if (healthTimeout || containerBoot) {
-      return {
-        pattern: healthTimeout ? "health_check_timeout" : "container_boot_failure",
-        severity: "high",
-        recommendationKey: "deployment-health-timeout",
-        suspectedRootCause:
-          "The API container did not become healthy, likely because an earlier boot/setup step failed.",
-        safeToRetry: true,
-        matchedSignals: signals,
-        recommendedActions: [
-          "Find the earliest failing log line before the health-check timeout.",
-          "Check API process boot logs and container exit reason.",
-          "Retry may be reasonable only if the underlying failure was transient.",
-        ],
-      };
-    }
-
-    return {
-      pattern: "unknown_deployment_failure",
-      severity: "high",
-      recommendationKey: "production-seed-failure",
-      suspectedRootCause:
-        "The log does not match a known DTP deployment signature yet and needs human review.",
-      safeToRetry: false,
-      matchedSignals: signals.length ? signals : ["No known signature matched"],
-      recommendedActions: [
-        "Attach the full GitHub Actions run URL and the first failing step.",
-        "Identify the earliest error before secondary failures.",
-        "If this becomes recurring, mark the report as new_entry_needed in the learning loop.",
-      ],
-    };
   }
 
   private async buildEvidenceForReport(row: SupportReportRow) {
