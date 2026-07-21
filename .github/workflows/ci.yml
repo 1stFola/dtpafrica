@@ -29,29 +29,199 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      # ── Each step writes pass/fail to a results file ──────────────────────
+      # The report is built at the end from this file regardless of failures.
+
       - name: Install dependencies
+        id: install
         run: pnpm install --frozen-lockfile
+        continue-on-error: true
 
       - name: Generate Prisma client
+        id: prisma_generate
         run: pnpm --filter @dtp/api prisma:generate
+        continue-on-error: true
 
       - name: Validate Prisma schema
+        id: prisma_validate
         run: pnpm --filter @dtp/api exec prisma validate
+        continue-on-error: true
 
       - name: Build engines
+        id: build_engines
         run: pnpm --filter @dtp/engines build
+        continue-on-error: true
 
       - name: Build UI package
+        id: build_ui
         run: pnpm --filter @dtp/ui build
+        continue-on-error: true
 
       - name: Typecheck workspace
+        id: typecheck
         run: pnpm typecheck
+        continue-on-error: true
 
       - name: Build API
+        id: build_api
         run: pnpm --filter @dtp/api build
+        continue-on-error: true
 
       - name: Build web
+        id: build_web
         run: pnpm --filter @dtp/web build
+        continue-on-error: true
 
       - name: Validate staging compose
+        id: compose_validate
         run: docker compose --env-file infra/.env.staging.example -f infra/docker-compose.staging.yml config
+        continue-on-error: true
+
+      # ── Build report ──────────────────────────────────────────────────────
+
+      - name: Generate build report
+        if: always()
+        run: |
+          # Determine overall status
+          STEPS=(
+            "install:${{ steps.install.outcome }}"
+            "prisma_generate:${{ steps.prisma_generate.outcome }}"
+            "prisma_validate:${{ steps.prisma_validate.outcome }}"
+            "build_engines:${{ steps.build_engines.outcome }}"
+            "build_ui:${{ steps.build_ui.outcome }}"
+            "typecheck:${{ steps.typecheck.outcome }}"
+            "build_api:${{ steps.build_api.outcome }}"
+            "build_web:${{ steps.build_web.outcome }}"
+            "compose_validate:${{ steps.compose_validate.outcome }}"
+          )
+
+          PASS=0; FAIL=0
+          for STEP in "${STEPS[@]}"; do
+            OUTCOME="${STEP##*:}"
+            [ "$OUTCOME" = "success" ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+          done
+
+          OVERALL="✅ PASSED"
+          [ $FAIL -gt 0 ] && OVERALL="❌ FAILED"
+
+          # ── GitHub Actions Job Summary (visible on the run page) ──────────
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # DTP Africa — CI Build Report
+
+          **$OVERALL** &nbsp;|&nbsp; Branch: \`${{ github.ref_name }}\` &nbsp;|&nbsp; Commit: \`${{ github.sha }}\`
+
+          | Step | Status |
+          |---|---|
+          | Install dependencies | ${{ steps.install.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Generate Prisma client | ${{ steps.prisma_generate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Validate Prisma schema | ${{ steps.prisma_validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Build engines | ${{ steps.build_engines.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Build UI package | ${{ steps.build_ui.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Typecheck workspace | ${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Build API | ${{ steps.build_api.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Build web | ${{ steps.build_web.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Validate staging compose | ${{ steps.compose_validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+
+          **Total:** $PASS passed, $FAIL failed
+
+          **Triggered by:** ${{ github.actor }} &nbsp;|&nbsp; **Run:** [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+
+          # ── Downloadable HTML report ──────────────────────────────────────
+          mkdir -p report
+          cat > report/build-report.html << HTMLEOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>DTP Africa — CI Build Report</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                     max-width: 800px; margin: 40px auto; padding: 0 20px; color: #24292f; }
+              h1 { border-bottom: 1px solid #d0d7de; padding-bottom: 12px; }
+              .badge { display: inline-block; padding: 4px 12px; border-radius: 20px;
+                       font-weight: 600; font-size: 14px; }
+              .pass { background: #dafbe1; color: #116329; }
+              .fail { background: #ffebe9; color: #82071e; }
+              table { width: 100%; border-collapse: collapse; margin: 24px 0; }
+              th { background: #f6f8fa; text-align: left; padding: 10px 16px;
+                   border: 1px solid #d0d7de; font-size: 13px; }
+              td { padding: 10px 16px; border: 1px solid #d0d7de; font-size: 14px; }
+              tr:hover td { background: #f6f8fa; }
+              .meta { color: #656d76; font-size: 13px; margin: 8px 0; }
+              .summary { background: #f6f8fa; border: 1px solid #d0d7de;
+                         border-radius: 6px; padding: 16px 20px; margin: 20px 0; }
+            </style>
+          </head>
+          <body>
+            <h1>DTP Africa &mdash; CI Build Report</h1>
+            <p class="meta">Branch: <strong>${{ github.ref_name }}</strong>
+              &nbsp;&bull;&nbsp; Commit: <code>${{ github.sha }}</code>
+              &nbsp;&bull;&nbsp; Run #${{ github.run_number }}
+              &nbsp;&bull;&nbsp; Triggered by: ${{ github.actor }}</p>
+
+            <div class="summary">
+              <span class="badge $([ $FAIL -gt 0 ] && echo 'fail' || echo 'pass')">
+                $([ $FAIL -gt 0 ] && echo "❌ BUILD FAILED" || echo "✅ BUILD PASSED")
+              </span>
+              &nbsp;&nbsp; $PASS passed &nbsp;&bull;&nbsp; $FAIL failed
+            </div>
+
+            <table>
+              <thead>
+                <tr><th>Step</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Install dependencies</td>
+                    <td><span class="badge ${{ steps.install.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.install.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Generate Prisma client</td>
+                    <td><span class="badge ${{ steps.prisma_generate.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.prisma_generate.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Validate Prisma schema</td>
+                    <td><span class="badge ${{ steps.prisma_validate.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.prisma_validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Build engines</td>
+                    <td><span class="badge ${{ steps.build_engines.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.build_engines.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Build UI package</td>
+                    <td><span class="badge ${{ steps.build_ui.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.build_ui.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Typecheck workspace</td>
+                    <td><span class="badge ${{ steps.typecheck.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Build API</td>
+                    <td><span class="badge ${{ steps.build_api.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.build_api.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Build web</td>
+                    <td><span class="badge ${{ steps.build_web.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.build_web.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>Validate staging compose</td>
+                    <td><span class="badge ${{ steps.compose_validate.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.compose_validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+              </tbody>
+            </table>
+
+            <p class="meta">Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')</p>
+          </body>
+          </html>
+          HTMLEOF
+
+      - name: Upload build report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report
+          path: report/build-report.html
+          retention-days: 30
+
+      # ── Fail the job if any step failed ───────────────────────────────────
+      - name: Check for failures
+        if: always()
+        run: |
+          if [[ \
+            "${{ steps.install.outcome }}"          != "success" || \
+            "${{ steps.prisma_generate.outcome }}"  != "success" || \
+            "${{ steps.prisma_validate.outcome }}"  != "success" || \
+            "${{ steps.build_engines.outcome }}"    != "success" || \
+            "${{ steps.build_ui.outcome }}"         != "success" || \
+            "${{ steps.typecheck.outcome }}"        != "success" || \
+            "${{ steps.build_api.outcome }}"        != "success" || \
+            "${{ steps.build_web.outcome }}"        != "success" || \
+            "${{ steps.compose_validate.outcome }}" != "success" \
+          ]]; then
+            echo "One or more build steps failed — see report above"
+            exit 1
+          fi
