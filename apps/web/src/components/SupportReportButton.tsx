@@ -17,7 +17,6 @@ const CATEGORIES = [
   ["scoreboard_ops", "ScoreBoard / match operations"],
   ["player_data", "Player data or profile"],
   ["calibration", "Calibration / ratings"],
-  ["tracker_ocr", "Tracker stats / OCR"],
   ["media_highlights", "Media / highlights"],
   ["content_admin", "Content / admin"],
   ["deployment", "Site or deployment"],

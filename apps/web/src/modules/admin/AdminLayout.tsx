@@ -5,14 +5,16 @@ import { adminApi, type SupportSummary } from "../../api/admin";
 import { useAdminAuth } from "./AdminAuthContext";
 import { ADMIN_NAV_PERMISSIONS, canAccessNav } from "./admin-permissions";
 
-const links = [
+type AdminNavLink = {
+  to: string;
+  label: string;
+  icon: string;
+  end?: boolean;
+  variant?: "outline";
+};
+
+const links: AdminNavLink[] = [
   { to: "/admin", end: true, label: "Dashboard", icon: "◆" },
-  {
-    to: "/admin/player-stats-extractor",
-    label: "Tracker Stats Extractor",
-    icon: "CSV",
-    variant: "outline",
-  },
   { to: "/admin/inbox", label: "Inbox", icon: "✉" },
   { to: "/admin/players", label: "Players", icon: "⚽" },
   { to: "/admin/calibration", label: "Calibration", icon: "◎" },

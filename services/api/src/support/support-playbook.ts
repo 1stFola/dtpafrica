@@ -72,18 +72,6 @@ export const SUPPORT_PLAYBOOK: SupportPlaybookEntry[] = [
     playbookPath: "docs/support-playbook/scoreboard-history-not-linking.md",
   },
   {
-    key: "tracker-ocr-extraction",
-    title: "Tracker/OCR extraction missing or wrong metrics",
-    category: "tracker_ocr",
-    tier: "tier_1_known",
-    severity: "medium",
-    symptoms: ["OCR provider missing", "wrong sprint distance", "missing kicking power"],
-    diagnostics: ["Check OCR env vars", "Review warnings", "Double-check flagged fields"],
-    recommendation:
-      "Confirm OCR provider config and manually verify sprint_distance, kicking_power, quick_release_score, and footed kicking power fields.",
-    playbookPath: "docs/support-playbook/tracker-ocr-extraction.md",
-  },
-  {
     key: "calibration-save-display",
     title: "Calibration data saves but profile display is wrong",
     category: "calibration",

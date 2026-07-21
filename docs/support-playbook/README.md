@@ -10,20 +10,19 @@ The support agent is **recommend-only**. It may diagnose, collect context, and s
 - **Tier 2 - AI-assisted human resolution:** The issue needs context gathering, log review, or a data decision. The agent prepares a recommendation for a human.
 - **Tier 3 - Human escalation:** Security, production data repair, destructive database changes, or deployment failures go directly to a responsible human.
 
-## First 10 DTP Playbook Areas
+## Core DTP Playbook Areas
 
 1. [ScoreBoard supervisor offline](./scoreboard-supervisor-offline.md)
 2. [Timeline CSV upload errors](./timeline-csv-upload-errors.md)
 3. [Standings not updating](./standings-not-updating.md)
 4. [Duplicate player profile](./duplicate-player-profile.md)
 5. [ScoreBoard history not linking](./scoreboard-history-not-linking.md)
-6. [Tracker OCR extraction](./tracker-ocr-extraction.md)
-7. [Calibration save/display](./calibration-save-display.md)
-8. [Highlight approval flow](./highlight-approval-flow.md)
-9. [Production seed failure](./production-seed-failure.md)
-10. [CI Prisma constraint failure](./ci-prisma-constraint.md)
-11. [Deployment health check timeout](./deployment-health-timeout.md)
-12. [Deployment missing environment variable](./deployment-env-missing.md)
+6. [Calibration save/display](./calibration-save-display.md)
+7. [Highlight approval flow](./highlight-approval-flow.md)
+8. [Production seed failure](./production-seed-failure.md)
+9. [CI Prisma constraint failure](./ci-prisma-constraint.md)
+10. [Deployment health check timeout](./deployment-health-timeout.md)
+11. [Deployment missing environment variable](./deployment-env-missing.md)
 
 ## Learning Loop
 

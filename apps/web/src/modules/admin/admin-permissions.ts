@@ -42,7 +42,6 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
   "/admin/inbox": "inbox.read",
   "/admin/players": "players.read",
   "/admin/calibration": ["calibration.run", "players.calibrate"],
-  "/admin/player-stats-extractor": "calibration.run",
   "/admin/homepage": "homepage.write",
   "/admin/ads": "ads.write",
   "/admin/academies": "academies.read",

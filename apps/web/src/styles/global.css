@@ -10023,107 +10023,6 @@ a {
   font-size: 0.78rem;
 }
 
-.admin-player-stats {
-  display: grid;
-  gap: 1rem;
-}
-
-.admin-player-stats__form {
-  display: grid;
-  gap: 1rem;
-  max-width: 760px;
-}
-
-.admin-player-stats__form label {
-  display: grid;
-  gap: 0.35rem;
-  color: var(--color-text);
-  font-weight: 700;
-}
-
-.admin-player-stats__form input {
-  width: 100%;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: rgba(15, 23, 42, 0.82);
-  color: var(--color-text);
-  font: inherit;
-  padding: 0.7rem 0.8rem;
-}
-
-.admin-player-stats__file-list,
-.admin-player-stats__warnings {
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: rgba(15, 23, 42, 0.55);
-  font-size: 0.85rem;
-}
-
-.admin-player-stats__warnings {
-  border-color: rgba(245, 158, 11, 0.45);
-  background: rgba(245, 158, 11, 0.12);
-  color: #fde68a;
-}
-
-.admin-player-stats__review-note {
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.85rem;
-  border: 1px solid rgba(59, 130, 246, 0.45);
-  border-radius: var(--radius-sm);
-  background: rgba(59, 130, 246, 0.1);
-  color: #bfdbfe;
-  font-size: 0.86rem;
-}
-
-.admin-player-stats__review-note span {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-}
-
-.admin-player-stats__result {
-  display: grid;
-  gap: 1rem;
-}
-
-.admin-player-stats__result-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.admin-player-stats__result-head h2 {
-  margin: 0 0 0.2rem;
-  font-size: 1.1rem;
-}
-
-.admin-player-stats__table td:first-child {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.78rem;
-  color: var(--color-muted);
-}
-
-.admin-player-stats__csv {
-  width: 100%;
-  min-height: 8rem;
-  resize: vertical;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: rgba(15, 23, 42, 0.78);
-  color: var(--color-text);
-  font: 0.78rem ui-monospace, SFMono-Regular, Consolas, monospace;
-  padding: 0.85rem;
-}
-
-@media (max-width: 720px) {
-  .admin-player-stats__result-head {
-    flex-direction: column;
-  }
-}
-
 .admin-calibration__toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -20229,8 +20128,6 @@ a.dbx-comp-card:hover {
 .admin-support-report__controls input,
 .admin-support-report__controls select,
 .admin-support-report__controls textarea,
-.admin-support-deployment-form input,
-.admin-support-deployment-form textarea,
 .admin-support-learning select,
 .admin-support-learning textarea {
   border: 1px solid rgba(148, 163, 184, 0.28);
@@ -20238,59 +20135,6 @@ a.dbx-comp-card:hover {
   background: rgba(15, 23, 42, 0.85);
   color: #f8fafc;
   padding: 0.6rem 0.75rem;
-}
-
-.admin-support-deployment {
-  border-color: rgba(56, 189, 248, 0.2);
-  background:
-    linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(15, 23, 42, 0.9)),
-    rgba(15, 23, 42, 0.9);
-}
-
-.admin-support-deployment-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.admin-support-deployment-form label,
-.admin-support-deployment-result {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.admin-support-deployment-form__log {
-  grid-column: 1 / -1;
-}
-
-.admin-support-deployment-form button {
-  justify-self: start;
-}
-
-.admin-support-deployment-result {
-  margin-top: 0.25rem;
-  border: 1px solid rgba(56, 189, 248, 0.24);
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.72);
-  padding: 0.9rem;
-}
-
-.admin-support-deployment-result header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.admin-support-deployment-result h3,
-.admin-support-deployment-result p {
-  margin: 0;
-}
-
-.admin-support-deployment-result ul {
-  display: grid;
-  gap: 0.4rem;
-  margin: 0;
-  padding-left: 1.2rem;
 }
 
 .admin-support-report-list {
@@ -20492,9 +20336,43 @@ a.dbx-comp-card:hover {
   gap: 0.35rem;
 }
 
+.admin-support-review-panel {
+  border-color: rgba(190, 242, 100, 0.18);
+  background:
+    linear-gradient(135deg, rgba(190, 242, 100, 0.06), rgba(15, 23, 42, 0.9)),
+    rgba(15, 23, 42, 0.88);
+}
+
+.admin-support-review-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.admin-support-review-summary span {
+  display: inline-grid;
+  min-width: 5.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #94a3b8;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-support-review-summary strong {
+  color: #f8fafc;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
 .admin-support-review-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
@@ -20505,8 +20383,31 @@ a.dbx-comp-card:hover {
   min-width: 0;
 }
 
-.admin-support-review-column h3 {
+.admin-support-review-column--primary {
+  align-self: stretch;
+}
+
+.admin-support-review-column__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-support-review-column__head h3,
+.admin-support-review-column__head p {
   margin: 0;
+}
+
+.admin-support-review-column__head > span {
+  min-width: 2rem;
+  border: 1px solid rgba(190, 242, 100, 0.28);
+  border-radius: 999px;
+  color: #bef264;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-align: center;
 }
 
 .admin-support-learning-card,
@@ -20518,6 +20419,19 @@ a.dbx-comp-card:hover {
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.76);
   padding: 0.9rem;
+}
+
+.admin-support-empty-card {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.44);
+  padding: 1rem;
+}
+
+.admin-support-empty-card p {
+  margin: 0;
 }
 
 .admin-support-learning-card header {
@@ -20537,6 +20451,74 @@ a.dbx-comp-card:hover {
 .admin-support-pattern-card p,
 .admin-support-route-card p {
   margin: 0;
+}
+
+.admin-support-routing-panel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.62), rgba(2, 6, 23, 0.38)),
+    rgba(15, 23, 42, 0.42);
+  padding: 1rem;
+}
+
+.admin-support-route-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+  gap: 0.65rem;
+}
+
+.admin-support-route-card {
+  grid-template-rows: auto 1fr auto;
+  gap: 0.5rem;
+  min-height: 9.25rem;
+  padding: 0.78rem;
+}
+
+.admin-support-route-card__badge {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid rgba(190, 242, 100, 0.36);
+  border-radius: 999px;
+  background: rgba(190, 242, 100, 0.08);
+  color: #bef264;
+  padding: 0.2rem 0.48rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-support-route-card h4 {
+  margin-top: 0.45rem;
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.admin-support-route-card p:not(.admin-support-kicker) {
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  line-height: 1.42;
+}
+
+.admin-support-route-card ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-support-route-card li {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  color: #cbd5e1;
+  padding: 0.24rem 0.48rem;
+  font-size: 0.74rem;
+  line-height: 1.2;
 }
 
 .admin-support-pattern-card div {
@@ -20574,16 +20556,19 @@ a.dbx-comp-card:hover {
   .admin-support-section-head,
   .admin-support-triage header,
   .admin-support-triage__cols,
-  .admin-support-deployment-form,
   .admin-support-review-grid {
     grid-template-columns: 1fr;
   }
 
   .admin-support-report__controls,
   .admin-support-section-head,
-  .admin-support-deployment-result header,
-  .admin-support-learning header {
+  .admin-support-learning header,
+  .admin-support-review-column__head {
     flex-direction: column;
+  }
+
+  .admin-support-review-summary {
+    justify-content: flex-start;
   }
 
   .support-report-fab {
