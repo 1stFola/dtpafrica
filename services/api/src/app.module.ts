@@ -12,7 +12,6 @@ import { ScoutingModule } from "./scouting/scouting.module";
 import { SipModule } from "./sip/sip.module";
 import { AcademyAuthModule } from "./academy-auth/academy-auth.module";
 import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.module";
-import { PlayerStatsModule } from "./player-stats/player-stats.module";
 import { SupportModule } from "./support/support.module";
 
 @Module({
@@ -30,7 +29,6 @@ import { SupportModule } from "./support/support.module";
     BenchmarksModule,
     AcademyAuthModule,
     AcademyDashboardModule,
-    PlayerStatsModule,
     SupportModule,
   ],
 })

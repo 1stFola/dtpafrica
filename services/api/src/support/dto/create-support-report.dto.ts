@@ -12,7 +12,6 @@ export const SUPPORT_CATEGORIES = [
   "scoreboard_ops",
   "player_data",
   "calibration",
-  "tracker_ocr",
   "media_highlights",
   "content_admin",
   "deployment",

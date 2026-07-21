@@ -21,7 +21,6 @@ const CATEGORIES = [
   "scoreboard_ops",
   "player_data",
   "calibration",
-  "tracker_ocr",
   "media_highlights",
   "content_admin",
   "deployment",
@@ -98,13 +97,6 @@ const QUICK_ACTIONS_BY_KEY: Record<string, RecommendationQuickAction[]> = {
       label: "Open Players",
       href: "/admin/players",
       detail: "Find existing profiles before creating or merging records.",
-    },
-  ],
-  "tracker-ocr-extraction": [
-    {
-      label: "Tracker Stats Extractor",
-      href: "/admin/player-stats-extractor",
-      detail: "Re-run OCR extraction and compare flagged stats.",
     },
   ],
   "calibration-save-display": [
@@ -206,13 +198,6 @@ const QUICK_ACTIONS_BY_CATEGORY: Record<string, RecommendationQuickAction[]> = {
       label: "Open Calibration",
       href: "/admin/calibration",
       detail: "Review player benchmark and rating inputs.",
-    },
-  ],
-  tracker_ocr: [
-    {
-      label: "Tracker Stats Extractor",
-      href: "/admin/player-stats-extractor",
-      detail: "Upload tracker screenshots and verify extracted CSV stats.",
     },
   ],
   media_highlights: [
@@ -662,105 +647,6 @@ export function AdminOpsSupportPage() {
       <section className="admin-sb-panel admin-support-panel">
         <header className="admin-support-section-head">
           <div>
-            <h2>Playbook review workflow</h2>
-            <p className="muted">
-              Repeated issues, routing rules, and resolved reports that should improve support docs.
-            </p>
-          </div>
-          <div className="admin-support-review-summary" aria-label="Playbook review summary">
-            <span>
-              <strong>{reviewQueue?.learningQueue.length ?? 0}</strong>
-              Learning
-            </span>
-            <span>
-              <strong>{reviewQueue?.repeatedPatterns.length ?? 0}</strong>
-              Patterns
-            </span>
-            <span>
-              <strong>{reviewQueue?.routingRules.length ?? 0}</strong>
-              Routes
-            </span>
-          </div>
-        </header>
-        <div className="admin-support-review-grid">
-          <div className="admin-support-review-column admin-support-review-column--primary">
-            <div className="admin-support-review-column__head">
-              <h3>Learning queue</h3>
-              <span>{reviewQueue?.learningQueue.length ?? 0}</span>
-            </div>
-            {reviewQueue?.learningQueue.length ? (
-              reviewQueue.learningQueue.map((report) => (
-                <LearningQueueCard
-                  key={report.id}
-                  report={report}
-                  onChanged={() => void load()}
-                />
-              ))
-            ) : (
-              <div className="admin-support-empty-card">
-                <strong>No playbook updates</strong>
-                <p className="muted">Resolved reports will appear here when they need review.</p>
-              </div>
-            )}
-          </div>
-          <div className="admin-support-review-column">
-            <div className="admin-support-review-column__head">
-              <h3>Repeated patterns</h3>
-              <span>{reviewQueue?.repeatedPatterns.length ?? 0}</span>
-            </div>
-            {reviewQueue?.repeatedPatterns.length ? (
-              reviewQueue.repeatedPatterns.map((pattern) => (
-                <article
-                  key={`${pattern.category}-${pattern.recommendationKey ?? "unmatched"}`}
-                  className="admin-support-pattern-card"
-                >
-                  <p className="admin-support-kicker">{pretty(pattern.category)}</p>
-                  <h4>{pattern.recommendation?.title ?? "Unmatched pattern"}</h4>
-                  <div>
-                    <span>{pattern.total} total</span>
-                    <span>{pattern.openCount} open</span>
-                    <span>{pattern.criticalCount} critical</span>
-                  </div>
-                  <p>{pattern.suggestedReview}</p>
-                  <RecommendationQuickActions
-                    actions={quickActionsForRecommendation(pattern.recommendation, pattern.category)}
-                  />
-                </article>
-              ))
-            ) : (
-              <div className="admin-support-empty-card">
-                <strong>No repeated patterns</strong>
-                <p className="muted">The last 90 days do not show recurring issues yet.</p>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="admin-support-routing-panel">
-          <div className="admin-support-review-column__head">
-            <div>
-              <h3>Routing rules</h3>
-              <p className="muted">Human owners and approval boundaries for support categories.</p>
-            </div>
-            <span>{reviewQueue?.routingRules.length ?? 0}</span>
-          </div>
-          <div className="admin-support-route-grid">
-            {reviewQueue?.routingRules.map((rule) => (
-              <article key={rule.category} className="admin-support-route-card">
-                <div>
-                  <p className="admin-support-kicker">{pretty(rule.category)}</p>
-                  <h4>{rule.owner}</h4>
-                </div>
-                <p>{rule.escalation}</p>
-                <small>{rule.humanApprovalRequiredFor.join(", ")}</small>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="admin-sb-panel admin-support-panel">
-        <header className="admin-support-section-head">
-          <div>
             <h2>Issue reports</h2>
             <p className="muted">Submitted from the in-app report button.</p>
           </div>
@@ -829,6 +715,105 @@ export function AdminOpsSupportPage() {
               <RecommendationQuickActions actions={quickActionsForRecommendation(entry)} />
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="admin-sb-panel admin-support-panel admin-support-review-panel">
+        <header className="admin-support-section-head">
+          <div>
+            <h2>Playbook review workflow</h2>
+            <p className="muted">
+              Repeated issues, routing rules, and resolved reports that should improve support docs.
+            </p>
+          </div>
+          <div className="admin-support-review-summary" aria-label="Playbook review summary">
+            <span>
+              <strong>{reviewQueue?.learningQueue.length ?? 0}</strong>
+              Learning
+            </span>
+            <span>
+              <strong>{reviewQueue?.repeatedPatterns.length ?? 0}</strong>
+              Patterns
+            </span>
+            <span>
+              <strong>{reviewQueue?.routingRules.length ?? 0}</strong>
+              Routes
+            </span>
+          </div>
+        </header>
+        <div className="admin-support-review-grid">
+          <div className="admin-support-review-column admin-support-review-column--primary">
+            <div className="admin-support-review-column__head">
+              <h3>Learning queue</h3>
+              <span>{reviewQueue?.learningQueue.length ?? 0}</span>
+            </div>
+            {reviewQueue?.learningQueue.length ? (
+              reviewQueue.learningQueue.map((report) => (
+                <LearningQueueCard key={report.id} report={report} onChanged={() => void load()} />
+              ))
+            ) : (
+              <div className="admin-support-empty-card">
+                <strong>No playbook updates</strong>
+                <p className="muted">Resolved reports will appear here when they need review.</p>
+              </div>
+            )}
+          </div>
+          <div className="admin-support-review-column">
+            <div className="admin-support-review-column__head">
+              <h3>Repeated patterns</h3>
+              <span>{reviewQueue?.repeatedPatterns.length ?? 0}</span>
+            </div>
+            {reviewQueue?.repeatedPatterns.length ? (
+              reviewQueue.repeatedPatterns.map((pattern) => (
+                <article
+                  key={`${pattern.category}-${pattern.recommendationKey ?? "unmatched"}`}
+                  className="admin-support-pattern-card"
+                >
+                  <p className="admin-support-kicker">{pretty(pattern.category)}</p>
+                  <h4>{pattern.recommendation?.title ?? "Unmatched pattern"}</h4>
+                  <div>
+                    <span>{pattern.total} total</span>
+                    <span>{pattern.openCount} open</span>
+                    <span>{pattern.criticalCount} critical</span>
+                  </div>
+                  <p>{pattern.suggestedReview}</p>
+                  <RecommendationQuickActions
+                    actions={quickActionsForRecommendation(pattern.recommendation, pattern.category)}
+                  />
+                </article>
+              ))
+            ) : (
+              <div className="admin-support-empty-card">
+                <strong>No repeated patterns</strong>
+                <p className="muted">The last 90 days do not show recurring issues yet.</p>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="admin-support-routing-panel">
+          <div className="admin-support-review-column__head">
+            <div>
+              <h3>Routing rules</h3>
+              <p className="muted">Human owners and approval boundaries for support categories.</p>
+            </div>
+            <span>{reviewQueue?.routingRules.length ?? 0}</span>
+          </div>
+          <div className="admin-support-route-grid">
+            {reviewQueue?.routingRules.map((rule) => (
+              <article key={rule.category} className="admin-support-route-card">
+                <div>
+                  <p className="admin-support-route-card__badge">{pretty(rule.category)}</p>
+                  <h4>{rule.owner}</h4>
+                </div>
+                <p>{rule.escalation}</p>
+                <ul>
+                  {rule.humanApprovalRequiredFor.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
     </section>

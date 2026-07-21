@@ -425,7 +425,6 @@ export class SupportService {
         : Promise.resolve(0),
     ]);
 
-    const ocrConfigured = Boolean(process.env.OCR_SPACE_API_KEY || process.env.OPENAI_API_KEY);
     const signals = [
       {
         key: "support-open-reports",
@@ -476,14 +475,6 @@ export class SupportService {
         status: nameQaSingleNames > 0 ? "warning" : "ok",
         recommendation:
           "Complete first/last names before making timeline names clickable or treating them as verified profiles.",
-      },
-      {
-        key: "ocr-provider",
-        label: "Tracker OCR provider",
-        value: ocrConfigured ? "configured" : "missing",
-        status: ocrConfigured ? "ok" : "critical",
-        recommendation:
-          "Set OCR_SPACE_API_KEY or OPENAI_API_KEY in the API environment and restart the API service.",
       },
       {
         key: "pending-highlights",
@@ -546,9 +537,6 @@ export class SupportService {
     const text = `${row.subject} ${row.description}`.toLowerCase();
     if (text.includes("-1") || text.includes("duplicate")) {
       return "A ScoreBoard-created player identity likely needs to be merged into the canonical master player profile.";
-    }
-    if (text.includes("ocr") || text.includes("extract") || text.includes("sprint")) {
-      return "Tracker extraction likely needs OCR/provider verification plus manual review of flagged metric fields.";
     }
     if (text.includes("supervisor") || text.includes("no matches")) {
       return "Match Center may be missing scheduled/live fixtures, permissions, or a healthy API/supervisor connection.";
@@ -622,12 +610,6 @@ export class SupportService {
         humanApprovalRequiredFor: ["rating re-save", "benchmark changes", "formula changes"],
       },
       {
-        category: "tracker_ocr",
-        owner: "Tracker data reviewer",
-        escalation: "Escalate repeated OCR failures or metric fields flagged for manual review.",
-        humanApprovalRequiredFor: ["metric correction", "provider change", "production env change"],
-      },
-      {
         category: "media_highlights",
         owner: "Media/highlights reviewer",
         escalation: "Escalate upload failures, approval blockers, or public publishing disputes.",
@@ -694,13 +676,6 @@ export class SupportService {
         { label: "Single-name player records", value: singleNames, status: singleNames > 0 ? "warning" : "ok" },
         { label: "Unlinked ScoreBoard mentions", value: unlinked, status: unlinked > 0 ? "warning" : "ok" }
       );
-    } else if (row.category === "tracker_ocr") {
-      const ocrConfigured = Boolean(process.env.OCR_SPACE_API_KEY || process.env.OPENAI_API_KEY);
-      evidence.push({
-        label: "OCR provider",
-        value: ocrConfigured ? "configured" : "missing",
-        status: ocrConfigured ? "ok" : "critical",
-      });
     } else if (row.category === "media_highlights") {
       const pending = await this.prisma.sbHighlight.count({ where: { isPublished: false } });
       evidence.push({

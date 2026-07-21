@@ -82,15 +82,6 @@ export function AdminDashboardPage() {
         crumbs={[{ label: "Overview" }]}
       />
 
-      <div className="admin-dashboard-actions">
-        <Link
-          to="/admin/player-stats-extractor"
-          className="admin-dashboard-actions__button"
-        >
-          Tracker Stats Extractor
-        </Link>
-      </div>
-
       {loading ? (
         <div className="admin-sb-hub-stats" aria-busy="true">
           {Array.from({ length: 8 }).map((_, i) => (

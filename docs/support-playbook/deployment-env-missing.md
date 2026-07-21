@@ -3,7 +3,7 @@
 ## Symptoms
 
 - Production logs mention a missing key, provider, secret, or environment variable.
-- API boots without OCR/OpenAI/third-party configuration.
+- API boots without required third-party configuration.
 - A feature works locally but fails in production after deploy.
 
 ## Recommendation-Only Triage
