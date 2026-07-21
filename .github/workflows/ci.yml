@@ -7,6 +7,12 @@ on:
       - main
       - dev
 
+# Required for GitHub Pages deployment
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -279,6 +285,16 @@ jobs:
           name: allure-report
           path: report/allure-html
           retention-days: 30
+
+      - name: Deploy Allure report to GitHub Pages
+        # Only publish from main/dev push — not PRs
+        if: always() && github.event_name == 'push'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: report/allure-html
+          destination_dir: allure-report
+          commit_message: "ci: update Allure report [run ${{ github.run_number }}]"
 
       # ── Fail the job if any step failed ───────────────────────────────────
       - name: Check for failures
