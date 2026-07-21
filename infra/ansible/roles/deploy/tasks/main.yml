@@ -211,7 +211,11 @@
     docker compose \
       --env-file infra/.env.staging \
       -f infra/docker-compose.staging.yml \
-      up -d --build
+      build --no-cache
+    docker compose \
+      --env-file infra/.env.staging \
+      -f infra/docker-compose.staging.yml \
+      up -d
   args:
     chdir: "{{ app_dir }}/repo"
   become: true

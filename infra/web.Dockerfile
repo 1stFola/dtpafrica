@@ -9,6 +9,8 @@ COPY packages ./packages
 COPY services ./services
 
 RUN pnpm install --frozen-lockfile
+# Build engines first — @dtp/web imports from @dtp/engines and needs its type declarations
+RUN pnpm --filter @dtp/engines build
 RUN pnpm --filter @dtp/web build
 
 FROM nginx:1.27-alpine
