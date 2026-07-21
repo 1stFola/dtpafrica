@@ -57,6 +57,16 @@ jobs:
         run: pnpm --filter @dtp/ui build
         continue-on-error: true
 
+      - name: Run engines tests
+        id: test_engines
+        run: pnpm --filter @dtp/engines test
+        continue-on-error: true
+
+      - name: Run API tests
+        id: test_api
+        run: pnpm --filter @dtp/api test
+        continue-on-error: true
+
       - name: Typecheck workspace
         id: typecheck
         run: pnpm typecheck
@@ -79,99 +89,141 @@ jobs:
 
       # ── Build report ──────────────────────────────────────────────────────
 
-      - name: Generate build report
+      - name: Generate build and test report
         if: always()
         run: |
-          # Determine overall status
-          STEPS=(
-            "install:${{ steps.install.outcome }}"
-            "prisma_generate:${{ steps.prisma_generate.outcome }}"
-            "prisma_validate:${{ steps.prisma_validate.outcome }}"
-            "build_engines:${{ steps.build_engines.outcome }}"
-            "build_ui:${{ steps.build_ui.outcome }}"
-            "typecheck:${{ steps.typecheck.outcome }}"
-            "build_api:${{ steps.build_api.outcome }}"
-            "build_web:${{ steps.build_web.outcome }}"
-            "compose_validate:${{ steps.compose_validate.outcome }}"
-          )
-
+          # Count results
           PASS=0; FAIL=0
-          for STEP in "${STEPS[@]}"; do
-            OUTCOME="${STEP##*:}"
+          declare -A RESULTS
+          for STEP_OUTCOME in \
+            "Install dependencies:${{ steps.install.outcome }}" \
+            "Generate Prisma client:${{ steps.prisma_generate.outcome }}" \
+            "Validate Prisma schema:${{ steps.prisma_validate.outcome }}" \
+            "Build engines:${{ steps.build_engines.outcome }}" \
+            "Build UI package:${{ steps.build_ui.outcome }}" \
+            "Engines tests:${{ steps.test_engines.outcome }}" \
+            "API tests:${{ steps.test_api.outcome }}" \
+            "Typecheck workspace:${{ steps.typecheck.outcome }}" \
+            "Build API:${{ steps.build_api.outcome }}" \
+            "Build web:${{ steps.build_web.outcome }}" \
+            "Validate staging compose:${{ steps.compose_validate.outcome }}"
+          do
+            OUTCOME="${STEP_OUTCOME##*:}"
             [ "$OUTCOME" = "success" ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
           done
 
           OVERALL="✅ PASSED"
           [ $FAIL -gt 0 ] && OVERALL="❌ FAILED"
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
-          # ── GitHub Actions Job Summary (visible on the run page) ──────────
+          # ── GitHub Job Summary ──────────────────────────────────────────────
           cat >> $GITHUB_STEP_SUMMARY << EOF
-          # DTP Africa — CI Build Report
+          # DTP Africa — CI Pipeline Report
+          **${OVERALL}** &nbsp;|&nbsp; Branch: \`${{ github.ref_name }}\` &nbsp;|&nbsp; Commit: \`${{ github.sha }}\`
 
-          **$OVERALL** &nbsp;|&nbsp; Branch: \`${{ github.ref_name }}\` &nbsp;|&nbsp; Commit: \`${{ github.sha }}\`
+          ---
 
+          ## 🏗️ Build Steps
           | Step | Status |
           |---|---|
           | Install dependencies | ${{ steps.install.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
           | Generate Prisma client | ${{ steps.prisma_generate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
           | Validate Prisma schema | ${{ steps.prisma_validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
-          | Build engines | ${{ steps.build_engines.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
-          | Build UI package | ${{ steps.build_ui.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Build @dtp/engines | ${{ steps.build_engines.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Build @dtp/ui | ${{ steps.build_ui.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
           | Typecheck workspace | ${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
           | Build API | ${{ steps.build_api.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
           | Build web | ${{ steps.build_web.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
           | Validate staging compose | ${{ steps.compose_validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
 
-          **Total:** $PASS passed, $FAIL failed
+          ## 🧪 Test Results
+          | Suite | Status |
+          |---|---|
+          | @dtp/engines unit tests | ${{ steps.test_engines.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | @dtp/api unit tests | ${{ steps.test_api.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
 
-          **Triggered by:** ${{ github.actor }} &nbsp;|&nbsp; **Run:** [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          ---
+          **Total:** ${PASS} passed, ${FAIL} failed &nbsp;|&nbsp; **Actor:** ${{ github.actor }} &nbsp;|&nbsp; **Run:** [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          > 📥 Download the full Allure HTML report from the **Artifacts** section below.
           EOF
 
-          # ── Downloadable HTML report ──────────────────────────────────────
+          # ── Downloadable HTML Report ────────────────────────────────────────
           mkdir -p report
-          cat > report/build-report.html << HTMLEOF
+          cat > report/pipeline-report.html << HTMLEOF
           <!DOCTYPE html>
           <html lang="en">
           <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>DTP Africa — CI Build Report</title>
+            <title>DTP Africa — CI Pipeline Report</title>
             <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                     max-width: 800px; margin: 40px auto; padding: 0 20px; color: #24292f; }
-              h1 { border-bottom: 1px solid #d0d7de; padding-bottom: 12px; }
-              .badge { display: inline-block; padding: 4px 12px; border-radius: 20px;
-                       font-weight: 600; font-size: 14px; }
-              .pass { background: #dafbe1; color: #116329; }
-              .fail { background: #ffebe9; color: #82071e; }
-              table { width: 100%; border-collapse: collapse; margin: 24px 0; }
-              th { background: #f6f8fa; text-align: left; padding: 10px 16px;
-                   border: 1px solid #d0d7de; font-size: 13px; }
-              td { padding: 10px 16px; border: 1px solid #d0d7de; font-size: 14px; }
-              tr:hover td { background: #f6f8fa; }
-              .meta { color: #656d76; font-size: 13px; margin: 8px 0; }
-              .summary { background: #f6f8fa; border: 1px solid #d0d7de;
-                         border-radius: 6px; padding: 16px 20px; margin: 20px 0; }
+              * { box-sizing: border-box; }
+              body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+                     max-width: 900px; margin: 40px auto; padding: 0 24px; color: #24292f; background: #f6f8fa; }
+              h1, h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 10px; }
+              h2 { margin-top: 32px; font-size: 1rem; text-transform: uppercase; letter-spacing: .05em; color: #57606a; }
+              .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 20px 24px; margin: 16px 0; }
+              .badge { display:inline-block; padding:3px 10px; border-radius:12px; font-weight:600; font-size:13px; }
+              .pass  { background:#dafbe1; color:#116329; }
+              .fail  { background:#ffebe9; color:#82071e; }
+              .warn  { background:#fff8c5; color:#9a6700; }
+              table  { width:100%; border-collapse:collapse; margin:12px 0; }
+              th     { background:#f6f8fa; text-align:left; padding:8px 14px; border:1px solid #d0d7de; font-size:12px; }
+              td     { padding:8px 14px; border:1px solid #d0d7de; font-size:13px; }
+              tr:hover td { background:#f6f8fa; }
+              .meta  { color:#656d76; font-size:12px; margin:6px 0; }
+              .headline { font-size:1.4rem; font-weight:700; margin:4px 0; }
+              .grid  { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
             </style>
           </head>
           <body>
-            <h1>DTP Africa &mdash; CI Build Report</h1>
-            <p class="meta">Branch: <strong>${{ github.ref_name }}</strong>
-              &nbsp;&bull;&nbsp; Commit: <code>${{ github.sha }}</code>
-              &nbsp;&bull;&nbsp; Run #${{ github.run_number }}
-              &nbsp;&bull;&nbsp; Triggered by: ${{ github.actor }}</p>
-
-            <div class="summary">
-              <span class="badge $([ $FAIL -gt 0 ] && echo 'fail' || echo 'pass')">
-                $([ $FAIL -gt 0 ] && echo "❌ BUILD FAILED" || echo "✅ BUILD PASSED")
-              </span>
-              &nbsp;&nbsp; $PASS passed &nbsp;&bull;&nbsp; $FAIL failed
+            <div class="card">
+              <p class="headline">
+                <span class="badge $([ $FAIL -gt 0 ] && echo 'fail' || echo 'pass')">
+                  $([ $FAIL -gt 0 ] && echo '❌ PIPELINE FAILED' || echo '✅ PIPELINE PASSED')
+                </span>
+              </p>
+              <div class="grid">
+                <div>
+                  <p class="meta">🌿 Branch</p>
+                  <strong>${{ github.ref_name }}</strong>
+                </div>
+                <div>
+                  <p class="meta">📝 Commit</p>
+                  <code>${{ github.sha }}</code>
+                </div>
+                <div>
+                  <p class="meta">👤 Actor</p>
+                  <strong>${{ github.actor }}</strong>
+                </div>
+                <div>
+                  <p class="meta">🕐 Generated</p>
+                  <strong>${TIMESTAMP}</strong>
+                </div>
+                <div>
+                  <p class="meta">✅ Passed</p>
+                  <strong style="color:#116329; font-size:1.2rem">${PASS}</strong>
+                </div>
+                <div>
+                  <p class="meta">❌ Failed</p>
+                  <strong style="color:$([ $FAIL -gt 0 ] && echo '#82071e' || echo '#116329'); font-size:1.2rem">${FAIL}</strong>
+                </div>
+              </div>
             </div>
 
+            <h2>🧪 Test Results</h2>
             <table>
-              <thead>
-                <tr><th>Step</th><th>Status</th></tr>
-              </thead>
+              <thead><tr><th>Suite</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>@dtp/engines unit tests</td>
+                    <td><span class="badge ${{ steps.test_engines.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.test_engines.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+                <tr><td>@dtp/api unit tests</td>
+                    <td><span class="badge ${{ steps.test_api.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.test_api.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
+              </tbody>
+            </table>
+
+            <h2>🏗️ Build Steps</h2>
+            <table>
+              <thead><tr><th>Step</th><th>Status</th></tr></thead>
               <tbody>
                 <tr><td>Install dependencies</td>
                     <td><span class="badge ${{ steps.install.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.install.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
@@ -179,9 +231,9 @@ jobs:
                     <td><span class="badge ${{ steps.prisma_generate.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.prisma_generate.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
                 <tr><td>Validate Prisma schema</td>
                     <td><span class="badge ${{ steps.prisma_validate.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.prisma_validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
-                <tr><td>Build engines</td>
+                <tr><td>Build @dtp/engines</td>
                     <td><span class="badge ${{ steps.build_engines.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.build_engines.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
-                <tr><td>Build UI package</td>
+                <tr><td>Build @dtp/ui</td>
                     <td><span class="badge ${{ steps.build_ui.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.build_ui.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
                 <tr><td>Typecheck workspace</td>
                     <td><span class="badge ${{ steps.typecheck.outcome == 'success' && 'pass' || 'fail' }}">${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }}</span></td></tr>
@@ -194,17 +246,38 @@ jobs:
               </tbody>
             </table>
 
-            <p class="meta">Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')</p>
+            <p class="meta" style="margin-top:32px">
+              For the full interactive Allure report with test details, categories and history,
+              download the <strong>allure-report</strong> artifact from the GitHub Actions run.
+            </p>
           </body>
           </html>
           HTMLEOF
 
-      - name: Upload build report artifact
+      - name: Install Allure CLI and generate HTML report
+        if: always()
+        run: |
+          npm install -g allure-commandline --quiet
+          mkdir -p allure-results
+          # Merge both result directories if they exist
+          [ -d allure-results/engines ] && cp -r allure-results/engines/. allure-results/ || true
+          [ -d allure-results/api ]     && cp -r allure-results/api/.     allure-results/ || true
+          allure generate allure-results --clean -o report/allure-html || true
+
+      - name: Upload pipeline report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-report
-          path: report/build-report.html
+          name: pipeline-report
+          path: report/pipeline-report.html
+          retention-days: 30
+
+      - name: Upload Allure HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: report/allure-html
           retention-days: 30
 
       # ── Fail the job if any step failed ───────────────────────────────────
@@ -217,11 +290,13 @@ jobs:
             "${{ steps.prisma_validate.outcome }}"  != "success" || \
             "${{ steps.build_engines.outcome }}"    != "success" || \
             "${{ steps.build_ui.outcome }}"         != "success" || \
+            "${{ steps.test_engines.outcome }}"     != "success" || \
+            "${{ steps.test_api.outcome }}"         != "success" || \
             "${{ steps.typecheck.outcome }}"        != "success" || \
             "${{ steps.build_api.outcome }}"        != "success" || \
             "${{ steps.build_web.outcome }}"        != "success" || \
             "${{ steps.compose_validate.outcome }}" != "success" \
           ]]; then
-            echo "One or more build steps failed — see report above"
+            echo "One or more pipeline steps failed — see report above"
             exit 1
           fi
