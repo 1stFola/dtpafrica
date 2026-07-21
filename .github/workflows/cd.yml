@@ -320,9 +320,15 @@ jobs:
 
       - name: Run Ansible playbook
         run: |
+          REPO_URL="${{ secrets.GIT_REPO_URL }}"
+          if [ -z "$REPO_URL" ] || [[ "$REPO_URL" != https://github.com/* ]]; then
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+          fi
+
           ansible-playbook playbook.yml \
             -e "aws_region=${{ secrets.AWS_REGION }}" \
-            -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
+            -e "git_repo_url=$REPO_URL" \
+            -e "git_repo_token=${{ github.token }}" \
             -e "git_branch=${{ github.ref_name }}" \
             -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
             -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
