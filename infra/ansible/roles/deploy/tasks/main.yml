@@ -90,6 +90,23 @@
 
 # ── 5. Clone / update repository ─────────────────────────────────────────────
 
+- name: Write temporary GitHub token helper for private repo access
+  ansible.builtin.copy:
+    dest: /tmp/dtp-git-askpass.sh
+    owner: ubuntu
+    group: ubuntu
+    mode: "0700"
+    content: |
+      #!/bin/sh
+      case "$1" in
+        *Username*) echo "x-access-token" ;;
+        *Password*) echo "{{ git_repo_token }}" ;;
+      esac
+  when: git_repo_token is defined and (git_repo_token | length) > 0
+  become: true
+  become_user: root
+  no_log: true
+
 - name: Clone or update repository
   ansible.builtin.git:
     repo:    "{{ git_repo_url }}"
@@ -98,6 +115,17 @@
     force:   true
   become: true
   become_user: ubuntu
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+    GIT_ASKPASS: /tmp/dtp-git-askpass.sh
+
+- name: Remove temporary GitHub token helper
+  ansible.builtin.file:
+    path: /tmp/dtp-git-askpass.sh
+    state: absent
+  when: git_repo_token is defined and (git_repo_token | length) > 0
+  become: true
+  become_user: root
 
 # ── 6. Write environment files ────────────────────────────────────────────────
 
