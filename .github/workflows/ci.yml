@@ -264,11 +264,38 @@ jobs:
         if: always()
         run: |
           npm install -g allure-commandline --quiet
-          mkdir -p allure-results
-          # Merge both result directories if they exist
-          [ -d allure-results/engines ] && cp -r allure-results/engines/. allure-results/ || true
-          [ -d allure-results/api ]     && cp -r allure-results/api/.     allure-results/ || true
-          allure generate allure-results --clean -o report/allure-html || true
+
+          echo "=== Checking for allure results ==="
+          find . -name "*.json" -path "*/allure-results*" 2>/dev/null | head -20 || true
+          ls -la allure-results/ 2>/dev/null || echo "allure-results/ not found at root"
+          ls -la allure-results/engines/ 2>/dev/null || echo "allure-results/engines/ not found"
+          ls -la allure-results/api/ 2>/dev/null || echo "allure-results/api/ not found"
+
+          # Create merged results directory
+          mkdir -p allure-results-merged
+
+          # Copy from each package output directory
+          if [ -d "allure-results/engines" ] && [ "$(ls -A allure-results/engines 2>/dev/null)" ]; then
+            echo "Copying engines results..."
+            cp -r allure-results/engines/. allure-results-merged/
+          fi
+
+          if [ -d "allure-results/api" ] && [ "$(ls -A allure-results/api 2>/dev/null)" ]; then
+            echo "Copying API results..."
+            cp -r allure-results/api/. allure-results-merged/
+          fi
+
+          echo "=== Merged results ==="
+          ls -la allure-results-merged/ || echo "No merged results"
+
+          mkdir -p report/allure-html
+          if [ "$(ls -A allure-results-merged 2>/dev/null)" ]; then
+            allure generate allure-results-merged --clean -o report/allure-html
+            echo "Allure report generated successfully"
+          else
+            echo "No test results found — generating empty report placeholder"
+            echo "<html><body><h1>No test results yet</h1><p>Run CI to generate results.</p></body></html>" > report/allure-html/index.html
+          fi
 
       - name: Upload pipeline report
         if: always()
@@ -277,6 +304,15 @@ jobs:
           name: pipeline-report
           path: report/pipeline-report.html
           retention-days: 30
+
+      - name: Upload Allure raw results (for debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-raw
+          path: allure-results-merged
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Upload Allure HTML report
         if: always()
