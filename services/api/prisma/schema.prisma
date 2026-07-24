@@ -344,6 +344,7 @@ model SbCompetition {
   name         String
   season       String
   type         String   @default("tournament")
+  status       String   @default("upcoming")
   formatType   String?  @map("format_type")
   formatConfig Json?    @map("format_config")
   country      String?  @default("Nigeria")

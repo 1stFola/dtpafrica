@@ -158,6 +158,15 @@ function deriveCompetitionStatus(
   return "upcoming";
 }
 
+function normalizeCompetitionStatus(value: string | undefined | null): SbCompetitionStatus {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, "_");
+  if (normalized === "ongoing") return "active";
+  if (normalized === "active" || normalized === "upcoming" || normalized === "draft" || normalized === "archived") {
+    return normalized;
+  }
+  throw new BadRequestException("Competition status must be active, upcoming, draft, archived, or ongoing");
+}
+
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -304,7 +313,7 @@ export class AdminScoreboardService {
           season: c.season,
           teamsCount: c._count.teams,
           matchesCount: c._count.matches,
-          status,
+          status: (c as { status?: SbCompetitionStatus }).status ?? status,
           isPublished: c.isPublished,
           isFeatured: (c.description ?? "").includes("[featured]"),
           formatType: c.formatType,
@@ -337,6 +346,7 @@ export class AdminScoreboardService {
       data.season = season;
     }
     if (dto.type !== undefined) data.type = dto.type.trim() || existing.type;
+    if (dto.status !== undefined) (data as { status?: SbCompetitionStatus }).status = normalizeCompetitionStatus(dto.status);
     if (dto.formatType !== undefined) data.formatType = dto.formatType.trim() || null;
     if (dto.country !== undefined) data.country = dto.country.trim() || null;
     if (dto.description !== undefined) data.description = dto.description.trim() || null;
@@ -358,7 +368,7 @@ export class AdminScoreboardService {
         season: row.season,
         teamsCount: row._count.teams,
         matchesCount: row._count.matches,
-        status: deriveCompetitionStatus(row.isPublished, []),
+        status: (row as { status?: SbCompetitionStatus }).status ?? deriveCompetitionStatus(row.isPublished, []),
         isPublished: row.isPublished,
         isFeatured: (row.description ?? "").includes("[featured]"),
         formatType: row.formatType,
@@ -1982,27 +1992,33 @@ export class AdminScoreboardService {
       const type = typeIdx >= 0 ? row[typeIdx] || "tournament" : "tournament";
       const region = regionIdx >= 0 ? row[regionIdx] : "Nigeria";
       const status = statusIdx >= 0 ? row[statusIdx] : "upcoming";
+      const competitionStatus = normalizeCompetitionStatus(status);
       const isFeatured = featuredIdx >= 0 && row[featuredIdx]?.toLowerCase() === "true";
-      const isPublished = status !== "draft";
+      const isPublished = competitionStatus !== "draft";
+
+      const createData = {
+        slug,
+        name,
+        season: new Date().getFullYear().toString(),
+        type,
+        status: competitionStatus,
+        country: region || "Nigeria",
+        isPublished,
+        description: isFeatured ? "[featured]" : null,
+      } as Prisma.SbCompetitionCreateInput;
+      const updateData = {
+        name,
+        type,
+        status: competitionStatus,
+        country: region || "Nigeria",
+        isPublished,
+        description: isFeatured ? "[featured]" : undefined,
+      } as Prisma.SbCompetitionUpdateInput;
 
       await this.prisma.sbCompetition.upsert({
         where: { slug },
-        create: {
-          slug,
-          name,
-          season: new Date().getFullYear().toString(),
-          type,
-          country: region || "Nigeria",
-          isPublished,
-          description: isFeatured ? "[featured]" : null,
-        },
-        update: {
-          name,
-          type,
-          country: region || "Nigeria",
-          isPublished,
-          description: isFeatured ? "[featured]" : undefined,
-        },
+        create: createData,
+        update: updateData,
       });
       imported++;
     }

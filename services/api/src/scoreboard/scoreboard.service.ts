@@ -33,6 +33,10 @@ import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
 import { deriveMatchStatsFromCsvEvents } from "./match-csv-events";
 import { parseMatchTimelineCsv } from "./match-csv-ingest";
 import { computeStandings } from "./standings";
+import {
+  resolvePlayerNameCandidate,
+  type PlayerNameCandidate,
+} from "./player-name-normalization";
 
 const MATCH_INCLUDE = {
   homeTeam: {
@@ -79,7 +83,7 @@ const MATCH_INCLUDE = {
   },
   competition: true,
   events: {
-    orderBy: { minute: "asc" as const },
+    orderBy: [{ minute: "asc" as const }, { createdAt: "asc" as const }],
     include: {
       player: {
         select: {
@@ -398,6 +402,7 @@ export class ScoreboardService {
 
     const aliasesByTeam = new Map<string, Map<string, Set<string>>>();
     const aliasesGlobal = new Map<string, Set<string>>();
+    const candidatesByTeam = new Map<string, PlayerNameCandidate[]>();
 
     const addAlias = (
       index: Map<string, Set<string>>,
@@ -429,6 +434,10 @@ export class ScoreboardService {
         addAlias(teamIndex, alias, playerId);
         addAlias(aliasesGlobal, alias, playerId);
       }
+      candidatesByTeam.set(row.teamId, [
+        ...(candidatesByTeam.get(row.teamId) ?? []),
+        { playerId, displayName: row.displayName, aliases },
+      ]);
 
       const displayParts = row.displayName.trim().split(/\s+/);
       if (displayParts.length === 2) {
@@ -481,12 +490,21 @@ export class ScoreboardService {
       return Array.from(matches)[0] ?? null;
     };
 
+    const resolveFuzzyFromTeam = (
+      teamId: string | null | undefined,
+      label: string | null | undefined
+    ) => {
+      if (!teamId || !this.isUsableTimelinePlayerLabel(label)) return null;
+      return resolvePlayerNameCandidate(label, candidatesByTeam.get(teamId) ?? [])?.playerId ?? null;
+    };
+
     const resolveWithTeamPreference = (
       label: string | null | undefined,
       teamId: string | null | undefined
     ) => {
       return (
         resolveFromIndex(teamId ? aliasesByTeam.get(teamId) : undefined, label) ??
+        resolveFuzzyFromTeam(teamId, label) ??
         (!teamId ? resolveFromIndex(aliasesGlobal, label) : null)
       );
     };

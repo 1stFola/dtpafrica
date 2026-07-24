@@ -128,7 +128,8 @@ function parseMinute(value: string | undefined, rowNum: number): number {
   if (!raw) {
     throw new BadRequestException(`Row ${rowNum}: minute is required for match events`);
   }
-  const n = Number.parseInt(raw, 10);
+  const match = raw.match(/^(\d+)(?:\s*\+\s*(\d+))?$/);
+  const n = match ? Number(match[1]) + Number(match[2] ?? 0) : Number.NaN;
   if (!Number.isFinite(n) || n < 0 || n > 130) {
     throw new BadRequestException(`Row ${rowNum}: minute must be between 0 and 130`);
   }
@@ -198,8 +199,27 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
       try {
         homeScore = parseIntCell(row[homeScoreIdx], "home_score", rowNum);
         awayScore = parseIntCell(row[awayScoreIdx], "away_score", rowNum);
+        const fullTimeMinuteRaw = minuteIdx >= 0 ? row[minuteIdx] : undefined;
+        const fullTimeMinuteInferred = !(fullTimeMinuteRaw ?? "").trim();
+        const minute = parseOptionalMinute(fullTimeMinuteRaw, 90, rowNum);
+        const detailCell = detailIdx >= 0 ? (row[detailIdx] ?? "").trim() : "";
         const narrativeCell = narrativeIdx >= 0 ? (row[narrativeIdx] ?? "").trim() : "";
         if (narrativeCell) narrative = narrativeCell;
+        const mapped = mapCsvEventToStorage({
+          csvType: "full_time",
+          detail: detailCell || narrativeCell || `Full-time: ${homeScore}-${awayScore}`,
+        });
+        events.push({
+          csvType: "full_time",
+          type: mapped.type,
+          minute,
+          detail: mapped.detail,
+          metadata: {
+            ...(mapped.metadata ?? {}),
+            csvSequence: events.length + 1,
+            fullTimeMinuteInferred,
+          },
+        });
       } catch (e) {
         if (e instanceof BadRequestException) errors.push(e.message);
       }
@@ -260,6 +280,7 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
         metadata: {
           ...(mapped.metadata ?? {}),
           penaltyShootoutSequence: shootoutEventCount,
+          csvSequence: events.length + 1,
         },
       });
       continue;
@@ -350,7 +371,10 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
         playerLabel: playerLabel || undefined,
         assistLabel: assistLabel || undefined,
         detail: mapped.detail,
-        metadata: mapped.metadata,
+        metadata: {
+          ...(mapped.metadata ?? {}),
+          csvSequence: events.length + 1,
+        },
       });
     } catch (e) {
       if (e instanceof BadRequestException) errors.push(e.message);
@@ -371,6 +395,17 @@ export function parseMatchTimelineCsv(csv: string): ParsedMatchTimelineCsv {
       message: "CSV validation failed",
       errors,
     });
+  }
+
+  const finalRegulationMinute = events.reduce((max, ev) => {
+    if (ev.csvType === "full_time" || ev.csvType === "penalty_shootout") return max;
+    return Math.max(max, ev.minute);
+  }, 90);
+
+  for (const ev of events) {
+    if (ev.csvType === "full_time" && ev.metadata?.fullTimeMinuteInferred) {
+      ev.minute = finalRegulationMinute;
+    }
   }
 
   return {

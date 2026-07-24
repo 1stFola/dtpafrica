@@ -45,6 +45,7 @@ export type AdminSbCompetitionInput = {
   slug?: string;
   season: string;
   type: string;
+  status?: SbCompetitionStatus;
   formatType?: string;
   country?: string;
   description?: string;

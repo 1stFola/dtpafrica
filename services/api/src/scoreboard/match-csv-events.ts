@@ -309,10 +309,10 @@ export function mapCsvEventToStorage(ev: {
     source: "csv-ingest",
   };
 
-  if (ev.csvType === "penalty_shootout") {
+  if (ev.csvType === "full_time" || ev.csvType === "penalty_shootout") {
     return {
       type: "match_flow",
-      detail: ev.detail || "Penalty shootout",
+      detail: ev.detail || (ev.csvType === "full_time" ? "Full-time" : "Penalty shootout"),
       metadata: { ...baseMeta, flowKind: ev.csvType },
     };
   }
@@ -443,7 +443,7 @@ export function deriveMatchStatsFromCsvEvents(
     }
 
     if (csvType === "corner_kick" && side) bump(corners, side);
-    if ((csvType === "foul" || csvType === "freekick" || csvType === "penalty_awarded") && side) {
+    if (csvType === "foul" && side) {
       bump(fouls, side);
     }
 
