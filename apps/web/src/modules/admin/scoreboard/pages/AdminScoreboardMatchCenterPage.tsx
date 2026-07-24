@@ -339,7 +339,7 @@ export function AdminScoreboardMatchCenterPage() {
                 className="admin-inline-button"
                 onClick={() => setStatsModalOpen(true)}
               >
-                Stats
+                Update stats
               </button>
               <button
                 type="button"
