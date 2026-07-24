@@ -1,5 +1,12 @@
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, MaxLength, Min } from "class-validator";
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from "class-validator";
 
 export class MatchStatsSideDto {
   @IsOptional()
@@ -76,8 +83,18 @@ export class MatchStatsSideDto {
 }
 
 export class UpdateMatchStatsDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MatchStatsSideDto)
   home?: MatchStatsSideDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MatchStatsSideDto)
   away?: MatchStatsSideDto;
+
+  @IsOptional()
+  @IsIn(["manual", "csv", "json"])
   source?: "manual" | "csv" | "json";
 
   @IsOptional()
