@@ -254,9 +254,9 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.matches.write")
   updateMatchStats(
     @Param("matchId") matchId: string,
-    @Body() dto: UpdateMatchStatsDto
+    @Body() dto: Record<string, unknown>
   ) {
-    return this.sb.updateMatchStats(matchId, dto);
+    return this.sb.updateMatchStats(matchId, dto as UpdateMatchStatsDto);
   }
 
   @Post("matches/stats/import")
