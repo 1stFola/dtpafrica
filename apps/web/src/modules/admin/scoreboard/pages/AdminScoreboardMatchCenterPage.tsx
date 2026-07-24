@@ -13,6 +13,7 @@ import { useAdminToast } from "../../components/AdminToast";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { MatchCsvIngestModal } from "../components/MatchCsvIngestModal";
+import { MatchStatsUpdateModal } from "../components/MatchStatsUpdateModal";
 import { FixtureFormModal } from "../components/FixtureFormModal";
 import { QuickScoreUpdatePanel } from "../components/QuickScoreUpdatePanel";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
@@ -36,6 +37,7 @@ export function AdminScoreboardMatchCenterPage() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
   const [matchSearch, setMatchSearch] = useState("");
   const [competitionOptions, setCompetitionOptions] = useState<
@@ -335,6 +337,13 @@ export function AdminScoreboardMatchCenterPage() {
               <button
                 type="button"
                 className="admin-inline-button"
+                onClick={() => setStatsModalOpen(true)}
+              >
+                Stats
+              </button>
+              <button
+                type="button"
+                className="admin-inline-button"
                 onClick={() => setCsvModalOpen(true)}
               >
                 CSV upload
@@ -412,6 +421,20 @@ export function AdminScoreboardMatchCenterPage() {
               matchLabel={`${selected.homeTeam.name} vs ${selected.awayTeam.name}`}
               isFinished={selected.status === "finished"}
               onClose={() => setCsvModalOpen(false)}
+              onSuccess={() => {
+                refresh();
+                loadTimeline(selected.id);
+              }}
+            />
+          )}
+          {statsModalOpen && selected && (
+            <MatchStatsUpdateModal
+              matchId={selected.id}
+              matchLabel={`${selected.homeTeam.name} vs ${selected.awayTeam.name}`}
+              homeTeam={selected.homeTeam}
+              awayTeam={selected.awayTeam}
+              stats={selected.stats}
+              onClose={() => setStatsModalOpen(false)}
               onSuccess={() => {
                 refresh();
                 loadTimeline(selected.id);

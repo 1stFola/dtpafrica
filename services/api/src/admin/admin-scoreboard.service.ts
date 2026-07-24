@@ -25,6 +25,10 @@ import {
 import type { CreateAdminMatchDto } from "./dto/create-admin-match.dto";
 import type { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
 import type { PatchMatchScoreDto } from "./dto/patch-match-score.dto";
+import type {
+  MatchStatsSideDto,
+  UpdateMatchStatsDto,
+} from "./dto/update-match-stats.dto";
 import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
 import {
   resolveUniqueMatchSlug,
@@ -97,6 +101,71 @@ type MatchStatsJson = {
   matchdayRosters?: Record<string, MatchdayRosterPayload>;
   spotter?: SpotterStatsStored;
   possession?: { home: number; away: number };
+  goals?: { home: number; away: number };
+  shots?: { home: number; away: number };
+  shotsOnTarget?: { home: number; away: number };
+  shotsOffTarget?: { home: number; away: number };
+  blockedShots?: { home: number; away: number };
+  corners?: { home: number; away: number };
+  fouls?: { home: number; away: number };
+  offsides?: { home: number; away: number };
+  yellowCards?: { home: number; away: number };
+  redCards?: { home: number; away: number };
+  saves?: { home: number; away: number };
+  penaltiesAwarded?: { home: number; away: number };
+  manualStatsMeta?: {
+    source: "manual" | "csv" | "json";
+    updatedAt: string;
+  };
+};
+
+const MATCH_STAT_KEYS = [
+  "goals",
+  "shots",
+  "shotsOnTarget",
+  "shotsOffTarget",
+  "blockedShots",
+  "corners",
+  "fouls",
+  "offsides",
+  "yellowCards",
+  "redCards",
+  "saves",
+  "penaltiesAwarded",
+] as const;
+
+type MatchStatKey = (typeof MATCH_STAT_KEYS)[number];
+type MatchStatsSide = Partial<Record<MatchStatKey, number>>;
+
+const MATCH_STAT_ALIASES: Record<string, MatchStatKey> = {
+  goals: "goals",
+  goal: "goals",
+  totalshots: "shots",
+  shots: "shots",
+  shotstotal: "shots",
+  shotsontarget: "shotsOnTarget",
+  shotson: "shotsOnTarget",
+  sot: "shotsOnTarget",
+  shotsofftarget: "shotsOffTarget",
+  shotsoff: "shotsOffTarget",
+  blockedshots: "blockedShots",
+  blockedshot: "blockedShots",
+  corners: "corners",
+  cornerkicks: "corners",
+  fouls: "fouls",
+  foulscommitted: "fouls",
+  offsides: "offsides",
+  offside: "offsides",
+  yellowcards: "yellowCards",
+  yellowcard: "yellowCards",
+  reds: "redCards",
+  redcards: "redCards",
+  redcard: "redCards",
+  saves: "saves",
+  save: "saves",
+  penaltyawarded: "penaltiesAwarded",
+  penaltiesawarded: "penaltiesAwarded",
+  penalties: "penaltiesAwarded",
 };
 
 function defaultSpotterState(): SpotterStatsStored {
@@ -207,6 +276,48 @@ function parseCsv(text: string): string[][] {
 
 function csvError(label: string, detail: string): BadRequestException {
   return new BadRequestException(`${label}: ${detail}`);
+}
+
+function normalizedHeader(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function readCsvCell(
+  row: string[],
+  header: string[],
+  aliases: string[]
+): string | undefined {
+  for (const alias of aliases.map(normalizedHeader)) {
+    const idx = header.indexOf(alias);
+    if (idx >= 0) return row[idx];
+  }
+  return undefined;
+}
+
+function parseOptionalStatNumber(value: unknown, label: string): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const num = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(num) || num < 0) {
+    throw new BadRequestException(`${label} must be a non-negative number`);
+  }
+  return Math.round(num);
+}
+
+function normalizeStatSide(
+  raw: MatchStatsSideDto | MatchStatsSide | undefined,
+  label: string
+): MatchStatsSide {
+  const out: MatchStatsSide = {};
+  if (!raw) return out;
+  for (const key of MATCH_STAT_KEYS) {
+    const parsed = parseOptionalStatNumber(raw[key], `${label}.${key}`);
+    if (parsed !== undefined) out[key] = parsed;
+  }
+  return out;
+}
+
+function hasStatSideValues(side: MatchStatsSide) {
+  return MATCH_STAT_KEYS.some((key) => side[key] !== undefined);
 }
 
 @Injectable()
@@ -1191,6 +1302,235 @@ export class AdminScoreboardService {
 
   patchMatchScore(matchId: string, dto: PatchMatchScoreDto) {
     return this.scoreboard.patchMatchScore(matchId, dto);
+  }
+
+  private buildMatchStatsPatch(
+    home: MatchStatsSide,
+    away: MatchStatsSide,
+    source: "manual" | "csv" | "json",
+    narrative?: string
+  ): Record<string, unknown> {
+    if (!hasStatSideValues(home) && !hasStatSideValues(away)) {
+      throw new BadRequestException("At least one match statistic is required");
+    }
+
+    const patch: Record<string, unknown> = {
+      manualStatsMeta: { source, updatedAt: new Date().toISOString() },
+    };
+    for (const key of MATCH_STAT_KEYS) {
+      if (home[key] !== undefined || away[key] !== undefined) {
+        patch[key] = { home: home[key] ?? 0, away: away[key] ?? 0 };
+      }
+    }
+    if (narrative !== undefined) patch.narrative = narrative.trim() || null;
+    return patch;
+  }
+
+  async updateMatchStats(matchId: string, dto: UpdateMatchStatsDto) {
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: {
+        homeTeam: true,
+        awayTeam: true,
+        competition: true,
+        _count: { select: { events: true } },
+        events: {
+          where: { type: { in: ["goal", "own_goal"] } },
+          orderBy: { minute: "asc" },
+          select: {
+            id: true,
+            minute: true,
+            type: true,
+            teamId: true,
+            playerLabel: true,
+            player: { select: { displayName: true, slug: true } },
+          },
+        },
+      },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+
+    const home = normalizeStatSide(dto.home, "home");
+    const away = normalizeStatSide(dto.away, "away");
+    const existingStats =
+      match.stats && typeof match.stats === "object" && !Array.isArray(match.stats)
+        ? (match.stats as Record<string, unknown>)
+        : {};
+    const patch = this.buildMatchStatsPatch(
+      home,
+      away,
+      dto.source ?? "manual",
+      dto.narrative
+    );
+    const updated = await this.prisma.sbMatch.update({
+      where: { id: matchId },
+      data: { stats: { ...existingStats, ...patch } as Prisma.InputJsonValue },
+      include: {
+        homeTeam: true,
+        awayTeam: true,
+        competition: true,
+        _count: { select: { events: true } },
+        events: {
+          where: { type: { in: ["goal", "own_goal"] } },
+          orderBy: { minute: "asc" },
+          select: {
+            id: true,
+            minute: true,
+            type: true,
+            teamId: true,
+            playerLabel: true,
+            player: { select: { displayName: true, slug: true } },
+          },
+        },
+      },
+    });
+    return { ok: true, match: presentScoreboardPayload(updated) };
+  }
+
+  private normalizeCsvTeamName(value: string | undefined) {
+    return normalizeClubName(value ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  private splitCsvMatchLabel(label: string | undefined) {
+    const parts = (label ?? "").split(/\s+v(?:s\.?)?\s+/i);
+    if (parts.length !== 2) return null;
+    return { homeTeam: parts[0].trim(), awayTeam: parts[1].trim() };
+  }
+
+  private async resolveStatsCsvMatch(args: {
+    matchId?: string;
+    matchLabel?: string;
+    homeTeam?: string;
+    awayTeam?: string;
+  }) {
+    if (args.matchId) {
+      const match = await this.prisma.sbMatch.findUnique({
+        where: { id: args.matchId },
+        include: { homeTeam: true, awayTeam: true },
+      });
+      if (!match) throw new NotFoundException(`Match not found: ${args.matchId}`);
+      return match;
+    }
+
+    const split = this.splitCsvMatchLabel(args.matchLabel);
+    const homeTeam = args.homeTeam || split?.homeTeam;
+    const awayTeam = args.awayTeam || split?.awayTeam;
+    const normalizedHome = this.normalizeCsvTeamName(homeTeam);
+    const normalizedAway = this.normalizeCsvTeamName(awayTeam);
+    if (!normalizedHome || !normalizedAway) {
+      throw csvError(
+        "Match stats import",
+        'each row needs matchId, match ("Home vs Away"), or homeTeam and awayTeam'
+      );
+    }
+
+    const candidates = await this.prisma.sbMatch.findMany({
+      where: {
+        OR: [
+          {
+            homeTeam: { name: { contains: homeTeam, mode: "insensitive" } },
+            awayTeam: { name: { contains: awayTeam, mode: "insensitive" } },
+          },
+          {
+            homeTeam: { name: { contains: awayTeam, mode: "insensitive" } },
+            awayTeam: { name: { contains: homeTeam, mode: "insensitive" } },
+          },
+        ],
+      },
+      include: { homeTeam: true, awayTeam: true },
+      orderBy: [{ kickoffAt: "desc" }, { createdAt: "desc" }],
+      take: 10,
+    });
+
+    const exact = candidates.filter((match) => {
+      const home = this.normalizeCsvTeamName(match.homeTeam.name);
+      const away = this.normalizeCsvTeamName(match.awayTeam.name);
+      return (
+        (home === normalizedHome && away === normalizedAway) ||
+        (home === normalizedAway && away === normalizedHome)
+      );
+    });
+    if (exact.length === 0) {
+      throw new NotFoundException(`Match not found: ${homeTeam} vs ${awayTeam}`);
+    }
+    if (exact.length > 1) {
+      throw new BadRequestException(
+        `Multiple matches found for ${homeTeam} vs ${awayTeam}; use matchId`
+      );
+    }
+    return exact[0];
+  }
+
+  private readStatsFromCsvRow(row: string[], header: string[]) {
+    const stats: MatchStatsSide = {};
+    for (const [alias, key] of Object.entries(MATCH_STAT_ALIASES)) {
+      const idx = header.indexOf(alias);
+      if (idx < 0) continue;
+      const value = parseOptionalStatNumber(row[idx], key);
+      if (value !== undefined) stats[key] = value;
+    }
+    return stats;
+  }
+
+  async importMatchStatsCsv(csv: string) {
+    const table = parseCsv(csv);
+    if (table.length < 2) {
+      throw csvError("Match stats import", "file must include a header row and at least one data row");
+    }
+    const header = table[0].map(normalizedHeader);
+    const grouped = new Map<
+      string,
+      {
+        match: Awaited<ReturnType<AdminScoreboardService["resolveStatsCsvMatch"]>>;
+        home: MatchStatsSide;
+        away: MatchStatsSide;
+      }
+    >();
+
+    for (const [i, row] of table.slice(1).entries()) {
+      const rowNum = i + 2;
+      const match = await this.resolveStatsCsvMatch({
+        matchId: readCsvCell(row, header, ["matchId", "id"]),
+        matchLabel: readCsvCell(row, header, ["match"]),
+        homeTeam: readCsvCell(row, header, ["homeTeam", "home"]),
+        awayTeam: readCsvCell(row, header, ["awayTeam", "away"]),
+      });
+      const sideRaw = readCsvCell(row, header, ["side", "teamSide"]);
+      const teamRaw = readCsvCell(row, header, ["team", "teamName"]);
+      const side =
+        sideRaw?.toLowerCase() === "home" || sideRaw?.toLowerCase() === "away"
+          ? sideRaw.toLowerCase()
+          : this.normalizeCsvTeamName(teamRaw) === this.normalizeCsvTeamName(match.homeTeam.name)
+            ? "home"
+            : this.normalizeCsvTeamName(teamRaw) === this.normalizeCsvTeamName(match.awayTeam.name)
+              ? "away"
+              : null;
+      if (side !== "home" && side !== "away") {
+        throw csvError("Match stats import", `row ${rowNum} needs side or team`);
+      }
+      const stats = this.readStatsFromCsvRow(row, header);
+      if (!hasStatSideValues(stats)) {
+        throw csvError("Match stats import", `row ${rowNum} has no statistic values`);
+      }
+      const current = grouped.get(match.id) ?? { match, home: {}, away: {} };
+      current[side] = { ...current[side], ...stats };
+      grouped.set(match.id, current);
+    }
+
+    let updated = 0;
+    for (const [matchId, item] of grouped) {
+      await this.updateMatchStats(matchId, {
+        home: item.home,
+        away: item.away,
+        source: "csv",
+      });
+      updated++;
+    }
+
+    return { ok: true, updated, rows: table.length - 1 };
   }
 
   updateMatch(matchId: string, dto: UpdateMatchDto) {

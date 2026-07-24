@@ -788,6 +788,92 @@ function matchNumberLabel(code: string): string {
   return `Match ${Number(code.replace(/\D/g, ""))}`;
 }
 
+const FIRST_ROUND_MATCH_STATS: Record<
+  string,
+  {
+    homeScore: number;
+    awayScore: number;
+    stats: Prisma.InputJsonValue;
+  }
+> = {
+  M1: {
+    homeScore: 1,
+    awayScore: 0,
+    stats: {
+      goals: { home: 1, away: 0 },
+      shots: { home: 1, away: 5 },
+      shotsOnTarget: { home: 10, away: 2 },
+      shotsOffTarget: { home: 4, away: 1 },
+      blockedShots: { home: 14, away: 2 },
+      corners: { home: 4, away: 1 },
+      fouls: { home: 20, away: 5 },
+      offsides: { home: 9, away: 6 },
+      yellowCards: { home: 3, away: 1 },
+      redCards: { home: 8, away: 0 },
+      saves: { home: 2, away: 8 },
+      penaltiesAwarded: { home: 1, away: 0 },
+      manualStatsMeta: { source: "json", updatedAt: "2026-07-24T00:00:00.000Z" },
+    },
+  },
+  M2: {
+    homeScore: 0,
+    awayScore: 3,
+    stats: {
+      goals: { home: 0, away: 3 },
+      shots: { home: 12, away: 22 },
+      shotsOnTarget: { home: 2, away: 10 },
+      shotsOffTarget: { home: 5, away: 4 },
+      blockedShots: { home: 11, away: 8 },
+      corners: { home: 2, away: 8 },
+      fouls: { home: 12, away: 4 },
+      offsides: { home: 3, away: 3 },
+      yellowCards: { home: 1, away: 1 },
+      redCards: { home: 0, away: 0 },
+      saves: { home: 7, away: 2 },
+      penaltiesAwarded: { home: 7, away: 0 },
+      manualStatsMeta: { source: "json", updatedAt: "2026-07-24T00:00:00.000Z" },
+    },
+  },
+  M3: {
+    homeScore: 5,
+    awayScore: 1,
+    stats: {
+      goals: { home: 5, away: 1 },
+      shots: { home: 23, away: 11 },
+      shotsOnTarget: { home: 12, away: 4 },
+      shotsOffTarget: { home: 9, away: 5 },
+      blockedShots: { home: 2, away: 2 },
+      corners: { home: 9, away: 0 },
+      fouls: { home: 7, away: 5 },
+      offsides: { home: 6, away: 1 },
+      yellowCards: { home: 2, away: 0 },
+      redCards: { home: 0, away: 0 },
+      saves: { home: 3, away: 7 },
+      penaltiesAwarded: { home: 1, away: 0 },
+      manualStatsMeta: { source: "json", updatedAt: "2026-07-24T00:00:00.000Z" },
+    },
+  },
+  M4: {
+    homeScore: 0,
+    awayScore: 1,
+    stats: {
+      goals: { home: 0, away: 1 },
+      shots: { home: 0, away: 15 },
+      shotsOnTarget: { home: 0, away: 6 },
+      shotsOffTarget: { home: 0, away: 8 },
+      blockedShots: { home: 0, away: 1 },
+      corners: { home: 0, away: 3 },
+      fouls: { home: 0, away: 14 },
+      offsides: { home: 0, away: 2 },
+      yellowCards: { home: 0, away: 1 },
+      redCards: { home: 0, away: 0 },
+      saves: { home: 0, away: 5 },
+      penaltiesAwarded: { home: 0, away: 0 },
+      manualStatsMeta: { source: "json", updatedAt: "2026-07-24T00:00:00.000Z" },
+    },
+  },
+};
+
 const ZONES = [
   { key: "ikeja", name: "Ikeja Zone", teams: 24, qualifiers: 6 },
   { key: "lagos_island", name: "Lagos Island Zone", teams: 24, qualifiers: 6 },
@@ -995,14 +1081,15 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
     const home = teamByKey.get(nameKey(match.homeName))!;
     const away = teamByKey.get(nameKey(match.awayName))!;
     const slug = allocateMatchSlug(home.slug, away.slug, usedMatchSlugs);
+    const seededStats = FIRST_ROUND_MATCH_STATS[match.matchCode];
     await prisma.sbMatch.upsert({
       where: { id },
       update: {
         slug,
-        homeScore: 0,
-        awayScore: 0,
-        status: "scheduled",
-        minute: null,
+        homeScore: seededStats?.homeScore ?? 0,
+        awayScore: seededStats?.awayScore ?? 0,
+        status: seededStats ? "finished" : "scheduled",
+        minute: seededStats ? 90 : null,
         stageKey: `qualifying_${zoneKey(match.zone)}`,
         stageId: stageByKey.get(match.zone),
         matchday: tournamentDay(match),
@@ -1011,7 +1098,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
         kickoffAt: new Date(match.kickoffAt),
         homeTeamId: teamIds[home.slug],
         awayTeamId: teamIds[away.slug],
-        stats: null,
+        stats: seededStats?.stats ?? null,
         meta: {
           zone: match.zone,
           matchCode: match.matchCode,
@@ -1031,14 +1118,14 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
         matchday: tournamentDay(match),
         homeTeamId: teamIds[home.slug],
         awayTeamId: teamIds[away.slug],
-        status: "scheduled",
-        homeScore: 0,
-        awayScore: 0,
-        minute: null,
+        status: seededStats ? "finished" : "scheduled",
+        homeScore: seededStats?.homeScore ?? 0,
+        awayScore: seededStats?.awayScore ?? 0,
+        minute: seededStats ? 90 : null,
         kickoffAt: new Date(match.kickoffAt),
         venue: match.venue,
         roundLabel: `${match.zone} - Qualifying Round 1 (${matchNumberLabel(match.matchCode)})`,
-        stats: null,
+        stats: seededStats?.stats ?? null,
         meta: {
           zone: match.zone,
           matchCode: match.matchCode,
