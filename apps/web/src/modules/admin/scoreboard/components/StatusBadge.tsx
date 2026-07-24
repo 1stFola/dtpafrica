@@ -1,7 +1,7 @@
 import type { SbCompetitionStatus } from "../types";
 
 const LABELS: Record<SbCompetitionStatus, string> = {
-  active: "Active",
+  active: "Ongoing",
   upcoming: "Upcoming",
   draft: "Draft",
   archived: "Archived",

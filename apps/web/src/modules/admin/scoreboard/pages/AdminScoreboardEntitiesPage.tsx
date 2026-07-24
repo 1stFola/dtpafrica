@@ -230,6 +230,7 @@ export function AdminScoreboardEntitiesPage() {
         slug: competition.slug,
         season: competition.season,
         type: competition.type,
+        status: competition.status,
         formatType: competition.formatType ?? "",
         country: competition.region ?? "",
         description: "",
@@ -292,6 +293,7 @@ export function AdminScoreboardEntitiesPage() {
         slug: draft.slug?.trim() || undefined,
         season: draft.season.trim(),
         type: draft.type.trim() || "tournament",
+        status: draft.status,
         formatType: draft.formatType?.trim() || undefined,
         country: draft.country?.trim() || undefined,
         description: draft.description?.trim() || undefined,
@@ -897,6 +899,33 @@ export function AdminScoreboardEntitiesPage() {
                     )
                   }
                 />
+              </label>
+              <label className="admin-sb-field">
+                <span>Status</span>
+                <select
+                  value={editingCompetition.draft.status ?? "upcoming"}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: {
+                              ...current.draft,
+                              status: e.target.value as AdminSbCompetitionInput["status"],
+                            },
+                          }
+                        : current
+                    )
+                  }
+                >
+                  {COMPETITION_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status === "active"
+                        ? "Ongoing"
+                        : status.charAt(0).toUpperCase() + status.slice(1)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="admin-sb-field">
                 <span>Country / region</span>

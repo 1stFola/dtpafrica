@@ -134,6 +134,27 @@ function resolveCsvEventType(ev: SbMatchEvent): string {
   return ev.type;
 }
 
+function resolveCsvSequence(ev: SbMatchEvent): number {
+  const sequence = ev.metadata?.csvSequence;
+  return typeof sequence === "number" && Number.isFinite(sequence)
+    ? sequence
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function compareTimelineEvents(a: SbMatchEvent, b: SbMatchEvent): number {
+  const minuteDiff = a.minute - b.minute;
+  if (minuteDiff !== 0) return minuteDiff;
+
+  const aFullTime = resolveCsvEventType(a) === "full_time";
+  const bFullTime = resolveCsvEventType(b) === "full_time";
+  if (aFullTime !== bFullTime) return aFullTime ? 1 : -1;
+
+  const sequenceDiff = resolveCsvSequence(a) - resolveCsvSequence(b);
+  if (sequenceDiff !== 0) return sequenceDiff;
+
+  return a.id.localeCompare(b.id);
+}
+
 function assistPrefixForEvent(ev: SbMatchEvent): string {
   const csvType = resolveCsvEventType(ev);
   return ASSIST_LABEL_BY_TYPE[csvType] ?? ASSIST_LABEL_BY_TYPE[ev.type] ?? "Assist ";
@@ -668,7 +689,7 @@ export function EventTimeline({
   awayTeam: SbTeamRef;
   competition?: string;
 }) {
-  const sorted = [...events].sort((a, b) => a.minute - b.minute || a.id.localeCompare(b.id));
+  const sorted = [...events].sort(compareTimelineEvents);
 
   if (sorted.length === 0) {
     return (

@@ -1,11 +1,13 @@
 // @ts-nocheck
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import {
   isFullSeed,
   shouldPreserveSbMatch,
   type SeedOptions,
 } from "../src/seed/seed-options";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { resolvePlayerNameCandidate } from "../src/scoreboard/player-name-normalization";
 
 const COMP_SLUG = "1xcup-2026";
 const COMP_ID = "00000000-0000-4000-81xc-000000000000";
@@ -634,6 +636,89 @@ function nameKey(value: string): string {
     .replace(/-/g, "");
 }
 
+function splitPlayerDisplayName(displayName: string) {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] ?? displayName,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : "",
+  };
+}
+
+async function resolveUniquePlayerSlug(prisma: PrismaClient, displayName: string) {
+  const base = slugify(displayName) || "player";
+  let slug = base;
+  let suffix = 0;
+  while (await prisma.player.findUnique({ where: { slug }, select: { id: true } })) {
+    suffix += 1;
+    slug = `${base}-${suffix}`;
+  }
+  return slug;
+}
+
+async function findOrCreate1XCupPlayer(
+  prisma: PrismaClient,
+  rawName: string,
+  position: string,
+  previousTeamRows: Array<{
+    playerId: string | null;
+    displayName: string;
+    player?: { id: string; displayName: string; normalizedName: string | null; slug: string } | null;
+  }>
+) {
+  const displayName = normalizePlayerName(rawName);
+  const normalizedName = playerLookupKey(displayName);
+  const exact = normalizedName
+    ? await prisma.player.findUnique({ where: { normalizedName } })
+    : null;
+  if (exact) {
+    return prisma.player.update({
+      where: { id: exact.id },
+      data: {
+        displayName,
+        positionPrimary: exact.positionPrimary || position,
+        registrationStatus: "approved",
+        isPublic: true,
+      },
+    });
+  }
+
+  const scopedCandidate = resolvePlayerNameCandidate(
+    displayName,
+    previousTeamRows
+      .filter((row) => row.playerId || row.player?.id)
+      .map((row) => ({
+        playerId: row.playerId ?? row.player!.id,
+        displayName: row.displayName,
+        aliases: [row.player?.displayName, row.player?.normalizedName, row.player?.slug?.replace(/-/g, " ")],
+      }))
+  );
+  if (scopedCandidate) {
+    return prisma.player.update({
+      where: { id: scopedCandidate.playerId },
+      data: {
+        displayName,
+        positionPrimary: position,
+        registrationStatus: "approved",
+        isPublic: true,
+      },
+    });
+  }
+
+  const nameParts = splitPlayerDisplayName(displayName);
+  return prisma.player.create({
+    data: {
+      firstName: nameParts.firstName,
+      lastName: nameParts.lastName,
+      displayName,
+      normalizedName: normalizedName || null,
+      slug: await resolveUniquePlayerSlug(prisma, displayName),
+      positionPrimary: position,
+      registrationStatus: "approved",
+      isPublic: true,
+    },
+  });
+}
+
 function parseCsvRows(csv: string): Record<string, string>[] {
   const [headerLine, ...rows] = csv.trim().split(/\r?\n/);
   const headers = headerLine.split(",");
@@ -807,6 +892,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
       season: "2026",
       type: "tournament",
       formatType: "1XCUP_MULTI_STAGE",
+      status: "active",
       formatConfig: formatConfig as Prisma.InputJsonValue,
       country: "Nigeria",
       description:
@@ -820,6 +906,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
       season: "2026",
       type: "tournament",
       formatType: "1XCUP_MULTI_STAGE",
+      status: "active",
       formatConfig: formatConfig as Prisma.InputJsonValue,
       country: "Nigeria",
       description:
@@ -969,16 +1056,32 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
     const team = teamByKey.get(nameKey(squad.teamName));
     if (!team) continue;
     const teamIdValue = teamIds[team.slug];
-    await prisma.sbTeamSquad.deleteMany({ where: { teamId: teamIdValue } });
-    await prisma.sbTeamSquad.createMany({
-      data: squad.players.map((player, index) => ({
-        teamId: teamIdValue,
-        displayName: player.name,
-        position: player.position,
-        shirtNumber: null,
-      })),
-      skipDuplicates: true,
+    const previousTeamRows = await prisma.sbTeamSquad.findMany({
+      where: { teamId: teamIdValue },
+      include: {
+        player: {
+          select: { id: true, displayName: true, normalizedName: true, slug: true },
+        },
+      },
     });
+    await prisma.sbTeamSquad.deleteMany({ where: { teamId: teamIdValue } });
+    for (const player of squad.players) {
+      const linkedPlayer = await findOrCreate1XCupPlayer(
+        prisma,
+        player.name,
+        player.position,
+        previousTeamRows
+      );
+      await prisma.sbTeamSquad.create({
+        data: {
+          teamId: teamIdValue,
+          playerId: linkedPlayer.id,
+          displayName: linkedPlayer.displayName,
+          position: player.position,
+          shirtNumber: null,
+        },
+      });
+    }
   }
 
   const [teamCount, matchCount, squadCount] = await Promise.all([

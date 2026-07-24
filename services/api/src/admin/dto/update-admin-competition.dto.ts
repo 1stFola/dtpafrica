@@ -36,6 +36,11 @@ export class UpdateAdminCompetitionDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  status?: string;
+
+  @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
 }
