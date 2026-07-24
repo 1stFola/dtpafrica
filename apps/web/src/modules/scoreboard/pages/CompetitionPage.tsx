@@ -41,6 +41,8 @@ const COMPETITION_DESCRIPTION =
 
 const JAGABAN_FORMAT_COPY =
   "The top team from each group advances directly to the Grand Finale. The second-placed teams face off in the Third-Place Playoff to determine the bronze medal winner.";
+const ONE_XCUP_FORMAT_COPY =
+  "The tournament begins with five Lagos zonal qualifiers in a one-time loser-go-home knockout format. Ikeja and Lagos Island each qualify 6 teams, Ikorodu and Badagry each qualify 5, and Epe qualifies 2. Those 24 teams move into six groups of four for a single round-robin group stage. The top two from each group plus the four best third-placed teams advance to the 16-team knockout stage.";
 
 const KNOCKOUT_FORMAT_COPY =
   "Single-elimination knockout: winners advance through Round of 16, quarter-finals, semi-finals, and the final. All Round of 32 ties are seeded (1v2, 3v4, … 31v32).";
@@ -765,9 +767,14 @@ export function CompetitionPage() {
   const isGroupFormat =
     !isKnockoutFormat &&
     (formatType === "JAGABAN_CUP_STANDARD" ||
+      formatType === "1XCUP_MULTI_STAGE" ||
       formatType === "HYBRID_CHAMPIONS_LEAGUE" ||
       standingsGroups.length > 0);
   const showKnockoutBracket = Boolean(bracketImageUrl && isKnockoutFormat);
+  const tournamentFormatCopy =
+    slug === "1xcup-2026" || formatType === "1XCUP_MULTI_STAGE"
+      ? ONE_XCUP_FORMAT_COPY
+      : JAGABAN_FORMAT_COPY;
 
   const groups = standingsGroups.length ? standingsGroups : isGroupFormat ? [] : [""];
 
@@ -828,7 +835,7 @@ export function CompetitionPage() {
           </span>
           <div>
             <p className="sbc-alert__title">Tournament Format</p>
-            <p className="sbc-alert__body">{JAGABAN_FORMAT_COPY}</p>
+            <p className="sbc-alert__body">{tournamentFormatCopy}</p>
           </div>
         </div>
       )}
