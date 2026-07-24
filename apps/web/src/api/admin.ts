@@ -770,7 +770,7 @@ export const adminApi = {
   databaseSeedStatus: () =>
     adminFetch<AdminSeedStatus>("/admin/database/seed/status"),
   runDatabaseSeed: (mode: "incremental" | "full" = "incremental") =>
-    adminFetch<AdminSeedResult>("/admin/database/seed", {
+    adminFetch<AdminSeedStatus>("/admin/database/seed", {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),

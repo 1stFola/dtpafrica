@@ -36,6 +36,7 @@ import { PatchMatchScoreDto } from "./dto/patch-match-score.dto";
 import { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
 import { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
 import { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
+import { UpdateMatchStatsDto } from "./dto/update-match-stats.dto";
 
 @Controller("admin/scoreboard")
 @UseGuards(AdminAuthGuard, PermissionsGuard)
@@ -247,6 +248,24 @@ export class AdminScoreboardController {
     @Body() dto: PatchMatchScoreDto
   ) {
     return this.sb.patchMatchScore(matchId, dto);
+  }
+
+  @Patch("matches/:matchId/stats")
+  @RequirePermissions("scoreboard.matches.write")
+  updateMatchStats(
+    @Param("matchId") matchId: string,
+    @Body() dto: UpdateMatchStatsDto
+  ) {
+    return this.sb.updateMatchStats(matchId, dto);
+  }
+
+  @Post("matches/stats/import")
+  @RequirePermissions("scoreboard.matches.write")
+  importMatchStats(@Body() body: { csv: string }) {
+    if (!body.csv?.trim()) {
+      throw new BadRequestException("csv body field is required");
+    }
+    return this.sb.importMatchStatsCsv(body.csv);
   }
 
   @Patch("matches/:matchId")

@@ -1,12 +1,19 @@
 import type { SbMatchStats, SbTeamRef } from "../../../api/scoreboard";
 
 type HomeAwayStatKey =
+  | "goals"
   | "possession"
   | "saves"
   | "shots"
   | "shotsOnTarget"
+  | "shotsOffTarget"
+  | "blockedShots"
   | "corners"
   | "fouls"
+  | "offsides"
+  | "yellowCards"
+  | "redCards"
+  | "penaltiesAwarded"
   | "xg";
 
 const STAT_ROWS: Array<{
@@ -14,12 +21,19 @@ const STAT_ROWS: Array<{
   label: string;
   suffix?: string;
 }> = [
+  { key: "goals", label: "Goals" },
   { key: "possession", label: "Possession", suffix: "%" },
   { key: "saves", label: "Goalkeeper saves" },
   { key: "shots", label: "Shots" },
   { key: "shotsOnTarget", label: "On target" },
+  { key: "shotsOffTarget", label: "Off target" },
+  { key: "blockedShots", label: "Blocked shots" },
   { key: "corners", label: "Corners" },
   { key: "fouls", label: "Fouls" },
+  { key: "offsides", label: "Offsides" },
+  { key: "yellowCards", label: "Yellow cards" },
+  { key: "redCards", label: "Red cards" },
+  { key: "penaltiesAwarded", label: "Penalties awarded" },
   { key: "xg", label: "xG" },
 ];
 

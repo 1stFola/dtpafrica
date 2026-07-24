@@ -34,15 +34,24 @@ export function AdminDatabasePage() {
     loadStatus().finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!status?.running && !running) return;
+    const id = window.setInterval(() => {
+      void loadStatus().finally(() => setRunning(false));
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [running, status?.running]);
+
   const handleRunSeed = async () => {
     setRunning(true);
     setConfirmOpen(false);
     try {
       const mode = fullReseed ? "full" : "incremental";
-      const result = await adminApi.runDatabaseSeed(mode);
-      setLastResult(result);
-      if (result.ok) {
-        toast.success("Database seed completed");
+      const nextStatus = await adminApi.runDatabaseSeed(mode);
+      setStatus(nextStatus);
+      setLastResult(null);
+      if (nextStatus.running) {
+        toast.success("Database seed started");
       } else {
         toast.error("Seed finished with errors — see details below");
       }

@@ -82,12 +82,19 @@ export type SbMatchSquadsResponse = {
 };
 
 export type SbMatchStats = {
+  goals?: { home: number; away: number };
   possession?: { home: number; away: number };
   saves?: { home: number | null; away: number | null };
   shots?: { home: number; away: number };
   shotsOnTarget?: { home: number; away: number };
+  shotsOffTarget?: { home: number; away: number };
+  blockedShots?: { home: number; away: number };
   corners?: { home: number; away: number };
   fouls?: { home: number; away: number };
+  offsides?: { home: number; away: number };
+  yellowCards?: { home: number; away: number };
+  redCards?: { home: number; away: number };
+  penaltiesAwarded?: { home: number; away: number };
   xg?: { home: number; away: number };
   narrative?: string | null;
   matchdayRosters?: Record<string, SbMatchdayRoster>;

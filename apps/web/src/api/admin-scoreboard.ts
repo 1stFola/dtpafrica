@@ -276,6 +276,32 @@ export const adminScoreboardApi = {
       body: JSON.stringify(body),
     }),
 
+  updateMatchStats: (
+    matchId: string,
+    body: {
+      home?: Record<string, number>;
+      away?: Record<string, number>;
+      source?: "manual" | "csv" | "json";
+      narrative?: string;
+    }
+  ) =>
+    sbFetch<{ ok: boolean; match: SbMatchListItem }>(
+      `/admin/scoreboard/matches/${matchId}/stats`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }
+    ),
+
+  importMatchStatsCsv: (csv: string) =>
+    sbFetch<{ ok: boolean; updated: number; rows: number }>(
+      "/admin/scoreboard/matches/stats/import",
+      {
+        method: "POST",
+        body: JSON.stringify({ csv }),
+      }
+    ),
+
   exportCompetitionsCsv: () =>
     sbFetch<{ csv: string }>("/admin/scoreboard/seed/competitions/export"),
 
