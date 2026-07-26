@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma, type PlayerMatchMetrics } from "@prisma/client";
+import { Prisma, type PlayerMatchMetrics, type SbMatchEvent } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
@@ -32,6 +32,7 @@ import { assertMatchReadyForLiveEvents } from "./roster-guard";
 import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
 import { deriveMatchStatsFromCsvEvents } from "./match-csv-events";
 import { parseMatchTimelineCsv } from "./match-csv-ingest";
+import { parseShortMatchEventsCsv } from "./short-event-csv";
 import { computeStandings } from "./standings";
 import {
   resolvePlayerNameCandidate,
@@ -201,6 +202,79 @@ type MatchWithCompetition = Prisma.SbMatchGetPayload<{
 type SipIngestPlayerResult =
   | { playerId: string; status: "created" | "updated" }
   | { playerId: string; status: "skipped"; reason: string };
+
+type ManualGoalScorer = {
+  name: string;
+  minute: number | null;
+  teamSide: "home" | "away";
+};
+
+function normalizeScorerTeamLabel(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scorerTeamLabels(match: {
+  homeTeam: { name: string; shortName: string | null };
+  awayTeam: { name: string; shortName: string | null };
+}) {
+  return {
+    home: [match.homeTeam.name, match.homeTeam.shortName, "home", "home team"]
+      .filter(Boolean)
+      .map((label) => normalizeScorerTeamLabel(label)),
+    away: [match.awayTeam.name, match.awayTeam.shortName, "away", "away team"]
+      .filter(Boolean)
+      .map((label) => normalizeScorerTeamLabel(label)),
+  };
+}
+
+function parseManualScorerMinute(raw: string): number | null {
+  const match = raw.match(/(?:^|[\s(])(\d{1,3})(?:\s*\+\s*(\d{1,2}))?\s*(?:'|min\b|m\b)?/i);
+  return match ? Number(match[1]) + Number(match[2] ?? 0) : null;
+}
+
+function parseManualGoalScorersForMatch(
+  match: {
+    homeTeam: { name: string; shortName: string | null };
+    awayTeam: { name: string; shortName: string | null };
+  },
+  value: unknown
+): ManualGoalScorer[] {
+  if (typeof value !== "string" || !value.trim()) return [];
+  const labels = scorerTeamLabels(match);
+  const scorers: ManualGoalScorer[] = [];
+
+  for (const row of value.split(/\r?\n/)) {
+    const [maybeTeam, ...rest] = row.split(":");
+    if (!rest.length) continue;
+    const normalizedTeam = normalizeScorerTeamLabel(maybeTeam);
+    const teamSide = labels.home.includes(normalizedTeam)
+      ? "home"
+      : labels.away.includes(normalizedTeam)
+        ? "away"
+        : null;
+    if (!teamSide) continue;
+
+    for (const item of rest.join(":").split(/[,;|]+/)) {
+      const cleaned = item.replace(/\s+/g, " ").trim();
+      if (!cleaned) continue;
+      const name = cleaned
+        .replace(/(?:^|[\s(])\d{1,3}(?:\s*\+\s*\d{1,2})?\s*(?:'|min\b|m\b)?/i, " ")
+        .replace(/\([^)]*(?:pen|penalty|pk|og|own goal|p)[^)]*\)/gi, "")
+        .replace(/\b(?:pen|penalty|pk|og|own goal)\b/gi, "")
+        .replace(/[,;|\-\u2013\u2014]+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (name) scorers.push({ name, minute: parseManualScorerMinute(cleaned), teamSide });
+    }
+  }
+
+  return scorers;
+}
 
 @Injectable()
 export class ScoreboardService {
@@ -822,6 +896,61 @@ export class ScoreboardService {
           photoUrl: event.player?.playerPhotoUrl ?? null,
           team: event.team,
         });
+      }
+
+      if (metric === "goals") {
+        const manualMatches = await this.prisma.sbMatch.findMany({
+          where: matchScope,
+          select: {
+            id: true,
+            meta: true,
+            homeTeamId: true,
+            awayTeamId: true,
+            homeTeam: {
+              select: {
+                id: true,
+                name: true,
+                shortName: true,
+                slug: true,
+                logoUrl: true,
+              },
+            },
+            awayTeam: {
+              select: {
+                id: true,
+                name: true,
+                shortName: true,
+                slug: true,
+                logoUrl: true,
+              },
+            },
+            events: {
+              where: { type: { in: ["goal", "own_goal"] } },
+              select: { id: true },
+            },
+          },
+        });
+
+        for (const match of manualMatches) {
+          if (match.events.length > 0) continue;
+          const meta = (match.meta ?? {}) as Record<string, unknown>;
+          if (typeof meta.goalScorers !== "string" || !meta.goalScorers.trim()) {
+            continue;
+          }
+          const scorers = parseManualGoalScorersForMatch(match, meta.goalScorers);
+          for (const scorer of scorers) {
+            const team = scorer.teamSide === "home" ? match.homeTeam : match.awayTeam;
+            const teamId = scorer.teamSide === "home" ? match.homeTeamId : match.awayTeamId;
+            const playerSlug = slugifyPlayerName(scorer.name);
+            bump(byKey, `${playerSlug}::${teamId}`, {
+              playerId: null,
+              playerName: scorer.name,
+              playerSlug,
+              photoUrl: null,
+              team,
+            });
+          }
+        }
       }
     }
 
@@ -1506,6 +1635,107 @@ export class ScoreboardService {
     }
 
     return event;
+  }
+
+  async ingestShortMatchEventsCsv(matchId: string, csv: string) {
+    const parsed = parseShortMatchEventsCsv(csv);
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: { homeTeam: true, awayTeam: true, competition: true },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+
+    const labels = scorerTeamLabels(match);
+    const resolveTeamId = (teamName: string) => {
+      const normalized = normalizeScorerTeamLabel(teamName);
+      if (labels.home.includes(normalized)) return match.homeTeamId;
+      if (labels.away.includes(normalized)) return match.awayTeamId;
+      throw new BadRequestException(
+        `Team "${teamName}" does not match ${match.homeTeam.name} or ${match.awayTeam.name}`
+      );
+    };
+
+    for (const ev of parsed) {
+      const teamId = resolveTeamId(ev.teamName);
+      await this.resolveOrCreateTimelinePlayer({
+        label: ev.playerLabel,
+        teamId,
+        role: "primary",
+        eventType: ev.type,
+      });
+      await this.resolveOrCreateTimelinePlayer({
+        label: ev.assistLabel,
+        teamId,
+        role: "assist",
+        eventType: ev.type,
+      });
+    }
+
+    const playerResolver = await this.buildMatchEventPlayerResolver(matchId, [
+      match.homeTeamId,
+      match.awayTeamId,
+    ]);
+
+    const createdEvents: SbMatchEvent[] = [];
+    let skippedDuplicates = 0;
+
+    for (const ev of parsed) {
+      const teamId = resolveTeamId(ev.teamName);
+
+      const resolvedPlayerId = playerResolver.resolvePrimary(ev.playerLabel, teamId);
+      const resolvedAssistPlayerId = playerResolver.resolveAssist(ev.assistLabel, teamId);
+      const metadata = {
+        ...(ev.metadata ?? {}),
+        source: "quick-score-csv",
+      };
+
+      const duplicate = await this.prisma.sbMatchEvent.findFirst({
+        where: {
+          matchId,
+          type: ev.type,
+          minute: ev.minute,
+          teamId,
+          playerLabel: ev.playerLabel?.trim() || null,
+          assistLabel: ev.assistLabel?.trim() || null,
+        },
+      });
+      if (duplicate) {
+        skippedDuplicates++;
+        continue;
+      }
+
+      const created = await this.prisma.sbMatchEvent.create({
+        data: {
+          matchId,
+          type: ev.type,
+          minute: ev.minute,
+          teamId,
+          playerId: resolvedPlayerId ?? undefined,
+          assistPlayerId: resolvedAssistPlayerId ?? undefined,
+          playerLabel: ev.playerLabel?.trim() || undefined,
+          assistLabel: ev.assistLabel?.trim() || undefined,
+          detail: ev.detail?.trim() || undefined,
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      createdEvents.push(created);
+    }
+
+    for (const event of createdEvents) {
+      if (event.playerId) {
+        await this.lifecycle.applyMatchEventToPlayerStats(event, match.competitionId);
+      }
+    }
+
+    if (createdEvents.some((event) => event.playerId)) {
+      void this.ingestSipMetricsFromMatch(matchId).catch(() => undefined);
+    }
+
+    return {
+      matchId,
+      eventsCreated: createdEvents.length,
+      skippedDuplicates,
+    };
   }
 
   async updateMatch(matchId: string, dto: UpdateMatchDto) {

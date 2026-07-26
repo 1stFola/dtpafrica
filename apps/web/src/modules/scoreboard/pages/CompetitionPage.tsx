@@ -195,6 +195,68 @@ type Scorer = {
   team: SbTeamRef | null;
 };
 
+function normalizeTeamLabel(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseManualScorerName(raw: string): string | null {
+  const name = raw
+    .replace(/\s+/g, " ")
+    .replace(/(?:^|[\s(])\d{1,3}(?:\s*\+\s*\d{1,2})?\s*(?:'|min\b|m\b)?/i, " ")
+    .replace(/\([^)]*(?:pen|penalty|pk|og|own goal|p)[^)]*\)/gi, "")
+    .replace(/\b(?:pen|penalty|pk|og|own goal)\b/gi, "")
+    .replace(/[,;|\-\u2013\u2014]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return name && !/^(unknown|player\s*[12])$/i.test(name) ? name : null;
+}
+
+function manualGoalScorers(match: SbMatchListItem): Array<{ name: string; team: SbTeamRef }> {
+  const text = match.meta?.goalScorers?.trim();
+  if (!text) return [];
+
+  const homeLabels = [
+    match.homeTeam.name,
+    match.homeTeam.shortName,
+    "home",
+    "home team",
+  ]
+    .filter(Boolean)
+    .map((label) => normalizeTeamLabel(label));
+  const awayLabels = [
+    match.awayTeam.name,
+    match.awayTeam.shortName,
+    "away",
+    "away team",
+  ]
+    .filter(Boolean)
+    .map((label) => normalizeTeamLabel(label));
+  const scorers: Array<{ name: string; team: SbTeamRef }> = [];
+
+  for (const row of text.split(/\r?\n/)) {
+    const [teamLabel, ...rest] = row.split(":");
+    if (!rest.length) continue;
+    const normalized = normalizeTeamLabel(teamLabel);
+    const team = homeLabels.includes(normalized)
+      ? match.homeTeam
+      : awayLabels.includes(normalized)
+        ? match.awayTeam
+        : null;
+    if (!team) continue;
+    for (const item of rest.join(":").split(/[,;|]+/)) {
+      const name = parseManualScorerName(item);
+      if (name) scorers.push({ name, team });
+    }
+  }
+
+  return scorers;
+}
+
 function findKnockout(
   matches: SbMatchListItem[],
   stageKey: string,
@@ -234,9 +296,21 @@ function derivePlacements(matches: SbMatchListItem[]): Placement[] | null {
 /** Aggregate goal events into a scorer leaderboard (per player + club). */
 function deriveTopScorers(matches: SbMatchListItem[]): Scorer[] {
   const byKey = new Map<string, Scorer>();
+  const bump = (name: string, slug: string, team: SbTeamRef | null) => {
+    const key = `${slug}::${team?.id ?? "free"}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.goals += 1;
+    } else {
+      byKey.set(key, { key, name, slug, goals: 1, team });
+    }
+  };
+
   for (const match of matches) {
+    let hasGoalEvents = false;
     for (const event of match.events ?? []) {
       if (event.type !== "goal") continue;
+      hasGoalEvents = true;
       const name = event.player?.displayName ?? event.playerLabel;
       if (!name || /^(unknown|player\s*[12])$/i.test(name.trim())) continue;
       const team =
@@ -246,12 +320,12 @@ function deriveTopScorers(matches: SbMatchListItem[]): Scorer[] {
             ? match.awayTeam
             : null;
       const slug = event.player?.slug ?? slugifyName(name);
-      const key = `${slug}::${team?.id ?? "free"}`;
-      const existing = byKey.get(key);
-      if (existing) {
-        existing.goals += 1;
-      } else {
-        byKey.set(key, { key, name, slug, goals: 1, team });
+      bump(name, slug, team);
+    }
+
+    if (!hasGoalEvents) {
+      for (const scorer of manualGoalScorers(match)) {
+        bump(scorer.name, slugifyName(scorer.name), scorer.team);
       }
     }
   }

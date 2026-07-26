@@ -12,13 +12,14 @@ type Props = {
     status: string;
     meta?: SbMatchListItem["meta"];
   }) => void;
+  onEventsImported?: () => void;
 };
 
 function isKnockoutStage(stageKey: string | null | undefined) {
   return Boolean(stageKey && !stageKey.startsWith("group_"));
 }
 
-export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
+export function QuickScoreUpdatePanel({ match, onSaved, onEventsImported }: Props) {
   const toast = useAdminToast();
   const [editing, setEditing] = useState(false);
   const [homeScore, setHomeScore] = useState(String(match.homeScore));
@@ -34,6 +35,8 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
     Boolean(match.meta?.penaltyShootout) || isKnockoutStage(match.stageKey)
   );
   const [saving, setSaving] = useState(false);
+  const [shortCsvFile, setShortCsvFile] = useState<File | null>(null);
+  const [uploadingShortCsv, setUploadingShortCsv] = useState(false);
 
   const knockout = isKnockoutStage(match.stageKey);
 
@@ -139,6 +142,35 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
     }
   };
 
+  const uploadShortCsv = async () => {
+    if (!shortCsvFile) {
+      toast.error("Choose a short timeline CSV first");
+      return;
+    }
+
+    setUploadingShortCsv(true);
+    try {
+      const csv = await shortCsvFile.text();
+      const result = await adminScoreboardApi.ingestShortEventsCsv(match.id, csv);
+      const skipped = result.skippedDuplicates
+        ? `, skipped ${result.skippedDuplicates} duplicate${
+            result.skippedDuplicates === 1 ? "" : "s"
+          }`
+        : "";
+      toast.success(
+        `Imported ${result.eventsCreated} event${
+          result.eventsCreated === 1 ? "" : "s"
+        }${skipped}`
+      );
+      setShortCsvFile(null);
+      onEventsImported?.();
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setUploadingShortCsv(false);
+    }
+  };
+
   const penaltyLabel = match.meta?.penaltyShootout
     ? `Pens ${match.meta.penaltyShootout.home}–${match.meta.penaltyShootout.away}`
     : null;
@@ -240,6 +272,32 @@ export function QuickScoreUpdatePanel({ match, onSaved }: Props) {
               placeholder={`${match.homeTeam.name}: Name 12', Name 88'\n${match.awayTeam.name}: Name 45'`}
             />
           </label>
+
+          <div className="admin-sb-score-update__short-csv">
+            <div>
+              <span>Short event timeline CSV</span>
+              <small>
+                Columns: match, half, minute, event_type, team, player, player_in,
+                player_out.
+              </small>
+            </div>
+            <label className="admin-sb-score-update__file">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => setShortCsvFile(e.target.files?.[0] ?? null)}
+                disabled={uploadingShortCsv}
+              />
+            </label>
+            <button
+              type="button"
+              className="admin-inline-button"
+              onClick={() => void uploadShortCsv()}
+              disabled={uploadingShortCsv || !shortCsvFile}
+            >
+              {uploadingShortCsv ? "Uploading..." : "Upload events"}
+            </button>
+          </div>
 
           {(knockout || showPenalties) && (
             <div className="admin-sb-score-update__penalties">

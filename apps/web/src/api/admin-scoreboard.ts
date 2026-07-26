@@ -445,6 +445,16 @@ export const adminScoreboardApi = {
       body: JSON.stringify({ csv, replace, matchComment }),
     }),
 
+  ingestShortEventsCsv: (matchId: string, csv: string) =>
+    sbFetch<{
+      matchId: string;
+      eventsCreated: number;
+      skippedDuplicates: number;
+    }>(`/admin/scoreboard/matches/${matchId}/short-events-csv`, {
+      method: "POST",
+      body: JSON.stringify({ csv }),
+    }),
+
   createHighlight: (body: {
     matchId: string;
     title: string;

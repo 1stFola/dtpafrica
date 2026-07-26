@@ -416,4 +416,16 @@ export class AdminScoreboardController {
       body.matchComment
     );
   }
+
+  @Post("matches/:matchId/short-events-csv")
+  @RequirePermissions("scoreboard.matches.write")
+  ingestShortMatchEventsCsv(
+    @Param("matchId") matchId: string,
+    @Body() body: { csv: string }
+  ) {
+    if (!body.csv?.trim()) {
+      throw new BadRequestException("csv body field is required");
+    }
+    return this.sb.ingestShortMatchEventsCsv(matchId, body.csv);
+  }
 }
