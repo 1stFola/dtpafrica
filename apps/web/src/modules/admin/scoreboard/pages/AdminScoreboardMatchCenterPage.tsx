@@ -276,6 +276,10 @@ export function AdminScoreboardMatchCenterPage() {
               patchSelectedMatch(patch);
               refresh();
             }}
+            onEventsImported={() => {
+              void loadTimeline(selected.id);
+              void refresh();
+            }}
           />
 
           <div className="sb-supervisor-panel admin-sb-match-panel admin-sb-panel">

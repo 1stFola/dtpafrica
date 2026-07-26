@@ -8360,8 +8360,10 @@ a {
 
 .sb-mc-score {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  gap: 0.18rem;
   font-family: var(--font-display);
   font-size: 1.9rem;
   font-weight: 800;
@@ -8369,9 +8371,25 @@ a {
   line-height: 1;
 }
 
+.sb-mc-score__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .sb-mc-score__dash {
   color: var(--color-muted);
   font-weight: 500;
+}
+
+.sb-mc-score__pens {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: var(--color-primary);
 }
 
 .sb-mc-score__vs {
@@ -12742,6 +12760,39 @@ a {
   width: min(100%, 42rem);
 }
 
+.admin-sb-score-update__short-csv {
+  align-items: end;
+  background: var(--admin-surface-elevated, rgba(255, 255, 255, 0.035));
+  border: 1px solid var(--admin-border, rgba(255, 255, 255, 0.1));
+  border-radius: 0.65rem;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(12rem, 1fr) minmax(12rem, auto) auto;
+  padding: 0.75rem;
+  width: min(100%, 42rem);
+}
+
+.admin-sb-score-update__short-csv span {
+  color: var(--color-text);
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.admin-sb-score-update__short-csv small {
+  color: var(--color-text-muted);
+  display: block;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  margin-top: 0.2rem;
+}
+
+.admin-sb-score-update__file input {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  max-width: 13rem;
+}
+
 .admin-sb-score-update__penalties {
   border-top: 1px solid var(--admin-border, rgba(255, 255, 255, 0.08));
   padding-top: 0.75rem;
@@ -12760,6 +12811,17 @@ a {
 .admin-sb-score-update__hint {
   font-size: 0.8rem;
   margin: 0;
+}
+
+@media (max-width: 760px) {
+  .admin-sb-score-update__short-csv {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sb-score-update__file input {
+    max-width: 100%;
+  }
 }
 
 .admin-sb-roster-split {

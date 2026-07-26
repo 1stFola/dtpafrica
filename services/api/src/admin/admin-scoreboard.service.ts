@@ -2417,6 +2417,10 @@ export class AdminScoreboardService {
     );
   }
 
+  ingestShortMatchEventsCsv(matchId: string, csv: string) {
+    return this.scoreboard.ingestShortMatchEventsCsv(matchId, csv);
+  }
+
   async deleteMatchEvent(matchId: string, eventId: string) {
     const event = await this.prisma.sbMatchEvent.findFirst({
       where: { id: eventId, matchId },
