@@ -572,6 +572,8 @@ export const EVENT_LABELS: Record<string, string> = {
   score_update: "Score update",
   second_half_kickoff: "Second half",
   shot_off_target: "Shot off target",
+  shootout_goal: "Shootout goal",
+  shootout_miss: "Shootout miss",
   substitution: "Substitution",
   sustained_pressure: "Sustained pressure",
   tactical_substitution: "Tactical substitution",
