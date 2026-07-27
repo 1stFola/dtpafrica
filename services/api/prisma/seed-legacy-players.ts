@@ -205,7 +205,10 @@ function incrementalPlayerUpdate(
     academyId: _academyId,
     ...rest
   } = data;
-  return rest;
+  return {
+    ...rest,
+    ...(data.academyId ? { academyId: data.academyId } : {}),
+  };
 }
 
 export async function seedLegacyPlayers(

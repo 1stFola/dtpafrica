@@ -17,6 +17,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { normalizePlayerAgeCategory } from "../players/age-category";
 import { resolveUniquePlayerSlug } from "../players/player-slug";
 import { SipRecalculationService } from "../sip/sip-recalculation.service";
+import { resolveAcademyIdByClubName } from "../academy/academy-linking.util";
 import {
   legacyMatchMetricsToPlayerMatchRecord,
   playerMatchMetricsToLegacyMetrics,
@@ -433,6 +434,10 @@ export class AdminCalibrationService {
     });
     const headline = result.calibratedSummary;
     const parsedHeightCm = this.parseRequiredHeightFt(options.playerInfo?.heightFt);
+    const currentClub = options.playerInfo?.currentClub?.trim();
+    const resolvedAcademyId = currentClub
+      ? await resolveAcademyIdByClubName(this.prisma, currentClub)
+      : null;
 
     if (options.save) {
       await this.prisma.player.update({
@@ -454,8 +459,11 @@ export class AdminCalibrationService {
             ? parsedHeightCm
             : player.heightCm,
           weightKg: options.playerInfo?.weightKg ?? player.weightKg,
-          city: options.playerInfo?.currentClub
-            ? normalizeClubName(options.playerInfo.currentClub)
+          academyId: resolvedAcademyId ?? player.academyId,
+          city: currentClub
+            ? resolvedAcademyId
+              ? null
+              : normalizeClubName(currentClub)
             : player.city,
           playerPhotoUrl: options.playerInfo?.photoUrl ?? player.playerPhotoUrl,
           videoUrl: options.playerInfo?.videoUrl ?? player.videoUrl,
@@ -526,6 +534,10 @@ export class AdminCalibrationService {
         : undefined;
     const ageGroup = normalizePlayerAgeCategory({ age, dateOfBirth: dob });
     const parsedHeightCm = this.parseRequiredHeightFt(playerInfo.heightFt);
+    const currentClub = playerInfo.currentClub?.trim();
+    const resolvedAcademyId = currentClub
+      ? await resolveAcademyIdByClubName(this.prisma, currentClub)
+      : null;
 
     const slug = await resolveUniquePlayerSlug(
       this.prisma,
@@ -545,7 +557,8 @@ export class AdminCalibrationService {
         ageGroup,
         heightCm: parsedHeightCm,
         weightKg: playerInfo.weightKg,
-        city: playerInfo.currentClub ? normalizeClubName(playerInfo.currentClub) : undefined,
+        academyId: resolvedAcademyId ?? undefined,
+        city: currentClub && !resolvedAcademyId ? normalizeClubName(currentClub) : undefined,
         playerPhotoUrl: playerInfo.photoUrl,
         videoUrl: playerInfo.videoUrl,
         slug,

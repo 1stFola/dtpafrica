@@ -600,6 +600,14 @@ export const adminApi = {
       invalidateAdminPlayersCache();
       return result;
     }),
+  bulkDeletePlayers: (ids: string[]) =>
+    adminFetch<{ deleted: number; ids: string[] }>("/admin/players/bulk", {
+      method: "PATCH",
+      body: JSON.stringify({ ids, delete: true }),
+    }).then((result) => {
+      invalidateAdminPlayersCache();
+      return result;
+    }),
   previewPlayerSlug: (name: string, excludeId?: string) => {
     const params = new URLSearchParams({ name });
     if (excludeId) params.set("excludeId", excludeId);

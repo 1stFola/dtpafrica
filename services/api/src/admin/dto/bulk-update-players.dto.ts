@@ -28,7 +28,12 @@ export class BulkUpdatePlayersDto {
   @IsString({ each: true })
   ids!: string[];
 
+  @IsOptional()
+  @IsBoolean()
+  delete?: boolean;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => BulkPlayerUpdatesDto)
-  updates!: BulkPlayerUpdatesDto;
+  updates?: BulkPlayerUpdatesDto;
 }

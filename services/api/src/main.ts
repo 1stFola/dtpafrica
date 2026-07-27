@@ -1,7 +1,16 @@
 import "reflect-metadata";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { loadEnvFile } from "node:process";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+
+for (const envPath of [join(process.cwd(), ".env"), join(process.cwd(), "services/api/.env")]) {
+  if (existsSync(envPath)) {
+    loadEnvFile(envPath);
+  }
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
