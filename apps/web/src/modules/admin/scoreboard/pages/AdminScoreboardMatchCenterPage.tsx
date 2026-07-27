@@ -276,7 +276,14 @@ export function AdminScoreboardMatchCenterPage() {
               patchSelectedMatch(patch);
               refresh();
             }}
-            onEventsImported={() => {
+            onEventsImported={(result) => {
+              if (result.events.length) {
+                setTimeline((current) => {
+                  const byId = new Map(current.map((event) => [event.id, event]));
+                  for (const event of result.events) byId.set(event.id, event);
+                  return [...byId.values()].sort((a, b) => a.minute - b.minute);
+                });
+              }
               void loadTimeline(selected.id);
               void refresh();
             }}

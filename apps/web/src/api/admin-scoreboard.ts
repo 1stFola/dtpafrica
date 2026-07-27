@@ -27,6 +27,22 @@ type AdminSbSquadRowUpdateResponse = {
   teams: AdminSbPlayerDirectoryRow["teams"];
 };
 
+export type AdminMatchTimelineEvent = {
+  id: string;
+  type: string;
+  minute: number;
+  teamId: string | null;
+  playerId: string | null;
+  assistPlayerId: string | null;
+  playerLabel: string | null;
+  assistLabel?: string | null;
+  detail?: string | null;
+  metadata: Record<string, unknown> | null;
+  team: { id: string; name: string } | null;
+  player: { id: string; slug: string | null; displayName: string } | null;
+  assistPlayer?: { id: string; slug: string | null; displayName: string } | null;
+};
+
 export type AdminHighlightRow = {
   id: string;
   title: string;
@@ -406,20 +422,7 @@ export const adminScoreboardApi = {
     }),
 
   listMatchEvents: (matchId: string) =>
-    sbFetch<
-      Array<{
-        id: string;
-        type: string;
-        minute: number;
-        teamId: string | null;
-        playerId: string | null;
-        assistPlayerId: string | null;
-        playerLabel: string | null;
-        metadata: Record<string, unknown> | null;
-        team: { id: string; name: string } | null;
-        player: { id: string; slug: string | null; displayName: string } | null;
-      }>
-    >(`/admin/scoreboard/matches/${matchId}/events`),
+    sbFetch<AdminMatchTimelineEvent[]>(`/admin/scoreboard/matches/${matchId}/events`),
 
   deleteMatchEvent: (matchId: string, eventId: string) =>
     sbFetch<{ ok: boolean }>(`/admin/scoreboard/matches/${matchId}/events/${eventId}`, {
@@ -450,6 +453,7 @@ export const adminScoreboardApi = {
       matchId: string;
       eventsCreated: number;
       skippedDuplicates: number;
+      events: AdminMatchTimelineEvent[];
     }>(`/admin/scoreboard/matches/${matchId}/short-events-csv`, {
       method: "POST",
       body: JSON.stringify({ csv }),
