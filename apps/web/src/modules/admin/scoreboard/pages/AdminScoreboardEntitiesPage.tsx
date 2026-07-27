@@ -537,6 +537,8 @@ export function AdminScoreboardEntitiesPage() {
 
   const nameQaRows = useMemo(() => {
     const byName = new Map<string, AdminSbPlayerDirectoryRow[]>();
+    const byFirstLast = new Map<string, AdminSbPlayerDirectoryRow[]>();
+    const bySurname = new Map<string, AdminSbPlayerDirectoryRow[]>();
     const byReversed = new Map<string, AdminSbPlayerDirectoryRow[]>();
 
     for (const player of players) {
@@ -544,9 +546,16 @@ export function AdminScoreboardEntitiesPage() {
       if (!key) continue;
       byName.set(key, [...(byName.get(key) ?? []), player]);
       const parts = key.split(" ").filter(Boolean);
-      if (parts.length === 2) {
-        const reversed = `${parts[1]} ${parts[0]}`;
-        byReversed.set(reversed, [...(byReversed.get(reversed) ?? []), player]);
+      const first = parts[0];
+      const surname = parts.at(-1);
+      if (first && surname) {
+        const firstLast = `${first} ${surname}`;
+        byFirstLast.set(firstLast, [...(byFirstLast.get(firstLast) ?? []), player]);
+        bySurname.set(surname, [...(bySurname.get(surname) ?? []), player]);
+        if (parts.length === 2 && first !== surname) {
+          const reversed = `${surname} ${first}`;
+          byReversed.set(reversed, [...(byReversed.get(reversed) ?? []), player]);
+        }
       }
     }
 
@@ -554,10 +563,21 @@ export function AdminScoreboardEntitiesPage() {
       .map((player) => {
         const key = normalizeNameKey(player.displayName);
         const parts = key.split(" ").filter(Boolean);
+        const first = parts[0];
+        const surname = parts.at(-1);
+        const firstLastKey = first && surname ? `${first} ${surname}` : "";
         const flags: string[] = [];
         if (parts.length < 2) flags.push("Name completion needed");
         if ((byName.get(key)?.length ?? 0) > 1) flags.push("Possible duplicate normalized name");
-        if ((byReversed.get(key)?.length ?? 0) > 0) flags.push("Possible first/last-name reversal");
+        if (firstLastKey && (byFirstLast.get(firstLastKey)?.length ?? 0) > 1) {
+          flags.push("Same First Name and Last name");
+        }
+        if (surname && (bySurname.get(surname)?.length ?? 0) > 1) {
+          flags.push("Same Surname");
+        }
+        if ((byReversed.get(key)?.length ?? 0) > 0) {
+          flags.push("Swapped First name and last name");
+        }
         if (/[^a-zA-Z\s.'-]/.test(player.displayName)) flags.push("Unusual name appearance");
         if (player.displayName.length <= 3 || parts.some((part) => part.length <= 1)) {
           flags.push("Unusual short name");

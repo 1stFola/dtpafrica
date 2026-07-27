@@ -234,6 +234,16 @@ export class AdminPlayersService {
       throw new BadRequestException("At least one player id is required");
     }
 
+    if (dto.delete) {
+      if (dto.updates && Object.keys(dto.updates).length > 0) {
+        throw new BadRequestException("Delete cannot be combined with bulk updates");
+      }
+      const result = await this.prisma.player.deleteMany({
+        where: { id: { in: ids } },
+      });
+      return { deleted: result.count, ids };
+    }
+
     const updates = dto.updates ?? {};
     const data: Prisma.PlayerUncheckedUpdateManyInput = {};
 

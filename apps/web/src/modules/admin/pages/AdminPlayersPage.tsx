@@ -750,8 +750,8 @@ export function AdminPlayersPage() {
         selectedIds={[...selectedIds]}
         selectedSlugs={selectedSlugs}
         onClose={() => setBulkOpen(false)}
-        onSaved={(updated) => {
-          toast.success(`Updated ${updated} players`);
+        onSaved={(count, action) => {
+          toast.success(`${action === "deleted" ? "Deleted" : "Updated"} ${count} players`);
           setSelectedIds(new Set());
           load();
         }}

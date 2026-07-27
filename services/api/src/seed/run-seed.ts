@@ -12,6 +12,7 @@ import { legacyMatchMetricsToPlayerMatchRecord } from "../sip/legacy-match-metri
 import type { LegacyMatchMetricsDto } from "../admin/dto/calibration-player-info.dto";
 import { normalizePlayerAgeCategory } from "../players/age-category";
 import { syncPlayerAgeCategories } from "../../prisma/sync-player-age-categories";
+import { matchAcademyByClubName } from "../academy/academy-linking.util";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
@@ -176,6 +177,34 @@ async function seedDemoCalibrationPlayer(
       possessionDurationSeconds: matchRecord.possessionDurationSeconds,
     },
   });
+}
+
+async function syncPlayerAcademyLinksFromClubNames(prisma: PrismaClient): Promise<number> {
+  const [academies, players] = await Promise.all([
+    prisma.academy.findMany({ select: { id: true, name: true, slug: true } }),
+    prisma.player.findMany({
+      where: {
+        academyId: null,
+        city: { not: null },
+      },
+      select: { id: true, city: true },
+    }),
+  ]);
+
+  let updated = 0;
+  for (const player of players) {
+    const academy = matchAcademyByClubName(player.city, academies);
+    if (!academy) continue;
+    await prisma.player.update({
+      where: { id: player.id },
+      data: {
+        academyId: academy.id,
+        city: null,
+      },
+    });
+    updated += 1;
+  }
+  return updated;
 }
 
 const SEED_MEDIA_ITEMS = [
@@ -804,6 +833,15 @@ Parents and guardians can register minors with consent workflows built for youth
           "ismael-salisu",
           ISMAEL_SALISU_CALIBRATION_METRICS
         );
+      },
+    },
+    {
+      name: "player-academy-links",
+      run: async () => {
+        const updated = await syncPlayerAcademyLinksFromClubNames(prisma);
+        if (updated > 0) {
+          console.log("Synced player academy links from club names:", updated);
+        }
       },
     },
     {
