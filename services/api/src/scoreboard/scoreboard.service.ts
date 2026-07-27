@@ -209,6 +209,12 @@ type ManualGoalScorer = {
   teamSide: "home" | "away";
 };
 
+type ScoreboardTeamLabelSource = {
+  name: string;
+  shortName: string | null;
+  slug?: string | null;
+};
+
 function normalizeScorerTeamLabel(value: string | null | undefined): string {
   return (value ?? "")
     .toLowerCase()
@@ -218,18 +224,69 @@ function normalizeScorerTeamLabel(value: string | null | undefined): string {
     .trim();
 }
 
+function compactScorerTeamLabel(value: string | null | undefined): string {
+  return normalizeScorerTeamLabel(value).replace(/\s+/g, "");
+}
+
+function genericTeamLabel(value: string | null | undefined): string {
+  return normalizeScorerTeamLabel(value)
+    .split(" ")
+    .filter((part) => !["fc", "fa", "football", "academy", "club", "sc"].includes(part))
+    .join(" ")
+    .trim();
+}
+
+function scorerTeamLabelVariants(team: ScoreboardTeamLabelSource, side?: "home" | "away") {
+  const raw = [
+    team.name,
+    team.shortName,
+    team.slug?.replace(/-/g, " "),
+    side,
+    side ? `${side} team` : null,
+  ].filter(Boolean) as string[];
+  const variants = new Set<string>();
+  for (const label of raw) {
+    const normalized = normalizeScorerTeamLabel(label);
+    const compact = compactScorerTeamLabel(label);
+    const generic = genericTeamLabel(label);
+    if (normalized) variants.add(normalized);
+    if (compact) variants.add(compact);
+    if (generic) variants.add(generic);
+    if (generic) variants.add(generic.replace(/\s+/g, ""));
+  }
+  return [...variants];
+}
+
 function scorerTeamLabels(match: {
-  homeTeam: { name: string; shortName: string | null };
-  awayTeam: { name: string; shortName: string | null };
+  homeTeam: ScoreboardTeamLabelSource;
+  awayTeam: ScoreboardTeamLabelSource;
 }) {
   return {
-    home: [match.homeTeam.name, match.homeTeam.shortName, "home", "home team"]
-      .filter(Boolean)
-      .map((label) => normalizeScorerTeamLabel(label)),
-    away: [match.awayTeam.name, match.awayTeam.shortName, "away", "away team"]
-      .filter(Boolean)
-      .map((label) => normalizeScorerTeamLabel(label)),
+    home: scorerTeamLabelVariants(match.homeTeam, "home"),
+    away: scorerTeamLabelVariants(match.awayTeam, "away"),
   };
+}
+
+function scoreTeamLabelMatch(input: string, candidates: string[]) {
+  const normalized = normalizeScorerTeamLabel(input);
+  const compact = compactScorerTeamLabel(input);
+  const generic = genericTeamLabel(input);
+  const genericCompact = generic.replace(/\s+/g, "");
+  let score = 0;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (candidate === normalized) score = Math.max(score, 100);
+    if (candidate === compact) score = Math.max(score, 95);
+    if (generic && candidate === generic) score = Math.max(score, 90);
+    if (genericCompact && candidate === genericCompact) score = Math.max(score, 85);
+    if (normalized.length >= 5 && candidate.includes(normalized)) score = Math.max(score, 75);
+    if (compact.length >= 5 && candidate.includes(compact)) score = Math.max(score, 72);
+    if (generic.length >= 5 && candidate.includes(generic)) score = Math.max(score, 70);
+    if (genericCompact.length >= 5 && candidate.includes(genericCompact)) {
+      score = Math.max(score, 68);
+    }
+  }
+  return score;
 }
 
 function parseManualScorerMinute(raw: string): number | null {
@@ -1647,9 +1704,15 @@ export class ScoreboardService {
 
     const labels = scorerTeamLabels(match);
     const resolveTeamId = (teamName: string) => {
-      const normalized = normalizeScorerTeamLabel(teamName);
-      if (labels.home.includes(normalized)) return match.homeTeamId;
-      if (labels.away.includes(normalized)) return match.awayTeamId;
+      const homeScore = scoreTeamLabelMatch(teamName, labels.home);
+      const awayScore = scoreTeamLabelMatch(teamName, labels.away);
+      if (homeScore >= 68 && homeScore > awayScore) return match.homeTeamId;
+      if (awayScore >= 68 && awayScore > homeScore) return match.awayTeamId;
+      if (homeScore === awayScore && homeScore >= 68) {
+        throw new BadRequestException(
+          `Team "${teamName}" matches both fixture teams. Use ${match.homeTeam.name} or ${match.awayTeam.name}.`
+        );
+      }
       throw new BadRequestException(
         `Team "${teamName}" does not match ${match.homeTeam.name} or ${match.awayTeam.name}`
       );
@@ -1735,6 +1798,15 @@ export class ScoreboardService {
       matchId,
       eventsCreated: createdEvents.length,
       skippedDuplicates,
+      events: await this.prisma.sbMatchEvent.findMany({
+        where: { id: { in: createdEvents.map((event) => event.id) } },
+        orderBy: { minute: "asc" },
+        include: {
+          team: { select: { id: true, name: true } },
+          player: { select: { id: true, slug: true, displayName: true } },
+          assistPlayer: { select: { id: true, slug: true, displayName: true } },
+        },
+      }),
     };
   }
 

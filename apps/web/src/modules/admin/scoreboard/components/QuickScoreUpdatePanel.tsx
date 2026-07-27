@@ -12,7 +12,9 @@ type Props = {
     status: string;
     meta?: SbMatchListItem["meta"];
   }) => void;
-  onEventsImported?: () => void;
+  onEventsImported?: (
+    result: Awaited<ReturnType<typeof adminScoreboardApi.ingestShortEventsCsv>>
+  ) => void;
 };
 
 function isKnockoutStage(stageKey: string | null | undefined) {
@@ -163,7 +165,7 @@ export function QuickScoreUpdatePanel({ match, onSaved, onEventsImported }: Prop
         }${skipped}`
       );
       setShortCsvFile(null);
-      onEventsImported?.();
+      onEventsImported?.(result);
     } catch (e) {
       toast.error(formatAdminScoreboardError(e));
     } finally {
