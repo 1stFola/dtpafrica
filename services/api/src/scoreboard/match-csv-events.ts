@@ -56,6 +56,8 @@ export const CSV_EVENT_TYPES = [
   "score_update",
   "second_half_kickoff",
   "shot_off_target",
+  "shootout_goal",
+  "shootout_miss",
   "substitution",
   "sustained_pressure",
   "tactical_substitution",
@@ -285,7 +287,12 @@ export function isNeutralCsvEventType(eventType: string): boolean {
 }
 
 export function isPenaltyShootoutEventType(eventType: string): boolean {
-  return eventType === "penalty_shootout" || eventType.startsWith("penalty_shootout_");
+  return (
+    eventType === "penalty_shootout" ||
+    eventType === "shootout_goal" ||
+    eventType === "shootout_miss" ||
+    eventType.startsWith("penalty_shootout_")
+  );
 }
 
 export function csvTypeRequiresTeam(csvType: CsvEventType): boolean {

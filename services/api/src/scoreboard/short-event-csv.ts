@@ -1,9 +1,16 @@
 import { BadRequestException } from "@nestjs/common";
+import {
+  CSV_EVENT_TYPES,
+  csvTypeRequiresPlayer,
+  csvTypeRequiresTeam,
+  mapCsvEventToStorage,
+  type CsvEventType,
+} from "./match-csv-events";
 
 export type ParsedShortMatchEvent = {
-  type: "goal" | "yellow_card" | "red_card" | "substitution";
+  type: string;
   minute: number;
-  teamName: string;
+  teamName?: string;
   playerLabel?: string;
   assistLabel?: string;
   detail?: string;
@@ -77,25 +84,41 @@ function parseMinute(value: string, rowNum: number): number {
   return minute;
 }
 
-function mapEventType(value: string, rowNum: number): ParsedShortMatchEvent["type"] {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  switch (normalized) {
-    case "goal":
-      return "goal";
-    case "penalty_goal":
-    case "goal_penalty":
-      return "goal";
-    case "yellow_card":
-      return "yellow_card";
-    case "red_card":
-      return "red_card";
-    case "substitution":
-      return "substitution";
-    default:
-      throw new BadRequestException(
-        `Row ${rowNum}: unsupported event_type "${value}" for short timeline upload`
-      );
-  }
+const EVENT_TYPE_ALIASES: Record<string, CsvEventType> = {
+  freekick: "freekick",
+  free_kick: "freekick",
+  kickoff: "kick_off",
+  kick_off: "kick_off",
+  penalty: "goal_penalty",
+  penalty_goal: "goal_penalty",
+  penalty_kick_goal: "goal_penalty",
+  goal_penalty: "goal_penalty",
+  own_goal: "own_goal",
+  og: "own_goal",
+  yellow: "yellow_card",
+  yellow_card: "yellow_card",
+  red: "red_card",
+  red_card: "red_card",
+  shootout_goal: "shootout_goal",
+  shootout_scored: "shootout_goal",
+  shootout_miss: "shootout_miss",
+  shootout_missed: "shootout_miss",
+};
+
+function normalizeEventType(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function mapEventType(value: string, rowNum: number): CsvEventType {
+  const normalized = normalizeEventType(value);
+  const direct = CSV_EVENT_TYPES.find((eventType) => eventType === normalized);
+  const alias = EVENT_TYPE_ALIASES[normalized];
+  if (direct) return direct;
+  if (alias) return alias;
+
+  throw new BadRequestException(
+    `Row ${rowNum}: unsupported event_type "${value}" for short timeline upload`
+  );
 }
 
 export function parseShortMatchEventsCsv(csv: string): ParsedShortMatchEvent[] {
@@ -113,9 +136,10 @@ export function parseShortMatchEventsCsv(csv: string): ParsedShortMatchEvent[] {
   const playerOutIdx = headerIndex(headers, "player_out", "player_off");
   const halfIdx = headerIndex(headers, "half");
   const matchIdx = headerIndex(headers, "match");
+  const detailIdx = headerIndex(headers, "detail", "description", "comment");
 
-  if (minuteIdx < 0 || eventTypeIdx < 0 || teamIdx < 0) {
-    throw new BadRequestException("CSV header must include minute, event_type, and team columns");
+  if (minuteIdx < 0 || eventTypeIdx < 0) {
+    throw new BadRequestException("CSV header must include minute and event_type columns");
   }
 
   const events: ParsedShortMatchEvent[] = [];
@@ -123,44 +147,59 @@ export function parseShortMatchEventsCsv(csv: string): ParsedShortMatchEvent[] {
     const row = table[r];
     const rowNum = r + 1;
     const typeLabel = required(row, eventTypeIdx, "event_type", rowNum);
-    const type = mapEventType(typeLabel, rowNum);
+    const csvType = mapEventType(typeLabel, rowNum);
     const minute = parseMinute(required(row, minuteIdx, "minute", rowNum), rowNum);
-    const teamName = required(row, teamIdx, "team", rowNum);
+    const teamName = optional(row, teamIdx);
     const player = optional(row, playerIdx);
     const playerIn = optional(row, playerInIdx);
     const playerOut = optional(row, playerOutIdx);
     const half = optional(row, halfIdx);
     const matchLabel = optional(row, matchIdx);
-    const isPenaltyGoal = /penalty/i.test(typeLabel);
+    const detailValue = optional(row, detailIdx);
 
-    if (type === "substitution") {
+    if (csvTypeRequiresTeam(csvType) && !teamName) {
+      throw new BadRequestException(`Row ${rowNum}: team is required for ${typeLabel}`);
+    }
+
+    if (csvType === "substitution" || csvType === "injury_substitution" || csvType === "tactical_substitution") {
       if (!playerIn || !playerOut) {
         throw new BadRequestException(
           `Row ${rowNum}: substitution rows require player_in and player_out`
         );
       }
-      events.push({
-        type,
-        minute,
-        teamName,
+      const storage = mapCsvEventToStorage({
+        csvType,
         playerLabel: playerOut,
         assistLabel: playerIn,
-        detail: `${playerIn} for ${playerOut}`,
-        metadata: { source: "quick-score-csv", half, matchLabel },
+        detail: detailValue || `${playerIn} for ${playerOut}`,
+      });
+      events.push({
+        type: storage.type,
+        minute,
+        teamName: teamName || undefined,
+        playerLabel: playerOut,
+        assistLabel: playerIn,
+        detail: storage.detail,
+        metadata: { ...(storage.metadata ?? {}), source: "quick-score-csv", half, matchLabel },
       });
       continue;
     }
 
-    if (!player) {
+    if (csvTypeRequiresPlayer(csvType) && !player) {
       throw new BadRequestException(`Row ${rowNum}: player is required for ${typeLabel}`);
     }
+    const storage = mapCsvEventToStorage({
+      csvType,
+      playerLabel: player || undefined,
+      detail: detailValue || undefined,
+    });
     events.push({
-      type,
+      type: storage.type,
       minute,
-      teamName,
-      playerLabel: player,
-      detail: isPenaltyGoal ? "penalty" : undefined,
-      metadata: { source: "quick-score-csv", half, matchLabel, isPenaltyGoal },
+      teamName: teamName || undefined,
+      playerLabel: player || undefined,
+      detail: storage.detail,
+      metadata: { ...(storage.metadata ?? {}), source: "quick-score-csv", half, matchLabel },
     });
   }
 

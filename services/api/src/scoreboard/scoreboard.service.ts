@@ -1719,7 +1719,7 @@ export class ScoreboardService {
     };
 
     for (const ev of parsed) {
-      const teamId = resolveTeamId(ev.teamName);
+      const teamId = ev.teamName ? resolveTeamId(ev.teamName) : null;
       await this.resolveOrCreateTimelinePlayer({
         label: ev.playerLabel,
         teamId,
@@ -1743,7 +1743,7 @@ export class ScoreboardService {
     let skippedDuplicates = 0;
 
     for (const ev of parsed) {
-      const teamId = resolveTeamId(ev.teamName);
+      const teamId = ev.teamName ? resolveTeamId(ev.teamName) : null;
 
       const resolvedPlayerId = playerResolver.resolvePrimary(ev.playerLabel, teamId);
       const resolvedAssistPlayerId = playerResolver.resolveAssist(ev.assistLabel, teamId);

@@ -60,6 +60,8 @@ const NEUTRAL_EVENT_TYPES = new Set([
   "goal_scorers_update",
   "full_time",
   "penalty_shootout",
+  "shootout_goal",
+  "shootout_miss",
 ]);
 
 /** assist_name column label by event type (CSV secondary player). */
@@ -105,6 +107,8 @@ const EVENT_ICON_FALLBACKS: Record<string, string> = {
   possession_lost: "-",
   recovery_tackle: "T",
   restart_play: ">",
+  shootout_goal: "P",
+  shootout_miss: "X",
   sustained_pressure: "!!",
   tactical_substitution: "T/S",
   volley_missed: "V",
