@@ -153,6 +153,101 @@ function roleOverallWeights(position?: string): Record<CalibrationCategoryKey, n
   }
 }
 
+type CalibrationHeadlineWeights = {
+  weights: Record<CalibrationCategoryKey, number>;
+  modifier: number;
+};
+
+function roleAttackWeights(position?: string): CalibrationHeadlineWeights {
+  switch (benchmarkPosition(position)) {
+    case "ST":
+      return {
+        weights: { speed: 0.24, distribution: 0.12, ball_skills: 0.44, physicality: 0.16, defensive_iq: 0.04 },
+        modifier: 6,
+      };
+    case "WINGER":
+      return {
+        weights: { speed: 0.3, distribution: 0.18, ball_skills: 0.38, physicality: 0.1, defensive_iq: 0.04 },
+        modifier: 5,
+      };
+    case "AM":
+      return {
+        weights: { speed: 0.16, distribution: 0.32, ball_skills: 0.34, physicality: 0.08, defensive_iq: 0.1 },
+        modifier: 4,
+      };
+    case "CM":
+      return {
+        weights: { speed: 0.1, distribution: 0.34, ball_skills: 0.22, physicality: 0.14, defensive_iq: 0.2 },
+        modifier: 0,
+      };
+    case "CDM":
+      return {
+        weights: { speed: 0.06, distribution: 0.32, ball_skills: 0.16, physicality: 0.14, defensive_iq: 0.32 },
+        modifier: -7,
+      };
+    case "FB":
+      return {
+        weights: { speed: 0.28, distribution: 0.26, ball_skills: 0.18, physicality: 0.14, defensive_iq: 0.14 },
+        modifier: -2,
+      };
+    case "CB":
+      return {
+        weights: { speed: 0.06, distribution: 0.3, ball_skills: 0.12, physicality: 0.14, defensive_iq: 0.38 },
+        modifier: -14,
+      };
+    default:
+      return {
+        weights: { speed: 0.2, distribution: 0.25, ball_skills: 0.25, physicality: 0.15, defensive_iq: 0.15 },
+        modifier: 0,
+      };
+  }
+}
+
+function roleDefenseWeights(position?: string): CalibrationHeadlineWeights {
+  switch (benchmarkPosition(position)) {
+    case "ST":
+      return {
+        weights: { speed: 0.16, distribution: 0.04, ball_skills: 0.04, physicality: 0.2, defensive_iq: 0.56 },
+        modifier: -14,
+      };
+    case "WINGER":
+      return {
+        weights: { speed: 0.18, distribution: 0.08, ball_skills: 0.04, physicality: 0.2, defensive_iq: 0.5 },
+        modifier: -10,
+      };
+    case "AM":
+      return {
+        weights: { speed: 0.1, distribution: 0.12, ball_skills: 0.06, physicality: 0.2, defensive_iq: 0.52 },
+        modifier: -8,
+      };
+    case "CM":
+      return {
+        weights: { speed: 0.06, distribution: 0.16, ball_skills: 0.04, physicality: 0.22, defensive_iq: 0.52 },
+        modifier: 0,
+      };
+    case "CDM":
+      return {
+        weights: { speed: 0.06, distribution: 0.12, ball_skills: 0.02, physicality: 0.26, defensive_iq: 0.54 },
+        modifier: 6,
+      };
+    case "FB":
+      return {
+        weights: { speed: 0.18, distribution: 0.1, ball_skills: 0.02, physicality: 0.26, defensive_iq: 0.44 },
+        modifier: 4,
+      };
+    case "CB":
+      return {
+        weights: { speed: 0.08, distribution: 0.08, ball_skills: 0.02, physicality: 0.28, defensive_iq: 0.54 },
+        modifier: 8,
+      };
+    default:
+      return {
+        weights: { speed: 0.1, distribution: 0.1, ball_skills: 0.05, physicality: 0.25, defensive_iq: 0.5 },
+        modifier: 0,
+      };
+  }
+}
+
 function weightedCategorySummary(
   categories: CalibrationCategoryScore[],
   weights: Record<CalibrationCategoryKey, number>,
@@ -168,6 +263,13 @@ function weightedCategorySummary(
       0,
     ) / totalWeight,
   );
+}
+
+function roleWeightedHeadlineScore(
+  categories: CalibrationCategoryScore[],
+  headline: CalibrationHeadlineWeights,
+) {
+  return clampScore(weightedCategorySummary(categories, headline.weights) + headline.modifier);
 }
 
 export function calibrationCategoryScoresFromAttributes(
@@ -207,20 +309,9 @@ export function summarizeCalibratedRatings(
   position?: string,
 ): CalibrationRatingSummary {
   const categories = calibrationCategoryScoresFromAttributes(attributes);
-  const byKey = Object.fromEntries(categories.map((item) => [item.key, item.score])) as Record<
-    CalibrationCategoryScore["key"],
-    number
-  >;
 
-  const offensiveScore = clampScore(
-    byKey.ball_skills * 0.35 +
-      byKey.speed * 0.25 +
-      byKey.distribution * 0.25 +
-      byKey.physicality * 0.15,
-  );
-  const defensiveScore = clampScore(
-    byKey.defensive_iq * 0.55 + byKey.physicality * 0.25 + byKey.distribution * 0.2,
-  );
+  const offensiveScore = roleWeightedHeadlineScore(categories, roleAttackWeights(position));
+  const defensiveScore = roleWeightedHeadlineScore(categories, roleDefenseWeights(position));
   const overallRating = weightedCategorySummary(categories, roleOverallWeights(position));
 
   return {
