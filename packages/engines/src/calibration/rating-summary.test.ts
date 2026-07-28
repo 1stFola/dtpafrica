@@ -136,3 +136,35 @@ test("overall rating is role-weighted while pentagon evidence remains unchanged"
   assert.equal(summarizeCalibratedRatings(attributes, "AM").overall_rating, 64);
   assert.equal(summarizeCalibratedRatings(attributes, "RW").overall_rating, 57);
 });
+
+test("attacking roles do not inherit strong defense from athletic attacking traits", () => {
+  const attributes = attributesFromCategories({
+    speed: 82,
+    distribution: 76,
+    ballSkills: 84,
+    physicality: 74,
+    defensiveIq: 52,
+  });
+
+  const summary = summarizeCalibratedRatings(attributes, "LW");
+
+  assert.ok(summary.offensive_score >= 80);
+  assert.ok(summary.defensive_score <= 58);
+  assert.ok(summary.offensive_score - summary.defensive_score >= 20);
+});
+
+test("defensive roles do not inherit strong attack from physical defensive traits", () => {
+  const attributes = attributesFromCategories({
+    speed: 76,
+    distribution: 58,
+    ballSkills: 48,
+    physicality: 84,
+    defensiveIq: 82,
+  });
+
+  const summary = summarizeCalibratedRatings(attributes, "CB");
+
+  assert.ok(summary.defensive_score >= 82);
+  assert.ok(summary.offensive_score <= 58);
+  assert.ok(summary.defensive_score - summary.offensive_score >= 24);
+});
