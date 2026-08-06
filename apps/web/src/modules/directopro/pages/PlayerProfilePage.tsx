@@ -167,13 +167,6 @@ function isGkProfile(player: Pick<PublicPlayerProfile, "role" | "positionPrimary
   return isGoalkeeper(player.role) || isGoalkeeper(player.positionPrimary);
 }
 
-function ratingBadgeTone(rating?: number | null): string {
-  if (rating == null) return "player-profile-rating-badge--muted";
-  if (rating >= 85) return "player-profile-rating-badge--elite";
-  if (rating >= 75) return "player-profile-rating-badge--ready";
-  return "player-profile-rating-badge--standard";
-}
-
 type BioFact = { label: string; value: string; highlight?: boolean };
 
 function isDuplicateScoutingCopy(
@@ -507,8 +500,8 @@ export function PlayerProfilePage() {
   };
 
   return (
-    <div className="home-page profile-page player-profile">
-      <Link to="/featured-players" className="back-link">
+    <div className="home-page profile-page player-profile dtp-page">
+      <Link to="/featured-players" className="dtp-profile-back">
         ← Featured players
       </Link>
 
@@ -676,73 +669,58 @@ function PlayerCardBanner({
 }) {
   return (
     <header className="player-profile-banner" aria-label={`${player.displayName} profile card`}>
-      <div className="player-profile-banner__top">
-        <div className="player-profile-banner__hero">
-          <div className="player-profile-banner__portrait">
-            {photoUrl ? (
-              <img
-                src={photoUrl}
-                alt=""
-                className="player-profile-banner__photo"
-              />
-            ) : (
-              <span className="player-profile-banner__fallback" aria-hidden="true">
-                {initialsFromName(player.displayName)}
-              </span>
-            )}
-          </div>
-
-          <div className="player-profile-banner__identity">
-            <span className="player-profile-eyebrow">DirectToPro verified</span>
-            <h1 className="player-profile-banner__name">{player.displayName}</h1>
-            <p className="player-profile-banner__role">
-              {positionLabel}
-              {player.positionSecondary ? ` · ${player.positionSecondary}` : ""}
-              {player.competition ? ` · ${player.competition}` : ""}
-            </p>
-            <p className="player-profile-banner__tier">{tierLabel} tier</p>
-          </div>
+      {/* Figma "DTP" -> Featured Players Profile 239:2425 */}
+      <div className="dtp-profile-card">
+        <div className="dtp-profile-card__portrait">
+          {photoUrl ? (
+            <img src={photoUrl} alt="" />
+          ) : (
+            <span
+              aria-hidden="true"
+              style={{
+                display: "grid",
+                placeItems: "center",
+                width: "100%",
+                height: "100%",
+                fontFamily: "var(--dtp-font-display)",
+                fontSize: "3rem",
+                color: "var(--dtp-blue)",
+              }}
+            >
+              {initialsFromName(player.displayName)}
+            </span>
+          )}
         </div>
 
-        <aside
-          className="player-profile-banner__toolbar"
-          aria-label="Ratings and profile actions"
-        >
-          <div className="player-profile-banner__ratings" aria-label="Core ratings">
-            <div
-              className={`player-profile-rating-badge player-profile-rating-badge--overall ${ratingBadgeTone(
-                player.overallRating
-              )}`}
-            >
-              <span className="player-profile-rating-badge__value">
-                {player.overallRating ?? "—"}
-              </span>
-              <span className="player-profile-rating-badge__label">Overall</span>
+        <div>
+          <span className="dtp-profile-card__verified">DTP Verified</span>
+          <h1 className="dtp-profile-card__name">{player.displayName}</h1>
+          <p className="dtp-profile-card__meta">
+            {positionLabel}
+            {player.positionSecondary ? ` · ${player.positionSecondary}` : ""}
+            {` | ${tierLabel} Tier`}
+            {player.competition ? ` · ${player.competition}` : ""}
+          </p>
+        </div>
+
+        <div>
+          <dl className="dtp-profile-card__ratings" aria-label="Core ratings">
+            <div className="dtp-profile-rating dtp-profile-rating--overall">
+              <dd>{player.overallRating ?? "—"}</dd>
+              <dt>Overall</dt>
             </div>
-            <div
-              className={`player-profile-rating-badge player-profile-rating-badge--attack ${ratingBadgeTone(
-                player.offensiveRating
-              )}`}
-            >
-              <span className="player-profile-rating-badge__value">
-                {player.offensiveRating ?? "—"}
-              </span>
-              <span className="player-profile-rating-badge__label">Attack</span>
+            <div className="dtp-profile-rating dtp-profile-rating--attack">
+              <dd>{player.offensiveRating ?? "—"}</dd>
+              <dt>Attack</dt>
             </div>
-            <div
-              className={`player-profile-rating-badge player-profile-rating-badge--defense ${ratingBadgeTone(
-                player.defensiveRating
-              )}`}
-            >
-              <span className="player-profile-rating-badge__value">
-                {player.defensiveRating ?? "—"}
-              </span>
-              <span className="player-profile-rating-badge__label">Defense</span>
+            <div className="dtp-profile-rating dtp-profile-rating--defense">
+              <dd>{player.defensiveRating ?? "—"}</dd>
+              <dt>Defense</dt>
             </div>
-          </div>
-          <div className="player-profile-banner__toolbar-actions">
+          </dl>
+          <div style={{ marginTop: "var(--dtp-space-4)", textAlign: "center" }}>
             <Button type="button" variant="secondary" onClick={onShare}>
-              Share profile
+              Share Profile
             </Button>
             {shareStatus && (
               <p className="profile-share-status player-profile-banner__share-status">
@@ -750,7 +728,7 @@ function PlayerCardBanner({
               </p>
             )}
           </div>
-        </aside>
+        </div>
       </div>
 
       <div className="player-profile-banner__insights">

@@ -1,31 +1,55 @@
+/* Figma "Medium Action Button" (148x45, radius 83px, fill #091df4).
+   Literal fallbacks keep the package renderable outside the web app,
+   where the --dtp-* token layer is not loaded. */
+
 .dtp-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.65rem 1.25rem;
-  border-radius: 10px;
+  gap: var(--dtp-space-3, 10px);
+  min-height: 45px;
+  padding: 0 var(--dtp-space-5, 24px);
+  border: 1px solid transparent;
+  border-radius: var(--dtp-radius-btn, 5px);
+  font-family: var(--dtp-font-ui, "Sofia Sans", Inter, system-ui, sans-serif);
+  font-size: var(--dtp-fs-xs, 0.75rem);
   font-weight: 600;
-  font-size: 0.9rem;
-  border: none;
+  line-height: 1;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  font-family: inherit;
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.dtp-btn:active {
+  transform: translateY(0);
+}
+
+.dtp-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .dtp-btn--primary {
-  background: #2563eb;
-  color: #fff;
+  background: var(--dtp-blue, #091df4);
+  color: var(--dtp-white, #fff);
 }
 
-.dtp-btn--primary:hover {
-  background: #1d4ed8;
+.dtp-btn--primary:hover:not(:disabled) {
+  background: #0716c4;
+  transform: translateY(-1px);
+  box-shadow: var(--dtp-shadow-blue, 0 5px 14px rgba(54, 159, 255, 0.4));
 }
 
 .dtp-btn--secondary {
   background: transparent;
-  color: #f1f5f9;
-  border: 1px solid #475569;
+  border-color: currentColor;
+  color: var(--dtp-ink, #000);
 }
 
-.dtp-btn--secondary:hover {
-  border-color: #2563eb;
+.dtp-btn--secondary:hover:not(:disabled) {
+  background: var(--dtp-ink, #000);
+  color: var(--dtp-white, #fff);
 }

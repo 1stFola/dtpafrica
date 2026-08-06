@@ -4,8 +4,10 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { useAdSlot } from "../../../context/AdConfigContext";
 import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
-import { HomeFeaturedTalentCard } from "../components/home/HomeFeaturedTalentCard";
+import { MvceCard } from "@dtp/ui";
 import { resolvePositionFullLabel } from "../../../utils/positionLabels";
+import { mvceCardHref, toMvceCardData } from "../utils/mvceCardData";
+import { HIGH_FETCH_PRIORITY } from "../../../utils/imgPriority";
 
 type RatingFilter = "all" | "elite" | "ready" | "developing" | "emerging";
 type SortMode = "rating" | "name" | "position";
@@ -123,149 +125,205 @@ export function FeaturedPlayersPage() {
   };
 
   return (
-    <div className="home-page evidence-page evidence-page--players">
-      <header className="evidence-hero featured-players-hero">
-        <span className="about-kicker">
-          {contentValue(content, "featured_players.hero.kicker", "Verified talent intelligence")}
-        </span>
-        <h1>
-          {contentValue(
-            content,
-            "featured_players.hero.title",
-            "Featured players with proof behind the promise."
-          )}
-        </h1>
-        <p>
-          {contentValue(
-            content,
-            "featured_players.hero.body",
-            "Explore player profiles shaped by ratings, tactical summaries, performance history, and scouting context from the DTP Africa intelligence ecosystem."
-          )}
-        </p>
-        <div className="evidence-hero__metrics" aria-label="Featured player signals">
-          <article>
-            <strong>{loading ? "--" : players.length}</strong>
-            <span>Published profiles</span>
-          </article>
-          <article>
-            <strong>{loading ? "--" : filteredPlayers.length}</strong>
-            <span>Matching filters</span>
-          </article>
-          <article>
-            <strong>DTP</strong>
-            <span>Verified evidence</span>
-          </article>
-        </div>
-      </header>
+    <div className="dtp-page">
+      {/* Hero — Figma 234:486 */}
+      <section className="dtp-hero dtp-hero--left">
+        <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-featured-players.webp" alt="" aria-hidden="true" />
+        <div className="dtp-hero__scrim" aria-hidden="true" />
+        <div className="dtp-shell dtp-hero__inner">
+          <p className="dtp-eyebrow" style={{ color: "var(--dtp-paper)" }}>
+            {contentValue(content, "featured_players.hero.kicker", "Verified Talent Intelligence")}
+          </p>
+          <h1 className="dtp-display dtp-display--hero dtp-hero__title">
+            {contentValue(
+              content,
+              "featured_players.hero.title",
+              "Featured players. Proven potential."
+            )}
+          </h1>
 
-      <section className="featured-players-filterbar" aria-label="Featured player filters">
-        <label className="featured-players-filterbar__search">
-          <span>Search</span>
-          <input
-            type="search"
-            value={query}
-            placeholder="Name, role, nationality"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Position</span>
-          <select value={position} onChange={(event) => setPosition(event.target.value)}>
-            <option value="all">All positions</option>
-            {positionOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Age group</span>
-          <select value={ageGroup} onChange={(event) => setAgeGroup(event.target.value)}>
-            <option value="all">All age groups</option>
-            {ageOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Nationality</span>
-          <select value={nationality} onChange={(event) => setNationality(event.target.value)}>
-            <option value="all">All countries</option>
-            {nationalityOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Rating</span>
-          <select
-            value={ratingBand}
-            onChange={(event) => setRatingBand(event.target.value as RatingFilter)}
-          >
-            <option value="all">All ratings</option>
-            <option value="elite">Elite 85+</option>
-            <option value="ready">Pro-ready 75-84</option>
-            <option value="developing">Developing 65-74</option>
-            <option value="emerging">Emerging under 65</option>
-          </select>
-        </label>
-        <label>
-          <span>Sort</span>
-          <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
-            <option value="rating">Highest rating</option>
-            <option value="name">Name A-Z</option>
-            <option value="position">Position</option>
-          </select>
-        </label>
-        <button type="button" className="featured-players-filterbar__clear" onClick={clearFilters}>
-          Reset
-        </button>
+          <dl className="dtp-hero__stats" aria-label="Featured player signals">
+            <div className="dtp-hero__stat">
+              <dd>{loading ? "--" : players.length}</dd>
+              <dt>Published profiles</dt>
+            </div>
+            <div className="dtp-hero__stat">
+              <dd>DTP</dd>
+              <dt>Verified evidence</dt>
+            </div>
+            <div className="dtp-hero__stat">
+              <dd>{loading ? "--" : filteredPlayers.length}</dd>
+              <dt>Matching filters</dt>
+            </div>
+          </dl>
+
+          <p className="dtp-lead dtp-hero__lead">
+            {contentValue(
+              content,
+              "featured_players.hero.body",
+              "Explore player profiles from the DTP Africa intelligence ecosystem."
+            )}
+          </p>
+        </div>
       </section>
 
-      {error && (
-        <p className="dtp-error-banner" role="alert">
-          {error}
-        </p>
-      )}
-      {loading && (
-        <div className="home-features-talent-grid" aria-busy="true" aria-hidden="true">
-          {Array.from({ length: 8 }).map((_, idx) => (
-            <div key={idx} className="dtp-skeleton home-talent-card-skeleton" />
-          ))}
+      {/* Filters + card grid */}
+      <section className="dtp-band dtp-band--ink">
+        <div className="dtp-shell">
+          <div className="dtp-filters" role="search" aria-label="Featured player filters">
+            <label className="sr-only" htmlFor="fp-search">
+              Search players
+            </label>
+            <input
+              id="fp-search"
+              className="dtp-filters__search"
+              type="search"
+              value={query}
+              placeholder="Name, Nationality, Sex"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+
+            <label className="sr-only" htmlFor="fp-position">
+              Position
+            </label>
+            <select
+              id="fp-position"
+              className="dtp-filters__select"
+              value={position}
+              onChange={(event) => setPosition(event.target.value)}
+            >
+              <option value="all">All Positions</option>
+              {positionOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <label className="sr-only" htmlFor="fp-age">
+              Age group
+            </label>
+            <select
+              id="fp-age"
+              className="dtp-filters__select"
+              value={ageGroup}
+              onChange={(event) => setAgeGroup(event.target.value)}
+            >
+              <option value="all">All Age Groups</option>
+              {ageOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+
+            <label className="sr-only" htmlFor="fp-country">
+              Nationality
+            </label>
+            <select
+              id="fp-country"
+              className="dtp-filters__select"
+              value={nationality}
+              onChange={(event) => setNationality(event.target.value)}
+            >
+              <option value="all">All Countries</option>
+              {nationalityOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+
+            <label className="sr-only" htmlFor="fp-rating">
+              Rating band
+            </label>
+            <select
+              id="fp-rating"
+              className="dtp-filters__select"
+              value={ratingBand}
+              onChange={(event) => setRatingBand(event.target.value as RatingFilter)}
+            >
+              <option value="all">All Ratings</option>
+              <option value="elite">Elite 85+</option>
+              <option value="ready">Pro-ready 75-84</option>
+              <option value="developing">Developing 65-74</option>
+              <option value="emerging">Emerging under 65</option>
+            </select>
+
+            <label className="sr-only" htmlFor="fp-sort">
+              Sort order
+            </label>
+            <select
+              id="fp-sort"
+              className="dtp-filters__select"
+              value={sortMode}
+              onChange={(event) => setSortMode(event.target.value as SortMode)}
+            >
+              <option value="rating">Highest Ratings</option>
+              <option value="name">Name A-Z</option>
+              <option value="position">Position</option>
+            </select>
+
+            <button type="button" className="dtp-filters__reset" onClick={clearFilters}>
+              Reset
+            </button>
+          </div>
+
+          {error && (
+            <p className="dtp-form__error" role="alert" style={{ marginTop: "var(--dtp-space-5)" }}>
+              {error}
+            </p>
+          )}
+
+          <div style={{ marginTop: "clamp(2rem, 4vw, 48px)" }}>
+            {loading && (
+              <div className="dtp-card-grid" aria-busy="true" aria-hidden="true">
+                {Array.from({ length: 8 }).map((_, idx) => (
+                  <div key={idx} className="dtp-skeleton home-talent-card-skeleton" />
+                ))}
+              </div>
+            )}
+
+            {!loading && players.length === 0 && !error && (
+              <div style={{ textAlign: "center", color: "var(--dtp-white)" }}>
+                <p className="dtp-lead">No featured players yet</p>
+                <p className="dtp-row__meta">
+                  Verified player profiles will appear here once published.
+                </p>
+              </div>
+            )}
+
+            {!loading && players.length > 0 && filteredPlayers.length === 0 && !error && (
+              <div style={{ textAlign: "center", color: "var(--dtp-white)" }}>
+                <p className="dtp-lead">No matching players</p>
+                <p className="dtp-row__meta">Adjust the filters to broaden the talent view.</p>
+              </div>
+            )}
+
+            {!loading && filteredPlayers.length > 0 && (
+              <div className="dtp-card-grid">
+                {filteredPlayers.flatMap((player, idx) => {
+                  const items = [
+                    <MvceCard
+                      key={player.id}
+                      player={toMvceCardData(player)}
+                      to={mvceCardHref(player)}
+                    />,
+                  ];
+                  if (inlineAd && (idx + 1) % adInterval === 0 && idx < filteredPlayers.length - 1) {
+                    items.push(
+                      <div key={`featured-inline-ad-${idx}`} className="player-grid-ad">
+                        <AdPlacement slotKey="featuredPlayersInline" />
+                      </div>
+                    );
+                  }
+                  return items;
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      )}
-      {!loading && players.length === 0 && !error && (
-        <div className="dtp-empty-state">
-          <p className="dtp-empty-state__title">No featured players yet</p>
-          <p>Verified player profiles will appear here once published.</p>
-        </div>
-      )}
-      {!loading && players.length > 0 && filteredPlayers.length === 0 && !error && (
-        <div className="dtp-empty-state">
-          <p className="dtp-empty-state__title">No matching players</p>
-          <p>Adjust the filters to broaden the talent view.</p>
-        </div>
-      )}
-      {!loading && filteredPlayers.length > 0 && (
-        <div className="home-features-talent-grid featured-players-grid">
-          {filteredPlayers.flatMap((player, idx) => {
-            const items = [<HomeFeaturedTalentCard key={player.id} player={player} />];
-            if (inlineAd && (idx + 1) % adInterval === 0 && idx < filteredPlayers.length - 1) {
-              items.push(
-                <div key={`featured-inline-ad-${idx}`} className="player-grid-ad">
-                  <AdPlacement slotKey="featuredPlayersInline" />
-                </div>
-              );
-            }
-            return items;
-          })}
-        </div>
-      )}
+      </section>
     </div>
   );
 }

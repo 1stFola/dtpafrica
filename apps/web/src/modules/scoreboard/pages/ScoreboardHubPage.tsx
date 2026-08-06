@@ -90,12 +90,10 @@ export function ScoreboardHubPage() {
 
   return (
     <div className="sb-landing">
+      {/* The eyebrow and the page <h1> now live in the Figma hero owned by
+          ScoreboardLayout, so this block starts at the supporting copy. */}
       <section className="sb-hero">
-        <span className="sb-hero__eyebrow">
-          <span className="sb-hero__pulse" aria-hidden="true" />
-          Nigeria Grassroots Football
-        </span>
-        <h1 className="sb-hero__title">The Ultimate Match Experience</h1>
+        <h2 className="sb-hero__title">The Ultimate Match Experience</h2>
         <p className="sb-hero__subtitle">
           Explore premium match stats, video highlights and historical player
           profiles from Nigeria Grassroots Football.
