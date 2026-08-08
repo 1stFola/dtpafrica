@@ -4,10 +4,9 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { useAdSlot } from "../../../context/AdConfigContext";
 import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
-import { MvceCard } from "@dtp/ui";
 import { resolvePositionFullLabel } from "../../../utils/positionLabels";
-import { mvceCardHref, toMvceCardData } from "../utils/mvceCardData";
 import { HIGH_FETCH_PRIORITY } from "../../../utils/imgPriority";
+import { FeaturedTalentCard, FeaturedTalentLegend } from "../components/featured/FeaturedTalentCard";
 
 type RatingFilter = "all" | "elite" | "ready" | "developing" | "emerging";
 type SortMode = "rating" | "name" | "position";
@@ -277,7 +276,7 @@ export function FeaturedPlayersPage() {
 
           <div style={{ marginTop: "clamp(2rem, 4vw, 48px)" }}>
             {loading && (
-              <div className="dtp-card-grid" aria-busy="true" aria-hidden="true">
+              <div className="featured-talent-grid featured-talent-grid--wide" aria-busy="true" aria-hidden="true">
                 {Array.from({ length: 8 }).map((_, idx) => (
                   <div key={idx} className="dtp-skeleton home-talent-card-skeleton" />
                 ))}
@@ -301,14 +300,12 @@ export function FeaturedPlayersPage() {
             )}
 
             {!loading && filteredPlayers.length > 0 && (
-              <div className="dtp-card-grid">
+              <>
+                <FeaturedTalentLegend />
+                <div className="featured-talent-grid featured-talent-grid--wide">
                 {filteredPlayers.flatMap((player, idx) => {
                   const items = [
-                    <MvceCard
-                      key={player.id}
-                      player={toMvceCardData(player)}
-                      to={mvceCardHref(player)}
-                    />,
+                    <FeaturedTalentCard key={player.id} player={player} />,
                   ];
                   if (inlineAd && (idx + 1) % adInterval === 0 && idx < filteredPlayers.length - 1) {
                     items.push(
@@ -319,7 +316,8 @@ export function FeaturedPlayersPage() {
                   }
                   return items;
                 })}
-              </div>
+                </div>
+              </>
             )}
           </div>
         </div>

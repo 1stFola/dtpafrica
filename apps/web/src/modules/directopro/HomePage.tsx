@@ -1,24 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { MvceCard } from "@dtp/ui";
 import { apiGet, fetchFeaturedPlayers, isAbortError, type FeaturedPlayer } from "../../api/client";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { HomePlayerHighlights } from "./components/home/HomePlayerHighlights";
 import { HomeIntelligenceTeasers } from "./components/home/HomeIntelligenceTeasers";
-import { HomeLiveMatchCenter } from "./components/home/HomeLiveMatchCenter";
-import { mvceCardHref, toMvceCardData } from "./utils/mvceCardData";
 import { HIGH_FETCH_PRIORITY } from "../../utils/imgPriority";
+import { videoEmbedUrl, youtubeThumbnail } from "../../utils/media-url";
+import { FeaturedTalentCard, FeaturedTalentLegend } from "./components/featured/FeaturedTalentCard";
 
 /* Figma "DTP" -> Homepage 3:189.
    Band order mirrors the frame: black hero -> marquee -> blue mission band ->
    lime FEATURED TALENT wedge (MVCE card grid) -> marquee -> red Intelligence
    Suite -> blue PLAYER HIGHLIGHTS. */
-
-type WinsWallLogo = {
-  name?: string;
-  imageUrl?: string;
-  href?: string;
-};
 
 const HOME_CONTENT_KEYS = [
   "home.eyebrow",
@@ -27,28 +20,12 @@ const HOME_CONTENT_KEYS = [
   "home.lead",
   "home.primaryCta",
   "home.secondaryCta",
-  "home.announcement.enabled",
-  "home.announcement.title",
-  "home.announcement.body",
-  "home.announcement.ctaLabel",
-  "home.announcement.ctaHref",
-  "home.event.enabled",
-  "home.event.title",
-  "home.event.date",
-  "home.event.venue",
-  "home.event.body",
-  "home.event.ctaLabel",
-  "home.event.ctaHref",
-  "home.featuredVideo.enabled",
-  "home.featuredVideo.title",
-  "home.featuredVideo.url",
-  "home.featuredVideo.caption",
-  "home.winsWall.enabled",
-  "home.winsWall.title",
-  "home.winsWall.logos",
 ];
 
 const MARQUEE_PHRASE = "from local roots to global reach";
+const HOME_REEL_URL = "https://youtu.be/uIgqg7m9EDA";
+const HOME_REEL_COPY =
+  "DTP Africa is building the intelligence and data infrastructure, to turn the overlooked African football talent into verifiable and discoverable opportunity.";
 
 /** Words highlighted in electric blue when the CMS gives no explicit accent. */
 const HEADLINE_ACCENT_WORDS = 2;
@@ -78,33 +55,112 @@ function splitHeadline(headline: string, accent?: string) {
   return { lead: text.slice(0, text.length - tail.length), highlight: tail };
 }
 
-function isEnabled(value?: string) {
-  return value?.trim().toLowerCase() === "true";
+function reelAutoplayUrl(youtubeUrl: string): string | null {
+  const base = videoEmbedUrl(youtubeUrl);
+  if (!base) return null;
+  const separator = base.includes("?") ? "&" : "?";
+  return `${base}${separator}autoplay=1&rel=0&modestbranding=1`;
 }
 
-function parseWinsWallLogos(value?: string): WinsWallLogo[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+function HomeReelModal({ onClose }: { onClose: () => void }) {
+  const titleId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const embedSrc = reelAutoplayUrl(HOME_REEL_URL);
 
-function HomeCta({ href, label }: { href?: string; label?: string }) {
-  if (!href || !label) return null;
-  if (/^https?:\/\//i.test(href)) {
-    return (
-      <a href={href} target="_blank" rel="noreferrer" className="text-link">
-        {label}
-      </a>
-    );
-  }
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    return () => {
+      previouslyFocused?.focus?.();
+    };
+  }, []);
+
   return (
-    <Link to={href} className="text-link">
-      {label}
-    </Link>
+    <div className="home-reel-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="home-reel-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          ref={closeButtonRef}
+          type="button"
+          className="home-reel-modal__close"
+          onClick={onClose}
+          aria-label="Close DTP Africa reel"
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
+        <h2 id={titleId} className="sr-only">
+          DTP Africa reel
+        </h2>
+        {embedSrc ? (
+          <div className="home-reel-modal__frame">
+            <iframe
+              src={embedSrc}
+              title="DTP Africa reel"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
+        ) : (
+          <p className="home-reel-modal__fallback">The reel is not available right now.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HomeReelSection({ onPlay }: { onPlay: () => void }) {
+  const thumbnail = youtubeThumbnail(HOME_REEL_URL);
+
+  return (
+    <section className="home-reel-section" aria-labelledby="home-reel-heading">
+      <div className="dtp-shell home-reel-section__inner">
+        <button
+          type="button"
+          className="home-reel-section__media"
+          onClick={onPlay}
+          aria-label="Watch DTP Africa reel"
+        >
+          {thumbnail ? (
+            <img src={thumbnail} alt="" loading="lazy" />
+          ) : (
+            <span className="home-reel-section__thumb-fallback" aria-hidden="true" />
+          )}
+          <span className="home-reel-section__play" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="42" height="42" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+        </button>
+
+        <div className="home-reel-section__copy">
+          <p id="home-reel-heading">{HOME_REEL_COPY}</p>
+          <button type="button" className="home-reel-section__button" onClick={onPlay}>
+            Watch Reel
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -113,7 +169,7 @@ function HomeCta({ href, label }: { href?: string; label?: string }) {
  *  half must be a pixel-identical copy of the first for the loop to be seamless. */
 const MARQUEE_REPEATS = 12;
 
-function Marquee({ tone = "ink" }: { tone?: "ink" | "lime" | "blue" }) {
+function Marquee({ tone = "ink" }: { tone?: "ink" | "lime" | "blue" | "orange" }) {
   const items = Array.from({ length: MARQUEE_REPEATS }, (_, index) => (
     <span className="dtp-marquee__item" key={index}>
       {MARQUEE_PHRASE} <span aria-hidden="true">/</span>
@@ -131,6 +187,7 @@ export function HomePage() {
   usePageTitle();
   const [content, setContent] = useState<Record<string, string>>({});
   const [talent, setTalent] = useState<FeaturedPlayer[]>([]);
+  const [isReelOpen, setIsReelOpen] = useState(false);
 
   useEffect(() => {
     apiGet<Record<string, string>>(`/home/content?keys=${HOME_CONTENT_KEYS.join(",")}`)
@@ -159,11 +216,6 @@ export function HomePage() {
     content["home.headline"] ?? "Global\nStage for\nLocal\nTalent",
     content["home.headlineAccent"] ?? "Local\nTalent"
   );
-  const winsWallLogos = parseWinsWallLogos(content["home.winsWall.logos"]);
-  const hasManagedCards =
-    isEnabled(content["home.announcement.enabled"]) ||
-    isEnabled(content["home.event.enabled"]) ||
-    isEnabled(content["home.featuredVideo.enabled"]);
 
   return (
     <>
@@ -172,17 +224,10 @@ export function HomePage() {
         {/* Full-bleed, so sizes="100vw": a 1440 laptop pulls the 1440 variant,
             a 5K display the 2880. This is the LCP element.
 
-            Phones get the figure on its own, with alpha. A 50%-wide column is
-            far narrower than the photo half's 712:834, so filling it with the
-            photo crops ~53% of his width away and blows up what remains. The
-            cutout can instead be fitted whole at true proportions, and having
-            no sky means no rectangle edge against the black. */}
+            Phones now keep the same split-panel art direction as landscape,
+            so the copy and player still share the frame rather than switching
+            to a floating cutout. */}
         <picture className="dtp-hero__picture">
-          <source
-            media="(max-width: 600px)"
-            srcSet="/figma/hero-player-figure-420.webp 420w, /figma/hero-player-figure-840.webp 840w"
-            sizes="58vw"
-          />
           <img
             className="dtp-hero__layer dtp-hero__layer--photo"
             src="/figma/hero-photo-panel-1920.webp"
@@ -237,26 +282,10 @@ export function HomePage() {
       <Marquee tone="lime" />
       <Marquee tone="blue" />
 
-      {/* ---- Mission band ------------------------------------------- */}
-      <section className="dtp-band dtp-band--blue">
-        <div className="dtp-shell dtp-band__head">
-          <p className="dtp-lead" style={{ maxWidth: "62ch", color: "var(--dtp-white)" }}>
-            DTP Africa is building the intelligence and data infrastructure to turn overlooked
-            African football talent into verifiable, discoverable opportunity.
-          </p>
-          <div className="dtp-band__actions" style={{ marginTop: "var(--dtp-space-5)" }}>
-            <Link to="/about" className="dtp-btn dtp-btn--ghost">
-              Watch Reel
-            </Link>
-          </div>
-        </div>
-        <div className="dtp-shell">
-          <HomeLiveMatchCenter />
-        </div>
-      </section>
+      <HomeReelSection onPlay={() => setIsReelOpen(true)} />
 
       {/* ---- Featured talent: MVCE card grid ------------------------- */}
-      <section className="dtp-band dtp-band--lime dtp-band--wedge">
+      <section className="dtp-band dtp-band--lime dtp-band--featured">
         <div className="dtp-shell">
           <div className="dtp-band__head">
             <p className="dtp-eyebrow" style={{ color: "var(--dtp-green)" }}>
@@ -267,15 +296,12 @@ export function HomePage() {
               Scout-rated profiles with position fit, ratings, and match-verified career stats.
             </p>
           </div>
+          <FeaturedTalentLegend />
 
           {talent.length > 0 ? (
-            <div className="dtp-card-grid">
+            <div className="featured-talent-grid">
               {talent.map((player) => (
-                <MvceCard
-                  key={player.id}
-                  player={toMvceCardData(player)}
-                  to={mvceCardHref(player)}
-                />
+                <FeaturedTalentCard key={player.id} player={player} />
               ))}
             </div>
           ) : (
@@ -285,116 +311,24 @@ export function HomePage() {
           )}
 
           <div className="dtp-band__actions">
-            <Link to="/featured-players" className="dtp-btn dtp-btn--ink dtp-btn--lg">
+            <Link to="/featured-players" className="dtp-btn dtp-btn--primary">
               View All Talents
             </Link>
           </div>
         </div>
       </section>
 
-      <Marquee tone="ink" />
+      <Marquee tone="orange" />
 
-      {/* ---- Intelligence Suite ------------------------------------- */}
-      {/* HomeIntelligenceTeasers owns its own heading (and the aria-labelledby
-          that points at it), so the band only supplies the Figma styling. */}
-      <section className="dtp-band dtp-band--red dtp-band--start">
-        <div className="dtp-shell">
-          <HomeIntelligenceTeasers />
-          <div className="dtp-band__actions" style={{ justifyContent: "flex-start" }}>
-            <Link to="/scouting" className="dtp-btn dtp-btn--ink">
-              Explore Scouting
-            </Link>
-          </div>
-        </div>
-      </section>
+      <HomeIntelligenceTeasers />
 
-      {/* ---- Player highlights -------------------------------------- */}
-      <section className="dtp-band dtp-band--blue">
+      {/* ---- Player highlights: final homepage section before footer -- */}
+      <section className="home-footage-band">
         <div className="dtp-shell">
           <HomePlayerHighlights />
         </div>
       </section>
-
-      {/* ---- CMS-managed cards (announcement / event / video) -------- */}
-      {hasManagedCards && (
-        <section className="dtp-band dtp-band--paper">
-          <div className="dtp-shell home-managed-grid">
-            {isEnabled(content["home.announcement.enabled"]) && (
-              <article className="home-managed-card">
-                <p className="eyebrow">Announcement</p>
-                <h2>{content["home.announcement.title"] ?? "Latest update"}</h2>
-                <p>{content["home.announcement.body"]}</p>
-                <HomeCta
-                  href={content["home.announcement.ctaHref"]}
-                  label={content["home.announcement.ctaLabel"]}
-                />
-              </article>
-            )}
-
-            {isEnabled(content["home.event.enabled"]) && (
-              <article className="home-managed-card">
-                <p className="eyebrow">Event</p>
-                <h2>{content["home.event.title"] ?? "Upcoming event"}</h2>
-                <p className="muted">
-                  {[content["home.event.date"], content["home.event.venue"]]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                <p>{content["home.event.body"]}</p>
-                <HomeCta
-                  href={content["home.event.ctaHref"]}
-                  label={content["home.event.ctaLabel"]}
-                />
-              </article>
-            )}
-
-            {isEnabled(content["home.featuredVideo.enabled"]) && (
-              <article className="home-managed-card">
-                <p className="eyebrow">Featured video</p>
-                <h2>{content["home.featuredVideo.title"] ?? "Featured video"}</h2>
-                {content["home.featuredVideo.caption"] && (
-                  <p>{content["home.featuredVideo.caption"]}</p>
-                )}
-                <HomeCta href={content["home.featuredVideo.url"]} label="Watch video" />
-              </article>
-            )}
-          </div>
-        </section>
-      )}
-
-      {isEnabled(content["home.winsWall.enabled"]) && winsWallLogos.length > 0 && (
-        <section className="dtp-band dtp-band--paper home-wins-wall">
-          <div className="dtp-shell">
-            <div className="dtp-band__head">
-              <h2 className="dtp-display">{content["home.winsWall.title"] ?? "Wins wall"}</h2>
-            </div>
-            <div className="home-wins-wall__grid">
-              {winsWallLogos.map((logo, index) => {
-                const body = logo.imageUrl ? (
-                  <img src={logo.imageUrl} alt={logo.name ?? "Partner logo"} />
-                ) : (
-                  <strong>{logo.name ?? "Partner"}</strong>
-                );
-                return logo.href ? (
-                  <a
-                    key={`${logo.name ?? "logo"}-${index}`}
-                    href={logo.href}
-                    target={/^https?:\/\//i.test(logo.href) ? "_blank" : undefined}
-                    rel={/^https?:\/\//i.test(logo.href) ? "noreferrer" : undefined}
-                    className="home-wins-wall__item"
-                  >
-                    {body}
-                  </a>
-                ) : (
-                  <div key={`${logo.name ?? "logo"}-${index}`} className="home-wins-wall__item">
-                    {body}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
+      {isReelOpen && <HomeReelModal onClose={() => setIsReelOpen(false)} />}
     </>
   );
 }
