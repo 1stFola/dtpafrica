@@ -5,6 +5,10 @@ import App from "./App";
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
 import { AdConfigProvider } from "./context/AdConfigContext";
 import "./styles/global.css";
+// Figma sync layer — loaded last so redesigned public surfaces win over
+// the legacy stylesheet without touching the dark internal modules.
+import "./styles/figma-tokens.css";
+import "./styles/dtp-figma.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

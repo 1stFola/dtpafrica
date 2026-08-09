@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { apiGet, type HomeVideoHighlight } from "../../../../api/client";
-import { youtubeThumbnail } from "../../../../api/scoreboard";
-import { videoEmbedUrl } from "../../../../utils/media-url";
+import { highlightThumbnailUrl, videoEmbedUrl } from "../../../../utils/media-url";
 
 function embedAutoplayUrl(youtubeUrl: string): string | null {
   const base = videoEmbedUrl(youtubeUrl);
@@ -16,7 +15,8 @@ type HighlightVideoCardProps = {
 };
 
 function HighlightVideoCard({ highlight, onPlay }: HighlightVideoCardProps) {
-  const thumb = youtubeThumbnail(highlight.youtubeUrl);
+  const thumb = highlightThumbnailUrl(highlight.youtubeUrl);
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
     <article className="home-hl-card">
@@ -26,24 +26,23 @@ function HighlightVideoCard({ highlight, onPlay }: HighlightVideoCardProps) {
         onClick={() => onPlay(highlight.id)}
         aria-label={`Play: ${highlight.title}`}
       >
-        {thumb ? (
-          <img src={thumb} alt="" loading="lazy" className="home-hl-card__thumb" />
+        {thumb && !imageFailed ? (
+          <img
+            src={thumb}
+            alt=""
+            loading="lazy"
+            className="home-hl-card__thumb"
+            onError={() => setImageFailed(true)}
+          />
         ) : (
           <div className="home-hl-card__thumb home-hl-card__thumb--fallback" aria-hidden="true" />
         )}
         <span className="home-hl-card__play" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+          <svg viewBox="0 0 24 24" width="44" height="44" fill="currentColor">
             <path d="M8 5v14l11-7z" />
           </svg>
         </span>
       </button>
-      <div className="home-hl-card__meta">
-        <span className="home-hl-card__tag">{highlight.playerName}</span>
-        <h3 className="home-hl-card__title">{highlight.title}</h3>
-        {highlight.description?.trim() && (
-          <p className="home-hl-card__desc">{highlight.description}</p>
-        )}
-      </div>
     </article>
   );
 }
@@ -55,7 +54,6 @@ type HomeHighlightVideoModalProps = {
 
 function HomeHighlightVideoModal({ highlight, onClose }: HomeHighlightVideoModalProps) {
   const titleId = useId();
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const embedSrc = embedAutoplayUrl(highlight.youtubeUrl);
 
   useEffect(() => {
@@ -74,20 +72,8 @@ function HomeHighlightVideoModal({ highlight, onClose }: HomeHighlightVideoModal
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    closeButtonRef.current?.focus();
-    return () => {
-      previouslyFocused?.focus?.();
-    };
-  }, []);
-
   return (
-    <div
-      className="home-highlights-modal-backdrop"
-      role="presentation"
-      onClick={onClose}
-    >
+    <div className="home-highlights-modal-backdrop" role="presentation" onClick={onClose}>
       <div
         className="home-highlights-modal"
         role="dialog"
@@ -97,12 +83,11 @@ function HomeHighlightVideoModal({ highlight, onClose }: HomeHighlightVideoModal
       >
         <button
           type="button"
-          ref={closeButtonRef}
           className="home-highlights-modal__close"
           onClick={onClose}
           aria-label="Close video"
         >
-          ×
+          <span aria-hidden="true">&times;</span>
         </button>
 
         {embedSrc ? (
@@ -136,12 +121,12 @@ function HomeHighlightVideoModal({ highlight, onClose }: HomeHighlightVideoModal
 }
 
 export function HomePlayerHighlights() {
-  const trackRef = useRef<HTMLDivElement>(null);
   const [highlights, setHighlights] = useState<HomeVideoHighlight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  const visibleHighlights = highlights.slice(0, 3);
   const activeHighlight = highlights.find((h) => h.id === activeId) ?? null;
 
   const handlePlay = useCallback((id: string) => {
@@ -173,55 +158,20 @@ export function HomePlayerHighlights() {
     };
   }, []);
 
-  function scrollTrack(direction: -1 | 1) {
-    const track = trackRef.current;
-    if (!track) return;
-    const card = track.querySelector<HTMLElement>(".home-hl-card");
-    const delta = (card?.offsetWidth ?? 300) + 16;
-    track.scrollBy({ left: direction * delta, behavior: "smooth" });
-  }
-
   return (
-    <section
-      className="home-features-block home-features-block--highlights"
-      aria-labelledby="home-player-highlights-title"
-    >
-      <div className="home-features-block__head">
-        <div>
-          <span className="home-features-eyebrow home-features-eyebrow--gold">Player Highlights</span>
-          <h2 id="home-player-highlights-title">Curated match footage</h2>
-          <p className="home-features-lead">
-            Verified clips from Jagaban Cup, 1XCup, and NLO — defensive reads, goals, and
-            game-changing moments.
-          </p>
-        </div>
-        <div className="home-features-block__actions">
-          {highlights.length > 1 && (
-            <div className="home-features-carousel-nav" aria-label="Highlight carousel controls">
-              <button
-                type="button"
-                className="home-features-carousel-btn"
-                onClick={() => scrollTrack(-1)}
-                aria-label="Scroll highlights left"
-              >
-                ←
-              </button>
-              <button
-                type="button"
-                className="home-features-carousel-btn"
-                onClick={() => scrollTrack(1)}
-                aria-label="Scroll highlights right"
-              >
-                →
-              </button>
-            </div>
-          )}
-        </div>
+    <section className="home-footage" aria-labelledby="home-player-highlights-title">
+      <div className="home-footage__head">
+        <span className="home-footage__eyebrow">Player Highlights</span>
+        <h2 id="home-player-highlights-title">Curated match footage</h2>
+        <p>
+          Verified clips from Jagaban Cup, 1XCup, and NLO — defensive reads, goals, and
+          game-changing moments.
+        </p>
       </div>
 
       {loading && (
-        <div className="home-features-carousel" aria-busy="true" aria-hidden="true">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="home-footage__grid" aria-busy="true" aria-hidden="true">
+          {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="dtp-skeleton home-hl-card-skeleton" />
           ))}
         </div>
@@ -230,23 +180,31 @@ export function HomePlayerHighlights() {
       {!loading && error && (
         <div className="dtp-empty-state home-features-empty">
           <p className="dtp-empty-state__title">Could not load highlights</p>
-          <p>Please refresh — curated clips will appear when available.</p>
+          <p>Please refresh. Curated clips will appear when available.</p>
         </div>
       )}
 
-      {!loading && !error && highlights.length === 0 && (
+      {!loading && !error && visibleHighlights.length === 0 && (
         <div className="dtp-empty-state home-features-empty">
           <p className="dtp-empty-state__title">No highlights published yet</p>
           <p>Curated player clips from tournaments will appear here soon.</p>
         </div>
       )}
 
-      {!loading && !error && highlights.length > 0 && (
-        <div ref={trackRef} className="home-features-carousel" tabIndex={0}>
-          {highlights.map((h) => (
-            <HighlightVideoCard key={h.id} highlight={h} onPlay={handlePlay} />
-          ))}
-        </div>
+      {!loading && !error && visibleHighlights.length > 0 && (
+        <>
+          <div className="home-footage__grid">
+            {visibleHighlights.map((highlight) => (
+              <HighlightVideoCard key={highlight.id} highlight={highlight} onPlay={handlePlay} />
+            ))}
+          </div>
+
+          <div className="home-footage__pager" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+        </>
       )}
 
       {activeHighlight && (

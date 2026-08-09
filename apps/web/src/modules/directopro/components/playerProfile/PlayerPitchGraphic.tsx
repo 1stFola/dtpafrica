@@ -17,6 +17,7 @@ type Props = SecondaryPitchInput & {
   positionPrimary: string;
   positionFull?: string | null;
   role?: string | null;
+  variant?: "default" | "snapshot";
 };
 
 function formatMarkerAria(x: number, y: number): string {
@@ -63,6 +64,7 @@ export function PlayerPitchGraphic({
   positionPrimary,
   positionFull,
   role,
+  variant = "default",
   positionSecondary,
   positionFitSecondary,
   scoutingSecondaryPositionFit,
@@ -88,12 +90,21 @@ export function PlayerPitchGraphic({
   const primaryMarker = resolvePrimaryPitchMarker(positionPrimary, positionFull, role);
   const secondaryMarker = resolveSecondaryPitchMarker(pitchInput, primaryMarker);
   const hybridMarker = resolveHybridPitchMarker(pitchInput, primaryMarker, secondaryMarker);
+  const projectMarker = (marker: PitchMarkerCoords): PitchMarkerCoords =>
+    variant === "snapshot" ? { x: marker.y, y: marker.x } : marker;
+  const primaryDisplayMarker = projectMarker(primaryMarker);
+  const secondaryDisplayMarker = secondaryMarker ? projectMarker(secondaryMarker) : null;
+  const hybridDisplayMarker = hybridMarker ? projectMarker(hybridMarker) : null;
   const primaryLabel = resolvePrimaryPitchLabel(positionPrimary, positionFull, role);
   const secondaryLabel = secondaryMarker
     ? resolveSecondaryPitchLabel(pitchInput, primaryMarker)
     : null;
   const hybridLabel = resolveHybridPitchLabel(pitchInput, primaryMarker, secondaryMarker);
-  const labelSiblings = buildLabelSiblings(primaryMarker, secondaryMarker, hybridMarker);
+  const labelSiblings = buildLabelSiblings(
+    primaryDisplayMarker,
+    secondaryDisplayMarker,
+    hybridDisplayMarker
+  );
 
   const ariaParts = [
     `primary (${formatMarkerAria(primaryMarker.x, primaryMarker.y)})`,
@@ -111,7 +122,15 @@ export function PlayerPitchGraphic({
   const zoneGradId = `player-profile-pitch-hybrid-zone-${uid}`;
 
   return (
-    <div className="player-profile-pitch" role="img" aria-label={ariaLabel}>
+    <div
+      className={
+        variant === "snapshot"
+          ? "player-profile-pitch player-profile-pitch--snapshot"
+          : "player-profile-pitch"
+      }
+      role="img"
+      aria-label={ariaLabel}
+    >
       <span
         className="player-profile-pitch__attack-edge player-profile-pitch__attack-edge--left"
         aria-hidden="true"
@@ -126,7 +145,7 @@ export function PlayerPitchGraphic({
       </span>
       <svg
         className="player-profile-pitch__svg"
-        viewBox="0 0 68 100"
+        viewBox={variant === "snapshot" ? "0 0 100 60" : "0 0 68 100"}
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
@@ -146,47 +165,118 @@ export function PlayerPitchGraphic({
           </pattern>
         </defs>
 
-        <rect width="68" height="100" fill="url(#player-profile-pitch-grass)" rx="4" />
-        <rect width="68" height="100" fill="url(#player-profile-pitch-stripes)" rx="4" />
+        {variant === "snapshot" ? (
+          <>
+            <rect width="100" height="60" fill="url(#player-profile-pitch-grass)" rx="0" />
+            <rect width="100" height="60" fill="url(#player-profile-pitch-stripes)" rx="0" />
+            <rect
+              x="4.5"
+              y="4"
+              width="91"
+              height="52"
+              fill="none"
+              stroke="rgba(255,255,255,0.64)"
+              strokeWidth="0.8"
+            />
+            <line
+              x1="50"
+              y1="4"
+              x2="50"
+              y2="56"
+              stroke="rgba(255,255,255,0.64)"
+              strokeWidth="0.75"
+            />
+            <circle
+              cx="50"
+              cy="30"
+              r="7.5"
+              fill="none"
+              stroke="rgba(255,255,255,0.78)"
+              strokeWidth="0.8"
+            />
+            <circle cx="50" cy="30" r="0.95" fill="rgba(255,255,255,0.9)" />
+            <rect
+              x="4.5"
+              y="18"
+              width="9.5"
+              height="24"
+              fill="none"
+              stroke="rgba(255,255,255,0.64)"
+              strokeWidth="0.75"
+            />
+            <rect
+              x="86"
+              y="18"
+              width="9.5"
+              height="24"
+              fill="none"
+              stroke="rgba(255,255,255,0.64)"
+              strokeWidth="0.75"
+            />
+            <rect
+              x="2.5"
+              y="25"
+              width="3"
+              height="10"
+              fill="none"
+              stroke="rgba(255,255,255,0.7)"
+              strokeWidth="0.75"
+            />
+            <rect
+              x="94.5"
+              y="25"
+              width="3"
+              height="10"
+              fill="none"
+              stroke="rgba(255,255,255,0.7)"
+              strokeWidth="0.75"
+            />
+          </>
+        ) : (
+          <>
+            <rect width="68" height="100" fill="url(#player-profile-pitch-grass)" rx="4" />
+            <rect width="68" height="100" fill="url(#player-profile-pitch-stripes)" rx="4" />
 
-        <rect
-          x="4"
-          y="4"
-          width="60"
-          height="18"
-          fill="none"
-          stroke="rgba(255,255,255,0.22)"
-          strokeWidth="0.6"
-        />
-        <rect
-          x="4"
-          y="78"
-          width="60"
-          height="18"
-          fill="none"
-          stroke="rgba(255,255,255,0.22)"
-          strokeWidth="0.6"
-        />
-        <line
-          x1="4"
-          y1="50"
-          x2="64"
-          y2="50"
-          stroke="rgba(255,255,255,0.2)"
-          strokeWidth="0.55"
-        />
-        <circle
-          cx="34"
-          cy="50"
-          r="9"
-          fill="none"
-          stroke="rgba(255,255,255,0.2)"
-          strokeWidth="0.55"
-        />
-        <circle cx="34" cy="50" r="0.9" fill="rgba(255,255,255,0.28)" />
+            <rect
+              x="4"
+              y="4"
+              width="60"
+              height="18"
+              fill="none"
+              stroke="rgba(255,255,255,0.22)"
+              strokeWidth="0.6"
+            />
+            <rect
+              x="4"
+              y="78"
+              width="60"
+              height="18"
+              fill="none"
+              stroke="rgba(255,255,255,0.22)"
+              strokeWidth="0.6"
+            />
+            <line
+              x1="4"
+              y1="50"
+              x2="64"
+              y2="50"
+              stroke="rgba(255,255,255,0.2)"
+              strokeWidth="0.55"
+            />
+            <circle
+              cx="34"
+              cy="50"
+              r="9"
+              fill="none"
+              stroke="rgba(255,255,255,0.2)"
+              strokeWidth="0.55"
+            />
+            <circle cx="34" cy="50" r="0.9" fill="rgba(255,255,255,0.28)" />
+          </>
+        )}
       </svg>
 
-      {hybridMarker && (
+      {hybridDisplayMarker && (
         <svg
           className="player-profile-pitch__overlay"
           viewBox="0 0 100 100"
@@ -194,7 +284,7 @@ export function PlayerPitchGraphic({
           aria-hidden="true"
         >
           <defs>
-            <linearGradient id={connectorGradId} gradientUnits="userSpaceOnUse" x1={primaryMarker.x} y1={primaryMarker.y} x2={hybridMarker.x} y2={hybridMarker.y}>
+            <linearGradient id={connectorGradId} gradientUnits="userSpaceOnUse" x1={primaryDisplayMarker.x} y1={primaryDisplayMarker.y} x2={hybridDisplayMarker.x} y2={hybridDisplayMarker.y}>
               <stop offset="0%" stopColor="rgba(34, 197, 94, 0.85)" />
               <stop offset="55%" stopColor="rgba(251, 191, 36, 0.75)" />
               <stop offset="100%" stopColor="rgba(167, 139, 250, 0.9)" />
@@ -207,18 +297,18 @@ export function PlayerPitchGraphic({
           </defs>
           <ellipse
             className="player-profile-pitch__hybrid-zone"
-            cx={hybridMarker.x}
-            cy={hybridMarker.y}
+            cx={hybridDisplayMarker.x}
+            cy={hybridDisplayMarker.y}
             rx="9"
             ry="7.5"
             fill={`url(#${zoneGradId})`}
           />
           <line
             className="player-profile-pitch__hybrid-connector"
-            x1={primaryMarker.x}
-            y1={primaryMarker.y}
-            x2={hybridMarker.x}
-            y2={hybridMarker.y}
+            x1={primaryDisplayMarker.x}
+            y1={primaryDisplayMarker.y}
+            x2={hybridDisplayMarker.x}
+            y2={hybridDisplayMarker.y}
             stroke={`url(#${connectorGradId})`}
             strokeWidth="1.1"
             strokeLinecap="round"
@@ -228,33 +318,33 @@ export function PlayerPitchGraphic({
 
       <span
         className="player-profile-pitch__marker player-profile-pitch__marker--primary"
-        style={{ left: `${primaryMarker.x}%`, top: `${primaryMarker.y}%` }}
+        style={{ left: `${primaryDisplayMarker.x}%`, top: `${primaryDisplayMarker.y}%` }}
         aria-hidden="true"
       />
       <span
         className="player-profile-pitch__main-role-label"
         style={{
-          left: `${primaryMarker.x}%`,
-          top: `${primaryMarker.y}%`,
-          transform: resolveMarkerLabelTransform(primaryMarker, "primary", labelSiblings),
+          left: `${primaryDisplayMarker.x}%`,
+          top: `${primaryDisplayMarker.y}%`,
+          transform: resolveMarkerLabelTransform(primaryDisplayMarker, "primary", labelSiblings),
         }}
         aria-hidden="true"
       >
         <PitchMarkerBadge role="primary" label={primaryLabel} />
       </span>
-      {secondaryMarker && (
+      {secondaryDisplayMarker && (
         <>
           <span
             className="player-profile-pitch__marker player-profile-pitch__marker--secondary"
-            style={{ left: `${secondaryMarker.x}%`, top: `${secondaryMarker.y}%` }}
+            style={{ left: `${secondaryDisplayMarker.x}%`, top: `${secondaryDisplayMarker.y}%` }}
             aria-hidden="true"
           />
           <span
             className="player-profile-pitch__alt-role-label"
             style={{
-              left: `${secondaryMarker.x}%`,
-              top: `${secondaryMarker.y}%`,
-              transform: resolveMarkerLabelTransform(secondaryMarker, "secondary", labelSiblings),
+              left: `${secondaryDisplayMarker.x}%`,
+              top: `${secondaryDisplayMarker.y}%`,
+              transform: resolveMarkerLabelTransform(secondaryDisplayMarker, "secondary", labelSiblings),
             }}
             aria-hidden="true"
           >
@@ -262,24 +352,24 @@ export function PlayerPitchGraphic({
           </span>
         </>
       )}
-      {hybridMarker && (
+      {hybridDisplayMarker && (
         <>
           <span
             className="player-profile-pitch__hybrid-halo"
-            style={{ left: `${hybridMarker.x}%`, top: `${hybridMarker.y}%` }}
+            style={{ left: `${hybridDisplayMarker.x}%`, top: `${hybridDisplayMarker.y}%` }}
             aria-hidden="true"
           />
           <span
             className="player-profile-pitch__marker player-profile-pitch__marker--hybrid"
-            style={{ left: `${hybridMarker.x}%`, top: `${hybridMarker.y}%` }}
+            style={{ left: `${hybridDisplayMarker.x}%`, top: `${hybridDisplayMarker.y}%` }}
             aria-hidden="true"
           />
           <span
             className="player-profile-pitch__hybrid-role-label"
             style={{
-              left: `${hybridMarker.x}%`,
-              top: `${hybridMarker.y}%`,
-              transform: resolveMarkerLabelTransform(hybridMarker, "hybrid", labelSiblings),
+              left: `${hybridDisplayMarker.x}%`,
+              top: `${hybridDisplayMarker.y}%`,
+              transform: resolveMarkerLabelTransform(hybridDisplayMarker, "hybrid", labelSiblings),
             }}
             aria-hidden="true"
           >
