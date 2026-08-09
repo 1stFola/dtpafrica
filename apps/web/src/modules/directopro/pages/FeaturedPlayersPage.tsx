@@ -3,7 +3,6 @@ import { fetchFeaturedPlayers, type FeaturedPlayer, isAbortError } from "../../.
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { useAdSlot } from "../../../context/AdConfigContext";
-import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
 import { resolvePositionFullLabel } from "../../../utils/positionLabels";
 import { HIGH_FETCH_PRIORITY } from "../../../utils/imgPriority";
 import { FeaturedTalentCard, FeaturedTalentLegend } from "../components/featured/FeaturedTalentCard";
@@ -29,11 +28,6 @@ function ratingMatches(rating: number | null | undefined, filter: RatingFilter) 
 export function FeaturedPlayersPage() {
   const adInterval = 8;
   const inlineAd = useAdSlot("featuredPlayersInline");
-  const content = useStaticContent([
-    "featured_players.hero.kicker",
-    "featured_players.hero.title",
-    "featured_players.hero.body",
-  ]);
   usePageTitle("Featured players");
 
   const [players, setPlayers] = useState<FeaturedPlayer[]>([]);
@@ -124,51 +118,41 @@ export function FeaturedPlayersPage() {
   };
 
   return (
-    <div className="dtp-page">
-      {/* Hero — Figma 234:486 */}
-      <section className="dtp-hero dtp-hero--left">
-        <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-featured-players.webp" alt="" aria-hidden="true" />
-        <div className="dtp-hero__scrim" aria-hidden="true" />
-        <div className="dtp-shell dtp-hero__inner">
-          <p className="dtp-eyebrow" style={{ color: "var(--dtp-paper)" }}>
-            {contentValue(content, "featured_players.hero.kicker", "Verified Talent Intelligence")}
-          </p>
-          <h1 className="dtp-display dtp-display--hero dtp-hero__title">
-            {contentValue(
-              content,
-              "featured_players.hero.title",
-              "Featured players. Proven potential."
-            )}
-          </h1>
-
-          <dl className="dtp-hero__stats" aria-label="Featured player signals">
-            <div className="dtp-hero__stat">
-              <dd>{loading ? "--" : players.length}</dd>
-              <dt>Published profiles</dt>
-            </div>
-            <div className="dtp-hero__stat">
-              <dd>DTP</dd>
-              <dt>Verified evidence</dt>
-            </div>
-            <div className="dtp-hero__stat">
-              <dd>{loading ? "--" : filteredPlayers.length}</dd>
-              <dt>Matching filters</dt>
-            </div>
-          </dl>
-
-          <p className="dtp-lead dtp-hero__lead">
-            {contentValue(
-              content,
-              "featured_players.hero.body",
-              "Explore player profiles from the DTP Africa intelligence ecosystem."
-            )}
-          </p>
-        </div>
+    <div className="dtp-page featured-players-page">
+      <section className="featured-players-hero" aria-labelledby="featured-players-title">
+        <h1 id="featured-players-title" className="sr-only">
+          Featured players. Proven potential.
+        </h1>
+        <img
+          className="featured-players-hero__banner"
+          {...HIGH_FETCH_PRIORITY}
+          decoding="async"
+          src="/figma/featured-players-banner.png"
+          alt=""
+          aria-hidden="true"
+        />
+        <dl className="featured-players-hero__stats" aria-label="Featured player signals">
+          <div>
+            <dd>{loading ? "--" : players.length}</dd>
+            <dt>Published profiles</dt>
+          </div>
+          <div>
+            <dd>DTP</dd>
+            <dt>Verified evidence</dt>
+          </div>
+          <div>
+            <dd>{loading ? "--" : filteredPlayers.length}</dd>
+            <dt>Matching filters</dt>
+          </div>
+        </dl>
       </section>
 
-      {/* Filters + card grid */}
-      <section className="dtp-band dtp-band--ink">
-        <div className="dtp-shell">
+      <section className="featured-players-directory" aria-label="Featured player directory">
+        <div className="featured-players-directory__shell">
+          <p className="featured-players-directory__intro">
+            Explore player profiles from the DTP Africa intelligence ecosystem.
+          </p>
+
           <div className="dtp-filters" role="search" aria-label="Featured player filters">
             <label className="sr-only" htmlFor="fp-search">
               Search players
@@ -274,9 +258,13 @@ export function FeaturedPlayersPage() {
             </p>
           )}
 
-          <div style={{ marginTop: "clamp(2rem, 4vw, 48px)" }}>
+          <div className="featured-players-directory__results">
             {loading && (
-              <div className="featured-talent-grid featured-talent-grid--wide" aria-busy="true" aria-hidden="true">
+              <div
+                className="featured-talent-grid featured-talent-grid--wide"
+                aria-busy="true"
+                aria-hidden="true"
+              >
                 {Array.from({ length: 8 }).map((_, idx) => (
                   <div key={idx} className="dtp-skeleton home-talent-card-skeleton" />
                 ))}
@@ -284,7 +272,7 @@ export function FeaturedPlayersPage() {
             )}
 
             {!loading && players.length === 0 && !error && (
-              <div style={{ textAlign: "center", color: "var(--dtp-white)" }}>
+              <div className="featured-players-directory__empty">
                 <p className="dtp-lead">No featured players yet</p>
                 <p className="dtp-row__meta">
                   Verified player profiles will appear here once published.
@@ -293,7 +281,7 @@ export function FeaturedPlayersPage() {
             )}
 
             {!loading && players.length > 0 && filteredPlayers.length === 0 && !error && (
-              <div style={{ textAlign: "center", color: "var(--dtp-white)" }}>
+              <div className="featured-players-directory__empty">
                 <p className="dtp-lead">No matching players</p>
                 <p className="dtp-row__meta">Adjust the filters to broaden the talent view.</p>
               </div>
@@ -303,19 +291,17 @@ export function FeaturedPlayersPage() {
               <>
                 <FeaturedTalentLegend />
                 <div className="featured-talent-grid featured-talent-grid--wide">
-                {filteredPlayers.flatMap((player, idx) => {
-                  const items = [
-                    <FeaturedTalentCard key={player.id} player={player} />,
-                  ];
-                  if (inlineAd && (idx + 1) % adInterval === 0 && idx < filteredPlayers.length - 1) {
-                    items.push(
-                      <div key={`featured-inline-ad-${idx}`} className="player-grid-ad">
-                        <AdPlacement slotKey="featuredPlayersInline" />
-                      </div>
-                    );
-                  }
-                  return items;
-                })}
+                  {filteredPlayers.flatMap((player, idx) => {
+                    const items = [<FeaturedTalentCard key={player.id} player={player} />];
+                    if (inlineAd && (idx + 1) % adInterval === 0 && idx < filteredPlayers.length - 1) {
+                      items.push(
+                        <div key={`featured-inline-ad-${idx}`} className="player-grid-ad">
+                          <AdPlacement slotKey="featuredPlayersInline" />
+                        </div>
+                      );
+                    }
+                    return items;
+                  })}
                 </div>
               </>
             )}

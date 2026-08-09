@@ -516,137 +516,184 @@ export function PlayerProfilePage() {
         shareStatus={shareStatus}
       />
 
-      {player.biography &&
-        !isDuplicateScoutingCopy(player.biography, player.scoutingSummary) && (
-          <p className="player-profile-bio">{player.biography}</p>
+      <div className="player-profile-body-sheet">
+        {player.biography &&
+          !isDuplicateScoutingCopy(player.biography, player.scoutingSummary) && (
+            <p className="player-profile-bio">{player.biography}</p>
+          )}
+
+        <section className="player-profile-scout-strip" aria-label="Scouting summary">
+          <div className="player-profile-scout-strip__summary">
+            <h2 className="player-profile-heading">Scouting Summary</h2>
+            <p className="player-profile-scout-strip__text">
+              {player.scoutingSummary ?? "Scouting summary pending calibration review."}
+            </p>
+          </div>
+          <PositionScoutingMetricsRow
+            player={player}
+            variant="strip"
+            className="player-profile-scout-strip__metrics"
+          />
+        </section>
+
+        <nav className="player-profile-tabs" aria-label="Player profile sections">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={tab.id === activeTab ? "player-profile-tabs__btn active" : "player-profile-tabs__btn"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        {activeTab === "overview" && (
+          <>
+            <section className="profile-section">
+              <PlayerRoleProfileSection
+                attributes={attributes}
+                positionPrimary={player.positionPrimary}
+                role={player.role}
+                secondaryRole={
+                  player.positionSecondary ??
+                  player.positionFit?.secondaryPositionFit ??
+                  player.scoutingIntelligence?.positionFit?.secondaryPositionFit ??
+                  null
+                }
+                dataSourceLabel={
+                  player.ratingAttributes ? "From match data" : "Estimated from profile"
+                }
+              />
+
+              <section className="player-profile-proof-block" aria-label="Profile proof points">
+                <div className="profile-detail-grid">
+                  <article className="profile-panel player-profile-panel">
+                    <h3 className="player-profile-subheading">Profile highlights</h3>
+                    <ul className="profile-list">
+                      {highlights.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </article>
+                  <article className="profile-panel player-profile-panel">
+                    <h3 className="player-profile-subheading">Performance metrics</h3>
+                    <div className="profile-metric-list">
+                      <span>Minutes played</span>
+                      <strong>{formatMinutesPlayed(minutesPlayed)}</strong>
+                      {player.positionFit?.secondaryPositionFit && (
+                        <>
+                          <span>Secondary role</span>
+                          <strong>{player.positionFit.secondaryPositionFit}</strong>
+                        </>
+                      )}
+                      <span>Appearances</span>
+                      <strong>{player.stats?.appearances ?? scoreboard?.aggregates.appearances ?? 0}</strong>
+                      {isGk ? (
+                        <>
+                          <span>Clean sheets</span>
+                          <strong>{player.stats?.cleanSheets ?? 0}</strong>
+                        </>
+                      ) : (
+                        <>
+                          <span>Goal contributions</span>
+                          <strong>
+                            {(player.stats?.goals ?? scoreboard?.aggregates.goals ?? 0) +
+                              (player.stats?.assists ?? scoreboard?.aggregates.assists ?? 0)}
+                          </strong>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                </div>
+
+                <BenchmarkPlaystyleComparison
+                  playerName={player.displayName}
+                  playerPhotoUrl={profilePhotoUrl}
+                  benchmark={benchmark}
+                  attributes={attributes}
+                />
+              </section>
+            </section>
+          </>
         )}
 
-      <section className="player-profile-scout-strip" aria-label="Scouting summary">
-        <div className="player-profile-scout-strip__summary">
-          <h2 className="player-profile-heading">Scouting summary</h2>
-          <p className="player-profile-scout-strip__text">
-            {player.scoutingSummary ?? "Scouting summary pending calibration review."}
-          </p>
-        </div>
-        <PositionScoutingMetricsRow player={player} variant="strip" />
-      </section>
+        {activeTab === "scoreboard" && (
+          <>
+            {isGk && <GoalkeeperScoreboardProfileSection history={scoreboard} />}
+            <ScoreboardHistorySection history={scoreboard} minutesPlayed={minutesPlayed} />
+          </>
+        )}
 
-      <nav className="player-profile-tabs" aria-label="Player profile sections">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={tab.id === activeTab ? "player-profile-tabs__btn active" : "player-profile-tabs__btn"}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+        {activeTab === "scouting" && <ScoutingDetailsTab player={player} />}
 
-      {activeTab === "overview" && (
-        <>
-          <section className="profile-section">
-            <PlayerRoleProfileSection
-              attributes={attributes}
-              positionPrimary={player.positionPrimary}
-              role={player.role}
-              secondaryRole={
-                player.positionSecondary ??
-                player.positionFit?.secondaryPositionFit ??
-                player.scoutingIntelligence?.positionFit?.secondaryPositionFit ??
-                null
-              }
-              dataSourceLabel={
-                player.ratingAttributes ? "From match data" : "Estimated from profile"
-              }
-            />
+        {activeTab === "videos" && (
+          <TypedMediaTab
+            eyebrow="Media"
+            title="Videos"
+            emptyTitle="No highlight videos yet"
+            emptyDetail="Highlight reels and match clips will appear here once they are linked to this profile."
+            items={videoItems}
+          />
+        )}
 
-            <div className="profile-detail-grid">
-              <article className="profile-panel player-profile-panel">
-                <h3 className="player-profile-subheading">Profile highlights</h3>
-                <ul className="profile-list">
-                  {highlights.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </article>
-              <article className="profile-panel player-profile-panel">
-                <h3 className="player-profile-subheading">Performance metrics</h3>
-                <div className="profile-metric-list">
-                  <span>Minutes played</span>
-                  <strong>{formatMinutesPlayed(minutesPlayed)}</strong>
-                  {player.positionFit?.secondaryPositionFit && (
-                    <>
-                      <span>Secondary role</span>
-                      <strong>{player.positionFit.secondaryPositionFit}</strong>
-                    </>
-                  )}
-                  {isGk && (
-                    <>
-                      <span>Clean sheets</span>
-                      <strong>{player.stats?.cleanSheets ?? 0}</strong>
-                    </>
-                  )}
-                </div>
-              </article>
-            </div>
+        {activeTab === "photos" && (
+          <TypedMediaTab
+            eyebrow="Media"
+            title="Photos"
+            emptyTitle="No photos yet"
+            emptyDetail="Profile and action photos will appear here once they are linked to this profile."
+            items={photoItems}
+            gallery
+          />
+        )}
 
-            <BenchmarkPlaystyleComparison
-              playerName={player.displayName}
-              playerPhotoUrl={profilePhotoUrl}
-              benchmark={benchmark}
-              attributes={attributes}
-            />
-          </section>
-        </>
-      )}
-
-      {activeTab === "scoreboard" && (
-        <>
-          {isGk && <GoalkeeperScoreboardProfileSection history={scoreboard} />}
-          <ScoreboardHistorySection history={scoreboard} minutesPlayed={minutesPlayed} />
-        </>
-      )}
-
-      {activeTab === "scouting" && <ScoutingDetailsTab player={player} />}
-
-      {activeTab === "videos" && (
-        <TypedMediaTab
-          eyebrow="Media"
-          title="Videos"
-          emptyTitle="No highlight videos yet"
-          emptyDetail="Highlight reels and match clips will appear here once they are linked to this profile."
-          items={videoItems}
-        />
-      )}
-
-      {activeTab === "photos" && (
-        <TypedMediaTab
-          eyebrow="Media"
-          title="Photos"
-          emptyTitle="No photos yet"
-          emptyDetail="Profile and action photos will appear here once they are linked to this profile."
-          items={photoItems}
-          gallery
-        />
-      )}
-
-      {activeTab === "publications" && (
-        <TypedMediaTab
-          eyebrow="Media"
-          title="Publications"
-          emptyTitle="No publications yet"
-          emptyDetail="Press coverage and scouting articles will appear here once they are linked to this profile."
-          items={publicationItems}
-        />
-      )}
+        {activeTab === "publications" && (
+          <TypedMediaTab
+            eyebrow="Media"
+            title="Publications"
+            emptyTitle="No publications yet"
+            emptyDetail="Press coverage and scouting articles will appear here once they are linked to this profile."
+            items={publicationItems}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
 const PENDING_SYNC_CAPTION =
   "Profile Pending Synchronization — Performance data and tournament history for this athlete are currently being verified by the DTP Africa scouting network.";
+const YUSUF_RAMADAN_PROFILE_IMAGE = "/figma/player-profile-yusuf-ramadan.png";
+
+function isTemporaryProfileImage(value: string | null | undefined): boolean {
+  if (!value) return true;
+  return /thumbnail|temporar|placeholder|unavailable/i.test(value);
+}
+
+function resolveProfileHeroPhotoUrl(player: PublicPlayerProfile, photoUrl: string | null): string | null {
+  const name = player.displayName.trim();
+  if (/\byusuf\b/i.test(name) || isTemporaryProfileImage(photoUrl)) {
+    return YUSUF_RAMADAN_PROFILE_IMAGE;
+  }
+  return photoUrl;
+}
+
+const SNAPSHOT_FACT_ORDER = [
+  "nationality",
+  "category",
+  "preferred foot",
+  "position",
+  "player value",
+];
+
+function buildSnapshotBioFacts(facts: BioFact[]): BioFact[] {
+  return SNAPSHOT_FACT_ORDER.flatMap((label) => {
+    const match = facts.find((fact) => fact.label.toLowerCase() === label);
+    return match ? [match] : [];
+  });
+}
 
 function PlayerCardBanner({
   player,
@@ -667,13 +714,24 @@ function PlayerCardBanner({
   onShare: () => void;
   shareStatus: string | null;
 }) {
+  const heroPhotoUrl = resolveProfileHeroPhotoUrl(player, photoUrl);
+  const snapshotBioFacts = buildSnapshotBioFacts(bioFacts);
+
   return (
     <header className="player-profile-banner" aria-label={`${player.displayName} profile card`}>
       {/* Figma "DTP" -> Featured Players Profile 239:2425 */}
       <div className="dtp-profile-card">
         <div className="dtp-profile-card__portrait">
-          {photoUrl ? (
-            <img src={photoUrl} alt="" />
+          {heroPhotoUrl ? (
+            <img
+              src={heroPhotoUrl}
+              alt=""
+              onError={(event) => {
+                const image = event.currentTarget;
+                if (image.src.endsWith(YUSUF_RAMADAN_PROFILE_IMAGE)) return;
+                image.src = YUSUF_RAMADAN_PROFILE_IMAGE;
+              }}
+            />
           ) : (
             <span
               aria-hidden="true"
@@ -692,7 +750,7 @@ function PlayerCardBanner({
           )}
         </div>
 
-        <div>
+        <div className="dtp-profile-card__identity">
           <span className="dtp-profile-card__verified">DTP Verified</span>
           <h1 className="dtp-profile-card__name">{player.displayName}</h1>
           <p className="dtp-profile-card__meta">
@@ -703,7 +761,7 @@ function PlayerCardBanner({
           </p>
         </div>
 
-        <div>
+        <div className="dtp-profile-card__actions">
           <dl className="dtp-profile-card__ratings" aria-label="Core ratings">
             <div className="dtp-profile-rating dtp-profile-rating--overall">
               <dd>{player.overallRating ?? "—"}</dd>
@@ -718,7 +776,7 @@ function PlayerCardBanner({
               <dt>Defense</dt>
             </div>
           </dl>
-          <div style={{ marginTop: "var(--dtp-space-4)", textAlign: "center" }}>
+          <div className="dtp-profile-card__share">
             <Button type="button" variant="secondary" onClick={onShare}>
               Share Profile
             </Button>
@@ -732,8 +790,9 @@ function PlayerCardBanner({
       </div>
 
       <div className="player-profile-banner__insights">
-        <PlayerBioGrid facts={bioFacts} />
+        <PlayerBioGrid facts={snapshotBioFacts} />
         <PlayerPitchGraphic
+          variant="snapshot"
           positionPrimary={player.positionPrimary}
           positionFull={player.positionFull}
           role={player.role}
@@ -776,8 +835,8 @@ function PlayerBioGrid({ facts }: { facts: BioFact[] }) {
                 : "player-profile-banner__bio-cell"
             }
           >
-            <strong className="player-profile-banner__bio-value">{fact.value}</strong>
             <span className="player-profile-banner__bio-label">{fact.label}</span>
+            <strong className="player-profile-banner__bio-value">{fact.value}</strong>
           </li>
         ))}
       </ul>
