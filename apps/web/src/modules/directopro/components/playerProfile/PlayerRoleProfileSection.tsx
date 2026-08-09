@@ -32,7 +32,7 @@ export function PlayerRoleProfileSection({
   const heading = resolveRoleProfileHeading(positionPrimary, role);
 
   return (
-    <>
+    <div className="player-profile-role-profile">
       <div className="profile-section-heading">
         <div>
           <span className="player-profile-eyebrow">Skill ratings</span>
@@ -86,6 +86,6 @@ export function PlayerRoleProfileSection({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

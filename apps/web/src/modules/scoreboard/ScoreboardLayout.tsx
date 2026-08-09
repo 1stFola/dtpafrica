@@ -5,6 +5,7 @@ import { AdBanner } from "../../components/AdBanner";
 import { ModuleAdRails } from "../../components/ModuleAdRails";
 import { creativeSizeLabel } from "../../config/adFormatSpecs";
 import { useAdSlot } from "../../context/AdConfigContext";
+import { HIGH_FETCH_PRIORITY } from "../../utils/imgPriority";
 
 /** Header mobile banner only; desktop top uses `scoreboardTop` in ModuleAdRails */
 
@@ -19,14 +20,24 @@ export function ScoreboardLayout() {
   const mobileAd = useAdSlot("scoreboardLeaderboardMobile");
 
   return (
-    <div className="scoreboard-module">
-      <header className="scoreboard-header">
-        <div className="scoreboard-brand">
-          <span className="scoreboard-brand__mark">ScoreBoard</span>
+    <div className="scoreboard-module dtp-page">
+      {/* Figma "DTP" -> Scoreboard 186:139: black hero, cyan eyebrow,
+          Gasoek 90px display, live ribbon and subnav beneath. */}
+      <section className="dtp-hero">
+        <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-scoreboard.webp" alt="" aria-hidden="true" />
+        <div className="dtp-hero__scrim" aria-hidden="true" />
+        <div className="dtp-shell dtp-hero__inner">
+          <p className="dtp-eyebrow" style={{ color: "var(--dtp-cyan)" }}>
+            Nigeria Grassroots Football
+          </p>
+          <h1 className="dtp-display dtp-display--hero dtp-hero__title">Scoreboard</h1>
           <NavLink to="/" className="scoreboard-brand__partner">
             <BrandLogo variant="white-horizontal" size="scoreboard" />
           </NavLink>
         </div>
+      </section>
+
+      <header className="scoreboard-header">
         <LiveScoreRibbon />
         {mobileAd && (
           <div className="ad-placement ad-placement--scoreboard ad-placement--scoreboard-header-mobile">
@@ -40,14 +51,22 @@ export function ScoreboardLayout() {
             />
           </div>
         )}
-        <nav className="sb-subnav" aria-label="ScoreBoard">
+        <nav className="dtp-chips sb-subnav" aria-label="ScoreBoard">
           {links.map((l) => (
             <NavLink
               key={l.to}
               to={l.to}
               end={l.end}
-              className={({ isActive }) =>
-                isActive ? "sb-subnav__link active" : "sb-subnav__link"
+              className="dtp-chip"
+              style={({ isActive }) =>
+                isActive
+                  ? {
+                      background: "var(--dtp-cyan)",
+                      borderColor: "var(--dtp-cyan)",
+                      color: "var(--dtp-ink)",
+                      fontWeight: 600,
+                    }
+                  : undefined
               }
             >
               {l.label}

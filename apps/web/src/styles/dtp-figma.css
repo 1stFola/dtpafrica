@@ -1,0 +1,5253 @@
+/* =====================================================================
+   DTP Africa — Figma design system implementation
+   Loaded AFTER global.css so the redesigned public surfaces win over the
+   legacy stylesheet. Every selector is namespaced `dtp-*` / `mvce-*`,
+   so nothing here leaks into the dark admin + operator modules.
+   ===================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * 1. Primitives
+ * ------------------------------------------------------------------ */
+
+.dtp-page {
+  background: var(--dtp-paper);
+  color: var(--dtp-ink);
+  font-family: var(--dtp-font-ui);
+  overflow-x: clip;
+}
+
+.dtp-shell {
+  width: 100%;
+  max-width: var(--dtp-maxw);
+  margin-inline: auto;
+  padding-inline: var(--dtp-gutter);
+}
+
+/* Eyebrow — Sofia Pro 600/700 15px, +2.1 tracking, uppercase */
+.dtp-eyebrow {
+  margin: 0;
+  font-family: var(--dtp-font-ui);
+  font-size: var(--dtp-fs-eyebrow);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: var(--dtp-tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.dtp-eyebrow--gradient {
+  background: var(--dtp-grad-eyebrow);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Display — Gasoek One, always uppercase in the design */
+.dtp-display {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-weight: 400;
+  font-size: var(--dtp-fs-display);
+  line-height: 0.99;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.dtp-display--hero {
+  font-size: var(--dtp-fs-hero);
+  line-height: 0.98;
+}
+
+.dtp-lead {
+  margin: 0;
+  font-size: var(--dtp-fs-lead);
+  line-height: 1.36;
+  font-weight: 400;
+  text-wrap: pretty;
+}
+
+.dtp-body {
+  margin: 0;
+  font-size: clamp(1rem, 1.7vw, var(--dtp-fs-body));
+  line-height: 1.2;
+  font-weight: 400;
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------------------------ *
+ * 2. Buttons — "Medium Action Button" 148x45, radius 5px
+ * ------------------------------------------------------------------ */
+
+.dtp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dtp-space-3);
+  min-height: 45px;
+  padding: 0 var(--dtp-space-5);
+  border: 1px solid transparent;
+  border-radius: var(--dtp-radius-btn);
+  background: var(--dtp-blue);
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: var(--dtp-fs-xs);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--dtp-t-fast), color var(--dtp-t-fast),
+    transform var(--dtp-t-fast), box-shadow var(--dtp-t-fast);
+}
+
+.dtp-btn:hover {
+  background: #0716c4;
+  transform: translateY(-1px);
+  box-shadow: var(--dtp-shadow-blue);
+}
+
+.dtp-btn:active { transform: translateY(0); }
+
+.dtp-btn:focus-visible {
+  outline: 2px solid var(--dtp-white);
+  outline-offset: 3px;
+}
+
+.dtp-btn[aria-disabled="true"],
+.dtp-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* The shared <Button> from @dtp/ui emits these modifiers; global.css styled
+   them in the old slate palette, so re-point them at the Figma tokens. */
+.dtp-btn--primary {
+  background: var(--dtp-blue);
+  color: var(--dtp-white);
+}
+.dtp-btn--primary:not(:disabled):hover {
+  background: #0716c4;
+  box-shadow: var(--dtp-shadow-blue);
+}
+
+.dtp-btn--secondary {
+  background: transparent;
+  border-color: currentColor;
+  color: var(--dtp-ink);
+}
+.dtp-btn--secondary:not(:disabled):hover {
+  background: var(--dtp-ink);
+  color: var(--dtp-white);
+  box-shadow: none;
+}
+
+/* Outline-on-dark — hero secondary + "Interested in partnering?" CTA */
+.dtp-btn--ghost {
+  background: transparent;
+  border-color: var(--dtp-white);
+  color: var(--dtp-white);
+}
+.dtp-btn--ghost:hover {
+  background: var(--dtp-white);
+  color: var(--dtp-ink);
+  box-shadow: none;
+}
+
+.dtp-btn--ink {
+  background: var(--dtp-ink);
+  color: var(--dtp-white);
+}
+.dtp-btn--ink:hover { background: #1c1c2c; box-shadow: var(--dtp-shadow-soft); }
+
+.dtp-btn--lime {
+  background: var(--dtp-lime);
+  color: var(--dtp-green);
+}
+.dtp-btn--lime:hover { background: #c4f414; box-shadow: var(--dtp-shadow-lime); }
+
+.dtp-btn--lg { min-height: 75px; font-size: 1.25rem; padding-inline: var(--dtp-space-7); }
+
+/* ------------------------------------------------------------------ *
+ * 3. Navigation — white floating pill, Figma 3:189 (1314x92 at y57)
+ * ------------------------------------------------------------------ */
+
+.dtp-nav-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  /* Equal inset above and to both sides, so the pill reads as evenly
+     floated rather than centred in a narrower column. */
+  padding: var(--dtp-nav-top) var(--dtp-nav-top) var(--dtp-space-2);
+  pointer-events: none;
+}
+
+.dtp-nav {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--dtp-space-5);
+  width: 100%;
+  max-width: calc(var(--dtp-maxw) + var(--dtp-nav-top) + var(--dtp-nav-top));
+  min-width: 0;
+  min-height: var(--dtp-nav-h);
+  margin-inline: auto;
+  padding: 0 var(--dtp-space-5) 0 var(--dtp-space-7);
+  background: var(--dtp-white);
+  border-radius: var(--dtp-radius-nav);
+  box-shadow: var(--dtp-shadow-soft);
+}
+
+.dtp-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  /* Inline SVG paints currentColor — black ink on the white pill. */
+  color: var(--dtp-ink);
+}
+
+/* Full lockup (monogram + wordmark), 5.84:1. Height-driven so the width
+   follows the intrinsic ratio. The clamp matters: at 38px the lockup is 222px
+   wide, which on a 375 phone pushed the CTA and the burger outside the pill. */
+.dtp-nav__logo {
+  display: block;
+  height: clamp(22px, 6.4vw, 38px);
+  width: auto;
+  max-width: clamp(132px, 17vw, 222px);
+  flex: none;
+}
+
+/* Logo left; links pushed over to sit beside the CTA. The 36px inset plus the
+   nav's own 24px gap reproduces Figma's 60px between the last link and the
+   Register Talent button. */
+.dtp-nav__links {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  gap: clamp(1rem, 2.6vw, 34px);
+  padding-right: 36px;
+}
+
+.dtp-nav__link {
+  position: relative;
+  font-family: var(--dtp-font-ui);
+  font-size: var(--dtp-fs-eyebrow);
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--dtp-ink);
+  white-space: nowrap;
+  padding-block: var(--dtp-space-2);
+  transition: color var(--dtp-t-fast);
+}
+
+.dtp-nav__link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--dtp-blue);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dtp-t-fast);
+}
+
+/* Desktop keeps the links visible even while the mobile disclosure reports
+   `hidden`; the media query below restores `display:none` on small screens. */
+.dtp-nav__links[hidden] { display: flex; }
+
+.dtp-nav__link:hover,
+.dtp-nav__link.is-active { color: var(--dtp-blue); }
+.dtp-nav__link:hover::after,
+.dtp-nav__link.is-active::after { transform: scaleX(1); }
+.dtp-nav__link::after { background: var(--dtp-blue); }
+
+.dtp-nav__cta {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* Mobile disclosure */
+.dtp-nav__toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  border: 0;
+  border-radius: var(--dtp-radius-pill);
+  background: transparent;
+  color: var(--dtp-ink);
+  cursor: pointer;
+}
+.dtp-nav__toggle:hover { background: var(--dtp-paper-alt); }
+
+/* ------------------------------------------------------------------ *
+ * 4. Hero — black plate, image, bottom scrim, centred stack
+ * ------------------------------------------------------------------ */
+
+/* Full bleed: rather than breaking out with `100vw` (which counts the
+   scrollbar and overshoots by its width), drop the layout constraint on the
+   one wrapper that imposes it. Scoped via :has() so it only affects routes
+   that actually render a Figma hero — admin and operator views keep their
+   padding. `.dtp-shell` still supplies the inner max-width and gutter. */
+.app-main:has(.dtp-hero),
+.app-main:has(.featured-players-page),
+.app-main:has(.profile-page.player-profile.dtp-page) {
+  max-width: none;
+  padding: 0;
+}
+
+.app-shell:has(.featured-players-page),
+.app-shell:has(.profile-page.player-profile.dtp-page) {
+  background: #020305;
+}
+
+
+.dtp-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 640px;
+  width: 100%;
+  /* Sits underneath the floating nav pill, as Figma 3:189 composes it. */
+  margin-top: calc(-1 * (var(--dtp-nav-top) + var(--dtp-nav-h) + var(--dtp-space-2) + 8px));
+  padding: calc(var(--dtp-nav-h) + var(--dtp-space-7)) 0 var(--dtp-space-9);
+  /* Figma "Rectangle 2319" — the plate the masked layers sit on. */
+  background: var(--dtp-ink);
+  color: var(--dtp-white);
+  overflow: hidden;
+}
+
+.dtp-hero--tall { min-height: 834px; }
+
+.dtp-hero__media {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.72;
+}
+
+/* Rectangle 34624119 — transparent -> black, bottom 559px */
+.dtp-hero__scrim {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: -1;
+  height: 66%;
+  background: var(--dtp-grad-scrim);
+  pointer-events: none;
+}
+
+.dtp-hero__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--dtp-space-5);
+  text-align: center;
+}
+
+.dtp-hero--left .dtp-hero__inner {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* --- Split hero (homepage) --------------------------------------------
+   Figma 3:189 composes the backdrop from a masked photo panel (z9) over a
+   black plate. Its hard edge falls at 50.6% and the mask carries the player
+   reaching back across the black, so a single exported layer reproduces the
+   composition. It sits behind the copy, so text always wins.               */
+/* Opt out of the isolate so the arm layer can paint above the nav, and
+   re-stack everything on non-negative indices so nothing falls behind the
+   hero's own background. `overflow: hidden` still clips to the hero box. */
+/* Figma anchors the copy to the lower half, not the centre: the block runs
+   y274->712 in an 834 frame, leaving 122px (14.6%) beneath it.
+
+   Height stays fixed rather than following the 1440:834 ratio: locking the
+   ratio kept the layer uncropped but made the hero 1086px tall at 1875px
+   wide, dropping the headline below the fold. The magnification is solved on
+   the layer instead (see `--photo` below). */
+.dtp-hero--split {
+  justify-content: center;
+  isolation: auto;
+}
+
+.dtp-hero--split .dtp-hero__layer--photo { z-index: 0; }
+
+/* Equal halves. The artwork's black/photo boundary sits at 50.56% of its own
+   width, so pinning the layer right and sizing it to 100/(1 - 0.5056) =
+   101.12% drops that boundary exactly on the hero's midpoint at any viewport.
+   The player scales with the half he occupies, which is the trade for a split
+   that stays 50/50 instead of the black creeping wider as the window grows. */
+.dtp-hero--split .dtp-hero__layer {
+  left: auto;
+  right: 0;
+  width: 101.12%;
+}
+.dtp-hero--split .dtp-hero__dot { z-index: 1; }
+
+.dtp-hero--split .dtp-hero__inner {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  text-align: left;
+  /* Sits ~30px inside the nav pill's left edge rather than on the shell
+     gutter, so the stack reads closer to the frame edge without lining up
+     flush with the nav. */
+  padding-left: 30px;
+}
+
+.dtp-hero__copy {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--dtp-space-5);
+  min-width: 0;
+}
+
+.dtp-hero__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* global.css carries `@media (max-width:640px){ .marketing-module img … {
+   height:auto } }` at specificity (0,1,1), which outranks the single-class
+   rules above and collapses these backdrops to their intrinsic height on
+   phones. Re-assert the fill at (0,2,0). */
+.dtp-hero .dtp-hero__layer,
+.dtp-hero .dtp-hero__media {
+  height: 100%;
+}
+
+.dtp-hero__layer--photo { z-index: -2; }
+
+
+/* The player's arm crossing in front of the nav pill (Figma z45, which sits
+   above the nav in the board). The hero is an `isolation: isolate` stacking
+   context, which would trap this layer, so the split hero opts out and uses
+   non-negative indices throughout — see `.dtp-hero--split` below.
+
+   Clipped to the nav band. It has to outrank the nav (60) to cross the pill,
+   which also put it above the copy (2) — so its opaque shoulder was covering
+   the end of "STAGE FOR" instead of letting the headline run onto the arm.
+   Figma orders these the other way (headline z46 over the mask at z45). Below
+   this strip the same arm is already drawn by the photo layer at z0, so
+   clipping loses nothing visually and lets the type sit on top of it. */
+.dtp-hero__layer--arm {
+  z-index: 61; /* nav wrap is 60 */
+  clip-path: inset(0 0 76% 0);
+}
+
+/* Decorative markers on the right edge — Figma Group 19521 / 19522 */
+.dtp-hero__dot {
+  position: absolute;
+  z-index: -1;
+  display: block;
+  border-radius: var(--dtp-radius-pill);
+  background: var(--dtp-white);
+  pointer-events: none;
+}
+
+.dtp-hero__dot--ring {
+  left: 93.26%;
+  top: 44.72%;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: 1px solid var(--dtp-white);
+}
+
+/* The filled 18px core inside the ring. */
+.dtp-hero__dot--ring::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: var(--dtp-radius-pill);
+  background: var(--dtp-white);
+}
+
+.dtp-hero__dot--solid {
+  left: 93.89%;
+  top: 54.92%;
+  width: 18px;
+  height: 18px;
+}
+
+/* `pre-line` honours the deliberate line breaks the Figma headline ships with
+   while still collapsing incidental whitespace. */
+.dtp-hero__title {
+  color: var(--dtp-white);
+  white-space: pre-line;
+  text-wrap: initial;
+}
+
+/* Figma sizes the hero stack larger than the page defaults — deliberately
+   enough that the widest headline line grazes the player's arm. */
+.dtp-hero__copy .dtp-eyebrow { font-size: 1.0625rem; }
+
+.dtp-hero__actions .dtp-btn {
+  min-height: 52px;
+  padding-inline: var(--dtp-space-6);
+  font-size: 0.875rem;
+}
+
+/* Headline accent — "…for LOCAL TALENT" */
+.dtp-hl { color: var(--dtp-blue-electric); }
+
+.dtp-hero__lead {
+  max-width: 46ch;
+  color: #e8ebf2;
+}
+
+.dtp-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dtp-space-4);
+  margin-top: var(--dtp-space-2);
+}
+
+/* Hero stat trio — Featured Players "50 / DTP / 50" */
+.dtp-hero__stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(1.5rem, 6vw, 82px);
+  margin-top: var(--dtp-space-5);
+}
+
+.dtp-hero__stat { text-align: center; }
+
+.dtp-hero__stat dd {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.75rem, 3vw, 2.3125rem);
+  line-height: 1.1;
+  color: var(--dtp-white);
+}
+
+.dtp-hero__stat dt {
+  margin-top: var(--dtp-space-1);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dtp-cyan);
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. Colour bands — the homepage's blocked sections
+ * ------------------------------------------------------------------ */
+
+.dtp-band {
+  position: relative;
+  padding-block: clamp(3rem, 7vw, 96px);
+}
+
+.dtp-band--paper { background: var(--dtp-paper); }
+.dtp-band--ink { background: var(--dtp-ink); color: var(--dtp-white); }
+.dtp-band--blue { background: var(--dtp-blue); color: var(--dtp-white); }
+.dtp-band--lime { background: var(--dtp-lime); color: var(--dtp-ink); }
+.dtp-band--red { background: var(--dtp-red); color: var(--dtp-ink); }
+
+.dtp-band__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--dtp-space-3);
+  text-align: center;
+  margin-bottom: clamp(2rem, 4vw, 56px);
+}
+
+.dtp-band--start .dtp-band__head {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.dtp-band__head .dtp-body { max-width: 62ch; }
+
+/* Per-band type colours straight from the frames */
+.dtp-band--lime .dtp-eyebrow { color: var(--dtp-lime); }
+.dtp-band--lime .dtp-display { color: var(--dtp-green); }
+.dtp-band--red .dtp-eyebrow { color: var(--dtp-orange-deep); }
+.dtp-band--red .dtp-display { color: var(--dtp-orange); }
+.dtp-band--blue .dtp-eyebrow { color: var(--dtp-ink-800); }
+.dtp-band--blue .dtp-display { color: var(--dtp-blue); }
+.dtp-band--blue .dtp-band__head .dtp-body { color: var(--dtp-ink); }
+
+/* The lime band is a full-bleed wedge in Figma */
+.dtp-band--lime.dtp-band--wedge {
+  clip-path: polygon(0 3.5%, 100% 0, 100% 100%, 0 96.5%);
+  padding-block: clamp(4.5rem, 9vw, 132px);
+}
+
+.dtp-band__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: clamp(2rem, 4vw, 48px);
+}
+
+/* Legacy home-feature blocks keep their own headings (they carry the
+   aria-labelledby target). Inside a band, give them the Figma type. */
+.dtp-band .home-features-block__head {
+  margin-bottom: clamp(2rem, 4vw, 56px);
+}
+
+.dtp-band .home-features-eyebrow {
+  display: block;
+  margin-bottom: var(--dtp-space-3);
+  font-family: var(--dtp-font-ui);
+  font-size: var(--dtp-fs-eyebrow);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: var(--dtp-tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.dtp-band .home-features-block__head h2 {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-weight: 400;
+  font-size: var(--dtp-fs-display);
+  line-height: 0.99;
+  text-transform: uppercase;
+  text-shadow: none;
+  text-wrap: balance;
+}
+
+.dtp-band .home-features-lead {
+  margin: var(--dtp-space-4) 0 0;
+  max-width: 62ch;
+  font-size: clamp(1rem, 1.7vw, var(--dtp-fs-body));
+  line-height: 1.2;
+}
+
+/* Card surfaces inside bands: the legacy blocks were transparent (inheriting
+   black body text onto the red band) or the old slate. Pull them onto the
+   Figma ink surface so every card reads as one dark system. */
+.dtp-band .home-features-teaser,
+.dtp-band .home-hl-card,
+.dtp-band .home-match-card,
+.dtp-band [class*="home-live-match"] article {
+  background: var(--dtp-ink-800);
+  border: 1px solid var(--dtp-ink-700);
+  border-radius: var(--dtp-radius-sm);
+  color: var(--dtp-white);
+  box-shadow: var(--dtp-shadow-card);
+}
+
+.dtp-band .home-features-teaser :where(h2, h3, h4, strong, dt),
+.dtp-band .home-hl-card :where(h2, h3, h4, strong, dt) {
+  color: var(--dtp-white);
+}
+
+.dtp-band .home-features-teaser :where(p, span, dd, li, small),
+.dtp-band .home-hl-card :where(p, span, dd, li, small) {
+  color: #c6cad6;
+}
+
+/* Keep the accent glyphs the design calls for. */
+.dtp-band .home-features-teaser__tag,
+.dtp-band .home-features-teaser :where(a) {
+  color: var(--dtp-cyan);
+}
+
+.dtp-band .home-features-teaser:hover,
+.dtp-band .home-hl-card:hover {
+  border-color: var(--dtp-cyan);
+}
+
+.dtp-band--red .home-features-eyebrow { color: var(--dtp-orange-deep); }
+.dtp-band--red .home-features-block__head h2 { color: var(--dtp-orange); }
+.dtp-band--red .home-features-lead { color: var(--dtp-ink); }
+
+.dtp-band--blue .home-features-eyebrow { color: var(--dtp-ink-800); }
+.dtp-band--blue .home-features-block__head h2 { color: var(--dtp-white); }
+.dtp-band--blue .home-features-lead { color: var(--dtp-white); }
+
+/* ------------------------------------------------------------------ *
+ * 6. Marquee — "from local roots to global reach"
+ * ------------------------------------------------------------------ */
+
+.dtp-marquee {
+  overflow: hidden;
+  padding-block: clamp(0.65rem, 1.25vw, 1rem);
+  background: var(--dtp-neon-lime);
+  user-select: none;
+}
+
+.dtp-marquee--lime { background: var(--dtp-neon-lime); }
+.dtp-marquee--ink { background: var(--dtp-neon-lime-bright); }
+.dtp-marquee--blue { background: var(--dtp-blue); }
+.dtp-marquee--orange { background: var(--dtp-orange); }
+
+.dtp-marquee__track {
+  display: flex;
+  width: max-content;
+  animation: dtp-marquee-scroll 38s linear infinite;
+  will-change: transform;
+}
+
+/* No `gap` here on purpose: the track holds two identical halves and the
+   keyframe translates -50%. A flex gap adds one fewer gap than items, so the
+   seam would drift and the loop would visibly jump. Spacing lives on the item
+   instead, making every item contribute identical width. */
+.dtp-marquee__item {
+  flex: none;
+  padding-right: clamp(1rem, 2.4vw, 2rem);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.15rem, 2.7vw, 2.45rem);
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--dtp-ink);
+}
+
+.dtp-marquee--lime .dtp-marquee__item,
+.dtp-marquee--ink .dtp-marquee__item { color: var(--dtp-ink); }
+.dtp-marquee--orange .dtp-marquee__item { color: var(--dtp-white); }
+
+/* Figma Group 19524 — the second strip under the hero. */
+.dtp-marquee--blue .dtp-marquee__item { color: var(--dtp-white); }
+
+@keyframes dtp-marquee-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dtp-marquee__track { animation: none; }
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. MVCE card — Figma "Product Card" 241:3165 / 315x392
+ *    Reusable market-value + metric card. Shipped from @dtp/ui.
+ * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
+ * 6a. Homepage reel proof section
+ * ------------------------------------------------------------------ */
+
+.home-reel-section {
+  background: #e9edff;
+  border-top: 2px solid var(--dtp-blue);
+  border-bottom: 2px solid var(--dtp-blue);
+  padding-block: clamp(3rem, 6vw, 5.2rem);
+}
+
+.home-reel-section__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.92fr);
+  align-items: center;
+  gap: clamp(2rem, 7vw, 5rem);
+  max-width: 1088px;
+}
+
+.home-reel-section__media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 509 / 296;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  border: 0;
+  border-radius: 8px;
+  background: #07101c;
+  box-shadow: 0 18px 38px rgba(16, 24, 64, 0.12);
+}
+
+.home-reel-section__media img,
+.home-reel-section__thumb-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.home-reel-section__media img {
+  object-fit: cover;
+  filter: saturate(0.92) contrast(0.96);
+  transform: scale(1.01);
+  transition: transform 180ms ease, filter 180ms ease;
+}
+
+.home-reel-section__thumb-fallback {
+  background:
+    linear-gradient(135deg, rgba(38, 60, 255, 0.35), transparent 42%),
+    linear-gradient(180deg, #20283f, #070b16);
+}
+
+.home-reel-section__media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 8, 22, 0.16);
+  transition: background 180ms ease;
+}
+
+.home-reel-section__play {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: clamp(70px, 8vw, 94px);
+  height: clamp(70px, 8vw, 94px);
+  color: var(--dtp-white);
+  border: clamp(5px, 0.6vw, 7px) solid currentColor;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  transform: translate(-50%, -50%);
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.home-reel-section__play svg {
+  margin-left: 5px;
+}
+
+.home-reel-section__media:hover img,
+.home-reel-section__media:focus-visible img {
+  filter: saturate(1) contrast(1.02);
+  transform: scale(1.045);
+}
+
+.home-reel-section__media:hover::after,
+.home-reel-section__media:focus-visible::after {
+  background: rgba(5, 8, 22, 0.05);
+}
+
+.home-reel-section__media:hover .home-reel-section__play,
+.home-reel-section__media:focus-visible .home-reel-section__play {
+  background: rgba(38, 60, 255, 0.38);
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
+.home-reel-section__media:focus-visible,
+.home-reel-section__button:focus-visible,
+.home-reel-modal__close:focus-visible {
+  outline: 3px solid var(--dtp-neon-lime);
+  outline-offset: 4px;
+}
+
+.home-reel-section__copy {
+  display: grid;
+  justify-items: start;
+  gap: 1.45rem;
+}
+
+.home-reel-section__copy p {
+  max-width: 43ch;
+  margin: 0;
+  color: #050816;
+  font-family: var(--dtp-font-body);
+  font-size: clamp(1rem, 1.28vw, 1.2rem);
+  font-weight: 500;
+  line-height: 1.43;
+  letter-spacing: 0;
+}
+
+.home-reel-section__button {
+  min-width: 132px;
+  min-height: 44px;
+  padding: 0.8rem 1.4rem;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-body);
+  font-size: 0.76rem;
+  font-weight: 800;
+  border: 0;
+  border-radius: 5px;
+  background: var(--dtp-blue);
+  box-shadow: 0 12px 24px rgba(38, 60, 255, 0.2);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.home-reel-section__button:hover,
+.home-reel-section__button:focus-visible {
+  background: #1428f5;
+  box-shadow: 0 16px 28px rgba(38, 60, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.home-reel-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 2rem);
+  background: rgba(3, 6, 18, 0.84);
+  backdrop-filter: blur(10px);
+}
+
+.home-reel-modal {
+  position: relative;
+  width: min(960px, 100%);
+}
+
+.home-reel-modal__close {
+  position: absolute;
+  right: 0;
+  top: -52px;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: var(--dtp-white);
+  font-size: 2rem;
+  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.home-reel-modal__frame {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  background: #000;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.46);
+}
+
+.home-reel-modal__frame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.home-reel-modal__fallback {
+  margin: 0;
+  padding: 2rem;
+  color: var(--dtp-white);
+  border-radius: 14px;
+  background: var(--dtp-ink-900);
+}
+
+@media (max-width: 760px) {
+  .dtp-marquee {
+    padding-block: 0.62rem;
+  }
+
+  .dtp-marquee__item {
+    padding-right: 1rem;
+    font-size: clamp(1.12rem, 7vw, 1.78rem);
+    line-height: 0.9;
+  }
+
+  .home-reel-section {
+    padding-block: clamp(2.2rem, 10vw, 3.3rem);
+  }
+
+  .home-reel-section__inner {
+    grid-template-columns: 1fr;
+    gap: 1.45rem;
+  }
+
+  .home-reel-section__media {
+    max-width: 520px;
+    margin-inline: auto;
+  }
+
+  .home-reel-section__copy {
+    width: min(520px, 100%);
+    margin-inline: auto;
+    gap: 1.15rem;
+  }
+
+  .home-reel-section__copy p {
+    font-size: 1rem;
+    line-height: 1.48;
+  }
+
+  .home-reel-section__button {
+    min-width: 118px;
+    min-height: 40px;
+    padding: 0.72rem 1.05rem;
+  }
+
+  .home-reel-modal {
+    width: min(720px, 100%);
+  }
+
+  .home-reel-modal__close {
+    top: 10px;
+    right: 10px;
+    z-index: 1;
+    width: 38px;
+    height: 38px;
+    background: rgba(3, 6, 18, 0.72);
+  }
+}
+
+@media (max-width: 380px) {
+  .home-reel-section__play {
+    width: 62px;
+    height: 62px;
+  }
+
+  .home-reel-section__play svg {
+    width: 31px;
+    height: 31px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 6b. Featured talent signal cards
+ * ------------------------------------------------------------------ */
+
+.dtp-band--featured {
+  overflow: hidden;
+  padding-top: clamp(4rem, 8vw, 7rem);
+  padding-bottom: clamp(2rem, 4vw, 3.35rem);
+  background:
+    radial-gradient(circle at 14% 9%, rgba(255, 255, 255, 0.62), transparent 23rem),
+    radial-gradient(circle at 88% 84%, rgba(182, 255, 89, 0.22), transparent 18rem),
+    #edf8dc;
+}
+
+.dtp-band--featured .dtp-band__head {
+  margin-bottom: clamp(1.2rem, 2.4vw, 2rem);
+}
+
+.dtp-band--featured .dtp-eyebrow {
+  color: var(--dtp-green);
+}
+
+.dtp-band--featured .dtp-display {
+  max-width: 650px;
+  color: var(--dtp-green);
+}
+
+.dtp-band--featured .dtp-body {
+  color: var(--dtp-ink);
+  font-weight: 500;
+}
+
+.dtp-band--featured .dtp-band__actions {
+  margin-top: clamp(1.35rem, 2.6vw, 2.1rem);
+}
+
+.dtp-band--featured .dtp-btn {
+  min-height: 54px;
+  padding-inline: 2.1rem;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  box-shadow: 0 14px 28px rgba(38, 60, 255, 0.18);
+}
+
+.featured-talent-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  max-width: min(820px, 100%);
+  margin: 0 auto clamp(1.25rem, 2.7vw, 2rem);
+}
+
+.featured-talent-legend__items {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0.35rem 0.15rem;
+  scrollbar-width: none;
+}
+
+.featured-talent-legend__items::-webkit-scrollbar {
+  display: none;
+}
+
+.featured-talent-legend__arrow {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--dtp-ink);
+  font-size: 1.35rem;
+  line-height: 1;
+  border-radius: 999px;
+  background: var(--dtp-white);
+  box-shadow: 0 8px 20px rgba(20, 45, 36, 0.09);
+}
+
+.featured-talent-legend__item {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  color: #26302a;
+  font-size: clamp(0.58rem, 1vw, 0.72rem);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dtp-band--ink .featured-talent-legend__item {
+  color: var(--dtp-white);
+}
+
+.featured-talent-legend__item > span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--signal-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal-color) 18%, transparent);
+}
+
+.featured-talent-legend__item--turn,
+.featured-talent-card__signal--turn { --signal-color: #00d16f; }
+.featured-talent-legend__item--release,
+.featured-talent-card__signal--release { --signal-color: #00b7ff; }
+.featured-talent-legend__item--touch,
+.featured-talent-card__signal--touch { --signal-color: #263cff; }
+.featured-talent-legend__item--sprint,
+.featured-talent-card__signal--sprint { --signal-color: #c44cff; }
+.featured-talent-legend__item--work,
+.featured-talent-card__signal--work { --signal-color: #b7ff1f; }
+.featured-talent-legend__item--speed,
+.featured-talent-card__signal--speed { --signal-color: var(--dtp-orange); }
+.featured-talent-legend__item--ballSpeed,
+.featured-talent-card__signal--ballSpeed { --signal-color: #ff3f8f; }
+.featured-talent-legend__item--ballDistance,
+.featured-talent-card__signal--ballDistance { --signal-color: #00d5c8; }
+
+.featured-talent-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.9rem, 1.45vw, 1.25rem);
+}
+
+.featured-talent-grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(214px, 1fr));
+}
+
+.featured-talent-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.72rem;
+  padding: clamp(0.55rem, 1vw, 0.75rem);
+  color: var(--dtp-ink);
+  text-decoration: none;
+  border: 1px solid rgba(27, 65, 45, 0.08);
+  border-radius: 8px;
+  background: var(--dtp-white);
+  box-shadow: 0 18px 32px rgba(31, 62, 42, 0.12);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.featured-talent-card:hover,
+.featured-talent-card:focus-visible {
+  color: var(--dtp-ink);
+  border-color: rgba(38, 60, 255, 0.32);
+  box-shadow: 0 22px 42px rgba(31, 62, 42, 0.18);
+  transform: translateY(-3px);
+}
+
+.featured-talent-card:focus-visible {
+  outline: 3px solid var(--dtp-blue);
+  outline-offset: 4px;
+}
+
+.featured-talent-card__portrait {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1 / 0.92;
+  overflow: hidden;
+  color: var(--dtp-blue);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(2.8rem, 7vw, 4rem);
+  line-height: 1;
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.32), transparent 42%),
+    linear-gradient(180deg, #d3fff0, #c8f2ff);
+}
+
+.featured-talent-card:nth-child(4n + 2) .featured-talent-card__portrait {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.4), transparent 42%),
+    linear-gradient(180deg, #fff0bd, #fff7d7);
+}
+
+.featured-talent-card:nth-child(4n + 3) .featured-talent-card__portrait {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.32), transparent 42%),
+    linear-gradient(180deg, #90ecff, #d9f7ff);
+}
+
+.featured-talent-card:nth-child(4n + 4) .featured-talent-card__portrait {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.32), transparent 42%),
+    linear-gradient(180deg, #bbffd9, #e1fff1);
+}
+
+.featured-talent-card__portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  transition: transform 180ms ease;
+}
+
+.featured-talent-card:hover .featured-talent-card__portrait img,
+.featured-talent-card:focus-visible .featured-talent-card__portrait img {
+  transform: scale(1.035);
+}
+
+.featured-talent-card__body {
+  min-width: 0;
+  padding: 0 0.22rem 0.15rem;
+}
+
+.featured-talent-card__body h3,
+.featured-talent-card__body p {
+  margin: 0;
+}
+
+.featured-talent-card__body h3 {
+  overflow: hidden;
+  color: #183426;
+  font-size: clamp(0.78rem, 1vw, 0.9rem);
+  font-weight: 800;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.featured-talent-card__body p {
+  margin-top: 0.16rem;
+  overflow: hidden;
+  color: var(--dtp-blue);
+  font-size: clamp(0.64rem, 0.85vw, 0.74rem);
+  font-weight: 800;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.featured-talent-card__signals {
+  display: grid;
+  gap: 0.22rem;
+  margin: 0.48rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.featured-talent-card__signal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.65rem;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.featured-talent-card__track {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(17, 25, 38, 0.11);
+}
+
+.featured-talent-card__track > span {
+  display: block;
+  height: 100%;
+  min-width: 7%;
+  border-radius: inherit;
+  background: var(--signal-color);
+}
+
+.featured-talent-card__figure {
+  color: #51605b;
+  font-size: 0.56rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ *
+ * 6c. Featured players directory page
+ * ------------------------------------------------------------------ */
+
+.featured-players-page {
+  --featured-shell: min(1212px, calc(100vw - clamp(5.25rem, 12vw, 14rem)));
+  min-height: 100vh;
+  padding:
+    clamp(0.18rem, 0.65vw, 0.62rem)
+    var(--dtp-gutter)
+    clamp(3.5rem, 7vw, 6rem);
+  background:
+    radial-gradient(circle at 12% 4%, rgba(38, 60, 255, 0.16), transparent 26rem),
+    radial-gradient(circle at 92% 18%, rgba(0, 213, 200, 0.12), transparent 22rem),
+    #020305;
+  color: var(--dtp-white);
+}
+
+.featured-players-hero,
+.featured-players-directory__shell {
+  width: var(--featured-shell);
+  margin-inline: auto;
+}
+
+.featured-players-hero {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  min-height: 0;
+  aspect-ratio: 1212 / 439;
+  overflow: hidden;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow:
+    0 32px 72px rgba(0, 0, 0, 0.36),
+    0 1px 0 rgba(255, 255, 255, 0.12) inset;
+}
+
+.featured-players-hero__banner {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.featured-players-hero__stats {
+  position: absolute;
+  z-index: 2;
+  left: 4.35%;
+  bottom: 13.1%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9%;
+  width: 36.8%;
+  margin: 0;
+  padding: 0;
+  color: var(--dtp-white);
+}
+
+.featured-players-hero__stats div {
+  display: grid;
+  aspect-ratio: 1.86 / 1;
+  align-content: center;
+  justify-items: center;
+  padding: clamp(0.24rem, 0.72vw, 0.58rem) clamp(0.25rem, 0.85vw, 0.68rem);
+  border: 1px solid rgba(88, 166, 255, 0.26);
+  border-radius: clamp(7px, 0.9vw, 11px);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(65, 184, 255, 0.34), transparent 62%),
+    linear-gradient(180deg, rgba(31, 112, 255, 0.99), rgba(21, 83, 246, 0.99));
+  box-shadow:
+    0 12px 25px rgba(18, 86, 255, 0.42),
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    0 -12px 18px rgba(12, 45, 191, 0.22) inset;
+}
+
+.featured-players-hero__stats dd,
+.featured-players-hero__stats dt {
+  margin: 0;
+}
+
+.featured-players-hero__stats dd {
+  font-family: var(--dtp-font-display);
+  font-size: clamp(0.62rem, 4.05vw, 2.52rem);
+  font-weight: 950;
+  line-height: 0.88;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  text-shadow: 0 3px 0 rgba(9, 44, 190, 0.26);
+}
+
+.featured-players-hero__stats dt {
+  margin-top: clamp(0.16rem, 0.48vw, 0.4rem);
+  color: rgba(202, 231, 255, 0.86);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.18rem, 0.58vw, 0.46rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.featured-players-directory {
+  padding-top: clamp(1.55rem, 2.7vw, 2.35rem);
+}
+
+.featured-players-directory__shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.featured-players-directory__intro {
+  width: min(475px, 100%);
+  margin: 0 auto clamp(1.7rem, 2.8vw, 2.25rem);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--dtp-font-body);
+  font-size: clamp(0.82rem, 0.96vw, 0.98rem);
+  font-weight: 600;
+  line-height: 1.28;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.featured-players-directory__shell .dtp-filters {
+  flex-wrap: nowrap;
+  width: min(1080px, 100%);
+  justify-content: center;
+  gap: clamp(0.55rem, 1.2vw, 1rem);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.featured-players-directory__shell .dtp-filters__search,
+.featured-players-directory__shell .dtp-filters__select,
+.featured-players-directory__shell .dtp-filters__reset {
+  min-height: 31px;
+  border-radius: 7px;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.64rem, 0.74vw, 0.72rem);
+  font-weight: 650;
+  line-height: 1;
+}
+
+.featured-players-directory__shell .dtp-filters__search {
+  flex: 0 1 262px;
+  min-width: 220px;
+  padding: 0.5rem 0.78rem 0.5rem 1.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background:
+    radial-gradient(circle at 0.9rem 50%, rgba(10, 12, 16, 0.7) 0 4px, transparent 4.5px),
+    linear-gradient(180deg, rgba(227, 227, 229, 0.9), rgba(159, 159, 164, 0.92));
+  box-shadow:
+    0 7px 18px rgba(0, 0, 0, 0.34),
+    0 1px 0 rgba(255, 255, 255, 0.42) inset;
+}
+
+.featured-players-directory__shell .dtp-filters__search::placeholder {
+  color: rgba(22, 24, 30, 0.62);
+}
+
+.featured-players-directory__shell .dtp-filters__select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: none;
+  padding: 0.5rem 0.1rem;
+  border: 0;
+  background: transparent;
+  text-shadow: 0 1px 9px rgba(0, 0, 0, 0.46);
+}
+
+.featured-players-directory__shell .dtp-filters__reset {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  outline: 0;
+  appearance: none;
+  background: rgba(3, 7, 17, 0.42);
+  color: var(--dtp-white);
+  font-weight: 700;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(255, 255, 255, 0.035) inset;
+}
+
+.featured-players-directory__shell .dtp-filters__reset:focus,
+.featured-players-directory__shell .dtp-filters__reset:focus-visible {
+  border-color: rgba(255, 255, 255, 0.44);
+  outline: 0;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.18),
+    0 0 0 2px rgba(255, 255, 255, 0.12) inset,
+    0 1px 0 rgba(255, 255, 255, 0.18) inset;
+}
+
+.featured-players-directory__results {
+  width: 100%;
+  margin-top: clamp(1.95rem, 3vw, 2.6rem);
+}
+
+.featured-players-directory__empty {
+  color: var(--dtp-white);
+  text-align: center;
+}
+
+.featured-players-page .featured-talent-legend {
+  max-width: min(820px, 100%);
+  margin-bottom: clamp(1.05rem, 1.8vw, 1.55rem);
+  padding: 0.2rem 0.24rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.featured-players-page .featured-talent-legend__arrow {
+  width: 31px;
+  height: 31px;
+  color: var(--dtp-ink);
+}
+
+.featured-players-page .featured-talent-legend__items {
+  padding: 0.43rem 0.24rem;
+}
+
+.featured-players-page .featured-talent-legend__item {
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.38);
+}
+
+.featured-players-page .featured-talent-legend__item > span {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--signal-color) 22%, transparent),
+    0 0 12px color-mix(in srgb, var(--signal-color) 32%, transparent);
+}
+
+.featured-players-page .featured-talent-grid--wide {
+  width: min(1040px, 100%);
+  margin-inline: auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(1rem, 1.35vw, 1.22rem);
+}
+
+.featured-players-page .featured-talent-card {
+  padding: clamp(0.55rem, 0.95vw, 0.7rem);
+  border: 1px solid rgba(20, 30, 55, 0.94);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(12, 18, 35, 0.98), rgba(3, 7, 17, 0.99));
+  box-shadow:
+    0 20px 34px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.045) inset;
+}
+
+.featured-players-page .featured-talent-card:hover,
+.featured-players-page .featured-talent-card:focus-visible {
+  color: var(--dtp-white);
+  border-color: rgba(0, 183, 255, 0.36);
+  background:
+    linear-gradient(180deg, rgba(15, 24, 45, 0.99), rgba(4, 8, 19, 0.99));
+  box-shadow:
+    0 24px 42px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(0, 183, 255, 0.08) inset;
+}
+
+.featured-players-page .featured-talent-card__portrait {
+  border-radius: 7px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 38%),
+    linear-gradient(180deg, #b0a6a4 0%, #2a2930 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset,
+    0 11px 20px rgba(0, 0, 0, 0.18);
+}
+
+.featured-players-page .featured-talent-card:nth-child(4n + 2) .featured-talent-card__portrait {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 38%),
+    linear-gradient(180deg, #ffeaa8 0%, #332d28 100%);
+}
+
+.featured-players-page .featured-talent-card:nth-child(4n + 3) .featured-talent-card__portrait {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), transparent 38%),
+    linear-gradient(180deg, #57dcff 0%, #213746 100%);
+}
+
+.featured-players-page .featured-talent-card:nth-child(4n + 4) .featured-talent-card__portrait {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), transparent 38%),
+    linear-gradient(180deg, #b8f7dd 0%, #253f38 100%);
+}
+
+.featured-players-page .featured-talent-card__portrait span {
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.32),
+    0 13px 22px rgba(0, 0, 0, 0.28);
+}
+
+.featured-players-page .featured-talent-card__body h3 {
+  color: var(--dtp-white);
+  font-weight: 760;
+}
+
+.featured-players-page .featured-talent-card__body p {
+  color: #18cbff;
+}
+
+.featured-players-page .featured-talent-card__track {
+  height: 6px;
+  background: rgba(26, 38, 60, 0.98);
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.035) inset,
+    0 -1px 1px rgba(0, 0, 0, 0.3) inset;
+}
+
+.featured-players-page .featured-talent-card__track > span {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--signal-color) 45%, transparent);
+}
+
+.featured-players-page .featured-talent-card__figure {
+  color: #a8dbff;
+}
+
+.featured-players-page .featured-talent-card__figure::before {
+  content: "\2605";
+  margin-right: 0.18rem;
+  color: #ffd24a;
+  font-size: 0.55rem;
+}
+
+/* ------------------------------------------------------------------ *
+ * 6d. Intelligence Suite section
+ * ------------------------------------------------------------------ */
+
+.home-intel-suite {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  min-height: clamp(560px, 58vw, 760px);
+  overflow: hidden;
+  padding:
+    clamp(4.5rem, 7vw, 6.4rem)
+    var(--dtp-nav-top)
+    clamp(3rem, 5.4vw, 4.6rem);
+  background:
+    linear-gradient(103deg, rgba(255, 255, 255, 0.7) 0 54%, transparent 54%),
+    linear-gradient(105deg, rgba(255, 221, 221, 0.6) 0 68%, rgba(255, 239, 239, 0.9) 68% 100%),
+    #fdeaea;
+  border-top: 2px solid var(--dtp-orange);
+}
+
+.home-intel-suite__content {
+  position: relative;
+  z-index: 2;
+  justify-self: center;
+  width: min(calc(var(--dtp-maxw) + var(--dtp-nav-top) * 2), 100%);
+  padding-left: clamp(2rem, 4vw, 5rem);
+}
+
+.home-intel-suite__eyebrow {
+  display: block;
+  margin-bottom: 0.65rem;
+  color: #8d321f;
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.92rem, 1.4vw, 1.38rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.home-intel-suite__title {
+  max-width: 570px;
+  margin: 0;
+  color: var(--dtp-orange);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(3.25rem, 6.15vw, 6.35rem);
+  font-weight: 700;
+  line-height: 0.83;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.home-intel-suite__lead {
+  max-width: 520px;
+  margin: clamp(1rem, 1.5vw, 1.35rem) 0 0;
+  color: #14131b;
+  font-size: clamp(1rem, 1.35vw, 1.34rem);
+  font-weight: 500;
+  line-height: 1.22;
+}
+
+.home-intel-suite__card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(230px, 0.72fr);
+  align-items: center;
+  gap: clamp(1.4rem, 3.5vw, 3rem);
+  width: min(720px, 56vw);
+  min-height: 190px;
+  margin-top: clamp(2rem, 3.6vw, 3rem);
+  padding: clamp(1.35rem, 2.6vw, 2.05rem) clamp(1.45rem, 3vw, 2.35rem);
+  color: var(--dtp-ink);
+  text-decoration: none;
+  border-radius: 8px;
+  background: rgba(255, 247, 239, 0.92);
+  box-shadow: 0 20px 48px rgba(104, 44, 34, 0.08);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.home-intel-suite__card:hover,
+.home-intel-suite__card:focus-visible {
+  color: var(--dtp-ink);
+  box-shadow: 0 26px 62px rgba(104, 44, 34, 0.14);
+  transform: translateY(-3px);
+}
+
+.home-intel-suite__card:focus-visible {
+  outline: 3px solid var(--dtp-blue);
+  outline-offset: 4px;
+}
+
+.home-intel-suite__card-copy h3,
+.home-intel-suite__card-copy p {
+  margin: 0;
+}
+
+.home-intel-suite__card-copy h3 {
+  color: var(--dtp-blue);
+  font-size: clamp(0.9rem, 1vw, 1.08rem);
+  font-weight: 900;
+  line-height: 1.12;
+  white-space: nowrap;
+}
+
+.home-intel-suite__card-copy p {
+  max-width: 330px;
+  margin-top: 0.65rem;
+  color: #7b7182;
+  font-size: clamp(0.78rem, 0.96vw, 0.94rem);
+  font-weight: 700;
+  line-height: 1.38;
+}
+
+.home-intel-suite__card-copy span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 134px;
+  min-height: 42px;
+  margin-top: 1.3rem;
+  color: var(--dtp-blue);
+  font-size: 0.72rem;
+  font-weight: 900;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+}
+
+.home-intel-suite__viz {
+  display: grid;
+  gap: 0.62rem;
+  padding: clamp(1rem, 1.8vw, 1.35rem);
+  border-radius: 8px;
+  background: rgba(234, 222, 215, 0.72);
+}
+
+.home-intel-suite__bar {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.home-intel-suite__track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(66, 54, 57, 0.12);
+}
+
+.home-intel-suite__track > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dtp-orange);
+}
+
+.home-intel-suite__bar:nth-child(2) .home-intel-suite__track > div {
+  background: #2ee68d;
+}
+
+.home-intel-suite__bar:nth-child(3) .home-intel-suite__track > div {
+  background: var(--dtp-blue);
+}
+
+.home-intel-suite__bar-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #554e55;
+  font-size: clamp(0.56rem, 0.72vw, 0.68rem);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.home-intel-suite__bar-label strong {
+  color: var(--dtp-ink);
+  font-weight: 900;
+}
+
+.home-intel-suite__pager {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: clamp(1.55rem, 2.6vw, 2rem);
+}
+
+.home-intel-suite__pager span {
+  display: block;
+  width: clamp(72px, 8vw, 100px);
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(36, 25, 31, 0.15);
+}
+
+.home-intel-suite__pager span:first-child {
+  background: rgba(36, 25, 31, 0.26);
+}
+
+.home-intel-suite__art {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.home-intel-suite__ribbon,
+.home-intel-suite__ball {
+  position: absolute;
+  display: block;
+  max-width: none;
+  user-select: none;
+}
+
+.home-intel-suite__ribbon {
+  left: clamp(-180px, -7vw, -64px);
+  top: clamp(-620px, -42vw, -460px);
+  width: clamp(1220px, 118vw, 1680px);
+  height: auto;
+  opacity: 0.06;
+  transform: rotate(-2deg);
+  mix-blend-mode: multiply;
+}
+
+.home-intel-suite__ball {
+  top: -12%;
+  right: clamp(-260px, -13vw, -138px);
+  height: min(152%, 1040px);
+  width: auto;
+  opacity: 0.96;
+}
+
+/* ------------------------------------------------------------------ *
+ * 6d. Final match-footage section
+ * ------------------------------------------------------------------ */
+
+.home-footage-band {
+  position: relative;
+  overflow: hidden;
+  scroll-margin-top: calc(var(--dtp-nav-top) + var(--dtp-nav-h) + 1rem);
+  padding-block: clamp(4rem, 7.2vw, 6.8rem) clamp(4.1rem, 7vw, 6.5rem);
+  background: #e8ecff;
+  border-top: 2px solid var(--dtp-blue);
+}
+
+.home-footage {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.home-footage__head {
+  display: grid;
+  justify-items: center;
+  width: min(760px, 100%);
+  margin-bottom: clamp(1.7rem, 3.2vw, 2.6rem);
+}
+
+.home-footage__eyebrow {
+  color: #17151f;
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.88rem, 1.2vw, 1.08rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.home-footage__head h2 {
+  max-width: 760px;
+  margin: 0.72rem 0 0;
+  color: var(--dtp-blue);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(3.1rem, 6vw, 5.9rem);
+  font-weight: 700;
+  line-height: 0.86;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.home-footage__head p {
+  max-width: 590px;
+  margin: 1rem 0 0;
+  color: #15131d;
+  font-size: clamp(1rem, 1.35vw, 1.22rem);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.home-footage__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(0.75rem, 1.1vw, 1.05rem);
+  width: min(1180px, 100%);
+}
+
+.home-footage .home-hl-card,
+.home-footage .home-hl-card-skeleton {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: #07101c;
+  box-shadow: 0 18px 40px rgba(24, 38, 91, 0.14);
+}
+
+.home-footage .home-hl-card {
+  display: block;
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.home-footage .home-hl-card:has(.home-hl-card__media:hover),
+.home-footage .home-hl-card:has(.home-hl-card__media:focus-visible) {
+  border-color: transparent;
+  box-shadow: 0 22px 46px rgba(24, 38, 91, 0.2);
+  transform: translateY(-3px);
+}
+
+.home-footage .home-hl-card__media {
+  aspect-ratio: 509 / 296;
+  border-radius: inherit;
+  background:
+    linear-gradient(0deg, rgba(4, 8, 20, 0.32), rgba(4, 8, 20, 0.32)),
+    radial-gradient(circle at 72% 18%, rgba(189, 255, 40, 0.28), transparent 18%),
+    linear-gradient(135deg, rgba(122, 148, 255, 0.24), transparent 38%),
+    linear-gradient(145deg, #6f875f 0%, #314a35 42%, #1c2a28 100%);
+}
+
+.home-footage .home-hl-card__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.95) contrast(1.02);
+}
+
+.home-footage .home-hl-card__thumb--fallback {
+  background:
+    linear-gradient(0deg, rgba(4, 8, 20, 0.28), rgba(4, 8, 20, 0.28)),
+    radial-gradient(circle at 72% 18%, rgba(189, 255, 40, 0.3), transparent 18%),
+    linear-gradient(135deg, rgba(122, 148, 255, 0.24), transparent 38%),
+    linear-gradient(145deg, #6f875f 0%, #314a35 42%, #1c2a28 100%);
+}
+
+.home-footage .home-hl-card__play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--dtp-white);
+  background: rgba(3, 7, 18, 0.08);
+}
+
+.home-footage .home-hl-card__play::before {
+  content: "";
+  position: absolute;
+  width: clamp(70px, 6.8vw, 96px);
+  aspect-ratio: 1;
+  border: 6px solid currentColor;
+  border-radius: 999px;
+}
+
+.home-footage .home-hl-card__play svg {
+  position: relative;
+  z-index: 1;
+  margin-left: 0.35rem;
+  filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.28));
+}
+
+.home-footage .home-hl-card__media:hover .home-hl-card__play,
+.home-footage .home-hl-card__media:focus-visible .home-hl-card__play {
+  color: var(--dtp-white);
+  background: rgba(3, 7, 18, 0.01);
+}
+
+.home-footage__pager {
+  display: flex;
+  justify-content: center;
+  gap: 0.58rem;
+  margin-top: clamp(1.25rem, 2.2vw, 1.9rem);
+}
+
+.home-footage__pager span {
+  width: clamp(54px, 5.5vw, 88px);
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(31, 32, 47, 0.12);
+}
+
+.home-footage__pager span:nth-child(2) {
+  background: rgba(31, 32, 47, 0.24);
+}
+
+@media (max-width: 1180px) {
+  .featured-players-hero {
+    border-radius: 13px;
+  }
+
+  .featured-players-page .featured-talent-grid--wide {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .featured-talent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .featured-talent-grid--wide {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  }
+
+  .featured-players-page {
+    --featured-shell: min(1212px, calc(100vw - clamp(2rem, 7vw, 4rem)));
+    padding-top: clamp(0.5rem, 1.8vw, 1rem);
+  }
+
+  .featured-players-hero {
+    aspect-ratio: 1212 / 439;
+    height: auto;
+  }
+
+  .featured-players-page .featured-talent-grid--wide {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-intel-suite {
+    min-height: auto;
+    padding-top: clamp(3.2rem, 8vw, 4.5rem);
+  }
+
+  .home-intel-suite__content {
+    width: min(680px, 100%);
+    padding-left: 0;
+  }
+
+  .home-intel-suite__ball {
+    top: -6%;
+    right: -250px;
+    bottom: auto;
+    height: min(132%, 860px);
+    width: auto;
+    opacity: 0.48;
+  }
+
+  .home-intel-suite__ribbon {
+    left: -18%;
+    top: -46%;
+    width: 178vw;
+  }
+
+  .home-footage__grid {
+    grid-template-columns: repeat(3, minmax(210px, 1fr));
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 0.4rem;
+    scrollbar-width: none;
+  }
+
+  .home-footage__grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .home-footage .home-hl-card {
+    scroll-snap-align: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .dtp-band--featured {
+    padding-top: clamp(3rem, 12vw, 4.25rem);
+    padding-bottom: clamp(1.65rem, 7vw, 2.35rem);
+  }
+
+  .featured-talent-legend {
+    justify-content: flex-start;
+    margin-inline: calc(var(--dtp-gutter) * -0.35);
+  }
+
+  .featured-talent-grid,
+  .featured-talent-grid--wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.72rem;
+  }
+
+  .featured-talent-card {
+    padding: 0.48rem;
+  }
+
+  .featured-talent-card__signal {
+    grid-template-columns: minmax(0, 1fr) 2.2rem;
+    gap: 0.32rem;
+  }
+
+  .featured-players-page {
+    --featured-shell: calc(100vw - clamp(1.25rem, 6vw, 2rem));
+    padding-inline: clamp(0.85rem, 4vw, 1.2rem);
+    padding-top: 0.45rem;
+  }
+
+  .featured-players-hero {
+    border-radius: 7px;
+  }
+
+  .featured-players-directory__intro {
+    margin-bottom: 1rem;
+    font-size: 0.84rem;
+  }
+
+  .featured-players-directory__shell .dtp-filters {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    border-radius: 16px;
+  }
+
+  .featured-players-directory__shell .dtp-filters__search,
+  .featured-players-directory__shell .dtp-filters__select {
+    flex: 1 1 calc(50% - 0.3rem);
+    min-width: 0;
+  }
+
+  .featured-players-directory__shell .dtp-filters__reset {
+    flex: 1 1 100%;
+  }
+
+  .featured-players-page .featured-talent-grid--wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-intel-suite {
+    padding:
+      clamp(3rem, 12vw, 4rem)
+      var(--dtp-gutter)
+      clamp(2.7rem, 11vw, 3.7rem);
+  }
+
+  .home-intel-suite__eyebrow {
+    font-size: 0.9rem;
+  }
+
+  .home-intel-suite__title {
+    max-width: 100%;
+    font-size: clamp(2.65rem, 11.8vw, 3.55rem);
+  }
+
+  .home-intel-suite__lead {
+    max-width: 320px;
+    font-size: 0.98rem;
+    line-height: 1.3;
+  }
+
+  .home-intel-suite__card {
+    grid-template-columns: 1fr;
+    gap: 1.15rem;
+    width: 100%;
+    min-height: 0;
+    padding: 1.2rem;
+  }
+
+  .home-intel-suite__card-copy p {
+    max-width: none;
+  }
+
+  .home-intel-suite__card-copy h3 {
+    white-space: normal;
+  }
+
+  .home-intel-suite__card-copy span {
+    min-width: 126px;
+    min-height: 40px;
+  }
+
+  .home-intel-suite__viz {
+    padding: 1rem;
+  }
+
+  .home-intel-suite__pager span {
+    width: 62px;
+  }
+
+  .home-intel-suite__ribbon {
+    left: -76%;
+    top: -18%;
+    width: 250vw;
+    opacity: 0.055;
+    transform: rotate(-9deg);
+  }
+
+  .home-intel-suite__ball {
+    top: 2%;
+    right: -275px;
+    bottom: auto;
+    height: 88%;
+    width: auto;
+    opacity: 0.34;
+    filter: blur(12px);
+  }
+
+  .home-footage-band {
+    padding-block: clamp(3.2rem, 12vw, 4.4rem);
+  }
+
+  .home-footage__head {
+    margin-bottom: 1.35rem;
+  }
+
+  .home-footage__eyebrow {
+    font-size: 0.75rem;
+    letter-spacing: 0.18em;
+  }
+
+  .home-footage__head h2 {
+    font-size: clamp(2.55rem, 13vw, 3.65rem);
+  }
+
+  .home-footage__head p {
+    max-width: 31ch;
+    font-size: 0.98rem;
+  }
+
+  .home-footage__grid {
+    grid-template-columns: minmax(260px, 84vw);
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .home-footage .home-hl-card__play::before {
+    width: 74px;
+    border-width: 5px;
+  }
+}
+
+@media (max-width: 360px) {
+  .featured-talent-grid,
+  .featured-talent-grid--wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mvce-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtp-space-3);
+  padding: 15px 19px 22px;
+  background: var(--dtp-ink-800);
+  border: 1px solid var(--dtp-ink-700);
+  border-radius: var(--dtp-radius-sm);
+  box-shadow: var(--dtp-shadow-card);
+  color: var(--dtp-white);
+  text-align: left;
+  transition: transform var(--dtp-t-med), box-shadow var(--dtp-t-med),
+    border-color var(--dtp-t-med);
+}
+
+a.mvce-card:hover,
+a.mvce-card:focus-visible {
+  transform: translateY(-4px);
+  border-color: var(--dtp-cyan);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+a.mvce-card:focus-visible {
+  outline: 2px solid var(--dtp-cyan);
+  outline-offset: 3px;
+}
+
+.mvce-card__media {
+  position: relative;
+  aspect-ratio: 258 / 206;
+  border-radius: var(--dtp-radius-xs);
+  overflow: hidden;
+  background: var(--dtp-grad-ink);
+}
+
+.mvce-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.mvce-card__badge {
+  position: absolute;
+  top: var(--dtp-space-2);
+  left: var(--dtp-space-2);
+  padding: 4px 10px;
+  border-radius: var(--dtp-radius-pill);
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(6px);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dtp-lime);
+}
+
+.mvce-card__name {
+  margin: 0;
+  font-size: 1.3125rem;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  color: var(--dtp-white);
+}
+
+.mvce-card__position {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--dtp-cyan);
+}
+
+.mvce-card__value {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-size: 1.125rem;
+  line-height: 1.1;
+  color: var(--dtp-gold);
+}
+
+.mvce-card__value small {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--dtp-font-ui);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dtp-grey-soft);
+}
+
+/* Metric rows: star + gradient track + numeral */
+.mvce-card__metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtp-space-2);
+  margin-top: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.mvce-card__metric {
+  display: grid;
+  grid-template-columns: 12px 1fr 34px;
+  align-items: center;
+  gap: var(--dtp-space-2);
+}
+
+.mvce-card__star { color: var(--dtp-gold); flex: none; }
+
+.mvce-card__track {
+  position: relative;
+  height: 8px;
+  border-radius: var(--dtp-radius-pill);
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.mvce-card__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--dtp-radius-pill);
+  background: var(--dtp-grad-gold);
+  transition: width var(--dtp-t-med);
+}
+
+.mvce-card__metric--attack .mvce-card__fill { background: var(--dtp-grad-green); }
+.mvce-card__metric--defense .mvce-card__fill { background: var(--dtp-grad-blue); }
+
+.mvce-card__figure {
+  font-size: var(--dtp-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  text-align: right;
+  color: var(--dtp-cyan);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Light placement (lime / paper bands) */
+.mvce-card--light {
+  background: var(--dtp-white);
+  border-color: rgba(0, 0, 0, 0.06);
+  color: var(--dtp-slate);
+}
+.mvce-card--light .mvce-card__name { color: var(--dtp-slate); }
+.mvce-card--light .mvce-card__figure { color: var(--dtp-grey); }
+.mvce-card--light .mvce-card__track { background: rgba(0, 0, 0, 0.08); }
+.mvce-card--light .mvce-card__value { color: var(--dtp-orange-deep); }
+
+/* Card grids */
+.dtp-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: clamp(1rem, 2vw, 24px);
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. Search + filter controls
+ * ------------------------------------------------------------------ */
+
+.dtp-search {
+  display: flex;
+  align-items: center;
+  gap: var(--dtp-space-4);
+  width: min(820px, 100%);
+  margin-inline: auto;
+  padding: var(--dtp-space-2) var(--dtp-space-2) var(--dtp-space-2) var(--dtp-space-5);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--dtp-radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+  transition: border-color var(--dtp-t-fast), background var(--dtp-t-fast);
+}
+
+.dtp-search:focus-within {
+  border-color: var(--dtp-cyan);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dtp-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.dtp-search__input::placeholder { color: rgba(255, 255, 255, 0.62); }
+.dtp-search__input:focus { outline: none; }
+
+.dtp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--dtp-space-3);
+  margin-top: var(--dtp-space-5);
+}
+
+.dtp-chip {
+  padding: 7px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--dtp-radius-pill);
+  background: transparent;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: 0.875rem;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dtp-t-fast), color var(--dtp-t-fast),
+    border-color var(--dtp-t-fast);
+}
+
+.dtp-chip:hover { border-color: var(--dtp-lime); color: var(--dtp-lime); }
+
+.dtp-chip[aria-pressed="true"] {
+  background: var(--dtp-lime);
+  border-color: var(--dtp-lime);
+  color: var(--dtp-green);
+  font-weight: 600;
+}
+
+/* Filter bar — Featured Players 234:486 */
+.dtp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dtp-space-3);
+  padding: var(--dtp-space-3) var(--dtp-space-4);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: var(--dtp-radius-pill);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dtp-filters__search {
+  flex: 2 1 220px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-body);
+  font-size: 1.0625rem;
+  font-weight: 500;
+}
+.dtp-filters__search::placeholder { color: rgba(255, 255, 255, 0.6); }
+.dtp-filters__search:focus { outline: none; }
+
+.dtp-filters__select {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+  background: transparent;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-body);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.dtp-filters__select option { background: var(--dtp-ink-800); color: var(--dtp-white); }
+.dtp-filters__select:focus-visible { outline: 2px solid var(--dtp-cyan); outline-offset: 2px; }
+
+.dtp-filters__reset {
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  border: 0;
+  border-radius: var(--dtp-radius-pill);
+  background: transparent;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: 0.9375rem;
+  font-weight: 300;
+  cursor: pointer;
+  transition: background var(--dtp-t-fast);
+}
+.dtp-filters__reset:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* ------------------------------------------------------------------ *
+ * 9. Feature tiles — Scouting Hub gradient cards 389x148
+ * ------------------------------------------------------------------ */
+
+.dtp-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--dtp-space-5);
+}
+
+.dtp-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtp-space-2);
+  min-height: 148px;
+  padding: var(--dtp-space-5);
+  border-radius: var(--dtp-radius-md);
+  background: var(--dtp-tile-blue);
+  color: #1e3a8a;
+  transition: transform var(--dtp-t-med), box-shadow var(--dtp-t-med);
+}
+
+.dtp-tile:hover,
+.dtp-tile:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: var(--dtp-shadow-soft);
+}
+
+.dtp-tile h3 {
+  margin: 0;
+  font-family: var(--dtp-font-body);
+  font-size: clamp(1.25rem, 2.2vw, 1.875rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dtp-tile p {
+  margin: 0;
+  font-family: var(--dtp-font-body);
+  font-size: 0.875rem;
+  line-height: 1.43;
+  color: #2563eb;
+}
+
+.dtp-tile--green { background: var(--dtp-tile-green); color: #14532d; }
+.dtp-tile--green p { color: #16a34a; }
+.dtp-tile--orange { background: var(--dtp-tile-orange); color: #f84100; }
+.dtp-tile--orange p { color: var(--dtp-orange); }
+
+/* ------------------------------------------------------------------ *
+ * 10. Directory rows — Clubs 115:615 (1111x324)
+ * ------------------------------------------------------------------ */
+
+.dtp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtp-space-6);
+}
+
+.dtp-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr auto;
+  align-items: center;
+  gap: clamp(1rem, 3vw, 40px);
+  padding: var(--dtp-space-5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--dtp-radius-lg);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dtp-white);
+  transition: border-color var(--dtp-t-med), background var(--dtp-t-med),
+    transform var(--dtp-t-med);
+}
+
+.dtp-row:hover {
+  border-color: var(--dtp-lime);
+  background: rgba(255, 255, 255, 0.07);
+  transform: translateY(-2px);
+}
+
+.dtp-row__media {
+  aspect-ratio: 16 / 10;
+  border-radius: var(--dtp-radius-md);
+  overflow: hidden;
+  background: var(--dtp-grad-ink);
+}
+
+.dtp-row__media img { width: 100%; height: 100%; object-fit: cover; }
+
+.dtp-row__kicker {
+  margin: 0 0 var(--dtp-space-2);
+  font-size: var(--dtp-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--dtp-lime);
+}
+
+.dtp-row__title {
+  margin: 0 0 var(--dtp-space-2);
+  font-size: clamp(1.125rem, 2vw, 1.5rem);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--dtp-white);
+}
+
+.dtp-row__meta {
+  margin: 0;
+  font-size: var(--dtp-fs-sm);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* ------------------------------------------------------------------ *
+ * 11. Forms — Contact 113:4
+ * ------------------------------------------------------------------ */
+
+.dtp-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--dtp-space-4);
+  padding: clamp(1.5rem, 3vw, 40px);
+  border-radius: var(--dtp-radius-lg);
+  background: var(--dtp-white);
+  box-shadow: var(--dtp-shadow-card);
+}
+
+.dtp-form__field { display: flex; flex-direction: column; gap: 6px; }
+.dtp-form__field--wide { grid-column: 1 / -1; }
+
+.dtp-form__label {
+  font-family: var(--dtp-font-ui);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dtp-slate);
+}
+
+.dtp-form__input,
+.dtp-form__textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #e3e6ee;
+  border-radius: var(--dtp-radius-xs);
+  background: var(--dtp-white);
+  font-family: "Open Sans", var(--dtp-font-ui);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: #011334;
+  transition: border-color var(--dtp-t-fast), box-shadow var(--dtp-t-fast);
+}
+
+.dtp-form__input::placeholder,
+.dtp-form__textarea::placeholder { color: var(--dtp-grey-mid); }
+
+.dtp-form__input:focus,
+.dtp-form__textarea:focus {
+  outline: none;
+  border-color: var(--dtp-blue);
+  box-shadow: 0 0 0 3px var(--dtp-blue-soft);
+}
+
+.dtp-form__textarea { resize: vertical; min-height: 132px; }
+
+.dtp-form__error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.875rem;
+  color: #c81e1e;
+}
+
+.dtp-form__actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+
+/* Direct channels column */
+.dtp-channels { display: flex; flex-direction: column; gap: var(--dtp-space-4); }
+
+.dtp-channels__title {
+  margin: 0;
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  font-weight: 700;
+  line-height: 1.28;
+  color: var(--dtp-lime);
+}
+
+.dtp-channels__body {
+  margin: 0;
+  max-width: 34ch;
+  font-size: var(--dtp-fs-base);
+  line-height: 1.3;
+  color: var(--dtp-lime);
+}
+
+.dtp-channels__list { display: flex; flex-direction: column; gap: var(--dtp-space-3); margin: 0; padding: 0; list-style: none; }
+
+.dtp-channels__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dtp-space-3);
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.44;
+  color: var(--dtp-white);
+  transition: color var(--dtp-t-fast);
+}
+.dtp-channels__link:hover { color: var(--dtp-cyan); }
+
+/* Newsletter band — 1311x248 lime */
+.dtp-subscribe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 460px);
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 56px);
+  padding: clamp(1.75rem, 4vw, 48px);
+  border-radius: var(--dtp-radius-lg);
+  background: var(--dtp-lime);
+  color: var(--dtp-green);
+}
+
+.dtp-subscribe__title {
+  margin: 0 0 var(--dtp-space-3);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.5rem, 2.6vw, 1.6875rem);
+  line-height: 1.2;
+  color: var(--dtp-green);
+}
+
+.dtp-subscribe__body {
+  margin: 0;
+  font-family: var(--dtp-font-body);
+  font-size: 0.875rem;
+  line-height: 1.43;
+  color: var(--dtp-green);
+}
+
+.dtp-subscribe__form {
+  display: flex;
+  align-items: center;
+  gap: var(--dtp-space-2);
+  padding: 6px 6px 6px var(--dtp-space-5);
+  border-radius: var(--dtp-radius-pill);
+  background: var(--dtp-ink);
+}
+
+.dtp-subscribe__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-body);
+  font-size: 0.75rem;
+  line-height: 1.66;
+}
+.dtp-subscribe__input::placeholder { color: rgba(255, 255, 255, 0.65); }
+.dtp-subscribe__input:focus { outline: none; }
+
+.dtp-subscribe__btn {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding-inline: var(--dtp-space-5);
+  border: 0;
+  border-radius: var(--dtp-radius-pill);
+  background: var(--dtp-lime);
+  color: var(--dtp-green);
+  font-family: var(--dtp-font-body);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--dtp-t-fast);
+}
+.dtp-subscribe__btn:hover { background: var(--dtp-white); }
+
+/* ------------------------------------------------------------------ *
+ * 12. Player profile — 239:2425
+ * ------------------------------------------------------------------ */
+
+.profile-page.player-profile.dtp-page {
+  --profile-shell: min(1208px, calc(100vw - clamp(1.5rem, 6vw, 7.25rem)));
+  width: var(--profile-shell);
+  max-width: var(--profile-shell);
+  margin-inline: auto;
+  padding: clamp(4.65rem, 6.3vw, 5.65rem) 0 clamp(4rem, 8vw, 6.5rem);
+  background: #000;
+  color: var(--dtp-white);
+}
+
+.dtp-profile-hero {
+  position: relative;
+  isolation: isolate;
+  padding-block: clamp(2rem, 5vw, 72px);
+  background: var(--dtp-ink);
+  color: var(--dtp-white);
+}
+
+.dtp-profile-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dtp-space-2);
+  margin-bottom: clamp(2rem, 3.2vw, 2.75rem);
+  font-size: var(--dtp-fs-eyebrow);
+  font-weight: 700;
+  letter-spacing: var(--dtp-tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--dtp-paper);
+  transition: color var(--dtp-t-fast);
+}
+.dtp-profile-back:hover { color: var(--dtp-cyan); }
+
+.profile-page.player-profile.dtp-page .player-profile-banner {
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-body-sheet {
+  position: relative;
+  z-index: 0;
+  padding:
+    0
+    0
+    clamp(2.4rem, 5vw, 4.15rem);
+  border-radius: 0 0 8px 8px;
+  background:
+    radial-gradient(circle at 88% 23%, rgba(66, 122, 177, 0.16), transparent 42%),
+    linear-gradient(180deg, #36415e 0%, #303b5a 50%, #33405f 100%);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.dtp-profile-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 249px minmax(0, 408px) 382px;
+  align-items: center;
+  min-height: 361px;
+  column-gap: 28px;
+  padding: 44px 60px 49px 53px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background:
+    radial-gradient(circle at 72% 12%, rgba(61, 132, 255, 0.32), transparent 33%),
+    linear-gradient(180deg, #115dff 0%, #145dff 48%, #1058f5 100%);
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.dtp-profile-card::before,
+.dtp-profile-card::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+.dtp-profile-card::before {
+  display: none;
+}
+.dtp-profile-card::after {
+  display: none;
+}
+
+.dtp-profile-card > * { position: relative; z-index: 1; }
+
+.dtp-profile-card__portrait {
+  aspect-ratio: 249 / 267;
+  width: 249px;
+  align-self: start;
+  border: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: none;
+}
+.dtp-profile-card__portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.dtp-profile-card__verified {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 1.02rem;
+  min-height: 40px;
+  padding: 0.68rem 3.08rem 0.68rem 1.1rem;
+  border-radius: var(--dtp-radius-pill);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(222, 233, 255, 0.94));
+  font-family: "Raleway", var(--dtp-font-ui);
+  font-size: clamp(0.74rem, 0.95vw, 0.88rem);
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: #0055ff;
+  box-shadow:
+    9px 11px 22px rgba(0, 61, 205, 0.17),
+    -2px -2px 8px rgba(255, 255, 255, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.dtp-profile-card__verified::before,
+.dtp-profile-card__verified::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.dtp-profile-card__verified::before {
+  right: 1.07rem;
+  top: 50%;
+  z-index: 1;
+  width: 0.52rem;
+  height: 0.3rem;
+  border-left: 3px solid #fff;
+  border-bottom: 3px solid #fff;
+  border-radius: 1px;
+  transform: translateY(-62%) rotate(-45deg);
+}
+
+.dtp-profile-card__verified::after {
+  right: 0.48rem;
+  top: 50%;
+  width: 1.42rem;
+  height: 1.42rem;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #0b66ff, #064de7);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 6px 12px rgba(0, 72, 210, 0.2);
+  transform: translateY(-50%);
+}
+
+.dtp-profile-card__name {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(4.75rem, 6.9vw, 6.35rem);
+  line-height: 0.88;
+  color: var(--dtp-cyan);
+  text-wrap: balance;
+}
+
+.dtp-profile-card__meta {
+  margin: 1.26rem 0 0;
+  font-family: var(--dtp-font-alt);
+  font-size: 1.24rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--dtp-lime);
+}
+
+.dtp-profile-card__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  min-height: 182px;
+  padding: 48px 49px 41px;
+  border: 0;
+  border-radius: 9px;
+  background: #252630;
+  box-shadow: none;
+}
+
+.dtp-profile-card__ratings {
+  display: flex;
+  justify-content: center;
+  gap: clamp(0.75rem, 2vw, 1rem);
+  margin: 0;
+}
+
+.dtp-profile-rating {
+  min-width: 84px;
+  padding: 0.66rem 0.48rem 0.58rem;
+  border: 2px solid currentColor;
+  border-radius: 7px;
+  background:
+    linear-gradient(145deg, rgba(75, 83, 106, 0.72), rgba(31, 34, 48, 0.95));
+  box-shadow:
+    10px 12px 24px rgba(0, 0, 0, 0.24),
+    -2px -2px 8px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.dtp-profile-rating dd {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-size: 1.625rem;
+  line-height: 1;
+}
+
+.dtp-profile-rating dt {
+  margin-top: 4px;
+  font-family: var(--dtp-font-body);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.dtp-profile-rating--overall dd { color: #ff8b16; }
+.dtp-profile-rating--overall dt { color: #dd7e06; }
+.dtp-profile-rating--attack dd,
+.dtp-profile-rating--attack dt { color: #00ffbf; }
+.dtp-profile-rating--defense dd,
+.dtp-profile-rating--defense dt { color: #dc15ff; }
+
+.dtp-profile-card__share {
+  margin-top: 1.26rem;
+  text-align: center;
+}
+
+.dtp-profile-card__share .dtp-btn,
+.dtp-profile-card__share button {
+  width: min(100%, 167px);
+  min-height: 38px;
+  padding-inline: 1rem;
+  border-color: #0b86ff;
+  border-radius: 5px;
+  background: rgba(58, 72, 94, 0.72);
+  color: rgba(255, 255, 255, 0.36);
+  font-weight: 600;
+}
+
+.dtp-profile-card__share .dtp-btn:hover,
+.dtp-profile-card__share button:hover {
+  background: rgba(64, 84, 112, 0.9);
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__insights {
+  display: grid;
+  grid-template-columns: minmax(270px, 1fr) clamp(184px, 22.5vw, 230px) clamp(246px, 30vw, 310px);
+  align-items: center;
+  gap: clamp(1.35rem, 2.8vw, 2.35rem);
+  margin: 0;
+  padding:
+    clamp(2.4rem, 4.6vw, 3.55rem)
+    60px
+    clamp(2rem, 3.8vw, 3rem)
+    53px;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 85% 20%, rgba(66, 122, 177, 0.16), transparent 42%),
+    linear-gradient(180deg, #36415e 0%, #36415e 100%);
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    "nationality category foot"
+    "position value value";
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  column-gap: clamp(1.25rem, 2.55vw, 2.75rem);
+  row-gap: clamp(1.42rem, 3vw, 2.85rem);
+  list-style: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.48rem;
+  min-width: 0;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-cell:nth-child(1) {
+  grid-area: nationality;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-cell:nth-child(2) {
+  grid-area: category;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-cell:nth-child(3) {
+  grid-area: foot;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-cell:nth-child(4) {
+  grid-area: position;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-cell:nth-child(5) {
+  grid-area: value;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-label {
+  color: rgba(255, 255, 255, 0.57);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.82rem, 1.3vw, 1.08rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  text-transform: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-banner__bio-value {
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.95rem, 1.55vw, 1.42rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-banner__bio-cell--highlight
+  .player-profile-banner__bio-value {
+  color: var(--dtp-cyan);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot {
+  align-self: center;
+  width: 100%;
+  max-width: none;
+  aspect-ratio: 152 / 89;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #18a74b;
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot .player-profile-pitch__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot .player-profile-pitch__attack-edge,
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot .player-profile-pitch__overlay,
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot .player-profile-pitch__hybrid-zone,
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot .player-profile-pitch__hybrid-connector,
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot .player-profile-pitch__hybrid-halo {
+  display: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-pitch--snapshot .player-profile-pitch__marker {
+  width: clamp(0.62rem, 1.1vw, 0.75rem);
+  height: clamp(0.62rem, 1.1vw, 0.75rem);
+  border: 0;
+  background: #ffe145;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.56);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__marker--secondary {
+  background: #ffe145;
+  opacity: 0.96;
+  animation: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__marker--hybrid {
+  background: #ffe145;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__main-role-label,
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__alt-role-label,
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__hybrid-role-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08em;
+  min-height: clamp(0.62rem, 1.1vw, 0.75rem);
+  padding: 0.04rem 0.16rem;
+  border: 1px solid rgba(255, 225, 69, 0.48);
+  border-radius: 999px;
+  background: rgba(16, 24, 39, 0.84);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.31rem, 0.5vw, 0.42rem);
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__main-role-label::before,
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__alt-role-label::before,
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__hybrid-role-label::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  width: 8px;
+  height: 8px;
+  border-left: 1px solid currentColor;
+  border-top: 1px solid currentColor;
+  background: inherit;
+  opacity: 0.92;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__main-role-label::after,
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__alt-role-label::after,
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__hybrid-role-label::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -17px;
+  width: 1.5px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 225, 69, 0.94), currentColor);
+  opacity: 0.68;
+  transform: translateX(-50%);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__main-role-label {
+  border-color: rgba(34, 197, 94, 0.66);
+  color: rgba(220, 252, 231, 0.98);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__alt-role-label {
+  border-color: rgba(125, 211, 252, 0.62);
+  color: rgba(224, 242, 254, 0.98);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__hybrid-role-label {
+  border-color: rgba(251, 191, 36, 0.7);
+  color: rgba(254, 243, 199, 0.98);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__role-prefix {
+  font-size: 0.88em;
+  opacity: 0.74;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__role-sep {
+  opacity: 0.55;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-pitch--snapshot
+  .player-profile-pitch__role-token {
+  font-weight: 950;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-cat-radar__frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: clamp(122px, 16.2vw, 158px);
+  padding: clamp(0.44rem, 1vw, 0.72rem);
+  border: 0;
+  border-radius: 5px;
+  background: #252630;
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-cat-radar {
+  width: 100%;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-cat-radar__chart {
+  width: 100%;
+  max-width: min(100%, 212px);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-cat-radar__grid {
+  stroke: rgba(255, 255, 255, 0.18);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-cat-radar__spoke {
+  stroke: rgba(255, 255, 255, 0.15);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-bio {
+  max-width: 920px;
+  margin: 0 60px clamp(1.4rem, 2.7vw, 2.2rem) 53px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: clamp(0.95rem, 1.15vw, 1.08rem);
+  line-height: 1.65;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-scout-strip {
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - 113px);
+  margin: 0 auto clamp(2.25rem, 5vw, 3.8rem);
+  padding: clamp(2rem, 3.4vw, 3.25rem) clamp(2rem, 3.35vw, 3.15rem)
+    clamp(2.15rem, 3.6vw, 3.45rem);
+  border: 0;
+  border-radius: 7px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(40, 148, 86, 0.22), transparent 38%),
+    linear-gradient(108deg, #17360f 0%, #14351a 48%, #003f37 100%);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-scout-strip__summary {
+  min-width: 0;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__summary
+  .player-profile-heading {
+  margin: 0;
+  color: var(--dtp-lime);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.45rem, 2.45vw, 2rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-scout-strip__text {
+  max-width: 770px;
+  margin: clamp(0.55rem, 1vw, 0.74rem) 0 clamp(1.4rem, 2.25vw, 1.72rem);
+  color: rgba(255, 255, 255, 0.88);
+  font-family: var(--dtp-font-body);
+  font-size: clamp(0.72rem, 1.1vw, 0.91rem);
+  font-weight: 650;
+  line-height: 1.22;
+  text-wrap: pretty;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-scout-strip__metrics.position-scouting-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(1.85rem, 4vw, 3.3rem);
+  row-gap: 0.62rem;
+  margin: 0;
+  padding: clamp(1.45rem, 2.5vw, 1.85rem) clamp(1.9rem, 3.2vw, 2.55rem);
+  border: 0;
+  border-radius: 7px;
+  background: rgba(117, 139, 132, 0.52);
+  box-shadow: none;
+  backdrop-filter: blur(3px);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label label"
+    "bar value";
+  align-items: center;
+  min-height: 31px;
+  gap: 0.28rem 0.78rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__head {
+  display: contents;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__label-row {
+  grid-area: label;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.42rem;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__icon {
+  display: block;
+  flex: 0 0 auto;
+  width: clamp(0.68rem, 0.92vw, 0.82rem);
+  height: clamp(0.68rem, 0.92vw, 0.82rem);
+  color: rgba(255, 255, 255, 0.72);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__label {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(229, 232, 226, 0.58);
+  font-size: clamp(0.62rem, 0.86vw, 0.74rem);
+  font-weight: 760;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .info-tip__icon {
+  display: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__value {
+  grid-area: value;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--dtp-cyan);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.78rem, 1.06vw, 0.94rem);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__value::before {
+  content: "\2605";
+  margin-right: 0.42rem;
+  color: #ffdf63;
+  font-size: 0.76em;
+  line-height: 1;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__value-unit {
+  margin-left: 0.14rem;
+  color: currentColor;
+  font-size: 0.78em;
+  font-weight: 850;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__bar {
+  grid-area: bar;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(78, 102, 95, 0.8);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff8a1f, #ff4f74);
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__card:nth-child(2n)
+  .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #b6262e, #ef3a42);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__card:nth-child(3n)
+  .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #7af35d, #11d89f);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__card:nth-child(4n)
+  .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #ff93ee, #e3d8ff);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__card:nth-child(5n)
+  .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #2b7fff, #1c5cff);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__card:nth-child(6n)
+  .position-scouting-metrics__bar-fill {
+  background: linear-gradient(90deg, #3ef4f6, #13c6cf);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: stretch;
+  gap: 0;
+  width: calc(100% - 113px);
+  margin: clamp(1.7rem, 3.2vw, 2.7rem) auto clamp(1.05rem, 2vw, 1.55rem);
+  padding: 0;
+  overflow-x: auto;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  scrollbar-width: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-tabs__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 0.5rem 0.55rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.56rem, 0.72vw, 0.66rem);
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dtp-t-fast),
+    border-color var(--dtp-t-fast),
+    color var(--dtp-t-fast),
+    box-shadow var(--dtp-t-fast);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-tabs__btn:hover {
+  border-bottom-color: rgba(80, 211, 255, 0.28);
+  background: transparent;
+  color: var(--dtp-white);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-tabs__btn.active {
+  border-bottom-color: var(--dtp-cyan);
+  background: transparent;
+  color: var(--dtp-cyan);
+  box-shadow: 0 8px 18px rgba(80, 211, 255, 0.08);
+}
+
+.profile-page.player-profile.dtp-page .profile-section {
+  padding: 0 0 clamp(2.5rem, 5vw, 4rem);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-role-profile {
+  width: calc(100% - 113px);
+  margin: clamp(1.65rem, 3.5vw, 2.6rem) auto clamp(2rem, 4vw, 3rem);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-role-profile .profile-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin: 0 0 0.68rem;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-eyebrow {
+  display: block;
+  margin-bottom: 0.34rem;
+  color: rgba(255, 255, 255, 0.52);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.66rem, 0.86vw, 0.78rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-transform: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  color: var(--dtp-cyan);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.15rem, 2.35vw, 1.92rem);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .profile-data-note {
+  margin-bottom: 0.12rem;
+  color: rgba(255, 255, 255, 0.42);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.7rem, 1vw, 0.88rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr-grid--core {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(0.72rem, 1.6vw, 1.2rem) clamp(1.2rem, 2.5vw, 2rem);
+  margin: 0;
+  padding: clamp(1.18rem, 2vw, 1.55rem) clamp(1.55rem, 2.8vw, 2.35rem);
+  border: 0;
+  border-radius: 7px;
+  background: rgba(126, 135, 153, 0.56);
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr__label {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.64rem, 0.86vw, 0.78rem);
+  font-weight: 820;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr__score {
+  color: rgba(255, 255, 255, 0.62);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.62rem, 0.82vw, 0.74rem);
+  font-weight: 850;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr__track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(205, 213, 229, 0.36);
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0529ff, #1227bc);
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr:nth-child(2)
+  .player-profile-attr__fill {
+  background: linear-gradient(90deg, #22c7ff, #8c19df);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr:nth-child(3)
+  .player-profile-attr__fill {
+  background: linear-gradient(90deg, #ff4a18, #ff5d23);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr:nth-child(4)
+  .player-profile-attr__fill {
+  background: linear-gradient(90deg, #ff2d71, #eb3b78);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr:nth-child(5)
+  .player-profile-attr__fill {
+  background: linear-gradient(90deg, #149eff, #0aa5ff);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-attr:nth-child(6)
+  .player-profile-attr__fill {
+  background: linear-gradient(90deg, #ce35e8, #bf28dc);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-role-profile .player-profile-role-expand {
+  margin: 0.72rem 0 0;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-role-profile
+  .player-profile-role-expand__toggle {
+  color: rgba(80, 211, 255, 0.85);
+  font-size: 0.74rem;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-proof-block {
+  display: grid;
+  gap: clamp(1.35rem, 2.4vw, 1.95rem);
+  width: calc(100% - 113px);
+  margin: clamp(2rem, 4.2vw, 3.35rem) auto 0;
+  padding: clamp(1.75rem, 3.2vw, 2.55rem);
+  border: 0;
+  border-radius: 7px;
+  background:
+    radial-gradient(circle at 100% 8%, rgba(4, 124, 128, 0.64), transparent 44%),
+    linear-gradient(132deg, rgba(77, 119, 77, 0.88), rgba(22, 103, 118, 0.86));
+}
+
+.profile-page.player-profile.dtp-page .profile-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(1.35rem, 2.4vw, 1.95rem);
+  margin: 0;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-panel {
+  min-height: clamp(150px, 15vw, 202px);
+  padding: clamp(1.3rem, 2.2vw, 1.85rem) clamp(1.35rem, 2.4vw, 2rem);
+  border: 0;
+  border-radius: 7px;
+  background: rgba(126, 135, 153, 0.42);
+  box-shadow:
+    12px 16px 32px rgba(0, 0, 0, 0.14),
+    -2px -2px 8px rgba(255, 255, 255, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(3px);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-subheading {
+  margin: 0 0 clamp(1.05rem, 2vw, 1.45rem);
+  color: var(--dtp-lime);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.15rem, 2vw, 1.72rem);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page .profile-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-page.player-profile.dtp-page .profile-list li,
+.profile-page.player-profile.dtp-page .profile-metric-list span,
+.profile-page.player-profile.dtp-page .profile-metric-list strong {
+  min-height: 31px;
+  padding: 0.57rem 0.78rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.42);
+  color: rgba(255, 255, 255, 0.84);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.66rem, 0.86vw, 0.78rem);
+  font-weight: 780;
+  line-height: 1.1;
+}
+
+.profile-page.player-profile.dtp-page .profile-list li:last-child,
+.profile-page.player-profile.dtp-page .profile-metric-list span:nth-last-child(2),
+.profile-page.player-profile.dtp-page .profile-metric-list strong:last-child {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.42);
+}
+
+.profile-page.player-profile.dtp-page .profile-metric-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
+  margin: 0;
+}
+
+.profile-page.player-profile.dtp-page .profile-metric-list span {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.profile-page.player-profile.dtp-page .profile-metric-list strong {
+  min-width: 5.5rem;
+  color: var(--dtp-white);
+  font-weight: 900;
+  text-align: right;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyle-comparison {
+  min-height: clamp(132px, 14vw, 182px);
+  margin: 0;
+  padding: clamp(1.3rem, 2.3vw, 1.85rem) clamp(1.55rem, 2.8vw, 2.4rem);
+  border: 1px solid rgba(186, 255, 0, 0.34);
+  border-radius: 7px;
+  background: rgba(126, 135, 153, 0.42);
+  box-shadow:
+    12px 16px 34px rgba(0, 0, 0, 0.14),
+    -2px -2px 8px rgba(255, 255, 255, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyle-comparison:hover {
+  transform: none;
+  border-color: rgba(186, 255, 0, 0.42);
+  box-shadow: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyle-comparison__inner {
+  align-items: center;
+  min-height: 100%;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-playstyle-comparison
+  .player-profile-eyebrow {
+  color: rgba(255, 255, 255, 0.46);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.7rem, 1vw, 0.9rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  text-transform: none;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyle-comparison__copy {
+  width: min(520px, 100%);
+  margin: 0.28rem 0 0;
+  color: var(--dtp-cyan);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.25rem, 2.5vw, 2.05rem);
+  font-weight: 400;
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyle-comparison .dtp-btn--secondary {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0.52rem 0.9rem;
+  border: 1px solid rgba(80, 211, 255, 0.42);
+  border-radius: 5px;
+  background:
+    linear-gradient(145deg, rgba(70, 93, 125, 0.72), rgba(36, 45, 66, 0.82));
+  color: rgba(255, 255, 255, 0.72);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.62rem, 0.82vw, 0.74rem);
+  font-weight: 820;
+  box-shadow:
+    8px 10px 20px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-playstyle-comparison
+  .dtp-btn--secondary:hover {
+  transform: translateY(-1px);
+  border-color: rgba(80, 211, 255, 0.7);
+  color: var(--dtp-white);
+  background:
+    linear-gradient(145deg, rgba(79, 112, 152, 0.82), rgba(41, 51, 74, 0.94));
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyle-comparison__right {
+  align-items: center;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyle-comparison__headshot,
+.profile-page.player-profile.dtp-page
+  .benchmark-player-headshot.player-profile-playstyle-comparison__headshot {
+  width: clamp(74px, 8.2vw, 104px);
+  height: clamp(74px, 8.2vw, 104px);
+  min-width: clamp(74px, 8.2vw, 104px);
+  min-height: clamp(74px, 8.2vw, 104px);
+  border: 2px solid #f5c647;
+  background: #1c2230;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
+}
+
+.profile-page.player-profile.dtp-page
+  .scouting-details
+  > .profile-section,
+.profile-page.player-profile.dtp-page
+  .player-profile-body-sheet
+  > .profile-section:has(.scoreboard-history-hero),
+.profile-page.player-profile.dtp-page
+  .player-profile-body-sheet
+  > .profile-section:has(.profile-empty-state),
+.profile-page.player-profile.dtp-page
+  .player-profile-body-sheet
+  > .profile-section.player-profile-media,
+.profile-page.player-profile.dtp-page
+  .player-profile-body-sheet
+  > .goalkeeper-profile {
+  width: calc(100% - 113px);
+  margin: clamp(2rem, 4.2vw, 3.25rem) auto 0;
+  padding: clamp(1.65rem, 3vw, 2.45rem);
+  border: 0;
+  border-radius: 7px;
+  background:
+    radial-gradient(circle at 100% 5%, rgba(4, 124, 128, 0.5), transparent 38%),
+    linear-gradient(132deg, rgba(77, 119, 77, 0.72), rgba(31, 55, 83, 0.84));
+  box-shadow:
+    0 24px 58px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-body-sheet .profile-section {
+  margin-top: 0;
+}
+
+.profile-page.player-profile.dtp-page
+  .player-profile-body-sheet
+  > .profile-section:not(:first-child) {
+  margin-top: clamp(1.8rem, 3.6vw, 2.8rem);
+}
+
+.profile-page.player-profile.dtp-page
+  .scouting-details
+  > .profile-section:first-child {
+  margin-top: clamp(1.4rem, 2.8vw, 2.15rem);
+}
+
+.profile-page.player-profile.dtp-page .profile-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.2rem;
+  margin: 0 0 clamp(1.15rem, 2vw, 1.55rem);
+}
+
+.profile-page.player-profile.dtp-page .profile-section__eyebrow,
+.profile-page.player-profile.dtp-page
+  .profile-section-heading
+  .player-profile-eyebrow {
+  color: rgba(255, 255, 255, 0.58);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.62rem, 0.82vw, 0.74rem);
+  font-weight: 860;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page .profile-section-heading h2,
+.profile-page.player-profile.dtp-page
+  .profile-section-heading
+  .player-profile-heading,
+.profile-page.player-profile.dtp-page .player-profile-media > .player-profile-heading {
+  margin: 0.24rem 0 0;
+  color: var(--dtp-cyan);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.55rem, 3vw, 2.55rem);
+  font-weight: 400;
+  line-height: 0.94;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page .profile-data-note,
+.profile-page.player-profile.dtp-page .scouting-details__meta {
+  color: rgba(255, 255, 255, 0.46);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.68rem, 0.92vw, 0.82rem);
+  font-weight: 780;
+  letter-spacing: -0.01em;
+  text-align: right;
+}
+
+.profile-page.player-profile.dtp-page .scouting-details__summary {
+  width: min(870px, 100%);
+  margin: 0 0 clamp(1.25rem, 2.4vw, 1.8rem);
+  color: rgba(255, 255, 255, 0.84);
+  font-family: var(--dtp-font-body);
+  font-size: clamp(0.82rem, 1.14vw, 0.96rem);
+  font-weight: 620;
+  line-height: 1.32;
+}
+
+.profile-page.player-profile.dtp-page .scouting-details__snapshot,
+.profile-page.player-profile.dtp-page .scouting-intel__trait-grid,
+.profile-page.player-profile.dtp-page .player-profile-playstyles__grid,
+.profile-page.player-profile.dtp-page .scoreboard-history-kpis,
+.profile-page.player-profile.dtp-page .profile-facts {
+  display: grid;
+  gap: clamp(0.85rem, 1.7vw, 1.25rem);
+}
+
+.profile-page.player-profile.dtp-page .scouting-details__snapshot {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.profile-page.player-profile.dtp-page .scouting-intel__trait-grid,
+.profile-page.player-profile.dtp-page .scoreboard-history-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.profile-page.player-profile.dtp-page .player-profile-playstyles__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-page.player-profile.dtp-page .scouting-intel__stat-card,
+.profile-page.player-profile.dtp-page .scouting-intel__trait-card,
+.profile-page.player-profile.dtp-page .player-profile-playstyle,
+.profile-page.player-profile.dtp-page .scoreboard-history-kpi,
+.profile-page.player-profile.dtp-page .profile-facts div,
+.profile-page.player-profile.dtp-page .profile-summary-card,
+.profile-page.player-profile.dtp-page .profile-empty-state {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(137, 151, 169, 0.38), rgba(71, 88, 113, 0.28));
+  box-shadow:
+    10px 14px 28px rgba(0, 0, 0, 0.16),
+    -2px -2px 8px rgba(255, 255, 255, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(5px);
+}
+
+.profile-page.player-profile.dtp-page .scouting-intel__stat-card,
+.profile-page.player-profile.dtp-page .scouting-intel__trait-card,
+.profile-page.player-profile.dtp-page .player-profile-playstyle,
+.profile-page.player-profile.dtp-page .scoreboard-history-kpi,
+.profile-page.player-profile.dtp-page .profile-facts div {
+  padding: clamp(1rem, 1.8vw, 1.35rem);
+}
+
+.profile-page.player-profile.dtp-page .scouting-intel__stat-label,
+.profile-page.player-profile.dtp-page .scouting-intel__trait-label,
+.profile-page.player-profile.dtp-page .scoreboard-history-kpi span,
+.profile-page.player-profile.dtp-page .profile-facts span,
+.profile-page.player-profile.dtp-page .player-profile-playstyle__context,
+.profile-page.player-profile.dtp-page .player-profile-playstyle__desc {
+  color: rgba(255, 255, 255, 0.56);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.62rem, 0.82vw, 0.75rem);
+  font-weight: 760;
+  line-height: 1.18;
+}
+
+.profile-page.player-profile.dtp-page .scouting-intel__stat-value,
+.profile-page.player-profile.dtp-page .scouting-intel__trait-score,
+.profile-page.player-profile.dtp-page .scoreboard-history-kpi strong,
+.profile-page.player-profile.dtp-page .profile-facts strong,
+.profile-page.player-profile.dtp-page .player-profile-playstyle__title,
+.profile-page.player-profile.dtp-page .player-profile-playstyle__fit {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.95rem, 1.42vw, 1.18rem);
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.profile-page.player-profile.dtp-page .scouting-intel__trait-score,
+.profile-page.player-profile.dtp-page .player-profile-playstyle__fit {
+  color: var(--dtp-lime);
+}
+
+.profile-page.player-profile.dtp-page .scouting-details__fit-panel--full,
+.profile-page.player-profile.dtp-page .scoreboard-history-panel,
+.profile-page.player-profile.dtp-page .goalkeeper-profile__summary {
+  border: 0;
+  border-radius: 8px;
+  background: rgba(126, 135, 153, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 28px rgba(0, 0, 0, 0.11);
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.2rem;
+  margin: 0 0 clamp(1rem, 2vw, 1.5rem);
+  padding: clamp(1.35rem, 2.5vw, 1.95rem);
+  border: 1px solid rgba(186, 255, 0, 0.2);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 98% 0%, rgba(186, 255, 0, 0.16), transparent 42%),
+    rgba(126, 135, 153, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-hero__eyebrow {
+  color: rgba(255, 255, 255, 0.52);
+  font-family: var(--dtp-font-ui);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-hero strong {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--dtp-lime);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.55rem, 3vw, 2.35rem);
+  font-weight: 400;
+  line-height: 0.96;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-hero p {
+  max-width: 650px;
+  margin: 0.45rem 0 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: clamp(0.78rem, 1.02vw, 0.9rem);
+  line-height: 1.35;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-hero__score {
+  display: grid;
+  place-items: center;
+  min-width: clamp(92px, 10vw, 128px);
+  min-height: clamp(84px, 9vw, 112px);
+  border: 1px solid rgba(80, 211, 255, 0.34);
+  border-radius: 8px;
+  background: rgba(33, 37, 48, 0.72);
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-hero__score span {
+  color: var(--dtp-cyan);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(2.1rem, 4.2vw, 3.6rem);
+  line-height: 0.8;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-hero__score small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-match-groups {
+  display: grid;
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-match-group {
+  padding: clamp(1rem, 1.8vw, 1.35rem);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(29, 34, 48, 0.38);
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-appearance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+  color: var(--dtp-white);
+  text-decoration: none;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-appearance__team {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-appearance__team--away {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-appearance__team strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-appearance__score {
+  color: var(--dtp-lime);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.1rem, 2vw, 1.55rem);
+}
+
+.profile-page.player-profile.dtp-page .scoreboard-history-match-group__meta {
+  margin: 0.5rem 0 0.85rem;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.74rem;
+}
+
+.profile-page.player-profile.dtp-page .profile-event-list,
+.profile-page.player-profile.dtp-page .scoreboard-history-event-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-page.player-profile.dtp-page .profile-event-list li {
+  display: grid;
+  grid-template-columns: 3.2rem minmax(8rem, 0.75fr) minmax(0, 1.4fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.8rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.profile-page.player-profile.dtp-page .profile-event-list li:last-child {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.profile-page.player-profile.dtp-page .profile-event-list li > span {
+  color: var(--dtp-cyan);
+  font-weight: 900;
+}
+
+.profile-page.player-profile.dtp-page .profile-event-list li > strong {
+  color: var(--dtp-white);
+  font-weight: 860;
+}
+
+.profile-page.player-profile.dtp-page .profile-event-list li > em {
+  color: rgba(255, 255, 255, 0.62);
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media {
+  display: grid;
+  gap: clamp(1rem, 2vw, 1.55rem);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media > .player-profile-eyebrow {
+  color: rgba(255, 255, 255, 0.58);
+  font-family: var(--dtp-font-ui);
+  font-size: 0.68rem;
+  font-weight: 860;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page .profile-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1rem, 2vw, 1.4rem);
+}
+
+.profile-page.player-profile.dtp-page .profile-media-grid--photos {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media-card {
+  position: relative;
+  display: grid;
+  align-content: end;
+  min-height: clamp(190px, 20vw, 260px);
+  overflow: hidden;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(137, 151, 169, 0.34), rgba(31, 38, 54, 0.72));
+  color: var(--dtp-white);
+  text-align: left;
+  text-decoration: none;
+  box-shadow:
+    14px 18px 34px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media-card img,
+.profile-page.player-profile.dtp-page .profile-media-card__thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.78;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 18%, rgba(0, 0, 0, 0.74));
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.profile-page.player-profile.dtp-page .profile-media-card__icon {
+  display: inline-grid;
+  place-items: center;
+  width: max-content;
+  min-width: 3.5rem;
+  min-height: 2rem;
+  margin-bottom: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(80, 211, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--dtp-cyan);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media-card strong {
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.92rem, 1.2vw, 1.1rem);
+  font-weight: 900;
+}
+
+.profile-page.player-profile.dtp-page .player-profile-media-card span:not(.profile-media-card__icon) {
+  margin-top: 0.28rem;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.76rem;
+}
+
+.playstyle-modal-backdrop {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(80, 211, 255, 0.12), transparent 38%),
+    rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(14px);
+}
+
+.playstyle-modal {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 95% 4%, rgba(0, 255, 191, 0.14), transparent 34%),
+    linear-gradient(145deg, rgba(54, 65, 94, 0.98), rgba(29, 35, 54, 0.98));
+  color: var(--dtp-white);
+  box-shadow:
+    28px 36px 80px rgba(0, 0, 0, 0.46),
+    -3px -3px 16px rgba(255, 255, 255, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.playstyle-modal__close {
+  border: 1px solid rgba(80, 211, 255, 0.32);
+  background:
+    linear-gradient(145deg, rgba(87, 105, 136, 0.68), rgba(35, 43, 63, 0.92));
+  color: var(--dtp-cyan);
+  box-shadow:
+    8px 10px 18px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.playstyle-modal__header {
+  gap: clamp(1rem, 2vw, 1.6rem);
+}
+
+.playstyle-modal__badge {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, rgba(137, 151, 169, 0.32), rgba(54, 66, 94, 0.34));
+  box-shadow:
+    12px 16px 30px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.playstyle-modal__badge-label {
+  color: rgba(255, 255, 255, 0.52);
+  font-family: var(--dtp-font-ui);
+  font-weight: 850;
+  letter-spacing: 0.1em;
+}
+
+.playstyle-modal__name strong {
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.4rem, 2.6vw, 2.15rem);
+  font-weight: 400;
+  line-height: 0.94;
+}
+
+.playstyle-modal__banner {
+  border: 1px solid rgba(186, 255, 0, 0.22);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 98% 0%, rgba(186, 255, 0, 0.14), transparent 44%),
+    rgba(126, 135, 153, 0.28);
+}
+
+.playstyle-modal__banner h2,
+.playstyle-modal__footer h3,
+.playstyle-modal__group h3 {
+  color: var(--dtp-lime);
+  font-family: var(--dtp-font-display);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.playstyle-modal__banner p,
+.playstyle-modal__footer p {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.playstyle-modal__legend {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.playstyle-modal__group,
+.playstyle-modal__footer {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, rgba(137, 151, 169, 0.28), rgba(54, 66, 94, 0.26));
+  box-shadow:
+    10px 14px 26px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.playstyle-compare-row__label {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.playstyle-dual-bar__track {
+  background: rgba(205, 213, 229, 0.28);
+}
+
+.playstyle-dual-bar__fill--player {
+  background: linear-gradient(90deg, #0529ff, #50d3ff);
+}
+
+.playstyle-dual-bar__fill--benchmark {
+  background: linear-gradient(90deg, #baff00, #00ffbf);
+}
+
+.playstyle-dual-bar__value {
+  color: var(--dtp-white);
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .profile-page.player-profile.dtp-page {
+    --profile-shell: min(100%, calc(100vw - clamp(1.25rem, 4vw, 3rem)));
+  }
+
+  .dtp-profile-card {
+    grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
+    text-align: left;
+    padding: clamp(1.75rem, 4vw, 2.75rem);
+  }
+
+  .dtp-profile-card::before,
+  .dtp-profile-card::after {
+    display: block;
+  }
+
+  .dtp-profile-card__portrait {
+    max-width: 210px;
+    margin-inline: 0;
+  }
+
+  .dtp-profile-card__actions {
+    grid-column: 1 / -1;
+    width: min(100%, 420px);
+    min-height: 0;
+    justify-self: start;
+    padding: 1.25rem;
+  }
+
+  .dtp-profile-card__ratings {
+    justify-content: flex-start;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-banner__insights {
+    grid-template-columns: minmax(250px, 1fr) clamp(172px, 22vw, 218px) clamp(232px, 29vw, 292px);
+    gap: clamp(1rem, 2vw, 1.9rem);
+    padding-inline: clamp(1.75rem, 4vw, 2.75rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-banner__bio-grid {
+    row-gap: clamp(1.2rem, 2.4vw, 2.05rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-bio {
+    margin-inline: clamp(1.75rem, 4vw, 2.75rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-scout-strip {
+    width: calc(100% - clamp(3.5rem, 8vw, 5.5rem));
+    padding-inline: clamp(1.75rem, 4vw, 2.75rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-tabs {
+    width: calc(100% - clamp(3.5rem, 8vw, 5.5rem));
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-role-profile {
+    width: calc(100% - clamp(3.5rem, 8vw, 5.5rem));
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-proof-block {
+    width: calc(100% - clamp(3.5rem, 8vw, 5.5rem));
+  }
+
+  .profile-page.player-profile.dtp-page
+    .scouting-details
+    > .profile-section,
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .profile-section:has(.scoreboard-history-hero),
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .profile-section:has(.profile-empty-state),
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .profile-section.player-profile-media,
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .goalkeeper-profile {
+    width: calc(100% - clamp(3.5rem, 8vw, 5.5rem));
+  }
+
+  .profile-page.player-profile.dtp-page .scouting-details__snapshot,
+  .profile-page.player-profile.dtp-page .scoreboard-history-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-page.player-profile.dtp-page .profile-media-grid,
+  .profile-page.player-profile.dtp-page .profile-media-grid--photos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .profile-page.player-profile.dtp-page {
+    --profile-shell: min(100%, calc(100vw - 1rem));
+    padding-top: clamp(4.25rem, 13vw, 5.25rem);
+  }
+
+  .dtp-profile-card {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    gap: 1.2rem;
+    padding: 1.25rem;
+    text-align: center;
+  }
+
+  .dtp-profile-card::before,
+  .dtp-profile-card::after {
+    display: none;
+  }
+
+  .dtp-profile-card__portrait {
+    max-width: min(220px, 76vw);
+    margin-inline: auto;
+  }
+
+  .dtp-profile-card__name {
+    font-size: clamp(3rem, 18vw, 4.5rem);
+  }
+
+  .dtp-profile-card__meta {
+    font-size: 1rem;
+  }
+
+  .dtp-profile-card__actions {
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .dtp-profile-card__ratings {
+    flex-wrap: wrap;
+  }
+
+  .dtp-profile-rating {
+    flex: 1 1 84px;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-banner__insights {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.2rem;
+    padding-inline: 1.25rem;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-banner__bio-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "nationality category"
+      "foot position"
+      "value value";
+    row-gap: 1.45rem;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-banner__bio-label {
+    font-size: clamp(0.82rem, 4vw, 1rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-banner__bio-value {
+    font-size: clamp(1rem, 5.2vw, 1.35rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-pitch--snapshot {
+    width: min(100%, 310px);
+    justify-self: center;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-cat-radar__frame {
+    min-height: 190px;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-bio {
+    margin-inline: 1.25rem;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-scout-strip {
+    width: calc(100% - 1rem);
+    padding: 1.5rem 1.25rem 1.65rem;
+  }
+
+  .profile-page.player-profile.dtp-page
+    .player-profile-scout-strip__summary
+    .player-profile-heading {
+    font-size: clamp(1.45rem, 9vw, 2rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-scout-strip__metrics.position-scouting-metrics {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1rem;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-tabs {
+    width: calc(100% - 1rem);
+    margin-top: 1.15rem;
+    padding: 0;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-tabs__btn {
+    flex: 0 0 auto;
+    min-width: max-content;
+    min-height: 32px;
+    padding-inline: 0.78rem;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-role-profile {
+    width: calc(100% - 1rem);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-role-profile .profile-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profile-page.player-profile.dtp-page
+    .player-profile-role-profile
+    .player-profile-attr-grid--core {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1rem;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-proof-block {
+    width: calc(100% - 1rem);
+    padding: 1.15rem;
+  }
+
+  .profile-page.player-profile.dtp-page .profile-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-panel {
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .profile-page.player-profile.dtp-page .profile-metric-list strong {
+    min-width: 4rem;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-playstyle-comparison__inner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-playstyle-comparison__right {
+    align-self: flex-end;
+  }
+
+  .profile-page.player-profile.dtp-page
+    .scouting-details
+    > .profile-section,
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .profile-section:has(.scoreboard-history-hero),
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .profile-section:has(.profile-empty-state),
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .profile-section.player-profile-media,
+  .profile-page.player-profile.dtp-page
+    .player-profile-body-sheet
+    > .goalkeeper-profile {
+    width: calc(100% - 1rem);
+    padding: 1.15rem;
+  }
+
+  .profile-page.player-profile.dtp-page .profile-section-heading,
+  .profile-page.player-profile.dtp-page .scoreboard-history-hero {
+    align-items: flex-start;
+    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
+  }
+
+  .profile-page.player-profile.dtp-page .profile-data-note,
+  .profile-page.player-profile.dtp-page .scouting-details__meta {
+    text-align: left;
+  }
+
+  .profile-page.player-profile.dtp-page .scouting-details__snapshot,
+  .profile-page.player-profile.dtp-page .scouting-intel__trait-grid,
+  .profile-page.player-profile.dtp-page .player-profile-playstyles__grid,
+  .profile-page.player-profile.dtp-page .scoreboard-history-kpis,
+  .profile-page.player-profile.dtp-page .profile-facts,
+  .profile-page.player-profile.dtp-page .profile-media-grid,
+  .profile-page.player-profile.dtp-page .profile-media-grid--photos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-page.player-profile.dtp-page .scoreboard-history-hero__score {
+    width: 100%;
+    min-height: 82px;
+  }
+
+  .profile-page.player-profile.dtp-page .scoreboard-history-appearance {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+  }
+
+  .profile-page.player-profile.dtp-page .scoreboard-history-appearance__team--away {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .profile-page.player-profile.dtp-page .profile-event-list li {
+    grid-template-columns: 2.4rem minmax(0, 1fr);
+  }
+
+  .profile-page.player-profile.dtp-page .profile-event-list li > em {
+    grid-column: 2;
+  }
+
+  .profile-page.player-profile.dtp-page .player-profile-media-card {
+    min-height: 178px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 13. Footer — black, 5 columns, 1440x627
+ * ------------------------------------------------------------------ */
+
+.dtp-footer {
+  padding: clamp(3rem, 6vw, 100px) 0 var(--dtp-space-7);
+  background: var(--dtp-ink);
+  color: var(--dtp-white);
+}
+
+.dtp-footer__cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: clamp(1.5rem, 4vw, 48px);
+}
+
+.dtp-footer__heading {
+  margin: 0 0 var(--dtp-space-5);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--dtp-white);
+}
+
+.dtp-footer__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--dtp-space-5); }
+
+.dtp-footer__link {
+  font-size: var(--dtp-fs-base);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--dtp-white);
+  transition: color var(--dtp-t-fast);
+}
+.dtp-footer__link:hover { color: var(--dtp-lime); }
+
+.dtp-footer__rule {
+  margin: clamp(2rem, 5vw, 62px) 0 var(--dtp-space-5);
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.dtp-footer__base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dtp-space-4);
+}
+
+.dtp-footer__brand { display: inline-flex; align-items: center; }
+
+.dtp-footer__copy {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 2.28;
+  color: var(--dtp-white);
+}
+
+/* ------------------------------------------------------------------ *
+ * 14. Responsive
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 1024px) {
+  :root { --dtp-nav-h: 76px; }
+
+  .dtp-profile-card { grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); }
+  .dtp-profile-card__actions { grid-column: 1 / -1; }
+  .dtp-profile-card__ratings { justify-content: flex-start; }
+
+  .dtp-row { grid-template-columns: minmax(180px, 260px) 1fr; }
+  .dtp-row > .dtp-btn { grid-column: 2; justify-self: start; }
+
+  .dtp-subscribe { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 1100px) {
+  .dtp-nav {
+    padding-inline: clamp(0.85rem, 2vw, var(--dtp-space-4)) clamp(0.65rem, 1.6vw, var(--dtp-space-3));
+    gap: clamp(0.35rem, 1.4vw, var(--dtp-space-3));
+  }
+  .dtp-nav__toggle { display: inline-flex; }
+
+  .dtp-nav__links {
+    position: absolute;
+    top: calc(100% + var(--dtp-space-2));
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: var(--dtp-space-3);
+    background: var(--dtp-white);
+    border-radius: var(--dtp-radius-lg);
+    box-shadow: var(--dtp-shadow-soft);
+  }
+
+  .dtp-nav__links[hidden] { display: none; }
+  .dtp-nav__link { padding: var(--dtp-space-4); text-align: left; }
+  .dtp-nav__link::after { display: none; }
+  .dtp-nav { position: relative; }
+  .dtp-nav__cta {
+    order: 2;
+    min-width: 0;
+    margin-left: auto;
+    padding-inline: clamp(0.72rem, 2vw, var(--dtp-space-4));
+  }
+  .dtp-nav__toggle { order: 3; margin-left: var(--dtp-space-2); }
+
+  .dtp-hero { min-height: 0; }
+  .dtp-hero--tall { min-height: 0; }
+
+  /* The hero keeps its side-by-side split down to 600 — see the phone block
+     below, where it collapses. */
+  .dtp-hero--split .dtp-hero__inner { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+
+  /* Decorative markers are desktop-only furniture. */
+  .dtp-hero__dot { display: none; }
+
+  /* The arm-over-nav layer depends on the desktop composition; at this width
+     the pill spans nearly the full row and the cutout would sit across the
+     logo and burger instead of the empty space between them. */
+  .dtp-hero__layer--arm { display: none; }
+
+  .dtp-form { grid-template-columns: minmax(0, 1fr); }
+
+  .dtp-row { grid-template-columns: minmax(0, 1fr); }
+  .dtp-row > .dtp-btn { grid-column: 1; }
+
+  .dtp-profile-card { grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); text-align: left; }
+  .dtp-profile-card__portrait { max-width: 210px; margin-inline: 0; }
+  .dtp-profile-card__actions { grid-column: 1 / -1; width: min(100%, 420px); justify-self: start; }
+  .dtp-profile-card__ratings { justify-content: flex-start; }
+  .dtp-profile-card::before,
+  .dtp-profile-card::after { display: block; }
+
+  .dtp-band--lime.dtp-band--wedge { clip-path: none; }
+}
+
+/* ---- Phones: same composition, halved ------------------------------- *
+ * Equal halves, as on the board: the hero's own background is the black
+ * side, and the photo half fills the other. CSS owns the split rather than
+ * the artwork, because a cover-fit of the wide composite at 375px shows only
+ * ~727 design px against the 712 the player occupies — the black plate would
+ * be squeezed to nothing.
+ *
+ * The copy is a grid column, so it is bounded by its half no matter how the
+ * headline changes: longer copy wraps and grows the hero instead of running
+ * over the player. Nothing here depends on the headline's current line count.
+ * --------------------------------------------------------------------- */
+@media (max-width: 600px) {
+  .dtp-hero__picture { display: contents; }
+
+  .dtp-hero--split {
+    justify-content: center;
+    /* A floor only — the hero grows with the copy. */
+    min-height: clamp(430px, 58vh, 540px);
+    padding-top: calc(var(--dtp-nav-top) + var(--dtp-nav-h) + var(--dtp-space-4));
+    padding-bottom: var(--dtp-space-5);
+  }
+
+  /* Keep the landscape split: copy owns the left side but may paint across
+     the background boundary onto the player's arm. */
+  .dtp-hero--split .dtp-hero__inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    padding-left: clamp(1.15rem, 6vw, 1.875rem);
+    padding-right: clamp(0.75rem, 4vw, 1.25rem);
+  }
+
+  .dtp-hero--split .dtp-hero__copy {
+    gap: var(--dtp-space-3);
+    position: relative;
+    z-index: 2;
+    max-width: min(68vw, 17rem);
+  }
+  .dtp-hero--split .dtp-hero__copy .dtp-eyebrow {
+    max-width: 14rem;
+    font-size: clamp(0.55rem, 2vw, 0.625rem);
+    letter-spacing: 0.08em;
+  }
+
+  /* Scales with the column rather than a fixed step, so the headline keeps
+     its fit if the copy is reworded. `anywhere` covers the one case wrapping
+     alone cannot: a single word longer than the column, which otherwise
+     overruns the photo (measured at 299px against a 188px half). */
+  .dtp-hero--split .dtp-hero__title {
+    width: min(68vw, 17rem);
+    font-size: clamp(1.28rem, 6.45vw, 2rem);
+    line-height: 0.92;
+    overflow-wrap: anywhere;
+  }
+
+  .dtp-hero--split .dtp-hero__actions { width: auto; }
+  .dtp-hero--split .dtp-hero__actions .dtp-btn {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding-inline: var(--dtp-space-3);
+    font-size: 0.625rem;
+  }
+
+  /* `contain`, not `cover`. The column is ~0.4:1 while the photo half is
+     0.854:1, so covering it cropped ~53% of his width away and magnified the
+     rest — which is what put his torso in frame and his head behind the nav.
+     Contained, he renders whole at true proportions.
+
+     The panel is wider than the copy's column (58% vs 50%) and starts below
+     the nav. It may overlap the column on paper, but the source is an alpha
+     cutout whose left edge is his outstretched arm, so nothing boxes over the
+     text — and the copy is bounded by its own grid column regardless. */
+  .dtp-hero--split .dtp-hero__layer--photo {
+    left: auto;
+    right: 0;
+    /* Anchored from the bottom only. With both offsets set, `height: auto` on
+       a replaced element resolves to its intrinsic height rather than the
+       span, so the box sat high and tucked his raised hand under the pill. */
+    top: 0;
+    bottom: 0;
+    /* 54%, not 58%: at 375 the wider panel put its left edge inside the
+       copy column and the CTA ran into it. */
+    width: 101.12%;
+    transform: none;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    opacity: 1;
+  }
+}
+
+@media (max-width: 380px) {
+  .dtp-nav {
+    gap: 0.35rem;
+    padding-inline: 0.72rem 0.55rem;
+  }
+
+  .dtp-nav__cta {
+    min-height: 38px;
+    padding-inline: 0.64rem;
+    font-size: 0.68rem;
+  }
+
+  .dtp-nav__toggle {
+    width: 38px;
+    height: 38px;
+    margin-left: 0;
+  }
+
+  .dtp-nav__logo {
+    max-width: 104px;
+    height: auto;
+  }
+
+  .dtp-hero--split {
+    min-height: clamp(405px, 56vh, 500px);
+    padding-top: calc(var(--dtp-nav-top) + var(--dtp-nav-h) + var(--dtp-space-3));
+  }
+
+  .dtp-hero--split .dtp-hero__inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding-left: 1.15rem;
+    padding-right: 0.5rem;
+  }
+
+  .dtp-hero--split .dtp-hero__copy {
+    max-width: 68vw;
+  }
+
+  .dtp-hero--split .dtp-hero__title {
+    width: 68vw;
+    font-size: clamp(1.08rem, 6.7vw, 1.58rem);
+  }
+
+  .dtp-hero--split .dtp-hero__actions .dtp-btn {
+    min-height: 38px;
+    padding-inline: 0.72rem;
+    font-size: 0.58rem;
+  }
+
+  .dtp-hero--split .dtp-hero__layer--photo {
+    width: 105%;
+    object-position: 53% center;
+  }
+}
+
+@media (max-width: 560px) {
+  .dtp-card-grid { grid-template-columns: minmax(0, 1fr); }
+  .dtp-filters { border-radius: var(--dtp-radius-lg); }
+  .dtp-filters__select { flex-basis: 100%; border-left: 0; }
+  .dtp-hero__actions { width: 100%; }
+  .dtp-hero__actions .dtp-btn { flex: 1 1 100%; }
+  .dtp-footer__list { gap: var(--dtp-space-4); }
+}
+
+@media (max-width: 760px) {
+  .profile-page.player-profile.dtp-page {
+    --profile-shell: min(100%, calc(100vw - 1rem));
+    padding-top: clamp(4.25rem, 13vw, 5.25rem);
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-card {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    gap: 1.2rem;
+    padding: 1.25rem;
+    text-align: center;
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-card::before,
+  .profile-page.player-profile.dtp-page .dtp-profile-card::after {
+    display: none;
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-card__portrait {
+    max-width: min(220px, 76vw);
+    margin-inline: auto;
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-card__name {
+    font-size: clamp(3rem, 18vw, 4.5rem);
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-card__meta {
+    font-size: 1rem;
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-card__actions {
+    width: 100%;
+    min-height: 0;
+    padding: 1rem;
+    justify-self: stretch;
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-card__ratings {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .profile-page.player-profile.dtp-page .dtp-profile-rating {
+    flex: 1 1 84px;
+  }
+}

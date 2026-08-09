@@ -1,0 +1,137 @@
+/* =====================================================================
+   DTP Africa — design tokens synchronised from Figma
+   File: yhKaa6R7AAyDHFfoEFvLoX ("DTP")
+   Frames: Homepage 3:189 · Contact us 113:4 · Clubs 115:615 ·
+           Scouting Hubs 118:1711 · Scoreboard 186:139 ·
+           Featured Players 234:486 · Players Profile 239:2425 ·
+           Product Card 241:3165
+
+   Additive `--dtp-*` namespace: it layers over the legacy token block at
+   the top of global.css without repainting the dark internal modules
+   (admin / scoreboard operator tools) that depend on those values.
+   ===================================================================== */
+
+:root {
+  /* ---- Brand ------------------------------------------------------ */
+  --dtp-blue: #091df4;          /* primary CTA / link                  */
+  --dtp-blue-grad: #1b59f8;     /* "Blue grad" fill style              */
+  --dtp-blue-soft: rgba(9, 29, 244, 0.08);
+  /* Headline accent. Figma brand blue, per design direction that the Figma
+     palette wins. Note it measures ~1.9:1 against the #0a0a0a hero, so it is
+     reserved for 80px+ display type and must never carry body copy. */
+  --dtp-blue-electric: #091df4;
+  --dtp-cyan: #4cccf3;          /* position labels, metric numerals    */
+  --dtp-lime: #b2e006;          /* section band + eyebrow accent       */
+  --dtp-neon-lime: #84cc16;     /* ticker band (design direction)      */
+  --dtp-neon-lime-bright: #a3e635;
+  --dtp-green: #216039;         /* display type on lime band           */
+  --dtp-green-mid: #6da544;
+  --dtp-red: #ff0000;           /* Intelligence Suite band             */
+  --dtp-orange: #ff5a00;        /* Intelligence Suite display type     */
+  --dtp-orange-deep: #792b0f;
+  --dtp-gold: #ffd874;          /* star / rating glyphs                */
+  --dtp-gold-strong: #ffbf1a;
+  --dtp-pink: #ff4080;
+  --dtp-purple: #6b00d6;
+
+  /* ---- Neutrals --------------------------------------------------- */
+  --dtp-ink: #000000;
+  --dtp-ink-900: #070b16;
+  --dtp-ink-800: #222232;       /* card surface (dark)                 */
+  --dtp-ink-700: #2b2b3d;       /* card border (dark)                  */
+  --dtp-slate: #40424c;
+  --dtp-slate-soft: #767583;
+  --dtp-grey: #797979;
+  --dtp-grey-mid: #828282;
+  --dtp-grey-soft: #a4a4a4;
+  --dtp-line: #d9d9d9;
+  --dtp-paper-alt: #f0f0f0;
+  --dtp-paper: #fafcfe;         /* page background                     */
+  --dtp-white: #ffffff;
+
+  /* ---- Gradients -------------------------------------------------- */
+  --dtp-grad-gold: linear-gradient(90deg, #ffbf1a 0%, #ff4080 100%);
+  --dtp-grad-green: linear-gradient(90deg, #2fea9b 0%, #7fdd53 100%);
+  --dtp-grad-blue: linear-gradient(90deg, #1b59f8 0%, #1b59f8 100%);
+  --dtp-grad-cyan: linear-gradient(90deg, #37f7f4 0%, #1a92a2 100%);
+  --dtp-grad-eyebrow: linear-gradient(90deg, #b2e006 0%, #05118e 100%);
+  --dtp-grad-scrim: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, #000000 100%);
+  --dtp-grad-ink: linear-gradient(180deg, #2c2c2c 0%, #000000 100%);
+
+  /* Tile washes — Scouting Hub cards (118:1711) */
+  --dtp-tile-blue: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  --dtp-tile-green: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  --dtp-tile-orange: linear-gradient(135deg, #ffede4 0%, #ffdcc9 100%);
+
+  /* ---- Typography -------------------------------------------------
+     Gasoek One = display. Sofia Pro is a licensed face: the stack falls
+     back to Sofia Sans (metrically close, open source) so the design
+     holds until the licensed webfont is self-hosted.               */
+  --dtp-font-display: "Gasoek One", "Anton", Impact, sans-serif;
+  --dtp-font-ui: "Sofia Pro", "Sofia Sans", "Inter", system-ui, sans-serif;
+  --dtp-font-alt: "Outfit", "Inter", system-ui, sans-serif;
+  --dtp-font-body: "Inter", system-ui, sans-serif;
+
+  /* Display scale (1440 reference; pages clamp down responsively). */
+  /* Board value, restored: the headline is meant to run into the player's
+     arm the way Figma draws it, so it is not held back for clearance. */
+  --dtp-fs-hero: clamp(2.75rem, 6.25vw, 5.625rem);   /*  90px @1440 */
+  --dtp-fs-display: clamp(2.25rem, 4.65vw, 4.1875rem); /*  67px */
+  --dtp-fs-name: clamp(2.25rem, 5.5vw, 5rem);        /*  80px */
+  --dtp-fs-marquee: clamp(1.5rem, 2.9vw, 2.625rem);  /*  42px */
+
+  /* UI scale */
+  --dtp-fs-eyebrow: 0.9375rem;   /* 15px / 600 / +2.1 tracking */
+  --dtp-fs-lead: 1.375rem;       /* 22px / lh 30 */
+  --dtp-fs-body: 1.5rem;         /* 24px section body */
+  --dtp-fs-base: 1rem;           /* 16px */
+  --dtp-fs-sm: 0.8125rem;        /* 13px */
+  --dtp-fs-xs: 0.75rem;          /* 12px button label */
+
+  --dtp-tracking-eyebrow: 0.14em;
+  --dtp-tracking-tight: -0.02em;
+
+  /* ---- Radii ------------------------------------------------------ */
+  --dtp-radius-xs: 5px;
+  --dtp-radius-btn: 5px;         /* "Medium Action Button" (148x45)     */
+  --dtp-radius-sm: 9.6px;        /* product card                        */
+  --dtp-radius-nav: 11px;        /* nav bar "Rectangle 34624100"        */
+  --dtp-radius-md: 11px;
+  --dtp-radius-lg: 19.24px;      /* panels                              */
+  --dtp-radius-xl: 26px;
+  --dtp-radius-pill: 999px;      /* chips + search fields (83 / 92px)   */
+
+  /* ---- Spacing (Figma auto-layout gaps) --------------------------- */
+  --dtp-space-1: 4px;
+  --dtp-space-2: 8px;
+  --dtp-space-3: 10px;
+  --dtp-space-4: 16px;
+  --dtp-space-5: 24px;
+  --dtp-space-6: 32px;
+  --dtp-space-7: 48px;
+  --dtp-space-8: 58px;
+  --dtp-space-9: 87px;
+  --dtp-space-10: 110px;
+
+  /* Page gutter — Figma content spans 1314px inside a 1440 frame */
+  --dtp-gutter: clamp(1rem, 4.4vw, 63px);
+  --dtp-maxw: 1314px;
+  --dtp-nav-h: 92px;
+  /* Drives the pill's inset on all three sides at once, so the space above it
+     always matches the space beside it. Scales down on phones, where a flat
+     48px left only ~279px of pill and pushed the burger outside it. */
+  --dtp-nav-top: clamp(16px, 3.4vw, 48px);
+
+  /* ---- Elevation -------------------------------------------------- */
+  --dtp-shadow-card: 0 83px 85px rgba(80, 80, 80, 0.06);
+  --dtp-shadow-soft: 1px 1px 18px rgba(0, 0, 0, 0.09);
+  --dtp-shadow-tight: 1px 1px 14px rgba(0, 0, 0, 0.05);
+  --dtp-shadow-ring: 0 0 27px rgba(0, 0, 0, 1);
+  --dtp-shadow-blue: 0 5px 14px rgba(54, 159, 255, 0.4);
+  --dtp-shadow-lime: 0 5px 14px rgba(138, 197, 62, 0.5);
+
+  /* ---- Motion ----------------------------------------------------- */
+  --dtp-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --dtp-t-fast: 0.16s var(--dtp-ease);
+  --dtp-t-med: 0.28s var(--dtp-ease);
+}

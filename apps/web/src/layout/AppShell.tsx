@@ -1,7 +1,49 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { PRODUCT_MODULES } from "@dtp/domain";
+import { useEffect, useId, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandLogo } from "../components/BrandLogo";
+import { DtpLogoLockup } from "../components/DtpLogoLockup";
 import { SupportReportButton } from "../components/SupportReportButton";
+
+/* Figma "DTP" — the nav pill (1314x92) and footer (1440x627) are shared
+   chrome across every public frame: Homepage 3:189, Contact 113:4,
+   Clubs 115:615, Scouting Hubs 118:1711, Scoreboard 186:139,
+   Featured Players 234:486, Players Profile 239:2425. */
+
+const NAV_LINKS = [
+  { to: "/scoreboard", label: "Scoreboard" },
+  { to: "/scouting", label: "Scouting Hub" },
+  { to: "/partners/academies", label: "Clubs" },
+  { to: "/contact", label: "Contact" },
+] as const;
+
+/* Footer information architecture from the Figma footer frame. Labels whose
+   routes do not exist yet (API Docs, Careers, Terms, Privacy) are omitted
+   rather than pointed at dead paths — add them here as those pages land. */
+const FOOTER_COLUMNS = [
+  {
+    heading: "Product",
+    links: [
+      { to: "/scoreboard", label: "Scoreboard" },
+      { to: "/scouting", label: "Scouting Hub" },
+      { to: "/featured-players", label: "Featured Players" },
+    ],
+  },
+  {
+    heading: "Resources",
+    links: [
+      { to: "/blog", label: "Blog" },
+      { to: "/partners/academies", label: "Partnerships Base" },
+      { to: "/register", label: "Register Talent" },
+    ],
+  },
+  {
+    heading: "Company",
+    links: [
+      { to: "/about", label: "About Us" },
+      { to: "/contact", label: "Contact Us" },
+    ],
+  },
+] as const;
 
 const FOOTER_SOCIAL_LINKS = [
   {
@@ -42,83 +84,138 @@ const FOOTER_SOCIAL_LINKS = [
   },
 ] as const;
 
-const MARKETING_LINKS = [
-  { to: "/partners/academies", label: "Clubs" },
-  { to: "/contact", label: "Contact" },
-] as const;
+function SiteHeader() {
+  const menuId = useId();
+  const [open, setOpen] = useState(false);
+  const { pathname } = useLocation();
+
+  // Collapse the mobile disclosure whenever the route changes.
+  useEffect(() => setOpen(false), [pathname]);
+
+  return (
+    <div className="dtp-nav-wrap">
+      <nav className="dtp-nav" aria-label="Main">
+        <NavLink to="/" className="dtp-nav__brand" aria-label="DirectToPro Africa — home">
+          <DtpLogoLockup className="dtp-nav__logo" />
+        </NavLink>
+
+        <button
+          type="button"
+          className="dtp-nav__toggle"
+          aria-expanded={open}
+          aria-controls={menuId}
+          aria-label={open ? "Close menu" : "Open menu"}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">
+            {open ? (
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                d="M6 6l12 12M18 6L6 18"
+              />
+            ) : (
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                d="M4 7h16M4 12h16M4 17h16"
+              />
+            )}
+          </svg>
+        </button>
+
+        <div className="dtp-nav__links" id={menuId} hidden={!open}>
+          {NAV_LINKS.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) =>
+                isActive ? "dtp-nav__link is-active" : "dtp-nav__link"
+              }
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </div>
+
+        <Link to="/register" className="dtp-btn dtp-nav__cta">
+          Register Talent
+        </Link>
+      </nav>
+    </div>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="dtp-footer">
+      <div className="dtp-shell">
+        <div className="dtp-footer__cols">
+          {FOOTER_COLUMNS.map((column) => (
+            <div key={column.heading}>
+              <h2 className="dtp-footer__heading">{column.heading}</h2>
+              <ul className="dtp-footer__list">
+                {column.links.map((link) => (
+                  <li key={link.to + link.label}>
+                    <NavLink to={link.to} className="dtp-footer__link">
+                      {link.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+
+          <div>
+            <h2 className="dtp-footer__heading">Socials</h2>
+            <ul className="dtp-footer__list">
+              {FOOTER_SOCIAL_LINKS.map((link) => (
+                <li key={link.label}>
+                  <a
+                    className="dtp-footer__link dtp-channels__link"
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {link.icon}
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <hr className="dtp-footer__rule" />
+
+        <div className="dtp-footer__base">
+          <NavLink to="/" className="dtp-footer__brand" aria-label="DirectToPro Africa — home">
+            <BrandLogo variant="white-horizontal" size="footer" />
+          </NavLink>
+          <p className="dtp-footer__copy">© {new Date().getFullYear()} DirectToPro Africa</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
 
 export function AppShell() {
   return (
-    <div className="app-shell">
+    <div className="app-shell dtp-page">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <header className="app-header">
-        <NavLink to="/" className="brand">
-          <BrandLogo variant="white-horizontal" size="header" />
-        </NavLink>
-        <nav className="app-nav" aria-label="Main">
-          <div className="app-nav__group" aria-label="Platform">
-            {PRODUCT_MODULES.map((mod) => (
-              <NavLink
-                key={mod.id}
-                to={mod.path}
-                end={mod.path === "/"}
-                className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
-              >
-                {mod.navLabel}
-              </NavLink>
-            ))}
-          </div>
-          <div className="app-nav__group app-nav__group--secondary" aria-label="Site">
-            {MARKETING_LINKS.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                className={({ isActive }) =>
-                  isActive ? "nav-link nav-link--secondary active" : "nav-link nav-link--secondary"
-                }
-              >
-                {link.label}
-              </NavLink>
-            ))}
-          </div>
-        </nav>
-      </header>
+      <SiteHeader />
       <div className="app-body app-body--no-rail">
         <main className="app-main" id="main-content">
           <Outlet />
         </main>
       </div>
-      <footer className="app-footer">
-        <NavLink to="/" className="app-footer__brand">
-          <BrandLogo variant="white-horizontal" size="footer" />
-        </NavLink>
-        <nav className="footer-nav" aria-label="Footer">
-          <NavLink to="/about">About</NavLink>
-          <NavLink to="/blog">Blog</NavLink>
-          <NavLink to="/academy">Academies</NavLink>
-          <NavLink to="/contact">Contact</NavLink>
-          <NavLink to="/register">Register</NavLink>
-        </nav>
-        <div className="app-footer__social">
-          <p className="app-footer__social-label">Follow Us</p>
-          <div className="app-footer__social-links">
-            {FOOTER_SOCIAL_LINKS.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={link.label}
-              >
-                {link.icon}
-              </a>
-            ))}
-          </div>
-        </div>
-        <p>© {new Date().getFullYear()} DirectToPro Africa</p>
-      </footer>
+      <SiteFooter />
       <SupportReportButton />
     </div>
   );

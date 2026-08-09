@@ -167,13 +167,6 @@ function isGkProfile(player: Pick<PublicPlayerProfile, "role" | "positionPrimary
   return isGoalkeeper(player.role) || isGoalkeeper(player.positionPrimary);
 }
 
-function ratingBadgeTone(rating?: number | null): string {
-  if (rating == null) return "player-profile-rating-badge--muted";
-  if (rating >= 85) return "player-profile-rating-badge--elite";
-  if (rating >= 75) return "player-profile-rating-badge--ready";
-  return "player-profile-rating-badge--standard";
-}
-
 type BioFact = { label: string; value: string; highlight?: boolean };
 
 function isDuplicateScoutingCopy(
@@ -507,8 +500,8 @@ export function PlayerProfilePage() {
   };
 
   return (
-    <div className="home-page profile-page player-profile">
-      <Link to="/featured-players" className="back-link">
+    <div className="home-page profile-page player-profile dtp-page">
+      <Link to="/featured-players" className="dtp-profile-back">
         ← Featured players
       </Link>
 
@@ -523,137 +516,184 @@ export function PlayerProfilePage() {
         shareStatus={shareStatus}
       />
 
-      {player.biography &&
-        !isDuplicateScoutingCopy(player.biography, player.scoutingSummary) && (
-          <p className="player-profile-bio">{player.biography}</p>
+      <div className="player-profile-body-sheet">
+        {player.biography &&
+          !isDuplicateScoutingCopy(player.biography, player.scoutingSummary) && (
+            <p className="player-profile-bio">{player.biography}</p>
+          )}
+
+        <section className="player-profile-scout-strip" aria-label="Scouting summary">
+          <div className="player-profile-scout-strip__summary">
+            <h2 className="player-profile-heading">Scouting Summary</h2>
+            <p className="player-profile-scout-strip__text">
+              {player.scoutingSummary ?? "Scouting summary pending calibration review."}
+            </p>
+          </div>
+          <PositionScoutingMetricsRow
+            player={player}
+            variant="strip"
+            className="player-profile-scout-strip__metrics"
+          />
+        </section>
+
+        <nav className="player-profile-tabs" aria-label="Player profile sections">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={tab.id === activeTab ? "player-profile-tabs__btn active" : "player-profile-tabs__btn"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        {activeTab === "overview" && (
+          <>
+            <section className="profile-section">
+              <PlayerRoleProfileSection
+                attributes={attributes}
+                positionPrimary={player.positionPrimary}
+                role={player.role}
+                secondaryRole={
+                  player.positionSecondary ??
+                  player.positionFit?.secondaryPositionFit ??
+                  player.scoutingIntelligence?.positionFit?.secondaryPositionFit ??
+                  null
+                }
+                dataSourceLabel={
+                  player.ratingAttributes ? "From match data" : "Estimated from profile"
+                }
+              />
+
+              <section className="player-profile-proof-block" aria-label="Profile proof points">
+                <div className="profile-detail-grid">
+                  <article className="profile-panel player-profile-panel">
+                    <h3 className="player-profile-subheading">Profile highlights</h3>
+                    <ul className="profile-list">
+                      {highlights.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </article>
+                  <article className="profile-panel player-profile-panel">
+                    <h3 className="player-profile-subheading">Performance metrics</h3>
+                    <div className="profile-metric-list">
+                      <span>Minutes played</span>
+                      <strong>{formatMinutesPlayed(minutesPlayed)}</strong>
+                      {player.positionFit?.secondaryPositionFit && (
+                        <>
+                          <span>Secondary role</span>
+                          <strong>{player.positionFit.secondaryPositionFit}</strong>
+                        </>
+                      )}
+                      <span>Appearances</span>
+                      <strong>{player.stats?.appearances ?? scoreboard?.aggregates.appearances ?? 0}</strong>
+                      {isGk ? (
+                        <>
+                          <span>Clean sheets</span>
+                          <strong>{player.stats?.cleanSheets ?? 0}</strong>
+                        </>
+                      ) : (
+                        <>
+                          <span>Goal contributions</span>
+                          <strong>
+                            {(player.stats?.goals ?? scoreboard?.aggregates.goals ?? 0) +
+                              (player.stats?.assists ?? scoreboard?.aggregates.assists ?? 0)}
+                          </strong>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                </div>
+
+                <BenchmarkPlaystyleComparison
+                  playerName={player.displayName}
+                  playerPhotoUrl={profilePhotoUrl}
+                  benchmark={benchmark}
+                  attributes={attributes}
+                />
+              </section>
+            </section>
+          </>
         )}
 
-      <section className="player-profile-scout-strip" aria-label="Scouting summary">
-        <div className="player-profile-scout-strip__summary">
-          <h2 className="player-profile-heading">Scouting summary</h2>
-          <p className="player-profile-scout-strip__text">
-            {player.scoutingSummary ?? "Scouting summary pending calibration review."}
-          </p>
-        </div>
-        <PositionScoutingMetricsRow player={player} variant="strip" />
-      </section>
+        {activeTab === "scoreboard" && (
+          <>
+            {isGk && <GoalkeeperScoreboardProfileSection history={scoreboard} />}
+            <ScoreboardHistorySection history={scoreboard} minutesPlayed={minutesPlayed} />
+          </>
+        )}
 
-      <nav className="player-profile-tabs" aria-label="Player profile sections">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={tab.id === activeTab ? "player-profile-tabs__btn active" : "player-profile-tabs__btn"}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+        {activeTab === "scouting" && <ScoutingDetailsTab player={player} />}
 
-      {activeTab === "overview" && (
-        <>
-          <section className="profile-section">
-            <PlayerRoleProfileSection
-              attributes={attributes}
-              positionPrimary={player.positionPrimary}
-              role={player.role}
-              secondaryRole={
-                player.positionSecondary ??
-                player.positionFit?.secondaryPositionFit ??
-                player.scoutingIntelligence?.positionFit?.secondaryPositionFit ??
-                null
-              }
-              dataSourceLabel={
-                player.ratingAttributes ? "From match data" : "Estimated from profile"
-              }
-            />
+        {activeTab === "videos" && (
+          <TypedMediaTab
+            eyebrow="Media"
+            title="Videos"
+            emptyTitle="No highlight videos yet"
+            emptyDetail="Highlight reels and match clips will appear here once they are linked to this profile."
+            items={videoItems}
+          />
+        )}
 
-            <div className="profile-detail-grid">
-              <article className="profile-panel player-profile-panel">
-                <h3 className="player-profile-subheading">Profile highlights</h3>
-                <ul className="profile-list">
-                  {highlights.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </article>
-              <article className="profile-panel player-profile-panel">
-                <h3 className="player-profile-subheading">Performance metrics</h3>
-                <div className="profile-metric-list">
-                  <span>Minutes played</span>
-                  <strong>{formatMinutesPlayed(minutesPlayed)}</strong>
-                  {player.positionFit?.secondaryPositionFit && (
-                    <>
-                      <span>Secondary role</span>
-                      <strong>{player.positionFit.secondaryPositionFit}</strong>
-                    </>
-                  )}
-                  {isGk && (
-                    <>
-                      <span>Clean sheets</span>
-                      <strong>{player.stats?.cleanSheets ?? 0}</strong>
-                    </>
-                  )}
-                </div>
-              </article>
-            </div>
+        {activeTab === "photos" && (
+          <TypedMediaTab
+            eyebrow="Media"
+            title="Photos"
+            emptyTitle="No photos yet"
+            emptyDetail="Profile and action photos will appear here once they are linked to this profile."
+            items={photoItems}
+            gallery
+          />
+        )}
 
-            <BenchmarkPlaystyleComparison
-              playerName={player.displayName}
-              playerPhotoUrl={profilePhotoUrl}
-              benchmark={benchmark}
-              attributes={attributes}
-            />
-          </section>
-        </>
-      )}
-
-      {activeTab === "scoreboard" && (
-        <>
-          {isGk && <GoalkeeperScoreboardProfileSection history={scoreboard} />}
-          <ScoreboardHistorySection history={scoreboard} minutesPlayed={minutesPlayed} />
-        </>
-      )}
-
-      {activeTab === "scouting" && <ScoutingDetailsTab player={player} />}
-
-      {activeTab === "videos" && (
-        <TypedMediaTab
-          eyebrow="Media"
-          title="Videos"
-          emptyTitle="No highlight videos yet"
-          emptyDetail="Highlight reels and match clips will appear here once they are linked to this profile."
-          items={videoItems}
-        />
-      )}
-
-      {activeTab === "photos" && (
-        <TypedMediaTab
-          eyebrow="Media"
-          title="Photos"
-          emptyTitle="No photos yet"
-          emptyDetail="Profile and action photos will appear here once they are linked to this profile."
-          items={photoItems}
-          gallery
-        />
-      )}
-
-      {activeTab === "publications" && (
-        <TypedMediaTab
-          eyebrow="Media"
-          title="Publications"
-          emptyTitle="No publications yet"
-          emptyDetail="Press coverage and scouting articles will appear here once they are linked to this profile."
-          items={publicationItems}
-        />
-      )}
+        {activeTab === "publications" && (
+          <TypedMediaTab
+            eyebrow="Media"
+            title="Publications"
+            emptyTitle="No publications yet"
+            emptyDetail="Press coverage and scouting articles will appear here once they are linked to this profile."
+            items={publicationItems}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
 const PENDING_SYNC_CAPTION =
   "Profile Pending Synchronization — Performance data and tournament history for this athlete are currently being verified by the DTP Africa scouting network.";
+const YUSUF_RAMADAN_PROFILE_IMAGE = "/figma/player-profile-yusuf-ramadan.png";
+
+function isTemporaryProfileImage(value: string | null | undefined): boolean {
+  if (!value) return true;
+  return /thumbnail|temporar|placeholder|unavailable/i.test(value);
+}
+
+function resolveProfileHeroPhotoUrl(player: PublicPlayerProfile, photoUrl: string | null): string | null {
+  const name = player.displayName.trim();
+  if (/\byusuf\b/i.test(name) || isTemporaryProfileImage(photoUrl)) {
+    return YUSUF_RAMADAN_PROFILE_IMAGE;
+  }
+  return photoUrl;
+}
+
+const SNAPSHOT_FACT_ORDER = [
+  "nationality",
+  "category",
+  "preferred foot",
+  "position",
+  "player value",
+];
+
+function buildSnapshotBioFacts(facts: BioFact[]): BioFact[] {
+  return SNAPSHOT_FACT_ORDER.flatMap((label) => {
+    const match = facts.find((fact) => fact.label.toLowerCase() === label);
+    return match ? [match] : [];
+  });
+}
 
 function PlayerCardBanner({
   player,
@@ -674,75 +714,71 @@ function PlayerCardBanner({
   onShare: () => void;
   shareStatus: string | null;
 }) {
+  const heroPhotoUrl = resolveProfileHeroPhotoUrl(player, photoUrl);
+  const snapshotBioFacts = buildSnapshotBioFacts(bioFacts);
+
   return (
     <header className="player-profile-banner" aria-label={`${player.displayName} profile card`}>
-      <div className="player-profile-banner__top">
-        <div className="player-profile-banner__hero">
-          <div className="player-profile-banner__portrait">
-            {photoUrl ? (
-              <img
-                src={photoUrl}
-                alt=""
-                className="player-profile-banner__photo"
-              />
-            ) : (
-              <span className="player-profile-banner__fallback" aria-hidden="true">
-                {initialsFromName(player.displayName)}
-              </span>
-            )}
-          </div>
-
-          <div className="player-profile-banner__identity">
-            <span className="player-profile-eyebrow">DirectToPro verified</span>
-            <h1 className="player-profile-banner__name">{player.displayName}</h1>
-            <p className="player-profile-banner__role">
-              {positionLabel}
-              {player.positionSecondary ? ` · ${player.positionSecondary}` : ""}
-              {player.competition ? ` · ${player.competition}` : ""}
-            </p>
-            <p className="player-profile-banner__tier">{tierLabel} tier</p>
-          </div>
+      {/* Figma "DTP" -> Featured Players Profile 239:2425 */}
+      <div className="dtp-profile-card">
+        <div className="dtp-profile-card__portrait">
+          {heroPhotoUrl ? (
+            <img
+              src={heroPhotoUrl}
+              alt=""
+              onError={(event) => {
+                const image = event.currentTarget;
+                if (image.src.endsWith(YUSUF_RAMADAN_PROFILE_IMAGE)) return;
+                image.src = YUSUF_RAMADAN_PROFILE_IMAGE;
+              }}
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              style={{
+                display: "grid",
+                placeItems: "center",
+                width: "100%",
+                height: "100%",
+                fontFamily: "var(--dtp-font-display)",
+                fontSize: "3rem",
+                color: "var(--dtp-blue)",
+              }}
+            >
+              {initialsFromName(player.displayName)}
+            </span>
+          )}
         </div>
 
-        <aside
-          className="player-profile-banner__toolbar"
-          aria-label="Ratings and profile actions"
-        >
-          <div className="player-profile-banner__ratings" aria-label="Core ratings">
-            <div
-              className={`player-profile-rating-badge player-profile-rating-badge--overall ${ratingBadgeTone(
-                player.overallRating
-              )}`}
-            >
-              <span className="player-profile-rating-badge__value">
-                {player.overallRating ?? "—"}
-              </span>
-              <span className="player-profile-rating-badge__label">Overall</span>
+        <div className="dtp-profile-card__identity">
+          <span className="dtp-profile-card__verified">DTP Verified</span>
+          <h1 className="dtp-profile-card__name">{player.displayName}</h1>
+          <p className="dtp-profile-card__meta">
+            {positionLabel}
+            {player.positionSecondary ? ` · ${player.positionSecondary}` : ""}
+            {` | ${tierLabel} Tier`}
+            {player.competition ? ` · ${player.competition}` : ""}
+          </p>
+        </div>
+
+        <div className="dtp-profile-card__actions">
+          <dl className="dtp-profile-card__ratings" aria-label="Core ratings">
+            <div className="dtp-profile-rating dtp-profile-rating--overall">
+              <dd>{player.overallRating ?? "—"}</dd>
+              <dt>Overall</dt>
             </div>
-            <div
-              className={`player-profile-rating-badge player-profile-rating-badge--attack ${ratingBadgeTone(
-                player.offensiveRating
-              )}`}
-            >
-              <span className="player-profile-rating-badge__value">
-                {player.offensiveRating ?? "—"}
-              </span>
-              <span className="player-profile-rating-badge__label">Attack</span>
+            <div className="dtp-profile-rating dtp-profile-rating--attack">
+              <dd>{player.offensiveRating ?? "—"}</dd>
+              <dt>Attack</dt>
             </div>
-            <div
-              className={`player-profile-rating-badge player-profile-rating-badge--defense ${ratingBadgeTone(
-                player.defensiveRating
-              )}`}
-            >
-              <span className="player-profile-rating-badge__value">
-                {player.defensiveRating ?? "—"}
-              </span>
-              <span className="player-profile-rating-badge__label">Defense</span>
+            <div className="dtp-profile-rating dtp-profile-rating--defense">
+              <dd>{player.defensiveRating ?? "—"}</dd>
+              <dt>Defense</dt>
             </div>
-          </div>
-          <div className="player-profile-banner__toolbar-actions">
+          </dl>
+          <div className="dtp-profile-card__share">
             <Button type="button" variant="secondary" onClick={onShare}>
-              Share profile
+              Share Profile
             </Button>
             {shareStatus && (
               <p className="profile-share-status player-profile-banner__share-status">
@@ -750,12 +786,13 @@ function PlayerCardBanner({
               </p>
             )}
           </div>
-        </aside>
+        </div>
       </div>
 
       <div className="player-profile-banner__insights">
-        <PlayerBioGrid facts={bioFacts} />
+        <PlayerBioGrid facts={snapshotBioFacts} />
         <PlayerPitchGraphic
+          variant="snapshot"
           positionPrimary={player.positionPrimary}
           positionFull={player.positionFull}
           role={player.role}
@@ -798,8 +835,8 @@ function PlayerBioGrid({ facts }: { facts: BioFact[] }) {
                 : "player-profile-banner__bio-cell"
             }
           >
-            <strong className="player-profile-banner__bio-value">{fact.value}</strong>
             <span className="player-profile-banner__bio-label">{fact.label}</span>
+            <strong className="player-profile-banner__bio-value">{fact.value}</strong>
           </li>
         ))}
       </ul>
