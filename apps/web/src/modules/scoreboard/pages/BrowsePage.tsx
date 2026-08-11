@@ -2,17 +2,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   fetchCompetitions,
-  fetchScoreboardStats,
   searchScoreboard,
   type SbCompetition,
   type SbSearchResult,
-  type SbStats,
 } from "../../../api/scoreboard";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { isAbortError } from "../../../api/client";
 import { MatchCard } from "../components/MatchCard";
-import { MatchTicker } from "../components/MatchTicker";
 
 const COMPETITION_DESCRIPTION =
   "Competition hub with standings, fixtures, results, leaders, totals, and team-by-team navigation.";
@@ -186,7 +183,6 @@ export function BrowsePage() {
   const [competitions, setCompetitions] = useState<SbCompetition[]>([]);
   const [competitionsLoading, setCompetitionsLoading] = useState(true);
   const [competitionsError, setCompetitionsError] = useState<string | null>(null);
-  const [stats, setStats] = useState<SbStats | null>(null);
 
   const debouncedQuery = useDebouncedValue(query, 350);
 
@@ -199,10 +195,10 @@ export function BrowsePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // One-time load of published competitions + aggregate stats for the
-  // Featured grid and the EXPLORE ITEMS metric.
+  // One-time load of published competitions for the Featured grid. The
+  // aggregate-stats request that used to sit here only fed the hero's EXPLORE
+  // ITEMS counter, so it went with the hero.
   useEffect(() => {
-    const controller = new AbortController();
     setCompetitionsLoading(true);
     fetchCompetitions()
       .then((data) => {
@@ -213,12 +209,6 @@ export function BrowsePage() {
         if (!isAbortError(e)) setCompetitionsError(String(e));
       })
       .finally(() => setCompetitionsLoading(false));
-
-    fetchScoreboardStats(controller.signal)
-      .then(setStats)
-      .catch(() => setStats(null));
-
-    return () => controller.abort();
   }, []);
 
   // Debounced search that keeps the URL query (q) in sync.
@@ -256,15 +246,6 @@ export function BrowsePage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQuery]);
-
-  const exploreCount = useMemo(() => {
-    if (stats) {
-      return (
-        stats.competitions + stats.teams + stats.matches + stats.playersTracked
-      );
-    }
-    return competitions.length || null;
-  }, [stats, competitions.length]);
 
   // Featured cards: real competitions first, curated placeholders for any
   // named reference competition not yet present in the DB.
@@ -343,25 +324,10 @@ export function BrowsePage() {
 
   return (
     <div className="sb-page dbx-page">
-      <MatchTicker />
 
-      <header className="dbx-hero">
-        <div className="dbx-hero__main">
-          <span className="dbx-hero__eyebrow">Public Discovery · ScoreBoard Explore</span>
-          <h1 className="dbx-hero__title">Deep Browse Experience</h1>
-          <p className="dbx-hero__subtitle">
-            Public browsing hub for discovering competitions, teams, players, and matches
-            through a strong search bar and curated navigation paths.
-          </p>
-        </div>
-        <div className="dbx-metric" aria-label="Explore items count">
-          <span className="dbx-metric__label">Explore Items</span>
-          <strong className="dbx-metric__value">
-            {exploreCount != null ? exploreCount.toLocaleString() : "—"}
-          </strong>
-        </div>
-      </header>
-
+      {/* The page's own hero was removed: ScoreboardLayout already renders the
+          Figma hero (186:139) above every scoreboard route, so this was a second
+          title block stacked under it. The search form is now the entry point. */}
       <form className="dbx-search" onSubmit={onSubmit} role="search">
         <span className="dbx-search__icon" aria-hidden="true">
           <SearchIcon />

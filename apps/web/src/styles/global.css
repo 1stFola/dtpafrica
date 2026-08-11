@@ -8085,127 +8085,15 @@ a {
   margin-top: 0.75rem;
 }
 
-/* Hero */
-.sb-hero {
-  position: relative;
-  overflow: hidden;
-  padding: 3rem 2rem 2.25rem;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-xl);
-  background:
-    radial-gradient(120% 140% at 85% -10%, rgba(37, 99, 235, 0.28) 0%, transparent 55%),
-    radial-gradient(120% 120% at 0% 110%, rgba(34, 197, 94, 0.16) 0%, transparent 50%),
-    linear-gradient(180deg, #111a2e 0%, #0c1424 100%);
-}
-
-.sb-hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
-  background-size: 38px 38px;
-  mask-image: radial-gradient(120% 100% at 70% 0%, #000 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.sb-hero > * {
-  position: relative;
-  z-index: 1;
-}
-
-.sb-hero__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.85rem;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-pill);
-  background: rgba(15, 23, 42, 0.5);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #cbd5e1;
-}
-
-.sb-hero__pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-danger);
-  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
-  animation: sb-pulse 1.8s ease-out infinite;
-}
-
+/* The Scoreboard landing's own hero and metrics banner were removed when the
+   page moved onto the Figma frame (186:139): the hero now lives in
+   ScoreboardLayout and the figures render as .sb-stat gradient cards. Only
+   these keyframes survived that block — the live-match indicator still uses
+   them further down. */
 @keyframes sb-pulse {
   0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
   70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
   100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-}
-
-.sb-hero__title {
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 4.5vw, 3.4rem);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  margin: 1rem 0 0.75rem;
-  max-width: 16ch;
-}
-
-.sb-hero__subtitle {
-  max-width: 56ch;
-  font-size: clamp(0.95rem, 1.4vw, 1.1rem);
-  color: #cbd5e1;
-  margin: 0;
-}
-
-.sb-hero__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-}
-
-/* Metrics banner */
-.sb-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1px;
-  margin: 2.25rem 0 0;
-  padding: 1px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-lg);
-  background: var(--color-hairline);
-  overflow: hidden;
-}
-
-.sb-metric {
-  margin: 0;
-  padding: 1.25rem 1rem;
-  text-align: center;
-  background: rgba(12, 20, 36, 0.85);
-}
-
-.sb-metric__value {
-  font-family: var(--font-display);
-  font-size: clamp(1.6rem, 3vw, 2.4rem);
-  font-weight: 800;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, #ffffff 0%, #9ec5fe 140%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.sb-metric__label {
-  margin: 0.45rem 0 0;
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-muted);
 }
 
 /* Section headers */
@@ -8227,14 +8115,6 @@ a {
 .sb-section__head p {
   margin: 0;
   font-size: 0.9rem;
-}
-
-.sb-section__eyebrow {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--color-primary);
 }
 
 /* Match Center grid */
@@ -8727,12 +8607,6 @@ a {
 }
 
 @media (max-width: 720px) {
-  .sb-hero {
-    padding: 2.25rem 1.25rem 1.75rem;
-  }
-  .sb-metrics {
-    grid-template-columns: repeat(2, 1fr);
-  }
   .sb-section__head h2 {
     font-size: 1.35rem;
   }
@@ -13960,88 +13834,9 @@ a {
   }
 }
 
-/* —— Hero header —— */
-.dbx-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-5);
-  flex-wrap: wrap;
-  padding: var(--space-6);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background:
-    radial-gradient(
-      120% 140% at 0% 0%,
-      rgba(37, 99, 235, 0.18) 0%,
-      transparent 55%
-    ),
-    var(--color-surface);
-  box-shadow: var(--shadow-md);
-}
-
-.dbx-hero__main {
-  flex: 1 1 340px;
-  min-width: 0;
-}
-
-.dbx-hero__eyebrow {
-  display: inline-block;
-  margin-bottom: 0.6rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-muted);
-}
-
-.dbx-hero__title {
-  margin: 0 0 0.6rem;
-  font-family: var(--font-display);
-  font-size: clamp(1.9rem, 4vw, 2.75rem);
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
-}
-
-.dbx-hero__subtitle {
-  margin: 0;
-  max-width: 56ch;
-  color: var(--color-muted);
-  font-size: 1rem;
-  line-height: 1.55;
-}
-
-.dbx-metric {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 1.1rem 1.6rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: rgba(15, 23, 42, 0.6);
-  box-shadow: var(--shadow-sm);
-}
-
-.dbx-metric__label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-muted);
-}
-
-.dbx-metric__value {
-  font-family: var(--font-display);
-  font-size: 2.4rem;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--color-text);
-  font-variant-numeric: tabular-nums;
-}
+/* The Browse page's own hero header and its EXPLORE ITEMS metric were removed:
+   ScoreboardLayout already renders the Figma hero above every scoreboard route,
+   so they stacked a second title block beneath it. */
 
 /* —— Search bar —— */
 .dbx-search {
@@ -14374,15 +14169,6 @@ a.dbx-comp-card:hover {
 }
 
 @media (max-width: 640px) {
-  .dbx-hero {
-    padding: var(--space-5);
-  }
-
-  .dbx-metric {
-    width: 100%;
-    align-items: flex-start;
-  }
-
   .dbx-segmented {
     width: 100%;
     justify-content: space-between;

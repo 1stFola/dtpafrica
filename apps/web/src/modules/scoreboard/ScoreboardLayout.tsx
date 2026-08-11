@@ -1,6 +1,7 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { BrandLogo } from "../../components/BrandLogo";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import { LiveScoreRibbon } from "./components/LiveScoreRibbon";
+import { MatchTicker } from "./components/MatchTicker";
+import { ScoreboardTabs } from "./components/ScoreboardTabs";
 import { AdBanner } from "../../components/AdBanner";
 import { ModuleAdRails } from "../../components/ModuleAdRails";
 import { creativeSizeLabel } from "../../config/adFormatSpecs";
@@ -9,15 +10,13 @@ import { HIGH_FETCH_PRIORITY } from "../../utils/imgPriority";
 
 /** Header mobile banner only; desktop top uses `scoreboardTop` in ModuleAdRails */
 
-const links = [
-  { to: "/scoreboard", end: true, label: "Overview" },
-  { to: "/scoreboard/browse", label: "Competitions" },
-  { to: "/scoreboard/highlights", label: "Highlights" },
-  { to: "/scoreboard/live", label: "Live" },
-];
-
 export function ScoreboardLayout() {
   const mobileAd = useAdSlot("scoreboardLeaderboardMobile");
+  const { pathname } = useLocation();
+  /* The hub renders the tabs itself, inside the Match Centre header where the
+     frame draws them. Sub-routes have no such section, so the layout supplies
+     the same component beneath the hero to keep the module navigable. */
+  const isHub = pathname === "/scoreboard" || pathname === "/scoreboard/";
 
   return (
     <div className="scoreboard-module dtp-page">
@@ -27,15 +26,37 @@ export function ScoreboardLayout() {
         <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-scoreboard.webp" alt="" aria-hidden="true" />
         <div className="dtp-hero__scrim" aria-hidden="true" />
         <div className="dtp-shell dtp-hero__inner">
-          <p className="dtp-eyebrow" style={{ color: "var(--dtp-cyan)" }}>
+          <p className="dtp-eyebrow">Nigeria Grassroots Football</p>
+          <h1 className="dtp-display dtp-display--hero dtp-hero__title">Scoreboard</h1>
+          {/* Figma 186:139 carries a lead under the title that was never built.
+              The frame spells it "mach stats" — kept as "match" here. */}
+          <p className="dtp-lead dtp-hero__lead">
+            Explore premium match stats, video highlights and historical player profiles from
             Nigeria Grassroots Football
           </p>
-          <h1 className="dtp-display dtp-display--hero dtp-hero__title">Scoreboard</h1>
-          <NavLink to="/" className="scoreboard-brand__partner">
-            <BrandLogo variant="white-horizontal" size="scoreboard" />
-          </NavLink>
+
+          {/* Figma "Group 1000001925" (312x38 at x564 y633): two pills on a
+              #091df4 @8% wash, 119 and 173 wide with a 20px gap, sitting between
+              the lead and the stat row. I removed these in an earlier pass by
+              mistake — they are in the frame. */}
+          <div className="sb-hero-actions">
+            <Link to="/scoreboard/live" className="sb-hero-actions__btn">
+              Watch Live 🔴
+            </Link>
+            <Link to="/scoreboard/browse" className="sb-hero-actions__btn">
+              Browse Competitions
+            </Link>
+          </div>
         </div>
       </section>
+
+      {/* On every tab except Overview the match ticker takes the slot the stat
+          cards occupy on Overview — directly under the hero, above the tabs. */}
+      {!isHub && (
+        <div className="sb-ticker-slot">
+          <MatchTicker />
+        </div>
+      )}
 
       <header className="scoreboard-header">
         <LiveScoreRibbon />
@@ -51,28 +72,7 @@ export function ScoreboardLayout() {
             />
           </div>
         )}
-        <nav className="dtp-chips sb-subnav" aria-label="ScoreBoard">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end={l.end}
-              className="dtp-chip"
-              style={({ isActive }) =>
-                isActive
-                  ? {
-                      background: "var(--dtp-cyan)",
-                      borderColor: "var(--dtp-cyan)",
-                      color: "var(--dtp-ink)",
-                      fontWeight: 600,
-                    }
-                  : undefined
-              }
-            >
-              {l.label}
-            </NavLink>
-          ))}
-        </nav>
+        {!isHub && <ScoreboardTabs />}
       </header>
       <ModuleAdRails
         topSlot="scoreboardTop"

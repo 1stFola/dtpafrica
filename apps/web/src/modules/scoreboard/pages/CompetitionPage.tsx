@@ -10,7 +10,6 @@ import {
   type StandingRow,
 } from "../../../api/scoreboard";
 import { MatchCenterCard } from "../components/MatchCenterCard";
-import { MatchTicker } from "../components/MatchTicker";
 import { StatLeadersWidget } from "../components/StatLeadersWidget";
 import { TeamCrest } from "../components/TeamCrest";
 import { matchCenterPath } from "../utils/matchPath";
@@ -1257,7 +1256,6 @@ export function CompetitionPage() {
 
   return (
     <div className="sb-page dbx-page sbc-page">
-      <MatchTicker />
 
       <div className="sbc-meta" aria-label="Competition meta">
         <span className="sbc-pill sbc-pill--year">{seasonYear || "Season"}</span>

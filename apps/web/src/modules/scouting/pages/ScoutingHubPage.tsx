@@ -35,11 +35,11 @@ export function ScoutingHubPage() {
         ))}
       </div>
 
-      <div
-        className="dtp-band__actions"
-        style={{ flexDirection: "column", gap: "var(--dtp-space-4)" }}
-      >
-        <p style={{ margin: 0, fontSize: "1.25rem", fontWeight: 500 }}>Interested in partnering?</p>
+      {/* Figma: "Interested in partnering?" Sofia Pro 500, 20px / lh 20, white,
+          centred above a 148x45 Contact Us button. Styling lives in the
+          stylesheet — inline styles here would outrank it. */}
+      <div className="scouting-partner">
+        <p className="scouting-partner__label">Interested in partnering?</p>
         <Link to="/contact" className="dtp-btn">
           Contact Us
         </Link>

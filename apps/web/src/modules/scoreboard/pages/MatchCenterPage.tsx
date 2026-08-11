@@ -11,7 +11,6 @@ import { EventTimeline } from "../components/EventTimeline";
 import { HighlightCard } from "../components/HighlightCard";
 import { MatchSquadsGrid, MatchSquadsSkeleton } from "../components/MatchSquadPanel";
 import { MatchStatsBars } from "../components/MatchStatsBars";
-import { MatchTicker } from "../components/MatchTicker";
 import { TeamCrest } from "../components/TeamCrest";
 import { isMatchUuid, matchCenterPath } from "../utils/matchPath";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -359,7 +358,6 @@ export function MatchCenterPage() {
 
   return (
     <div className={`sb-page dbx-page sbm-page${live ? " sbm-page--live" : ""}`}>
-      <MatchTicker />
 
       <nav className="sbm-nav" aria-label="Match navigation">
         <Link to={`/scoreboard/competition/${match.competition.slug}`} className="sbm-back text-link">

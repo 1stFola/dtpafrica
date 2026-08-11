@@ -54,6 +54,9 @@
   --dtp-grad-green: linear-gradient(90deg, #2fea9b 0%, #7fdd53 100%);
   --dtp-grad-blue: linear-gradient(90deg, #1b59f8 0%, #1b59f8 100%);
   --dtp-grad-cyan: linear-gradient(90deg, #37f7f4 0%, #1a92a2 100%);
+  /* Scoreboard 186:139 — fourth stat card. Figma's gradient handles run
+     (0,0)->(1,1), i.e. a 135deg diagonal, not the 90deg the other ramps use. */
+  --dtp-grad-violet: linear-gradient(135deg, #eff6ff 0%, #b83bad 100%);
   --dtp-grad-eyebrow: linear-gradient(90deg, #b2e006 0%, #05118e 100%);
   --dtp-grad-scrim: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, #000000 100%);
   --dtp-grad-ink: linear-gradient(180deg, #2c2c2c 0%, #000000 100%);
