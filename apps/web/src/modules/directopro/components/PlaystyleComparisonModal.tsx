@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@dtp/ui";
 import { BenchmarkPlayerHeadshot } from "./BenchmarkPlayerHeadshot";
 import { benchmarkNameFromRecord } from "../utils/benchmarkPlayerHeadshot";
@@ -142,7 +143,13 @@ function PlaystyleComparisonModal({
 
   if (!open) return null;
 
-  return (
+  /* Rendered through a portal on <body>. Inline, the dialog sat inside
+     `.player-profile-body-sheet`, which sets `position: relative; z-index: 0`
+     and so opens a stacking context — the backdrop's z-index 120 was scoped
+     inside a layer stacked at 0, leaving the whole modal (and its close button)
+     underneath the sticky nav at z-index 60. A portal puts it at the document
+     root where its own z-index actually applies. */
+  return createPortal(
     <div
       className="playstyle-modal-backdrop"
       role="presentation"
@@ -290,7 +297,8 @@ function PlaystyleComparisonModal({
           </p>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

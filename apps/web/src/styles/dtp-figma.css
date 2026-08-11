@@ -23,15 +23,24 @@
   padding-inline: var(--dtp-gutter);
 }
 
-/* Eyebrow — Sofia Pro 600/700 15px, +2.1 tracking, uppercase */
+/* Eyebrow — Figma: Sofia Pro 600, 15px / lh 15 / ls 2.1 (= 0.14em), uppercase */
 .dtp-eyebrow {
   margin: 0;
   font-family: var(--dtp-font-ui);
   font-size: var(--dtp-fs-eyebrow);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   letter-spacing: var(--dtp-tracking-eyebrow);
   text-transform: uppercase;
+}
+
+/* Section eyebrows are a bigger cut than the hero's: Figma draws FEATURED
+   TALENT and PLAYER HIGHLIGHTS at 24.77px / lh 34.2 / ls 2.72 on the 1440
+   frame (24.77/1440 = 1.72vw; 34.2/24.77 = 1.38; 2.72/24.77 = 0.11em). */
+.dtp-band__head .dtp-eyebrow {
+  font-size: clamp(0.95rem, 1.72vw, 1.548rem);
+  line-height: 1.38;
+  letter-spacing: 0.11em;
 }
 
 .dtp-eyebrow--gradient {
@@ -41,14 +50,16 @@
   color: transparent;
 }
 
-/* Display — Gasoek One, always uppercase in the design */
+/* Display — Gasoek One, always uppercase in the design.
+   Figma tracks the section heads +0.67 at 67px (= 0.01em); the hero is the one
+   display line set at ls 0, so it overrides below. */
 .dtp-display {
   margin: 0;
   font-family: var(--dtp-font-display);
   font-weight: 400;
   font-size: var(--dtp-fs-display);
   line-height: 0.99;
-  letter-spacing: 0;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
   text-wrap: balance;
 }
@@ -56,12 +67,16 @@
 .dtp-display--hero {
   font-size: var(--dtp-fs-hero);
   line-height: 0.98;
+  letter-spacing: 0;
 }
 
+/* Figma sets lead copy at 22px / lh 30.4 / ls -0.22 wherever it appears
+   (30.4/22 = 1.382; -0.22/22 = -0.01em). */
 .dtp-lead {
   margin: 0;
   font-size: var(--dtp-fs-lead);
-  line-height: 1.36;
+  line-height: 1.382;
+  letter-spacing: -0.01em;
   font-weight: 400;
   text-wrap: pretty;
 }
@@ -231,12 +246,17 @@
   padding-right: 36px;
 }
 
+/* Figma "Scouting Hubs" Group 19523 carries the nav links as real text nodes:
+   Sofia Pro 600, 15px / lh 15 / ls 2.1, #000000, with the active item in
+   #091df4 — the homepage frame had them flattened, so the tracking was missing
+   here. 2.1/15 = 0.14em, the same step as the eyebrow. */
 .dtp-nav__link {
   position: relative;
   font-family: var(--dtp-font-ui);
   font-size: var(--dtp-fs-eyebrow);
   font-weight: 600;
   line-height: 1;
+  letter-spacing: var(--dtp-tracking-eyebrow);
   text-transform: uppercase;
   color: var(--dtp-ink);
   white-space: nowrap;
@@ -330,6 +350,18 @@
 
 .dtp-hero--tall { min-height: 834px; }
 
+/* The hero photo is a bright shot — mean luminance 213, over half of it near
+   white — so Figma drops the image node to opacity 0.35 over the black plate.
+   That is what keeps the players readable instead of a blown-out white field.
+   Both the Scoreboard (186:211) and Scouting (118:1783) frames use 0.35; the
+   build was running 0.72.
+
+   Horizontal focus comes from where each frame anchors its (wider than frame)
+   source, vertical is centred because our hero is far shorter than Figma's
+   1080 band and centring is the least-biased crop — it keeps the subjects,
+   which sit across the lower third of the picture, fully in shot:
+     Scoreboard 1894 wide at x-277 -> 277/(1894-1440) = 61%
+     Scouting   2048 wide at x-449 -> 449/(2048-1440) = 74% */
 .dtp-hero__media {
   position: absolute;
   inset: 0;
@@ -337,15 +369,21 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.72;
+  object-position: var(--dtp-hero-focus, 50% 50%);
+  opacity: var(--dtp-hero-media-opacity, 0.35);
 }
 
-/* Rectangle 34624119 — transparent -> black, bottom 559px */
+.scoreboard-module .dtp-hero { --dtp-hero-focus: 61% 50%; }
+.scouting-module .dtp-hero { --dtp-hero-focus: 74% 50%; }
+
+/* Rectangle 34624119 — a plain linear ramp from transparent to solid black,
+   handles (0.5,0)->(0.5,1), covering y540..1080 of the 1080 frame: the bottom
+   half, not two thirds. */
 .dtp-hero__scrim {
   position: absolute;
   inset: auto 0 0 0;
   z-index: -1;
-  height: 66%;
+  height: 50%;
   background: var(--dtp-grad-scrim);
   pointer-events: none;
 }
@@ -501,9 +539,9 @@
   text-wrap: initial;
 }
 
-/* Figma sizes the hero stack larger than the page defaults — deliberately
-   enough that the widest headline line grazes the player's arm. */
-.dtp-hero__copy .dtp-eyebrow { font-size: 1.0625rem; }
+/* The hero eyebrow keeps the base 15px / ls 2.1 cut — Figma draws
+   "From the Streets to the Stadium" at exactly the page eyebrow size, not the
+   larger section-head cut. It was running at 17px / ls 2.38. */
 
 .dtp-hero__actions .dtp-btn {
   min-height: 52px;
@@ -514,9 +552,10 @@
 /* Headline accent — "…for LOCAL TALENT" */
 .dtp-hl { color: var(--dtp-blue-electric); }
 
+/* Figma sets hero lead copy pure white, not the softened grey. */
 .dtp-hero__lead {
   max-width: 46ch;
-  color: #e8ebf2;
+  color: var(--dtp-white);
 }
 
 .dtp-hero__actions {
@@ -689,13 +728,19 @@
  * ------------------------------------------------------------------ */
 
 .dtp-marquee {
+  /* One knob for the loop. The strip is a background texture, not something to
+     be read at speed, so it runs slowly enough to sit still in peripheral
+     vision. Per-strip overrides go on the modifier. */
+  --dtp-marquee-duration: 95s;
   overflow: hidden;
   padding-block: clamp(0.65rem, 1.25vw, 1rem);
-  background: var(--dtp-neon-lime);
+  background: var(--dtp-lime);
   user-select: none;
 }
 
-.dtp-marquee--lime { background: var(--dtp-neon-lime); }
+/* Figma Group 19525 fills the plate with #b2e006, not the #84cc16 the token
+   layer was carrying. Group 19524 (the blue strip) is #091df4, already correct. */
+.dtp-marquee--lime { background: var(--dtp-lime); }
 .dtp-marquee--ink { background: var(--dtp-neon-lime-bright); }
 .dtp-marquee--blue { background: var(--dtp-blue); }
 .dtp-marquee--orange { background: var(--dtp-orange); }
@@ -703,8 +748,15 @@
 .dtp-marquee__track {
   display: flex;
   width: max-content;
-  animation: dtp-marquee-scroll 38s linear infinite;
+  animation: dtp-marquee-scroll var(--dtp-marquee-duration) linear infinite;
   will-change: transform;
+}
+
+/* Counter-scrolling strip. The track is two identical halves, so playing the
+   same keyframe in reverse is seamless in that direction too — it just starts
+   the loop at -50% and walks back to 0. */
+.dtp-marquee--reverse .dtp-marquee__track {
+  animation-direction: reverse;
 }
 
 /* No `gap` here on purpose: the track holds two identical halves and the
@@ -715,17 +767,23 @@
   flex: none;
   padding-right: clamp(1rem, 2.4vw, 2rem);
   font-family: var(--dtp-font-display);
-  font-size: clamp(1.15rem, 2.7vw, 2.45rem);
-  font-weight: 700;
-  line-height: 0.9;
-  letter-spacing: 0;
+  /* Figma: Gasoek One 400, 41.75px / lh 40.9 / ls 2.09 at the 1440 frame.
+     41.75/1440 = 2.9vw; 41.75px = 2.61rem; 40.9/41.75 = 0.98; 2.09/41.75 = .05em. */
+  font-size: clamp(1.15rem, 2.9vw, 2.61rem);
+  /* Gasoek One ships a single 400 face — declaring 700 risks the browser
+     synthesising bold (Chrome ignores it, Firefox and Safari do not). */
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
   color: var(--dtp-ink);
 }
 
+/* Figma sets the type on the lime plate in the deep green, not black — it is
+   the only strip that is not white. */
 .dtp-marquee--lime .dtp-marquee__item,
-.dtp-marquee--ink .dtp-marquee__item { color: var(--dtp-ink); }
+.dtp-marquee--ink .dtp-marquee__item { color: var(--dtp-green); }
 .dtp-marquee--orange .dtp-marquee__item { color: var(--dtp-white); }
 
 /* Figma Group 19524 — the second strip under the hero. */
@@ -857,15 +915,17 @@
   gap: 1.45rem;
 }
 
+/* Figma: Sofia Pro 400, 22px / lh 30.4 / ls -0.22 / #000000 — it was Inter 500
+   at 18.4px in near-black, so both the face and the colour were off. */
 .home-reel-section__copy p {
   max-width: 43ch;
   margin: 0;
-  color: #050816;
-  font-family: var(--dtp-font-body);
-  font-size: clamp(1rem, 1.28vw, 1.2rem);
-  font-weight: 500;
-  line-height: 1.43;
-  letter-spacing: 0;
+  color: var(--dtp-ink);
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(1rem, 1.53vw, 1.375rem);
+  font-weight: 400;
+  line-height: 1.38;
+  letter-spacing: -0.01em;
 }
 
 .home-reel-section__button {
@@ -1034,8 +1094,10 @@
   margin-bottom: clamp(1.2rem, 2.4vw, 2rem);
 }
 
+/* Figma paints this eyebrow #b2e006. On the pale #edf8dc band that is ~1.4:1
+   contrast — matching the design, but flagged as a legibility call, not a bug. */
 .dtp-band--featured .dtp-eyebrow {
-  color: var(--dtp-green);
+  color: var(--dtp-lime);
 }
 
 .dtp-band--featured .dtp-display {
@@ -1176,6 +1238,7 @@
 }
 
 .featured-talent-card__portrait {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
@@ -1209,7 +1272,16 @@
     linear-gradient(180deg, #bbffd9, #e1fff1);
 }
 
+/* Absolutely positioned rather than sized with height:100%. The frame takes its
+   height from `aspect-ratio`, which leaves it with no *definite* height, so a
+   percentage height on the image could not resolve and silently fell back to
+   `auto` — the picture then took its intrinsic ratio and `place-items: center`
+   centred it, showing the pastel plate above the player's head on any photo
+   that was not tall enough. `inset: 0` gives the image a definite box to fill
+   in both axes, and `center top` keeps the head against the top of the frame. */
 .featured-talent-card__portrait img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1643,11 +1715,15 @@
     clamp(4.5rem, 7vw, 6.4rem)
     var(--dtp-nav-top)
     clamp(3rem, 5.4vw, 4.6rem);
+  /* Figma "Rectangle 34624110" — full-bleed 1441x965 at y2932, a single
+     #ff0000 wash at 5% over the #fafcfe page and nothing else: no white wedge,
+     no diagonal pink, no rule along the top. Layering the wash over the paper
+     token rather than relying on what happens to sit behind keeps the composite
+     exact (~#faeff1). The sibling bands are built the same way: blue at 8%,
+     the featured wedge lime at 13%. */
   background:
-    linear-gradient(103deg, rgba(255, 255, 255, 0.7) 0 54%, transparent 54%),
-    linear-gradient(105deg, rgba(255, 221, 221, 0.6) 0 68%, rgba(255, 239, 239, 0.9) 68% 100%),
-    #fdeaea;
-  border-top: 2px solid var(--dtp-orange);
+    linear-gradient(rgba(255, 0, 0, 0.05), rgba(255, 0, 0, 0.05)),
+    var(--dtp-paper);
 }
 
 .home-intel-suite__content {
@@ -1655,30 +1731,37 @@
   z-index: 2;
   justify-self: center;
   width: min(calc(var(--dtp-maxw) + var(--dtp-nav-top) * 2), 100%);
-  padding-left: clamp(2rem, 4vw, 5rem);
+  /* Figma starts the copy at x143 on the 1440 frame. The section already
+     carries var(--dtp-nav-top) (48px) of its own inline padding, so this makes
+     up the remaining 95px — 95/1440 = 6.6vw, capped at 5.94rem. */
+  padding-left: clamp(2rem, 6.6vw, 5.94rem);
 }
 
+/* Figma: Sofia Pro 600, 25.42px / lh 35.1 / ls 0.51 / #792b0f
+   (25.42/1440 = 1.77vw; 35.1/25.42 = 1.38; 0.51/25.42 = 0.02em). */
 .home-intel-suite__eyebrow {
   display: block;
   margin-bottom: 0.65rem;
-  color: #8d321f;
+  color: var(--dtp-orange-deep);
   font-family: var(--dtp-font-ui);
-  font-size: clamp(0.92rem, 1.4vw, 1.38rem);
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: 0.06em;
+  font-size: clamp(0.95rem, 1.77vw, 1.589rem);
+  font-weight: 600;
+  line-height: 1.38;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
+/* Figma: Gasoek One 400, 68.78px / lh 68.1 / ls 0.69 / #ff5a00. It was set at
+   88.56px and weight 700 — a third too large, and a weight the face lacks. */
 .home-intel-suite__title {
   max-width: 570px;
   margin: 0;
   color: var(--dtp-orange);
   font-family: var(--dtp-font-display);
-  font-size: clamp(3.25rem, 6.15vw, 6.35rem);
-  font-weight: 700;
-  line-height: 0.83;
-  letter-spacing: 0;
+  font-size: clamp(2.9rem, 4.78vw, 4.299rem);
+  font-weight: 400;
+  line-height: 0.99;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
 }
 
@@ -1696,7 +1779,9 @@
   grid-template-columns: minmax(0, 1.1fr) minmax(230px, 0.72fr);
   align-items: center;
   gap: clamp(1.4rem, 3.5vw, 3rem);
-  width: min(720px, 56vw);
+  /* Figma "Elements/Image/Image/1": 807x262 at x143 — 56% of the 1441 band.
+     The 720px cap held it ~11% narrower than the frame at desktop widths. */
+  width: min(807px, 56vw);
   min-height: 190px;
   margin-top: clamp(2rem, 3.6vw, 3rem);
   padding: clamp(1.35rem, 2.6vw, 2.05rem) clamp(1.45rem, 3vw, 2.35rem);
@@ -1839,22 +1924,45 @@
   user-select: none;
 }
 
+/* The ribbon is exported masked to the band, so it is exactly the section:
+   2882x1930 = the Figma band (1441x965) at 2x. It lines up at inset 0 with no
+   nudging. The artwork already carries its own #ff0000 @5% — sampling it gives
+   rgba(255,0,0,13) — so it must render at full opacity. The previous rule put
+   `opacity: .06` and a multiply blend on top of that baked-in 5%, leaving an
+   effective ~0.3% alpha, which is why the swoosh never appeared. */
+/* The export is masked to the whole Figma band (1441x965) — and that band
+   INCLUDES the 116px orange ticker along its top. We render that ticker as a
+   sibling above this section, so the section's y=0 is really the band's y=116.
+   The artwork therefore has to be lifted by the ticker and scaled against the
+   remaining 849px: top -116/849 = -13.66%, height 965/849 = 113.66%. Pinning it
+   to inset:0 slid the whole composition down by the height of the ticker. */
 .home-intel-suite__ribbon {
-  left: clamp(-180px, -7vw, -64px);
-  top: clamp(-620px, -42vw, -460px);
-  width: clamp(1220px, 118vw, 1680px);
-  height: auto;
-  opacity: 0.06;
-  transform: rotate(-2deg);
-  mix-blend-mode: multiply;
+  left: 0;
+  top: -13.66%;
+  width: 100%;
+  height: 113.66%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 1;
 }
 
+/* Figma masks the ball photo to "Ellipse 25", a 793x793 circle at x1000,
+   y3045 — 113px below the band top at y2932. Relative to the 1441-wide band:
+   left 1001/1441 = 69.47%, width 793/1441 = 55.03%, top 113/965 = 11.71%.
+   The circle's right edge lands at ~124.5%, so it runs off the right edge of
+   the frame exactly as drawn. The export is already the circular crop, hence
+   the square aspect — no border-radius needed here. */
 .home-intel-suite__ball {
-  top: -12%;
-  right: clamp(-260px, -13vw, -138px);
-  height: min(152%, 1040px);
-  width: auto;
-  opacity: 0.96;
+  left: 69.47%;
+  /* Band y113 for the circle, minus the 116px ticker that band includes, puts
+     its top 3px ABOVE this section — flush with the top edge, not 11.71% down.
+     Measured against the post-ticker 849px: -3/849 = -0.35%. */
+  top: -0.35%;
+  right: auto;
+  width: 55.03%;
+  height: auto;
+  aspect-ratio: 1;
+  opacity: 1;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1883,25 +1991,28 @@
   margin-bottom: clamp(1.7rem, 3.2vw, 2.6rem);
 }
 
+/* Figma: Sofia Pro 600, 24.77px / lh 34.2 / ls 2.72 / #232323. */
 .home-footage__eyebrow {
-  color: #17151f;
+  color: #232323;
   font-family: var(--dtp-font-ui);
-  font-size: clamp(0.88rem, 1.2vw, 1.08rem);
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: 0.22em;
+  font-size: clamp(0.95rem, 1.72vw, 1.548rem);
+  font-weight: 600;
+  line-height: 1.38;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
 }
 
+/* Figma: Gasoek One 400, 67.02px / lh 66.4 / ls 0.67 / #091df4. Was 86.4px
+   at weight 700 — nearly 30% oversized against the frame. */
 .home-footage__head h2 {
   max-width: 760px;
   margin: 0.72rem 0 0;
   color: var(--dtp-blue);
   font-family: var(--dtp-font-display);
-  font-size: clamp(3.1rem, 6vw, 5.9rem);
-  font-weight: 700;
-  line-height: 0.86;
-  letter-spacing: 0;
+  font-size: clamp(2.8rem, 4.65vw, 4.189rem);
+  font-weight: 400;
+  line-height: 0.99;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
 }
 
@@ -2061,19 +2172,17 @@
     padding-left: 0;
   }
 
+  /* The ribbon stays welded to the band at every width — it is a masked export
+     of the band itself, so it needs no per-breakpoint nudging. Only the ball
+     moves: below the 1440 frame it slides further off the right edge and drops
+     back so it never competes with the copy. */
   .home-intel-suite__ball {
-    top: -6%;
-    right: -250px;
-    bottom: auto;
-    height: min(132%, 860px);
-    width: auto;
-    opacity: 0.48;
-  }
-
-  .home-intel-suite__ribbon {
-    left: -18%;
-    top: -46%;
-    width: 178vw;
+    left: auto;
+    right: -16%;
+    top: 0;
+    width: 62%;
+    height: auto;
+    opacity: 0.5;
   }
 
   .home-footage__grid {
@@ -2205,22 +2314,15 @@
     width: 62px;
   }
 
-  .home-intel-suite__ribbon {
-    left: -76%;
-    top: -18%;
-    width: 250vw;
-    opacity: 0.055;
-    transform: rotate(-9deg);
-  }
-
+  /* Phones: the ball recedes to a corner accent. The source photo is already
+     defocused, so it needs opacity to sit back, not an extra blur filter. */
   .home-intel-suite__ball {
-    top: 2%;
-    right: -275px;
-    bottom: auto;
-    height: 88%;
-    width: auto;
+    left: auto;
+    right: -26%;
+    top: 0;
+    width: 76%;
+    height: auto;
     opacity: 0.34;
-    filter: blur(12px);
   }
 
   .home-footage-band {
@@ -2554,10 +2656,16 @@ a.mvce-card:focus-visible {
  * 9. Feature tiles — Scouting Hub gradient cards 389x148
  * ------------------------------------------------------------------ */
 
+/* Figma "Scouting Hubs" 118:1711 — three 389x148 tiles at x112 / x525 / x939,
+   so 24px gutters and a 1216px span (3x389 + 2x24) centred in the 1440 frame.
+   Capping the track at 1216 makes each column resolve to 389.33 without
+   hard-coding a width, so the grid still collapses on narrow screens. */
 .dtp-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--dtp-space-5);
+  max-width: 1216px;
+  margin-inline: auto;
 }
 
 .dtp-tile {
@@ -2566,7 +2674,8 @@ a.mvce-card:focus-visible {
   gap: var(--dtp-space-2);
   min-height: 148px;
   padding: var(--dtp-space-5);
-  border-radius: var(--dtp-radius-md);
+  /* Figma corner radius on these tiles is 16, not the 11 used by panels. */
+  border-radius: 16px;
   background: var(--dtp-tile-blue);
   color: #1e3a8a;
   transition: transform var(--dtp-t-med), box-shadow var(--dtp-t-med);
@@ -2598,6 +2707,493 @@ a.mvce-card:focus-visible {
 .dtp-tile--green p { color: #16a34a; }
 .dtp-tile--orange { background: var(--dtp-tile-orange); color: #f84100; }
 .dtp-tile--orange p { color: var(--dtp-orange); }
+
+/* ---- Scoreboard 186:139, page-specific --------------------------- */
+
+/* Figma runs the same full-page black plate here as on Scouting
+   ("Rectangle 2319", 1440x5349 — taller than the 4121 frame, so it covers
+   everything above the footer). The module was on paper white, which left the
+   landing section's own black plate sitting inside a light page and pushed
+   muted copy to 2.49:1 against #fafcfe. */
+.scoreboard-module.dtp-page {
+  background: var(--dtp-ink);
+  color: var(--dtp-white);
+}
+
+/* Figma: Sofia Pro 700 / 15px / ls 2.1 in cyan — was a 600 inline style. */
+.scoreboard-module .dtp-hero .dtp-eyebrow {
+  color: var(--dtp-cyan);
+  font-weight: 700;
+}
+
+/* Figma stat row "Group 1000001920": 920x98 centred on the frame, four 215x98
+   cards at radius 8.35 with 20px gutters (496 - 476). Each card carries its own
+   gradient, and only the first is dark-on-green. Numbers are Gasoek One 40.62 /
+   lh 48.7; labels Sofia Pro 17.65 / lh 14.6 / ls 0.35 (= 0.02em), uppercase.
+   The old markup was Montserrat 800 behind a gradient text-clip on a flat
+   translucent plate. */
+.sb-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 20px;
+  /* `width: 100%` matters: .sb-landing centres its children, so without it the
+     grid sizes to fit-content and the cards resolve to 180 instead of 215. */
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.sb-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dtp-space-2);
+  min-height: 98px;
+  padding: 13px var(--dtp-space-3);
+  border-radius: 8.35px;
+  text-align: center;
+}
+
+/* `order` flips the DOM pair so the figure reads above its label, while the
+   markup keeps <dt> as the term for assistive tech. */
+.sb-stat__value {
+  order: 1;
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.9rem, 2.82vw, 2.539rem);
+  font-weight: 400;
+  line-height: 1.199;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-stat__label {
+  order: 2;
+  margin: 0;
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(0.8rem, 1.23vw, 1.103rem);
+  font-weight: 400;
+  line-height: 0.83;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Angles are read off each fill's gradientHandlePositions rather than reusing
+   the shared 90deg ramps: Figma runs these at 270deg, 143deg and 135deg. The
+   blue card's two stops are both #1b59f8, so it is a flat fill. */
+.sb-stat--teams {
+  background: linear-gradient(270deg, #2fea9b 0%, #7fdd53 100%);
+  color: var(--dtp-green);
+}
+.sb-stat--players {
+  background: var(--dtp-blue-grad);
+  color: var(--dtp-white);
+}
+.sb-stat--competitions {
+  background: linear-gradient(143deg, #ffbf1a 0%, #ff4080 100%);
+  color: var(--dtp-white);
+}
+.sb-stat--matches {
+  background: var(--dtp-grad-violet);
+  color: var(--dtp-white);
+}
+
+/* These inherited the page's dark ink onto a rgba(15,23,42,.6) card — black on
+   near-black, 1.18:1, so every highlight title was effectively invisible. */
+.scoreboard-module .sb-hl-card__title {
+  color: var(--dtp-white);
+}
+
+/* Old-system residue: `--font-display` is "Montserrat", which the Figma frame
+   never uses — it draws every section title in Inter 600 at ~23.5px / lh 28.4,
+   white ("⚽ Match Centre", "📺 Latest Highlights", "🔭 Explore"). These were
+   rendering Montserrat 700 at 17.6px. Scoped to the module rather than
+   repointing the global token, which a dozen admin rules still rely on. */
+.scoreboard-module .sb-section h2,
+.scoreboard-module .sb-section__head h2 {
+  font-family: var(--dtp-font-body);
+  font-size: clamp(1.25rem, 1.63vw, 1.469rem);
+  font-weight: 600;
+  line-height: 1.208;
+  letter-spacing: 0;
+  color: var(--dtp-white);
+}
+
+/* The only other Montserrat holdout on the hub. */
+.scoreboard-module .sb-mc-score__vs {
+  font-family: var(--dtp-font-ui);
+}
+
+/* The sub-routes carry their own older UI ("dbx-*", the Deep Browse screens)
+   still typeset in Montserrat 800. Figma has no frame for those routes, but the
+   type system is the same everywhere, so they are mapped onto it rather than
+   left clashing: display-scale figures and page titles to Gasoek One — which
+   ships a single 400 weight, so the 700/800 they asked for would have been
+   synthesised — and titles/labels to Inter and Sofia Pro. */
+.scoreboard-module h1 {
+  font-family: var(--dtp-font-display);
+  font-weight: 400;
+}
+
+.scoreboard-module .dbx-comp-card__title {
+  font-family: var(--dtp-font-body);
+  font-weight: 600;
+}
+
+.scoreboard-module .dbx-section-title {
+  font-family: var(--dtp-font-ui);
+  font-weight: 600;
+}
+
+/* Active sub-nav chip, moved off an inline style so the stylesheet governs it. */
+.scoreboard-module .sb-subnav .dtp-chip.is-active {
+  background: var(--dtp-cyan);
+  border-color: var(--dtp-cyan);
+  color: var(--dtp-ink);
+  font-weight: 600;
+}
+
+/* Figma's Match Centre panel ("Group 1000001895") is 1207 wide — three 384px
+   columns with 28px gutters. ModuleAdRails caps its content column at 960,
+   which forced the grid down to two columns. Lifted only while no ad rails are
+   rendering, exactly as on the Scouting hub, so the layout reflows on its own
+   the moment an ad occupies the sides. */
+.scoreboard-module .module-ad-body--no-sides .module-ad-main {
+  max-width: 1208px;
+}
+
+/* ---- Scoreboard: hero action pills — Figma "Group 1000001925" ----
+   312x38 centred at x564 y633: a 119px and a 173px pill, 20px apart, both on a
+   #091df4 at 8% wash with 11px corners and Sofia Pro 300 white labels. */
+.sb-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: var(--dtp-space-5);
+}
+
+.sb-hero-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding-inline: 14px;
+  border-radius: var(--dtp-radius-nav);
+  background: rgba(9, 29, 244, 0.08);
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: 0.9375rem;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0.0147em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--dtp-t-fast);
+}
+
+.sb-hero-actions__btn:hover,
+.sb-hero-actions__btn:focus-visible {
+  background: rgba(9, 29, 244, 0.22);
+}
+
+/* Zoom-out alignment: the hero's .dtp-shell is centred (max 1314) while
+   .module-ad-shell is left-aligned with margin 0. Below ~1425 the page is
+   narrower than .app-body's 1560 cap so the two happen to coincide; past that
+   the hero keeps centring while the content column stays pinned left, and they
+   drift apart — 63px at 1425 but 130px at 1920. Centring the shell makes the
+   offset between hero copy and content column a constant 10px at every width,
+   which is what zooming out was exposing. */
+.scoreboard-module .module-ad-shell,
+.scouting-module .module-ad-shell {
+  margin-inline: auto;
+}
+
+/* Overview renders the tabs and stat row inside ModuleAdRails, whose shell is
+   left-aligned at 1320 with the 1208 content column centred inside it — so
+   they start at x56, not at the page's own centre line. Anything the layout
+   renders outside that shell has to reproduce the same two-step geometry or it
+   lands ~53px further right and the bar visibly jumps between tabs. */
+.scoreboard-module .scoreboard-header,
+.sb-ticker-slot {
+  width: 100%;
+  max-width: 1320px;
+  margin-inline: auto;
+}
+
+.scoreboard-module .scoreboard-header .sb-tabs,
+.sb-ticker-slot > * {
+  width: 100%;
+  max-width: 1208px;
+  margin-inline: auto;
+}
+
+/* The ticker stands in for the stat row on every tab except Overview, so it
+   opens the same distance below the hero. */
+.sb-ticker-slot {
+  padding-top: 12px;
+}
+
+.sb-ticker-slot:empty { display: none; }
+
+/* The module header also carried a navy --color-header-bg plate from the old
+   UI, which made the bar read as a different component on every route but
+   Overview. */
+.scoreboard-module .scoreboard-header {
+  background: transparent;
+}
+
+/* ---- Scoreboard: section tabs — Figma "Title" 191:433 > Menu -----
+   Text labels on a 5px rule, NOT pills. Inter 500 / 18.8px / lh 22.8, active
+   #ffffff and resting #a4a4a4, 47px apart. The rule is #2e3034 with a #4cccf3
+   indicator under the active label. */
+.sb-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 47px;
+  margin: clamp(1.5rem, 3vw, 2.4rem) 0 clamp(1.5rem, 3.4vw, 2.6rem);
+  padding-inline: 28px;
+  border-bottom: 5px solid #2e3034;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sb-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.sb-tabs__tab {
+  position: relative;
+  padding-bottom: 12px;
+  font-family: var(--dtp-font-body);
+  font-size: clamp(1rem, 1.31vw, 1.175rem);
+  font-weight: 500;
+  line-height: 1.213;
+  letter-spacing: 0;
+  color: #a4a4a4;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--dtp-t-fast);
+}
+
+.sb-tabs__tab:hover,
+.sb-tabs__tab:focus-visible { color: var(--dtp-white); }
+
+.sb-tabs__tab.is-active { color: var(--dtp-white); }
+
+/* The cyan indicator sits on the rule, spanning the active label plus the
+   24px of breathing room the frame gives it on each side. */
+.sb-tabs__tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: -24px;
+  right: -24px;
+  bottom: -5px;
+  height: 5px;
+  background: var(--dtp-cyan);
+}
+
+/* ---- Scoreboard: Match Centre panel — Figma "Group 1000001929" ---
+   Three 384px columns, 28px apart. Inside a column Figma alternates a 42px
+   competition row and an 82px fixture card, 17px between the row and its
+   fixture and 28px before the next pair. */
+.scoreboard-module .sb-mc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 384px));
+  justify-content: center;
+  gap: 28px;
+  align-items: start;
+}
+
+.sb-fixture-group {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  min-width: 0;
+}
+
+/* Figma "Card/1" — 382x42: 29px flag, name over country, chevron at the end. */
+.sb-comp-row {
+  display: grid;
+  grid-template-columns: 29px minmax(0, 1fr) 7px;
+  align-items: center;
+  gap: 15px;
+  min-height: 42px;
+  color: var(--dtp-white);
+  text-decoration: none;
+}
+
+.sb-comp-row__flag {
+  width: 29px;
+  height: 29px;
+  border-radius: 50%;
+  background: var(--dtp-ink-800);
+  overflow: hidden;
+}
+
+.sb-comp-row__flag img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sb-comp-row__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sb-comp-row__name {
+  font-family: "Source Sans 3", var(--dtp-font-ui);
+  font-size: clamp(1rem, 1.34vw, 1.203rem);
+  font-weight: 600;
+  line-height: 1.258;
+  color: var(--dtp-white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-comp-row__place {
+  font-family: "Source Sans 3", var(--dtp-font-ui);
+  font-size: clamp(0.8rem, 1vw, 0.902rem);
+  font-weight: 400;
+  line-height: 1.254;
+  color: #aaaaaa;
+}
+
+.sb-comp-row__arrow { color: var(--dtp-white); flex: none; }
+
+/* Figma "card/match1" — 384x82, r19.24, #2b2b3d, with a flush 57px #222232
+   status panel on the right. */
+.sb-fixture {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 57px;
+  align-items: center;
+  min-height: 82px;
+  padding-left: 19px;
+  border-radius: 19.24px;
+  background: var(--dtp-ink-700);
+  color: var(--dtp-white);
+  text-decoration: none;
+  overflow: hidden;
+  transition: background var(--dtp-t-fast);
+}
+
+.sb-fixture:hover,
+.sb-fixture:focus-visible { background: #34344a; }
+
+/* Two 43px discs overlapping by 2px, each holding a 26px crest. */
+.sb-fixture__crests { display: flex; align-items: center; }
+
+.sb-fixture__crest {
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  border-radius: 50%;
+  background: var(--dtp-ink-800);
+  flex: none;
+}
+
+.sb-fixture__crest + .sb-fixture__crest { margin-left: -2px; }
+
+.sb-fixture__crest .sb-crest {
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  font-size: 0.5625rem;
+}
+
+.sb-fixture__crest .sb-crest img { width: 26px; height: 26px; }
+
+.sb-fixture__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding-left: 17px;
+  padding-right: var(--dtp-space-3);
+}
+
+.sb-fixture__teams {
+  font-family: "Source Sans 3", var(--dtp-font-ui);
+  font-size: clamp(0.9rem, 1.17vw, 1.053rem);
+  font-weight: 600;
+  line-height: 1.259;
+  color: var(--dtp-white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-fixture__score {
+  display: flex;
+  align-items: baseline;
+  gap: 2.6rem;
+  font-family: "Source Sans 3", var(--dtp-font-ui);
+  font-size: clamp(0.9rem, 1.17vw, 1.053rem);
+  font-weight: 600;
+  line-height: 1.259;
+  color: var(--dtp-white);
+}
+
+.sb-fixture__dash { opacity: 0.85; }
+.sb-fixture__kickoff { gap: 0; color: #aaaaaa; }
+
+.sb-fixture__status {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  width: 57px;
+  background: var(--dtp-ink-800);
+  font-family: "Source Sans 3", var(--dtp-font-ui);
+  font-size: clamp(0.9rem, 1.17vw, 1.053rem);
+  font-weight: 600;
+  line-height: 1.259;
+  color: var(--dtp-white);
+}
+
+.sb-fixture[data-live="true"] .sb-fixture__status { color: #ff4d4d; }
+
+/* ---- Scouting Hubs 118:1711, page-specific ----------------------- */
+
+/* ModuleAdRails caps its content column at 960px to keep prose readable beside
+   the ad rails. Figma spans the tile row 1216px, which that cap made
+   unreachable — the tiles resolved to 304px instead of 389px. Lift it only
+   when no rails are actually rendering (`--no-sides`), so the moment an ad
+   loads the column returns to 960 and the tiles reflow down on their own. */
+.scouting-module .module-ad-body--no-sides .module-ad-main {
+  max-width: 1216px;
+}
+
+/* This frame's eyebrow is the one Sofia Pro 700 in the set — the homepage
+   draws its eyebrows at 600 — and it is the brand orange, not band-derived. */
+.scouting-module .dtp-hero .dtp-eyebrow {
+  color: var(--dtp-orange);
+  font-weight: 700;
+}
+
+/* Figma: label at x607 y2364 with the 148x45 button at x645 y2409, both
+   centred on the frame — 25px between them. */
+.scouting-partner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--dtp-space-5);
+  margin-top: clamp(2.5rem, 5vw, 4rem);
+  text-align: center;
+}
+
+.scouting-partner__label {
+  margin: 0;
+  font-family: var(--dtp-font-ui);
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--dtp-white);
+}
 
 /* ------------------------------------------------------------------ *
  * 10. Directory rows — Clubs 115:615 (1111x324)
@@ -2694,9 +3290,10 @@ a.mvce-card:focus-visible {
   border: 1px solid #e3e6ee;
   border-radius: var(--dtp-radius-xs);
   background: var(--dtp-white);
+  /* Figma 113:4: Open Sans 400, 16.57px / lh 26.9 (= 1.623), value ink #011334. */
   font-family: "Open Sans", var(--dtp-font-ui);
-  font-size: 1.0625rem;
-  line-height: 1.6;
+  font-size: 1.0355rem;
+  line-height: 1.623;
   color: #011334;
   transition: border-color var(--dtp-t-fast), box-shadow var(--dtp-t-fast);
 }
@@ -2937,68 +3534,60 @@ a.mvce-card:focus-visible {
   object-position: center bottom;
 }
 
+/* Figma "Group 1000001944" — 123x29 pill at radius 13.26 filled #e5ebfc at
+   58%, holding "DTP VERIFIED" in Raleway 700 / 11.05px / lh 14 / ls -0.11 /
+   #004cff with a 16px solid-blue check disc on the right (8px inset). The
+   build had it as a 40px-tall white gradient chip with a heavy drop shadow and
+   an outsized haloed tick. Text sits 15px from the left, the disc 8px from the
+   right, which is the 12px gap between them. */
 .dtp-profile-card__verified {
   position: relative;
   display: inline-flex;
   align-items: center;
+  gap: 12px;
   margin-bottom: 1.02rem;
-  min-height: 40px;
-  padding: 0.68rem 3.08rem 0.68rem 1.1rem;
-  border-radius: var(--dtp-radius-pill);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(222, 233, 255, 0.94));
+  height: 29px;
+  padding: 0 8px 0 15px;
+  border-radius: 13.26px;
+  background: rgba(229, 235, 252, 0.58);
   font-family: "Raleway", var(--dtp-font-ui);
-  font-size: clamp(0.74rem, 0.95vw, 0.88rem);
-  font-weight: 900;
-  letter-spacing: 0.01em;
+  font-size: 0.69rem;
+  font-weight: 700;
+  line-height: 1.267;
+  letter-spacing: -0.01em;
   text-transform: uppercase;
-  color: #0055ff;
-  box-shadow:
-    9px 11px 22px rgba(0, 61, 205, 0.17),
-    -2px -2px 8px rgba(255, 255, 255, 0.58),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  color: #004cff;
+  box-shadow: none;
 }
 
-.dtp-profile-card__verified::before,
+/* The check disc: a 16px #004cff circle with a white tick, drawn as one mark
+   rather than the previous ring-plus-halo. */
 .dtp-profile-card__verified::after {
   content: "";
-  position: absolute;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #004cff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.6 8.3l2.2 2.2 4.6-4.8' fill='none' stroke='%23ffffff' stroke-width='2.21' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
   pointer-events: none;
 }
 
-.dtp-profile-card__verified::before {
-  right: 1.07rem;
-  top: 50%;
-  z-index: 1;
-  width: 0.52rem;
-  height: 0.3rem;
-  border-left: 3px solid #fff;
-  border-bottom: 3px solid #fff;
-  border-radius: 1px;
-  transform: translateY(-62%) rotate(-45deg);
-}
-
-.dtp-profile-card__verified::after {
-  right: 0.48rem;
-  top: 50%;
-  width: 1.42rem;
-  height: 1.42rem;
-  border-radius: 999px;
-  background: linear-gradient(145deg, #0b66ff, #064de7);
-  box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.78),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 6px 12px rgba(0, 72, 210, 0.2);
-  transform: translateY(-50%);
-}
-
+/* Figma: Gasoek One 400, 80px / lh 80, #4cccf3. The build was running 88.32px
+   at weight 700 — a weight the face does not ship, so browsers that synthesise
+   bold were thickening it. The ceiling comes from nameMaxSize() so long names
+   step down instead of overrunning the identity column. */
 .dtp-profile-card__name {
   margin: 0;
   font-family: var(--dtp-font-display);
-  font-size: clamp(4.75rem, 6.9vw, 6.35rem);
-  line-height: 0.88;
+  font-size: clamp(2.25rem, 6.9vw, var(--dtp-name-max, 5rem));
+  font-weight: 400;
+  line-height: 1;
   color: var(--dtp-cyan);
   text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 
 .dtp-profile-card__meta {
@@ -3030,18 +3619,23 @@ a.mvce-card:focus-visible {
   margin: 0;
 }
 
+/* Figma "Group 202" > Rectangle 671, one per rating: 85x56 at radius 5.64,
+   filled with the card's own accent at 16% and outlined with the same accent
+   at 60% on a 1.41px inside stroke. The build outlined them in 2px
+   `currentColor`, which resolved to white because the accent is set on the
+   inner dd/dt rather than the card — hence the white boxes. */
 .dtp-profile-rating {
-  min-width: 84px;
-  padding: 0.66rem 0.48rem 0.58rem;
-  border: 2px solid currentColor;
-  border-radius: 7px;
-  background:
-    linear-gradient(145deg, rgba(75, 83, 106, 0.72), rgba(31, 34, 48, 0.95));
-  box-shadow:
-    10px 12px 24px rgba(0, 0, 0, 0.24),
-    -2px -2px 8px rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -10px 22px rgba(0, 0, 0, 0.1);
+  min-width: 85px;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.45rem;
+  border: 1.41px solid var(--dtp-rating-stroke, rgba(255, 255, 255, 0.6));
+  border-radius: 5.64px;
+  background: var(--dtp-rating-fill, transparent);
+  box-shadow: none;
   text-align: center;
 }
 
@@ -3059,6 +3653,65 @@ a.mvce-card:focus-visible {
   font-weight: 500;
   letter-spacing: 0.22em;
   text-transform: uppercase;
+}
+
+/* ---- Player profile: stop values breaking mid-line -----------------
+   `.profile-summary-card` is a rigid 1.5fr/1fr grid and `.profile-facts` a
+   rigid 2-column one, so below ~900px the fact cells collapsed to ~71px and
+   values snapped apart — "€350,000 - €750,000" fell onto three lines and
+   "Elite Prospect" onto two. Letting both grids reflow on available width, and
+   keeping each value on one line, fixes it without touching the wide layout. */
+.profile-page.player-profile.dtp-page .profile-summary-card {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.profile-page.player-profile.dtp-page .profile-facts,
+.profile-page.player-profile.dtp-page .profile-facts--wide {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+/* Values are atomic — a currency range or a tier name should never be split. */
+.profile-page.player-profile.dtp-page .profile-facts strong {
+  display: block;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* Section headings carry an inline info-tip; balancing keeps the tip with the
+   last word instead of stranding it on a line of its own. */
+.profile-page.player-profile.dtp-page .player-profile-heading,
+.profile-page.player-profile.dtp-page .player-profile-subheading {
+  text-wrap: balance;
+}
+
+/* Metric and trait labels read as single units. */
+.profile-page.player-profile.dtp-page .scouting-intel__stat-label,
+.profile-page.player-profile.dtp-page .scouting-intel__trait-label,
+.profile-page.player-profile.dtp-page .position-scouting-metrics__label {
+  text-wrap: balance;
+}
+
+/* `<button>` does not inherit the page font, so these were rendering in the
+   browser's UA face (Arial) — the only non-Figma type left on the profile. */
+.profile-page.player-profile.dtp-page .player-profile-role-expand__toggle,
+.playstyle-modal__close,
+.support-report-fab {
+  font-family: var(--dtp-font-ui);
+}
+
+/* Accent per card, straight off the frame. Attack's fill is sampled from a
+   slightly deeper teal (#00d8bf) than its stroke (#00ffbf) in Figma. */
+.dtp-profile-rating--overall {
+  --dtp-rating-stroke: rgba(221, 126, 6, 0.6);
+  --dtp-rating-fill: rgba(221, 126, 6, 0.16);
+}
+.dtp-profile-rating--attack {
+  --dtp-rating-stroke: rgba(0, 255, 191, 0.6);
+  --dtp-rating-fill: rgba(0, 216, 191, 0.16);
+}
+.dtp-profile-rating--defense {
+  --dtp-rating-stroke: rgba(220, 21, 255, 0.6);
+  --dtp-rating-fill: rgba(220, 21, 255, 0.16);
 }
 
 .dtp-profile-rating--overall dd { color: #ff8b16; }
@@ -3558,7 +4211,7 @@ a.mvce-card:focus-visible {
   .position-scouting-metrics__bar-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #ff8a1f, #ff4f74);
+  background: linear-gradient(90deg, #ffc48f, #ffa7ba);
   box-shadow: none;
 }
 
@@ -3566,35 +4219,35 @@ a.mvce-card:focus-visible {
   .player-profile-scout-strip__metrics
   .position-scouting-metrics__card:nth-child(2n)
   .position-scouting-metrics__bar-fill {
-  background: linear-gradient(90deg, #b6262e, #ef3a42);
+  background: linear-gradient(90deg, #da9296, #f79ca0);
 }
 
 .profile-page.player-profile.dtp-page
   .player-profile-scout-strip__metrics
   .position-scouting-metrics__card:nth-child(3n)
   .position-scouting-metrics__bar-fill {
-  background: linear-gradient(90deg, #7af35d, #11d89f);
+  background: linear-gradient(90deg, #bcf9ae, #88ebcf);
 }
 
 .profile-page.player-profile.dtp-page
   .player-profile-scout-strip__metrics
   .position-scouting-metrics__card:nth-child(4n)
   .position-scouting-metrics__bar-fill {
-  background: linear-gradient(90deg, #ff93ee, #e3d8ff);
+  background: linear-gradient(90deg, #ffc9f6, #f1ebff);
 }
 
 .profile-page.player-profile.dtp-page
   .player-profile-scout-strip__metrics
   .position-scouting-metrics__card:nth-child(5n)
   .position-scouting-metrics__bar-fill {
-  background: linear-gradient(90deg, #2b7fff, #1c5cff);
+  background: linear-gradient(90deg, #95bfff, #8daeff);
 }
 
 .profile-page.player-profile.dtp-page
   .player-profile-scout-strip__metrics
   .position-scouting-metrics__card:nth-child(6n)
   .position-scouting-metrics__bar-fill {
-  background: linear-gradient(90deg, #3ef4f6, #13c6cf);
+  background: linear-gradient(90deg, #9ef9fa, #89e2e7);
 }
 
 .profile-page.player-profile.dtp-page .player-profile-tabs {
@@ -3806,7 +4459,7 @@ a.mvce-card:focus-visible {
   .player-profile-attr__fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #0529ff, #1227bc);
+  background: linear-gradient(90deg, #8294ff, #8893dd);
   box-shadow: none;
 }
 
@@ -3814,28 +4467,28 @@ a.mvce-card:focus-visible {
   .player-profile-role-profile
   .player-profile-attr:nth-child(2)
   .player-profile-attr__fill {
-  background: linear-gradient(90deg, #22c7ff, #8c19df);
+  background: linear-gradient(90deg, #90e3ff, #c58cef);
 }
 
 .profile-page.player-profile.dtp-page
   .player-profile-role-profile
   .player-profile-attr:nth-child(3)
   .player-profile-attr__fill {
-  background: linear-gradient(90deg, #ff4a18, #ff5d23);
+  background: linear-gradient(90deg, #ffa48b, #ffae91);
 }
 
 .profile-page.player-profile.dtp-page
   .player-profile-role-profile
   .player-profile-attr:nth-child(4)
   .player-profile-attr__fill {
-  background: linear-gradient(90deg, #ff2d71, #eb3b78);
+  background: linear-gradient(90deg, #ff96b8, #f59dbb);
 }
 
 .profile-page.player-profile.dtp-page
   .player-profile-role-profile
   .player-profile-attr:nth-child(5)
   .player-profile-attr__fill {
-  background: linear-gradient(90deg, #149eff, #0aa5ff);
+  background: linear-gradient(90deg, #8aceff, #85d2ff);
 }
 
 .profile-page.player-profile.dtp-page
@@ -4478,7 +5131,13 @@ a.mvce-card:focus-visible {
   font-size: 0.76rem;
 }
 
+/* The dialog opens clear of the sticky nav so its close button is never tucked
+   behind the pill. --dtp-nav-top is the pill's inset and --dtp-nav-h its
+   height; the extra space keeps a visible gap under it. */
 .playstyle-modal-backdrop {
+  z-index: 200;
+  padding-top: calc(var(--dtp-nav-top) + var(--dtp-nav-h) + var(--dtp-space-4));
+  align-items: flex-start;
   background:
     radial-gradient(circle at 50% 20%, rgba(80, 211, 255, 0.12), transparent 38%),
     rgba(0, 0, 0, 0.78);
@@ -4960,7 +5619,20 @@ a.mvce-card:focus-visible {
   gap: var(--dtp-space-4);
 }
 
-.dtp-footer__brand { display: inline-flex; align-items: center; }
+/* `.app-brand-logo-wrap` paints an opaque plate behind the mark so that the
+   `mix-blend-mode: screen` on legacy, non-transparent raster logos knocks their
+   black background out. It defaults to `--color-header-bg` (#0f172a), which on
+   this pure-black footer read as a navy rectangle around the lockup.
+   dtp-logo-white-horizontal.png carries a real alpha channel — 68% of its
+   pixels are fully transparent — so it needs no plate at all. Matching the
+   plate to the footer's own ink makes it invisible and leaves the screen blend
+   a no-op (screen against black returns the source), without changing the
+   admin, login or scoreboard surfaces that still rely on the default. */
+.dtp-footer__brand {
+  display: inline-flex;
+  align-items: center;
+  --brand-logo-bg: var(--dtp-ink);
+}
 
 .dtp-footer__copy {
   margin: 0;
@@ -5249,5 +5921,461 @@ a.mvce-card:focus-visible {
 
   .profile-page.player-profile.dtp-page .dtp-profile-rating {
     flex: 1 1 84px;
+  }
+}
+
+/* ---- Contact 113:4: hero is an inset panel, not a full-bleed band ---
+   The frame masks the picture into a 1317x622 panel at x61 y207 — content
+   width, sitting 58px below the nav pill — and runs the image at full opacity
+   cropped from its top edge (mask and image share y207, so the crop takes the
+   top 622 of a 955-tall source). Our build had it full-bleed, dimmed to 0.35
+   and centred, which is the treatment the Scoreboard and Scouting frames use
+   but not this one. */
+.dtp-hero--panel {
+  width: min(1317px, 91.5vw);
+  margin-inline: auto;
+  /* Nav pill ends at y149 in the frame, panel starts at y207. */
+  margin-top: 58px;
+  min-height: 0;
+  aspect-ratio: 1317 / 622;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dtp-hero--panel .dtp-hero__media {
+  opacity: 1;
+  object-position: center top;
+}
+
+/* Figma sets this eyebrow to #000000 — black type sitting on a darkened photo,
+   which measures about 1.3:1 and cannot be read. Brand blue was no better at
+   2.49:1, so it takes the same white as the headline it introduces. This is a
+   deliberate departure from the frame, on legibility grounds. */
+.dtp-hero--panel .dtp-eyebrow {
+  color: var(--dtp-white);
+}
+
+/* The frame's 2.117 ratio only holds while the panel is wide. On a phone that
+   is a 211px-tall band, shorter than the headline itself, so the ratio is
+   dropped and the panel sizes to its content instead of clipping it. */
+@media (max-width: 760px) {
+  .dtp-hero--panel {
+    aspect-ratio: auto;
+    min-height: 300px;
+    margin-top: 24px;
+  }
+}
+
+/* ---- Contact 113:4: full page build ---------------------------------
+   Frame geometry this is derived from (1440 frame):
+     hero panel      1317x622 r11 at x61 y207, image + a flat #000000 @19%
+     copy column      478 wide at x135, heading Gasoek One 38.5/42 ls-0.77
+     form card        585x524 r11 #ffffff at x715 y887, fields 482 wide at
+                      x767 (52px inset), rows 52 tall, message 145, r10.36
+                      on #f9f9f9, submit 148x45 r5 #091df4
+     subscribe band  1311x248 r11 #b2e006 at x65 y1472, copy 464 at x229,
+                      field group 464x58 r13.65 at x748 */
+
+/* Figma lays "Rectangle 2319" — a black plate 1440x2451 — behind the entire
+   page, down to the footer. Without it the inset hero panel floated on the
+   paper-white page background while the band beneath it was black, so the hero
+   read as a detached tile rather than part of the page. */
+.contact-page {
+  background: var(--dtp-ink);
+}
+
+.contact-page .dtp-hero--panel {
+  border-radius: 11px;
+}
+
+/* Figma lays a flat 19% black over the whole picture — not the bottom-up
+   gradient the other heroes use. */
+.contact-page .dtp-hero--panel .dtp-hero__scrim {
+  inset: 0;
+  height: auto;
+  background: rgba(0, 0, 0, 0.19);
+}
+
+/* The hero panel ends at y829 and the body opens at y887 — a 58px seam, not the
+   band's default padding, which was leaving the hero floating apart from the
+   rest of the page. */
+.contact-page .dtp-band--ink:first-of-type {
+  padding-top: 58px;
+}
+
+/* Two-column body: 478 copy + 585 card with a 102px gutter. */
+.contact-body {
+  display: grid;
+  grid-template-columns: minmax(0, 478fr) minmax(0, 585fr);
+  gap: clamp(2rem, 7.1vw, 102px);
+  align-items: start;
+}
+
+/* The frame's big white Gasoek paragraph (y915, 38.5/42, ls -0.77) is the LEAD,
+   and "Direct Channels" below it is Sofia Pro 700 36/46 in lime — I had those
+   two the wrong way round. */
+.contact-channels__lead {
+  margin: 0 0 clamp(1.5rem, 3.4vw, 49px);
+  max-width: 478px;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.6rem, 2.67vw, 2.406rem);
+  font-weight: 400;
+  line-height: 1.091;
+  letter-spacing: -0.02em;
+  color: var(--dtp-white);
+}
+
+.contact-page .dtp-channels__title {
+  margin: 0;
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(1.6rem, 2.5vw, 2.25rem);
+  font-weight: 700;
+  line-height: 1.278;
+  letter-spacing: 0;
+  color: var(--dtp-lime);
+}
+
+.contact-page .dtp-channels__body {
+  margin: 4px 0 0;
+  max-width: 222px;
+  font-family: var(--dtp-font-ui);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.313;
+  color: var(--dtp-lime);
+}
+
+/* Contact rows: a 24px glyph at the column edge with the label 34px in, and a
+   44px pitch between the two rows. */
+.contact-page .dtp-channels__list {
+  margin: clamp(1.2rem, 2.4vw, 34px) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  /* 44px pitch in the frame (y1312 -> y1356) against a ~33px row. */
+  gap: 11px;
+}
+
+.contact-page .dtp-channels__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--dtp-font-ui);
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.444;
+  color: var(--dtp-white);
+  text-decoration: none;
+}
+
+.contact-page .dtp-channels__link:hover,
+.contact-page .dtp-channels__link:focus-visible {
+  color: var(--dtp-lime);
+}
+
+.dtp-channels__glyph {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+/* ---- The white form card ---- */
+.contact-page .dtp-form {
+  width: 100%;
+  padding: 53px 52px 29px;
+  border-radius: 11px;
+  background: var(--dtp-white);
+  box-shadow: none;
+}
+
+.contact-page .dtp-form--sent {
+  display: block;
+  text-align: center;
+}
+
+.contact-page .dtp-form--sent .dtp-display {
+  font-size: 2rem;
+  color: var(--dtp-green);
+}
+
+.contact-page .dtp-form--sent .dtp-lead {
+  color: var(--dtp-slate);
+}
+
+/* Fields: 52px rows on #f9f9f9 at radius 10.36, message box 145. */
+.contact-page .dtp-form__input,
+.contact-page .dtp-form__textarea,
+.contact-page .dtp-form select {
+  min-height: 52px;
+  padding: 13px 20px;
+  border: 0;
+  border-radius: 10.36px;
+  background: #f9f9f9;
+}
+
+.contact-page .dtp-form__textarea {
+  min-height: 145px;
+}
+
+.contact-page .dtp-form__input::placeholder,
+.contact-page .dtp-form__textarea::placeholder {
+  color: #828282;
+}
+
+/* Figma hides the field labels — the placeholder carries the name. */
+.contact-page .dtp-form__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.contact-page .dtp-form__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.contact-page .dtp-form__actions .dtp-btn {
+  min-width: 148px;
+  min-height: 45px;
+  border-radius: var(--dtp-radius-btn);
+  background: var(--dtp-blue);
+  color: var(--dtp-white);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ---- Lime subscribe band ---- */
+.contact-subscribe-band {
+  padding-top: 0;
+}
+
+/* The band is 1311 wide in the frame — wider than the 1188 the shell allows —
+   so it breaks out of the shell onto the same width as the hero panel. */
+.contact-subscribe-band .dtp-shell {
+  width: min(1311px, 91.5vw);
+  max-width: none;
+  padding-inline: 0;
+  margin-inline: auto;
+}
+
+.contact-page .dtp-subscribe {
+  display: grid;
+  grid-template-columns: minmax(0, 464fr) minmax(0, 464fr);
+  align-items: center;
+  gap: clamp(1.5rem, 3.8vw, 55px);
+  min-height: 248px;
+  padding: clamp(2rem, 5.7vw, 82px) clamp(1.5rem, 11.4vw, 164px);
+  border-radius: 11px;
+  background: var(--dtp-lime);
+}
+
+.contact-page .dtp-subscribe__title {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.35rem, 1.9vw, 1.707rem);
+  font-weight: 400;
+  line-height: 1.446;
+  letter-spacing: 0;
+  color: var(--dtp-green);
+}
+
+.contact-page .dtp-subscribe__body {
+  margin: 0.4rem 0 0;
+  font-family: var(--dtp-font-body);
+  font-size: clamp(0.8rem, 0.95vw, 0.853rem);
+  font-weight: 400;
+  line-height: 1.502;
+  color: var(--dtp-green);
+}
+
+/* Field group: a 27% green well with a white pill button butted against it. */
+/* Figma butts the well and the CTA together with no padding or gap — the group
+   is one 58px-tall pill (366 + 99 ≈ 464). The shared rule adds both. */
+.contact-page .dtp-subscribe__form {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  max-width: 464px;
+  height: 58px;
+  padding: 0;
+  gap: 0;
+  justify-self: end;
+  border-radius: 13.65px;
+  overflow: hidden;
+}
+
+.contact-page .dtp-subscribe__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: 22px;
+  border: 0;
+  background: rgba(33, 96, 57, 0.27);
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-body);
+  font-size: 0.768rem;
+  line-height: 1.668;
+}
+
+.contact-page .dtp-subscribe__input::placeholder {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+/* A shared button rule pins an explicit height, which beats `align-self:
+   stretch`, so the CTA is sized outright to fill the 58px group. */
+.contact-page .dtp-subscribe__btn {
+  flex: 0 0 99px;
+  width: 99px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  background: var(--dtp-white);
+  color: var(--dtp-green);
+  font-family: var(--dtp-font-body);
+  font-size: 0.683rem;
+  font-weight: 700;
+  line-height: 1.209;
+  cursor: pointer;
+}
+
+.contact-page .dtp-subscribe__btn:hover,
+.contact-page .dtp-subscribe__btn:focus-visible {
+  background: #f0f5ea;
+}
+
+@media (max-width: 860px) {
+  .contact-body,
+  .contact-page .dtp-subscribe {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contact-page .dtp-subscribe__form { justify-self: stretch; }
+  .contact-page .dtp-form { padding: 32px 24px 24px; }
+}
+
+/* ---- Admin: restore the module's own dark-theme text colour ---------
+   The admin area is dark by design (--color-bg #0f172a, --color-surface
+   #1e293b) and its type token is light (--color-text #f1f5f9). But
+   `.admin-shell` only ever declared the background, relying on inheriting the
+   light colour; with the public shell now setting near-black type on
+   `.dtp-page`, that black flowed straight into the admin surfaces. Headings
+   like "DTP Admin" were rendering at 1.44:1 — black on dark navy.
+
+   Pairing the surface with its own text token fixes the whole `/admin/*` tree
+   at the root, including the login page, which paints a dark card. */
+.admin-shell,
+.admin-login-page {
+  color: var(--color-text);
+}
+
+/* ---- Player profile: claymorphism -----------------------------------
+   The page already carried the beginnings of this language (soft dual-tone
+   shadows, --clay-tier-* accents), so this formalises it into one recipe
+   rather than inventing a second style.
+
+   Clay = a soft extruded surface: generous radius, a light inner highlight on
+   the top-left and a dark inner shade on the bottom-right to give thickness,
+   plus a diffuse drop shadow so it sits above the page. Values are kept
+   restrained because the surfaces here are dark; a heavier press would read as
+   muddy rather than soft.
+
+   Deliberately NOT applied to anything measured against the frame — the
+   Overall/Attack/Defense ratings, the DTP Verified badge and the stat bars all
+   keep their Figma treatment. */
+.profile-page.player-profile.dtp-page {
+  --clay-radius: 22px;
+  --clay-radius-sm: 16px;
+  --clay-shadow:
+    10px 12px 24px rgba(0, 0, 0, 0.26),
+    -5px -5px 14px rgba(255, 255, 255, 0.035),
+    inset 5px 5px 11px rgba(255, 255, 255, 0.09),
+    inset -6px -8px 14px rgba(0, 0, 0, 0.2);
+  --clay-shadow-sm:
+    6px 8px 16px rgba(0, 0, 0, 0.22),
+    -3px -3px 9px rgba(255, 255, 255, 0.03),
+    inset 3px 3px 7px rgba(255, 255, 255, 0.075),
+    inset -4px -5px 10px rgba(0, 0, 0, 0.17);
+  /* Pressed state — the highlight and shade swap so the surface reads sunken. */
+  --clay-shadow-inset:
+    inset 6px 6px 13px rgba(0, 0, 0, 0.26),
+    inset -5px -5px 12px rgba(255, 255, 255, 0.06);
+}
+
+/* Large surfaces: panels and the summary/scout cards. */
+.profile-page.player-profile.dtp-page .profile-panel,
+.profile-page.player-profile.dtp-page .player-profile-panel,
+.profile-page.player-profile.dtp-page .profile-summary-card,
+.profile-page.player-profile.dtp-page .player-profile-scout-strip {
+  border-radius: var(--clay-radius);
+  box-shadow: var(--clay-shadow);
+}
+
+/* Smaller repeated tiles: stat cards, trait cards, metric cards, fact cells. */
+.profile-page.player-profile.dtp-page .scouting-intel__stat-card,
+.profile-page.player-profile.dtp-page .scouting-intel__trait-card,
+.profile-page.player-profile.dtp-page .profile-facts div,
+/* The scout-strip metric cards are already targeted through a 5-class selector
+   further up, so this has to match that weight to win. */
+.profile-page.player-profile.dtp-page
+  .player-profile-scout-strip__metrics
+  .position-scouting-metrics__card {
+  border-radius: var(--clay-radius-sm);
+  box-shadow: var(--clay-shadow-sm);
+}
+
+/* Progress tracks read as pressed grooves, which is where clay is at its most
+   legible — the pastel fill then sits proud inside the channel. */
+.profile-page.player-profile.dtp-page .position-scouting-metrics__bar,
+.profile-page.player-profile.dtp-page .player-profile-attr__track {
+  border-radius: 999px;
+  box-shadow: var(--clay-shadow-inset);
+}
+
+.profile-page.player-profile.dtp-page .position-scouting-metrics__bar-fill,
+.profile-page.player-profile.dtp-page .player-profile-attr__fill {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+/* Tabs: raised when resting, pressed when active. */
+.profile-page.player-profile.dtp-page .player-profile-tabs__btn {
+  border-radius: 999px;
+  box-shadow: var(--clay-shadow-sm);
+  transition: box-shadow var(--dtp-t-fast), transform var(--dtp-t-fast);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-tabs__btn:hover {
+  transform: translateY(-1px);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-tabs__btn.active {
+  box-shadow: var(--clay-shadow-inset);
+  transform: none;
+}
+
+/* Buttons on the page get the same extruded feel. */
+.profile-page.player-profile.dtp-page .player-profile-role-expand__toggle {
+  border-radius: 999px;
+  box-shadow: var(--clay-shadow-sm);
+}
+
+.profile-page.player-profile.dtp-page .player-profile-role-expand__toggle:active {
+  box-shadow: var(--clay-shadow-inset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-page.player-profile.dtp-page .player-profile-tabs__btn {
+    transition: none;
+  }
+  .profile-page.player-profile.dtp-page .player-profile-tabs__btn:hover {
+    transform: none;
   }
 }

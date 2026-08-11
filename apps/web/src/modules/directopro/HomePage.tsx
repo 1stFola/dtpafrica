@@ -169,15 +169,24 @@ function HomeReelSection({ onPlay }: { onPlay: () => void }) {
  *  half must be a pixel-identical copy of the first for the loop to be seamless. */
 const MARQUEE_REPEATS = 12;
 
-function Marquee({ tone = "ink" }: { tone?: "ink" | "lime" | "blue" | "orange" }) {
+function Marquee({
+  tone = "ink",
+  reverse = false,
+}: {
+  tone?: "ink" | "lime" | "blue" | "orange";
+  reverse?: boolean;
+}) {
   const items = Array.from({ length: MARQUEE_REPEATS }, (_, index) => (
     <span className="dtp-marquee__item" key={index}>
-      {MARQUEE_PHRASE} <span aria-hidden="true">/</span>
+      {MARQUEE_PHRASE} <span aria-hidden="true">|</span>
     </span>
   ));
 
+  const classes = ["dtp-marquee", `dtp-marquee--${tone}`];
+  if (reverse) classes.push("dtp-marquee--reverse");
+
   return (
-    <div className={`dtp-marquee dtp-marquee--${tone}`} aria-hidden="true">
+    <div className={classes.join(" ")} aria-hidden="true">
       <div className="dtp-marquee__track">{items}</div>
     </div>
   );
@@ -280,7 +289,7 @@ export function HomePage() {
           lime plate, dark green type) and Group 19524 (y950, blue plate,
           white type). */}
       <Marquee tone="lime" />
-      <Marquee tone="blue" />
+      <Marquee tone="blue" reverse />
 
       <HomeReelSection onPlay={() => setIsReelOpen(true)} />
 
@@ -288,9 +297,9 @@ export function HomePage() {
       <section className="dtp-band dtp-band--lime dtp-band--featured">
         <div className="dtp-shell">
           <div className="dtp-band__head">
-            <p className="dtp-eyebrow" style={{ color: "var(--dtp-green)" }}>
-              Featured Talent
-            </p>
+            {/* Colour comes from `.dtp-band--featured .dtp-eyebrow`; an inline
+                style here outranked the stylesheet and pinned it to green. */}
+            <p className="dtp-eyebrow">Featured Talent</p>
             <h2 className="dtp-display">Discover verified prospects</h2>
             <p className="dtp-body">
               Scout-rated profiles with position fit, ratings, and match-verified career stats.

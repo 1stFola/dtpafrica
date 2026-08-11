@@ -9,11 +9,20 @@ import {
   type SbMatchListItem,
   type SbStats,
 } from "../../../api/scoreboard";
-import { MatchCenterCard } from "../components/MatchCenterCard";
 import { HighlightCard } from "../components/HighlightCard";
+import { ScoreboardTabs } from "../components/ScoreboardTabs";
+import {
+  SbCompetitionRow,
+  SbFixtureCard,
+  type SbCompetitionRowRef,
+} from "../components/SbFixtureCard";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
-type Metric = { value: string; label: string };
+/* Figma 186:139 "Group 1000001920" — four 215x98 stat cards, each on its own
+   gradient, in this fixed order. The tone travels with the metric so the card
+   keeps its colour no matter what the API returns. */
+type MetricTone = "teams" | "players" | "competitions" | "matches";
+type Metric = { value: string; label: string; tone: MetricTone };
 
 function buildMetrics(
   stats: SbStats | null,
@@ -33,10 +42,18 @@ function buildMetrics(
   const playersLabel = players >= 100 ? "100+" : players > 0 ? String(players) : "—";
 
   return [
-    { value: teams > 0 ? String(teams) : "—", label: "Teams" },
-    { value: playersLabel, label: "Players Tracked" },
-    { value: competitions > 0 ? String(competitions) : "—", label: "Competitions" },
-    { value: matchCount > 0 ? String(matchCount) : "—", label: "Matches Logged" },
+    { value: teams > 0 ? String(teams) : "—", label: "Teams", tone: "teams" },
+    { value: playersLabel, label: "Players Tracked", tone: "players" },
+    {
+      value: competitions > 0 ? String(competitions) : "—",
+      label: "Competitions",
+      tone: "competitions",
+    },
+    {
+      value: matchCount > 0 ? String(matchCount) : "—",
+      label: "Matches Logged",
+      tone: "matches",
+    },
   ];
 }
 
@@ -88,49 +105,56 @@ export function ScoreboardHubPage() {
     ...matches.filter((m) => !liveMatches.includes(m)),
   ].slice(0, 9);
 
+  /* Figma pairs every fixture with its own competition row — column one reads
+     La Liga → match, then Premier League → match — so these are cells of
+     [competition row + card], not one row heading a grouped list. The full
+     competition record is looked up for the country line, since a match only
+     carries {id, name, slug}. */
+  const fixtureCells = useMemo(
+    () =>
+      orderedMatches.map((match) => ({
+        match,
+        competition: (comps.find((c) => c.id === match.competition.id) ??
+          match.competition) as SbCompetitionRowRef,
+      })),
+    [orderedMatches, comps]
+  );
+
   return (
     <div className="sb-landing">
       {/* The eyebrow and the page <h1> now live in the Figma hero owned by
           ScoreboardLayout, so this block starts at the supporting copy. */}
-      <section className="sb-hero">
-        <h2 className="sb-hero__title">The Ultimate Match Experience</h2>
-        <p className="sb-hero__subtitle">
-          Explore premium match stats, video highlights and historical player
-          profiles from Nigeria Grassroots Football.
-        </p>
-        <div className="sb-hero__actions">
-          <Link to="/scoreboard/live" className="dtp-btn dtp-btn--primary">
-            Watch Live
-          </Link>
-          <Link to="/scoreboard/browse" className="dtp-btn dtp-btn--secondary">
-            Browse Competitions
-          </Link>
-        </div>
-
-        <dl className="sb-metrics" aria-label="ScoreBoard at a glance">
-          {metrics.map((m) => (
-            <div key={m.label} className="sb-metric">
-              <dt className="sb-metric__value">{m.value}</dt>
-              <dd className="sb-metric__label">{m.label}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+      {/* `<dt>` carries the label and `<dd>` the figure, so the pair reads
+          "Teams: 148" to a screen reader; CSS flips the visual order to put the
+          number on top the way Figma draws it. */}
+      <dl className="sb-stats" aria-label="ScoreBoard at a glance">
+        {metrics.map((m) => (
+          <div key={m.label} className={`sb-stat sb-stat--${m.tone}`}>
+            <dt className="sb-stat__label">{m.label}</dt>
+            <dd className="sb-stat__value">{m.value}</dd>
+          </div>
+        ))}
+      </dl>
 
       <section className="sb-section">
         <div className="sb-section__head">
           <div>
-            <span className="sb-section__eyebrow">Live &amp; Recent</span>
-            <h2>Match Center</h2>
+            {/* Figma 186:139 titles each section with a single line — no
+                eyebrow above it. Copy and emoji are the frame's own. */}
+            <h2>⚽ Match Centre</h2>
             <p className="muted">
               Follow the action closely with real-time updates and detailed
               match logs.
             </p>
           </div>
           <Link to="/scoreboard/live" className="text-link">
-            View all live →
+            Watch Live →
           </Link>
         </div>
+
+        {/* Figma 191:433 puts the section tabs directly beneath the
+            "⚽ Match Centre" title, on their own rule — not up under the hero. */}
+        <ScoreboardTabs />
 
         {loading ? (
           <div className="sb-mc-grid" aria-busy="true">
@@ -147,9 +171,15 @@ export function ScoreboardHubPage() {
             </p>
           </div>
         ) : (
+          /* Figma stacks the panel as [competition row][fixture][competition
+             row][fixture] across three 384px columns, so fixtures are grouped
+             under the competition they belong to rather than listed flat. */
           <div className="sb-mc-grid">
-            {orderedMatches.map((m) => (
-              <MatchCenterCard key={m.id} match={m} />
+            {fixtureCells.map((cell) => (
+              <div key={cell.match.id} className="sb-fixture-group">
+                <SbCompetitionRow competition={cell.competition} />
+                <SbFixtureCard match={cell.match} />
+              </div>
             ))}
           </div>
         )}
@@ -158,8 +188,7 @@ export function ScoreboardHubPage() {
       <section className="sb-section">
         <div className="sb-section__head">
           <div>
-            <span className="sb-section__eyebrow">Video</span>
-            <h2>Latest Highlights</h2>
+            <h2>📺 Latest Highlights</h2>
             <p className="muted">Curated video moments from ongoing tournaments.</p>
           </div>
           <Link to="/scoreboard/highlights" className="text-link">
@@ -193,8 +222,7 @@ export function ScoreboardHubPage() {
       <section className="sb-section">
         <div className="sb-section__head">
           <div>
-            <span className="sb-section__eyebrow">Explore</span>
-            <h2>Competitions</h2>
+            <h2>🔭 Explore</h2>
           </div>
         </div>
         <div className="sb-comp-grid">

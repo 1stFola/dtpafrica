@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@dtp/ui";
 import { apiGet, isAbortError, type PlayerSkeletonProfile, type PublicPlayerProfile } from "../../../api/client";
@@ -153,6 +153,31 @@ function initialsFromName(name: string): string {
     .map((word) => word.charAt(0).toUpperCase())
     .join("");
   return initials || "?";
+}
+
+/**
+ * Figma 239:2425 sets the profile name in title case ("Yusuf Ramadan"), but
+ * some records arrive from the registration feed fully capitalised. Only
+ * all-caps values are recased, so names that already carry deliberate casing
+ * ("McCarthy", "van Dijk", "O'Neill") are left exactly as entered.
+ */
+function displayNameCased(name: string): string {
+  if (name !== name.toUpperCase()) return name;
+  return name
+    .toLowerCase()
+    .replace(/(^|[\s'’-])([a-z])/g, (_, lead: string, ch: string) => lead + ch.toUpperCase());
+}
+
+/**
+ * Figma draws the name at 80px. Long names have to give some of that back or
+ * they overrun the identity column, so the ceiling steps down with length and
+ * bottoms out at 40px — the CSS clamp still handles viewport scaling.
+ */
+function nameMaxSize(name: string): string {
+  const len = displayNameCased(name).length;
+  if (len <= 14) return "5rem";
+  const rem = Math.max(2.5, 5 - (len - 14) * 0.16);
+  return `${Math.round(rem * 100) / 100}rem`;
 }
 
 function ratingTier(rating?: number | null) {
@@ -752,7 +777,12 @@ function PlayerCardBanner({
 
         <div className="dtp-profile-card__identity">
           <span className="dtp-profile-card__verified">DTP Verified</span>
-          <h1 className="dtp-profile-card__name">{player.displayName}</h1>
+          <h1
+            className="dtp-profile-card__name"
+            style={{ "--dtp-name-max": nameMaxSize(player.displayName) } as CSSProperties}
+          >
+            {displayNameCased(player.displayName)}
+          </h1>
           <p className="dtp-profile-card__meta">
             {positionLabel}
             {player.positionSecondary ? ` · ${player.positionSecondary}` : ""}

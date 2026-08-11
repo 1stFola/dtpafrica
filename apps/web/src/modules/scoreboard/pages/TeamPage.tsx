@@ -9,7 +9,6 @@ import {
 import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { MatchCenterCard } from "../components/MatchCenterCard";
-import { MatchTicker } from "../components/MatchTicker";
 import { TeamCrest } from "../components/TeamCrest";
 
 type TeamTab = "overview" | "fixtures" | "squad" | "stats";
@@ -307,7 +306,6 @@ function SquadPlayerRow({ row, team }: { row: SbSquadPlayer; team: SbTeamDetail 
 function TeamPageSkeleton() {
   return (
     <div className="sb-page dbx-page sbc-page sbt-page" aria-busy="true">
-      <MatchTicker />
       <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "8rem" }} />
       <div className="dbx-comp-card__tags">
         {[0, 1, 2].map((i) => (
@@ -424,7 +422,6 @@ export function TeamPage() {
   if (error && !team) {
     return (
       <div className="sb-page dbx-page sbc-page sbt-page">
-        <MatchTicker />
         <p className="dtp-error-banner" role="alert">
           {error}
         </p>
@@ -617,7 +614,6 @@ export function TeamPage() {
 
   return (
     <div className="sb-page dbx-page sbc-page sbt-page">
-      <MatchTicker />
 
       <nav className="sbt-nav" aria-label="Team navigation">
         <Link to={`/scoreboard/competition/${team.competition.slug}`} className="sbt-back text-link">
