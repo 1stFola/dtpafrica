@@ -1238,6 +1238,7 @@
 }
 
 .featured-talent-card__portrait {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
@@ -1271,7 +1272,16 @@
     linear-gradient(180deg, #bbffd9, #e1fff1);
 }
 
+/* Absolutely positioned rather than sized with height:100%. The frame takes its
+   height from `aspect-ratio`, which leaves it with no *definite* height, so a
+   percentage height on the image could not resolve and silently fell back to
+   `auto` — the picture then took its intrinsic ratio and `place-items: center`
+   centred it, showing the pastel plate above the player's head on any photo
+   that was not tall enough. `inset: 0` gives the image a definite box to fill
+   in both axes, and `center top` keeps the head against the top of the frame. */
 .featured-talent-card__portrait img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -3280,9 +3290,10 @@ a.mvce-card:focus-visible {
   border: 1px solid #e3e6ee;
   border-radius: var(--dtp-radius-xs);
   background: var(--dtp-white);
+  /* Figma 113:4: Open Sans 400, 16.57px / lh 26.9 (= 1.623), value ink #011334. */
   font-family: "Open Sans", var(--dtp-font-ui);
-  font-size: 1.0625rem;
-  line-height: 1.6;
+  font-size: 1.0355rem;
+  line-height: 1.623;
   color: #011334;
   transition: border-color var(--dtp-t-fast), box-shadow var(--dtp-t-fast);
 }
@@ -5911,6 +5922,357 @@ a.mvce-card:focus-visible {
   .profile-page.player-profile.dtp-page .dtp-profile-rating {
     flex: 1 1 84px;
   }
+}
+
+/* ---- Contact 113:4: hero is an inset panel, not a full-bleed band ---
+   The frame masks the picture into a 1317x622 panel at x61 y207 — content
+   width, sitting 58px below the nav pill — and runs the image at full opacity
+   cropped from its top edge (mask and image share y207, so the crop takes the
+   top 622 of a 955-tall source). Our build had it full-bleed, dimmed to 0.35
+   and centred, which is the treatment the Scoreboard and Scouting frames use
+   but not this one. */
+.dtp-hero--panel {
+  width: min(1317px, 91.5vw);
+  margin-inline: auto;
+  /* Nav pill ends at y149 in the frame, panel starts at y207. */
+  margin-top: 58px;
+  min-height: 0;
+  aspect-ratio: 1317 / 622;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dtp-hero--panel .dtp-hero__media {
+  opacity: 1;
+  object-position: center top;
+}
+
+/* Figma sets this eyebrow to #000000 — black type sitting on a darkened photo,
+   which measures about 1.3:1 and cannot be read. Brand blue was no better at
+   2.49:1, so it takes the same white as the headline it introduces. This is a
+   deliberate departure from the frame, on legibility grounds. */
+.dtp-hero--panel .dtp-eyebrow {
+  color: var(--dtp-white);
+}
+
+/* The frame's 2.117 ratio only holds while the panel is wide. On a phone that
+   is a 211px-tall band, shorter than the headline itself, so the ratio is
+   dropped and the panel sizes to its content instead of clipping it. */
+@media (max-width: 760px) {
+  .dtp-hero--panel {
+    aspect-ratio: auto;
+    min-height: 300px;
+    margin-top: 24px;
+  }
+}
+
+/* ---- Contact 113:4: full page build ---------------------------------
+   Frame geometry this is derived from (1440 frame):
+     hero panel      1317x622 r11 at x61 y207, image + a flat #000000 @19%
+     copy column      478 wide at x135, heading Gasoek One 38.5/42 ls-0.77
+     form card        585x524 r11 #ffffff at x715 y887, fields 482 wide at
+                      x767 (52px inset), rows 52 tall, message 145, r10.36
+                      on #f9f9f9, submit 148x45 r5 #091df4
+     subscribe band  1311x248 r11 #b2e006 at x65 y1472, copy 464 at x229,
+                      field group 464x58 r13.65 at x748 */
+
+/* Figma lays "Rectangle 2319" — a black plate 1440x2451 — behind the entire
+   page, down to the footer. Without it the inset hero panel floated on the
+   paper-white page background while the band beneath it was black, so the hero
+   read as a detached tile rather than part of the page. */
+.contact-page {
+  background: var(--dtp-ink);
+}
+
+.contact-page .dtp-hero--panel {
+  border-radius: 11px;
+}
+
+/* Figma lays a flat 19% black over the whole picture — not the bottom-up
+   gradient the other heroes use. */
+.contact-page .dtp-hero--panel .dtp-hero__scrim {
+  inset: 0;
+  height: auto;
+  background: rgba(0, 0, 0, 0.19);
+}
+
+/* The hero panel ends at y829 and the body opens at y887 — a 58px seam, not the
+   band's default padding, which was leaving the hero floating apart from the
+   rest of the page. */
+.contact-page .dtp-band--ink:first-of-type {
+  padding-top: 58px;
+}
+
+/* Two-column body: 478 copy + 585 card with a 102px gutter. */
+.contact-body {
+  display: grid;
+  grid-template-columns: minmax(0, 478fr) minmax(0, 585fr);
+  gap: clamp(2rem, 7.1vw, 102px);
+  align-items: start;
+}
+
+/* The frame's big white Gasoek paragraph (y915, 38.5/42, ls -0.77) is the LEAD,
+   and "Direct Channels" below it is Sofia Pro 700 36/46 in lime — I had those
+   two the wrong way round. */
+.contact-channels__lead {
+  margin: 0 0 clamp(1.5rem, 3.4vw, 49px);
+  max-width: 478px;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.6rem, 2.67vw, 2.406rem);
+  font-weight: 400;
+  line-height: 1.091;
+  letter-spacing: -0.02em;
+  color: var(--dtp-white);
+}
+
+.contact-page .dtp-channels__title {
+  margin: 0;
+  font-family: var(--dtp-font-ui);
+  font-size: clamp(1.6rem, 2.5vw, 2.25rem);
+  font-weight: 700;
+  line-height: 1.278;
+  letter-spacing: 0;
+  color: var(--dtp-lime);
+}
+
+.contact-page .dtp-channels__body {
+  margin: 4px 0 0;
+  max-width: 222px;
+  font-family: var(--dtp-font-ui);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.313;
+  color: var(--dtp-lime);
+}
+
+/* Contact rows: a 24px glyph at the column edge with the label 34px in, and a
+   44px pitch between the two rows. */
+.contact-page .dtp-channels__list {
+  margin: clamp(1.2rem, 2.4vw, 34px) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  /* 44px pitch in the frame (y1312 -> y1356) against a ~33px row. */
+  gap: 11px;
+}
+
+.contact-page .dtp-channels__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--dtp-font-ui);
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.444;
+  color: var(--dtp-white);
+  text-decoration: none;
+}
+
+.contact-page .dtp-channels__link:hover,
+.contact-page .dtp-channels__link:focus-visible {
+  color: var(--dtp-lime);
+}
+
+.dtp-channels__glyph {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+/* ---- The white form card ---- */
+.contact-page .dtp-form {
+  width: 100%;
+  padding: 53px 52px 29px;
+  border-radius: 11px;
+  background: var(--dtp-white);
+  box-shadow: none;
+}
+
+.contact-page .dtp-form--sent {
+  display: block;
+  text-align: center;
+}
+
+.contact-page .dtp-form--sent .dtp-display {
+  font-size: 2rem;
+  color: var(--dtp-green);
+}
+
+.contact-page .dtp-form--sent .dtp-lead {
+  color: var(--dtp-slate);
+}
+
+/* Fields: 52px rows on #f9f9f9 at radius 10.36, message box 145. */
+.contact-page .dtp-form__input,
+.contact-page .dtp-form__textarea,
+.contact-page .dtp-form select {
+  min-height: 52px;
+  padding: 13px 20px;
+  border: 0;
+  border-radius: 10.36px;
+  background: #f9f9f9;
+}
+
+.contact-page .dtp-form__textarea {
+  min-height: 145px;
+}
+
+.contact-page .dtp-form__input::placeholder,
+.contact-page .dtp-form__textarea::placeholder {
+  color: #828282;
+}
+
+/* Figma hides the field labels — the placeholder carries the name. */
+.contact-page .dtp-form__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.contact-page .dtp-form__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.contact-page .dtp-form__actions .dtp-btn {
+  min-width: 148px;
+  min-height: 45px;
+  border-radius: var(--dtp-radius-btn);
+  background: var(--dtp-blue);
+  color: var(--dtp-white);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ---- Lime subscribe band ---- */
+.contact-subscribe-band {
+  padding-top: 0;
+}
+
+/* The band is 1311 wide in the frame — wider than the 1188 the shell allows —
+   so it breaks out of the shell onto the same width as the hero panel. */
+.contact-subscribe-band .dtp-shell {
+  width: min(1311px, 91.5vw);
+  max-width: none;
+  padding-inline: 0;
+  margin-inline: auto;
+}
+
+.contact-page .dtp-subscribe {
+  display: grid;
+  grid-template-columns: minmax(0, 464fr) minmax(0, 464fr);
+  align-items: center;
+  gap: clamp(1.5rem, 3.8vw, 55px);
+  min-height: 248px;
+  padding: clamp(2rem, 5.7vw, 82px) clamp(1.5rem, 11.4vw, 164px);
+  border-radius: 11px;
+  background: var(--dtp-lime);
+}
+
+.contact-page .dtp-subscribe__title {
+  margin: 0;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(1.35rem, 1.9vw, 1.707rem);
+  font-weight: 400;
+  line-height: 1.446;
+  letter-spacing: 0;
+  color: var(--dtp-green);
+}
+
+.contact-page .dtp-subscribe__body {
+  margin: 0.4rem 0 0;
+  font-family: var(--dtp-font-body);
+  font-size: clamp(0.8rem, 0.95vw, 0.853rem);
+  font-weight: 400;
+  line-height: 1.502;
+  color: var(--dtp-green);
+}
+
+/* Field group: a 27% green well with a white pill button butted against it. */
+/* Figma butts the well and the CTA together with no padding or gap — the group
+   is one 58px-tall pill (366 + 99 ≈ 464). The shared rule adds both. */
+.contact-page .dtp-subscribe__form {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  max-width: 464px;
+  height: 58px;
+  padding: 0;
+  gap: 0;
+  justify-self: end;
+  border-radius: 13.65px;
+  overflow: hidden;
+}
+
+.contact-page .dtp-subscribe__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: 22px;
+  border: 0;
+  background: rgba(33, 96, 57, 0.27);
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-body);
+  font-size: 0.768rem;
+  line-height: 1.668;
+}
+
+.contact-page .dtp-subscribe__input::placeholder {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+/* A shared button rule pins an explicit height, which beats `align-self:
+   stretch`, so the CTA is sized outright to fill the 58px group. */
+.contact-page .dtp-subscribe__btn {
+  flex: 0 0 99px;
+  width: 99px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  background: var(--dtp-white);
+  color: var(--dtp-green);
+  font-family: var(--dtp-font-body);
+  font-size: 0.683rem;
+  font-weight: 700;
+  line-height: 1.209;
+  cursor: pointer;
+}
+
+.contact-page .dtp-subscribe__btn:hover,
+.contact-page .dtp-subscribe__btn:focus-visible {
+  background: #f0f5ea;
+}
+
+@media (max-width: 860px) {
+  .contact-body,
+  .contact-page .dtp-subscribe {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contact-page .dtp-subscribe__form { justify-self: stretch; }
+  .contact-page .dtp-form { padding: 32px 24px 24px; }
+}
+
+/* ---- Admin: restore the module's own dark-theme text colour ---------
+   The admin area is dark by design (--color-bg #0f172a, --color-surface
+   #1e293b) and its type token is light (--color-text #f1f5f9). But
+   `.admin-shell` only ever declared the background, relying on inheriting the
+   light colour; with the public shell now setting near-black type on
+   `.dtp-page`, that black flowed straight into the admin surfaces. Headings
+   like "DTP Admin" were rendering at 1.44:1 — black on dark navy.
+
+   Pairing the surface with its own text token fixes the whole `/admin/*` tree
+   at the root, including the login page, which paints a dark card. */
+.admin-shell,
+.admin-login-page {
+  color: var(--color-text);
 }
 
 /* ---- Player profile: claymorphism -----------------------------------
