@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
-import AllureVitest from "allure-vitest/reporter";
+import { resolve } from "path";
+
+const repoRoot = resolve(__dirname, "../..");
 
 export default defineConfig({
   test: {
@@ -8,15 +10,9 @@ export default defineConfig({
     include: ["src/**/*.spec.ts"],
     reporters: [
       "verbose",
-      new AllureVitest({
-        resultsDir: "../../allure-results/engines",
-      }),
+      ["allure-vitest/reporter", {
+        resultsDir: resolve(repoRoot, "allure-results", "engines"),
+      }],
     ],
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "json-summary"],
-      include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts", "src/**/*.spec.ts"],
-    },
   },
 });
