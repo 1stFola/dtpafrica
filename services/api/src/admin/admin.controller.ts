@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminAcademiesService } from "./admin-academies.service";
+import { AcademyChangeRequestsService } from "../academy-dashboard/academy-change-requests.service";
 import { AdminBlogService } from "./admin-blog.service";
 import { AdminCalibrationService } from "./admin-calibration.service";
 import { AdminContentService } from "./admin-content.service";
@@ -29,6 +30,7 @@ import { RunDatabaseSeedDto } from "./dto/run-database-seed.dto";
 import { UpdatePlayerAdminDto } from "./dto/update-player-admin.dto";
 import { PublishBlogDto } from "./dto/publish-blog.dto";
 import { UpsertAcademyDto } from "./dto/upsert-academy.dto";
+import { ReviewAcademyChangeRequestDto } from "../academy-dashboard/dto/academy-change-request.dto";
 import { UpsertStaticContentDto } from "./dto/upsert-static-content.dto";
 import { UpsertBlogPostDto } from "./dto/upsert-blog-post.dto";
 import { AdminAuthGuard } from "./guards/admin-auth.guard";
@@ -48,6 +50,8 @@ export class AdminController {
     @Inject(AdminPlayersService) private readonly players: AdminPlayersService,
     @Inject(AdminInboxService) private readonly inbox: AdminInboxService,
     @Inject(AdminAcademiesService) private readonly academies: AdminAcademiesService,
+    @Inject(AcademyChangeRequestsService)
+    private readonly academyChangeRequests: AcademyChangeRequestsService,
     @Inject(AdminBlogService) private readonly blog: AdminBlogService,
     @Inject(AdminContentService) private readonly content: AdminContentService,
     @Inject(AdminCalibrationService) private readonly calibration: AdminCalibrationService,
@@ -279,6 +283,30 @@ export class AdminController {
   @RequirePermissions("academies.write")
   deleteAcademy(@Param("id") id: string) {
     return this.academies.remove(id);
+  }
+
+  @Get("academy-change-requests")
+  @RequirePermissions("academies.read")
+  listAcademyChangeRequests(@Query("status") status?: string) {
+    return this.academyChangeRequests.list(status);
+  }
+
+  @Patch("academy-change-requests/:id/approve")
+  @RequirePermissions("academies.write")
+  approveAcademyChangeRequest(
+    @Param("id") id: string,
+    @Body() dto: ReviewAcademyChangeRequestDto
+  ) {
+    return this.academyChangeRequests.approve(id, dto.adminNotes);
+  }
+
+  @Patch("academy-change-requests/:id/reject")
+  @RequirePermissions("academies.write")
+  rejectAcademyChangeRequest(
+    @Param("id") id: string,
+    @Body() dto: ReviewAcademyChangeRequestDto
+  ) {
+    return this.academyChangeRequests.reject(id, dto.adminNotes);
   }
 
   @Get("blog")

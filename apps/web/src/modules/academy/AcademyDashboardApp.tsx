@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   fetchAcademyDashboard,
+  submitAcademyPlayerChangeRequest,
+  submitAcademyProfileChangeRequest,
   type AcademyDashboard,
   type AcademyFixture,
   type AcademyMediaItem,
@@ -85,6 +87,24 @@ function fixtureTitle(fixture: AcademyFixture) {
 
 function mediaHref(item: AcademyMediaItem) {
   return item.url;
+}
+
+function splitLines(value: string) {
+  return value
+    .split(/\n+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function isYouTubeUrl(value: string) {
+  if (!value.trim()) return true;
+  try {
+    const url = new URL(value.trim());
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return host === "youtube.com" || host === "m.youtube.com" || host === "youtu.be";
+  } catch {
+    return false;
+  }
 }
 
 function AcademyHeroBanner({
@@ -271,7 +291,7 @@ export function AcademyDashboardApp() {
         <AcademyHeroBanner academy={data.academy} playerCount={data.squad.length} />
 
         {section === "overview" && <OverviewSection data={data} />}
-        {section === "players" && <PlayersSection players={data.squad} />}
+        {section === "players" && <PlayersSection slug={data.academy.slug} players={data.squad} />}
         {section === "matches" && <MatchesSection fixtures={data.fixtures} />}
         {section === "development" && <DevelopmentSection data={data} />}
         {section === "philosophy" && <PhilosophySection data={data} />}
@@ -422,11 +442,18 @@ function InsightCard({
   );
 }
 
-function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
+function PlayersSection({ slug, players }: { slug: string; players: AcademySquadPlayer[] }) {
   const [ageGroup, setAgeGroup] = useState("all");
   const [position, setPosition] = useState("all");
   const [foot, setFoot] = useState("all");
   const [status, setStatus] = useState("all");
+  const [selectedPlayerId, setSelectedPlayerId] = useState(players[0]?.id ?? "");
+  const [displayName, setDisplayName] = useState("");
+  const [photoUrls, setPhotoUrls] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [publicationUrls, setPublicationUrls] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const ageGroups = uniqueOptions(players.map((player) => player.ageGroup));
   const positions = uniqueOptions(players.map((player) => player.positionPrimary));
@@ -440,6 +467,47 @@ function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
     if (status !== "all" && player.status !== status) return false;
     return true;
   });
+
+  const selectedPlayer = players.find((player) => player.id === selectedPlayerId) ?? players[0];
+
+  useEffect(() => {
+    if (!selectedPlayerId && players[0]?.id) {
+      setSelectedPlayerId(players[0].id);
+    }
+  }, [players, selectedPlayerId]);
+
+  const submitPlayerChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedPlayer) return;
+    if (!isYouTubeUrl(videoUrl)) {
+      setMessage({ type: "error", text: "Video Highlights URL must be a YouTube link." });
+      return;
+    }
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const photoList = splitLines(photoUrls);
+      const publicationList = splitLines(publicationUrls);
+      await submitAcademyPlayerChangeRequest(slug, selectedPlayer.id, {
+        displayName: displayName.trim() || undefined,
+        photoUrls: photoList.length ? photoList : undefined,
+        videoUrl: videoUrl.trim() || undefined,
+        publicationUrls: publicationList.length ? publicationList : undefined,
+      });
+      setDisplayName("");
+      setPhotoUrls("");
+      setVideoUrl("");
+      setPublicationUrls("");
+      setMessage({
+        type: "success",
+        text: "Player update sent for DTP review.",
+      });
+    } catch (err) {
+      setMessage({ type: "error", text: String(err) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <section className="academy-panel academy-panel--wide">
@@ -510,6 +578,71 @@ function PlayersSection({ players }: { players: AcademySquadPlayer[] }) {
           </tbody>
         </table>
       </div>
+
+      <form className="academy-change-form academy-change-form--player" onSubmit={submitPlayerChange}>
+        <div className="academy-change-form__header">
+          <div>
+            <h3>Request player profile update</h3>
+            <p>Name corrections and media updates are sent to DTP admin for approval.</p>
+          </div>
+          <span className="academy-pill">Review required</span>
+        </div>
+        <label>
+          Player
+          <select
+            value={selectedPlayer?.id ?? ""}
+            onChange={(event) => setSelectedPlayerId(event.target.value)}
+          >
+            {players.map((player) => (
+              <option key={player.id} value={player.id}>
+                {player.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Name spelling correction
+          <input
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            placeholder={selectedPlayer?.displayName ?? "Correct display name"}
+          />
+        </label>
+        <label>
+          Profile picture and other photo URLs
+          <textarea
+            rows={4}
+            value={photoUrls}
+            onChange={(event) => setPhotoUrls(event.target.value)}
+            placeholder="One image URL per line"
+          />
+        </label>
+        <label>
+          Video Highlights URL
+          <input
+            value={videoUrl}
+            onChange={(event) => setVideoUrl(event.target.value)}
+            placeholder="YouTube link only"
+          />
+        </label>
+        <label>
+          Publications URL
+          <textarea
+            rows={3}
+            value={publicationUrls}
+            onChange={(event) => setPublicationUrls(event.target.value)}
+            placeholder="One publication URL per line"
+          />
+        </label>
+        {message && (
+          <p className={`academy-form-alert academy-form-alert--${message.type}`} role="status">
+            {message.text}
+          </p>
+        )}
+        <button type="submit" className="academy-submit-btn" disabled={submitting || !selectedPlayer}>
+          {submitting ? "Sending..." : "Send for review"}
+        </button>
+      </form>
     </section>
   );
 }
@@ -647,7 +780,7 @@ function PhilosophySection({ data }: { data: AcademyDashboard }) {
           </Link>
         ))}
         {data.philosophy.players.length === 0 && (
-          <p className="academy-empty">Run scouting recalculation to populate style-fit rows.</p>
+          <p className="academy-empty">Style-fit rows will appear once enough verified player data is available.</p>
         )}
       </div>
     </section>
@@ -697,7 +830,7 @@ function MediaSection({ media }: { media: AcademyMediaItem[] }) {
       <div className="academy-panel__header">
         <div>
           <h2>Media library</h2>
-          <p>Existing profile media and ScoreBoard highlights. Uploads and AI tagging are deferred.</p>
+          <p>Profile media, published highlights, and player evidence from DTP records.</p>
         </div>
       </div>
       <div className="academy-media-grid">
@@ -723,18 +856,53 @@ function MediaSection({ media }: { media: AcademyMediaItem[] }) {
 }
 
 function SettingsSection({ data }: { data: AcademyDashboard }) {
+  const [description, setDescription] = useState(data.academy.description ?? "");
+  const [foundedYear, setFoundedYear] = useState<string>(
+    data.academy.foundedYear ? String(data.academy.foundedYear) : ""
+  );
+  const [city, setCity] = useState(data.academy.city ?? "");
+  const [country, setCountry] = useState(data.academy.country ?? "");
+  const [logoUrl, setLogoUrl] = useState(data.academy.logoUrl ?? "");
+  const [websiteUrl, setWebsiteUrl] = useState(data.academy.websiteUrl ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const submitAcademyChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      await submitAcademyProfileChangeRequest(data.academy.slug, {
+        description,
+        foundedYear: foundedYear.trim() ? Number(foundedYear) : null,
+        city,
+        country,
+        logoUrl,
+        websiteUrl,
+      });
+      setMessage({
+        type: "success",
+        text: "Club profile update sent for DTP review.",
+      });
+    } catch (err) {
+      setMessage({ type: "error", text: String(err) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <section className="academy-panel academy-panel--wide">
       <div className="academy-panel__header">
         <div>
           <h2>Settings</h2>
-          <p>Read-only implementation notes for the academy workspace.</p>
+          <p>Submit club profile details for DTP admin review and publication.</p>
         </div>
       </div>
       <div className="academy-settings-grid">
         <InsightCard
           label="Access"
-          value="Demo read-only"
+          value="Review-gated"
           detail={data.scope.authNote}
         />
         <InsightCard
@@ -743,11 +911,80 @@ function SettingsSection({ data }: { data: AcademyDashboard }) {
           detail="Matches are inferred from teams containing academy-linked players."
         />
         <InsightCard
-          label="Next controls"
-          value="Academy auth"
-          detail="Per-academy users, attendance import, and development assessments should be added after the data model is finalized."
+          label="Review workflow"
+          value="DTP approval"
+          detail="Submitted club and player updates are reviewed before they appear publicly."
         />
       </div>
+      {data.pendingChangeRequests?.length ? (
+        <div className="academy-pending-review">
+          <h3>Pending review</h3>
+          <ul>
+            {data.pendingChangeRequests.map((request) => (
+              <li key={request.id}>
+                <strong>{titleCase(request.kind)}</strong>
+                <span>
+                  {request.player?.displayName ? ` · ${request.player.displayName}` : ""}
+                </span>
+                <small>{formatDate(request.submittedAt)}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <form className="academy-change-form" onSubmit={submitAcademyChange}>
+        <div className="academy-change-form__header">
+          <div>
+            <h3>Club profile update</h3>
+            <p>These changes remain unpublished until approved by DTP admin.</p>
+          </div>
+          <span className="academy-pill">Send for review</span>
+        </div>
+        <label>
+          Detail / description
+          <textarea
+            rows={5}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+        <div className="academy-change-form__grid">
+          <label>
+            Year founded
+            <input
+              type="number"
+              min={1800}
+              max={2100}
+              value={foundedYear}
+              onChange={(event) => setFoundedYear(event.target.value)}
+            />
+          </label>
+          <label>
+            City
+            <input value={city} onChange={(event) => setCity(event.target.value)} />
+          </label>
+          <label>
+            Country
+            <input value={country} onChange={(event) => setCountry(event.target.value)} />
+          </label>
+        </div>
+        <label>
+          Logo URL
+          <input value={logoUrl} onChange={(event) => setLogoUrl(event.target.value)} />
+        </label>
+        <label>
+          Website URL
+          <input value={websiteUrl} onChange={(event) => setWebsiteUrl(event.target.value)} />
+        </label>
+        {message && (
+          <p className={`academy-form-alert academy-form-alert--${message.type}`} role="status">
+            {message.text}
+          </p>
+        )}
+        <button type="submit" className="academy-submit-btn" disabled={submitting}>
+          {submitting ? "Sending..." : "Send for review"}
+        </button>
+      </form>
     </section>
   );
 }

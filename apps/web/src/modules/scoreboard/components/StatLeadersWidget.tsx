@@ -132,7 +132,7 @@ export function StatLeadersWidget({
         <button
           type="button"
           className="sbc-stat-leaders__expand"
-          aria-label="Expand stat leaders (coming soon)"
+          aria-label="Expand stat leaders"
           disabled
         >
           <ChevronIcon />

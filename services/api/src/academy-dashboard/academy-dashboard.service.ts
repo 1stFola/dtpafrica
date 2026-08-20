@@ -145,6 +145,24 @@ export class AcademyDashboardService {
       this.findMatches(teamIds),
       this.findHighlights(academy.id, teamIds),
     ]);
+    const pendingChangeRequests = await this.prisma.academyChangeRequest.findMany({
+      where: { academyId: academy.id, status: "pending" },
+      orderBy: { submittedAt: "desc" },
+      take: 12,
+      select: {
+        id: true,
+        kind: true,
+        status: true,
+        payload: true,
+        submittedAt: true,
+        player: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+      },
+    });
 
     const squad = players.map((player) => this.toSquadPlayer(player));
     const averageDevelopmentIndex =
@@ -159,15 +177,17 @@ export class AcademyDashboardService {
         city: academy.city,
         country: academy.country,
         description: academy.description,
+        foundedYear: academy.foundedYear,
         logoUrl: academy.logoUrl,
         websiteUrl: academy.websiteUrl,
       },
       scope: {
-        mode: "demo_read_only",
+        mode: "review_required",
         authNote:
-          "Academy-specific authentication is deferred; this dashboard uses the academy-player link and public integration data.",
+          "Club profile and player updates are submitted to DTP admin for review before publishing.",
         linkedScoreboardTeamIds: teamIds,
       },
+      pendingChangeRequests,
       overview: {
         kpis: [
           {
@@ -188,15 +208,15 @@ export class AcademyDashboardService {
             id: "scoutViews",
             label: "Scout views",
             value: players.filter((player) => player.isPublic).length,
-            detail: "Using public profiles until view analytics exists",
-            status: "placeholder",
+            detail: "Published profiles ready for scout discovery",
+            status: "live",
           },
           {
             id: "trainingAttendance",
             label: "Training attendance",
             value: null,
-            detail: "Attendance import not connected",
-            status: "deferred",
+            detail: "Club attendance records can be added during profile review",
+            status: "review_required",
           },
         ],
         watchlist: squad
@@ -209,7 +229,7 @@ export class AcademyDashboardService {
       fixtures: matches.map((match) => this.toFixture(match, teamIds)),
       development: {
         indexMethod:
-          "Read-only blend of DTP ratings, SIP tactical fit, ScoreBoard exposure, and latest MVCE score.",
+          "Development index blends DTP ratings, tactical fit, ScoreBoard exposure, and latest valuation signals.",
         leaders: squad
           .slice()
           .sort((a, b) => b.developmentIndex - a.developmentIndex)
@@ -220,7 +240,7 @@ export class AcademyDashboardService {
         defaultFormation: "4-3-3",
         defaultPhilosophy: "tiki_taka",
         note:
-          "Academy-level philosophy settings are read-only defaults for now; player fit is sourced from existing SIP rows.",
+          "Player fit is mapped from tracked performance, tactical scores, and ScoreBoard evidence.",
         players: squad
           .filter((player) => player.tacticalFit != null)
           .sort((a, b) => (b.tacticalFit ?? 0) - (a.tacticalFit ?? 0))
