@@ -19,6 +19,7 @@
   ansible.builtin.apt:
     upgrade: dist
     autoremove: true
+  when: run_os_package_upgrade | default(false) | bool
 
 - name: Install common utilities
   ansible.builtin.apt:
