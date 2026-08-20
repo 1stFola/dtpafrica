@@ -323,6 +323,7 @@ jobs:
             -e "aws_region=${{ secrets.AWS_REGION }}" \
             -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
             -e "git_branch=${{ github.ref_name }}" \
+            -e "git_repo_token=${{ secrets.GITHUB_TOKEN }}" \
             -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
             -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
             -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
