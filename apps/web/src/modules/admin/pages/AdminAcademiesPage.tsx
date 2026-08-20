@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import {
   adminApi,
   type AdminAcademy,
+  type AdminAcademyChangeRequest,
   type AdminAcademyInput,
 } from "../../../api/admin";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
@@ -27,6 +28,7 @@ const emptyDraft: AdminAcademyInput = {
   city: "",
   country: "",
   description: "",
+  foundedYear: "",
   logoUrl: "",
   websiteUrl: "",
   subscriptionTier: "",
@@ -46,6 +48,7 @@ function toDraft(academy: AdminAcademy): AdminAcademyInput {
     city: academy.city ?? "",
     country: academy.country ?? "",
     description: academy.description ?? "",
+    foundedYear: academy.foundedYear ?? "",
     logoUrl: academy.logoUrl ?? "",
     websiteUrl: academy.websiteUrl ?? "",
     subscriptionTier: academy.subscriptionTier ?? "",
@@ -96,16 +99,21 @@ export function AdminAcademiesPage() {
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("");
+  const [reviews, setReviews] = useState<AdminAcademyChangeRequest[]>([]);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(searchQuery, 200);
 
   const load = useCallback(() => {
     setLoading(true);
-    adminApi
-      .academyList()
-      .then(setRows)
+    Promise.all([adminApi.academyList(), adminApi.academyChangeRequests("pending")])
+      .then(([academyRows, reviewRows]) => {
+        setRows(academyRows);
+        setReviews(reviewRows);
+      })
       .catch((e) => {
         toast.error(String(e));
         setRows([]);
+        setReviews([]);
       })
       .finally(() => setLoading(false));
   }, [toast]);
@@ -177,6 +185,7 @@ export function AdminAcademiesPage() {
         subscriptionTier:
           draft.subscriptionTier === "" ? undefined : draft.subscriptionTier,
         maxPlayers: draft.maxPlayers === "" ? undefined : draft.maxPlayers,
+        foundedYear: draft.foundedYear === "" ? undefined : draft.foundedYear,
       };
       const saved = selectedId
         ? await adminApi.academyUpdate(selectedId, body)
@@ -209,6 +218,24 @@ export function AdminAcademiesPage() {
     setQuickFilter((prev) => (prev === chip ? "" : chip));
   };
 
+  const reviewRequest = async (id: string, decision: "approve" | "reject") => {
+    setReviewingId(id);
+    try {
+      if (decision === "approve") {
+        await adminApi.approveAcademyChangeRequest(id);
+        toast.success("Club change approved");
+      } else {
+        await adminApi.rejectAcademyChangeRequest(id);
+        toast.success("Club change rejected");
+      }
+      load();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setReviewingId(null);
+    }
+  };
+
   return (
     <section className="admin-page admin-sb-section admin-academies-page">
       <AdminPageHeader
@@ -225,6 +252,74 @@ export function AdminAcademiesPage() {
           </button>
         }
       />
+
+      <section className="admin-sb-content-panel admin-academy-review-panel">
+        <div className="admin-sb-panel-header">
+          <div>
+            <h2>Club review queue</h2>
+            <p className="muted">
+              Approve manager-submitted club profile, player name, photo, publication,
+              and YouTube highlight updates.
+            </p>
+          </div>
+          <span className="admin-academies-badge admin-academies-badge--login">
+            {reviews.length} pending
+          </span>
+        </div>
+        {reviews.length === 0 ? (
+          <p className="admin-empty-state">No club updates are waiting for review.</p>
+        ) : (
+          <div className="admin-academy-review-grid">
+            {reviews.map((request) => (
+              <article key={request.id} className="admin-academy-review-card">
+                <div>
+                  <span className="admin-academy-review-card__kind">
+                    {request.kind.replace(/_/g, " ")}
+                  </span>
+                  <h3>
+                    {request.player?.displayName ?? request.academy.name}
+                  </h3>
+                  <p className="muted">
+                    {request.academy.name} · {new Date(request.submittedAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <dl>
+                  {Object.entries(request.payload).map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key.replace(/([A-Z])/g, " $1")}</dt>
+                      <dd>
+                        {Array.isArray(value)
+                          ? value.join(", ")
+                          : value == null
+                            ? "Clear value"
+                            : String(value)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="admin-academy-review-card__actions">
+                  <button
+                    type="button"
+                    className="admin-inline-button admin-inline-button--primary"
+                    disabled={reviewingId === request.id}
+                    onClick={() => void reviewRequest(request.id, "approve")}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-inline-button"
+                    disabled={reviewingId === request.id}
+                    onClick={() => void reviewRequest(request.id, "reject")}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="admin-content-grid admin-academies-grid">
         <div className="admin-sb-content-panel admin-academies-list-panel">
@@ -474,6 +569,21 @@ export function AdminAcademiesPage() {
               rows={4}
               value={draft.description ?? ""}
               onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+            />
+          </label>
+          <label className="admin-sb-field">
+            <span>Year founded</span>
+            <input
+              type="number"
+              min={1800}
+              max={2100}
+              value={draft.foundedYear ?? ""}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  foundedYear: e.target.value === "" ? "" : Number(e.target.value),
+                })
+              }
             />
           </label>
           <label className="admin-sb-field">

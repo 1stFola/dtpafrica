@@ -53,6 +53,7 @@ model Player {
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   academy            Academy? @relation(fields: [academyId], references: [id], onDelete: SetNull)
+  academyChangeRequests AcademyChangeRequest[]
   matchMetrics       PlayerMatchMetrics[]
   aggregatedMetrics  PlayerAggregatedMetrics[]
   tacticalScores     TacticalScores?
@@ -99,6 +100,7 @@ model Academy {
   city             String?
   country          String?
   description      String?  @db.Text
+  foundedYear      Int?     @map("founded_year")
   logoUrl          String?  @map("logo_url")
   websiteUrl       String?  @map("website_url")
   loginUsername    String?  @unique @map("login_username")
@@ -109,9 +111,32 @@ model Academy {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  players     Player[]
+  players        Player[]
+  changeRequests AcademyChangeRequest[]
 
   @@map("academies")
+}
+
+model AcademyChangeRequest {
+  id          String   @id @default(uuid())
+  academyId   String   @map("academy_id")
+  playerId    String?  @map("player_id")
+  kind        String
+  status      String   @default("pending")
+  payload     Json
+  adminNotes  String?  @map("admin_notes") @db.Text
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  reviewedAt  DateTime? @map("reviewed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  player  Player? @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([academyId, status])
+  @@index([status, createdAt])
+  @@index([playerId])
+  @@map("academy_change_requests")
 }
 
 model StaticContent {

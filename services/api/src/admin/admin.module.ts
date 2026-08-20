@@ -5,6 +5,7 @@ import { AdsModule } from "../ads/ads.module";
 import { ScoreboardModule } from "../scoreboard/scoreboard.module";
 import { SipModule } from "../sip/sip.module";
 import { SupportModule } from "../support/support.module";
+import { AcademyChangeRequestsService } from "../academy-dashboard/academy-change-requests.service";
 import { AdminAcademiesService } from "./admin-academies.service";
 import { AdminAuthController } from "./admin-auth.controller";
 import { AdminAuthService } from "./auth/admin-auth.service";
@@ -54,6 +55,7 @@ import { PermissionsGuard } from "./guards/permissions.guard";
     AdminSeedService,
     AdminAuthService,
     AdminRbacService,
+    AcademyChangeRequestsService,
     AdminAuthGuard,
     PermissionsGuard,
   ],

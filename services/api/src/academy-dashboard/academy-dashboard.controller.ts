@@ -1,15 +1,22 @@
-import { Controller, Get, Inject, Param, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from "@nestjs/common";
 import type { AcademyJwtPayload } from "../academy-auth/academy-auth.service";
 import { AcademyAuthGuard } from "../academy-auth/guards/academy-auth.guard";
 import { AcademyScopeGuard } from "../academy-auth/guards/academy-scope.guard";
+import { AcademyChangeRequestsService } from "./academy-change-requests.service";
 import { AcademyDashboardService } from "./academy-dashboard.service";
+import {
+  AcademyPlayerChangeRequestDto,
+  AcademyProfileChangeRequestDto,
+} from "./dto/academy-change-request.dto";
 
 @Controller("academy")
 @UseGuards(AcademyAuthGuard)
 export class AcademyDashboardController {
   constructor(
     @Inject(AcademyDashboardService)
-    private readonly academyDashboard: AcademyDashboardService
+    private readonly academyDashboard: AcademyDashboardService,
+    @Inject(AcademyChangeRequestsService)
+    private readonly changeRequests: AcademyChangeRequestsService
   ) {}
 
   @Get("dashboard")
@@ -57,5 +64,24 @@ export class AcademyDashboardController {
   @UseGuards(AcademyScopeGuard)
   media(@Param("slug") slug: string) {
     return this.academyDashboard.media(slug);
+  }
+
+  @Post(":slug/change-requests/academy-profile")
+  @UseGuards(AcademyScopeGuard)
+  submitAcademyProfileChange(
+    @Param("slug") slug: string,
+    @Body() dto: AcademyProfileChangeRequestDto
+  ) {
+    return this.changeRequests.submitAcademyProfile(slug, dto);
+  }
+
+  @Post(":slug/change-requests/players/:playerId")
+  @UseGuards(AcademyScopeGuard)
+  submitPlayerProfileChange(
+    @Param("slug") slug: string,
+    @Param("playerId") playerId: string,
+    @Body() dto: AcademyPlayerChangeRequestDto
+  ) {
+    return this.changeRequests.submitPlayerProfile(slug, playerId, dto);
   }
 }

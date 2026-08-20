@@ -485,7 +485,7 @@ export function PlayerProfilePage() {
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
     player.ageGroup ? `${player.ageGroup} pathway candidate` : "Open category profile",
-    tactical ? "Tactical scores available" : "Awaiting tactical recalculation",
+    tactical ? "Tactical scores available" : "Tactical profile building",
     scoreboard?.aggregates.goals
       ? `${scoreboard.aggregates.goals} ScoreBoard goal${scoreboard.aggregates.goals === 1 ? "" : "s"}`
       : scoreboard?.aggregates.assists
@@ -554,7 +554,7 @@ export function PlayerProfilePage() {
           <div className="player-profile-scout-strip__summary">
             <h2 className="player-profile-heading">Scouting Summary</h2>
             <p className="player-profile-scout-strip__text">
-              {player.scoutingSummary ?? "Scouting summary pending calibration review."}
+              {player.scoutingSummary ?? "Scouting summary will appear as verified match data grows."}
             </p>
           </div>
           <PositionScoutingMetricsRow
@@ -1040,7 +1040,7 @@ function PremiumSkeletonProfile({
       <div className="profile-pending-notice" role="status">
         <span className="profile-pending-notice__dot" aria-hidden="true" />
         <span>
-          <strong>Profile pending synchronization.</strong> We&apos;re verifying this
+          <strong>Profile verification in progress.</strong> We&apos;re verifying this
           athlete&apos;s record with the DTP Africa scouting network.
         </span>
       </div>
@@ -1078,7 +1078,7 @@ function PremiumSkeletonProfile({
             <span className="profile-section__eyebrow">Core performance</span>
             <h2>Season metrics</h2>
           </div>
-          <span className="profile-data-note">Awaiting sync</span>
+          <span className="profile-data-note">Verification in progress</span>
         </div>
         <div className="profile-metric-grid">
           {metrics.map((metric) => (

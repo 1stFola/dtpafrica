@@ -17038,6 +17038,304 @@ a.dbx-comp-card:hover {
   text-align: center;
 }
 
+.academy-login-page {
+  color: #f8fafc;
+}
+
+.academy-login-card {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.97), rgba(2, 6, 23, 0.96)),
+    #020617;
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.academy-login-card h1,
+.academy-login-field span {
+  color: #f8fafc;
+}
+
+.academy-login-lead,
+.academy-login-footer {
+  color: #cbd5e1;
+}
+
+.academy-login-field input {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #f8fafc;
+}
+
+.academy-login-field input::placeholder {
+  color: #94a3b8;
+}
+
+.academy-dashboard {
+  min-height: 100vh;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  background:
+    radial-gradient(circle at 18% 10%, rgba(37, 99, 235, 0.22), transparent 28%),
+    radial-gradient(circle at 90% 0%, rgba(16, 185, 129, 0.18), transparent 30%),
+    linear-gradient(135deg, #020617 0%, #0f172a 48%, #07111f 100%);
+  color: #f8fafc;
+}
+
+.academy-sidebar__brand strong,
+.academy-panel h2,
+.academy-panel h3,
+.academy-table td,
+.academy-player-card__top a,
+.academy-fixture-card h3,
+.academy-valuation-card a,
+.academy-media-card strong,
+.academy-lane-row,
+.academy-insight-card strong {
+  color: #f8fafc;
+}
+
+.academy-sidebar__brand small,
+.academy-sidebar__nav a,
+.academy-kpi small,
+.academy-insight-card p,
+.academy-panel__header p,
+.academy-player-card p,
+.academy-fixture-card p,
+.academy-valuation-card small,
+.academy-media-card small,
+.academy-table small,
+.academy-table th,
+.academy-feed small,
+.academy-filters label {
+  color: #cbd5e1;
+}
+
+.academy-kpi,
+.academy-panel,
+.academy-insight-card,
+.academy-player-card,
+.academy-fixture-card,
+.academy-valuation-card,
+.academy-media-card,
+.academy-lane {
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
+  border-color: rgba(96, 165, 250, 0.32);
+}
+
+.academy-filters select,
+.academy-change-form input,
+.academy-change-form textarea,
+.academy-change-form select {
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: rgba(2, 6, 23, 0.62);
+  color: #f8fafc;
+}
+
+.academy-change-form input::placeholder,
+.academy-change-form textarea::placeholder {
+  color: #94a3b8;
+}
+
+.academy-change-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid rgba(45, 212, 191, 0.32);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.12), transparent 32%),
+    rgba(15, 23, 42, 0.72);
+}
+
+.academy-change-form--player {
+  margin-top: 1.5rem;
+}
+
+.academy-change-form__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.academy-change-form__header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.academy-change-form__header p {
+  margin: 0.25rem 0 0;
+  color: #cbd5e1;
+  font-size: 0.88rem;
+}
+
+.academy-change-form label {
+  display: grid;
+  gap: 0.45rem;
+  color: #bfdbfe;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.academy-change-form input,
+.academy-change-form textarea,
+.academy-change-form select {
+  width: 100%;
+  border-radius: 12px;
+  padding: 0.72rem 0.8rem;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.academy-change-form textarea {
+  resize: vertical;
+}
+
+.academy-change-form__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.academy-submit-btn {
+  width: max-content;
+  padding: 0.72rem 1rem;
+  border: 1px solid rgba(52, 211, 153, 0.55);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #10b981, #2563eb);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.academy-submit-btn:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.academy-form-alert {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  font-weight: 800;
+}
+
+.academy-form-alert--success {
+  border: 1px solid rgba(52, 211, 153, 0.36);
+  background: rgba(16, 185, 129, 0.12);
+  color: #bbf7d0;
+}
+
+.academy-form-alert--error {
+  border: 1px solid rgba(248, 113, 113, 0.42);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+}
+
+.academy-pending-review {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 18px;
+  background: rgba(120, 53, 15, 0.18);
+}
+
+.academy-pending-review h3 {
+  margin: 0 0 0.65rem;
+}
+
+.academy-pending-review ul {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.academy-pending-review li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+  color: #fde68a;
+}
+
+.academy-pending-review small {
+  color: #fef3c7;
+}
+
+.admin-academy-review-panel {
+  margin-bottom: 1rem;
+}
+
+.admin-academy-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.admin-academy-review-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.54));
+}
+
+.admin-academy-review-card__kind {
+  display: inline-flex;
+  width: max-content;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.14);
+  color: #7dd3fc;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-academy-review-card h3 {
+  margin: 0.55rem 0 0;
+}
+
+.admin-academy-review-card dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.admin-academy-review-card dl div {
+  display: grid;
+  gap: 0.2rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.admin-academy-review-card dt {
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-academy-review-card dd {
+  margin: 0;
+  color: #f8fafc;
+  overflow-wrap: anywhere;
+}
+
+.admin-academy-review-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
 .academy-dir-page {
   background: #0a0f14;
   color: #e8eef4;

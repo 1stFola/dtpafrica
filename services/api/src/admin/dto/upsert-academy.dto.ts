@@ -34,6 +34,11 @@ export class UpsertAcademyDto {
   description?: string;
 
   @IsOptional()
+  @IsInt()
+  @Min(1800)
+  foundedYear?: number;
+
+  @IsOptional()
   @IsString()
   logoUrl?: string;
 

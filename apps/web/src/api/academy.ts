@@ -127,6 +127,7 @@ export type AcademyDashboard = {
     city: string | null;
     country: string | null;
     description: string | null;
+    foundedYear: number | null;
     logoUrl: string | null;
     websiteUrl: string | null;
   };
@@ -135,6 +136,7 @@ export type AcademyDashboard = {
     authNote: string;
     linkedScoreboardTeamIds: string[];
   };
+  pendingChangeRequests?: AcademyChangeRequest[];
   overview: {
     kpis: AcademyKpi[];
     watchlist: AcademySquadPlayer[];
@@ -160,9 +162,61 @@ export type AcademyDashboard = {
   media: AcademyMediaItem[];
 };
 
+export type AcademyChangeRequest = {
+  id: string;
+  kind: "academy_profile" | "player_profile" | string;
+  status: "pending" | "approved" | "rejected" | string;
+  payload: Record<string, unknown>;
+  submittedAt: string;
+  player?: { id: string; displayName: string } | null;
+};
+
+export type AcademyProfileChangeRequestInput = {
+  description?: string | null;
+  foundedYear?: number | null;
+  city?: string | null;
+  country?: string | null;
+  logoUrl?: string | null;
+  websiteUrl?: string | null;
+};
+
+export type AcademyPlayerChangeRequestInput = {
+  displayName?: string | null;
+  photoUrls?: string[];
+  videoUrl?: string | null;
+  publicationUrls?: string[];
+};
+
 export function fetchAcademyDashboard(slug: string, signal?: AbortSignal) {
   return academyAuthFetch<AcademyDashboard>(
     `/academy/${encodeURIComponent(slug)}/dashboard`,
     { signal }
+  );
+}
+
+export function submitAcademyProfileChangeRequest(
+  slug: string,
+  body: AcademyProfileChangeRequestInput
+) {
+  return academyAuthFetch<AcademyChangeRequest>(
+    `/academy/${encodeURIComponent(slug)}/change-requests/academy-profile`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    }
+  );
+}
+
+export function submitAcademyPlayerChangeRequest(
+  slug: string,
+  playerId: string,
+  body: AcademyPlayerChangeRequestInput
+) {
+  return academyAuthFetch<AcademyChangeRequest>(
+    `/academy/${encodeURIComponent(slug)}/change-requests/players/${encodeURIComponent(playerId)}`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    }
   );
 }

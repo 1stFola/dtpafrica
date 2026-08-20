@@ -397,6 +397,7 @@ export type AdminAcademy = {
   city: string | null;
   country: string | null;
   description: string | null;
+  foundedYear: number | null;
   logoUrl: string | null;
   websiteUrl: string | null;
   subscriptionTier: "Premium" | "Basic" | null;
@@ -405,6 +406,32 @@ export type AdminAcademy = {
   isPublished: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AdminAcademyChangeRequest = {
+  id: string;
+  academyId: string;
+  playerId: string | null;
+  kind: "academy_profile" | "player_profile" | string;
+  status: "pending" | "approved" | "rejected" | string;
+  payload: Record<string, unknown>;
+  adminNotes: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  academy: {
+    id: string;
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+  };
+  player: {
+    id: string;
+    displayName: string;
+    slug: string;
+    playerPhotoUrl: string | null;
+  } | null;
 };
 
 export type AdminSeedPhaseError = {
@@ -572,6 +599,7 @@ export type AdminAcademyInput = {
   city?: string;
   country?: string;
   description?: string;
+  foundedYear?: number | "";
   logoUrl?: string;
   websiteUrl?: string;
   subscriptionTier?: "Premium" | "Basic" | "";
@@ -689,6 +717,20 @@ export const adminApi = {
     }),
   academyDelete: (id: string) =>
     adminFetch(`/admin/academies/${id}`, { method: "DELETE" }),
+  academyChangeRequests: (status = "pending") => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return adminFetch<AdminAcademyChangeRequest[]>(`/admin/academy-change-requests${qs}`);
+  },
+  approveAcademyChangeRequest: (id: string, adminNotes?: string) =>
+    adminFetch<AdminAcademyChangeRequest>(`/admin/academy-change-requests/${id}/approve`, {
+      method: "PATCH",
+      body: JSON.stringify({ adminNotes }),
+    }),
+  rejectAcademyChangeRequest: (id: string, adminNotes?: string) =>
+    adminFetch<AdminAcademyChangeRequest>(`/admin/academy-change-requests/${id}/reject`, {
+      method: "PATCH",
+      body: JSON.stringify({ adminNotes }),
+    }),
   blogList: () => adminFetch<AdminBlogPost[]>("/admin/blog"),
   blogGet: (id: string) => adminFetch<AdminBlogPost>(`/admin/blog/${id}`),
   blogCreate: (body: {

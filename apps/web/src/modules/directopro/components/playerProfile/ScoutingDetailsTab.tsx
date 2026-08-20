@@ -138,7 +138,7 @@ export function ScoutingDetailsTab({ player }: Props) {
           <p className="scouting-details__summary">{player.scoutingSummary}</p>
         ) : (
           <p className="player-profile-muted scouting-details__summary">
-            Scouting summary pending calibration review.
+            Scouting summary will appear as verified match data grows.
           </p>
         )}
 
@@ -175,8 +175,8 @@ export function ScoutingDetailsTab({ player }: Props) {
           <div className="profile-empty-state scouting-intel__empty">
             <strong>No scouting snapshot yet.</strong>
             <p>
-              Match metrics, calibration imports, or ScoreBoard ingest are required before style fit
-              and tactical matching can be computed.
+              More verified match and player-tracking data is needed before style fit
+              and tactical matching can be shown confidently.
             </p>
           </div>
         )}

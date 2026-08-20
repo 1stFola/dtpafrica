@@ -139,7 +139,7 @@ export function ValuationReportPage() {
         <h2>
           Scout notes
           {hasLegacyPlaceholder && (
-            <InfoTip text="Personalised AI-written summaries are coming soon. Notes below are generated from valuation factors." />
+            <InfoTip text="Notes are generated from valuation factors and verified profile evidence." />
           )}
         </h2>
         <p className="mvce-scout-notes">
