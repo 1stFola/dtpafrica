@@ -1,11 +1,10 @@
 name: CD — Deploy to Staging
 
+# ── Triggers ──────────────────────────────────────────────────────────────────
+# Automatic deployment is DISABLED for push events.
+# Deploy only runs when manually triggered from the GitHub Actions UI.
+# To deploy: Actions → CD — Deploy to Staging → Run workflow
 on:
-  push:
-    branches:
-      - main
-     
-
   workflow_dispatch:
     inputs:
       skip_terraform:
@@ -320,15 +319,9 @@ jobs:
 
       - name: Run Ansible playbook
         run: |
-          REPO_URL="${{ secrets.GIT_REPO_URL }}"
-          if [ -z "$REPO_URL" ] || [[ "$REPO_URL" != https://github.com/* ]]; then
-            REPO_URL="https://github.com/${{ github.repository }}.git"
-          fi
-
           ansible-playbook playbook.yml \
             -e "aws_region=${{ secrets.AWS_REGION }}" \
-            -e "git_repo_url=$REPO_URL" \
-            -e "git_repo_token=${{ github.token }}" \
+            -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
             -e "git_branch=${{ github.ref_name }}" \
             -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
             -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
@@ -350,6 +343,22 @@ jobs:
           else
             echo "Health check failed — got HTTP $HTTP"
             exit 1
+          fi
+
+      - name: Invalidate CloudFront cache
+        run: |
+          CF_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='dtp-staging'].Id" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$CF_ID" ] && [ "$CF_ID" != "None" ]; then
+            echo "Invalidating CloudFront distribution: $CF_ID"
+            aws cloudfront create-invalidation \
+              --distribution-id "$CF_ID" \
+              --paths "/*"
+            echo "Cache invalidation submitted"
+          else
+            echo "No CloudFront distribution found — skipping invalidation"
           fi
 
       - name: Deployment summary
