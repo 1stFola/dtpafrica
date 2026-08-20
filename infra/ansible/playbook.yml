@@ -31,6 +31,10 @@
     node_version: "20"
     pnpm_version: "9.15.0"
 
+    # OS upgrades can restart SSH/network packages on small EC2 instances.
+    # Keep application deploys deterministic; opt in during maintenance windows.
+    run_os_package_upgrade: false
+
   roles:
     - common
     - docker
