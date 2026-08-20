@@ -17,15 +17,27 @@ const HOME_CONTENT_KEYS = [
   "home.eyebrow",
   "home.headline",
   "home.headlineAccent",
-  "home.lead",
-  "home.primaryCta",
   "home.secondaryCta",
-];
+  "home.marquee.phrase",
+  "home.reel.url",
+  "home.reel.body",
+  "home.reel.cta",
+  "home.featured.kicker",
+  "home.featured.title",
+  "home.featured.body",
+  "home.featured.cta",
+  "home.intel.kicker",
+  "home.intel.title",
+  "home.intel.body",
+  "home.intel.cardTitle",
+  "home.intel.cardBody",
+  "home.intel.cardCta",
+  "home.footage.kicker",
+  "home.footage.title",
+  "home.footage.body",
+] as const;
 
-const MARQUEE_PHRASE = "from local roots to global reach";
-const HOME_REEL_URL = "https://youtu.be/uIgqg7m9EDA";
-const HOME_REEL_COPY =
-  "DTP Africa is building the intelligence and data infrastructure, to turn the overlooked African football talent into verifiable and discoverable opportunity.";
+const DEFAULT_HOME_REEL_URL = "https://youtu.be/uIgqg7m9EDA";
 
 /** Words highlighted in electric blue when the CMS gives no explicit accent. */
 const HEADLINE_ACCENT_WORDS = 2;
@@ -62,10 +74,10 @@ function reelAutoplayUrl(youtubeUrl: string): string | null {
   return `${base}${separator}autoplay=1&rel=0&modestbranding=1`;
 }
 
-function HomeReelModal({ onClose }: { onClose: () => void }) {
+function HomeReelModal({ youtubeUrl, onClose }: { youtubeUrl: string; onClose: () => void }) {
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const embedSrc = reelAutoplayUrl(HOME_REEL_URL);
+  const embedSrc = reelAutoplayUrl(youtubeUrl);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -129,8 +141,18 @@ function HomeReelModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function HomeReelSection({ onPlay }: { onPlay: () => void }) {
-  const thumbnail = youtubeThumbnail(HOME_REEL_URL);
+function HomeReelSection({
+  youtubeUrl,
+  body,
+  ctaLabel,
+  onPlay,
+}: {
+  youtubeUrl: string;
+  body: string;
+  ctaLabel: string;
+  onPlay: () => void;
+}) {
+  const thumbnail = youtubeThumbnail(youtubeUrl);
 
   return (
     <section className="home-reel-section" aria-labelledby="home-reel-heading">
@@ -154,9 +176,9 @@ function HomeReelSection({ onPlay }: { onPlay: () => void }) {
         </button>
 
         <div className="home-reel-section__copy">
-          <p id="home-reel-heading">{HOME_REEL_COPY}</p>
+          <p id="home-reel-heading">{body}</p>
           <button type="button" className="home-reel-section__button" onClick={onPlay}>
-            Watch Reel
+            {ctaLabel}
           </button>
         </div>
       </div>
@@ -170,15 +192,17 @@ function HomeReelSection({ onPlay }: { onPlay: () => void }) {
 const MARQUEE_REPEATS = 12;
 
 function Marquee({
+  phrase,
   tone = "ink",
   reverse = false,
 }: {
+  phrase: string;
   tone?: "ink" | "lime" | "blue" | "orange";
   reverse?: boolean;
 }) {
   const items = Array.from({ length: MARQUEE_REPEATS }, (_, index) => (
     <span className="dtp-marquee__item" key={index}>
-      {MARQUEE_PHRASE} <span aria-hidden="true">|</span>
+      {phrase} <span aria-hidden="true">|</span>
     </span>
   ));
 
@@ -225,6 +249,8 @@ export function HomePage() {
     content["home.headline"] ?? "Global\nStage for\nLocal\nTalent",
     content["home.headlineAccent"] ?? "Local\nTalent"
   );
+  const marqueePhrase = content["home.marquee.phrase"] ?? "from local roots to global reach";
+  const reelUrl = content["home.reel.url"] ?? DEFAULT_HOME_REEL_URL;
 
   return (
     <>
@@ -288,10 +314,18 @@ export function HomePage() {
       {/* Figma stacks two tickers under the hero: Group 19525 (y834,
           lime plate, dark green type) and Group 19524 (y950, blue plate,
           white type). */}
-      <Marquee tone="lime" />
-      <Marquee tone="blue" reverse />
+      <Marquee phrase={marqueePhrase} tone="lime" />
+      <Marquee phrase={marqueePhrase} tone="blue" reverse />
 
-      <HomeReelSection onPlay={() => setIsReelOpen(true)} />
+      <HomeReelSection
+        youtubeUrl={reelUrl}
+        body={
+          content["home.reel.body"] ??
+          "DTP Africa is building the intelligence and data infrastructure, to turn the overlooked African football talent into verifiable and discoverable opportunity."
+        }
+        ctaLabel={content["home.reel.cta"] ?? "Watch Reel"}
+        onPlay={() => setIsReelOpen(true)}
+      />
 
       {/* ---- Featured talent: MVCE card grid ------------------------- */}
       <section className="dtp-band dtp-band--lime dtp-band--featured">
@@ -299,10 +333,13 @@ export function HomePage() {
           <div className="dtp-band__head">
             {/* Colour comes from `.dtp-band--featured .dtp-eyebrow`; an inline
                 style here outranked the stylesheet and pinned it to green. */}
-            <p className="dtp-eyebrow">Featured Talent</p>
-            <h2 className="dtp-display">Discover verified prospects</h2>
+            <p className="dtp-eyebrow">{content["home.featured.kicker"] ?? "Featured Talent"}</p>
+            <h2 className="dtp-display">
+              {content["home.featured.title"] ?? "Discover verified prospects"}
+            </h2>
             <p className="dtp-body">
-              Scout-rated profiles with position fit, ratings, and match-verified career stats.
+              {content["home.featured.body"] ??
+                "Scout-rated profiles with position fit, ratings, and match-verified career stats."}
             </p>
           </div>
           <FeaturedTalentLegend />
@@ -321,23 +358,23 @@ export function HomePage() {
 
           <div className="dtp-band__actions">
             <Link to="/featured-players" className="dtp-btn dtp-btn--primary">
-              View All Talents
+              {content["home.featured.cta"] ?? "View All Talents"}
             </Link>
           </div>
         </div>
       </section>
 
-      <Marquee tone="orange" />
+      <Marquee phrase={marqueePhrase} tone="orange" />
 
-      <HomeIntelligenceTeasers />
+      <HomeIntelligenceTeasers content={content} />
 
       {/* ---- Player highlights: final homepage section before footer -- */}
       <section className="home-footage-band">
         <div className="dtp-shell">
-          <HomePlayerHighlights />
+          <HomePlayerHighlights content={content} />
         </div>
       </section>
-      {isReelOpen && <HomeReelModal onClose={() => setIsReelOpen(false)} />}
+      {isReelOpen && <HomeReelModal youtubeUrl={reelUrl} onClose={() => setIsReelOpen(false)} />}
     </>
   );
 }

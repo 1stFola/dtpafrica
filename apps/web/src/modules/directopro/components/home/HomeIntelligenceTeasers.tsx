@@ -6,26 +6,35 @@ const PHILOSOPHY_BARS = [
   { label: "Strong XI Fit", pct: 74 },
 ];
 
-export function HomeIntelligenceTeasers() {
+type HomeIntelligenceTeasersProps = {
+  content: Record<string, string>;
+};
+
+export function HomeIntelligenceTeasers({ content }: HomeIntelligenceTeasersProps) {
   return (
     <section className="home-intel-suite" aria-labelledby="home-intel-title">
       <div className="home-intel-suite__content">
-        <span className="home-intel-suite__eyebrow">Intelligence Suite</span>
+        <span className="home-intel-suite__eyebrow">
+          {content["home.intel.kicker"] ?? "Intelligence Suite"}
+        </span>
         <h2 id="home-intel-title" className="home-intel-suite__title">
-          Scout smarter. Value with confidence
+          {content["home.intel.title"] ?? "Scout smarter. Value with confidence"}
         </h2>
         <p className="home-intel-suite__lead">
-          Tactical fit from SIP and market-value bands from MVCE - built for African grassroots talent.
+          {content["home.intel.body"] ??
+            "Tactical fit from SIP and market-value bands from MVCE - built for African grassroots talent."}
         </p>
 
         <Link to="/scouting" className="home-intel-suite__card">
           <div className="home-intel-suite__card-copy">
-            <h3>Scouting Hub | Tactical fit &amp; Strong XI</h3>
+            <h3>
+              {content["home.intel.cardTitle"] ?? "Scouting Hub | Tactical fit & Strong XI"}
+            </h3>
             <p>
-              Philosophy matching, formation-aware Strong XI picks, and position-fit confidence
-              for every verified profile.
+              {content["home.intel.cardBody"] ??
+                "Philosophy matching, formation-aware Strong XI picks, and position-fit confidence for every verified profile."}
             </p>
-            <span>Explore Scouting</span>
+            <span>{content["home.intel.cardCta"] ?? "Explore Scouting"}</span>
           </div>
 
           <div className="home-intel-suite__viz" aria-hidden="true">

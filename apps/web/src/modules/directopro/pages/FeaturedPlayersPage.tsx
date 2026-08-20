@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchFeaturedPlayers, type FeaturedPlayer, isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { contentValue, useStaticContent } from "../../../hooks/useStaticContent";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { useAdSlot } from "../../../context/AdConfigContext";
 import { resolvePositionFullLabel } from "../../../utils/positionLabels";
@@ -9,6 +10,11 @@ import { FeaturedTalentCard, FeaturedTalentLegend } from "../components/featured
 
 type RatingFilter = "all" | "elite" | "ready" | "developing" | "emerging";
 type SortMode = "rating" | "name" | "position";
+
+const FEATURED_PLAYERS_CONTENT_KEYS = [
+  "featured_players.hero.title",
+  "featured_players.hero.body",
+] as const;
 
 function optionList(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])).sort(
@@ -29,6 +35,7 @@ export function FeaturedPlayersPage() {
   const adInterval = 8;
   const inlineAd = useAdSlot("featuredPlayersInline");
   usePageTitle("Featured players");
+  const content = useStaticContent(FEATURED_PLAYERS_CONTENT_KEYS);
 
   const [players, setPlayers] = useState<FeaturedPlayer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +128,7 @@ export function FeaturedPlayersPage() {
     <div className="dtp-page featured-players-page">
       <section className="featured-players-hero" aria-labelledby="featured-players-title">
         <h1 id="featured-players-title" className="sr-only">
-          Featured players. Proven potential.
+          {contentValue(content, "featured_players.hero.title", "Featured players. Proven potential.")}
         </h1>
         <img
           className="featured-players-hero__banner"
@@ -150,7 +157,11 @@ export function FeaturedPlayersPage() {
       <section className="featured-players-directory" aria-label="Featured player directory">
         <div className="featured-players-directory__shell">
           <p className="featured-players-directory__intro">
-            Explore player profiles from the DTP Africa intelligence ecosystem.
+            {contentValue(
+              content,
+              "featured_players.hero.body",
+              "Explore player profiles from the DTP Africa intelligence ecosystem."
+            )}
           </p>
 
           <div className="dtp-filters" role="search" aria-label="Featured player filters">

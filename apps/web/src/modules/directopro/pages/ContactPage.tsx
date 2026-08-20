@@ -23,11 +23,8 @@ export function ContactPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  /* The frame draws a placeholder land line here; this channel is WhatsApp on
-     the published business number. The CMS still holds the old placeholder, so
-     it is not used as a source for this row. */
-  const whatsappDisplay = "+1 945 275 6104";
-  const whatsappDigits = "19452756104";
+  const whatsappDisplay = contentValue(contact, "contact.whatsapp", "+1 945 275 6104");
+  const whatsappDigits = whatsappDisplay.replace(/\D/g, "");
   const contactEmail = contact["contact.email"] || "hello@dtp.africa";
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {

@@ -55,14 +55,21 @@ const CONTENT_SECTIONS: ManagedContentSection[] = [
   },
   {
     title: "Public page heroes",
-    description: "Copy for the About-inspired frontend pages outside /about.",
+    description: "Copy for public pages that currently read from the static-content API.",
     fields: [
       { key: "blog.hero.kicker", label: "Blog kicker", rows: 2 },
       { key: "blog.hero.title", label: "Blog title", rows: 3 },
       { key: "blog.hero.body", label: "Blog body", rows: 4 },
-      { key: "featured_players.hero.kicker", label: "Featured players kicker", rows: 2 },
-      { key: "featured_players.hero.title", label: "Featured players title", rows: 3 },
-      { key: "featured_players.hero.body", label: "Featured players body", rows: 4 },
+      {
+        key: "featured_players.hero.title",
+        label: "Featured players page title",
+        rows: 2,
+      },
+      {
+        key: "featured_players.hero.body",
+        label: "Featured players directory intro",
+        rows: 3,
+      },
       { key: "register.hero.kicker", label: "Register kicker", rows: 2 },
       { key: "register.hero.title", label: "Register title", rows: 3 },
       { key: "register.hero.body", label: "Register body", rows: 4 },
@@ -79,6 +86,10 @@ const CONTENT_SECTIONS: ManagedContentSection[] = [
 
 const MANAGED_FIELDS = CONTENT_SECTIONS.flatMap((section) => section.fields);
 
+function isHomepageContentKey(key: string) {
+  return key.startsWith("home.") || key.startsWith("homepage.");
+}
+
 export function AdminContentPage() {
   usePageTitle("Admin — Content");
   const toast = useAdminToast();
@@ -90,6 +101,8 @@ export function AdminContentPage() {
   const [aboutDraft, setAboutDraft] = useState<Record<string, string>>({});
   const [savingAbout, setSavingAbout] = useState(false);
 
+  const visibleRows = rows.filter((row) => !isHomepageContentKey(row.key));
+
   const load = () => {
     setLoading(true);
     adminApi
@@ -97,9 +110,14 @@ export function AdminContentPage() {
       .then((items) => {
         setRows(items);
         setAboutDraft(Object.fromEntries(items.map((item) => [item.key, item.value])));
-        if (!selectedKey && items.length > 0) {
-          setSelectedKey(items[0].key);
-          setValue(items[0].value);
+        const nextVisibleRows = items.filter((item) => !isHomepageContentKey(item.key));
+        const selectedStillVisible = nextVisibleRows.some((item) => item.key === selectedKey);
+        if ((!selectedKey || !selectedStillVisible) && nextVisibleRows.length > 0) {
+          setSelectedKey(nextVisibleRows[0].key);
+          setValue(nextVisibleRows[0].value);
+        } else if (nextVisibleRows.length === 0) {
+          setSelectedKey("");
+          setValue("");
         }
       })
       .catch((err) => {
@@ -140,6 +158,10 @@ export function AdminContentPage() {
     e.preventDefault();
     const key = selectedKey.trim();
     if (!key) return;
+    if (isHomepageContentKey(key)) {
+      toast.error("Homepage keys are managed from the Homepage screen.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -168,8 +190,10 @@ export function AdminContentPage() {
           <div>
             <h2 className="admin-sb-form-heading">Managed frontend content</h2>
             <p className="muted">
-              These fields correspond to the current public About, Blog, Featured Players,
-              Register, and Contact pages.
+              These fields are backed by the static-content API and correspond to the
+              current public About, Blog, Featured Players, Register, and Contact pages.
+              Homepage sections and homepage videos are managed from the dedicated
+              Homepage screen.
             </p>
           </div>
           <button
@@ -215,7 +239,7 @@ export function AdminContentPage() {
         <div className="admin-sb-content-panel">
           <AdminTableShell
             loading={loading}
-            empty={!loading && rows.length === 0}
+            empty={!loading && visibleRows.length === 0}
             emptyTitle="No content keys yet"
             emptyHint="Create a new key using the editor panel."
             columns={2}
@@ -228,7 +252,7 @@ export function AdminContentPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {visibleRows.map((row) => (
                   <tr
                     key={row.key}
                     className={row.key === selectedKey ? "admin-sb-row--active" : undefined}

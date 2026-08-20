@@ -78,6 +78,7 @@ type MatchSeed = {
   minute?: number | null;
   stats?: Prisma.InputJsonValue;
   events?: EventSeed[];
+  roundLabel?: string;
 };
 
 function matchStats(opts: {
@@ -1039,6 +1040,27 @@ const MATCHES: MatchSeed[] = [
     leg: "second_leg",
     firstLegMatchId: matchId(50),
   },
+  // Finals day
+  {
+    id: matchId(53),
+    homeSlug: "fc-okpara",
+    awaySlug: "fc-aloy",
+    kickoffAt: watKickoff("2026-08-23", "12:00"),
+    venue: "Mobolaji Johnson Arena, Onikan Stadium, Lagos",
+    matchday: 1,
+    stageKey: "final",
+    roundLabel: "Third Place",
+  },
+  {
+    id: matchId(54),
+    homeSlug: "fc-babington",
+    awaySlug: "fc-enegwea",
+    kickoffAt: watKickoff("2026-08-23", "15:00"),
+    venue: "Mobolaji Johnson Arena, Onikan Stadium, Lagos",
+    matchday: 1,
+    stageKey: "final",
+    roundLabel: "Grand Finale",
+  },
 ];
 
 const BRACKET_LAYOUT = {
@@ -1225,7 +1247,7 @@ export async function seedExInternationalsCup2026(
         : {}),
     };
     const roundLabel =
-      leg === "second_leg" ? `${roundBase} — Leg 2` : roundBase;
+      m.roundLabel ?? (leg === "second_leg" ? `${roundBase} — Leg 2` : roundBase);
     const slug = allocateMatchSlug(m.homeSlug, m.awaySlug, usedMatchSlugs, leg);
 
     if (!preserve) {
@@ -1297,7 +1319,7 @@ export async function seedExInternationalsCup2026(
 
   console.log("Ex Internationals Cup 2026 seeded:", COMP_SLUG);
   console.log("  teams:", teamCount, "(expected 32)");
-  console.log("  matches:", matchCount, "(expected 52 - 32 R32 + 16 R16 + 4 SF)");
+  console.log("  matches:", matchCount, "(expected 54 - 32 R32 + 16 R16 + 4 SF + 2 finals)");
   console.log("  events:", eventCount);
   console.log("  academies:", academyCount);
   console.log(
