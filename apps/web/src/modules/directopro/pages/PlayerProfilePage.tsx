@@ -314,9 +314,12 @@ function buildMediaItems(player: PublicPlayerProfile): ProfileMediaItem[] {
 
 function resolveProfilePhotoUrl(player: PublicPlayerProfile): string | null {
   const primary = player.playerPhotoUrl?.trim();
-  if (primary) return primary;
+  if (primary && !isTemporaryProfileImage(primary)) return primary;
   const mediaPhoto = player.mediaItems?.find(
-    (item) => item.type === "photo" && item.url?.trim()
+    (item) =>
+      item.type === "photo" &&
+      item.url?.trim() &&
+      !isTemporaryProfileImage(item.url)
   )?.url;
   return mediaPhoto?.trim() || null;
 }
@@ -690,18 +693,14 @@ export function PlayerProfilePage() {
 
 const PENDING_SYNC_CAPTION =
   "Profile Pending Synchronization — Performance data and tournament history for this athlete are currently being verified by the DTP Africa scouting network.";
-const YUSUF_RAMADAN_PROFILE_IMAGE = "/figma/player-profile-yusuf-ramadan.png";
 
 function isTemporaryProfileImage(value: string | null | undefined): boolean {
   if (!value) return true;
   return /thumbnail|temporar|placeholder|unavailable/i.test(value);
 }
 
-function resolveProfileHeroPhotoUrl(player: PublicPlayerProfile, photoUrl: string | null): string | null {
-  const name = player.displayName.trim();
-  if (/\byusuf\b/i.test(name) || isTemporaryProfileImage(photoUrl)) {
-    return YUSUF_RAMADAN_PROFILE_IMAGE;
-  }
+function resolveProfileHeroPhotoUrl(photoUrl: string | null): string | null {
+  if (isTemporaryProfileImage(photoUrl)) return null;
   return photoUrl;
 }
 
@@ -739,7 +738,8 @@ function PlayerCardBanner({
   onShare: () => void;
   shareStatus: string | null;
 }) {
-  const heroPhotoUrl = resolveProfileHeroPhotoUrl(player, photoUrl);
+  const [imageFailed, setImageFailed] = useState(false);
+  const heroPhotoUrl = imageFailed ? null : resolveProfileHeroPhotoUrl(photoUrl);
   const snapshotBioFacts = buildSnapshotBioFacts(bioFacts);
 
   return (
@@ -752,9 +752,8 @@ function PlayerCardBanner({
               src={heroPhotoUrl}
               alt=""
               onError={(event) => {
-                const image = event.currentTarget;
-                if (image.src.endsWith(YUSUF_RAMADAN_PROFILE_IMAGE)) return;
-                image.src = YUSUF_RAMADAN_PROFILE_IMAGE;
+                event.currentTarget.removeAttribute("src");
+                setImageFailed(true);
               }}
             />
           ) : (

@@ -3677,6 +3677,21 @@ a.mvce-card:focus-visible {
   overflow-wrap: normal;
 }
 
+.profile-page.player-profile.dtp-page .scouting-details__valuation .profile-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.profile-page.player-profile.dtp-page .profile-facts div {
+  min-width: 0;
+}
+
+.profile-page.player-profile.dtp-page .scouting-details__valuation .profile-facts strong {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
 /* Section headings carry an inline info-tip; balancing keeps the tip with the
    last word instead of stranding it on a line of its own. */
 .profile-page.player-profile.dtp-page .player-profile-heading,
@@ -4582,8 +4597,15 @@ a.mvce-card:focus-visible {
 
 .profile-page.player-profile.dtp-page .profile-metric-list {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(5.5rem, max-content);
   gap: 0;
+  margin: 0;
+}
+
+.profile-page.player-profile.dtp-page .profile-metric-list span,
+.profile-page.player-profile.dtp-page .profile-metric-list strong {
+  display: flex;
+  align-items: center;
   margin: 0;
 }
 
@@ -4592,7 +4614,8 @@ a.mvce-card:focus-visible {
 }
 
 .profile-page.player-profile.dtp-page .profile-metric-list strong {
-  min-width: 5.5rem;
+  min-width: 0;
+  justify-content: flex-end;
   color: var(--dtp-white);
   font-weight: 900;
   text-align: right;

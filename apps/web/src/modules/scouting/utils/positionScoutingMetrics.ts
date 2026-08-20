@@ -931,6 +931,16 @@ const MPH_BAR_CAPS: Partial<Record<ScoutingMetricKey, number>> = {
   top_speed_with_ball: 20,
 };
 
+/**
+ * Per-90 display caps for raw yardage metrics. These are intentionally higher
+ * than calibration bands so the scouting summary reads as progress toward a
+ * standout match output instead of reusing the rating-engine curve.
+ */
+const YARDS_BAR_CAPS: Partial<Record<ScoutingMetricKey, number>> = {
+  sprint_distance: 800,
+  distance_with_ball: 450,
+};
+
 /** Exit/entry speed ratio caps for tier bar fill (CSV values ~1.0–1.3). */
 const RATIO_BAR_CAPS: Partial<Record<ScoutingMetricKey, number>> = {
   turn_efficiency: 1.5,
@@ -942,7 +952,7 @@ function shouldGauge(format: MetricFormat): boolean {
 
 function resolveBarStyle(format: MetricFormat): MetricBarStyle {
   if (shouldGauge(format)) return "tier";
-  if (format === "mph") return "subtle";
+  if (format === "mph" || format === "yards") return "subtle";
   return "none";
 }
 
@@ -959,6 +969,11 @@ function normalizeMetricBarPercent(
   }
   if (format === "mph") {
     const cap = MPH_BAR_CAPS[key] ?? 75;
+    return Math.max(0, Math.min(100, Math.round((value / cap) * 100)));
+  }
+  if (format === "yards") {
+    const cap = YARDS_BAR_CAPS[key];
+    if (!cap) return 0;
     return Math.max(0, Math.min(100, Math.round((value / cap) * 100)));
   }
   return 0;

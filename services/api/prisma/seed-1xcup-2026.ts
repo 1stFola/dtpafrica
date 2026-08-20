@@ -189,8 +189,32 @@ M45,Lagos Island Zone,2026-08-15,11:00,Inspire Field,Dominion Hotspur FC,Lof uni
 M46,Lagos Island Zone,2026-08-15,12:15,Inspire Field,Divine Praise  FC,PRIME ELEVEN FA
 M47,Ikorodu Zone,2026-08-15,1:30,Inspire Field,Tonic FC,Agbede Supreme FC
 M48,Ikorodu Zone,2026-08-15,2:45,Inspire Field,OOIM FC,Vino Gano
-M49,Badagry Zone,2026-08-20,11:00,Inspire Field,POWER OF THE CROSS SPORT ACADEMY,EDU YOUTH FC
-M50,Badagry Zone,2026-08-20,12:15,Inspire Field,ROYAL PHARAOHS FC,MEGA 22 FC`;
+M49,Badagry Zone,2026-08-20,11:00,Inspire Sport Arena,POWER OF THE CROSS SPORT ACADEMY,EDU YOUTH FC
+M50,Badagry Zone,2026-08-20,12:30,Inspire Sport Arena,ROYAL PHARAOHS FC,MEGA 22 FC
+M51,Ikeja Zone,2026-08-20,14:00,Inspire Sport Arena,INSPIRE SA,OWORO UNITED FC
+M52,Ikeja Zone,2026-08-20,15:30,Inspire Sport Arena,DOSU JOSEPH FC,CRUSADERS FC
+M53,Lagos Island Zone,2026-08-21,11:00,Inspire Sport Arena,FC BETHEL SPORTING,COLLINS EDWIN SC
+M54,Lagos Island Zone,2026-08-21,12:30,Inspire Sport Arena,36 LION FC,G12 FC
+M55,Ikorodu Zone,2026-08-21,14:00,Inspire Sport Arena,BRIGHTON FA,AMA SMILE FC
+M56,Ikorodu Zone,2026-08-21,15:30,Inspire Sport Arena,ADHOC FA,KIRAA FA
+M57,Badagry Zone,2026-08-22,11:00,Inspire Sport Arena,VINMO ENERGY FC,AJUWA FA
+M58,Badagry Zone,2026-08-22,12:30,Inspire Sport Arena,Ecas FA,Greenlock FC
+M59,Ikeja Zone,2026-08-22,14:00,Inspire Sport Arena,Somolu Bariga LFC Ramba Samba,Elite Stars FC
+M60,Epe Zone,2026-08-22,15:30,Inspire Sport Arena,OOA FA,DAJA UNITED
+M61,Epe Zone,2026-08-27,11:00,Inspire Sport Arena,Ighalo FA,ARICH FC
+M62,Ikeja Zone,2026-08-27,12:30,Inspire Sport Arena,Royalty Athletic FC,DYNAMIC FC
+M63,Lagos Island Zone,2026-08-27,14:00,Inspire Sport Arena,Emiloju FC,FRANCEEX UNITED
+M64,Lagos Island Zone,2026-08-27,15:30,Inspire Sport Arena,Goals Fc,Vido 99 fc
+M65,Ikorodu Zone,2026-08-28,11:00,Inspire Sport Arena,Eagle Star FC,Joy Cometh FC
+M66,Ikorodu Zone,2026-08-28,12:30,Inspire Sport Arena,Edunz International fc,BYT Academical FC
+M67,Badagry Zone,2026-08-28,14:00,Inspire Sport Arena,Willyjoe-17 FA,AUX FC
+M68,Badagry Zone,2026-08-28,15:30,Inspire Sport Arena,Roro House,JP YOUNG STARS FC
+M69,Epe Zone,2026-08-29,11:00,Inspire Sport Arena,Luther Inter FC,Newhope Naija FC
+M70,Ikeja Zone,2026-08-29,12:30,Inspire Sport Arena,Maryland United FC,AUSTENPLUS FOOTBALL CLUB
+M71,Ikeja Zone,2026-08-29,14:00,Inspire Sport Arena,Diadem Stallion Sports,Crystal FC
+M72,Lagos Island Zone,2026-08-29,15:30,Inspire Sport Arena,YOUNG STRIKERS FC,AFRICANO FC
+M73,Lagos Island Zone,2026-09-03,11:00,Inspire Sport Arena,Dominion Hotspur FC,Divine Praise  FC
+M74,Ikorodu Zone,2026-09-03,12:30,Inspire Sport Arena,Tonic FC,Vino Gano`;
 
 const SQUADS: SquadSeed[] = [
   {
@@ -780,12 +804,21 @@ const TOURNAMENT_DAY_BY_DATE = new Map(
     .map((date, index) => [date, index + 1])
 );
 
+const QUALIFYING_ROUND_TWO_MATCH_CODES = new Set(["M73", "M74"]);
+
 function tournamentDay(match: MatchSeed): number {
   return TOURNAMENT_DAY_BY_DATE.get(match.kickoffAt.slice(0, 10)) ?? 1;
 }
 
 function matchNumberLabel(code: string): string {
   return `Match ${Number(code.replace(/\D/g, ""))}`;
+}
+
+function qualifyingRoundLabel(match: MatchSeed): string {
+  const round = QUALIFYING_ROUND_TWO_MATCH_CODES.has(match.matchCode)
+    ? "Qualifying Round 2"
+    : "Qualifying Round";
+  return `${match.zone} - ${round} (${matchNumberLabel(match.matchCode)})`;
 }
 
 const FIRST_ROUND_MATCH_STATS: Record<
@@ -883,34 +916,8 @@ const ZONES = [
 ] as const;
 
 const SECOND_ROUND_TEMPLATES = [
-  { code: "M51", zone: "Ikeja Zone", date: "2026-08-20", time: "1:30", label: "IKJ F1: M1 vs M2" },
-  { code: "M52", zone: "Ikeja Zone", date: "2026-08-20", time: "2:45", label: "IKJ F2: M1 vs M2" },
-  { code: "M53", zone: "Lagos Island Zone", date: "2026-08-21", time: "11:00", label: "L/ISLAND F1: M1 vs M2" },
-  { code: "M54", zone: "Lagos Island Zone", date: "2026-08-21", time: "12:15", label: "L/ISLAND F2: M1 vs M2" },
-  { code: "M55", zone: "Ikorodu Zone", date: "2026-08-21", time: "1:30", label: "IKD F1: M1 vs M2" },
-  { code: "M56", zone: "Ikorodu Zone", date: "2026-08-21", time: "2:45", label: "IKD F2: M1 vs M2" },
-  { code: "M57", zone: "Badagry Zone", date: "2026-08-22", time: "11:00", label: "BD F1: M1 vs M2" },
-  { code: "M58", zone: "Badagry Zone", date: "2026-08-22", time: "12:15", label: "BD F2: M1 vs M2" },
-  { code: "M59", zone: "Epe Zone", date: "2026-08-22", time: "1:30", label: "EPE F1: M1 vs M2" },
-  { code: "M60", zone: "Epe Zone", date: "2026-08-22", time: "2:45", label: "EPE F2: M1 vs M2" },
-  { code: "M61", zone: "Ikeja Zone", date: "2026-08-27", time: "11:00", label: "IKJ F3: M1 vs M2" },
-  { code: "M62", zone: "Ikeja Zone", date: "2026-08-27", time: "12:15", label: "IKJ F4: M1 vs M2" },
-  { code: "M63", zone: "Lagos Island Zone", date: "2026-08-27", time: "1:30", label: "L/ISLAND F3: M1 vs M2" },
-  { code: "M64", zone: "Lagos Island Zone", date: "2026-08-27", time: "2:45", label: "L/ISLAND F4: M1 vs M2" },
-  { code: "M65", zone: "Ikorodu Zone", date: "2026-08-28", time: "11:00", label: "IKD F3: M1 vs M2" },
-  { code: "M66", zone: "Ikorodu Zone", date: "2026-08-28", time: "12:15", label: "IKD F4: M1 vs M2" },
-  { code: "M67", zone: "Badagry Zone", date: "2026-08-28", time: "1:30", label: "BD F3: M1 vs M2" },
-  { code: "M68", zone: "Badagry Zone", date: "2026-08-28", time: "2:45", label: "BD F4: M1 vs M2" },
-  { code: "M69", zone: "Epe Zone", date: "2026-08-29", time: "11:00", label: "EPE F1: M1 vs M2" },
-  { code: "M70", zone: "Ikeja Zone", date: "2026-08-29", time: "12:15", label: "IKJ F5: M1 vs M2" },
-  { code: "M71", zone: "Ikeja Zone", date: "2026-08-29", time: "1:30", label: "IKJ F6: M1 vs M2" },
-  { code: "M72", zone: "Lagos Island Zone", date: "2026-08-29", time: "2:45", label: "L/ISLAND F5: M1 vs M2" },
-  { code: "M73", zone: "Lagos Island Zone", date: "2026-09-03", time: "11:00", label: "L/ISLAND F6: M1 vs M2" },
-  { code: "M74", zone: "Ikorodu Zone", date: "2026-09-03", time: "12:15", label: "IKD F5: M1 vs M2" },
-  { code: "M75", zone: "Badagry Zone", date: "2026-09-03", time: "1:30", label: "BD F5: M1 vs M2" },
-  { code: "M76", zone: "Epe Zone", date: "2026-09-04", time: "2:45", label: "EPE: F1 vs M2" },
-  { code: "M77", zone: "Epe Zone", date: "2026-09-04", time: "11:00", label: "EPE: F1 vs M3" },
-  { code: "M78", zone: "Epe Zone", date: "2026-09-04", time: "12:15", label: "EPE: F3 vs M2" },
+  { code: "M73", zone: "Lagos Island Zone", date: "2026-09-03", time: "11:00", label: "Lagos Island Qualifying Round 2" },
+  { code: "M74", zone: "Ikorodu Zone", date: "2026-09-03", time: "12:30", label: "Ikorodu Qualifying Round 2" },
 ];
 
 function zoneKey(zone: string): string {
@@ -948,7 +955,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
       totalTeams: 100,
       qualifiers: 24,
       zones: ZONES,
-      firstRoundMatches: MATCHES.length,
+      qualifyingMatches: MATCHES.length,
       secondRoundTemplates: SECOND_ROUND_TEMPLATES.map((row) => ({
         ...row,
         kickoffAt: watKickoff(row.date, row.time),
@@ -1093,7 +1100,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
         stageKey: `qualifying_${zoneKey(match.zone)}`,
         stageId: stageByKey.get(match.zone),
         matchday: tournamentDay(match),
-        roundLabel: `${match.zone} - Qualifying Round 1 (${matchNumberLabel(match.matchCode)})`,
+        roundLabel: qualifyingRoundLabel(match),
         venue: match.venue,
         kickoffAt: new Date(match.kickoffAt),
         homeTeamId: teamIds[home.slug],
@@ -1124,7 +1131,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
         minute: seededStats ? 90 : null,
         kickoffAt: new Date(match.kickoffAt),
         venue: match.venue,
-        roundLabel: `${match.zone} - Qualifying Round 1 (${matchNumberLabel(match.matchCode)})`,
+        roundLabel: qualifyingRoundLabel(match),
         stats: seededStats?.stats ?? null,
         meta: {
           zone: match.zone,
@@ -1179,7 +1186,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
 
   console.log("1XCup 2026 seeded:", COMP_SLUG);
   console.log("  teams:", teamCount, "(expected 100)");
-  console.log("  first-round fixtures:", matchCount, "(expected 50)");
+  console.log("  qualifying fixtures:", matchCount, "(expected 74)");
   console.log("  squad players:", squadCount, "(expected 2321)");
   return { comp, teamCount, matchCount, squadCount };
 }

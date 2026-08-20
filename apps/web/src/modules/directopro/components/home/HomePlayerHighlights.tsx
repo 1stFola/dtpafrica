@@ -120,7 +120,11 @@ function HomeHighlightVideoModal({ highlight, onClose }: HomeHighlightVideoModal
   );
 }
 
-export function HomePlayerHighlights() {
+type HomePlayerHighlightsProps = {
+  content: Record<string, string>;
+};
+
+export function HomePlayerHighlights({ content }: HomePlayerHighlightsProps) {
   const [highlights, setHighlights] = useState<HomeVideoHighlight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -161,11 +165,15 @@ export function HomePlayerHighlights() {
   return (
     <section className="home-footage" aria-labelledby="home-player-highlights-title">
       <div className="home-footage__head">
-        <span className="home-footage__eyebrow">Player Highlights</span>
-        <h2 id="home-player-highlights-title">Curated match footage</h2>
+        <span className="home-footage__eyebrow">
+          {content["home.footage.kicker"] ?? "Player Highlights"}
+        </span>
+        <h2 id="home-player-highlights-title">
+          {content["home.footage.title"] ?? "Curated match footage"}
+        </h2>
         <p>
-          Verified clips from Jagaban Cup, 1XCup, and NLO — defensive reads, goals, and
-          game-changing moments.
+          {content["home.footage.body"] ??
+            "Verified clips from Jagaban Cup, 1XCup, and NLO - defensive reads, goals, and game-changing moments."}
         </p>
       </div>
 

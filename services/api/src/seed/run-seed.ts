@@ -257,7 +257,7 @@ export async function runDatabaseSeed(
   let legacyAcademyLinks = 0;
   let legacySampleSlugs: string[] = [];
   let legacyAcademyCount = 0;
-  const staticContentKeyCount = 70;
+  const staticContentKeyCount = 88;
 
   const phases: SeedPhase[] = [
     {
@@ -583,6 +583,7 @@ Parents and guardians can register minors with consent workflows built for youth
         const staticRows: { key: string; value: string }[] = [
           { key: "home.eyebrow", value: "From the Streets to the Stadium" },
           { key: "home.headline", value: "Global stage for local talent" },
+          { key: "home.headlineAccent", value: "Local talent" },
           {
             key: "home.lead",
             value:
@@ -590,6 +591,46 @@ Parents and guardians can register minors with consent workflows built for youth
           },
           { key: "home.primaryCta", value: "Register talent" },
           { key: "home.secondaryCta", value: "Featured players" },
+          { key: "home.marquee.phrase", value: "from local roots to global reach" },
+          { key: "home.reel.url", value: "https://youtu.be/uIgqg7m9EDA" },
+          {
+            key: "home.reel.body",
+            value:
+              "DTP Africa is building the intelligence and data infrastructure, to turn the overlooked African football talent into verifiable and discoverable opportunity.",
+          },
+          { key: "home.reel.cta", value: "Watch Reel" },
+          { key: "home.featured.kicker", value: "Featured Talent" },
+          { key: "home.featured.title", value: "Discover verified prospects" },
+          {
+            key: "home.featured.body",
+            value:
+              "Scout-rated profiles with position fit, ratings, and match-verified career stats.",
+          },
+          { key: "home.featured.cta", value: "View All Talents" },
+          { key: "home.intel.kicker", value: "Intelligence Suite" },
+          { key: "home.intel.title", value: "Scout smarter. Value with confidence" },
+          {
+            key: "home.intel.body",
+            value:
+              "Tactical fit from SIP and market-value bands from MVCE - built for African grassroots talent.",
+          },
+          {
+            key: "home.intel.cardTitle",
+            value: "Scouting Hub | Tactical fit & Strong XI",
+          },
+          {
+            key: "home.intel.cardBody",
+            value:
+              "Philosophy matching, formation-aware Strong XI picks, and position-fit confidence for every verified profile.",
+          },
+          { key: "home.intel.cardCta", value: "Explore Scouting" },
+          { key: "home.footage.kicker", value: "Player Highlights" },
+          { key: "home.footage.title", value: "Curated match footage" },
+          {
+            key: "home.footage.body",
+            value:
+              "Verified clips from Jagaban Cup, 1XCup, and NLO - defensive reads, goals, and game-changing moments.",
+          },
           { key: "home.announcement.enabled", value: "false" },
           {
             key: "home.announcement.title",
