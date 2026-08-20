@@ -345,6 +345,22 @@ jobs:
             exit 1
           fi
 
+      - name: Invalidate CloudFront cache
+        run: |
+          CF_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='dtp-staging'].Id" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$CF_ID" ] && [ "$CF_ID" != "None" ]; then
+            echo "Invalidating CloudFront distribution: $CF_ID"
+            aws cloudfront create-invalidation \
+              --distribution-id "$CF_ID" \
+              --paths "/*"
+            echo "Cache invalidation submitted"
+          else
+            echo "No CloudFront distribution found — skipping invalidation"
+          fi
+
       - name: Deployment summary
         run: |
           IP="${{ steps.resolve_ip.outputs.server_ip }}"
