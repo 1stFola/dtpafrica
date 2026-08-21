@@ -101,6 +101,20 @@ resource "aws_instance" "server" {
   tags = { Name = "${var.project}-${var.environment}-server" }
 }
 
+# ── ACM Certificate for dtp.africa (must be in us-east-1 for CloudFront) ─────
+
+resource "aws_acm_certificate" "app" {
+  domain_name               = "dtp.africa"
+  subject_alternative_names = ["www.dtp.africa"]
+  validation_method         = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = { Name = "${var.project}-${var.environment}-cert" }
+}
+
 # ── CloudFront CDN Distribution ───────────────────────────────────────────────
 # Sits in front of the EC2 Elastic IP. EC2 instance is unchanged.
 # - /assets/* cached at edge for 1 year (Vite content-hashed filenames)
@@ -111,10 +125,13 @@ resource "aws_cloudfront_distribution" "app" {
   enabled             = true
   default_root_object = "index.html"
   comment             = "${var.project}-${var.environment}"
-  price_class         = "PriceClass_100" # US, Canada, Europe — cheapest tier
+  price_class         = "PriceClass_100"
+  aliases             = ["dtp.africa", "www.dtp.africa"]
 
+  # EC2 public DNS — CloudFront requires a hostname, not a raw IP.
+  # AWS auto-assigns ec2-X-X-X-X.compute-1.amazonaws.com to every instance.
   origin {
-    domain_name = aws_eip.server.public_ip
+    domain_name = aws_instance.server.public_dns
     origin_id   = "ec2-origin"
 
     custom_origin_config {
@@ -201,10 +218,11 @@ resource "aws_cloudfront_distribution" "app" {
     geo_restriction { restriction_type = "none" }
   }
 
-  # Free *.cloudfront.net SSL cert — no domain needed.
-  # Replace with ACM cert when you have a custom domain.
+  # ACM certificate for dtp.africa — enables HTTPS on your custom domain
   viewer_certificate {
-    cloudfront_default_certificate = true
+    acm_certificate_arn      = aws_acm_certificate.app.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 
   tags = { Name = "${var.project}-${var.environment}-cdn" }
