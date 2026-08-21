@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: infra/terraform
+        working-directory: ./infra/terraform
 
     outputs:
       server_public_ip: ${{ steps.tf_out.outputs.server_public_ip }}
