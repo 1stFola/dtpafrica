@@ -1193,6 +1193,27 @@ export class AdminScoreboardService {
     });
   }
 
+  /**
+   * Fixtures for the admin calendar. Deliberately `publicOnly: true` — the
+   * calendar is a staff view of the *published* schedule, so drafts and
+   * fixtures under an unpublished competition stay out of it.
+   */
+  async fixturesCalendar(query: {
+    from?: Date;
+    to?: Date;
+    competitionId?: string;
+    status?: string;
+  }) {
+    return this.scoreboard.listMatches({
+      from: query.from,
+      to: query.to,
+      competitionId: query.competitionId,
+      status: query.status,
+      publicOnly: true,
+      order: "asc",
+    });
+  }
+
   async supervisorLive() {
     return this.scoreboard.supervisorFeed();
   }

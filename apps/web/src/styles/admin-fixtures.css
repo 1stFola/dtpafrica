@@ -1,0 +1,826 @@
+/* =====================================================================
+   Admin — Fixtures calendar (/admin/fixtures)
+
+   A staff source-of-truth view of every published fixture. Styling sits on
+   the admin dark theme (--color-bg #0f172a, --color-surface #1e293b,
+   --color-text #f1f5f9) and stays in that vocabulary rather than importing
+   the public site's Figma tokens.
+
+   The premium feel comes from restraint: one accent, layered translucent
+   surfaces, hairline borders that catch light at the top edge, and depth
+   from soft shadows rather than heavy chrome.
+   ===================================================================== */
+
+.afx-page {
+  /* The admin shell lays its main column out at a fixed ~1689px, so on a narrow
+     screen a flex row inside it believes it has room and never wraps — the
+     toolbar then ran past the real viewport edge. Bounding the page by
+     whichever is smaller (its container, or the viewport) makes wrapping and
+     internal scrolling behave. On desktop the container is the smaller of the
+     two, so this is a no-op there. */
+  width: 100%;
+  max-width: min(100%, 100vw);
+  min-width: 0;
+  --afx-accent: #38bdf8;
+  --afx-line: rgba(148, 163, 184, 0.16);
+  --afx-line-strong: rgba(148, 163, 184, 0.28);
+  --afx-surface: rgba(30, 41, 59, 0.72);
+  --afx-surface-hi: rgba(51, 65, 85, 0.55);
+  --afx-radius: 16px;
+  --afx-radius-sm: 11px;
+  color: var(--color-text);
+}
+
+/* ---------- header ---------- */
+
+.afx-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.afx-header h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.afx-header__sub {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+.afx-header__sub strong {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.afx-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Segmented month / week / day control. */
+.afx-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--afx-line);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.afx-segmented__btn {
+  padding: 0.42rem 0.95rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.afx-segmented__btn:hover { color: var(--color-text); }
+
+.afx-segmented__btn.is-active {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(56, 189, 248, 0.12));
+  color: #e0f2fe;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.afx-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.afx-nav__btn,
+.afx-nav__today {
+  height: 34px;
+  border: 1px solid var(--afx-line);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.afx-nav__btn { width: 34px; font-size: 1.15rem; line-height: 1; }
+.afx-nav__today { padding-inline: 0.85rem; }
+
+.afx-nav__btn:hover,
+.afx-nav__today:hover {
+  border-color: var(--afx-line-strong);
+  background: var(--afx-surface-hi);
+}
+
+.afx-field { display: inline-flex; }
+
+.afx-input {
+  height: 34px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--afx-line);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  color-scheme: dark;
+}
+
+.afx-input:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline-offset: 1px;
+}
+
+/* ---------- period bar ---------- */
+
+.afx-periodbar {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.afx-period {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.afx-loading,
+.afx-empty {
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
+.afx-empty { margin: 0; }
+.afx-empty--lg { padding: 3rem 1rem; text-align: center; font-size: 0.95rem; }
+
+.afx-notice {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--afx-line);
+  border-left: 2px solid var(--afx-accent);
+  border-radius: var(--afx-radius-sm);
+  background: rgba(56, 189, 248, 0.07);
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.afx-error {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: var(--afx-radius-sm);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+  font-size: 0.85rem;
+}
+
+/* ---------- month grid ---------- */
+
+.afx-month {
+  border: 1px solid var(--afx-line);
+  border-radius: var(--afx-radius);
+  background: var(--afx-surface);
+  box-shadow: 0 24px 48px -28px rgba(2, 6, 23, 0.9);
+  overflow: hidden;
+}
+
+.afx-month__head {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-bottom: 1px solid var(--afx-line);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.afx-month__head span {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.afx-month__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+/* The whole cell is the click target, so it is a button reset to a block. */
+.afx-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  min-height: 138px;
+  padding: 9px 9px 10px;
+  border: 0;
+  border-right: 1px solid var(--afx-line);
+  border-bottom: 1px solid var(--afx-line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.afx-cell:hover { background: rgba(148, 163, 184, 0.07); }
+
+.afx-cell:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: -2px;
+}
+
+/* Only days with fixtures suggest depth on hover; empty days stay flat. */
+.afx-cell.has-fixtures:hover {
+  background: rgba(148, 163, 184, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+}
+
+.afx-cell:nth-child(7n) { border-right: 0; }
+.afx-cell:nth-last-child(-n + 7) { border-bottom: 0; }
+
+/* Days from the neighbouring months stay legible but clearly recede. */
+.afx-cell.is-outside { background: rgba(2, 6, 23, 0.28); }
+.afx-cell.is-outside .afx-cell__date { color: rgba(148, 163, 184, 0.55); }
+.afx-cell.is-outside .afx-fixture { opacity: 0.55; }
+
+.afx-cell.is-today {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.1), transparent 60%);
+  box-shadow: inset 0 2px 0 var(--afx-accent);
+}
+
+.afx-cell__date {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.afx-cell.is-today .afx-cell__date { color: #e0f2fe; }
+
+.afx-cell__count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.2);
+  color: #bae6fd;
+  font-size: 0.62rem;
+  line-height: 16px;
+  text-align: center;
+}
+
+.afx-cell__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.afx-cell__more {
+  padding-left: 7px;
+  color: var(--afx-accent);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+/* ---------- compact fixture row (month cells) ---------- */
+
+.afx-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 5px 3px 7px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Competition colour as a hairline spine — identity without another badge. */
+.afx-row::before {
+  content: "";
+  position: absolute;
+  inset: 3px auto 3px 0;
+  width: 2px;
+  border-radius: 999px;
+  background: hsl(var(--afx-comp-hue, 200) 75% 55%);
+}
+
+.afx-row--live { background: rgba(248, 113, 113, 0.12); }
+.afx-row--done { background: rgba(15, 23, 42, 0.4); }
+.afx-row--off { opacity: 0.72; }
+
+.afx-row__time {
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.afx-row__crests { display: inline-flex; }
+.afx-row__crests .afx-crest { width: 15px; height: 15px; }
+.afx-row__crests .afx-crest + .afx-crest { margin-left: -5px; }
+.afx-row__crests .afx-crest--fallback { font-size: 0.4rem; }
+
+.afx-row__tie {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.afx-row__v {
+  margin: 0 4px;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.afx-row__live { flex: none; }
+
+/* ---------- week ---------- */
+
+.afx-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.afx-weekday {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--afx-line);
+  border-radius: var(--afx-radius);
+  background: var(--afx-surface);
+  box-shadow: 0 20px 40px -30px rgba(2, 6, 23, 0.9);
+  overflow: hidden;
+}
+
+.afx-weekday.is-today { border-color: rgba(56, 189, 248, 0.45); }
+
+.afx-weekday__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 0;
+  border-bottom: 1px solid var(--afx-line);
+  background: rgba(15, 23, 42, 0.5);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.afx-weekday__head:hover { background: rgba(148, 163, 184, 0.12); }
+
+.afx-weekday__head:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: -2px;
+}
+
+.afx-weekday.is-today .afx-weekday__head {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.16), rgba(15, 23, 42, 0.5));
+}
+
+.afx-weekday__dow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.afx-weekday__num {
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.afx-weekday__count {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.18);
+  color: #bae6fd;
+  font-size: 0.65rem;
+  line-height: 17px;
+}
+
+.afx-weekday__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  min-height: 120px;
+}
+
+/* ---------- day ---------- */
+
+.afx-day__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+/* ---------- fixture card ---------- */
+
+.afx-fixture {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid var(--afx-line);
+  border-radius: var(--afx-radius-sm);
+  background: linear-gradient(180deg, var(--afx-surface-hi), rgba(15, 23, 42, 0.62));
+  box-shadow:
+    0 10px 22px -18px rgba(2, 6, 23, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  min-width: 0;
+}
+
+/* A status rail down the leading edge — the one piece of colour per card. */
+.afx-fixture::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--afx-rail, var(--afx-line-strong));
+}
+
+.afx-fixture--live { --afx-rail: #f87171; }
+.afx-fixture--upcoming { --afx-rail: var(--afx-accent); }
+.afx-fixture--done { --afx-rail: #34d399; }
+.afx-fixture--off { --afx-rail: #94a3b8; }
+
+.afx-fixture__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-left: 8px;
+}
+
+.afx-fixture__time {
+  font-size: 0.76rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.afx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.afx-chip--upcoming { background: rgba(56, 189, 248, 0.14); color: #bae6fd; }
+.afx-chip--live { background: rgba(248, 113, 113, 0.18); color: #fecaca; }
+.afx-chip--done { background: rgba(52, 211, 153, 0.15); color: #a7f3d0; }
+.afx-chip--off { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; }
+
+.afx-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f87171;
+  animation: afx-pulse 1.7s ease-out infinite;
+}
+
+@keyframes afx-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.6); }
+  70% { box-shadow: 0 0 0 7px rgba(248, 113, 113, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+}
+
+.afx-fixture__teams {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 8px;
+  min-width: 0;
+}
+
+.afx-team {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.afx-team__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.afx-team__score {
+  flex: none;
+  font-size: 0.82rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #e2e8f0;
+}
+
+.afx-crest {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--afx-line);
+  overflow: hidden;
+}
+
+.afx-crest img { width: 100%; height: 100%; object-fit: cover; }
+
+.afx-crest--fallback {
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #cbd5e1;
+}
+
+.afx-fixture__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 8px;
+  min-width: 0;
+  font-size: 0.68rem;
+  color: var(--color-muted);
+}
+
+/* Competition mark: SbCompetition has no crest field, so this is a
+   deterministic hue + monogram derived from the competition id. */
+.afx-comp-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: hsl(var(--afx-comp-hue, 200) 70% 32%);
+  color: hsl(var(--afx-comp-hue, 200) 90% 88%);
+  border: 1px solid hsl(var(--afx-comp-hue, 200) 70% 45% / 0.5);
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.afx-fixture__comp,
+.afx-fixture__round,
+.afx-fixture__venue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.afx-fixture__comp { flex: 0 1 auto; font-weight: 600; color: #cbd5e1; }
+
+.afx-fixture__round::before,
+.afx-fixture__venue::before {
+  content: "·";
+  margin-right: 5px;
+  color: var(--afx-line-strong);
+}
+
+.afx-fixture__venue { flex: 0 1 auto; }
+
+/* Dense variant used inside month cells. */
+.afx-fixture--dense { gap: 4px; padding: 6px 7px; }
+.afx-fixture--dense .afx-fixture__time { font-size: 0.68rem; }
+.afx-fixture--dense .afx-team__name { font-size: 0.7rem; }
+.afx-fixture--dense .afx-crest { width: 16px; height: 16px; }
+.afx-fixture--dense .afx-crest--fallback { font-size: 0.44rem; }
+.afx-fixture--dense .afx-fixture__meta { font-size: 0.62rem; }
+.afx-fixture--dense .afx-chip { font-size: 0.55rem; padding: 0 5px; }
+.afx-fixture--dense .afx-fixture__round,
+.afx-fixture--dense .afx-fixture__venue { display: none; }
+
+/* ---------- day detail modal ---------- */
+
+.afx-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(1rem, 5vh, 4rem) 1rem 2rem;
+  overflow-y: auto;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(10px);
+  animation: afx-fade 140ms ease-out;
+}
+
+.afx-modal {
+  width: min(760px, 100%);
+  border: 1px solid var(--afx-line-strong);
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(56, 189, 248, 0.1), transparent 55%),
+    linear-gradient(180deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.99));
+  box-shadow:
+    0 40px 80px -32px rgba(2, 6, 23, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: afx-rise 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  overflow: hidden;
+}
+
+@keyframes afx-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes afx-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+
+.afx-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--afx-line);
+}
+
+.afx-modal__eyebrow {
+  margin: 0 0 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--afx-accent);
+}
+
+.afx-modal__title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.afx-modal__headmeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.afx-modal__count {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.14);
+  color: #bae6fd;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.afx-modal__close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--afx-line);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.afx-modal__close:hover {
+  background: var(--afx-surface-hi);
+  border-color: var(--afx-line-strong);
+}
+
+.afx-modal__body {
+  max-height: min(66vh, 620px);
+  overflow-y: auto;
+  padding: 1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.afx-modal__group { min-width: 0; }
+
+.afx-modal__grouphead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--afx-line);
+}
+
+.afx-modal__grouphead h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #e2e8f0;
+}
+
+.afx-modal__groupcount {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.afx-modal__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1100px) {
+  .afx-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .afx-header { align-items: flex-start; }
+  .afx-toolbar { width: 100%; }
+  /* The month grid keeps seven columns but scrolls rather than crushing. */
+  .afx-month { overflow-x: auto; }
+  .afx-month__head,
+  .afx-month__grid { min-width: 760px; }
+}
+
+@media (max-width: 640px) {
+  .afx-week { grid-template-columns: minmax(0, 1fr); }
+  .afx-day__list { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .afx-modal__list { grid-template-columns: minmax(0, 1fr); }
+  .afx-modal { border-radius: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .afx-pulse,
+  .afx-modal,
+  .afx-modal-backdrop { animation: none; }
+  .afx-segmented__btn,
+  .afx-nav__btn,
+  .afx-nav__today,
+  .afx-cell { transition: none; }
+}

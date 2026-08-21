@@ -190,6 +190,31 @@ export class AdminScoreboardController {
     return this.sb.listMatches(competitionId);
   }
 
+  /**
+   * Published fixtures inside a kickoff window, across every competition.
+   * Backs the admin fixtures calendar; `from`/`to` are ISO timestamps.
+   */
+  @Get("fixtures-calendar")
+  @RequirePermissions("scoreboard.read")
+  fixturesCalendar(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("competitionId") competitionId?: string,
+    @Query("status") status?: string
+  ) {
+    const parseBound = (value?: string) => {
+      if (!value) return undefined;
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    };
+    return this.sb.fixturesCalendar({
+      from: parseBound(from),
+      to: parseBound(to),
+      competitionId: competitionId || undefined,
+      status: status || undefined,
+    });
+  }
+
   @Get("supervisor/live")
   @RequirePermissions("scoreboard.read")
   supervisorLive() {

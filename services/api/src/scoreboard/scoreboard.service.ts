@@ -1272,6 +1272,11 @@ export class ScoreboardService {
     competitionId?: string;
     limit?: number;
     publicOnly?: boolean;
+    /** Inclusive kickoff window, used by the admin fixtures calendar. */
+    from?: Date;
+    to?: Date;
+    /** Calendar reads ascending so a day's fixtures run earliest-first. */
+    order?: "asc" | "desc";
   }) {
     const where: Prisma.SbMatchWhereInput = {};
     if (query.publicOnly !== false) {
@@ -1286,10 +1291,16 @@ export class ScoreboardService {
     } else if (query.status) {
       where.status = query.status;
     }
+    if (query.from || query.to) {
+      where.kickoffAt = {
+        ...(query.from ? { gte: query.from } : {}),
+        ...(query.to ? { lte: query.to } : {}),
+      };
+    }
 
     const rows = await this.prisma.sbMatch.findMany({
       where,
-      orderBy: [{ kickoffAt: "desc" }],
+      orderBy: [{ kickoffAt: query.order ?? "desc" }],
       ...(query.limit ? { take: query.limit } : {}),
       include: {
         homeTeam: true,

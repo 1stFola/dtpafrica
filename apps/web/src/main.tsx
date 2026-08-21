@@ -9,6 +9,9 @@ import "./styles/global.css";
 // the legacy stylesheet without touching the dark internal modules.
 import "./styles/figma-tokens.css";
 import "./styles/dtp-figma.css";
+/* Admin fixtures calendar. Loaded last so its scoped .afx-* rules win over the
+   generic .admin-page styles in global.css. */
+import "./styles/admin-fixtures.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
