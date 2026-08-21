@@ -17,6 +17,7 @@ const links: AdminNavLink[] = [
   { to: "/admin", end: true, label: "Dashboard", icon: "◆" },
   { to: "/admin/inbox", label: "Inbox", icon: "✉" },
   { to: "/admin/players", label: "Players", icon: "⚽" },
+  { to: "/admin/fixtures", label: "Fixtures", icon: "▤" },
   { to: "/admin/calibration", label: "Calibration", icon: "◎" },
   { to: "/admin/homepage", label: "Homepage", icon: "⌂" },
   { to: "/admin/ads", label: "Ads", icon: "▣" },

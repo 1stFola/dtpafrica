@@ -1,4 +1,5 @@
 import { cachedFetch, invalidateCachePrefix } from "./fetch-cache";
+import type { SbMatchListItem } from "./scoreboard";
 
 const STORAGE_KEY = "dtp_admin_api_key";
 const TOKEN_STORAGE_KEY = "dtp_admin_jwt";
@@ -612,6 +613,20 @@ export type AdminAcademyInput = {
 
 export const adminApi = {
   stats: () => adminFetch<AdminStats>("/admin/stats"),
+  /** Published fixtures in a kickoff window, across every competition. */
+  fixturesCalendar: (query: {
+    from: string;
+    to: string;
+    competitionId?: string;
+    status?: string;
+  }) => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.competitionId) params.set("competitionId", query.competitionId);
+    if (query.status) params.set("status", query.status);
+    return adminFetch<SbMatchListItem[]>(
+      `/admin/scoreboard/fixtures-calendar?${params.toString()}`
+    );
+  },
   players: (query: AdminPlayerListQuery = {}) => {
     const qs = playersQueryKey(query);
     return cachedFetch(

@@ -8,6 +8,7 @@ import { AdminBlogEditPage } from "./pages/AdminBlogEditPage";
 import { AdminBlogListPage } from "./pages/AdminBlogListPage";
 import { AdminAcademiesPage } from "./pages/AdminAcademiesPage";
 import { AdminCalibrationPage } from "./pages/AdminCalibrationPage";
+import { AdminFixturesPage } from "./pages/AdminFixturesPage";
 import { AdminContentPage } from "./pages/AdminContentPage";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
 import { AdminDatabasePage } from "./pages/AdminDatabasePage";
@@ -33,6 +34,7 @@ export function AdminApp() {
             <Route index element={<AdminDashboardPage />} />
             <Route path="inbox" element={<AdminInboxPage />} />
             <Route path="players" element={<AdminPlayersPage />} />
+            <Route path="fixtures" element={<AdminFixturesPage />} />
             <Route path="calibration" element={<AdminCalibrationPage />} />
             <Route path="ops-support" element={<AdminOpsSupportPage />} />
             <Route path="homepage" element={<AdminHomepagePage />} />
