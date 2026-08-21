@@ -76,50 +76,49 @@ jobs:
 
       - name: Reconcile state with real AWS resources
         run: |
-          if [ ! -f terraform.tfstate ]; then
-            echo "No state — skipping reconcile"
-            exit 0
-          fi
+          echo "=== Current state resources ==="
+          terraform state list 2>/dev/null || echo "No state yet"
 
-          INSTANCE_ID=$(terraform state show aws_instance.server 2>/dev/null \
-            | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
+          # Check if the tagged EIP exists in AWS
+          EIP_ALLOC=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Name,Values=dtp-staging-eip" \
+            --query 'Addresses[0].AllocationId' \
+            --output text 2>/dev/null || echo "")
 
-          if [ -z "$INSTANCE_ID" ]; then
-            echo "No instance in state"
-            exit 0
-          fi
+          EIP_IP=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Name,Values=dtp-staging-eip" \
+            --query 'Addresses[0].PublicIp' \
+            --output text 2>/dev/null || echo "")
 
-          echo "Instance in state: $INSTANCE_ID"
+          echo "EIP in AWS: $EIP_IP ($EIP_ALLOC)"
 
-          INSTANCE_STATE=$(aws ec2 describe-instances \
-            --instance-ids "$INSTANCE_ID" \
-            --query 'Reservations[0].Instances[0].State.Name' \
-            --output text 2>/dev/null || echo "not-found")
-
-          echo "AWS instance state: $INSTANCE_STATE"
-
-          if [ "$INSTANCE_STATE" = "terminated" ] || [ "$INSTANCE_STATE" = "not-found" ] || [ "$INSTANCE_STATE" = "None" ]; then
-            echo "Instance gone — clearing stale state so Terraform rebuilds"
-            terraform state rm aws_eip.server                     || true
-            terraform state rm aws_instance.server                || true
-            VPC_ID=$(terraform state show aws_vpc.main 2>/dev/null \
-              | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
-            if [ -n "$VPC_ID" ]; then
-              VPC_EXISTS=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
-                --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "not-found")
-              if [ "$VPC_EXISTS" = "not-found" ] || [ -z "$VPC_EXISTS" ] || [ "$VPC_EXISTS" = "None" ]; then
-                echo "VPC also gone — clearing all network state"
-                terraform state rm aws_route_table_association.public || true
-                terraform state rm aws_route_table.public             || true
-                terraform state rm aws_internet_gateway.main          || true
-                terraform state rm aws_subnet.public                  || true
-                terraform state rm aws_security_group.server          || true
-                terraform state rm aws_vpc.main                       || true
-              fi
+          # If EIP exists in AWS but not in state, import it
+          if [ -n "$EIP_ALLOC" ] && [ "$EIP_ALLOC" != "None" ]; then
+            IN_STATE=$(terraform state show aws_eip.server 2>/dev/null | grep "id" | head -1 || echo "")
+            if [ -z "$IN_STATE" ]; then
+              echo "EIP exists in AWS but not in state — importing..."
+              terraform import aws_eip.server "$EIP_ALLOC" || true
             fi
-          else
-            echo "Instance is $INSTANCE_STATE — reusing existing infrastructure, only adding CDN"
           fi
+
+          # Check if the tagged EC2 instance exists
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=dtp-staging-server" "Name=instance-state-name,Values=running,stopped,pending" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text 2>/dev/null || echo "")
+
+          echo "EC2 in AWS: $INSTANCE_ID"
+
+          if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+            IN_STATE=$(terraform state show aws_instance.server 2>/dev/null | grep "^id" | head -1 || echo "")
+            if [ -z "$IN_STATE" ]; then
+              echo "EC2 exists in AWS but not in state — importing..."
+              terraform import aws_instance.server "$INSTANCE_ID" || true
+            fi
+          fi
+
+          echo "=== State after reconcile ==="
+          terraform state list 2>/dev/null || echo "No state"
 
       - name: Terraform validate
         run: terraform validate

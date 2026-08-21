@@ -46,11 +46,27 @@ output "ansible_inventory" {
 }
 
 output "cloudfront_domain" {
-  description = "CloudFront distribution domain — access the app through this URL"
+  description = "CloudFront distribution domain — point your dtp.africa DNS CNAME here"
   value       = "https://${aws_cloudfront_distribution.app.domain_name}"
 }
 
 output "cloudfront_id" {
   description = "CloudFront distribution ID — needed to invalidate cache after deploys"
   value       = aws_cloudfront_distribution.app.id
+}
+
+output "server_public_dns" {
+  description = "EC2 public DNS hostname — used as CloudFront origin"
+  value       = aws_instance.server.public_dns
+}
+
+output "acm_validation_records" {
+  description = "Add these DNS CNAME records to your dtp.africa domain to validate the SSL cert"
+  value = {
+    for dvo in aws_acm_certificate.app.domain_validation_options : dvo.domain_name => {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  }
 }
