@@ -109,7 +109,11 @@
 
 - name: Clone or update repository
   ansible.builtin.git:
-    repo:    "{{ git_repo_url }}"
+    # Embed token in HTTPS URL for private repo access: https://token@github.com/...
+    repo: >-
+      {{ git_repo_url | regex_replace('https://', 'https://x-access-token:' + git_repo_token + '@')
+         if (git_repo_token is defined and (git_repo_token | length) > 0 and git_repo_url.startswith('https://'))
+         else git_repo_url }}
     dest:    "{{ app_dir }}/repo"
     version: "{{ git_branch }}"
     force:   true
@@ -117,7 +121,7 @@
   become_user: ubuntu
   environment:
     GIT_TERMINAL_PROMPT: "0"
-    GIT_ASKPASS: /tmp/dtp-git-askpass.sh
+  no_log: true  # hide URL since it contains the token
 
 - name: Remove temporary GitHub token helper
   ansible.builtin.file:

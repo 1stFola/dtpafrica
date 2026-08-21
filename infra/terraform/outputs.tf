@@ -44,3 +44,13 @@ output "ansible_inventory" {
     server_public_ip=${aws_eip.server.public_ip}
   INI
 }
+
+output "cloudfront_domain" {
+  description = "CloudFront distribution domain — access the app through this URL"
+  value       = "https://${aws_cloudfront_distribution.app.domain_name}"
+}
+
+output "cloudfront_id" {
+  description = "CloudFront distribution ID — needed to invalidate cache after deploys"
+  value       = aws_cloudfront_distribution.app.id
+}

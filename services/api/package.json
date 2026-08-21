@@ -9,6 +9,8 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "lint": "echo ok",
     "prisma:generate": "prisma generate",
+    "test": "vitest run --reporter=verbose",
+    "test:coverage": "vitest run --coverage",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
     "db:repair:squad-duplicates": "tsx scripts/repair-sb-team-squad-duplicates.ts",
@@ -33,10 +35,15 @@
     "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@nestjs/testing": "^10.4.22",
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.10.1",
+    "@vitest/coverage-v8": "^2.1.0",
+    "allure-js-commons": "^3.10.2",
+    "allure-vitest": "^3.10.2",
     "prisma": "^6.1.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.0"
   }
 }
