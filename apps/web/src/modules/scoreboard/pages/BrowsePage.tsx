@@ -10,6 +10,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { isAbortError } from "../../../api/client";
 import { MatchCard } from "../components/MatchCard";
+import { CompetitionCrest } from "../components/CompetitionCrest";
 
 const COMPETITION_DESCRIPTION =
   "Competition hub with standings, fixtures, results, leaders, totals, and team-by-team navigation.";
@@ -24,6 +25,8 @@ type FeaturedCard = {
   /** Present when the competition exists in the DB and is clickable. */
   slug: string | null;
   placeholder: boolean;
+  id?: string;
+  logoUrl?: string | null;
 };
 
 /**
@@ -83,11 +86,13 @@ function competitionToCard(competition: SbCompetition): FeaturedCard {
   if (isCuratedName(competition.name)) tags.push("FEATURED");
   return {
     key: competition.id,
+    id: competition.id,
     name: competition.name,
     geo: competitionGeo(competition),
     tags,
     slug: competition.slug,
     placeholder: false,
+    logoUrl: competition.logoUrl ?? null,
   };
 }
 
@@ -130,6 +135,17 @@ function SearchIcon() {
 function CompetitionGridCard({ card }: { card: FeaturedCard }) {
   const inner = (
     <>
+      {/* Crest leads the card so competitions are identifiable before reading. */}
+      <div className="dbx-comp-card__head">
+        <CompetitionCrest
+          competition={{ id: card.id, name: card.name, logoUrl: card.logoUrl }}
+          size="lg"
+        />
+        <div className="dbx-comp-card__ident">
+          <h3 className="dbx-comp-card__title">{card.name}</h3>
+          <p className="dbx-comp-card__geo">{card.geo}</p>
+        </div>
+      </div>
       <div className="dbx-comp-card__tags">
         {card.tags.map((tag) => (
           <span
@@ -140,8 +156,6 @@ function CompetitionGridCard({ card }: { card: FeaturedCard }) {
           </span>
         ))}
       </div>
-      <h3 className="dbx-comp-card__title">{card.name}</h3>
-      <p className="dbx-comp-card__geo">{card.geo}</p>
       <p className="dbx-comp-card__desc">{COMPETITION_DESCRIPTION}</p>
       <div className="dbx-comp-card__foot">
         <span className="dbx-foot-marker">
@@ -380,8 +394,15 @@ function CompetitionSkeleton() {
     <div className="dbx-comp-grid" aria-hidden="true">
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="dbx-comp-card dbx-comp-card--skeleton">
+          {/* Mirrors the real card so nothing shifts when data lands. */}
+          <div className="dbx-comp-card__head">
+            <span className="dtp-skeleton dbx-comp-card__crest-skeleton" />
+            <div className="dbx-comp-card__ident">
+              <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "70%" }} />
+              <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "45%" }} />
+            </div>
+          </div>
           <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "40%" }} />
-          <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "70%" }} />
           <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "90%" }} />
           <span className="dtp-skeleton dtp-skeleton--line" style={{ width: "55%" }} />
         </div>

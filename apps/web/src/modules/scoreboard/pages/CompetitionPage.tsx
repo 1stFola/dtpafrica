@@ -12,6 +12,7 @@ import {
 import { MatchCenterCard } from "../components/MatchCenterCard";
 import { StatLeadersWidget } from "../components/StatLeadersWidget";
 import { TeamCrest } from "../components/TeamCrest";
+import { CompetitionCrest } from "../components/CompetitionCrest";
 import { matchCenterPath } from "../utils/matchPath";
 import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -48,6 +49,33 @@ const KNOCKOUT_FORMAT_COPY =
 
 const KNOCKOUT_STATUSES = new Set(["finished"]);
 const LIVE_STATUSES = new Set(["live", "halftime"]);
+
+const KNOCKOUT_ROUND_LABELS: Record<string, string> = {
+  round_of_16: "Round of 16",
+  quarter_final: "Quarter-Final",
+  semi_final: "Semi-Final",
+  final: "Final",
+};
+
+/**
+ * How many teams leave a group and where they go. Competitions that feed a
+ * knockout bracket declare this; the two-group cups (Jagaban, Lagos Queens)
+ * do not, and keep their winner-to-final shape.
+ */
+type GroupAdvancement = {
+  topPerGroup?: number;
+  bestThirdPlaced?: number;
+  qualifiers?: number;
+  into?: string;
+};
+
+/** Seeds put `advancement` at the top level or under `groupStage`. */
+function readAdvancement(cfg: Record<string, unknown> | null | undefined): GroupAdvancement | null {
+  if (!cfg) return null;
+  const groupStage = cfg.groupStage as Record<string, unknown> | undefined;
+  const raw = (cfg.advancement ?? groupStage?.advancement) as GroupAdvancement | undefined;
+  return raw && typeof raw === "object" && typeof raw.topPerGroup === "number" ? raw : null;
+}
 
 
 /** Player guardrail: always route by slug, never the internal DB id. */
@@ -707,6 +735,8 @@ export function CompetitionPage() {
   const [name, setName] = useState("");
   const [season, setSeason] = useState("");
   const [formatType, setFormatType] = useState<string | null>(null);
+  const [advancement, setAdvancement] = useState<GroupAdvancement | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [bracketImageUrl, setBracketImageUrl] = useState<string | null>(null);
   const [teams, setTeams] = useState<SbTeamWithSquad[]>([]);
   const [matches, setMatches] = useState<SbMatchListItem[]>([]);
@@ -770,8 +800,10 @@ export function CompetitionPage() {
         setName(c.name);
         setSeason(c.season);
         setFormatType(c.formatType ?? c.type);
+        setLogoUrl(c.logoUrl ?? null);
         setTeams(c.teams);
         const cfg = c.formatConfig as Record<string, unknown> | null | undefined;
+        setAdvancement(readAdvancement(cfg));
         const bracketFromConfig =
           (typeof cfg?.bracketImageUrl === "string" && cfg.bracketImageUrl) ||
           (typeof cfg?.bannerUrl === "string" && cfg.bannerUrl) ||
@@ -844,6 +876,9 @@ export function CompetitionPage() {
       formatType === "HYBRID_CHAMPIONS_LEAGUE" ||
       standingsGroups.length > 0);
   const showKnockoutBracket = Boolean(bracketImageUrl && isKnockoutFormat);
+  const knockoutEntryLabel =
+    (advancement?.into && KNOCKOUT_ROUND_LABELS[advancement.into]) ??
+    (advancement?.qualifiers === 16 ? "Round of 16" : "Knockout Stage");
   const tournamentFormatCopy =
     slug === "1xcup-2026" || formatType === "1XCUP_MULTI_STAGE"
       ? ONE_XCUP_FORMAT_COPY
@@ -883,15 +918,21 @@ export function CompetitionPage() {
               key={groupKey || "all"}
               groupKey={groupKey || "Standings"}
               rows={rows}
-              rankLabel={(rank) =>
-                !isGroupFormat
-                  ? null
-                  : rank === 1
-                    ? "Finalist"
-                    : rank === 2
-                      ? "3rd-Place Playoff"
-                      : null
-              }
+              rankLabel={(rank) => {
+                if (!isGroupFormat) return null;
+                const topPerGroup = advancement?.topPerGroup;
+                if (topPerGroup) {
+                  /* Groups feeding a bracket: the top N advance outright, so
+                     the third-place tag belongs on N+1, not on a qualifier. */
+                  if (rank <= topPerGroup) return knockoutEntryLabel;
+                  if (rank === topPerGroup + 1) return "3rd-Place Playoff";
+                  return null;
+                }
+                /* Two-group cups: winner to the final, runner-up to the playoff. */
+                if (rank === 1) return "Finalist";
+                if (rank === 2) return "3rd-Place Playoff";
+                return null;
+              }}
             />
           );
         })}
@@ -1264,13 +1305,24 @@ export function CompetitionPage() {
       </div>
 
       <header className="sbc-hero">
-        <div className="sbc-hero__badge" aria-hidden="true">
-          <span>{(name || "Cup").slice(0, 1).toUpperCase()}</span>
-        </div>
+        {/* The crest carries the competition's identity, so it replaces the
+            initial-letter badge wherever artwork exists. */}
+        {logoUrl ? (
+          <CompetitionCrest
+            competition={{ name, logoUrl }}
+            size="xl"
+            className="sbc-hero__crest"
+          />
+        ) : (
+          <div className="sbc-hero__badge" aria-hidden="true">
+            <span>{(name || "Cup").slice(0, 1).toUpperCase()}</span>
+          </div>
+        )}
         <div className="sbc-hero__main">
           <h1 className="sbc-hero__title">
             {name || (loading ? "Loading competition…" : "Competition")}
           </h1>
+          {season && <p className="sbc-hero__season">{season}</p>}
           <p className="sbc-hero__desc">{COMPETITION_DESCRIPTION}</p>
         </div>
       </header>

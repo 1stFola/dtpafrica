@@ -20,6 +20,8 @@ import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/mat
 import { resolveUniquePlayerSlug } from "../src/players/player-slug";
 
 const COMP_SLUG = "jagaban-cup-2026";
+const COMP_LOGO =
+  "https://lh3.googleusercontent.com/pw/AP1GczOaGhSNG8tQxErFPEh5VqaTgHf4MQf1EpVrNRH6qMcmFcCt8TgGKKtE6m-oLcYcdgUeiBf_pVSguanAE3P11ZgqUQOLdx6oHPjlFet1BOaJfrYCIbLvQRlTesBOqcjqfMvfZrYUH1GBNOWpvokYgzfu=w640-h640-s-no-gm?authuser=0";
 const COMP_ID = "00000000-0000-4000-8jc0-000000000001";
 const LEGACY_VENUE = "Legacy Pitch - Surulere Lagos";
 
@@ -967,6 +969,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
       formatType: "JAGABAN_CUP_STANDARD",
       formatConfig: jagabanConfig,
       country: "Nigeria",
+      logoUrl: COMP_LOGO,
       description:
         "Jagaban Cup 2026 — 2×4 group stage, cross-group grand final & third-place playoff. Full match narratives seeded on ScoreBoard.",
       isPublished: true,
@@ -980,6 +983,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
       formatType: "JAGABAN_CUP_STANDARD",
       formatConfig: jagabanConfig,
       country: "Nigeria",
+      logoUrl: COMP_LOGO,
       description:
         "Jagaban Cup 2026 — 2×4 group stage, cross-group grand final & third-place playoff. Full match narratives seeded on ScoreBoard.",
       isPublished: true,

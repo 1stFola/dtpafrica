@@ -10,6 +10,8 @@ import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/mat
 import { resolvePlayerNameCandidate } from "../src/scoreboard/player-name-normalization";
 
 const COMP_SLUG = "1xcup-2026";
+const COMP_LOGO =
+  "https://1xcup.ng/assets/xcup-logo.svg";
 const COMP_ID = "00000000-0000-4000-81xc-000000000000";
 const TIMEZONE = "Africa/Lagos";
 const DEFAULT_VENUE = "Inspire Field";
@@ -988,6 +990,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
       status: "active",
       formatConfig: formatConfig as Prisma.InputJsonValue,
       country: "Nigeria",
+      logoUrl: COMP_LOGO,
       description:
         "1XCup 2026 starts with 100 teams across five Lagos zonal loser-go-home qualifiers. Twenty-four zone winners/qualifiers advance to six round-robin groups of four, before the best 16 teams enter the knockout bracket.",
       isPublished: true,
@@ -1002,6 +1005,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
       status: "active",
       formatConfig: formatConfig as Prisma.InputJsonValue,
       country: "Nigeria",
+      logoUrl: COMP_LOGO,
       description:
         "1XCup 2026 starts with 100 teams across five Lagos zonal loser-go-home qualifiers. Twenty-four zone winners/qualifiers advance to six round-robin groups of four, before the best 16 teams enter the knockout bracket.",
       isPublished: true,
