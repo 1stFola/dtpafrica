@@ -681,30 +681,62 @@ export class ScoreboardService {
    * No response caching — each request reads fresh match rows and goal events from
    * the database so admin match-center writes appear immediately on the homepage widget.
    */
+  /**
+   * Match Centre feed for the ScoreBoard overview.
+   *
+   * Ordering purely by kickoff let whichever competition had the furthest-out
+   * fixtures take every slot, so the panel showed one competition at a time.
+   * Live matches still lead; the remainder is interleaved a match at a time
+   * per competition so the columns span the whole ScoreBoard.
+   */
   async overview() {
+    const OVERVIEW_TAKE = 12;
     const stats = await this.stats();
-    const recentMatches = await this.prisma.sbMatch.findMany({
-      where: { isPublished: true, competition: { isPublished: true } },
+    const published = { isPublished: true, competition: { isPublished: true } };
+
+    const live = await this.prisma.sbMatch.findMany({
+      where: { ...published, status: { in: LIVE_STATUSES } },
       orderBy: [{ kickoffAt: "desc" }],
-      take: 12,
-      include: {
-        homeTeam: true,
-        awayTeam: true,
-        competition: true,
-        events: {
-          where: { type: { in: ["goal", "own_goal"] } },
-          orderBy: { minute: "asc" },
-          select: {
-            id: true,
-            minute: true,
-            type: true,
-            teamId: true,
-            playerLabel: true,
-            player: { select: { displayName: true, slug: true } },
-          },
-        },
-      },
+      take: OVERVIEW_TAKE,
+      include: TEAM_MATCH_LIST_INCLUDE,
     });
+
+    /* Pull per competition rather than one global "most recent" slice: a
+       competition whose fixtures sit further out would otherwise push every
+       older competition out of the window entirely. */
+    const competitions = await this.prisma.sbCompetition.findMany({
+      where: { isPublished: true },
+      select: { id: true },
+    });
+    const excluded = live.map((m) => m.id);
+    const queues = (
+      await Promise.all(
+        competitions.map((competition) =>
+          this.prisma.sbMatch.findMany({
+            where: { ...published, competitionId: competition.id, id: { notIn: excluded } },
+            orderBy: [{ kickoffAt: "desc" }],
+            take: OVERVIEW_TAKE,
+            include: TEAM_MATCH_LIST_INCLUDE,
+          })
+        )
+      )
+    )
+      .filter((queue) => queue.length > 0)
+      // Competitions with the most recent action lead the grid.
+      .sort((a, b) => (b[0].kickoffAt?.getTime() ?? 0) - (a[0].kickoffAt?.getTime() ?? 0));
+
+    // Take each competition's nth match on the nth pass, so no single
+    // competition can monopolise the grid.
+    const interleaved: (typeof queues)[number] = [];
+    const deepest = Math.max(0, ...queues.map((q) => q.length));
+    for (let depth = 0; depth < deepest && interleaved.length < OVERVIEW_TAKE; depth += 1) {
+      for (const queue of queues) {
+        if (interleaved.length >= OVERVIEW_TAKE) break;
+        if (queue[depth]) interleaved.push(queue[depth]);
+      }
+    }
+
+    const recentMatches = [...live, ...interleaved].slice(0, OVERVIEW_TAKE);
     return presentScoreboardPayload({ stats, recentMatches });
   }
 
@@ -804,6 +836,7 @@ export class ScoreboardService {
         formatType: competition.formatType,
         formatConfig,
         country: competition.country,
+        logoUrl: competition.logoUrl,
         description: competition.description,
         teamCount: competition._count.teams,
         matchCount: competition._count.matches,

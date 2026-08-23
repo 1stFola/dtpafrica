@@ -20788,3 +20788,103 @@ a.dbx-comp-card:hover {
     bottom: 0.75rem;
   }
 }
+
+/* ==========================================================================
+   Competition crest — Featured Competitions cards and the competition hero.
+   ========================================================================== */
+
+.sb-comp-crest {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%),
+    rgba(15, 23, 42, 0.6);
+  box-shadow: var(--shadow-sm);
+}
+
+.sb-comp-crest img {
+  width: 100%;
+  height: 100%;
+  /* Contain, never cover: a competition mark must not be cropped. */
+  object-fit: contain;
+  display: block;
+}
+
+.sb-comp-crest--sm { width: 28px; height: 28px; border-radius: var(--radius-sm); }
+.sb-comp-crest--md { width: 44px; height: 44px; }
+.sb-comp-crest--lg { width: 64px; height: 64px; }
+.sb-comp-crest--xl { width: 96px; height: 96px; border-radius: var(--radius-lg); }
+
+/* Monogram fallback for competitions with no artwork yet. */
+.sb-comp-crest--placeholder {
+  background: linear-gradient(
+    160deg,
+    hsl(var(--sb-comp-hue, 210) 68% 38%) 0%,
+    hsl(var(--sb-comp-hue, 210) 72% 24%) 100%
+  );
+  border-color: hsl(var(--sb-comp-hue, 210) 70% 50% / 0.45);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.sb-comp-crest--sm.sb-comp-crest--placeholder { font-size: 0.7rem; }
+.sb-comp-crest--md.sb-comp-crest--placeholder { font-size: 1rem; }
+.sb-comp-crest--lg.sb-comp-crest--placeholder { font-size: 1.5rem; }
+.sb-comp-crest--xl.sb-comp-crest--placeholder { font-size: 2.25rem; }
+
+/* --- Featured Competitions card head --- */
+
+.dbx-comp-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.dbx-comp-card__ident {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  /* Lets long competition names wrap instead of forcing the crest to shrink. */
+  min-width: 0;
+}
+
+a.dbx-comp-card:hover .sb-comp-crest {
+  border-color: var(--color-primary);
+}
+
+.dbx-comp-card__crest-skeleton {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+}
+
+/* --- Competition hero crest --- */
+
+.sbc-hero__crest {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 100%),
+    rgba(15, 23, 42, 0.55);
+}
+
+.sbc-hero__season {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+@media (max-width: 640px) {
+  .sb-comp-crest--xl { width: 72px; height: 72px; }
+  .sb-comp-crest--xl.sb-comp-crest--placeholder { font-size: 1.75rem; }
+  .sb-comp-crest--lg { width: 52px; height: 52px; }
+  .sb-comp-crest--lg.sb-comp-crest--placeholder { font-size: 1.25rem; }
+  .dbx-comp-card__crest-skeleton { width: 52px; height: 52px; }
+}

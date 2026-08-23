@@ -162,13 +162,26 @@ function TeamCrestMini({ name, logoUrl }: { name: string; logoUrl?: string | nul
 
 function CompetitionMark({ competition }: { competition: SbMatchListItem["competition"] }) {
   const hue = competitionHue(competition.id);
+  /* Competitions that have no crest — or whose crest URL 404s — fall back to
+     the tinted monogram rather than leaving a hole in the row. */
+  const [failed, setFailed] = useState(false);
+  const showLogo = Boolean(competition.logoUrl) && !failed;
   return (
     <span
       className="afx-comp-mark"
       style={{ "--afx-comp-hue": String(hue) } as React.CSSProperties}
       title={competition.name}
     >
-      {competitionMonogram(competition.name)}
+      {showLogo ? (
+        <img
+          src={competition.logoUrl as string}
+          alt=""
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        competitionMonogram(competition.name)
+      )}
     </span>
   );
 }
@@ -275,11 +288,20 @@ function DayModal({
 
   /* Grouped by competition so a busy day reads as a few blocks, not a wall. */
   const groups = useMemo(() => {
-    const map = new Map<string, { name: string; id: string; items: SbMatchListItem[] }>();
+    const map = new Map<
+      string,
+      { name: string; id: string; competition: SbMatchListItem["competition"]; items: SbMatchListItem[] }
+    >();
     for (const m of matches) {
       const g = map.get(m.competition.id);
       if (g) g.items.push(m);
-      else map.set(m.competition.id, { name: m.competition.name, id: m.competition.id, items: [m] });
+      else
+        map.set(m.competition.id, {
+          name: m.competition.name,
+          id: m.competition.id,
+          competition: m.competition,
+          items: [m],
+        });
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [matches]);
@@ -329,7 +351,7 @@ function DayModal({
             groups.map((g) => (
               <section key={g.id} className="afx-modal__group">
                 <header className="afx-modal__grouphead">
-                  <CompetitionMark competition={{ id: g.id, name: g.name, slug: "" }} />
+                  <CompetitionMark competition={g.competition} />
                   <h3>{g.name}</h3>
                   <span className="afx-modal__groupcount">{g.items.length}</span>
                 </header>

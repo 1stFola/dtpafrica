@@ -613,6 +613,21 @@
   font-size: 0.5rem;
   font-weight: 800;
   letter-spacing: 0.02em;
+  overflow: hidden;
+}
+
+/* A real crest replaces the tinted monogram plate; the hue tint would only
+   fight the artwork. Degrades harmlessly where :has() is unsupported. */
+.afx-comp-mark:has(img) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--afx-line);
+}
+
+.afx-comp-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .afx-fixture__comp,

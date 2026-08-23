@@ -373,6 +373,9 @@ model SbCompetition {
   formatType   String?  @map("format_type")
   formatConfig Json?    @map("format_config")
   country      String?  @default("Nigeria")
+  /** Competition crest. Teams already carry one; competitions did not, which
+      left the admin fixtures calendar deriving a monogram instead. */
+  logoUrl      String?  @map("logo_url")
   description  String?  @db.Text
   isPublished  Boolean  @default(true) @map("is_published")
   createdAt    DateTime @default(now()) @map("created_at")

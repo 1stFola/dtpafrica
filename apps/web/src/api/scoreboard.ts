@@ -44,6 +44,8 @@ export type SbCompetition = {
   formatType?: string | null;
   formatConfig?: Record<string, unknown> | null;
   country: string | null;
+  /** Competition crest. Null for competitions that have not supplied one. */
+  logoUrl?: string | null;
   description: string | null;
   _count?: { teams: number; matches: number };
 };
@@ -142,7 +144,7 @@ export type SbMatchListItem = {
   stats: SbMatchStats | null;
   homeTeam: SbTeamRef;
   awayTeam: SbTeamRef;
-  competition: { id: string; name: string; slug: string };
+  competition: { id: string; name: string; slug: string; logoUrl?: string | null };
   events?: SbMatchGoal[];
   _count?: { events: number };
 };
