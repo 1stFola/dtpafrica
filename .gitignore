@@ -15,6 +15,12 @@ Thumbs.db
 coverage/
 *.tsbuildinfo
 
+# Local dev scratch: background server stderr and ad-hoc API dumps. The curl
+# dumps hold real player records, so they must never reach the remote.
+.codex-dev-*.err
+_curl_*.json
+_user_cmd.log.*
+
 # Terraform — state is stored in the terraform-state branch, never in main
 infra/terraform/terraform.tfstate
 infra/terraform/terraform.tfstate.backup
