@@ -20,6 +20,8 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { slug: "scoreboard.matches.write", resource: "scoreboard", action: "matches.write", description: "Manage matches and events" },
   { slug: "scoreboard.competitions.write", resource: "scoreboard", action: "competitions.write", description: "Manage competitions and teams" },
   { slug: "scoreboard.highlights.write", resource: "scoreboard", action: "highlights.write", description: "Manage highlights" },
+  { slug: "scoreboard.stats.record", resource: "scoreboard", action: "stats.record", description: "Record live match statistics pitch-side" },
+  { slug: "scoreboard.stats.approve", resource: "scoreboard", action: "stats.approve", description: "Approve or send back submitted match statistics" },
   { slug: "content.read", resource: "content", action: "read", description: "View static content" },
   { slug: "content.write", resource: "content", action: "write", description: "Edit static content" },
   { slug: "blog.read", resource: "blog", action: "read", description: "View blog posts" },
@@ -49,7 +51,28 @@ export const SCOREBOARD_OPS_PERMISSION_SLUGS = [
   "scoreboard.matches.write",
   "scoreboard.competitions.write",
   "scoreboard.highlights.write",
+  "scoreboard.stats.record",
+  "scoreboard.stats.approve",
   "ops.support.read",
+];
+
+/**
+ * Contracted pitch-side staff: a stats sheet and nothing else.
+ *
+ * Deliberately without `scoreboard.read` and `admin.stats.read` — those unlock
+ * Dashboard, Fixtures and ScoreBoard Operations, which are internal views.
+ * The console reads its own fixture list through the match-stats endpoints,
+ * scoped to the competition the recorder is assigned to.
+ */
+export const MATCH_RECORDER_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "scoreboard.stats.record",
+];
+
+/** Match officials / supervisors: review and sign off, but do not tally. */
+export const MATCH_SUPERVISOR_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "scoreboard.stats.approve",
 ];
 
 export const CALIBRATION_EDITOR_PERMISSION_SLUGS = [
@@ -87,6 +110,18 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
     name: "Calibration Editor",
     description: "Run calibration and create calibrated players",
     permissionSlugs: CALIBRATION_EDITOR_PERMISSION_SLUGS,
+  },
+  {
+    slug: "match_recorder",
+    name: "Match Recorder",
+    description: "Record live match statistics pitch-side and submit them for approval",
+    permissionSlugs: MATCH_RECORDER_PERMISSION_SLUGS,
+  },
+  {
+    slug: "match_supervisor",
+    name: "Match Supervisor",
+    description: "Review submitted match statistics, then approve or send them back",
+    permissionSlugs: MATCH_SUPERVISOR_PERMISSION_SLUGS,
   },
   {
     slug: "read_only",

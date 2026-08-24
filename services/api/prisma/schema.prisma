@@ -386,6 +386,7 @@ model SbCompetition {
   highlights SbHighlight[]
   stages  SbCompetitionStage[]
   playerStats SbPlayerCompetitionStats[]
+  scopedAdminUsers AdminUser[]
 
   standingsSnapshot Json? @map("standings_snapshot")
   standingsUpdatedAt DateTime? @map("standings_updated_at")
@@ -534,6 +535,7 @@ model SbMatch {
   highlights  SbHighlight[]
   ingestAudits SbSipIngestAudit[]
   squadPlayers SbMatchSquadPlayer[]
+  statisticsSheet SbMatchStatistics?
 
   @@index([competitionId, status])
   @@index([stageKey])
@@ -541,6 +543,107 @@ model SbMatch {
   @@index([sipIngestStatus])
   @@index([kickoffAt])
   @@map("sb_matches")
+}
+
+/**
+ * Pitch-side statistics sheet for one match, with its own review workflow.
+ *
+ * Separate from SbMatch.stats on purpose: SbMatch.stats is the *published*
+ * figure the public Statistics tab reads, while this row is the working sheet
+ * plus its audit trail. Approving copies totals across, so nothing half-tallied
+ * can reach the public site.
+ *
+ * Actor ids and names are stored flat rather than as relations: an audit trail
+ * has to survive the deletion of the admin user it refers to.
+ */
+model SbMatchStatistics {
+  id      String @id @default(uuid())
+  matchId String @unique @map("match_id")
+
+  /**
+   * Statistics track: live | submitted | approved.
+   *
+   * Statistics and events are reviewed independently — a recorder can send the
+   * stat sheet up at full time while still tidying the event log, and neither
+   * blocks the other. `status` and the unprefixed audit columns below belong to
+   * the statistics track; the `events*` columns mirror them for the event log.
+   */
+  status String @default("live")
+
+  /** Event log track: live | submitted | approved. */
+  eventsStatus String @default("live") @map("events_status")
+
+  eventsSubmittedById   String?   @map("events_submitted_by")
+  eventsSubmittedByName String?   @map("events_submitted_by_name")
+  eventsSubmittedAt     DateTime? @map("events_submitted_at")
+
+  eventsApprovedById   String?   @map("events_approved_by")
+  eventsApprovedByName String?   @map("events_approved_by_name")
+  eventsApprovedAt     DateTime? @map("events_approved_at")
+
+  eventsSentBackById   String?   @map("events_sent_back_by")
+  eventsSentBackByName String?   @map("events_sent_back_by_name")
+  eventsSentBackAt     DateTime? @map("events_sent_back_at")
+  eventsSentBackNote   String?   @map("events_sent_back_note") @db.Text
+
+  /**
+   * Raw tallies as the console records them, preserving the half split so a
+   * second-half query can be answered later:
+   *   { "shots": { "1st": { "home": 0, "away": 0 }, "2nd": {...} },
+   *     "yellowCards": { "home": 0, "away": 0 } }
+   * Stats that are not split by half carry the flat {home,away} shape.
+   */
+  tallies Json @default("{}")
+
+  /**
+   * Player events tapped on the Events tab, in recording order:
+   *   [{ id, type, minute, addedMinute, side, playerNumber, half }]
+   * Approving turns each into an SbMatchEvent row with a generated comment.
+   * Held here until then so nothing half-tapped reaches the public timeline.
+   */
+  events Json @default("[]")
+
+  /**
+   * Match clock: { halfLength, half, phase, firstHalfStartedAt, … }.
+   *
+   * Stores wall-clock anchors rather than an elapsed count, so the running time
+   * is derived on read. Switching tabs, reloading, or the phone locking cannot
+   * lose it. Half length is set at kick-off because competitions run anywhere
+   * from 30- to 45-minute halves.
+   */
+  clock Json?
+
+  /**
+   * Kit colours the two sides are actually wearing today, chosen by the
+   * recorder: { home: "#e11d48", away: "#f8fafc" }. Per sheet rather than per
+   * team because a team's kit changes match to match.
+   */
+  kits Json?
+
+  recorderId   String? @map("recorder_id")
+  recorderName String? @map("recorder_name")
+
+  submittedById   String?   @map("submitted_by")
+  submittedByName String?   @map("submitted_by_name")
+  submittedAt     DateTime? @map("submitted_at")
+
+  approvedById   String?   @map("approved_by")
+  approvedByName String?   @map("approved_by_name")
+  approvedAt     DateTime? @map("approved_at")
+
+  sentBackById   String?   @map("sent_back_by")
+  sentBackByName String?   @map("sent_back_by_name")
+  sentBackAt     DateTime? @map("sent_back_at")
+  sentBackNote   String?   @map("sent_back_note") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  match SbMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([eventsStatus])
+  @@map("sb_match_statistics")
 }
 
 model SbSipIngestAudit {
@@ -656,13 +759,21 @@ model AdminUser {
   name         String?
   passwordHash String?  @map("password_hash")
   roleId       String?  @map("role_id")
+  /**
+   * Scopes a contracted match recorder to a single competition: they only see
+   * fixtures from it, and cannot open a sheet for anything else. Null means
+   * unscoped, which is how every internal role behaves.
+   */
+  competitionId String? @map("competition_id")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  role AdminRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  role        AdminRole?     @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  competition SbCompetition? @relation(fields: [competitionId], references: [id], onDelete: SetNull)
 
   @@index([roleId])
+  @@index([competitionId])
   @@map("admin_users")
 }
 

@@ -29,6 +29,11 @@ export class CreateAdminUserDto {
 
   @IsString()
   roleSlug!: string;
+
+  /** Scopes a Match Recorder to one competition. Empty or omitted = unscoped. */
+  @IsOptional()
+  @IsString()
+  competitionId?: string | null;
 }
 
 export class UpdateAdminUserDto {
@@ -52,4 +57,9 @@ export class UpdateAdminUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Pass an empty string to clear an existing competition scope. */
+  @IsOptional()
+  @IsString()
+  competitionId?: string | null;
 }

@@ -3,6 +3,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AdminAuthService } from "./auth/admin-auth.service";
 import { ADMIN_PERMISSIONS } from "./rbac/permissions.catalog";
 
+/** Roles that must be pinned to exactly one competition. */
+const COMPETITION_SCOPED_ROLE = "match_recorder";
+
 @Injectable()
 export class AdminRbacService {
   constructor(
@@ -84,7 +87,7 @@ export class AdminRbacService {
   async listUsers() {
     const users = await this.prisma.adminUser.findMany({
       orderBy: [{ isActive: "desc" }, { email: "asc" }],
-      include: { role: true },
+      include: { role: true, competition: { select: { id: true, name: true } } },
     });
     return users.map((u) => ({
       id: u.id,
@@ -93,6 +96,8 @@ export class AdminRbacService {
       isActive: u.isActive,
       roleSlug: u.role?.slug ?? null,
       roleName: u.role?.name ?? null,
+      competitionId: u.competitionId ?? null,
+      competitionName: u.competition?.name ?? null,
       createdAt: u.createdAt.toISOString(),
       updatedAt: u.updatedAt.toISOString(),
     }));
@@ -103,12 +108,16 @@ export class AdminRbacService {
     name?: string;
     password: string;
     roleSlug: string;
+    competitionId?: string | null;
   }) {
     await this.adminAuth.assertUniqueEmail(input.email);
     const role = await this.prisma.adminRole.findUnique({
       where: { slug: input.roleSlug },
     });
     if (!role) throw new BadRequestException("Role not found");
+
+    const competitionId = await this.resolveCompetitionScope(input.competitionId);
+    this.assertScopeRequired(role.slug, competitionId);
 
     const passwordHash = await this.adminAuth.hashPassword(input.password);
     const user = await this.prisma.adminUser.create({
@@ -117,8 +126,9 @@ export class AdminRbacService {
         name: input.name?.trim() || null,
         passwordHash,
         roleId: role.id,
+        competitionId,
       },
-      include: { role: true },
+      include: { role: true, competition: { select: { id: true, name: true } } },
     });
     return {
       id: user.id,
@@ -127,7 +137,40 @@ export class AdminRbacService {
       isActive: user.isActive,
       roleSlug: user.role?.slug ?? null,
       roleName: user.role?.name ?? null,
+      competitionId: user.competitionId ?? null,
+      competitionName: user.competition?.name ?? null,
     };
+  }
+
+  /**
+   * A recorder with no competition would fall back to unscoped and see every
+   * fixture, so the scope is mandatory for that role rather than optional.
+   */
+  private assertScopeRequired(roleSlug: string | null, competitionId: string | null) {
+    if (roleSlug === COMPETITION_SCOPED_ROLE && !competitionId) {
+      throw new BadRequestException(
+        "A Match Recorder must be assigned a competition"
+      );
+    }
+  }
+
+  /**
+   * Competition scope for a contracted recorder. An empty value clears the
+   * scope; an unknown id is rejected rather than silently ignored, so a typo
+   * cannot quietly grant access to every competition.
+   */
+  private async resolveCompetitionScope(
+    competitionId?: string | null
+  ): Promise<string | null> {
+    if (competitionId === undefined || competitionId === null || competitionId === "") {
+      return null;
+    }
+    const competition = await this.prisma.sbCompetition.findUnique({
+      where: { id: competitionId },
+      select: { id: true },
+    });
+    if (!competition) throw new BadRequestException("Competition not found");
+    return competition.id;
   }
 
   async updateUser(
@@ -138,6 +181,7 @@ export class AdminRbacService {
       password?: string;
       roleSlug?: string;
       isActive?: boolean;
+      competitionId?: string | null;
     }
   ) {
     const existing = await this.prisma.adminUser.findUnique({ where: { id } });
@@ -156,6 +200,13 @@ export class AdminRbacService {
       roleId = role.id;
     }
 
+    const nextCompetitionId =
+      input.competitionId !== undefined
+        ? await this.resolveCompetitionScope(input.competitionId)
+        : existing.competitionId;
+    const nextRole = await this.prisma.adminRole.findUnique({ where: { id: roleId ?? "" } });
+    this.assertScopeRequired(nextRole?.slug ?? null, nextCompetitionId);
+
     const passwordHash = input.password
       ? await this.adminAuth.hashPassword(input.password)
       : undefined;
@@ -168,8 +219,13 @@ export class AdminRbacService {
         ...(passwordHash ? { passwordHash } : {}),
         ...(input.roleSlug ? { roleId } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.competitionId !== undefined ? { competitionId: nextCompetitionId } : {}),
+        /* Changing role away from a scoped one clears the stale scope. */
+        ...(nextRole?.slug !== COMPETITION_SCOPED_ROLE && existing.competitionId
+          ? { competitionId: null }
+          : {}),
       },
-      include: { role: true },
+      include: { role: true, competition: { select: { id: true, name: true } } },
     });
 
     return {
@@ -179,6 +235,8 @@ export class AdminRbacService {
       isActive: user.isActive,
       roleSlug: user.role?.slug ?? null,
       roleName: user.role?.name ?? null,
+      competitionId: user.competitionId ?? null,
+      competitionName: user.competition?.name ?? null,
     };
   }
 }
