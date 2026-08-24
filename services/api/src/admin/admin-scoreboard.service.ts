@@ -2399,7 +2399,7 @@ export class AdminScoreboardService {
   }
 
   groupStandings(competitionId: string) {
-    return this.competitionEngine.groupStandings(competitionId);
+    return this.competitionEngine.standings(competitionId);
   }
 
   async listMatchEvents(matchId: string) {

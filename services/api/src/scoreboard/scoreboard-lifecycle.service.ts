@@ -109,7 +109,7 @@ export class ScoreboardLifecycleService {
   }
 
   async refreshCompetitionStandings(competitionId: string) {
-    const payload = await this.competitionEngine.groupStandings(competitionId);
+    const payload = await this.competitionEngine.standings(competitionId);
     await this.prisma.sbCompetition.update({
       where: { id: competitionId },
       data: {

@@ -14,6 +14,7 @@ import {
 } from "@dtp/engines";
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { resolveUniqueMatchSlug } from "./match-slug";
+import { computeStandings } from "./standings";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -194,22 +195,49 @@ export class CompetitionEngineService {
     };
   }
 
-  async groupStandings(competitionId: string) {
-    const competition = await this.prisma.sbCompetition.findUnique({
-      where: { id: competitionId },
+  /**
+   * The single standings implementation.
+   *
+   * Two versions of this used to exist — one here and one on ScoreboardService —
+   * which drifted: only the other one knew that a knockout cup stores its draw
+   * seed in `groupKey`, so this one grouped such a competition into one "group"
+   * per team. Everything now goes through here.
+   *
+   * `publicOnly` restricts to published competitions and published matches; the
+   * admin and lifecycle callers need the unpublished view.
+   */
+  async standings(
+    competitionId: string,
+    options: { publicOnly?: boolean } = {}
+  ) {
+    const publicOnly = options.publicOnly === true;
+
+    const competition = await this.prisma.sbCompetition.findFirst({
+      where: { id: competitionId, ...(publicOnly ? { isPublished: true } : {}) },
       include: { teams: true },
     });
     if (!competition) throw new NotFoundException("Competition not found");
 
-    const groupStageKeys = competition.formatType === "JAGABAN_CUP_STANDARD"
-      ? ["group_a", "group_b"]
-      : undefined;
+    /* A knockout cup keeps the draw seed in groupKey, so it must never be
+       grouped by it; a competition is grouped only when it genuinely has
+       groups. */
+    const isKnockoutCup = competition.formatType === "KNOCKOUT_CUP";
+    const GROUPED_FORMATS = new Set(["JAGABAN_CUP_STANDARD", "HYBRID_CHAMPIONS_LEAGUE"]);
+    const useGroups =
+      !isKnockoutCup &&
+      (GROUPED_FORMATS.has(competition.formatType ?? "") ||
+        competition.teams.some((t) => t.groupKey));
 
     const finished = await this.prisma.sbMatch.findMany({
       where: {
         competitionId,
         status: "finished",
-        ...(groupStageKeys ? { stageKey: { in: groupStageKeys } } : {}),
+        ...(publicOnly ? { isPublished: true } : {}),
+        /* Jagaban's table counts only the group phase; its knockout ties must
+           not feed the group standings. */
+        ...(useGroups && competition.formatType === "JAGABAN_CUP_STANDARD"
+          ? { stageKey: { startsWith: "group_" } }
+          : {}),
       },
       select: {
         homeTeamId: true,
@@ -221,22 +249,40 @@ export class CompetitionEngineService {
       },
     });
 
-    const rows = computeGroupStandings(
-      competition.teams.map((t) => ({
-        id: t.id,
-        name: normalizeClubName(t.name),
-        shortName: t.shortName,
-        groupKey: t.groupKey,
-      })),
-      finished
-    );
+    const normalizedTeams = competition.teams.map((t) => ({
+      id: t.id,
+      name: normalizeClubName(t.name),
+      shortName: t.shortName,
+      groupKey: t.groupKey,
+    }));
+
+    /* Crests are attached after the table is computed rather than widening the
+       ranking engine's signature for a purely presentational field. */
+    const crestByTeam = new Map(competition.teams.map((t) => [t.id, t.logoUrl]));
+    const withCrests = <T extends { teamId: string }>(rows: T[]) =>
+      rows.map((row) => ({ ...row, logoUrl: crestByTeam.get(row.teamId) ?? null }));
+
+    if (useGroups) {
+      const groupRows = computeGroupStandings(normalizedTeams, finished);
+      return presentScoreboardPayload({
+        competitionId,
+        competitionName: competition.name,
+        season: competition.season,
+        formatType: competition.formatType,
+        groups: [...new Set(groupRows.map((r) => r.groupKey))].sort(),
+        rows: withCrests(groupRows),
+      });
+    }
 
     return presentScoreboardPayload({
       competitionId,
       competitionName: competition.name,
+      season: competition.season,
       formatType: competition.formatType,
-      groups: [...new Set(rows.map((r) => r.groupKey))].sort(),
-      rows,
+      /* No `groups` key at all: a flat table has none, and callers branch on
+         its absence rather than on a placeholder value. */
+      rows: withCrests(computeStandings(normalizedTeams, finished)),
     });
   }
+
 }

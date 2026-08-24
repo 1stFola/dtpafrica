@@ -12,7 +12,6 @@ import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
 import type { PatchMatchScoreDto } from "../admin/dto/patch-match-score.dto";
 import {
-  computeGroupStandings,
   normalizeClubName,
   normalizePlayerName,
   playerLookupKey,
@@ -33,7 +32,6 @@ import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
 import { deriveMatchStatsFromCsvEvents } from "./match-csv-events";
 import { parseMatchTimelineCsv } from "./match-csv-ingest";
 import { parseShortMatchEventsCsv } from "./short-event-csv";
-import { computeStandings } from "./standings";
 import {
   resolvePlayerNameCandidate,
   type PlayerNameCandidate,
@@ -763,11 +761,19 @@ export class ScoreboardService {
     const competition = await this.resolvePublishedCompetition(competitionIdOrSlug);
     const competitionId = competition.id;
 
-    const standingsPayload = await this.competitionEngine.groupStandings(competitionId);
-    const rows = (standingsPayload as { rows?: Array<{ groupKey: string }> }).rows ?? [];
-    const groupKeys = [...new Set(rows.map((r) => r.groupKey))].sort();
+    const standingsPayload = await this.competitionEngine.standings(competitionId, {
+      publicOnly: true,
+    });
+    const payload = standingsPayload as {
+      rows?: Array<{ groupKey?: string }>;
+      groups?: string[];
+    };
+    const rows = payload.rows ?? [];
+    /* Group only when the standings say so. Deriving groups from row keys used
+       to turn a knockout cup — which stores its draw seed there — into one
+       "group" per team. */
     const groups: Record<string, typeof rows> = {};
-    for (const key of groupKeys) {
+    for (const key of payload.groups ?? []) {
       const label = key.replace(/^group_/i, "").toUpperCase() || key;
       groups[label] = rows.filter((r) => r.groupKey === key);
     }
@@ -1532,66 +1538,6 @@ export class ScoreboardService {
         [match.homeTeamId]: teamPayload(match.homeTeamId, match.homeTeam),
         [match.awayTeamId]: teamPayload(match.awayTeamId, match.awayTeam),
       },
-    });
-  }
-
-  async standings(competitionId: string) {
-    const competition = await this.prisma.sbCompetition.findFirst({
-      where: { id: competitionId, isPublished: true },
-      include: { teams: true },
-    });
-    if (!competition) throw new NotFoundException("Competition not found");
-
-    const groupFormats = new Set(["JAGABAN_CUP_STANDARD", "HYBRID_CHAMPIONS_LEAGUE"]);
-    const isKnockoutCup = competition.formatType === "KNOCKOUT_CUP";
-    const useGroups =
-      !isKnockoutCup &&
-      (groupFormats.has(competition.formatType ?? "") ||
-        competition.teams.some((t) => t.groupKey));
-
-    const finished = await this.prisma.sbMatch.findMany({
-      where: {
-        competitionId,
-        status: "finished",
-        isPublished: true,
-        ...(useGroups && competition.formatType === "JAGABAN_CUP_STANDARD"
-          ? { stageKey: { startsWith: "group_" } }
-          : {}),
-      },
-      select: {
-        homeTeamId: true,
-        awayTeamId: true,
-        homeScore: true,
-        awayScore: true,
-        kickoffAt: true,
-      },
-    });
-
-    const normalizedTeams = competition.teams.map((t) => ({
-      id: t.id,
-      name: normalizeClubName(t.name),
-      shortName: t.shortName,
-      groupKey: t.groupKey,
-    }));
-
-    if (useGroups) {
-      const groupRows = computeGroupStandings(normalizedTeams, finished);
-      return presentScoreboardPayload({
-        competitionId,
-        competitionName: competition.name,
-        season: competition.season,
-        formatType: competition.formatType,
-        groups: [...new Set(groupRows.map((r) => r.groupKey))].sort(),
-        rows: groupRows,
-      });
-    }
-
-    return presentScoreboardPayload({
-      competitionId,
-      competitionName: competition.name,
-      season: competition.season,
-      formatType: competition.formatType,
-      rows: computeStandings(normalizedTeams, finished),
     });
   }
 
