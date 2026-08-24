@@ -559,7 +559,7 @@ export class AdminMatchStatsService {
     const match = await this.loadMatch(matchId, ctx);
     const sheet = await this.requireSheet(matchId);
 
-    this.assertOwnsSheet(sheet, ctx);
+    this.assertOwnsSheet(sheet, ctx, match);
 
     /* Sections lock independently: an approved stat sheet stops accepting
        tallies while the event log is still being tidied, and vice versa. */
@@ -602,7 +602,7 @@ export class AdminMatchStatsService {
         `The ${SECTION_LABEL[section]} has already been approved`
       );
     }
-    this.assertOwnsSheet(sheet, ctx);
+    this.assertOwnsSheet(sheet, ctx, match);
 
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
@@ -880,11 +880,18 @@ export class AdminMatchStatsService {
     return sheet;
   }
 
-  /** Sheets belong to the recorder who claimed them. */
+  /**
+   * Sheets belong to the recorder who claimed them.
+   *
+   * Training sheets are exempt: a practice fixture is shared equipment, and
+   * the first trainee to open one would otherwise lock out everybody else.
+   */
   private assertOwnsSheet(
     sheet: { recorderId: string | null },
-    ctx: AdminAuthContext
+    ctx: AdminAuthContext,
+    match?: { competition?: { formatConfig?: unknown } | null }
   ) {
+    if (match && isTrainingCompetition(match.competition ?? null)) return;
     const isSuperAdmin = ctx.method === "api_key" || ctx.roleSlug === "super_admin";
     if (isSuperAdmin || !sheet.recorderId || !ctx.userId) return;
     if (sheet.recorderId !== ctx.userId) {

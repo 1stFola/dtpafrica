@@ -75,12 +75,8 @@ export function AdminMatchStatsPage() {
     );
   }, [fixtures, search]);
 
-  /* Training fixtures sit in their own section: their dates are arbitrary, so
-     grouping them under "Recent & upcoming" only makes them hard to find. */
-  const trainingFixtures = useMemo(
-    () => visibleFixtures.filter((m) => m.competition.isTraining),
-    [visibleFixtures]
-  );
+  /* Training fixtures live on their own Training page, so this list stays a
+     list of real games. */
   const realFixtures = useMemo(
     () => visibleFixtures.filter((m) => !m.competition.isTraining),
     [visibleFixtures]
@@ -94,7 +90,6 @@ export function AdminMatchStatsPage() {
           {m.homeTeam.name} <span className="mcx-queue__vs">vs</span> {m.awayTeam.name}
         </span>
         <span className="mcx-fixtures__comp">
-          {m.competition.isTraining && <span className="mcx-training">Training</span>}
           {m.competition.name}
           {m.sheetStatus ? ` · sheet ${m.sheetStatus}` : ""}
           {m.recorderName ? ` · ${m.recorderName}` : ""}
@@ -109,9 +104,7 @@ export function AdminMatchStatsPage() {
         <h1>Match statistics</h1>
         <p>
           Open a fixture to record statistics pitch-side, then submit the sheet for a supervisor to
-          approve. Only approved sheets appear on the public site. Fixtures marked{" "}
-          <span className="mcx-training">Training</span> are practice only and never reach the
-          public site.
+          approve. Only approved sheets appear on the public site.
         </p>
       </header>
 
@@ -146,21 +139,6 @@ export function AdminMatchStatsPage() {
 
       {queue && queue.length === 0 && (
         <p className="mcx-callout">No sheets are waiting on your approval.</p>
-      )}
-
-      {trainingFixtures.length > 0 && (
-        <section className="mcx-fixtures">
-          <div className="mcx-fixtures__head">
-            <h2>
-              <span className="mcx-training">Training</span> Practice fixtures
-            </h2>
-          </div>
-          <p className="mcx-callout">
-            Practice sheets for learning the console. Nothing recorded here reaches the public
-            site, and they stay available whatever the date.
-          </p>
-          <ul className="mcx-fixtures__list">{trainingFixtures.map(fixtureRow)}</ul>
-        </section>
       )}
 
       <section className="mcx-fixtures">

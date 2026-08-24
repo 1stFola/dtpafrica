@@ -19,6 +19,7 @@ const links: AdminNavLink[] = [
   { to: "/admin/players", label: "Players", icon: "⚽" },
   { to: "/admin/fixtures", label: "Fixtures", icon: "▤" },
   { to: "/admin/match-stats", label: "Match Stats", icon: "✎" },
+  { to: "/admin/training", label: "Training", icon: "◷" },
   { to: "/admin/calibration", label: "Calibration", icon: "◎" },
   { to: "/admin/homepage", label: "Homepage", icon: "⌂" },
   { to: "/admin/ads", label: "Ads", icon: "▣" },

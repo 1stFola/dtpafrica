@@ -10,6 +10,7 @@ import { AdminAcademiesPage } from "./pages/AdminAcademiesPage";
 import { AdminCalibrationPage } from "./pages/AdminCalibrationPage";
 import { AdminFixturesPage } from "./pages/AdminFixturesPage";
 import { AdminMatchStatsPage } from "./pages/AdminMatchStatsPage";
+import { AdminTrainingPage } from "./pages/AdminTrainingPage";
 import { AdminContentPage } from "./pages/AdminContentPage";
 import { AdminIndexRoute } from "./AdminIndexRoute";
 import { AdminDatabasePage } from "./pages/AdminDatabasePage";
@@ -37,6 +38,7 @@ export function AdminApp() {
             <Route path="players" element={<AdminPlayersPage />} />
             <Route path="fixtures" element={<AdminFixturesPage />} />
             <Route path="match-stats" element={<AdminMatchStatsPage />} />
+            <Route path="training" element={<AdminTrainingPage />} />
             <Route path="calibration" element={<AdminCalibrationPage />} />
             <Route path="ops-support" element={<AdminOpsSupportPage />} />
             <Route path="homepage" element={<AdminHomepagePage />} />
