@@ -4,7 +4,8 @@ import type { ClockState } from "../../../api/adminMatchStats";
 /** Clock ticks once a second; anything finer is wasted work pitch-side. */
 const TICK_MS = 1000;
 
-export const HALF_LENGTH_CHOICES = [30, 35, 40, 45];
+/* 5 is for training fixtures — a full run in under ten minutes. */
+export const HALF_LENGTH_CHOICES = [5, 30, 35, 40, 45];
 
 export const DEFAULT_CLOCK: ClockState = {
   halfLength: 45,
