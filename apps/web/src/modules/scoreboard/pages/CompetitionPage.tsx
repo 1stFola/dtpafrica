@@ -50,6 +50,12 @@ const KNOCKOUT_FORMAT_COPY =
 const KNOCKOUT_STATUSES = new Set(["finished"]);
 const LIVE_STATUSES = new Set(["live", "halftime"]);
 
+/** Keys the engine emits when a competition has no real groups. */
+function isSingleTableKey(groupKey: string): boolean {
+  const key = groupKey.trim().toUpperCase();
+  return key === "" || key === "DEFAULT" || key === "STANDINGS";
+}
+
 const KNOCKOUT_ROUND_LABELS: Record<string, string> = {
   round_of_16: "Round of 16",
   quarter_final: "Quarter-Final",
@@ -387,7 +393,10 @@ function StandingsCard({
   return (
     <div className="sbc-standings-card">
       <div className="sbc-standings-card__head">
-        <h3>Group {groupKey}</h3>
+        {/* A single-table league has no group to name; the placeholder key the
+            engine emits for an ungrouped competition must not surface as
+            "Group DEFAULT". */}
+        <h3>{isSingleTableKey(groupKey) ? "League table" : `Group ${groupKey}`}</h3>
         <span className="sbc-standings-card__count">{rows.length} teams</span>
       </div>
       <table className="sbc-standings-table">
@@ -920,6 +929,9 @@ export function CompetitionPage() {
               rows={rows}
               rankLabel={(rank) => {
                 if (!isGroupFormat) return null;
+                /* A single table is a league: nobody is a "Finalist" and there
+                   is no third-place playoff to qualify for. */
+                if (groups.length <= 1 && isSingleTableKey(groupKey || "")) return null;
                 const topPerGroup = advancement?.topPerGroup;
                 if (topPerGroup) {
                   /* Groups feeding a bracket: the top N advance outright, so
