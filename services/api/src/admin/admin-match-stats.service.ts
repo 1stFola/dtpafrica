@@ -410,8 +410,13 @@ export class AdminMatchStatsService {
     });
     if (!match) throw new NotFoundException("Match not found");
     /* A scoped recorder must not reach a fixture outside their competition,
-       even by typing the match id straight into the URL. */
-    if (ctx.competitionId && match.competitionId !== ctx.competitionId) {
+       even by typing the match id straight into the URL — training fixtures
+       excepted, since every recorder needs somewhere to practise. */
+    if (
+      ctx.competitionId &&
+      match.competitionId !== ctx.competitionId &&
+      !isTrainingCompetition(match.competition)
+    ) {
       throw new ForbiddenException("This match is outside the competition you are assigned to");
     }
     return match;
@@ -430,30 +435,40 @@ export class AdminMatchStatsService {
       throw new ForbiddenException("You cannot view match statistics fixtures");
     }
 
+    const isTraining = { competition: { formatType: TRAINING_FORMAT_TYPE } };
     const matches = await this.prisma.sbMatch.findMany({
       where: {
         isPublished: true,
         /* Deliberately not filtering on competition.isPublished: the training
            competition is unpublished so it stays off the public ScoreBoard,
            but recorders still need to reach it here. This endpoint is
-           permission-gated and competition-scoped, so nothing leaks. */
-        ...(ctx.competitionId ? { competitionId: ctx.competitionId } : {}),
-        /* Training fixtures ignore the date window: their kickoff dates are
-           arbitrary, so a sandbox match must not fall out of reach simply
-           because the calendar moved past it. */
-        ...(range.from || range.to
-          ? {
-              OR: [
+           permission-gated, so nothing leaks. */
+        AND: [
+          /* Training fixtures sit outside a recorder's competition scope. The
+             scope exists to keep a contractor away from other competitions'
+             real games; a sandbox is not that, and a scoped recorder is
+             precisely who needs somewhere to practise. */
+          ...(ctx.competitionId
+            ? [{ OR: [{ competitionId: ctx.competitionId }, isTraining] }]
+            : []),
+          /* They also ignore the date window: a sandbox match's kickoff date is
+             arbitrary and must not fall out of reach as the calendar moves. */
+          ...(range.from || range.to
+            ? [
                 {
-                  kickoffAt: {
-                    ...(range.from ? { gte: range.from } : {}),
-                    ...(range.to ? { lte: range.to } : {}),
-                  },
+                  OR: [
+                    {
+                      kickoffAt: {
+                        ...(range.from ? { gte: range.from } : {}),
+                        ...(range.to ? { lte: range.to } : {}),
+                      },
+                    },
+                    isTraining,
+                  ],
                 },
-                { competition: { formatType: TRAINING_FORMAT_TYPE } },
-              ],
-            }
-          : {}),
+              ]
+            : []),
+        ],
       },
       orderBy: [{ kickoffAt: "desc" }],
       take: 200,
