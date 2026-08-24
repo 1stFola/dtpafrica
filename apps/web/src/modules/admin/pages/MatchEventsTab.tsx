@@ -52,9 +52,10 @@ export function MatchEventsTab({
 }) {
   const teamFor = (s: Side) => (s === "home" ? homeName : awayName);
   const stepsEnabled = editable && clock.started;
-  /* Step 4 stays locked until steps 1 and 2 are both answered, so an event can
-     never be filed against the wrong minute or the wrong side. */
-  const canLog = stepsEnabled && Boolean(captured) && Boolean(side);
+  /* Every earlier step must be answered before step 4 unlocks: no event can be
+     filed against the wrong minute, the wrong side, or no player at all. */
+  const canLog =
+    stepsEnabled && Boolean(captured) && Boolean(side) && playerNumber.trim() !== "";
 
   /** Step 4 — the tap that actually writes the event. */
   const addEvent = (type: string) => {
@@ -96,6 +97,8 @@ export function MatchEventsTab({
                 <em className="mcx-step__gate"> — log a minute first (step 1)</em>
               ) : !side ? (
                 <em className="mcx-step__gate"> — choose home or away first (step 2)</em>
+              ) : playerNumber.trim() === "" ? (
+                <em className="mcx-step__gate"> — enter a jersey number first (step 3)</em>
               ) : null}
             </span>
             <div className="mcx-grid" aria-label="Event types">

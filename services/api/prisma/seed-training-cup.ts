@@ -31,8 +31,6 @@ type TeamSeed = { id: string; slug: string; name: string; shortName: string };
 const TEAMS: TeamSeed[] = [
   { id: "7ac1f0de-0000-4000-8bbb-000000000001", slug: "france", name: "France", shortName: "FRA" },
   { id: "7ac1f0de-0000-4000-8bbb-000000000002", slug: "spain", name: "Spain", shortName: "ESP" },
-  { id: "7ac1f0de-0000-4000-8bbb-000000000003", slug: "england", name: "England", shortName: "ENG" },
-  { id: "7ac1f0de-0000-4000-8bbb-000000000004", slug: "argentina", name: "Argentina", shortName: "ARG" },
 ];
 
 type MatchSeed = {
@@ -44,6 +42,8 @@ type MatchSeed = {
   kickoffAt: string;
 };
 
+/* One practice fixture is enough to teach the console; a second only doubles
+   the resetting between trainees. */
 const MATCHES: MatchSeed[] = [
   {
     id: "7ac1f0de-0000-4000-8ccc-000000000001",
@@ -53,24 +53,9 @@ const MATCHES: MatchSeed[] = [
     awaySlug: "spain",
     kickoffAt: "2026-07-14T18:00:00.000+01:00",
   },
-  {
-    id: "7ac1f0de-0000-4000-8ccc-000000000002",
-    slugBase: ["england", "argentina"],
-    roundLabel: "Semi-Final 2",
-    homeSlug: "england",
-    awaySlug: "argentina",
-    kickoffAt: "2026-07-15T18:00:00.000+01:00",
-  },
 ];
 
-/**
- * Squads as supplied, with the two duplicated shirt numbers resolved: England
- * No. 9 is Harry Kane and Argentina No. 3 is Nicolas Tagliafico.
- *
- * Anthony Gordon and Lisandro Martinez keep their squad places but carry no
- * number until one is assigned — inventing a number would put a figure in the
- * generated commentary that nobody chose.
- */
+/** Squads for the practice fixture, as supplied. */
 const SQUADS: Record<string, Array<{ name: string; number: number | null }>> = {
   france: [
     { name: "Mike Maignan", number: 16 },
@@ -97,32 +82,6 @@ const SQUADS: Record<string, Array<{ name: string; number: number | null }>> = {
     { name: "Lamine Yamal", number: 19 },
     { name: "Alex Baena", number: 15 },
     { name: "Mikel Oyarzabal", number: 21 },
-  ],
-  england: [
-    { name: "Jordan Pickford", number: 1 },
-    { name: "Reece James", number: 24 },
-    { name: "Marc Guehi", number: 6 },
-    { name: "Charlie Cresswell", number: 5 },
-    { name: "Jed Spence", number: 3 },
-    { name: "Declan Rice", number: 4 },
-    { name: "Elliot Anderson", number: 7 },
-    { name: "Jude Bellingham", number: 10 },
-    { name: "Morgan Rogers", number: 11 },
-    { name: "Anthony Gordon", number: null },
-    { name: "Harry Kane", number: 9 },
-  ],
-  argentina: [
-    { name: "Emiliano Martinez", number: 1 },
-    { name: "Nahuel Molina", number: 4 },
-    { name: "Cristian Romero", number: 13 },
-    { name: "Lisandro Martinez", number: null },
-    { name: "Nicolas Tagliafico", number: 3 },
-    { name: "Leandro Paredes", number: 5 },
-    { name: "Giuliano Simeone", number: 7 },
-    { name: "Alexis Mac Allister", number: 8 },
-    { name: "Enzo Fernandez", number: 24 },
-    { name: "Julian Alvarez", number: 9 },
-    { name: "Lionel Messi", number: 10 },
   ],
 };
 

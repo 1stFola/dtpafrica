@@ -733,7 +733,9 @@ export function AdminMatchStatsConsolePage() {
 
             <label className="mcx-jersey">
               <span
-                className={`mcx-step__n mcx-step__n--inline${side ? "" : " is-locked"}`}
+                className={`mcx-step__n mcx-step__n--inline${
+                  side && playerNumber.trim() !== "" ? "" : " is-locked"
+                }`}
               >
                 3
               </span>
