@@ -122,12 +122,12 @@ export class ScoreboardController {
 
   @Get("standings/:competitionId")
   standings(@Param("competitionId") competitionId: string) {
-    return this.sb.standings(competitionId);
+    return this.competitionEngine.standings(competitionId, { publicOnly: true });
   }
 
   @Get("competitions/:competitionId/standings/groups")
   groupStandings(@Param("competitionId") competitionId: string) {
-    return this.competitionEngine.groupStandings(competitionId);
+    return this.competitionEngine.standings(competitionId, { publicOnly: true });
   }
 
   @Get("highlights")
