@@ -58,6 +58,9 @@ export type AdminSession = {
   userId?: string;
   email?: string;
   displayName?: string;
+  /** Set when the account is scoped to a single competition. */
+  competitionId?: string | null;
+  competitionName?: string | null;
 };
 
 export type AdminPermission = {
@@ -83,6 +86,9 @@ export type AdminUser = {
   isActive: boolean;
   roleSlug: string | null;
   roleName: string | null;
+  /** Set only for competition-scoped roles (contracted match recorders). */
+  competitionId?: string | null;
+  competitionName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -96,7 +102,7 @@ export class AdminApiError extends Error {
   }
 }
 
-async function adminFetch<T>(
+export async function adminFetch<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
@@ -883,6 +889,7 @@ export const adminApi = {
     name?: string;
     password: string;
     roleSlug: string;
+    competitionId?: string | null;
   }) =>
     adminFetch<AdminUser>("/admin/rbac/users", {
       method: "POST",
@@ -895,6 +902,7 @@ export const adminApi = {
       name?: string;
       password?: string;
       roleSlug?: string;
+      competitionId?: string | null;
       isActive?: boolean;
     }
   ) =>

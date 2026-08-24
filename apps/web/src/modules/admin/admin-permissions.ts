@@ -7,7 +7,29 @@ export type AdminSession = {
   userId?: string;
   email?: string;
   displayName?: string;
+  /** Set when the account is scoped to a single competition. */
+  competitionId?: string | null;
+  competitionName?: string | null;
 };
+
+/**
+ * Where an account lands after login. Contracted recorders have no dashboard
+ * permission, so sending them to /admin would show them an empty shell.
+ */
+export function adminLandingPath(session: {
+  method: AdminSession["method"];
+  permissions: string[];
+}): string {
+  if (session.method === "api_key") return "/admin";
+  if (session.permissions.includes("admin.stats.read")) return "/admin";
+  if (
+    session.permissions.includes("scoreboard.stats.record") ||
+    session.permissions.includes("scoreboard.stats.approve")
+  ) {
+    return "/admin/match-stats";
+  }
+  return "/admin";
+}
 
 export type AdminPermission = {
   slug: string;
@@ -32,6 +54,9 @@ export type AdminUser = {
   isActive: boolean;
   roleSlug: string | null;
   roleName: string | null;
+  /** Set only for competition-scoped roles (contracted match recorders). */
+  competitionId?: string | null;
+  competitionName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -41,6 +66,10 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
   "/admin": "admin.stats.read",
   "/admin/inbox": "inbox.read",
   "/admin/players": "players.read",
+  /* Fixtures had no entry, so it was visible to everyone — including contracted
+     recorders, who should only ever see their own match sheets. */
+  "/admin/fixtures": "scoreboard.read",
+  "/admin/match-stats": ["scoreboard.stats.record", "scoreboard.stats.approve"],
   "/admin/calibration": ["calibration.run", "players.calibrate"],
   "/admin/homepage": "homepage.write",
   "/admin/ads": "ads.write",

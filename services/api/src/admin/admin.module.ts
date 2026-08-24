@@ -18,6 +18,8 @@ import { AdminInboxService } from "./admin-inbox.service";
 import { AdminPlayersService } from "./admin-players.service";
 import { AdminRbacController } from "./admin-rbac.controller";
 import { AdminRbacService } from "./admin-rbac.service";
+import { AdminMatchStatsController } from "./admin-match-stats.controller";
+import { AdminMatchStatsService } from "./admin-match-stats.service";
 import { AdminScoreboardController } from "./admin-scoreboard.controller";
 import { AdminScoreboardService } from "./admin-scoreboard.service";
 import { AdminSeedService } from "./admin-seed.service";
@@ -40,6 +42,7 @@ import { PermissionsGuard } from "./guards/permissions.guard";
   controllers: [
     AdminController,
     AdminScoreboardController,
+    AdminMatchStatsController,
     AdminSupportController,
     AdminRbacController,
     AdminAuthController,
@@ -52,6 +55,7 @@ import { PermissionsGuard } from "./guards/permissions.guard";
     AdminContentService,
     AdminCalibrationService,
     AdminScoreboardService,
+    AdminMatchStatsService,
     AdminSeedService,
     AdminAuthService,
     AdminRbacService,

@@ -18894,28 +18894,6 @@ a.dbx-comp-card:hover {
   padding: 0 0.75rem 0.35rem;
 }
 
-.admin-login-tabs {
-  display: flex;
-  gap: 0.35rem;
-  margin-bottom: 1rem;
-}
-
-.admin-login-tabs button {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.45rem 0.6rem;
-}
-
-.admin-login-tabs button.active {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(96, 165, 250, 0.45);
-}
-
 .admin-rbac-layout {
   display: grid;
   gap: 1rem;
@@ -20887,4 +20865,40 @@ a.dbx-comp-card:hover .sb-comp-crest {
   .sb-comp-crest--lg { width: 52px; height: 52px; }
   .sb-comp-crest--lg.sb-comp-crest--placeholder { font-size: 1.25rem; }
   .dbx-comp-card__crest-skeleton { width: 52px; height: 52px; }
+}
+
+/* ==========================================================================
+   Super admin sign-in (/superadmin). Deliberately reads as a restricted door,
+   not the everyday staff login.
+   ========================================================================== */
+
+.admin-login-page--super {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(220, 38, 38, 0.16) 0%, transparent 60%),
+    var(--color-bg, #0b1220);
+}
+
+.admin-login-card--super {
+  border-color: rgba(248, 113, 113, 0.38);
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.08), var(--shadow-md);
+}
+
+.admin-login-badge {
+  display: inline-block;
+  margin-bottom: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 999px;
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-login-alt {
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.82rem;
 }

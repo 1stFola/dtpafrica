@@ -12,6 +12,7 @@ import "./styles/dtp-figma.css";
 /* Admin fixtures calendar. Loaded last so its scoped .afx-* rules win over the
    generic .admin-page styles in global.css. */
 import "./styles/admin-fixtures.css";
+import "./styles/match-console.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

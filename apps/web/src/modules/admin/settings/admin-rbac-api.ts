@@ -20,6 +20,7 @@ export const adminRbacApi = {
     name?: string;
     password: string;
     roleSlug: string;
+    competitionId?: string | null;
   }) => adminApi.rbacCreateUser(body),
   updateUser: (
     id: string,
@@ -29,6 +30,7 @@ export const adminRbacApi = {
       password?: string;
       roleSlug?: string;
       isActive?: boolean;
+      competitionId?: string | null;
     }
   ) => adminApi.rbacUpdateUser(id, body),
 };

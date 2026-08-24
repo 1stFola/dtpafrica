@@ -52,11 +52,11 @@ export function AdminApiKeyGate({ title, children }: AdminApiKeyGateProps) {
       <div className="admin-api-key-gate">
         <h1>{title}</h1>
         <p className="muted">
-          This tool requires an admin API key. Sign in through the admin panel first, or enter
-          your key on the login screen.
+          This tool requires the admin API key, which is entered on the super admin
+          sign-in page.
         </p>
-        <Link to="/admin/login" className="dtp-btn dtp-btn--primary">
-          Go to admin login
+        <Link to="/superadmin" className="dtp-btn dtp-btn--primary">
+          Go to super admin login
         </Link>
       </div>
     );

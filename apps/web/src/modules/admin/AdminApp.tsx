@@ -9,8 +9,9 @@ import { AdminBlogListPage } from "./pages/AdminBlogListPage";
 import { AdminAcademiesPage } from "./pages/AdminAcademiesPage";
 import { AdminCalibrationPage } from "./pages/AdminCalibrationPage";
 import { AdminFixturesPage } from "./pages/AdminFixturesPage";
+import { AdminMatchStatsPage } from "./pages/AdminMatchStatsPage";
 import { AdminContentPage } from "./pages/AdminContentPage";
-import { AdminDashboardPage } from "./pages/AdminDashboardPage";
+import { AdminIndexRoute } from "./AdminIndexRoute";
 import { AdminDatabasePage } from "./pages/AdminDatabasePage";
 import { AdminAdsPage } from "./pages/AdminAdsPage";
 import { AdminHomepagePage } from "./pages/AdminHomepagePage";
@@ -31,10 +32,11 @@ export function AdminApp() {
         <Route path="login" element={<AdminLoginPage />} />
         <Route element={<AdminRequireAuth />}>
           <Route element={<AdminLayout />}>
-            <Route index element={<AdminDashboardPage />} />
+            <Route index element={<AdminIndexRoute />} />
             <Route path="inbox" element={<AdminInboxPage />} />
             <Route path="players" element={<AdminPlayersPage />} />
             <Route path="fixtures" element={<AdminFixturesPage />} />
+            <Route path="match-stats" element={<AdminMatchStatsPage />} />
             <Route path="calibration" element={<AdminCalibrationPage />} />
             <Route path="ops-support" element={<AdminOpsSupportPage />} />
             <Route path="homepage" element={<AdminHomepagePage />} />

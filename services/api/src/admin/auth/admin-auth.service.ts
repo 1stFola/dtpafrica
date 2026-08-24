@@ -70,6 +70,7 @@ export class AdminAuthService {
             permissions: { include: { permission: true } },
           },
         },
+        competition: { select: { id: true, name: true } },
       },
     });
     if (!user?.isActive) {
@@ -87,6 +88,8 @@ export class AdminAuthService {
       userId: user.id,
       email: user.email,
       displayName: user.name ?? user.email,
+      competitionId: user.competitionId ?? null,
+      competitionName: user.competition?.name ?? null,
     };
   }
 

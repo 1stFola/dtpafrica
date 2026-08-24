@@ -8,6 +8,12 @@ export type AdminAuthContext = {
   userId?: string;
   email?: string;
   displayName?: string;
+  /**
+   * Set for contracted match recorders scoped to a single competition. Null or
+   * absent means unscoped, which is how every internal role behaves.
+   */
+  competitionId?: string | null;
+  competitionName?: string | null;
 };
 
 export function hasPermission(ctx: AdminAuthContext, slug: string): boolean {

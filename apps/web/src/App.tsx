@@ -59,6 +59,16 @@ const ScoutingApp = lazy(() =>
     default: module.ScoutingApp,
   }))
 );
+const MatchConsoleApp = lazy(() =>
+  import("./modules/admin/MatchConsoleApp").then((module) => ({
+    default: module.MatchConsoleApp,
+  }))
+);
+const SuperAdminApp = lazy(() =>
+  import("./modules/admin/SuperAdminApp").then((module) => ({
+    default: module.SuperAdminApp,
+  }))
+);
 const AdminApp = lazy(() =>
   import("./modules/admin/AdminApp").then((module) => ({ default: module.AdminApp }))
 );
@@ -88,6 +98,12 @@ function ValuationPlayerRedirect() {
 export default function App() {
   return (
     <Routes>
+      {/* Outside AppShell: the recorder console owns the full viewport, with no
+          site header sitting on top of its frozen panel. */}
+      <Route
+        path="admin/match-stats/:matchId/*"
+        element={<LazyRoute><MatchConsoleApp /></LazyRoute>}
+      />
       <Route element={<AppShell />}>
         <Route element={<MarketingLayout />}>
           <Route index element={<HomePage />} />
@@ -109,6 +125,9 @@ export default function App() {
         <Route path="valuation/compare" element={<Navigate to="/scouting/compare" replace />} />
         <Route path="valuation/player/:playerId" element={<ValuationPlayerRedirect />} />
         <Route path="admin/*" element={<LazyRoute><AdminApp /></LazyRoute>} />
+        {/* Super admin sign-in lives outside the /admin tree so the API key
+            field is never rendered on the page staff use. */}
+        <Route path="superadmin" element={<LazyRoute><SuperAdminApp /></LazyRoute>} />
         <Route path="spotter-tablet" element={<LazyRoute><SpotterTabletPage /></LazyRoute>} />
         <Route path="academy/*" element={<LazyRoute><AcademyApp /></LazyRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />

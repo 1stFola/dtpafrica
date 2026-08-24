@@ -3,6 +3,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminToast } from "../components/AdminToast";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { adminRbacApi, type AdminRole, type AdminUser } from "./admin-rbac-api";
+import { fetchCompetitions, type SbCompetition } from "../../../api/scoreboard";
 
 export function AdminUsersPage() {
   usePageTitle("Admin users");
@@ -16,13 +17,20 @@ export function AdminUsersPage() {
     name: "",
     password: "",
     roleSlug: "read_only",
+    competitionId: "",
   });
+  const [competitions, setCompetitions] = useState<SbCompetition[]>([]);
+
+  /* Only contracted recorders are competition-scoped; every internal role sees
+     all competitions, so the selector stays hidden for them. */
+  const SCOPED_ROLE = "match_recorder";
 
   const load = () =>
-    Promise.all([adminRbacApi.listUsers(), adminRbacApi.listRoles()])
-      .then(([userRows, roleRows]) => {
+    Promise.all([adminRbacApi.listUsers(), adminRbacApi.listRoles(), fetchCompetitions()])
+      .then(([userRows, roleRows, competitionRows]) => {
         setUsers(userRows);
         setRoles(roleRows);
+        setCompetitions(competitionRows);
       })
       .catch((err) => {
         toast.error(err instanceof Error ? err.message : "Failed to load users");
@@ -41,14 +49,29 @@ export function AdminUsersPage() {
         name: form.name || undefined,
         password: form.password,
         roleSlug: form.roleSlug,
+        competitionId: form.roleSlug === SCOPED_ROLE ? form.competitionId || null : null,
       });
       setUsers((prev) => [...prev, created]);
-      setForm({ email: "", name: "", password: "", roleSlug: form.roleSlug });
+      setForm({ email: "", name: "", password: "", roleSlug: form.roleSlug, competitionId: "" });
       toast.success(`Created ${created.email}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Create failed");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const changeCompetition = async (user: AdminUser, competitionId: string) => {
+    try {
+      const updated = await adminRbacApi.updateUser(user.id, { competitionId });
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      toast.success(
+        updated.competitionName
+          ? `${updated.email} now records ${updated.competitionName}`
+          : `${updated.email} is no longer competition-scoped`
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Update failed");
     }
   };
 
@@ -130,6 +153,26 @@ export function AdminUsersPage() {
                 ))}
               </select>
             </label>
+            {form.roleSlug === SCOPED_ROLE && (
+              <label className="admin-sb-field">
+                <span>Competition</span>
+                <select
+                  required
+                  value={form.competitionId}
+                  onChange={(e) => setForm((f) => ({ ...f, competitionId: e.target.value }))}
+                >
+                  <option value="">Select a competition…</option>
+                  {competitions.map((competition) => (
+                    <option key={competition.id} value={competition.id}>
+                      {competition.name}
+                    </option>
+                  ))}
+                </select>
+                <small className="muted">
+                  This recorder will only see fixtures from this competition.
+                </small>
+              </label>
+            )}
             <button type="submit" className="btn btn-primary" disabled={creating}>
               {creating ? "Creating…" : "Create user"}
             </button>
@@ -150,6 +193,7 @@ export function AdminUsersPage() {
                   <th>Email</th>
                   <th>Name</th>
                   <th>Role</th>
+                  <th>Competition</th>
                   <th>Status</th>
                   <th />
                 </tr>
@@ -170,6 +214,23 @@ export function AdminUsersPage() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td>
+                      {user.roleSlug === SCOPED_ROLE ? (
+                        <select
+                          value={user.competitionId ?? ""}
+                          onChange={(e) => void changeCompetition(user, e.target.value)}
+                        >
+                          <option value="" disabled>Select a competition…</option>
+                          {competitions.map((competition) => (
+                            <option key={competition.id} value={competition.id}>
+                              {competition.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td>
                       <span
