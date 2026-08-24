@@ -4,8 +4,14 @@ import type { ClockState } from "../../../api/adminMatchStats";
 /** Clock ticks once a second; anything finer is wasted work pitch-side. */
 const TICK_MS = 1000;
 
-/* 5 is for training fixtures — a full run in under ten minutes. */
-export const HALF_LENGTH_CHOICES = [5, 30, 35, 40, 45];
+/** Half lengths offered on real fixtures. */
+export const HALF_LENGTH_CHOICES = [30, 35, 40, 45];
+
+/**
+ * Training fixtures get short halves only: the point is to walk the whole flow
+ * quickly, and offering a 45-minute practice half would just strand a trainee.
+ */
+export const TRAINING_HALF_LENGTH_CHOICES = [5, 10];
 
 export const DEFAULT_CLOCK: ClockState = {
   halfLength: 45,

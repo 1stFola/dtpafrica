@@ -75,6 +75,29 @@ export function AdminMatchStatsPage() {
     );
   }, [fixtures, search]);
 
+  /* Training fixtures live on their own Training page, so this list stays a
+     list of real games. */
+  const realFixtures = useMemo(
+    () => visibleFixtures.filter((m) => !m.competition.isTraining),
+    [visibleFixtures]
+  );
+
+  const fixtureRow = (m: MatchStatsFixture) => (
+    <li key={m.id}>
+      <Link to={`/admin/match-stats/${m.id}`} className="mcx-fixtures__item">
+        <span className="mcx-fixtures__time">{kickoffLabel(m.kickoffAt)}</span>
+        <span className="mcx-fixtures__teams">
+          {m.homeTeam.name} <span className="mcx-queue__vs">vs</span> {m.awayTeam.name}
+        </span>
+        <span className="mcx-fixtures__comp">
+          {m.competition.name}
+          {m.sheetStatus ? ` · sheet ${m.sheetStatus}` : ""}
+          {m.recorderName ? ` · ${m.recorderName}` : ""}
+        </span>
+      </Link>
+    </li>
+  );
+
   return (
     <div className="mcx-page">
       <header className="mcx-index-head">
@@ -133,28 +156,12 @@ export function AdminMatchStatsPage() {
 
         {loading ? (
           <p className="mcx-callout">Loading fixtures…</p>
-        ) : visibleFixtures.length === 0 ? (
+        ) : realFixtures.length === 0 ? (
           <p className="mcx-callout">
             No published fixtures in the last {WINDOW_BACK_DAYS} days or next {WINDOW_FORWARD_DAYS}.
           </p>
         ) : (
-          <ul className="mcx-fixtures__list">
-            {visibleFixtures.map((m) => (
-              <li key={m.id}>
-                <Link to={`/admin/match-stats/${m.id}`} className="mcx-fixtures__item">
-                  <span className="mcx-fixtures__time">{kickoffLabel(m.kickoffAt)}</span>
-                  <span className="mcx-fixtures__teams">
-                    {m.homeTeam.name} <span className="mcx-queue__vs">vs</span> {m.awayTeam.name}
-                  </span>
-                  <span className="mcx-fixtures__comp">
-                    {m.competition.name}
-                    {m.sheetStatus ? ` · sheet ${m.sheetStatus}` : ""}
-                    {m.recorderName ? ` · ${m.recorderName}` : ""}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <ul className="mcx-fixtures__list">{realFixtures.map(fixtureRow)}</ul>
         )}
       </section>
     </div>

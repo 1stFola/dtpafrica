@@ -70,6 +70,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
      recorders, who should only ever see their own match sheets. */
   "/admin/fixtures": "scoreboard.read",
   "/admin/match-stats": ["scoreboard.stats.record", "scoreboard.stats.approve"],
+  "/admin/training": ["scoreboard.stats.record", "scoreboard.stats.approve"],
   "/admin/calibration": ["calibration.run", "players.calibrate"],
   "/admin/homepage": "homepage.write",
   "/admin/ads": "ads.write",

@@ -20,6 +20,7 @@ import { MatchEventsTab } from "./MatchEventsTab";
 import { clearDraft, draftIsAhead, markSynced, readDraft, writeDraft } from "./matchSheetDraft";
 import {
   HALF_LENGTH_CHOICES,
+  TRAINING_HALF_LENGTH_CHOICES,
   displayMinute,
   mmss,
   useMatchClock,
@@ -557,6 +558,9 @@ export function AdminMatchStatsConsolePage() {
   }
 
   const { match, audit, eventsAudit, status, eventsStatus } = sheet;
+  const halfLengthChoices = match.competition.isTraining
+    ? TRAINING_HALF_LENGTH_CHOICES
+    : HALF_LENGTH_CHOICES;
   const approved = status === "approved";
   const activeStatus = tab === "stats" ? status : eventsStatus;
 
@@ -630,7 +634,7 @@ export function AdminMatchStatsConsolePage() {
             eventsEditable && (
               <div className="mcx-kickoff mcx-kickoff--inline">
                 <div className="mcx-kickoff__choices">
-                  {HALF_LENGTH_CHOICES.map((n) => (
+                  {halfLengthChoices.map((n) => (
                     <button
                       key={n}
                       type="button"
@@ -729,7 +733,9 @@ export function AdminMatchStatsConsolePage() {
 
             <label className="mcx-jersey">
               <span
-                className={`mcx-step__n mcx-step__n--inline${side ? "" : " is-locked"}`}
+                className={`mcx-step__n mcx-step__n--inline${
+                  side && playerNumber.trim() !== "" ? "" : " is-locked"
+                }`}
               >
                 3
               </span>
