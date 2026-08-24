@@ -64,14 +64,14 @@ const MATCHES: MatchSeed[] = [
 ];
 
 /**
- * Squads exactly as supplied.
+ * Squads as supplied, with the two duplicated shirt numbers resolved: England
+ * No. 9 is Harry Kane and Argentina No. 3 is Nicolas Tagliafico.
  *
- * Two shirt numbers are duplicated in the source data — England No. 9
- * (Gordon / Kane) and Argentina No. 3 (Martinez / Tagliafico). Both players are
- * kept, but a number-to-name lookup can only resolve one of each, so generated
- * commentary will name whichever the lookup finds first.
+ * Anthony Gordon and Lisandro Martinez keep their squad places but carry no
+ * number until one is assigned — inventing a number would put a figure in the
+ * generated commentary that nobody chose.
  */
-const SQUADS: Record<string, Array<{ name: string; number: number }>> = {
+const SQUADS: Record<string, Array<{ name: string; number: number | null }>> = {
   france: [
     { name: "Mike Maignan", number: 16 },
     { name: "Jules Kounde", number: 5 },
@@ -108,14 +108,14 @@ const SQUADS: Record<string, Array<{ name: string; number: number }>> = {
     { name: "Elliot Anderson", number: 7 },
     { name: "Jude Bellingham", number: 10 },
     { name: "Morgan Rogers", number: 11 },
-    { name: "Anthony Gordon", number: 9 },
+    { name: "Anthony Gordon", number: null },
     { name: "Harry Kane", number: 9 },
   ],
   argentina: [
     { name: "Emiliano Martinez", number: 1 },
     { name: "Nahuel Molina", number: 4 },
     { name: "Cristian Romero", number: 13 },
-    { name: "Lisandro Martinez", number: 3 },
+    { name: "Lisandro Martinez", number: null },
     { name: "Nicolas Tagliafico", number: 3 },
     { name: "Leandro Paredes", number: 5 },
     { name: "Giuliano Simeone", number: 7 },
