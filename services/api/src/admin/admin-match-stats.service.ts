@@ -364,6 +364,9 @@ function sectionStatus(sheet: SheetRow | null, section: SheetSection): SheetStat
   return (typeof value === "string" ? value : "live") as SheetStatus;
 }
 
+/** Format type marking the recorder training sandbox. */
+const TRAINING_FORMAT_TYPE = "TRAINING_SANDBOX";
+
 /** A competition flagged as a training sandbox in its format config. */
 function isTrainingCompetition(competition: { formatConfig?: unknown } | null): boolean {
   const cfg = competition?.formatConfig;
@@ -435,12 +438,20 @@ export class AdminMatchStatsService {
            but recorders still need to reach it here. This endpoint is
            permission-gated and competition-scoped, so nothing leaks. */
         ...(ctx.competitionId ? { competitionId: ctx.competitionId } : {}),
+        /* Training fixtures ignore the date window: their kickoff dates are
+           arbitrary, so a sandbox match must not fall out of reach simply
+           because the calendar moved past it. */
         ...(range.from || range.to
           ? {
-              kickoffAt: {
-                ...(range.from ? { gte: range.from } : {}),
-                ...(range.to ? { lte: range.to } : {}),
-              },
+              OR: [
+                {
+                  kickoffAt: {
+                    ...(range.from ? { gte: range.from } : {}),
+                    ...(range.to ? { lte: range.to } : {}),
+                  },
+                },
+                { competition: { formatType: TRAINING_FORMAT_TYPE } },
+              ],
             }
           : {}),
       },
@@ -452,6 +463,13 @@ export class AdminMatchStatsService {
         competition: true,
         statisticsSheet: { select: { status: true, recorderName: true } },
       },
+    });
+
+    // Training fixtures lead the list; they are what a trainee came for.
+    matches.sort((a, b) => {
+      const at = a.competition.formatType === TRAINING_FORMAT_TYPE ? 0 : 1;
+      const bt = b.competition.formatType === TRAINING_FORMAT_TYPE ? 0 : 1;
+      return at - bt;
     });
 
     return matches.map((match) => ({

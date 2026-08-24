@@ -81,7 +81,9 @@ export function AdminMatchStatsPage() {
         <h1>Match statistics</h1>
         <p>
           Open a fixture to record statistics pitch-side, then submit the sheet for a supervisor to
-          approve. Only approved sheets appear on the public site.
+          approve. Only approved sheets appear on the public site. Fixtures marked{" "}
+          <span className="mcx-training">Training</span> are practice only and never reach the
+          public site.
         </p>
       </header>
 
@@ -147,6 +149,9 @@ export function AdminMatchStatsPage() {
                     {m.homeTeam.name} <span className="mcx-queue__vs">vs</span> {m.awayTeam.name}
                   </span>
                   <span className="mcx-fixtures__comp">
+                    {m.competition.isTraining && (
+                      <span className="mcx-training">Training</span>
+                    )}
                     {m.competition.name}
                     {m.sheetStatus ? ` · sheet ${m.sheetStatus}` : ""}
                     {m.recorderName ? ` · ${m.recorderName}` : ""}
