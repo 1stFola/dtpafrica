@@ -420,7 +420,14 @@ function StandingsCard({
                 </td>
                 <td className="sbc-col-team">
                   <div className="sbc-team-cell">
-                    <TeamCrest team={{ name: row.teamName, shortName: row.shortName, logoUrl: null }} size="sm" />
+                    <TeamCrest
+                      team={{
+                        name: row.teamName,
+                        shortName: row.shortName,
+                        logoUrl: row.logoUrl ?? null,
+                      }}
+                      size="sm"
+                     />
                     <div className="sbc-team-cell__id">
                       <span className="sbc-team-cell__name">{row.teamName}</span>
                       {tag && (

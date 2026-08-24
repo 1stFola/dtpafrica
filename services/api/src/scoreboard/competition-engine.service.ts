@@ -221,7 +221,7 @@ export class CompetitionEngineService {
       },
     });
 
-    const rows = computeGroupStandings(
+    const computed = computeGroupStandings(
       competition.teams.map((t) => ({
         id: t.id,
         name: normalizeClubName(t.name),
@@ -230,6 +230,14 @@ export class CompetitionEngineService {
       })),
       finished
     );
+
+    /* Attach crests after the table is computed, rather than widening the
+       shared engine signature for a purely presentational field. */
+    const crestByTeam = new Map(competition.teams.map((t) => [t.id, t.logoUrl]));
+    const rows = computed.map((row) => ({
+      ...row,
+      logoUrl: crestByTeam.get(row.teamId) ?? null,
+    }));
 
     return presentScoreboardPayload({
       competitionId,

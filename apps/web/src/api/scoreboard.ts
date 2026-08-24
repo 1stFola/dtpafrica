@@ -218,6 +218,8 @@ export type StandingRow = {
   teamId: string;
   teamName: string;
   shortName: string | null;
+  /** Club crest, so the table can show it beside the name. */
+  logoUrl?: string | null;
   played: number;
   won: number;
   drawn: number;

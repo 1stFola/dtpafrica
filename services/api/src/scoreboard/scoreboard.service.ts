@@ -1574,6 +1574,12 @@ export class ScoreboardService {
       groupKey: t.groupKey,
     }));
 
+    /* Crests are attached after the table is computed rather than widening the
+       shared engine signature for a purely presentational field. */
+    const crestByTeam = new Map(competition.teams.map((t) => [t.id, t.logoUrl]));
+    const withCrests = <T extends { teamId: string }>(rows: T[]) =>
+      rows.map((row) => ({ ...row, logoUrl: crestByTeam.get(row.teamId) ?? null }));
+
     if (useGroups) {
       const groupRows = computeGroupStandings(normalizedTeams, finished);
       return presentScoreboardPayload({
@@ -1582,7 +1588,7 @@ export class ScoreboardService {
         season: competition.season,
         formatType: competition.formatType,
         groups: [...new Set(groupRows.map((r) => r.groupKey))].sort(),
-        rows: groupRows,
+        rows: withCrests(groupRows),
       });
     }
 
@@ -1591,7 +1597,7 @@ export class ScoreboardService {
       competitionName: competition.name,
       season: competition.season,
       formatType: competition.formatType,
-      rows: computeStandings(normalizedTeams, finished),
+      rows: withCrests(computeStandings(normalizedTeams, finished)),
     });
   }
 
