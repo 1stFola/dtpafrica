@@ -1,10 +1,11 @@
 name: CD — Deploy to Staging
 
-# ── Triggers ──────────────────────────────────────────────────────────────────
-# Automatic deployment is DISABLED for push events.
-# Deploy only runs when manually triggered from the GitHub Actions UI.
-# To deploy: Actions → CD — Deploy to Staging → Run workflow
 on:
+  push:
+    branches:
+      - main
+     
+
   workflow_dispatch:
     inputs:
       skip_terraform:
@@ -28,175 +29,179 @@ permissions:
   contents: write
 
 jobs:
-  # ── Job 1: Terraform ──────────────────────────────────────────────────────
-  terraform:
-    name: Terraform apply
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./infra/terraform
+  # # ── Job 1: Terraform ──────────────────────────────────────────────────────
+  # terraform:
+  #   name: Terraform apply
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: infra/terraform
 
-    outputs:
-      server_public_ip: ${{ steps.tf_out.outputs.server_public_ip }}
+  #   outputs:
+  #     server_public_ip: ${{ steps.tf_out.outputs.server_public_ip }}
 
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
+  #   steps:
+  #     - name: Checkout source code
+  #       uses: actions/checkout@v4
+  #       with:
+  #         token: ${{ secrets.GITHUB_TOKEN }}
+  #         fetch-depth: 0
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ secrets.AWS_REGION }}
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region:            ${{ secrets.AWS_REGION }}
 
-      - name: Setup Terraform 1.8.5
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.8.5"
-          terraform_wrapper: false
+  #     - name: Setup Terraform 1.8.5
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_version: "1.8.5"
+  #         terraform_wrapper: false
 
-      - name: Restore Terraform state from state branch
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name  "github-actions[bot]"
-          if git fetch origin terraform-state 2>/dev/null; then
-            git show origin/terraform-state:terraform.tfstate > terraform.tfstate 2>/dev/null \
-              && echo "State restored — Terraform will update existing infrastructure" \
-              || echo "No state file on branch yet"
-          else
-            echo "No state branch — first run"
-          fi
+  #     - name: Restore Terraform state from state branch
+  #       run: |
+  #         git config user.email "github-actions[bot]@users.noreply.github.com"
+  #         git config user.name  "github-actions[bot]"
+  #         if git fetch origin terraform-state 2>/dev/null; then
+  #           git show origin/terraform-state:terraform.tfstate > terraform.tfstate 2>/dev/null \
+  #             && echo "State restored" \
+  #             || echo "No state file on branch yet"
+  #         else
+  #           echo "No state branch — first run"
+  #         fi
 
-      - name: Terraform init
-        run: terraform init
+  #     - name: Terraform init
+  #       run: terraform init
 
-      - name: Reconcile state with real AWS resources
-        run: |
-          echo "=== Current state resources ==="
-          terraform state list 2>/dev/null || echo "No state yet"
+  #     - name: Reconcile state with real AWS resources
+  #       run: |
+  #         if [ ! -f terraform.tfstate ]; then
+  #           echo "No state — skipping reconcile"
+  #           exit 0
+  #         fi
 
-          # Check if the tagged EIP exists in AWS
-          EIP_ALLOC=$(aws ec2 describe-addresses \
-            --filters "Name=tag:Name,Values=dtp-staging-eip" \
-            --query 'Addresses[0].AllocationId' \
-            --output text 2>/dev/null || echo "")
+  #         INSTANCE_ID=$(terraform state show aws_instance.server 2>/dev/null \
+  #           | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
 
-          EIP_IP=$(aws ec2 describe-addresses \
-            --filters "Name=tag:Name,Values=dtp-staging-eip" \
-            --query 'Addresses[0].PublicIp' \
-            --output text 2>/dev/null || echo "")
+  #         if [ -z "$INSTANCE_ID" ]; then
+  #           echo "No instance in state"
+  #           exit 0
+  #         fi
 
-          echo "EIP in AWS: $EIP_IP ($EIP_ALLOC)"
+  #         echo "Instance in state: $INSTANCE_ID"
 
-          # If EIP exists in AWS but not in state, import it
-          if [ -n "$EIP_ALLOC" ] && [ "$EIP_ALLOC" != "None" ]; then
-            IN_STATE=$(terraform state show aws_eip.server 2>/dev/null | grep "id" | head -1 || echo "")
-            if [ -z "$IN_STATE" ]; then
-              echo "EIP exists in AWS but not in state — importing..."
-              terraform import aws_eip.server "$EIP_ALLOC" || true
-            fi
-          fi
+  #         INSTANCE_STATE=$(aws ec2 describe-instances \
+  #           --instance-ids "$INSTANCE_ID" \
+  #           --query 'Reservations[0].Instances[0].State.Name' \
+  #           --output text 2>/dev/null || echo "not-found")
 
-          # Check if the tagged EC2 instance exists
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=dtp-staging-server" "Name=instance-state-name,Values=running,stopped,pending" \
-            --query 'Reservations[0].Instances[0].InstanceId' \
-            --output text 2>/dev/null || echo "")
+  #         echo "AWS instance state: $INSTANCE_STATE"
 
-          echo "EC2 in AWS: $INSTANCE_ID"
+  #         if [ "$INSTANCE_STATE" = "terminated" ] || [ "$INSTANCE_STATE" = "not-found" ] || [ "$INSTANCE_STATE" = "None" ]; then
+  #           echo "Instance gone — clearing stale state so Terraform rebuilds"
+  #           terraform state rm aws_eip.server                     || true
+  #           terraform state rm aws_instance.server                || true
+  #           VPC_ID=$(terraform state show aws_vpc.main 2>/dev/null \
+  #             | grep '^\s*id\s*=' | head -1 | awk -F'"' '{print $2}' || echo "")
+  #           if [ -n "$VPC_ID" ]; then
+  #             VPC_EXISTS=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+  #               --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "not-found")
+  #             if [ "$VPC_EXISTS" = "not-found" ] || [ -z "$VPC_EXISTS" ] || [ "$VPC_EXISTS" = "None" ]; then
+  #               echo "VPC also gone — clearing all network state"
+  #               terraform state rm aws_route_table_association.public || true
+  #               terraform state rm aws_route_table.public             || true
+  #               terraform state rm aws_internet_gateway.main          || true
+  #               terraform state rm aws_subnet.public                  || true
+  #               terraform state rm aws_security_group.server          || true
+  #               terraform state rm aws_vpc.main                       || true
+  #             fi
+  #           fi
+  #         else
+  #           echo "Instance is $INSTANCE_STATE — reusing existing infrastructure"
+  #         fi
 
-          if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
-            IN_STATE=$(terraform state show aws_instance.server 2>/dev/null | grep "^id" | head -1 || echo "")
-            if [ -z "$IN_STATE" ]; then
-              echo "EC2 exists in AWS but not in state — importing..."
-              terraform import aws_instance.server "$INSTANCE_ID" || true
-            fi
-          fi
+  #     - name: Terraform validate
+  #       run: terraform validate
 
-          echo "=== State after reconcile ==="
-          terraform state list 2>/dev/null || echo "No state"
+  #     - name: Terraform plan
+  #       run: |
+  #         terraform plan \
+  #           -var="key_pair_name=${{ secrets.EC2_KEY_PAIR_NAME }}" \
+  #           -var="aws_region=${{ secrets.AWS_REGION }}" \
+  #           -out=tfplan
 
-      - name: Terraform validate
-        run: terraform validate
+  #     - name: Check if infra already exists and is healthy
+  #       id: infra_check
+  #       run: |
+  #         # If the plan shows no changes needed, skip apply entirely
+  #         CHANGES=$(terraform show -json tfplan | python3 -c "
+  #         import sys, json
+  #         plan = json.load(sys.stdin)
+  #         changes = [r for r in plan.get('resource_changes', [])
+  #                    if r.get('change', {}).get('actions', ['no-op']) != ['no-op']]
+  #         print(len(changes))
+  #         " 2>/dev/null || echo "1")
 
-      - name: Terraform plan
-        run: |
-          terraform plan \
-            -var="key_pair_name=${{ secrets.EC2_KEY_PAIR_NAME }}" \
-            -var="aws_region=${{ secrets.AWS_REGION }}" \
-            -out=tfplan
+  #         echo "Resources needing changes: $CHANGES"
+  #         if [ "$CHANGES" = "0" ]; then
+  #           echo "skip_apply=true" >> "$GITHUB_OUTPUT"
+  #           echo "No infrastructure changes needed — skipping apply"
+  #         else
+  #           echo "skip_apply=false" >> "$GITHUB_OUTPUT"
+  #           echo "$CHANGES resource(s) need changes — will apply"
+  #         fi
 
-      - name: Show what Terraform will change
-        run: |
-          echo "=== Resources Terraform will create/update ==="
-          terraform show -json tfplan | python3 -c "
-          import sys, json
-          plan = json.load(sys.stdin)
-          changes = [r for r in plan.get('resource_changes', [])
-                     if r.get('change', {}).get('actions', ['no-op']) != ['no-op']]
-          if not changes:
-              print('No changes — infrastructure is up to date')
-          else:
-              for r in changes:
-                  print(f\"  {r['change']['actions']} {r['address']}\")
-          " 2>/dev/null || true
+  #     - name: Terraform apply
+  #       if: github.event.inputs.skip_terraform != 'true' && steps.infra_check.outputs.skip_apply != 'true'
+  #       run: terraform apply -auto-approve tfplan      # Capture outputs BEFORE switching branches for state commit
+  #     - name: Capture Terraform outputs
+  #       id: tf_out
+  #       run: |
+  #         IP=$(terraform output -raw server_public_ip)
+  #         echo "server_public_ip=$IP" >> "$GITHUB_OUTPUT"
+  #         echo "Captured IP: $IP"
 
-      - name: Terraform apply
-        if: github.event.inputs.skip_terraform != 'true'
-        run: terraform apply -auto-approve tfplan
+  #     - name: Print access details
+  #       run: |
+  #         echo "  App URL : $(terraform output -raw app_url)"
+  #         echo "  Health  : $(terraform output -raw health_check_url)"
+  #         echo "  SSH     : $(terraform output -raw ssh_command)"
 
-      # Capture outputs BEFORE switching branches for state commit
-      - name: Capture Terraform outputs
-        id: tf_out
-        run: |
-          IP=$(terraform output -raw server_public_ip)
-          echo "server_public_ip=$IP" >> "$GITHUB_OUTPUT"
-          echo "Captured IP: $IP"
+  #     # Save state AFTER capturing outputs so branch switch doesn't affect outputs
+  #     - name: Commit Terraform state to state branch
+  #       if: always()
+  #       run: |
+  #         STATE_FILE="${{ github.workspace }}/infra/terraform/terraform.tfstate"
+  #         if [ ! -f "$STATE_FILE" ]; then
+  #           echo "No state file — skipping"
+  #           exit 0
+  #         fi
 
-      - name: Print access details
-        run: |
-          echo "  EC2 IP  : $(terraform output -raw server_public_ip)"
-          echo "  App URL : $(terraform output -raw app_url)"
-          echo "  Health  : $(terraform output -raw health_check_url)"
-          echo "  CDN URL : $(terraform output -raw cloudfront_domain 2>/dev/null || echo 'not yet provisioned')"
-          echo "  SSH     : $(terraform output -raw ssh_command)"
+  #         git config user.email "github-actions[bot]@users.noreply.github.com"
+  #         git config user.name  "github-actions[bot]"
 
-      # Save state AFTER capturing outputs
-      - name: Commit Terraform state to state branch
-        if: always()
-        run: |
-          STATE_FILE="${{ github.workspace }}/infra/terraform/terraform.tfstate"
-          if [ ! -f "$STATE_FILE" ]; then
-            echo "No state file — skipping"
-            exit 0
-          fi
+  #         git fetch origin terraform-state 2>/dev/null || true
 
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name  "github-actions[bot]"
+  #         if git ls-remote --exit-code origin terraform-state >/dev/null 2>&1; then
+  #           git checkout terraform-state
+  #         else
+  #           git checkout --orphan terraform-state
+  #           git rm -rf . >/dev/null 2>&1 || true
+  #         fi
 
-          git fetch origin terraform-state 2>/dev/null || true
+  #         # The state file is already in place — just stage and commit it
+  #         git add --force terraform.tfstate
+  #         git diff --cached --quiet && echo "State unchanged" && exit 0
+  #         git commit -m "chore: update terraform state [run ${{ github.run_id }}]"
+  #         git push origin terraform-state
+  #         echo "State saved to terraform-state branch"
 
-          if git ls-remote --exit-code origin terraform-state >/dev/null 2>&1; then
-            git checkout terraform-state
-          else
-            git checkout --orphan terraform-state
-            git rm -rf . >/dev/null 2>&1 || true
-          fi
-
-          git add --force terraform.tfstate
-          git diff --cached --quiet && echo "State unchanged" && exit 0
-          git commit -m "chore: update terraform state [run ${{ github.run_id }}]"
-          git push origin terraform-state
-          echo "State saved to terraform-state branch"
-
-  # ── Job 2: Ansible ────────────────────────────────────────────────────────
+  # # ── Job 2: Ansible ────────────────────────────────────────────────────────
   deploy:
     name: Ansible deploy
-    needs: terraform
+    # needs: terraform
     if: github.event.inputs.skip_deploy != 'true'
     runs-on: ubuntu-latest
     defaults:
@@ -218,8 +223,10 @@ jobs:
       - name: Resolve server IP from AWS
         id: resolve_ip
         run: |
+          # Try the terraform job output first
           IP="${{ needs.terraform.outputs.server_public_ip }}"
 
+          # If empty or looks wrong, query AWS directly for the EIP
           if [ -z "$IP" ] || [ "$IP" = "" ]; then
             echo "Job output empty — querying AWS for Elastic IP"
             IP=$(aws ec2 describe-addresses \
@@ -313,11 +320,16 @@ jobs:
 
       - name: Run Ansible playbook
         run: |
+          REPO_URL="${{ secrets.GIT_REPO_URL }}"
+          if [ -z "$REPO_URL" ] || [[ "$REPO_URL" != https://github.com/* ]]; then
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+          fi
+
           ansible-playbook playbook.yml \
             -e "aws_region=${{ secrets.AWS_REGION }}" \
-            -e "git_repo_url=${{ secrets.GIT_REPO_URL }}" \
+            -e "git_repo_url=$REPO_URL" \
+            -e "git_repo_token=${{ github.token }}" \
             -e "git_branch=${{ github.ref_name }}" \
-            -e "git_repo_token=${{ secrets.GITHUB_TOKEN }}" \
             -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
             -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
             -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
@@ -340,31 +352,11 @@ jobs:
             exit 1
           fi
 
-      - name: Invalidate CloudFront cache
-        run: |
-          CF_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='dtp-staging'].Id" \
-            --output text 2>/dev/null || echo "")
-
-          if [ -n "$CF_ID" ] && [ "$CF_ID" != "None" ]; then
-            echo "Invalidating CloudFront distribution: $CF_ID"
-            aws cloudfront create-invalidation \
-              --distribution-id "$CF_ID" \
-              --paths "/*"
-            echo "Cache invalidation submitted"
-          else
-            echo "No CloudFront distribution found — skipping invalidation"
-          fi
-
       - name: Deployment summary
         run: |
           IP="${{ steps.resolve_ip.outputs.server_ip }}"
-          CF=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='dtp-staging'].DomainName" \
-            --output text 2>/dev/null || echo "")
           echo "========================================"
           echo "  Deployment complete"
-          echo "  EC2:    http://$IP"
-          echo "  CDN:    https://$CF"
+          echo "  App:    http://$IP"
           echo "  Health: http://$IP/api/v1/health"
           echo "========================================"
