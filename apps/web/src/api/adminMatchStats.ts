@@ -98,7 +98,15 @@ export type MatchStatsSheet = {
     awayScore: number;
     homeTeam: { id: string; name: string; shortName: string | null; logoUrl: string | null };
     awayTeam: { id: string; name: string; shortName: string | null; logoUrl: string | null };
-    competition: { id: string; name: string; logoUrl: string | null };
+    competition: {
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      /** Training fixtures never reach the public site. */
+      isTraining?: boolean;
+      /** Half length the competition prefers, preselected at kick-off. */
+      halfLengthMinutes?: number | null;
+    };
   };
 };
 
@@ -113,7 +121,12 @@ export type MatchStatsFixture = {
   recorderName: string | null;
   homeTeam: { name: string; logoUrl: string | null };
   awayTeam: { name: string; logoUrl: string | null };
-  competition: { id: string; name: string; logoUrl: string | null };
+  competition: {
+    id: string;
+    name: string;
+    logoUrl: string | null;
+    isTraining?: boolean;
+  };
 };
 
 export type MatchStatsQueueItem = {

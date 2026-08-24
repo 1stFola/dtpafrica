@@ -301,6 +301,7 @@ export function AdminMatchStatsConsolePage() {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [busy, setBusy] = useState(false);
   const [pendingHalfLength, setPendingHalfLength] = useState(45);
+  const [halfLengthTouched, setHalfLengthTouched] = useState(false);
   const [addedInput, setAddedInput] = useState("2");
   /** Minute captured by step 1, held until an event is logged. */
   const [captured, setCaptured] = useState<{ minute: number; added: number | null } | null>(null);
@@ -321,6 +322,12 @@ export function AdminMatchStatsConsolePage() {
     clock: ClockState | null;
     kits: KitColours;
   } | null>(null);
+
+  /* Competitions can declare their own half length; the training cup uses 5. */
+  const suggestedHalfLength = sheet?.match.competition.halfLengthMinutes ?? null;
+  useEffect(() => {
+    if (suggestedHalfLength && !halfLengthTouched) setPendingHalfLength(suggestedHalfLength);
+  }, [suggestedHalfLength, halfLengthTouched]);
 
   const applySheet = useCallback((next: MatchStatsSheet) => {
     setSheet(next);
@@ -559,6 +566,7 @@ export function AdminMatchStatsConsolePage() {
       <div className="mcx-sticky">
         <div className="mcx-sticky__bar">
           <Link to="/admin/match-stats" className="mcx-backlink">← All sheets</Link>
+          {match.competition.isTraining && <span className="mcx-training">Training</span>}
           <span className={`mcx-status mcx-status--${activeStatus}`}>
             <span className="mcx-status__dot" />
             {STATUS_COPY[activeStatus]}
@@ -627,7 +635,10 @@ export function AdminMatchStatsConsolePage() {
                       key={n}
                       type="button"
                       className={n === pendingHalfLength ? "mcx-chip is-active" : "mcx-chip"}
-                      onClick={() => setPendingHalfLength(n)}
+                      onClick={() => {
+                        setPendingHalfLength(n);
+                        setHalfLengthTouched(true);
+                      }}
                     >
                       {n}′
                     </button>
@@ -770,6 +781,12 @@ export function AdminMatchStatsConsolePage() {
       </div>
 
       {error && <p className="mcx-error" role="alert">{error}</p>}
+
+      {(status !== "live" || eventsStatus !== "live") && (
+        <Link to={`/admin/match-stats/${matchId}/preview`} className="mcx-previewlink">
+          View match summary — screenshot it for your records →
+        </Link>
+      )}
 
       {tab === "stats" ? (
         <>

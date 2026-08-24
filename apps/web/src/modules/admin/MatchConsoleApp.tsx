@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { AdminAuthProvider } from "./AdminAuthContext";
 import { AdminRequireAuth } from "./AdminRequireAuth";
 import { AdminMatchStatsConsolePage } from "./pages/AdminMatchStatsConsolePage";
+import { MatchSheetPreviewPage } from "./pages/MatchSheetPreviewPage";
 
 /**
  * The recorder console, mounted outside the marketing AppShell.
@@ -15,6 +16,7 @@ export function MatchConsoleApp() {
     <AdminAuthProvider>
       <Routes>
         <Route element={<AdminRequireAuth />}>
+          <Route path="preview" element={<MatchSheetPreviewPage />} />
           <Route path="*" element={<AdminMatchStatsConsolePage />} />
         </Route>
       </Routes>

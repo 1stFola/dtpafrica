@@ -364,6 +364,20 @@ function sectionStatus(sheet: SheetRow | null, section: SheetSection): SheetStat
   return (typeof value === "string" ? value : "live") as SheetStatus;
 }
 
+/** A competition flagged as a training sandbox in its format config. */
+function isTrainingCompetition(competition: { formatConfig?: unknown } | null): boolean {
+  const cfg = competition?.formatConfig;
+  return Boolean(cfg && typeof cfg === "object" && (cfg as Record<string, unknown>).isTraining);
+}
+
+/** Half length the competition prefers, if it declares one. */
+function competitionHalfLength(competition: { formatConfig?: unknown } | null): number | null {
+  const cfg = competition?.formatConfig;
+  if (!cfg || typeof cfg !== "object") return null;
+  const value = (cfg as Record<string, unknown>).halfLengthMinutes;
+  return typeof value === "number" && value > 0 ? Math.floor(value) : null;
+}
+
 function actorName(ctx: AdminAuthContext): string {
   return ctx.displayName || ctx.email || ctx.roleName || "Admin";
 }
@@ -416,7 +430,10 @@ export class AdminMatchStatsService {
     const matches = await this.prisma.sbMatch.findMany({
       where: {
         isPublished: true,
-        competition: { isPublished: true },
+        /* Deliberately not filtering on competition.isPublished: the training
+           competition is unpublished so it stays off the public ScoreBoard,
+           but recorders still need to reach it here. This endpoint is
+           permission-gated and competition-scoped, so nothing leaks. */
         ...(ctx.competitionId ? { competitionId: ctx.competitionId } : {}),
         ...(range.from || range.to
           ? {
@@ -447,7 +464,13 @@ export class AdminMatchStatsService {
       recorderName: match.statisticsSheet?.recorderName ?? null,
       homeTeam: { name: match.homeTeam.name, logoUrl: match.homeTeam.logoUrl },
       awayTeam: { name: match.awayTeam.name, logoUrl: match.awayTeam.logoUrl },
-      competition: { id: match.competition.id, name: match.competition.name, logoUrl: match.competition.logoUrl },
+      competition: {
+        id: match.competition.id,
+        name: match.competition.name,
+        logoUrl: match.competition.logoUrl,
+        /** Training fixtures are labelled so nobody mistakes one for a real match. */
+        isTraining: isTrainingCompetition(match.competition),
+      },
     }));
   }
 
@@ -925,6 +948,9 @@ export class AdminMatchStatsService {
           id: match.competition.id,
           name: match.competition.name,
           logoUrl: match.competition.logoUrl,
+          isTraining: isTrainingCompetition(match.competition),
+          /** Preselects the half length at kick-off (5 for training). */
+          halfLengthMinutes: competitionHalfLength(match.competition),
         },
       },
     };
