@@ -81,6 +81,7 @@ export const MATCH_EVENT_TYPES = [
   "penalty_shootout",
   "recovery_tackle",
   "save",
+  "shot",
   "shot_off_target",
   "sustained_pressure",
   "volley_missed",

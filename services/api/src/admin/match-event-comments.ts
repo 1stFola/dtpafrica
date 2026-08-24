@@ -162,6 +162,11 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c) => `Save! ${c.teamName}'s goalkeeper gathers safely to prevent further danger.`,
     (c) => `Save! Another important stop from the ${c.teamName} goalkeeper.`,
   ],
+  shot: [
+    (c, e) => `Shot! ${actor(c, e)} tests the goalkeeper with an effort on goal.`,
+    (c) => `Shot! ${c.teamName} work an opening and strike towards goal.`,
+    (c, e) => `Shot! ${actor(c, e)} lets fly from distance and forces the defence into action.`,
+  ],
   shot_off_target: [
     (c, e) => `Shot Off Target! ${actor(c, e)} sends the effort wide.`,
     (c, e) => `Shot Off Target! ${actor(c, e)} attempts an ambitious strike but misses the target.`,
