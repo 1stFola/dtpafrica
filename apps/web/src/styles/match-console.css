@@ -1409,3 +1409,6 @@
 
 /* Training label sits inline with the competition name on the fixture list. */
 .mcx-fixtures__comp .mcx-training { margin-right: 0.4rem; }
+
+/* The Training section heading pairs the badge with its title. */
+.mcx-fixtures__head h2 { display: flex; align-items: center; gap: 0.45rem; }
