@@ -18,10 +18,13 @@ export const adminRbacApi = {
   createUser: (body: {
     email: string;
     name?: string;
-    password: string;
+    password?: string;
     roleSlug: string;
     competitionId?: string | null;
   }) => adminApi.rbacCreateUser(body),
+  deleteUser: (id: string) => adminApi.rbacDeleteUser(id),
+  resetPassword: (id: string, password?: string) => adminApi.rbacResetPassword(id, password),
+  suggestPassword: () => adminApi.rbacSuggestPassword(),
   updateUser: (
     id: string,
     body: {

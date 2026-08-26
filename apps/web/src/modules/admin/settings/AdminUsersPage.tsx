@@ -1,17 +1,83 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminToast } from "../components/AdminToast";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { adminRbacApi, type AdminRole, type AdminUser } from "./admin-rbac-api";
 import { fetchCompetitions, type SbCompetition } from "../../../api/scoreboard";
 
+/** Contracted roles are competition-scoped and grouped away from staff. */
+const RECORDER_ROLES = new Set(["match_recorder"]);
+const SCOPED_ROLE = "match_recorder";
+
+type Tab = "staff" | "recorders";
+
+/**
+ * A password shown exactly once.
+ *
+ * Passwords are stored as bcrypt hashes and cannot be read back — that is the
+ * point of hashing them. So the plaintext is surfaced only at the moment it is
+ * issued, with a copy button, and never again. If it is lost, issue another.
+ */
+function PasswordReveal({
+  email,
+  password,
+  onDismiss,
+}: {
+  email: string;
+  password: string;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* Clipboard can be blocked; the value is on screen to copy by hand. */
+    }
+  };
+
+  return (
+    <div className="aup-reveal" role="alert">
+      <div className="aup-reveal__head">
+        <strong>Password for {email}</strong>
+        <button type="button" className="aup-reveal__close" onClick={onDismiss} aria-label="Dismiss">
+          ✕
+        </button>
+      </div>
+      <code className="aup-reveal__value">{password}</code>
+      <div className="aup-reveal__actions">
+        <button type="button" className="btn" onClick={copy}>
+          {copied ? "Copied" : "Copy password"}
+        </button>
+      </div>
+      <p className="aup-reveal__warn">
+        Shown once. It is stored only as a hash and cannot be retrieved later — copy it now, or
+        issue a new one.
+      </p>
+    </div>
+  );
+}
+
 export function AdminUsersPage() {
   usePageTitle("Admin users");
   const toast = useAdminToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<AdminRole[]>([]);
+  const [competitions, setCompetitions] = useState<SbCompetition[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [tab, setTab] = useState<Tab>("staff");
+  const [search, setSearch] = useState("");
+  const [revealed, setRevealed] = useState<{ email: string; password: string } | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{ name: string; email: string }>({
+    name: "",
+    email: "",
+  });
+
   const [form, setForm] = useState({
     email: "",
     name: "",
@@ -19,11 +85,6 @@ export function AdminUsersPage() {
     roleSlug: "read_only",
     competitionId: "",
   });
-  const [competitions, setCompetitions] = useState<SbCompetition[]>([]);
-
-  /* Only contracted recorders are competition-scoped; every internal role sees
-     all competitions, so the selector stays hidden for them. */
-  const SCOPED_ROLE = "match_recorder";
 
   const load = () =>
     Promise.all([adminRbacApi.listUsers(), adminRbacApi.listRoles(), fetchCompetitions()])
@@ -40,6 +101,41 @@ export function AdminUsersPage() {
     load().finally(() => setLoading(false));
   }, []);
 
+  const staffRoles = useMemo(() => roles.filter((r) => !RECORDER_ROLES.has(r.slug)), [roles]);
+  const recorderRoles = useMemo(() => roles.filter((r) => RECORDER_ROLES.has(r.slug)), [roles]);
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const inTab = users.filter((u) =>
+      tab === "recorders"
+        ? RECORDER_ROLES.has(u.roleSlug ?? "")
+        : !RECORDER_ROLES.has(u.roleSlug ?? "")
+    );
+    if (!q) return inTab;
+    return inTab.filter((u) =>
+      [u.email, u.name, u.roleName, u.competitionName]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q))
+    );
+  }, [users, tab, search]);
+
+  const counts = useMemo(
+    () => ({
+      staff: users.filter((u) => !RECORDER_ROLES.has(u.roleSlug ?? "")).length,
+      recorders: users.filter((u) => RECORDER_ROLES.has(u.roleSlug ?? "")).length,
+    }),
+    [users]
+  );
+
+  const generate = async () => {
+    try {
+      const { password } = await adminRbacApi.suggestPassword();
+      setForm((f) => ({ ...f, password }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not generate a password");
+    }
+  };
+
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     setCreating(true);
@@ -47,12 +143,24 @@ export function AdminUsersPage() {
       const created = await adminRbacApi.createUser({
         email: form.email,
         name: form.name || undefined,
-        password: form.password,
+        // Omitted entirely when blank, so the server generates one.
+        password: form.password.trim() || undefined,
         roleSlug: form.roleSlug,
         competitionId: form.roleSlug === SCOPED_ROLE ? form.competitionId || null : null,
       });
       setUsers((prev) => [...prev, created]);
-      setForm({ email: "", name: "", password: "", roleSlug: form.roleSlug, competitionId: "" });
+      if (created.generatedPassword) {
+        setRevealed({ email: created.email, password: created.generatedPassword });
+      } else if (form.password.trim()) {
+        setRevealed({ email: created.email, password: form.password.trim() });
+      }
+      setForm({
+        email: "",
+        name: "",
+        password: "",
+        roleSlug: form.roleSlug,
+        competitionId: "",
+      });
       toast.success(`Created ${created.email}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Create failed");
@@ -61,58 +169,105 @@ export function AdminUsersPage() {
     }
   };
 
-  const changeCompetition = async (user: AdminUser, competitionId: string) => {
+  const patch = async (user: AdminUser, body: Parameters<typeof adminRbacApi.updateUser>[1]) => {
     try {
-      const updated = await adminRbacApi.updateUser(user.id, { competitionId });
+      const updated = await adminRbacApi.updateUser(user.id, body);
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      toast.success(
-        updated.competitionName
-          ? `${updated.email} now records ${updated.competitionName}`
-          : `${updated.email} is no longer competition-scoped`
-      );
+      return updated;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
+      return null;
     }
   };
 
-  const toggleActive = async (user: AdminUser) => {
+  const resetPassword = async (user: AdminUser) => {
     try {
-      const updated = await adminRbacApi.updateUser(user.id, {
-        isActive: !user.isActive,
-      });
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      toast.success(updated.isActive ? "User activated" : "User deactivated");
+      const { password } = await adminRbacApi.resetPassword(user.id);
+      setRevealed({ email: user.email, password });
+      toast.success(`New password issued for ${user.email}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Update failed");
+      toast.error(err instanceof Error ? err.message : "Could not reset the password");
     }
   };
 
-  const changeRole = async (user: AdminUser, roleSlug: string) => {
+  const remove = async (user: AdminUser) => {
+    /* Deleting an account is irreversible, so it asks first. */
+    if (!window.confirm(`Delete ${user.email}? This cannot be undone.`)) return;
     try {
-      const updated = await adminRbacApi.updateUser(user.id, { roleSlug });
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      toast.success("Role updated");
+      await adminRbacApi.deleteUser(user.id);
+      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+      toast.success(`Deleted ${user.email}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Update failed");
+      toast.error(err instanceof Error ? err.message : "Delete failed");
     }
   };
 
-  if (loading) {
-    return <p className="muted admin-loading">Loading users…</p>;
-  }
+  const startEdit = (user: AdminUser) => {
+    setEditing(user.id);
+    setEditDraft({ name: user.name ?? "", email: user.email });
+  };
+
+  const saveEdit = async (user: AdminUser) => {
+    const updated = await patch(user, {
+      name: editDraft.name,
+      email: editDraft.email !== user.email ? editDraft.email : undefined,
+    });
+    if (updated) {
+      setEditing(null);
+      toast.success("Saved");
+    }
+  };
+
+  const roleOptions = tab === "recorders" ? recorderRoles : staffRoles;
 
   return (
-    <section className="admin-page admin-sb-section">
+    <div className="admin-rbac-page">
       <AdminPageHeader
         title="Admin users"
-        description="Email/password accounts with role-based permissions. Legacy API key login remains available for full access."
-        crumbs={[{ label: "Settings" }, { label: "Users" }]}
+        description="Internal staff and contracted match recorders. Recorders are scoped to a single competition and see only their own match sheets."
       />
 
-      <div className="admin-rbac-users-grid">
+      {revealed && (
+        <PasswordReveal
+          email={revealed.email}
+          password={revealed.password}
+          onDismiss={() => setRevealed(null)}
+        />
+      )}
+
+      <div className="aup-tabs" role="tablist" aria-label="Account groups">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "staff"}
+          className={tab === "staff" ? "aup-tab is-active" : "aup-tab"}
+          onClick={() => {
+            setTab("staff");
+            setForm((f) => ({ ...f, roleSlug: "read_only", competitionId: "" }));
+          }}
+        >
+          Internal staff <span className="aup-tab__count">{counts.staff}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "recorders"}
+          className={tab === "recorders" ? "aup-tab is-active" : "aup-tab"}
+          onClick={() => {
+            setTab("recorders");
+            setForm((f) => ({ ...f, roleSlug: SCOPED_ROLE }));
+          }}
+        >
+          Match recorders <span className="aup-tab__count">{counts.recorders}</span>
+        </button>
+      </div>
+
+      <div className="admin-rbac-layout">
         <div className="admin-sb-panel">
-          <h2 className="admin-sb-panel__title">Create user</h2>
-          <form className="admin-rbac-user-form" onSubmit={(e) => void handleCreate(e)}>
+          <h2 className="admin-sb-panel__title">
+            New {tab === "recorders" ? "match recorder" : "staff account"}
+          </h2>
+          <form className="admin-sb-form" onSubmit={handleCreate}>
             <label className="admin-sb-field">
               <span>Email</span>
               <input
@@ -125,34 +280,44 @@ export function AdminUsersPage() {
             <label className="admin-sb-field">
               <span>Name</span>
               <input
-                type="text"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               />
             </label>
+
             <label className="admin-sb-field">
               <span>Password</span>
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              />
+              <div className="aup-passrow">
+                <input
+                  type="text"
+                  minLength={8}
+                  placeholder="Leave blank to generate one"
+                  value={form.password}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                />
+                <button type="button" className="btn" onClick={generate}>
+                  Generate
+                </button>
+              </div>
+              <small className="muted">
+                Shown once after creating. It is stored as a hash and cannot be read back.
+              </small>
             </label>
+
             <label className="admin-sb-field">
               <span>Role</span>
               <select
                 value={form.roleSlug}
                 onChange={(e) => setForm((f) => ({ ...f, roleSlug: e.target.value }))}
               >
-                {roles.map((role) => (
+                {roleOptions.map((role) => (
                   <option key={role.slug} value={role.slug}>
                     {role.name}
                   </option>
                 ))}
               </select>
             </label>
+
             {form.roleSlug === SCOPED_ROLE && (
               <label className="admin-sb-field">
                 <span>Competition</span>
@@ -173,6 +338,7 @@ export function AdminUsersPage() {
                 </small>
               </label>
             )}
+
             <button type="submit" className="btn btn-primary" disabled={creating}>
               {creating ? "Creating…" : "Create user"}
             </button>
@@ -180,83 +346,133 @@ export function AdminUsersPage() {
         </div>
 
         <div className="admin-sb-panel admin-rbac-users-table-wrap">
-          <h2 className="admin-sb-panel__title">Users ({users.length})</h2>
-          {users.length === 0 ? (
+          <div className="aup-listhead">
+            <h2 className="admin-sb-panel__title">
+              {tab === "recorders" ? "Match recorders" : "Internal staff"} ({visible.length})
+            </h2>
+            <input
+              type="search"
+              className="aup-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter by name, email or role"
+              aria-label="Filter accounts"
+            />
+          </div>
+
+          {loading ? (
+            <p className="muted">Loading accounts…</p>
+          ) : visible.length === 0 ? (
             <p className="muted">
-              No admin users yet. API key login still works. Create a user to use
-              email/password with limited roles.
+              {search
+                ? "No accounts match that filter."
+                : tab === "recorders"
+                  ? "No match recorders yet. Create one on the left."
+                  : "No staff accounts yet."}
             </p>
           ) : (
-            <table className="admin-rbac-users-table">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th>Competition</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr key={user.id}>
-                    <td>{user.email}</td>
-                    <td>{user.name || "—"}</td>
-                    <td>
+            <ul className="aup-list">
+              {visible.map((user) => (
+                <li key={user.id} className={user.isActive ? "aup-row" : "aup-row is-inactive"}>
+                  <div className="aup-row__main">
+                    {editing === user.id ? (
+                      <div className="aup-edit">
+                        <input
+                          value={editDraft.name}
+                          onChange={(e) =>
+                            setEditDraft((d) => ({ ...d, name: e.target.value }))
+                          }
+                          placeholder="Name"
+                          aria-label="Name"
+                        />
+                        <input
+                          type="email"
+                          value={editDraft.email}
+                          onChange={(e) =>
+                            setEditDraft((d) => ({ ...d, email: e.target.value }))
+                          }
+                          placeholder="Email"
+                          aria-label="Email"
+                        />
+                        <button type="button" className="btn btn-primary" onClick={() => saveEdit(user)}>
+                          Save
+                        </button>
+                        <button type="button" className="btn" onClick={() => setEditing(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="aup-row__name">{user.name || "—"}</span>
+                        <span className="aup-row__email">{user.email}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="aup-row__controls">
+                    <select
+                      value={user.roleSlug ?? ""}
+                      onChange={(e) => patch(user, { roleSlug: e.target.value })}
+                      aria-label={`Role for ${user.email}`}
+                    >
+                      {roles.map((role) => (
+                        <option key={role.slug} value={role.slug}>
+                          {role.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {user.roleSlug === SCOPED_ROLE && (
                       <select
-                        value={user.roleSlug ?? ""}
-                        onChange={(e) => void changeRole(user, e.target.value)}
+                        value={user.competitionId ?? ""}
+                        onChange={(e) => patch(user, { competitionId: e.target.value })}
+                        aria-label={`Competition for ${user.email}`}
                       >
-                        {roles.map((role) => (
-                          <option key={role.slug} value={role.slug}>
-                            {role.name}
+                        <option value="" disabled>
+                          Select a competition…
+                        </option>
+                        {competitions.map((competition) => (
+                          <option key={competition.id} value={competition.id}>
+                            {competition.name}
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td>
-                      {user.roleSlug === SCOPED_ROLE ? (
-                        <select
-                          value={user.competitionId ?? ""}
-                          onChange={(e) => void changeCompetition(user, e.target.value)}
-                        >
-                          <option value="" disabled>Select a competition…</option>
-                          {competitions.map((competition) => (
-                            <option key={competition.id} value={competition.id}>
-                              {competition.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          user.isActive ? "admin-rbac-status active" : "admin-rbac-status"
-                        }
-                      >
-                        {user.isActive ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => void toggleActive(user)}
-                      >
-                        {user.isActive ? "Deactivate" : "Activate"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    )}
+                  </div>
+
+                  <div className="aup-row__actions">
+                    <button
+                      type="button"
+                      className="aup-link"
+                      onClick={() => startEdit(user)}
+                      disabled={editing === user.id}
+                    >
+                      Edit
+                    </button>
+                    <button type="button" className="aup-link" onClick={() => resetPassword(user)}>
+                      New password
+                    </button>
+                    <button
+                      type="button"
+                      className="aup-link"
+                      onClick={() => patch(user, { isActive: !user.isActive })}
+                    >
+                      {user.isActive ? "Deactivate" : "Activate"}
+                    </button>
+                    <button
+                      type="button"
+                      className="aup-link aup-link--danger"
+                      onClick={() => remove(user)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>
-    </section>
+    </div>
   );
 }

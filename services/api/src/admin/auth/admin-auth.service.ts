@@ -94,6 +94,13 @@ export class AdminAuthService {
   }
 
   async login(email: string, password: string) {
+    /* Do not lean on the validation pipe alone: under tsx (esbuild) decorator
+       metadata is not emitted, so DTO validation silently does not run in dev
+       even though it does in the tsc-built production bundle. Without this a
+       missing password reached bcrypt and surfaced as a 500. */
+    if (typeof email !== "string" || typeof password !== "string" || !password) {
+      throw new UnauthorizedException("Invalid email or password");
+    }
     const normalized = email.trim().toLowerCase();
     const user = await this.prisma.adminUser.findUnique({
       where: { email: normalized },

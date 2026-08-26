@@ -23,9 +23,11 @@ export class CreateAdminUserDto {
   @IsString()
   name?: string;
 
+  /** Optional: one is generated and returned once when omitted. */
+  @IsOptional()
   @IsString()
   @MinLength(8)
-  password!: string;
+  password?: string;
 
   @IsString()
   roleSlug!: string;
@@ -62,4 +64,12 @@ export class UpdateAdminUserDto {
   @IsOptional()
   @IsString()
   competitionId?: string | null;
+}
+
+export class ResetPasswordDto {
+  /** Omit to have a strong password generated and returned once. */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  password?: string;
 }

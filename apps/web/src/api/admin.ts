@@ -887,14 +887,29 @@ export const adminApi = {
   rbacCreateUser: (body: {
     email: string;
     name?: string;
-    password: string;
+    password?: string;
     roleSlug: string;
     competitionId?: string | null;
   }) =>
-    adminFetch<AdminUser>("/admin/rbac/users", {
+    adminFetch<AdminUser & { generatedPassword?: string | null }>("/admin/rbac/users", {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  rbacDeleteUser: (id: string) =>
+    adminFetch<{ id: string; deleted: boolean }>(`/admin/rbac/users/${id}`, {
+      method: "DELETE",
+    }),
+
+  /** Issues a new password and returns it once; only the hash is stored. */
+  rbacResetPassword: (id: string, password?: string) =>
+    adminFetch<{ id: string; email: string; password: string }>(
+      `/admin/rbac/users/${id}/password`,
+      { method: "POST", body: JSON.stringify({ password }) }
+    ),
+
+  rbacSuggestPassword: () =>
+    adminFetch<{ password: string }>("/admin/rbac/password-suggestion"),
+
   rbacUpdateUser: (
     id: string,
     body: {
