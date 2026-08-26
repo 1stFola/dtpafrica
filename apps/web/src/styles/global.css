@@ -13227,13 +13227,6 @@ a {
   font-weight: 500;
 }
 
-.admin-db-seed-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin: 1rem 0;
-}
-
 .admin-db-warnings {
   margin: 0.75rem 0 1rem;
   padding-left: 1.25rem;

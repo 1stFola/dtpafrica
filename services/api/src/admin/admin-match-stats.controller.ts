@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -71,6 +72,20 @@ export class AdminMatchStatsController {
   @RequirePermissions("scoreboard.stats.record", "scoreboard.stats.approve")
   totals(@Req() req: AdminRequest) {
     return this.stats.myTotals(req.adminAuth);
+  }
+
+  /* Practice matches. Declared above the ":matchId" routes so "training" is
+     never swallowed as a match id. */
+  @Post("training")
+  @RequirePermissions("scoreboard.stats.record")
+  startTraining(@Req() req: AdminRequest) {
+    return this.stats.createTrainingMatch(req.adminAuth);
+  }
+
+  @Delete("training/:matchId")
+  @RequirePermissions("scoreboard.stats.record")
+  deleteTraining(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
+    return this.stats.deleteTrainingMatch(matchId, req.adminAuth);
   }
 
   @Get(":matchId/history")

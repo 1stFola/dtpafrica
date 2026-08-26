@@ -83,10 +83,57 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c, e) => `Corner Kick! ${actor(c, e)} takes another corner for ${c.teamName}.`,
     (c) => `Corner Kick! Sustained pressure from ${c.teamName} forces another corner.`,
   ],
+  /* Retired in favour of the accurate/inaccurate split, but kept so sheets
+     recorded before the change still read correctly. */
   cross: [
     (c, e) => `Cross! ${actor(c, e)} swings a dangerous ball into the box.`,
     (c) => `Cross! ${c.teamName} work the ball wide and whip a delivery towards the far post.`,
     (c, e) => `Cross! ${actor(c, e)} picks out a team-mate with an inviting delivery.`,
+  ],
+  accurate_cross: [
+    (c, e) => `Accurate Cross! ${actor(c, e)} picks out a team-mate with an inviting delivery.`,
+    (c) => `Accurate Cross! ${c.teamName} work the ball wide and find a head in the middle.`,
+    (c, e) => `Accurate Cross! ${actor(c, e)} whips it onto the striker's boot from the byline.`,
+  ],
+  inaccurate_cross: [
+    (c, e) => `Inaccurate Cross! ${actor(c, e)} overhits the delivery and it sails out of play.`,
+    (c) => `Inaccurate Cross! ${c.teamName} get into a good wide area but waste the opportunity.`,
+    (c, e) => `Inaccurate Cross! ${actor(c, e)} finds only the first defender with the delivery.`,
+  ],
+  long_pass: [
+    (c, e) => `Long Pass! ${actor(c, e)} switches play with a raking ball across the pitch.`,
+    (c, e) => `Long Pass! ${actor(c, e)} picks out a runner with an ambitious diagonal.`,
+    (c) => `Long Pass! ${c.teamName} go long to relieve the pressure and turn ${c.opponentName} around.`,
+  ],
+  through_ball: [
+    (c, e) => `Through Ball! ${actor(c, e)} splits the defence with a perfectly weighted pass.`,
+    (c, e) => `Through Ball! ${actor(c, e)} threads it between the centre-backs to release the runner.`,
+    (c) => `Through Ball! ${c.teamName} find the gap as the ${c.opponentName} back line steps up too late.`,
+  ],
+  tackle_won: [
+    (c, e) => `Tackle Won! ${actor(c, e)} times the challenge perfectly and comes away with the ball.`,
+    (c, e) => `Tackle Won! ${actor(c, e)} stands his man up and wins possession cleanly.`,
+    (c) => `Tackle Won! A strong ${c.teamName} challenge halts the ${c.opponentName} attack.`,
+  ],
+  aerial_duel_won: [
+    (c, e) => `Aerial Duel Won! ${actor(c, e)} climbs highest to win the header.`,
+    (c, e) => `Aerial Duel Won! ${actor(c, e)} dominates in the air and nods it clear.`,
+    (c) => `Aerial Duel Won! ${c.teamName} win the second ball with a commanding header.`,
+  ],
+  blocked_shot: [
+    (c, e) => `Shot Blocked! ${actor(c, e)} throws himself in front of the effort.`,
+    (c, e) => `Shot Blocked! ${actor(c, e)} reads it early and smothers the strike.`,
+    (c) => `Shot Blocked! A brave ${c.teamName} body gets in the way to deflect it behind.`,
+  ],
+  goalkeeper_punch: [
+    (c, e) => `Goalkeeper Punch! ${actor(c, e)} elects to punch clear rather than claim the cross.`,
+    (c) => `Goalkeeper Punch! The ${c.teamName} goalkeeper flaps the delivery away under pressure.`,
+    (c, e) => `Goalkeeper Punch! ${actor(c, e)} rises through the crowd and clears with both fists.`,
+  ],
+  sweeper_keep: [
+    (c, e) => `Sweeper Keep! ${actor(c, e)} races off his line to clear the ball outside the box.`,
+    (c) => `Sweeper Keep! The ${c.teamName} goalkeeper reads the danger and sweeps up behind the defence.`,
+    (c, e) => `Sweeper Keep! ${actor(c, e)} beats the striker to the through ball well outside his area.`,
   ],
   dribble: [
     (c, e) => `Dribble! ${actor(c, e)} produces an excellent run to advance ${c.teamName}'s attack.`,
@@ -194,9 +241,9 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c) => `Save! Another important stop from the ${c.teamName} goalkeeper.`,
   ],
   shot: [
-    (c, e) => `Shot! ${actor(c, e)} tests the goalkeeper with an effort on goal.`,
-    (c) => `Shot! ${c.teamName} work an opening and strike towards goal.`,
-    (c, e) => `Shot! ${actor(c, e)} lets fly from distance and forces the defence into action.`,
+    (c, e) => `Shot On Target! ${actor(c, e)} tests the goalkeeper with an effort on goal.`,
+    (c) => `Shot On Target! ${c.teamName} work an opening and force a stop from the keeper.`,
+    (c, e) => `Shot On Target! ${actor(c, e)} lets fly from distance and draws a save.`,
   ],
   shot_off_target: [
     (c, e) => `Shot Off Target! ${actor(c, e)} sends the effort wide.`,
