@@ -7,6 +7,7 @@ import {
   type MatchStatsTotals,
 } from "../../../api/adminMatchStats";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { FeedbackSettings } from "./FeedbackSettings";
 
 /** Fixtures worth offering a sheet for: recent enough to have been played,
  *  near enough ahead to be today's assignment. */
@@ -140,6 +141,8 @@ export function AdminMatchStatsPage() {
           </div>
         </dl>
       )}
+
+      <FeedbackSettings />
 
       {queue && queue.length > 0 && (
         <section className="mcx-queue">

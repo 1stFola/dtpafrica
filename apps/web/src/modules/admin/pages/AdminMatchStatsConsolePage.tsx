@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   matchStatsApi,
@@ -18,6 +18,7 @@ import {
   type TallyValue,
 } from "../../../api/adminMatchStats";
 import { MatchEventsTab } from "./MatchEventsTab";
+import { capturedFromEvents } from "./eventStatCapture";
 import { MatchSheetHistory, latestActionBanner } from "./MatchSheetHistory";
 import { clearDraft, draftIsAhead, markSynced, readDraft, writeDraft } from "./matchSheetDraft";
 import {
@@ -556,15 +557,31 @@ export function AdminMatchStatsConsolePage() {
     return { home, away };
   }, [events]);
 
+  const splitKeys = useMemo(
+    () => new Set((sheet?.stats ?? []).filter((d) => d.split).map((d) => d.key)),
+    [sheet]
+  );
+
+  /* Recomputed from the events held here rather than read from the sheet, so a
+     tap on the Events tab moves these counters before the save lands. */
+  const capturedStats = useMemo(
+    () => capturedFromEvents(sheet?.eventCapture ?? {}, events, splitKeys),
+    [sheet, events, splitKeys]
+  );
+
   const totals = useMemo(() => {
     const out: Record<string, SidePair> = {};
-    for (const def of sheet?.stats ?? []) out[def.key] = totalOf(tallies[def.key]);
+    for (const def of sheet?.stats ?? []) {
+      const manual = totalOf(tallies[def.key]);
+      const auto = totalOf(capturedStats[def.key]);
+      out[def.key] = { home: manual.home + auto.home, away: manual.away + auto.away };
+    }
     /* Total shots is derived, never tapped: on target plus off target. */
     const on = out.shotsOnTarget ?? { home: 0, away: 0 };
     const off = out.shotsOffTarget ?? { home: 0, away: 0 };
     out.shots = { home: on.home + off.home, away: on.away + off.away };
     return out;
-  }, [sheet, tallies]);
+  }, [sheet, tallies, capturedStats]);
 
   /* The stats half toggle follows the match clock: the other half is not in
      play, so it must not be tallyable. */
@@ -950,38 +967,68 @@ export function AdminMatchStatsConsolePage() {
               </div>
 
               <section className="mcx-sheet">
-                {sheet.stats.map((def) => {
+                {sheet.stats.map((def, index) => {
                   const pair = pairOf(tallies[def.key], half);
                   const total = totals[def.key] ?? { home: 0, away: 0 };
+                  /* Split stats tally per half, so the chip shows this half's
+                     contribution beside the counter it belongs to. */
+                  const auto = def.split
+                    ? pairOf(capturedStats[def.key], half)
+                    : totalOf(capturedStats[def.key]);
+                  /* The stats arrive manual-first; this is where that changes. */
+                  const opensAutoGroup =
+                    def.autoCaptured && !sheet.stats[index - 1]?.autoCaptured;
+
                   return (
-                    <div key={def.key} className="mcx-row">
-                      <div className="mcx-row__label">
-                        {def.label}
-                        {def.split && <span className="mcx-row__half">{half} half</span>}
-                      </div>
-                      <div className="mcx-row__counters">
-                        <div className="mcx-row__side">
-                          <Counter
-                            value={pair.home}
-                            side="home"
-                            disabled={!statsEditable}
-                            onBump={(d) => bump(def.key, "home", d)}
-                            label={`${def.label}, ${match.homeTeam.name}`}
-                          />
-                          {def.split && <span className="mcx-row__total">match total {total.home}</span>}
+                    <Fragment key={def.key}>
+                      {opensAutoGroup && (
+                        <p className="mcx-sheet__divider">
+                          Filled in from the event log
+                          <span>
+                            Tap these in the Events tab and they count here automatically. The
+                            counters stay open for anything the log does not cover.
+                          </span>
+                        </p>
+                      )}
+                      <div className={`mcx-row${def.autoCaptured ? " mcx-row--auto" : ""}`}>
+                        <div className="mcx-row__label">
+                          {def.label}
+                          {def.split && <span className="mcx-row__half">{half} half</span>}
                         </div>
-                        <div className="mcx-row__side mcx-row__side--away">
-                          <Counter
-                            value={pair.away}
-                            side="away"
-                            disabled={!statsEditable}
-                            onBump={(d) => bump(def.key, "away", d)}
-                            label={`${def.label}, ${match.awayTeam.name}`}
-                          />
-                          {def.split && <span className="mcx-row__total">match total {total.away}</span>}
+                        <div className="mcx-row__counters">
+                          <div className="mcx-row__side">
+                            <Counter
+                              value={pair.home}
+                              side="home"
+                              disabled={!statsEditable}
+                              onBump={(d) => bump(def.key, "home", d)}
+                              label={`${def.label}, ${match.homeTeam.name}`}
+                            />
+                            {auto.home > 0 && (
+                              <span className="mcx-row__auto">+{auto.home} from events</span>
+                            )}
+                            {def.split && (
+                              <span className="mcx-row__total">match total {total.home}</span>
+                            )}
+                          </div>
+                          <div className="mcx-row__side mcx-row__side--away">
+                            <Counter
+                              value={pair.away}
+                              side="away"
+                              disabled={!statsEditable}
+                              onBump={(d) => bump(def.key, "away", d)}
+                              label={`${def.label}, ${match.awayTeam.name}`}
+                            />
+                            {auto.away > 0 && (
+                              <span className="mcx-row__auto">+{auto.away} from events</span>
+                            )}
+                            {def.split && (
+                              <span className="mcx-row__total">match total {total.away}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </Fragment>
                   );
                 })}
               </section>

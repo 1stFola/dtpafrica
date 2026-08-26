@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EVENT_LABELS } from "../../../api/scoreboard";
 import type {
   KitColours,
@@ -7,6 +7,9 @@ import type {
   Side,
 } from "../../../api/adminMatchStats";
 import { displayMinute, type useMatchClock } from "./useMatchClock";
+import { EventGrid } from "./EventGrid";
+import { soundFor, useFeedbackPrefs } from "./useFeedbackPrefs";
+import { useUISound } from "./useUISound";
 
 /**
  * Event types that need a second player before they can be logged: the incoming
@@ -65,6 +68,16 @@ export function MatchEventsTab({
   const [pendingType, setPendingType] = useState<string | null>(null);
   const [secondNumber, setSecondNumber] = useState("");
 
+  const { prefs } = useFeedbackPrefs();
+  const playSound = useUISound({ enabled: prefs.sound, intensity: prefs.intensity });
+
+  /* So a button can say which statistic it will also file, in the wording the
+     Statistics tab uses rather than a raw key. */
+  const statLabels = useMemo(
+    () => Object.fromEntries(sheet.stats.map((d) => [d.key, d.label])),
+    [sheet.stats]
+  );
+
   const teamFor = (s: Side) => (s === "home" ? homeName : awayName);
   const stepsEnabled = editable && clock.started;
   /* Every earlier step must be answered before step 4 unlocks: no event can be
@@ -78,6 +91,7 @@ export function MatchEventsTab({
     if (SECOND_PLAYER_PROMPT[type]) {
       setSecondNumber("");
       setPendingType(type);
+      // The sound belongs to the completed event, so it waits for the prompt.
       return;
     }
     writeEvent(type, null);
@@ -86,6 +100,8 @@ export function MatchEventsTab({
   /** Commit the event, with the second player's number when one was given. */
   const writeEvent = (type: string, secondary: number | null) => {
     if (!captured || !side) return;
+    // Sounded here rather than on tap, so a goal cheers when the assist lands.
+    playSound(soundFor(type));
     const next: RecordedEvent = {
       id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type,
@@ -130,19 +146,15 @@ export function MatchEventsTab({
                 <em className="mcx-step__gate"> — enter a jersey number first (step 3)</em>
               ) : null}
             </span>
-            <div className="mcx-grid" aria-label="Event types">
-              {sheet.eventTypes.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className="mcx-grid__btn"
-                  onClick={() => addEvent(type)}
-                  disabled={!canLog}
-                >
-                  {labelFor(type)}
-                </button>
-              ))}
-            </div>
+            <EventGrid
+              types={sheet.eventTypes}
+              locked={!canLog}
+              prefs={prefs}
+              captureMap={sheet.eventCapture}
+              statLabels={statLabels}
+              onLog={addEvent}
+              onBlocked={() => playSound("error")}
+            />
           </div>
         </section>
       )}
