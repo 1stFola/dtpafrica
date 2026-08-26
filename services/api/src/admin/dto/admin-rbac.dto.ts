@@ -32,10 +32,19 @@ export class CreateAdminUserDto {
   @IsString()
   roleSlug!: string;
 
-  /** Scopes a Match Recorder to one competition. Empty or omitted = unscoped. */
+  /**
+   * Competitions a Match Recorder may work in. Ignored when `allCompetitions`
+   * is set, since that already grants everything.
+   */
   @IsOptional()
-  @IsString()
-  competitionId?: string | null;
+  @IsArray()
+  @IsString({ each: true })
+  competitionIds?: string[];
+
+  /** Grants every competition, present and future. */
+  @IsOptional()
+  @IsBoolean()
+  allCompetitions?: boolean;
 }
 
 export class UpdateAdminUserDto {
@@ -60,10 +69,16 @@ export class UpdateAdminUserDto {
   @IsBoolean()
   isActive?: boolean;
 
-  /** Pass an empty string to clear an existing competition scope. */
+  /** Replaces the account's competitions wholesale. Omit to leave unchanged. */
   @IsOptional()
-  @IsString()
-  competitionId?: string | null;
+  @IsArray()
+  @IsString({ each: true })
+  competitionIds?: string[];
+
+  /** Grants every competition, present and future. */
+  @IsOptional()
+  @IsBoolean()
+  allCompetitions?: boolean;
 }
 
 export class ResetPasswordDto {

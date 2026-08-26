@@ -31,6 +31,7 @@ import {
 } from "./dto/create-competition-from-template.dto";
 import { PatchSpotterOpsDto } from "./dto/patch-spotter-ops.dto";
 import { CreateAdminMatchDto } from "./dto/create-admin-match.dto";
+import { CreateFriendlyMatchDto } from "./dto/create-friendly-match.dto";
 import { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
 import { PatchMatchScoreDto } from "./dto/patch-match-score.dto";
 import { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
@@ -219,6 +220,13 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.read")
   supervisorLive() {
     return this.sb.supervisorLive();
+  }
+
+  /* Declared before "matches" so the literal path is not read as a match id. */
+  @Post("matches/friendly")
+  @RequirePermissions("scoreboard.matches.write")
+  createFriendlyMatch(@Body() dto: CreateFriendlyMatchDto) {
+    return this.sb.createFriendlyMatch(dto);
   }
 
   @Post("matches")

@@ -15,6 +15,7 @@ import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { MatchCsvIngestModal } from "../components/MatchCsvIngestModal";
 import { MatchStatsUpdateModal } from "../components/MatchStatsUpdateModal";
 import { FixtureFormModal } from "../components/FixtureFormModal";
+import { FriendlyFormModal } from "../components/FriendlyFormModal";
 import { QuickScoreUpdatePanel } from "../components/QuickScoreUpdatePanel";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 
@@ -39,6 +40,7 @@ export function AdminScoreboardMatchCenterPage() {
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
+  const [friendlyOpen, setFriendlyOpen] = useState(false);
   const [matchSearch, setMatchSearch] = useState("");
   const [competitionOptions, setCompetitionOptions] = useState<
     Array<{ id: string; name: string }>
@@ -183,9 +185,14 @@ export function AdminScoreboardMatchCenterPage() {
         description="Canonical timeline and live match controls. Full time updates standings for group-stage fixtures."
         crumbs={[{ label: "Match center" }]}
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setFixtureOpen(true)}>
-            Create fixture
-          </button>
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => setFriendlyOpen(true)}>
+              Create friendly
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => setFixtureOpen(true)}>
+              Create fixture
+            </button>
+          </>
         }
       />
 
@@ -454,6 +461,15 @@ export function AdminScoreboardMatchCenterPage() {
           )}
         </>
       )}
+
+      <FriendlyFormModal
+        open={friendlyOpen}
+        onClose={() => setFriendlyOpen(false)}
+        onCreated={(matchId) => {
+          refresh();
+          setSelectedId(matchId);
+        }}
+      />
 
       <FixtureFormModal
         open={fixtureOpen}
