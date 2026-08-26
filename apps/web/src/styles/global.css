@@ -21048,3 +21048,75 @@ a.dbx-comp-card:hover .sb-comp-crest {
   font-size: 0.76rem;
   color: var(--color-muted);
 }
+
+/* --- Match recorder competition scope (multi-select) --- */
+
+.admin-scopeset {
+  margin: 0;
+  padding: 0.75rem 0.9rem 0.9rem;
+  border: 1px solid var(--admin-line, rgba(148, 163, 184, 0.28));
+  border-radius: 10px;
+}
+
+.admin-scopeset legend {
+  padding: 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.admin-scopeset__all {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px dashed var(--admin-line, rgba(148, 163, 184, 0.28));
+  cursor: pointer;
+}
+
+.admin-scopeset__all small { display: block; font-weight: 400; }
+
+/* Capped so a long competition list scrolls inside the card rather than
+   pushing the submit button off the screen. */
+.admin-scopeset__list {
+  display: grid;
+  gap: 0.3rem;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.admin-scopeset__list label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.admin-scopeset__list.is-disabled,
+.admin-scoperow .is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Row editor: folded away so the user list stays scannable. */
+.admin-scoperow > summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.25rem 0;
+}
+
+.admin-scoperow > div,
+.admin-scoperow__all {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.admin-scoperow label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+}

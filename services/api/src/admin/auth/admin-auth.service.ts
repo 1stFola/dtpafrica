@@ -71,6 +71,7 @@ export class AdminAuthService {
           },
         },
         competition: { select: { id: true, name: true } },
+        competitions: { include: { competition: { select: { id: true, name: true } } } },
       },
     });
     if (!user?.isActive) {
@@ -80,6 +81,18 @@ export class AdminAuthService {
     const permissions =
       user.role?.permissions.map((rp) => rp.permission.slug) ?? [];
 
+    /* An account granted every competition carries no scope at all, which is
+       how internal roles already behave. Otherwise the grants are the union of
+       the join table and the legacy single-competition column, so accounts
+       created before recorders could hold several keep working untouched. */
+    const granted = user.allCompetitions
+      ? []
+      : [
+          ...user.competitions.map((g) => g.competition),
+          ...(user.competition ? [user.competition] : []),
+        ];
+    const byId = new Map(granted.map((c) => [c.id, c]));
+
     return {
       method: "jwt",
       roleSlug: user.role?.slug ?? null,
@@ -88,8 +101,8 @@ export class AdminAuthService {
       userId: user.id,
       email: user.email,
       displayName: user.name ?? user.email,
-      competitionId: user.competitionId ?? null,
-      competitionName: user.competition?.name ?? null,
+      competitionIds: [...byId.keys()],
+      competitionNames: [...byId.values()].map((c) => c.name),
     };
   }
 

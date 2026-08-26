@@ -83,7 +83,8 @@ export function AdminUsersPage() {
     name: "",
     password: "",
     roleSlug: "read_only",
-    competitionId: "",
+    competitionIds: [] as string[],
+    allCompetitions: false,
   });
 
   const load = () =>
@@ -113,7 +114,7 @@ export function AdminUsersPage() {
     );
     if (!q) return inTab;
     return inTab.filter((u) =>
-      [u.email, u.name, u.roleName, u.competitionName]
+      [u.email, u.name, u.roleName, ...(u.competitionNames ?? [])]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q))
     );
@@ -146,7 +147,9 @@ export function AdminUsersPage() {
         // Omitted entirely when blank, so the server generates one.
         password: form.password.trim() || undefined,
         roleSlug: form.roleSlug,
-        competitionId: form.roleSlug === SCOPED_ROLE ? form.competitionId || null : null,
+        ...(form.roleSlug === SCOPED_ROLE
+          ? { competitionIds: form.competitionIds, allCompetitions: form.allCompetitions }
+          : {}),
       });
       setUsers((prev) => [...prev, created]);
       if (created.generatedPassword) {
@@ -159,7 +162,8 @@ export function AdminUsersPage() {
         name: "",
         password: "",
         roleSlug: form.roleSlug,
-        competitionId: "",
+        competitionIds: [],
+        allCompetitions: false,
       });
       toast.success(`Created ${created.email}`);
     } catch (err) {
@@ -243,7 +247,7 @@ export function AdminUsersPage() {
           className={tab === "staff" ? "aup-tab is-active" : "aup-tab"}
           onClick={() => {
             setTab("staff");
-            setForm((f) => ({ ...f, roleSlug: "read_only", competitionId: "" }));
+            setForm((f) => ({ ...f, roleSlug: "read_only", competitionIds: [], allCompetitions: false }));
           }}
         >
           Internal staff <span className="aup-tab__count">{counts.staff}</span>
@@ -319,24 +323,58 @@ export function AdminUsersPage() {
             </label>
 
             {form.roleSlug === SCOPED_ROLE && (
-              <label className="admin-sb-field">
-                <span>Competition</span>
-                <select
-                  required
-                  value={form.competitionId}
-                  onChange={(e) => setForm((f) => ({ ...f, competitionId: e.target.value }))}
+              <fieldset className="admin-sb-field admin-scopeset">
+                <legend>Competitions</legend>
+
+                <label className="admin-scopeset__all">
+                  <input
+                    type="checkbox"
+                    checked={form.allCompetitions}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, allCompetitions: e.target.checked }))
+                    }
+                  />
+                  <span>
+                    <strong>All competitions</strong>
+                    <small className="muted">
+                      Includes any competition added later, friendlies among them.
+                    </small>
+                  </span>
+                </label>
+
+                {/* Named picks are pointless once everything is granted, so they
+                    are disabled rather than left to contradict the toggle. */}
+                <div
+                  className={`admin-scopeset__list${form.allCompetitions ? " is-disabled" : ""}`}
                 >
-                  <option value="">Select a competition…</option>
                   {competitions.map((competition) => (
-                    <option key={competition.id} value={competition.id}>
-                      {competition.name}
-                    </option>
+                    <label key={competition.id}>
+                      <input
+                        type="checkbox"
+                        disabled={form.allCompetitions}
+                        checked={form.competitionIds.includes(competition.id)}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            competitionIds: e.target.checked
+                              ? [...f.competitionIds, competition.id]
+                              : f.competitionIds.filter((id) => id !== competition.id),
+                          }))
+                        }
+                      />
+                      <span>{competition.name}</span>
+                    </label>
                   ))}
-                </select>
+                </div>
+
                 <small className="muted">
-                  This recorder will only see fixtures from this competition.
+                  {form.allCompetitions
+                    ? "This recorder will see every fixture."
+                    : form.competitionIds.length === 0
+                      ? "Pick at least one competition, or grant them all."
+                      : `Sees fixtures from ${form.competitionIds.length} competition${form.competitionIds.length === 1 ? "" : "s"}.`}
                 </small>
-              </label>
+              </fieldset>
             )}
 
             <button type="submit" className="btn btn-primary" disabled={creating}>
@@ -423,20 +461,54 @@ export function AdminUsersPage() {
                     </select>
 
                     {user.roleSlug === SCOPED_ROLE && (
-                      <select
-                        value={user.competitionId ?? ""}
-                        onChange={(e) => patch(user, { competitionId: e.target.value })}
-                        aria-label={`Competition for ${user.email}`}
-                      >
-                        <option value="" disabled>
-                          Select a competition…
-                        </option>
-                        {competitions.map((competition) => (
-                          <option key={competition.id} value={competition.id}>
-                            {competition.name}
-                          </option>
-                        ))}
-                      </select>
+                      <details className="admin-scoperow">
+                        <summary>
+                          {user.allCompetitions
+                            ? "All competitions"
+                            : (user.competitionNames ?? []).length === 0
+                              ? "No competitions"
+                              : (user.competitionNames ?? []).length <= 2
+                                ? (user.competitionNames ?? []).join(", ")
+                                : `${(user.competitionNames ?? []).length} competitions`}
+                        </summary>
+
+                        <label className="admin-scoperow__all">
+                          <input
+                            type="checkbox"
+                            checked={user.allCompetitions ?? false}
+                            onChange={(e) => patch(user, { allCompetitions: e.target.checked })}
+                          />
+                          <span>All competitions</span>
+                        </label>
+
+                        <div className={user.allCompetitions ? "is-disabled" : undefined}>
+                          {competitions.map((competition) => {
+                            const on = (user.competitionIds ?? []).includes(competition.id);
+                            return (
+                              <label key={competition.id}>
+                                <input
+                                  type="checkbox"
+                                  disabled={user.allCompetitions ?? false}
+                                  checked={on}
+                                  onChange={() =>
+                                    patch(user, {
+                                      /* Sent whole rather than as a delta — the
+                                         server replaces the set outright, so a
+                                         dropped request cannot half-apply. */
+                                      competitionIds: on
+                                        ? (user.competitionIds ?? []).filter(
+                                            (id) => id !== competition.id
+                                          )
+                                        : [...(user.competitionIds ?? []), competition.id],
+                                    })
+                                  }
+                                />
+                                <span>{competition.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </details>
                     )}
                   </div>
 

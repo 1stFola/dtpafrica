@@ -58,9 +58,9 @@ export type AdminSession = {
   userId?: string;
   email?: string;
   displayName?: string;
-  /** Set when the account is scoped to a single competition. */
-  competitionId?: string | null;
-  competitionName?: string | null;
+  /** Competitions this account is limited to. Empty means no limit. */
+  competitionIds?: string[];
+  competitionNames?: string[];
 };
 
 export type AdminPermission = {
@@ -86,9 +86,11 @@ export type AdminUser = {
   isActive: boolean;
   roleSlug: string | null;
   roleName: string | null;
-  /** Set only for competition-scoped roles (contracted match recorders). */
-  competitionId?: string | null;
-  competitionName?: string | null;
+  /** Granted every competition, present and future. */
+  allCompetitions?: boolean;
+  /** Named competitions this account may record for. */
+  competitionIds?: string[];
+  competitionNames?: string[];
   createdAt?: string;
   updatedAt?: string;
 };
@@ -883,13 +885,28 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify({ permissions }),
     }),
+  /** Create a one-off friendly, tied to no competition of its own. */
+  createFriendlyMatch: (body: {
+    homeTeamId: string;
+    awayTeamId: string;
+    kickoffDate: string;
+    kickoffTime: string;
+    venue?: string;
+    roundLabel?: string;
+  }) =>
+    adminFetch<{ ok: boolean; match: { id: string; slug: string | null } }>(
+      "/admin/scoreboard/matches/friendly",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+
   rbacUsers: () => adminFetch<AdminUser[]>("/admin/rbac/users"),
   rbacCreateUser: (body: {
     email: string;
     name?: string;
     password?: string;
     roleSlug: string;
-    competitionId?: string | null;
+    competitionIds?: string[];
+    allCompetitions?: boolean;
   }) =>
     adminFetch<AdminUser & { generatedPassword?: string | null }>("/admin/rbac/users", {
       method: "POST",
@@ -917,7 +934,8 @@ export const adminApi = {
       name?: string;
       password?: string;
       roleSlug?: string;
-      competitionId?: string | null;
+      competitionIds?: string[];
+      allCompetitions?: boolean;
       isActive?: boolean;
     }
   ) =>

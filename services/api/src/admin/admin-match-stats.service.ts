@@ -9,7 +9,12 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
-import { hasPermission } from "./auth/admin-auth.types";
+import {
+  canAccessCompetition,
+  competitionScopeWhere,
+  hasPermission,
+  scopedCompetitions,
+} from "./auth/admin-auth.types";
 import {
   generateEventComments,
   type RecordedEventInput,
@@ -657,10 +662,10 @@ export class AdminMatchStatsService {
       return match;
     }
 
-    /* A scoped recorder must not reach a fixture outside their competition,
-       even by typing the match id straight into the URL. */
-    if (ctx.competitionId && match.competitionId !== ctx.competitionId) {
-      throw new ForbiddenException("This match is outside the competition you are assigned to");
+    /* A scoped recorder must not reach a fixture outside the competitions they
+       are assigned to, even by typing the match id straight into the URL. */
+    if (!canAccessCompetition(ctx, match.competitionId)) {
+      throw new ForbiddenException("This match is outside the competitions you are assigned to");
     }
     return match;
   }
@@ -686,7 +691,7 @@ export class AdminMatchStatsService {
       statisticsSheet: { select: { status: true, recorderName: true } },
     } as const;
 
-    const scope = ctx.competitionId ? { competitionId: ctx.competitionId } : {};
+    const scope = competitionScopeWhere(ctx);
 
     /* Training fixtures are fetched separately rather than relying on the take
        below. They are few, their kickoff dates are arbitrary, and once the real
@@ -1337,9 +1342,8 @@ export class AdminMatchStatsService {
     /* Scoped to the recorder's own sheets where they have one, so the numbers
        describe their work rather than the whole competition. */
     const mine = ctx.userId ? { recorderId: ctx.userId } : {};
-    const scope = ctx.competitionId
-      ? { match: { competitionId: ctx.competitionId } }
-      : {};
+    const scoped = scopedCompetitions(ctx);
+    const scope = scoped ? { match: { competitionId: { in: scoped } } } : {};
     const where = { ...mine, ...scope };
 
     /* Statistics and events are approved together, so one count covers both.
@@ -1374,7 +1378,7 @@ export class AdminMatchStatsService {
     const sheets = await this.prisma.sbMatchStatistics.findMany({
       where: {
         OR: [{ status: "submitted" }, { eventsStatus: "submitted" }],
-        ...(ctx.competitionId ? { match: { competitionId: ctx.competitionId } } : {}),
+        ...(scopedCompetitions(ctx) ? { match: { competitionId: { in: scopedCompetitions(ctx)! } } } : {}),
       },
       orderBy: { updatedAt: "asc" },
       include: {

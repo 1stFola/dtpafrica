@@ -31,6 +31,11 @@ import type {
 } from "./dto/update-match-stats.dto";
 import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
 import {
+  FRIENDLY_COMPETITION_NAME,
+  FRIENDLY_COMPETITION_SLUG,
+  FRIENDLY_FORMAT_TYPE,
+} from "../scoreboard/friendly";
+import {
   resolveUniqueMatchSlug,
   type MatchSlugLeg,
 } from "../scoreboard/match-slug";
@@ -38,6 +43,7 @@ import { parseKickoffAtIso, parseWatKickoff } from "../shared/wat-datetime";
 import { parseMatchSquadCsv, type ParsedMatchSquadCsvRow } from "./match-squad-csv";
 import type { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
 import type { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
+import { CreateFriendlyMatchDto } from "./dto/create-friendly-match.dto";
 
 const SCOREBOARD_TIMEZONE = "Africa/Lagos";
 const DEFAULT_FORMATION = "4-3-3";
@@ -1319,6 +1325,90 @@ export class AdminScoreboardService {
       }
       throw err;
     }
+  }
+
+  /**
+   * The competition that holds every friendly, created on first use.
+   *
+   * Made on demand rather than seeded so the feature works the moment it ships,
+   * without waiting on a database seed run.
+   */
+  private async ensureFriendlyCompetition() {
+    const existing = await this.prisma.sbCompetition.findUnique({
+      where: { slug: FRIENDLY_COMPETITION_SLUG },
+    });
+    if (existing) return existing;
+
+    return this.prisma.sbCompetition.create({
+      data: {
+        slug: FRIENDLY_COMPETITION_SLUG,
+        name: FRIENDLY_COMPETITION_NAME,
+        season: String(new Date().getUTCFullYear()),
+        type: "friendly",
+        status: "active",
+        formatType: FRIENDLY_FORMAT_TYPE,
+        formatConfig: { isFriendly: true } as Prisma.InputJsonValue,
+        description:
+          "One-off fixtures that count toward no league table, including matches between teams from different competitions.",
+        isPublished: true,
+      },
+    });
+  }
+
+  /**
+   * Create a friendly, tied to no competition of its own.
+   *
+   * Unlike a league fixture, the two teams need not share a competition — a
+   * friendly between a RAK side and a DSL side is the ordinary case, and is
+   * exactly what the regular fixture form refuses to create.
+   */
+  async createFriendlyMatch(dto: CreateFriendlyMatchDto) {
+    if (dto.homeTeamId === dto.awayTeamId) {
+      throw new BadRequestException("Home and away teams must be different");
+    }
+
+    const teams = await this.prisma.sbTeam.findMany({
+      where: { id: { in: [dto.homeTeamId, dto.awayTeamId] } },
+      select: { id: true, slug: true, name: true },
+    });
+    const homeTeam = teams.find((t) => t.id === dto.homeTeamId);
+    const awayTeam = teams.find((t) => t.id === dto.awayTeamId);
+    if (!homeTeam || !awayTeam) {
+      throw new BadRequestException("Both teams must exist");
+    }
+
+    const competition = await this.ensureFriendlyCompetition();
+    const kickoffAt = parseWatKickoff(dto.kickoffDate, dto.kickoffTime);
+    const slug = await resolveUniqueMatchSlug(
+      this.prisma,
+      homeTeam.slug,
+      awayTeam.slug,
+      {}
+    );
+
+    const created = await this.prisma.sbMatch.create({
+      data: {
+        slug,
+        competitionId: competition.id,
+        homeTeamId: dto.homeTeamId,
+        awayTeamId: dto.awayTeamId,
+        kickoffAt,
+        venue: dto.venue?.trim() || null,
+        roundLabel: dto.roundLabel?.trim() || "Friendly",
+        status: "scheduled",
+        meta: { friendly: true, timezone: SCOREBOARD_TIMEZONE } as Prisma.InputJsonValue,
+      },
+      include: {
+        homeTeam: true,
+        awayTeam: true,
+        competition: true,
+        _count: { select: { events: true } },
+        events: { where: { type: { in: ["goal", "own_goal"] } }, orderBy: { minute: "asc" } },
+      },
+    });
+
+    this.statsCache = null;
+    return { ok: true, match: presentScoreboardPayload(created) };
   }
 
   patchMatchScore(matchId: string, dto: PatchMatchScoreDto) {

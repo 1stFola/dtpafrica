@@ -15,6 +15,7 @@ import {
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { resolveUniqueMatchSlug } from "./match-slug";
 import { computeStandings } from "./standings";
+import { NO_TABLE_FORMAT_TYPES } from "./friendly";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -217,6 +218,13 @@ export class CompetitionEngineService {
       include: { teams: true },
     });
     if (!competition) throw new NotFoundException("Competition not found");
+
+    /* Friendlies are one-off fixtures between teams from different
+       competitions. There is no table to build, and an empty one on the page
+       would read as a competition nobody has played yet. */
+    if (NO_TABLE_FORMAT_TYPES.has(competition.formatType ?? "")) {
+      return { competitionId, grouped: false, groups: [], rows: [] };
+    }
 
     /* A knockout cup keeps the draw seed in groupKey, so it must never be
        grouped by it; a competition is grouped only when it genuinely has

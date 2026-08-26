@@ -20,7 +20,8 @@ export const adminRbacApi = {
     name?: string;
     password?: string;
     roleSlug: string;
-    competitionId?: string | null;
+    competitionIds?: string[];
+    allCompetitions?: boolean;
   }) => adminApi.rbacCreateUser(body),
   deleteUser: (id: string) => adminApi.rbacDeleteUser(id),
   resetPassword: (id: string, password?: string) => adminApi.rbacResetPassword(id, password),
@@ -33,7 +34,8 @@ export const adminRbacApi = {
       password?: string;
       roleSlug?: string;
       isActive?: boolean;
-      competitionId?: string | null;
+      competitionIds?: string[];
+      allCompetitions?: boolean;
     }
   ) => adminApi.rbacUpdateUser(id, body),
 };
