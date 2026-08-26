@@ -21,12 +21,6 @@ import type { AdminAuthContext } from "./auth/admin-auth.types";
 
 type AdminRequest = { adminAuth: AdminAuthContext };
 
-/** Reject an unknown section rather than silently defaulting to statistics. */
-function readSection(value: string): SheetSection {
-  if (value === "stats" || value === "events") return value;
-  throw new BadRequestException("Unknown sheet section");
-}
-
 /**
  * Live match statistics console.
  *
@@ -114,27 +108,23 @@ export class AdminMatchStatsController {
     });
   }
 
-  /** Statistics and the event log are reviewed independently. */
-  @Post(":matchId/:section/submit")
+  /* Statistics and the event log are submitted and reviewed as one record:
+     the events feed the statistics, so signing off half of it means nothing. */
+  @Post(":matchId/submit")
   @RequirePermissions("scoreboard.stats.record")
-  submit(
-    @Param("matchId") matchId: string,
-    @Param("section") section: string,
-    @Req() req: AdminRequest
-  ) {
-    return this.stats.submit(matchId, readSection(section), req.adminAuth);
+  submit(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
+    return this.stats.submit(matchId, req.adminAuth);
   }
 
   /** A recorder asking for a locked record back. */
-  @Post(":matchId/:section/request-correction")
+  @Post(":matchId/request-correction")
   @RequirePermissions("scoreboard.stats.record")
   requestCorrection(
     @Param("matchId") matchId: string,
-    @Param("section") section: string,
     @Body() dto: SendBackMatchStatsDto,
     @Req() req: AdminRequest
   ) {
-    return this.stats.requestCorrection(matchId, readSection(section), dto.note, req.adminAuth);
+    return this.stats.requestCorrection(matchId, dto.note, req.adminAuth);
   }
 
   /** An admin turning that request down, leaving the record locked. */
@@ -148,24 +138,19 @@ export class AdminMatchStatsController {
     return this.stats.declineCorrection(matchId, dto.note, req.adminAuth);
   }
 
-  @Post(":matchId/:section/approve")
+  @Post(":matchId/approve")
   @RequirePermissions("scoreboard.stats.approve")
-  approve(
-    @Param("matchId") matchId: string,
-    @Param("section") section: string,
-    @Req() req: AdminRequest
-  ) {
-    return this.stats.approve(matchId, readSection(section), req.adminAuth);
+  approve(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
+    return this.stats.approve(matchId, req.adminAuth);
   }
 
-  @Post(":matchId/:section/send-back")
+  @Post(":matchId/send-back")
   @RequirePermissions("scoreboard.stats.approve")
   sendBack(
     @Param("matchId") matchId: string,
-    @Param("section") section: string,
     @Body() dto: SendBackMatchStatsDto,
     @Req() req: AdminRequest
   ) {
-    return this.stats.sendBack(matchId, readSection(section), dto.note, req.adminAuth);
+    return this.stats.sendBack(matchId, dto.note, req.adminAuth);
   }
 }

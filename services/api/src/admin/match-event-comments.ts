@@ -131,9 +131,9 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c, e) => `Goalkeeper Punch! ${actor(c, e)} rises through the crowd and clears with both fists.`,
   ],
   sweeper_keep: [
-    (c, e) => `Sweeper Keep! ${actor(c, e)} races off his line to clear the ball outside the box.`,
-    (c) => `Sweeper Keep! The ${c.teamName} goalkeeper reads the danger and sweeps up behind the defence.`,
-    (c, e) => `Sweeper Keep! ${actor(c, e)} beats the striker to the through ball well outside his area.`,
+    (c, e) => `Sweeper Keeper! ${actor(c, e)} races off his line to clear the ball outside the box.`,
+    (c) => `Sweeper Keeper! The ${c.teamName} goalkeeper reads the danger and sweeps up behind the defence.`,
+    (c, e) => `Sweeper Keeper! ${actor(c, e)} beats the striker to the through ball well outside his area.`,
   ],
   dribble: [
     (c, e) => `Dribble! ${actor(c, e)} produces an excellent run to advance ${c.teamName}'s attack.`,

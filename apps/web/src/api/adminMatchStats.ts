@@ -3,7 +3,13 @@ import { adminFetch } from "./admin";
 export type SheetStatus = "live" | "submitted" | "approved";
 
 /** Statistics and the event log are reviewed independently. */
-export type SheetSection = "stats" | "events";
+/**
+ * Where a history entry or correction request was raised.
+ *
+ * "sheet" is what whole-sheet actions record now that statistics and events
+ * are submitted together; the older values still appear in existing history.
+ */
+export type SheetSection = "stats" | "events" | "sheet";
 
 export type SectionPermissions = {
   canRecord: boolean;
@@ -82,7 +88,6 @@ export type SheetLogEntry = {
 };
 
 export type CorrectionRequest = {
-  section: SheetSection;
   byName: string | null;
   at: string | null;
   note: string | null;
@@ -90,8 +95,8 @@ export type CorrectionRequest = {
 
 /** Headline counts for the recorder's landing page. */
 export type MatchStatsTotals = {
-  statisticsApproved: number;
-  eventLogsApproved: number;
+  /** Statistics and events are approved together, so one count covers both. */
+  sheetsApproved: number;
   awaitingApproval: number;
   fixturesRecorded: number;
   correctionsPending: number;
@@ -126,8 +131,8 @@ export type KitColours = { home: string; away: string };
 
 export type MatchStatsSheet = {
   matchId: string;
+  /** One status for the whole sheet: statistics and events move together. */
   status: SheetStatus;
-  eventsStatus: SheetStatus;
   tallies: Record<string, TallyValue>;
   /** The event log's contribution, kept apart from what was tapped by hand. */
   captured: Record<string, TallyValue>;
@@ -149,9 +154,7 @@ export type MatchStatsSheet = {
   /** Event types offered on the tap grid, already alphabetical. */
   eventTypes: string[];
   audit: SectionAudit & { recorderId: string | null; recorderName: string | null };
-  eventsAudit: SectionAudit;
   permissions: SectionPermissions;
-  eventsPermissions: SectionPermissions;
   match: {
     id: string;
     kickoffAt: string | null;
@@ -196,9 +199,6 @@ export type MatchStatsFixture = {
 export type MatchStatsQueueItem = {
   matchId: string;
   status: SheetStatus;
-  eventsStatus: SheetStatus;
-  /** Which tracks are actually waiting on this supervisor. */
-  awaiting: SheetSection[];
   submittedAt: string | null;
   submittedByName: string | null;
   recorderName: string | null;
@@ -236,14 +236,15 @@ export const matchStatsApi = {
       }),
     }),
 
-  submit: (matchId: string, section: SheetSection) =>
-    adminFetch<MatchStatsSheet>(`${base}/${matchId}/${section}/submit`, { method: "POST" }),
+  /** Submits the whole sheet — statistics and event log together. */
+  submit: (matchId: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/submit`, { method: "POST" }),
 
-  approve: (matchId: string, section: SheetSection) =>
-    adminFetch<MatchStatsSheet>(`${base}/${matchId}/${section}/approve`, { method: "POST" }),
+  approve: (matchId: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/approve`, { method: "POST" }),
 
-  sendBack: (matchId: string, section: SheetSection, note?: string) =>
-    adminFetch<MatchStatsSheet>(`${base}/${matchId}/${section}/send-back`, {
+  sendBack: (matchId: string, note?: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/send-back`, {
       method: "POST",
       body: JSON.stringify({ note }),
     }),
@@ -262,8 +263,8 @@ export const matchStatsApi = {
   deleteTraining: (matchId: string) =>
     adminFetch<{ deleted: boolean }>(`${base}/training/${matchId}`, { method: "DELETE" }),
 
-  requestCorrection: (matchId: string, section: SheetSection, note?: string) =>
-    adminFetch<MatchStatsSheet>(`${base}/${matchId}/${section}/request-correction`, {
+  requestCorrection: (matchId: string, note?: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/request-correction`, {
       method: "POST",
       body: JSON.stringify({ note }),
     }),

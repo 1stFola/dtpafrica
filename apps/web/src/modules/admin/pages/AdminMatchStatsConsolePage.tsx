@@ -182,8 +182,13 @@ const STATUS_COPY: Record<SheetStatus, string> = {
 };
 
 /** Submit / approve / send-back controls for one track. */
-function SectionActions({
-  section,
+/**
+ * Submit, approve and send-back for the whole sheet.
+ *
+ * One set of controls rather than one per tab: the event log feeds the
+ * statistics, so the two are signed off as a single record.
+ */
+function SheetActions({
   status,
   permissions,
   audit,
@@ -192,7 +197,6 @@ function SectionActions({
   onApprove,
   onSendBack,
 }: {
-  section: SheetSection;
   status: SheetStatus;
   permissions: SectionPermissions;
   audit: SectionAudit;
@@ -203,13 +207,12 @@ function SectionActions({
 }) {
   const [note, setNote] = useState("");
   const [showNote, setShowNote] = useState(false);
-  const label = section === "stats" ? "statistics" : "event log";
 
   return (
     <footer className="mcx-actions">
       {permissions.canSubmit && status === "live" && (
         <button type="button" className="mcx-btn mcx-btn--primary" disabled={busy} onClick={onSubmit}>
-          Submit {label} for approval
+          Submit statistics &amp; events for approval
         </button>
       )}
 
@@ -456,10 +459,10 @@ export function AdminMatchStatsConsolePage() {
     };
   }, [flush]);
 
-  const statsPerms = sheet?.permissions;
-  const eventsPerms = sheet?.eventsPermissions;
-  const statsEditable = Boolean(statsPerms?.canEdit);
-  const eventsEditable = Boolean(eventsPerms?.canEdit);
+  const perms = sheet?.permissions;
+  /* One permission set for the whole sheet — statistics and events are
+     submitted and approved together, so they lock and unlock together too. */
+  const editable = Boolean(perms?.canEdit);
 
   /** Queue a debounced save, and mirror to the device immediately. */
   const queueSave = useCallback(
@@ -504,7 +507,7 @@ export function AdminMatchStatsConsolePage() {
   );
 
   const bump = (key: string, side: Side, delta: number) => {
-    if (!statsEditable) return;
+    if (!editable) return;
     setTallies((prev) => {
       const current = prev[key];
       let next: TallyValue;
@@ -598,15 +601,13 @@ export function AdminMatchStatsConsolePage() {
     );
   }
 
-  const { match, audit, eventsAudit, status, eventsStatus } = sheet;
-  void audit;
-  void eventsAudit;
+  const { match, audit, status } = sheet;
   const banner = latestActionBanner(history);
   const halfLengthChoices = match.competition.isTraining
     ? TRAINING_HALF_LENGTH_CHOICES
     : HALF_LENGTH_CHOICES;
   const approved = status === "approved";
-  const activeStatus = tab === "stats" ? status : eventsStatus;
+  const activeStatus = status;
 
   return (
     <div className="mcx-page">
@@ -663,7 +664,7 @@ export function AdminMatchStatsConsolePage() {
                     : { minute: matchClock.liveMinute, added: matchClock.liveAdded }
                 )
               }
-              disabled={!eventsEditable}
+              disabled={!editable}
             >
               <span className="mcx-capture__value">
                 {captured
@@ -675,7 +676,7 @@ export function AdminMatchStatsConsolePage() {
               </span>
             </button>
           ) : (
-            eventsEditable && (
+            editable && (
               <div className="mcx-kickoff mcx-kickoff--inline">
                 <div className="mcx-kickoff__choices">
                   {halfLengthChoices.map((n) => (
@@ -724,8 +725,8 @@ export function AdminMatchStatsConsolePage() {
           >
             Events
             {events.length > 0 && <span className="mcx-tab__count">{events.length}</span>}
-            {eventsStatus !== "live" && (
-              <span className={`mcx-tab__pip mcx-tab__pip--${eventsStatus}`} />
+            {status !== "live" && (
+              <span className={`mcx-tab__pip mcx-tab__pip--${status}`} />
             )}
           </button>
         </div>
@@ -751,7 +752,7 @@ export function AdminMatchStatsConsolePage() {
                       }
                       onClick={() => setSide(target)}
                       /* Step 2 unlocks only once step 1 has captured a minute. */
-                      disabled={!eventsEditable || !captured}
+                      disabled={!editable || !captured}
                     >
                       <span
                         className={`mcx-step__n mcx-step__n--inline${captured ? "" : " is-locked"}`}
@@ -765,7 +766,7 @@ export function AdminMatchStatsConsolePage() {
                       type="button"
                       className="mcx-kitedit"
                       onClick={() => setKitPicker(kitPicker === target ? null : target)}
-                      disabled={!eventsEditable}
+                      disabled={!editable}
                       aria-label={`Choose ${name} jersey colour`}
                     >
                       Kit
@@ -792,7 +793,7 @@ export function AdminMatchStatsConsolePage() {
                 value={playerNumber}
                 onChange={(e) => setPlayerNumber(e.target.value)}
                 /* Step 3 unlocks only once a side is chosen. */
-                disabled={!eventsEditable || !captured || !side}
+                disabled={!editable || !captured || !side}
                 aria-label="Jersey number"
               />
             </label>
@@ -852,7 +853,7 @@ export function AdminMatchStatsConsolePage() {
       {/* Recorder: ask for a locked record back. */}
       {sheet.lockedAtFullTime &&
         !sheet.correctionRequest &&
-        (statsPerms?.canRecord ?? false) && (
+        (perms?.canRecord ?? false) && (
           <div className="mcx-review">
             {askCorrection && (
               <textarea
@@ -871,7 +872,7 @@ export function AdminMatchStatsConsolePage() {
               onClick={() =>
                 askCorrection
                   ? act(() =>
-                      matchStatsApi.requestCorrection(matchId, tab, correctionNote)
+                      matchStatsApi.requestCorrection(matchId, correctionNote)
                     ).then(() => {
                       setAskCorrection(false);
                       setCorrectionNote("");
@@ -885,7 +886,7 @@ export function AdminMatchStatsConsolePage() {
         )}
 
       {/* Admin: decide on a pending request. Approving is a send-back. */}
-      {sheet.correctionRequest && (statsPerms?.canApprove ?? false) && (
+      {sheet.correctionRequest && (perms?.canApprove ?? false) && (
         <div className="mcx-callout mcx-callout--warn">
           <strong>
             Correction requested by {sheet.correctionRequest.byName ?? "the recorder"}
@@ -906,11 +907,7 @@ export function AdminMatchStatsConsolePage() {
               disabled={busy}
               onClick={() =>
                 act(() =>
-                  matchStatsApi.sendBack(
-                    matchId,
-                    sheet.correctionRequest!.section,
-                    "Correction approved"
-                  )
+                  matchStatsApi.sendBack(matchId, "Correction approved")
                 )
               }
             >
@@ -920,7 +917,7 @@ export function AdminMatchStatsConsolePage() {
         </div>
       )}
 
-      {(status !== "live" || eventsStatus !== "live") && (
+      {status !== "live" && (
         <Link to={`/admin/match-stats/${matchId}/preview`} className="mcx-previewlink">
           View match summary — screenshot it for your records →
         </Link>
@@ -1000,7 +997,7 @@ export function AdminMatchStatsConsolePage() {
                             <Counter
                               value={pair.home}
                               side="home"
-                              disabled={!statsEditable}
+                              disabled={!editable}
                               onBump={(d) => bump(def.key, "home", d)}
                               label={`${def.label}, ${match.homeTeam.name}`}
                             />
@@ -1015,7 +1012,7 @@ export function AdminMatchStatsConsolePage() {
                             <Counter
                               value={pair.away}
                               side="away"
-                              disabled={!statsEditable}
+                              disabled={!editable}
                               onBump={(d) => bump(def.key, "away", d)}
                               label={`${def.label}, ${match.awayTeam.name}`}
                             />
@@ -1035,24 +1032,12 @@ export function AdminMatchStatsConsolePage() {
             </>
           )}
 
-          {statsPerms && (
-            <SectionActions
-              section="stats"
-              status={status}
-              permissions={statsPerms}
-              audit={audit}
-              busy={busy}
-              onSubmit={() => act(() => matchStatsApi.submit(matchId, "stats"))}
-              onApprove={() => act(() => matchStatsApi.approve(matchId, "stats"))}
-              onSendBack={(note) => act(() => matchStatsApi.sendBack(matchId, "stats", note))}
-            />
-          )}
         </>
       ) : (
         <>
           <MatchEventsTab
             sheet={sheet}
-            editable={eventsEditable}
+            editable={editable}
             events={events}
             kits={kits}
             captured={captured}
@@ -1072,20 +1057,20 @@ export function AdminMatchStatsConsolePage() {
             homeName={match.homeTeam.name}
             awayName={match.awayTeam.name}
           />
-
-          {eventsPerms && (
-            <SectionActions
-              section="events"
-              status={eventsStatus}
-              permissions={eventsPerms}
-              audit={eventsAudit}
-              busy={busy}
-              onSubmit={() => act(() => matchStatsApi.submit(matchId, "events"))}
-              onApprove={() => act(() => matchStatsApi.approve(matchId, "events"))}
-              onSendBack={(note) => act(() => matchStatsApi.sendBack(matchId, "events", note))}
-            />
-          )}
         </>
+      )}
+
+      {/* One set of actions for the sheet, below whichever tab is open. */}
+      {perms && (
+        <SheetActions
+          status={status}
+          permissions={perms}
+          audit={audit}
+          busy={busy}
+          onSubmit={() => act(() => matchStatsApi.submit(matchId))}
+          onApprove={() => act(() => matchStatsApi.approve(matchId))}
+          onSendBack={(note) => act(() => matchStatsApi.sendBack(matchId, note))}
+        />
       )}
 
       <section className="mcx-historywrap">
@@ -1105,8 +1090,7 @@ export function AdminMatchStatsConsolePage() {
         {audit.recorderName && (
           <div><dt>Recorded by</dt><dd>{audit.recorderName}</dd></div>
         )}
-        <div><dt>Statistics</dt><dd>{STATUS_COPY[status]}</dd></div>
-        <div><dt>Event log</dt><dd>{STATUS_COPY[eventsStatus]}</dd></div>
+        <div><dt>Statistics &amp; events</dt><dd>{STATUS_COPY[status]}</dd></div>
       </dl>
     </div>
   );

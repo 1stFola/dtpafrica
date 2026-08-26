@@ -511,11 +511,42 @@ const SECTION_LABEL: Record<SheetSection, string> = {
   events: "event log",
 };
 
+/** Both tracks, for the actions that now move them as one. */
+const SHEET_SECTIONS = ["stats", "events"] as const;
+
+/**
+ * Section recorded against a history entry made by a whole-sheet action.
+ *
+ * The column still holds "stats" and "events" for entries written before the
+ * two were submitted together, so old history keeps reading correctly.
+ */
+export const WHOLE_SHEET = "sheet";
+
 type SheetRow = Record<string, unknown>;
 
 function sectionStatus(sheet: SheetRow | null, section: SheetSection): SheetStatus {
   const value = sheet?.[SECTION_COLUMNS[section].status];
   return (typeof value === "string" ? value : "live") as SheetStatus;
+}
+
+/** How far along a status is, so a mixed sheet can be judged by its weakest half. */
+const STATUS_RANK: Record<SheetStatus, number> = { live: 0, submitted: 1, approved: 2 };
+
+/**
+ * The sheet's single status.
+ *
+ * Statistics and events are submitted and approved together — the event log
+ * feeds the statistics, so approving one without the other would publish
+ * figures derived from work nobody had signed off. The two columns are kept
+ * because they carry who did what and when, but they move as a pair.
+ *
+ * Sheets recorded before the merge can still disagree. The lesser of the two
+ * wins there, so a half-approved sheet is never treated as finished.
+ */
+function sheetStatus(sheet: SheetRow | null): SheetStatus {
+  const stats = sectionStatus(sheet, "stats");
+  const events = sectionStatus(sheet, "events");
+  return STATUS_RANK[stats] <= STATUS_RANK[events] ? stats : events;
 }
 
 /** Format type marking the recorder training sandbox. */
@@ -883,11 +914,9 @@ export class AdminMatchStatsService {
       );
     }
 
-    /* Sections lock independently: an approved stat sheet stops accepting
-       tallies while the event log is still being tidied, and vice versa. */
-    const statsLocked = sectionStatus(sheet, "stats") === "approved";
-    const eventsLocked = sectionStatus(sheet, "events") === "approved";
-    if (statsLocked && eventsLocked) {
+    /* The sheet locks as one. Statistics and events are approved together, so
+       there is no longer a state where half of it accepts edits. */
+    if (sheetStatus(sheet) === "approved") {
       throw new BadRequestException(
         "This sheet is approved. Ask a supervisor to send it back before editing."
       );
@@ -896,10 +925,8 @@ export class AdminMatchStatsService {
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
       data: {
-        ...(statsLocked
-          ? {}
-          : { tallies: normaliseTallies(talliesInput) as Prisma.InputJsonValue }),
-        ...(extras?.events !== undefined && !eventsLocked
+        tallies: normaliseTallies(talliesInput) as Prisma.InputJsonValue,
+        ...(extras?.events !== undefined
           ? { events: readEvents(extras.events) as unknown as Prisma.InputJsonValue }
           : {}),
         ...(extras?.clock !== undefined
@@ -913,51 +940,56 @@ export class AdminMatchStatsService {
     return this.present(match, updated, ctx);
   }
 
-  async submit(matchId: string, section: SheetSection, ctx: AdminAuthContext) {
+  /**
+   * Submit the whole sheet — statistics and event log together.
+   *
+   * They are one record now: the events feed the statistics, so submitting the
+   * figures without the log they came from would send a supervisor half a story.
+   */
+  async submit(matchId: string, ctx: AdminAuthContext) {
     this.assertCanRecord(ctx);
     const match = await this.loadMatch(matchId, ctx);
     const sheet = await this.requireSheet(matchId);
-    const col = SECTION_COLUMNS[section];
 
-    if (sectionStatus(sheet, section) === "approved") {
-      throw new BadRequestException(
-        `The ${SECTION_LABEL[section]} has already been approved`
-      );
+    const current = sheetStatus(sheet);
+    if (current === "approved") {
+      throw new BadRequestException("This sheet has already been approved");
     }
     this.assertOwnsSheet(sheet, ctx, match);
 
-    const wasSubmittedBefore = sectionStatus(sheet, section) === "submitted";
+    const stamp: Record<string, unknown> = {};
+    for (const section of SHEET_SECTIONS) {
+      const col = SECTION_COLUMNS[section];
+      stamp[col.status] = "submitted";
+      stamp[col.submittedById] = ctx.userId ?? null;
+      stamp[col.submittedByName] = actorName(ctx);
+      stamp[col.submittedAt] = new Date();
+      // A fresh submission clears the previous send-back note.
+      stamp[col.sentBackNote] = null;
+    }
+
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
-      data: {
-        [col.status]: "submitted",
-        [col.submittedById]: ctx.userId ?? null,
-        [col.submittedByName]: actorName(ctx),
-        [col.submittedAt]: new Date(),
-        // A fresh submission clears the previous send-back note.
-        [col.sentBackNote]: null,
-      } as Prisma.SbMatchStatisticsUpdateInput,
+      data: stamp as Prisma.SbMatchStatisticsUpdateInput,
     });
 
-    await this.log(sheet, section, wasSubmittedBefore ? "resubmitted" : "submitted", ctx, {
-      summary: this.summarise(sheet, section) as Prisma.InputJsonValue,
-    });
+    await this.log(
+      sheet,
+      WHOLE_SHEET,
+      current === "submitted" ? "resubmitted" : "submitted",
+      ctx,
+      { summary: this.summarise(sheet) as Prisma.InputJsonValue }
+    );
     return this.present(match, updated, ctx);
   }
 
-  /** A compact snapshot of what the section held, for the history entry. */
-  private summarise(
-    sheet: { tallies: unknown; events: unknown },
-    section: SheetSection
-  ) {
-    if (section === "events") {
-      const events = readEvents(sheet.events);
-      return { events: events.length, score: scoreFromEvents(events) };
-    }
-    const totals = totalsFor(
-      effectiveTallies(normaliseTallies(sheet.tallies), readEvents(sheet.events))
-    );
+  /** A compact snapshot of what the sheet held, for the history entry. */
+  private summarise(sheet: { tallies: unknown; events: unknown }) {
+    const events = readEvents(sheet.events);
+    const totals = totalsFor(effectiveTallies(normaliseTallies(sheet.tallies), events));
     return {
+      events: events.length,
+      score: scoreFromEvents(events),
       shots: totals.shots,
       shotsOnTarget: totals.shotsOnTarget,
       corners: totals.corners,
@@ -970,18 +1002,17 @@ export class AdminMatchStatsService {
    * Totals are merged into SbMatch.stats so sibling keys the console does not
    * own — spotter data, matchday rosters, possession, goals — survive intact.
    */
-  async approve(matchId: string, section: SheetSection, ctx: AdminAuthContext) {
+  async approve(matchId: string, ctx: AdminAuthContext) {
     this.assertCanApprove(ctx);
     const match = await this.loadMatch(matchId, ctx);
     const sheet = await this.requireSheet(matchId);
-    const col = SECTION_COLUMNS[section];
-    const current = sectionStatus(sheet, section);
+    const current = sheetStatus(sheet);
 
     if (current !== "submitted") {
       throw new BadRequestException(
         current === "approved"
-          ? `The ${SECTION_LABEL[section]} has already been approved`
-          : `Only a submitted ${SECTION_LABEL[section]} can be approved`
+          ? "This sheet has already been approved"
+          : "Only a submitted sheet can be approved"
       );
     }
 
@@ -1074,65 +1105,64 @@ export class AdminMatchStatsService {
       } as Prisma.InputJsonValue,
     }));
 
-    const stamp = {
-      [col.status]: "approved",
-      [col.approvedById]: ctx.userId ?? null,
-      [col.approvedByName]: actorName(ctx),
-      [col.approvedAt]: new Date(),
-    } as Prisma.SbMatchStatisticsUpdateInput;
+    const stamp: Record<string, unknown> = {};
+    for (const section of SHEET_SECTIONS) {
+      const col = SECTION_COLUMNS[section];
+      stamp[col.status] = "approved";
+      stamp[col.approvedById] = ctx.userId ?? null;
+      stamp[col.approvedByName] = actorName(ctx);
+      stamp[col.approvedAt] = new Date();
+    }
 
-    /* Each section publishes only its own artefact, so approving one never
-       pushes the other's half-finished work to the public site. */
+    /* One approval publishes both artefacts, in one transaction. The timeline
+       and the figures derived from it now reach the public site together or
+       not at all — there is no window where they can disagree. */
     const score = scoreFromEvents(recorded);
-    const writes: Prisma.PrismaPromise<unknown>[] =
-      section === "events"
-        ? [
-            this.prisma.sbMatchEvent.deleteMany({
-              where: {
-                matchId,
-                metadata: { path: ["source"], equals: "match_recorder" },
-              },
-            }),
-            ...(eventRows.length
-              ? [this.prisma.sbMatchEvent.createMany({ data: eventRows })]
-              : []),
-            /* The scoreline follows the approved goal events, so the match
-               score and its timeline can never disagree. */
-            this.prisma.sbMatch.update({
-              where: { id: matchId },
-              data: { homeScore: score.home, awayScore: score.away },
-            }),
-          ]
-        : [
-            this.prisma.sbMatch.update({
-              where: { id: matchId },
-              data: {
-                stats: {
-                  ...existingStats,
-                  /* Published figures include what the event log captured, so
-                     the public site never shows a corner count that the match
-                     timeline beside it contradicts. */
-                  ...totalsFor(effectiveTallies(tallies, recorded)),
-                  manualStatsMeta: {
-                    source: "manual",
-                    updatedAt: new Date().toISOString(),
-                  },
-                } as Prisma.InputJsonValue,
-              },
-            }),
-          ];
+    const writes: Prisma.PrismaPromise<unknown>[] = [
+      /* Re-approval must not duplicate the timeline, so this sheet's previously
+         published events are cleared first. */
+      this.prisma.sbMatchEvent.deleteMany({
+        where: { matchId, metadata: { path: ["source"], equals: "match_recorder" } },
+      }),
+      ...(eventRows.length
+        ? [this.prisma.sbMatchEvent.createMany({ data: eventRows })]
+        : []),
+      this.prisma.sbMatch.update({
+        where: { id: matchId },
+        data: {
+          /* The scoreline follows the approved goal events, so the match score
+             and its timeline can never disagree. */
+          homeScore: score.home,
+          awayScore: score.away,
+          stats: {
+            ...existingStats,
+            /* Published figures include what the event log captured, so the
+               public site never shows a corner count that the match timeline
+               beside it contradicts. */
+            ...totalsFor(effectiveTallies(tallies, recorded)),
+            manualStatsMeta: {
+              source: "manual",
+              updatedAt: new Date().toISOString(),
+            },
+          } as Prisma.InputJsonValue,
+        },
+      }),
+    ];
 
     const results = await this.prisma.$transaction([
       ...writes,
-      this.prisma.sbMatchStatistics.update({ where: { matchId }, data: stamp }),
+      this.prisma.sbMatchStatistics.update({
+        where: { matchId },
+        data: stamp as Prisma.SbMatchStatisticsUpdateInput,
+      }),
     ]);
 
     // The sheet stamp is always the last write in the transaction.
     const updated = results[results.length - 1] as Awaited<
       ReturnType<PrismaService["sbMatchStatistics"]["update"]>
     >;
-    await this.log(sheet, section, "approved", ctx, {
-      summary: this.summarise(sheet, section) as Prisma.InputJsonValue,
+    await this.log(sheet, WHOLE_SHEET, "approved", ctx, {
+      summary: this.summarise(sheet) as Prisma.InputJsonValue,
     });
     return this.present({ ...match }, updated, ctx);
   }
@@ -1143,50 +1173,48 @@ export class AdminMatchStatsService {
    * affected — approved figures are withdrawn by re-approving a corrected
    * sheet, never by this path.
    */
-  async sendBack(
-    matchId: string,
-    section: SheetSection,
-    note: string | undefined,
-    ctx: AdminAuthContext
-  ) {
+  async sendBack(matchId: string, note: string | undefined, ctx: AdminAuthContext) {
     this.assertCanApprove(ctx);
     const match = await this.loadMatch(matchId, ctx);
     const sheet = await this.requireSheet(matchId);
-    const col = SECTION_COLUMNS[section];
 
-    const current = sectionStatus(sheet, section);
+    const current = sheetStatus(sheet);
     if (current === "live") {
-      throw new BadRequestException(
-        `The ${SECTION_LABEL[section]} is already open for edits`
-      );
+      throw new BadRequestException("This sheet is already open for edits");
     }
 
-    /* An approved section can be pulled back too. Without this a supervisor who
+    /* An approved sheet can be pulled back too. Without this a supervisor who
        approves the wrong figures has no way to correct them, and the mistake
        stays on the public site permanently. */
     const wasApproved = current === "approved";
 
+    const stamp: Record<string, unknown> = {};
+    for (const section of SHEET_SECTIONS) {
+      const col = SECTION_COLUMNS[section];
+      stamp[col.status] = "live";
+      if (wasApproved) {
+        stamp[col.approvedById] = null;
+        stamp[col.approvedByName] = null;
+        stamp[col.approvedAt] = null;
+      }
+      stamp[col.sentBackById] = ctx.userId ?? null;
+      stamp[col.sentBackByName] = actorName(ctx);
+      stamp[col.sentBackAt] = new Date();
+      stamp[col.sentBackNote] = note?.trim() ? note.trim() : null;
+      stamp[col.submittedById] = null;
+      stamp[col.submittedByName] = null;
+      stamp[col.submittedAt] = null;
+    }
+
+    const answersCorrection = Boolean(sheet.correctionRequestedSection);
+
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
       data: {
-        [col.status]: "live",
-        ...(wasApproved
-          ? {
-              [col.approvedById]: null,
-              [col.approvedByName]: null,
-              [col.approvedAt]: null,
-            }
-          : {}),
-        [col.sentBackById]: ctx.userId ?? null,
-        [col.sentBackByName]: actorName(ctx),
-        [col.sentBackAt]: new Date(),
-        [col.sentBackNote]: note?.trim() ? note.trim() : null,
-        [col.submittedById]: null,
-        [col.submittedByName]: null,
-        [col.submittedAt]: null,
-        /* A send-back answers any pending correction request for this section
-           and reopens the record, so the full-time lock lifts with it. */
-        ...(sheet.correctionRequestedSection === section
+        ...stamp,
+        /* A send-back answers any pending correction request and reopens the
+           record, so the full-time lock lifts with it. */
+        ...(answersCorrection
           ? {
               correctionRequestedSection: null,
               correctionRequestedById: null,
@@ -1203,17 +1231,16 @@ export class AdminMatchStatsService {
 
     await this.log(
       sheet,
-      section,
-      sheet.correctionRequestedSection === section ? "correction_approved" : "sent_back",
+      WHOLE_SHEET,
+      answersCorrection ? "correction_approved" : "sent_back",
       ctx,
       { note: note?.trim() || null }
     );
 
     /* Withdraw the published event log so the public timeline matches the
-       sheet's state. Statistics cannot be unwound the same way — the totals
-       were merged into SbMatch.stats and stay until a corrected sheet is
-       approved over them. */
-    if (wasApproved && section === "events") {
+       sheet's state. The statistics merged into SbMatch.stats cannot be unwound
+       the same way — they stay until a corrected sheet is approved over them. */
+    if (wasApproved) {
       await this.prisma.sbMatchEvent.deleteMany({
         where: { matchId, metadata: { path: ["source"], equals: "match_recorder" } },
       });
@@ -1235,12 +1262,7 @@ export class AdminMatchStatsService {
    * This only records the ask — the sheet stays locked until a ScoreBoard admin
    * approves it by sending the section back.
    */
-  async requestCorrection(
-    matchId: string,
-    section: SheetSection,
-    note: string | undefined,
-    ctx: AdminAuthContext
-  ) {
+  async requestCorrection(matchId: string, note: string | undefined, ctx: AdminAuthContext) {
     this.assertCanRecord(ctx);
     const match = await this.loadMatch(matchId, ctx);
     const sheet = await this.requireSheet(matchId);
@@ -1255,7 +1277,7 @@ export class AdminMatchStatsService {
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
       data: {
-        correctionRequestedSection: section,
+        correctionRequestedSection: WHOLE_SHEET,
         correctionRequestedById: ctx.userId ?? null,
         correctionRequestedByName: actorName(ctx),
         correctionRequestedAt: new Date(),
@@ -1263,7 +1285,7 @@ export class AdminMatchStatsService {
       },
     });
 
-    await this.log(sheet, section, "correction_requested", ctx, {
+    await this.log(sheet, WHOLE_SHEET, "correction_requested", ctx, {
       note: note?.trim() || null,
     });
     return this.present(match, updated, ctx);
@@ -1282,7 +1304,9 @@ export class AdminMatchStatsService {
     if (!sheet.correctionRequestedSection) {
       throw new BadRequestException("There is no correction request to decline");
     }
-    const section = sheet.correctionRequestedSection as SheetSection;
+    /* Older requests name a single section; newer ones name the whole sheet.
+       The history entry records whichever the request was raised against. */
+    const section = sheet.correctionRequestedSection as SheetSection | typeof WHOLE_SHEET;
 
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
@@ -1318,25 +1342,26 @@ export class AdminMatchStatsService {
       : {};
     const where = { ...mine, ...scope };
 
-    const [statsApproved, eventsApproved, submitted, fixturesRecorded, pending] =
-      await Promise.all([
-        this.prisma.sbMatchStatistics.count({ where: { ...where, status: "approved" } }),
-        this.prisma.sbMatchStatistics.count({ where: { ...where, eventsStatus: "approved" } }),
-        this.prisma.sbMatchStatistics.count({
-          where: {
-            ...where,
-            OR: [{ status: "submitted" }, { eventsStatus: "submitted" }],
-          },
-        }),
-        this.prisma.sbMatchStatistics.count({ where }),
-        this.prisma.sbMatchStatistics.count({
-          where: { ...where, correctionRequestedSection: { not: null } },
-        }),
-      ]);
+    /* Statistics and events are approved together, so one count covers both.
+       The AND on the two columns keeps older half-approved sheets honest. */
+    const [approved, submitted, fixturesRecorded, pending] = await Promise.all([
+      this.prisma.sbMatchStatistics.count({
+        where: { ...where, status: "approved", eventsStatus: "approved" },
+      }),
+      this.prisma.sbMatchStatistics.count({
+        where: {
+          ...where,
+          OR: [{ status: "submitted" }, { eventsStatus: "submitted" }],
+        },
+      }),
+      this.prisma.sbMatchStatistics.count({ where }),
+      this.prisma.sbMatchStatistics.count({
+        where: { ...where, correctionRequestedSection: { not: null } },
+      }),
+    ]);
 
     return {
-      statisticsApproved: statsApproved,
-      eventLogsApproved: eventsApproved,
+      sheetsApproved: approved,
       awaitingApproval: submitted,
       fixturesRecorded,
       correctionsPending: pending,
@@ -1360,13 +1385,7 @@ export class AdminMatchStatsService {
     });
     return sheets.map((sheet) => ({
       matchId: sheet.matchId,
-      status: sheet.status as SheetStatus,
-      eventsStatus: sheet.eventsStatus as SheetStatus,
-      /** Which tracks are actually waiting on this supervisor. */
-      awaiting: [
-        ...(sheet.status === "submitted" ? ["stats" as const] : []),
-        ...(sheet.eventsStatus === "submitted" ? ["events" as const] : []),
-      ],
+      status: sheetStatus(sheet as SheetRow),
       submittedAt: sheet.submittedAt ?? sheet.eventsSubmittedAt,
       submittedByName: sheet.submittedByName ?? sheet.eventsSubmittedByName,
       recorderName: sheet.recorderName,
@@ -1384,7 +1403,8 @@ export class AdminMatchStatsService {
   /** Append one entry to the sheet's history. Never updates, only appends. */
   private async log(
     sheet: { id: string; matchId: string },
-    section: SheetSection,
+    /** "sheet" for whole-sheet actions; the old values still appear in history. */
+    section: SheetSection | typeof WHOLE_SHEET,
     action: SheetLogAction,
     ctx: AdminAuthContext,
     extra?: { note?: string | null; summary?: Prisma.InputJsonValue }
@@ -1415,7 +1435,7 @@ export class AdminMatchStatsService {
     });
     return rows.map((r) => ({
       id: r.id,
-      section: r.section as SheetSection,
+      section: r.section as SheetSection | typeof WHOLE_SHEET,
       action: r.action as SheetLogAction,
       actorName: r.actorName,
       actorRole: r.actorRole,
@@ -1456,28 +1476,20 @@ export class AdminMatchStatsService {
     ctx: AdminAuthContext
   ) {
     const row = sheet as SheetRow | null;
-    const status = sectionStatus(row, "stats");
-    const eventsStatus = sectionStatus(row, "events");
+    /* One status for the whole sheet: statistics and events are submitted and
+       approved together, so there is nothing left to report separately. */
+    const status = sheetStatus(row);
     const tallies = normaliseTallies(sheet?.tallies);
     const canRecord = hasPermission(ctx, RECORD_PERMISSION);
     const canApprove = hasPermission(ctx, APPROVE_PERMISSION);
     const ownsSheet =
       !sheet?.recorderId || !ctx.userId || sheet.recorderId === ctx.userId;
 
-    /** Per-track permissions, mirroring the server rules exactly so the UI
-     *  never offers a control the API would reject. */
-    const sectionPerms = (sectionState: SheetStatus) => ({
-      canEdit: canRecord && sectionState !== "approved" && ownsSheet,
-      canSubmit: canRecord && sectionState !== "approved" && ownsSheet,
-      canApproveThis: canApprove && sectionState === "submitted",
-    });
-
     const recorded = readEvents(sheet?.events);
 
     return {
       matchId: match.id,
       status,
-      eventsStatus,
       /** What was tapped by hand. The console edits this and nothing else. */
       tallies,
       /** What the event log contributed, shown alongside but never edited. */
@@ -1500,6 +1512,8 @@ export class AdminMatchStatsService {
       clock: readClock(sheet?.clock),
       kits: readKits(sheet?.kits) ?? { home: "#4c9ffe", away: "#f5a524" },
       eventTypes: MATCH_EVENT_TYPES,
+      /* The statistics columns carry the sheet's audit trail. Both column sets
+         are written together, so either tells the same story. */
       audit: {
         recorderId: sheet?.recorderId ?? null,
         recorderName: sheet?.recorderName ?? null,
@@ -1511,34 +1525,23 @@ export class AdminMatchStatsService {
         sentBackAt: sheet?.sentBackAt ?? null,
         sentBackNote: sheet?.sentBackNote ?? null,
       },
-      eventsAudit: {
-        submittedByName: sheet?.eventsSubmittedByName ?? null,
-        submittedAt: sheet?.eventsSubmittedAt ?? null,
-        approvedByName: sheet?.eventsApprovedByName ?? null,
-        approvedAt: sheet?.eventsApprovedAt ?? null,
-        sentBackByName: sheet?.eventsSentBackByName ?? null,
-        sentBackAt: sheet?.eventsSentBackAt ?? null,
-        sentBackNote: sheet?.eventsSentBackNote ?? null,
-      },
       /** Full time locks the record until a correction is approved. */
       lockedAtFullTime: isFullTime(readClock(sheet?.clock)),
       correctionRequest: sheet?.correctionRequestedSection
         ? {
-            section: sheet.correctionRequestedSection as SheetSection,
             byName: sheet.correctionRequestedByName,
             at: sheet.correctionRequestedAt,
             note: sheet.correctionRequestNote,
           }
         : null,
+      /** Mirrors the server rules exactly, so the UI never offers a control
+       *  the API would reject. */
       permissions: {
         canRecord,
         canApprove,
-        ...sectionPerms(status),
-      },
-      eventsPermissions: {
-        canRecord,
-        canApprove,
-        ...sectionPerms(eventsStatus),
+        canEdit: canRecord && status !== "approved" && ownsSheet,
+        canSubmit: canRecord && status !== "approved" && ownsSheet,
+        canApproveThis: canApprove && status === "submitted",
       },
       match: {
         id: match.id,
