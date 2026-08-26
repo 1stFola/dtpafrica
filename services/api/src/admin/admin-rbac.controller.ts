@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Delete, Req, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AdminRbacService } from "./admin-rbac.service";
 import { RequirePermissions } from "./decorators/require-permissions.decorator";
 import {
   CreateAdminUserDto,
+  ResetPasswordDto,
   UpdateAdminUserDto,
   UpdateRolePermissionsDto,
 } from "./dto/admin-rbac.dto";
@@ -59,5 +60,25 @@ export class AdminRbacController {
   @RequirePermissions("admin.users.manage")
   updateUser(@Param("id") id: string, @Body() dto: UpdateAdminUserDto) {
     return this.rbac.updateUser(id, dto);
+  }
+
+  @Delete("users/:id")
+  @RequirePermissions("admin.users.manage")
+  deleteUser(@Param("id") id: string, @Req() req: { adminAuth?: { userId?: string } }) {
+    return this.rbac.deleteUser(id, req.adminAuth?.userId);
+  }
+
+  /** Issues a new password and returns it once. */
+  @Post("users/:id/password")
+  @RequirePermissions("admin.users.manage")
+  resetPassword(@Param("id") id: string, @Body() dto: ResetPasswordDto) {
+    return this.rbac.resetPassword(id, dto.password);
+  }
+
+  /** A suggested password for the create form, before the account exists. */
+  @Get("password-suggestion")
+  @RequirePermissions("admin.users.manage")
+  suggestPassword() {
+    return this.rbac.suggestPassword();
   }
 }

@@ -21,8 +21,6 @@ export function AdminDatabasePage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState<AdminSeedResult | null>(null);
-  const [incrementalSeed, setIncrementalSeed] = useState(true);
-  const [fullReseed, setFullReseed] = useState(false);
 
   const loadStatus = () =>
     adminApi
@@ -46,8 +44,9 @@ export function AdminDatabasePage() {
     setRunning(true);
     setConfirmOpen(false);
     try {
-      const mode = fullReseed ? "full" : "incremental";
-      const nextStatus = await adminApi.runDatabaseSeed(mode);
+      /* Incremental is the only mode offered. Full re-seed resets ad config and
+         academy passwords, and there is no workflow that wants that. */
+      const nextStatus = await adminApi.runDatabaseSeed("incremental");
       setStatus(nextStatus);
       setLastResult(null);
       if (nextStatus.running) {
@@ -82,55 +81,15 @@ export function AdminDatabasePage() {
           MVCE demo data, and legacy academy credentials from the deployed seed bundle.
         </p>
 
-        <div className="admin-db-seed-options">
-          <label className="admin-sb-field admin-sb-field--checkbox">
-            <input
-              type="checkbox"
-              checked={incrementalSeed && !fullReseed}
-              onChange={(e) => {
-                setIncrementalSeed(e.target.checked);
-                if (e.target.checked) setFullReseed(false);
-              }}
-            />
-            <span>Incremental seed (preserve existing data)</span>
-          </label>
-          <label className="admin-sb-field admin-sb-field--checkbox">
-            <input
-              type="checkbox"
-              checked={fullReseed}
-              onChange={(e) => {
-                setFullReseed(e.target.checked);
-                if (e.target.checked) setIncrementalSeed(false);
-              }}
-            />
-            <span>Full re-seed (may reset statuses)</span>
-          </label>
-        </div>
-
         <ul className="admin-db-warnings">
-          {fullReseed ? (
-            <>
-              <li>
-                <strong>Ads reset:</strong> full re-seed overwrites <code>ads.config</code> — all ad
-                slots return to disabled defaults.
-              </li>
-              <li>
-                <strong>Academy passwords:</strong> legacy academy login passwords are reset to seed
-                values.
-              </li>
-            </>
-          ) : (
-            <>
-              <li>
-                <strong>Incremental:</strong> keeps admin toggles, static content edits, academy
-                passwords, and manually updated scoreboard matches.
-              </li>
-              <li>
-                <strong>New seed data:</strong> missing players, competitions, and content keys are
-                still added.
-              </li>
-            </>
-          )}
+          <li>
+            <strong>Incremental:</strong> keeps admin toggles, static content edits, academy
+            passwords, and manually updated scoreboard matches.
+          </li>
+          <li>
+            <strong>New seed data:</strong> missing players, competitions, and content keys are
+            still added.
+          </li>
           <li>
             <strong>Production only:</strong> use on live servers only when you intend to refresh
             demo and legacy content.
@@ -245,10 +204,8 @@ export function AdminDatabasePage() {
             <div className="admin-sb-modal__body">
               <p>
                 This will upsert bundled seed data into the <strong>live database</strong> using{" "}
-                <strong>{fullReseed ? "full" : "incremental"}</strong> mode.
-                {fullReseed
-                  ? " Ad placements will reset to disabled defaults and legacy academy passwords will be re-applied from seed."
-                  : " Existing admin edits, statuses, and manually updated matches will be preserved."}
+                <strong>incremental</strong> mode. Existing admin edits, statuses, and manually
+                updated matches will be preserved.
               </p>
               <p>Continue?</p>
             </div>

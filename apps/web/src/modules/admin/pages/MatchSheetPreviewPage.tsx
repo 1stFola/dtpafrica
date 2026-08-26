@@ -78,6 +78,9 @@ export function MatchSheetPreviewPage() {
   const totals = useMemo(() => {
     const out: Record<string, SidePair> = {};
     for (const def of sheet?.stats ?? []) out[def.key] = totalOf(sheet?.tallies[def.key]);
+    const on = out.shotsOnTarget ?? { home: 0, away: 0 };
+    const off = out.shotsOffTarget ?? { home: 0, away: 0 };
+    out.shots = { home: on.home + off.home, away: on.away + off.away };
     return out;
   }, [sheet]);
 
@@ -134,7 +137,7 @@ export function MatchSheetPreviewPage() {
 
         <section className="mpv-section">
           <h2 className="mpv-section__title">Match statistics</h2>
-          {sheet.stats.map((def) => (
+          {sheet.displayStats.map((def) => (
             <Bar
               key={def.key}
               label={def.label}

@@ -1,7 +1,26 @@
+import { randomBytes } from "node:crypto";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminAuthService } from "./auth/admin-auth.service";
 import { ADMIN_PERMISSIONS } from "./rbac/permissions.catalog";
+
+/**
+ * Generate a readable but strong password.
+ *
+ * Ambiguous characters are left out so a password can be read aloud or copied
+ * off a screen without confusing 0/O or 1/l.
+ */
+function generatePassword(length = 16): string {
+  const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const symbols = "!@#$%^&*";
+  const bytes = randomBytes(length + 2);
+  let out = "";
+  for (let i = 0; i < length; i += 1) out += alphabet[bytes[i] % alphabet.length];
+  // Guarantee one symbol and one digit so it satisfies any policy.
+  const pos = bytes[length] % length;
+  out = out.slice(0, pos) + symbols[bytes[length + 1] % symbols.length] + out.slice(pos + 1);
+  return out;
+}
 
 /** Roles that must be pinned to exactly one competition. */
 const COMPETITION_SCOPED_ROLE = "match_recorder";
@@ -106,7 +125,7 @@ export class AdminRbacService {
   async createUser(input: {
     email: string;
     name?: string;
-    password: string;
+    password?: string;
     roleSlug: string;
     competitionId?: string | null;
   }) {
@@ -119,7 +138,10 @@ export class AdminRbacService {
     const competitionId = await this.resolveCompetitionScope(input.competitionId);
     this.assertScopeRequired(role.slug, competitionId);
 
-    const passwordHash = await this.adminAuth.hashPassword(input.password);
+    /* Generated when none is supplied, and returned once below so the admin can
+       hand it over. Only the hash is kept. */
+    const password = input.password?.trim() ? input.password.trim() : generatePassword();
+    const passwordHash = await this.adminAuth.hashPassword(password);
     const user = await this.prisma.adminUser.create({
       data: {
         email: input.email.trim().toLowerCase(),
@@ -139,7 +161,75 @@ export class AdminRbacService {
       roleName: user.role?.name ?? null,
       competitionId: user.competitionId ?? null,
       competitionName: user.competition?.name ?? null,
+      /* Returned once, here, so the admin can hand it over. Only the hash is
+         stored, so it can never be read back afterwards. */
+      generatedPassword: input.password?.trim() ? null : password,
     };
+  }
+
+  /**
+   * Remove an admin account.
+   *
+   * Refuses to delete the last account that can manage users, since that would
+   * lock everybody out of the admin portal with no way back in.
+   */
+  async deleteUser(id: string, actingUserId?: string) {
+    const user = await this.prisma.adminUser.findUnique({
+      where: { id },
+      include: { role: { include: { permissions: { include: { permission: true } } } } },
+    });
+    if (!user) throw new NotFoundException("User not found");
+
+    if (actingUserId && actingUserId === id) {
+      throw new BadRequestException("You cannot delete the account you are signed in with");
+    }
+
+    const canManage = (u: typeof user) =>
+      u?.role?.permissions.some((p) => p.permission.slug === "admin.users.manage") ?? false;
+    if (canManage(user)) {
+      const others = await this.prisma.adminUser.count({
+        where: {
+          id: { not: id },
+          isActive: true,
+          role: { permissions: { some: { permission: { slug: "admin.users.manage" } } } },
+        },
+      });
+      if (others === 0) {
+        throw new BadRequestException(
+          "This is the last account that can manage users. Give another account that permission first."
+        );
+      }
+    }
+
+    await this.prisma.adminUser.delete({ where: { id } });
+    return { id, deleted: true };
+  }
+
+  /**
+   * Issue a fresh password.
+   *
+   * The plaintext is returned exactly once, here, and only the hash is stored —
+   * a saved password cannot be read back later, by design. If it is lost, issue
+   * another one.
+   */
+  async resetPassword(id: string, supplied?: string) {
+    const user = await this.prisma.adminUser.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException("User not found");
+
+    const password = supplied?.trim() ? supplied.trim() : generatePassword();
+    if (password.length < 8) {
+      throw new BadRequestException("Password must be at least 8 characters");
+    }
+    await this.prisma.adminUser.update({
+      where: { id },
+      data: { passwordHash: await this.adminAuth.hashPassword(password) },
+    });
+    return { id, email: user.email, password };
+  }
+
+  /** A password the caller can show before creating the account. */
+  suggestPassword() {
+    return { password: generatePassword() };
   }
 
   /**

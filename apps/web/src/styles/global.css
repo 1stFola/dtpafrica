@@ -13227,13 +13227,6 @@ a {
   font-weight: 500;
 }
 
-.admin-db-seed-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin: 1rem 0;
-}
-
 .admin-db-warnings {
   margin: 0.75rem 0 1rem;
   padding-left: 1.25rem;
@@ -20901,4 +20894,157 @@ a.dbx-comp-card:hover .sb-comp-crest {
   padding-top: 0.85rem;
   border-top: 1px solid var(--color-border);
   font-size: 0.82rem;
+}
+
+/* ==========================================================================
+   Admin users page (.aup-*): staff and match recorders in separate tabs.
+   ========================================================================== */
+
+.aup-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  width: fit-content;
+}
+
+.aup-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.aup-tab.is-active { background: var(--color-primary); color: #fff; }
+
+.aup-tab__count {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.aup-tab:not(.is-active) .aup-tab__count {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.aup-listhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.aup-search {
+  flex: 1 1 200px;
+  max-width: 280px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.aup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.aup-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.aup-row.is-inactive { opacity: 0.55; }
+
+.aup-row__main { flex: 1 1 200px; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.aup-row__name { font-size: 0.9rem; font-weight: 600; }
+.aup-row__email { font-size: 0.76rem; color: var(--color-muted); overflow-wrap: anywhere; }
+
+.aup-row__controls { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.aup-row__controls select { font-size: 0.8rem; padding: 0.35rem 0.5rem; }
+
+.aup-row__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.aup-link {
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.aup-link:hover { text-decoration: underline; }
+.aup-link:disabled { opacity: 0.4; cursor: not-allowed; }
+.aup-link--danger { color: #f87171; }
+
+.aup-edit { display: flex; flex-wrap: wrap; gap: 0.4rem; width: 100%; }
+.aup-edit input { flex: 1 1 140px; padding: 0.4rem 0.55rem; font-size: 0.82rem; }
+
+.aup-passrow { display: flex; gap: 0.4rem; }
+.aup-passrow input { flex: 1; min-width: 0; }
+
+/* --- Password shown once --- */
+
+.aup-reveal {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  border-radius: var(--radius);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.aup-reveal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.aup-reveal__close {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.aup-reveal__value {
+  display: block;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.55);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.aup-reveal__actions { margin-top: 0.6rem; }
+
+.aup-reveal__warn {
+  margin: 0.6rem 0 0;
+  font-size: 0.76rem;
+  color: var(--color-muted);
 }

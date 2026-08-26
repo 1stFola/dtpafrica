@@ -397,6 +397,51 @@
   color: var(--color-bg, #0f172a);
 }
 
+/* Destructive confirmations only — never the resting state of a control. */
+.mcx-btn--danger {
+  background: #e11d48;
+  border-color: #e11d48;
+  color: #fff;
+}
+
+/* --- Training: your own practice matches --- */
+
+.mcx-train__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.82rem;
+}
+
+/* The button sizes to its label here rather than filling the row. */
+.mcx-train__actions .mcx-btn { width: auto; padding: 0.6rem 1.1rem; }
+
+.mcx-train__row { display: flex; align-items: stretch; gap: 0.5rem; }
+.mcx-train__row .mcx-fixtures__item { flex: 1; }
+
+.mcx-train__del {
+  flex: none;
+  padding: 0 0.9rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: var(--mcx-radius, 14px);
+  background: transparent;
+  color: var(--color-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.mcx-train__del:hover:not(:disabled) {
+  border-color: #e11d48;
+  background: rgba(225, 29, 72, 0.12);
+  color: #fb7185;
+}
+
+.mcx-train__del:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .mcx-btn--approve {
   background: #16a34a;
   border-color: #16a34a;
@@ -696,18 +741,181 @@
   text-align: center;
 }
 
+/* --- Tap feedback preferences --- */
+
+.mcx-fx {
+  margin: 1.25rem 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: var(--mcx-radius, 14px);
+  background: var(--mcx-surface);
+}
+
+/* The whole header is the fold control, so the tap target is the full width. */
+.mcx-fx__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  /* Comfortably past the 44px touch minimum: this gets tapped with a thumb,
+     often one-handed, on a phone held at a match. */
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mcx-fx__heading { display: block; }
+.mcx-fx__head h2 { margin: 0; font-size: 1rem; }
+.mcx-fx__head .muted { display: block; margin-top: 0.2rem; font-size: 0.82rem; }
+
+.mcx-fx__fold {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--mcx-line);
+  border-radius: 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.mcx-fx__head:hover .mcx-fx__fold {
+  border-color: var(--mcx-home);
+  background: rgba(76, 159, 254, 0.14);
+}
+
+.mcx-fx__head:focus-visible { outline: 2px solid var(--mcx-home); outline-offset: 3px; }
+
+/* Folded, the card still says where the settings stand. */
+.mcx-fx__summary {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.7;
+  text-transform: capitalize;
+}
+
+.mcx-fx__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 0.85rem;
+}
+
+.mcx-fx__switch {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mcx-fx__levels {
+  margin: 0.9rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.mcx-fx__levels legend {
+  padding: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.mcx-fx__levels:disabled { opacity: 0.45; }
+
+.mcx-fx__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
+.mcx-fx__level {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.mcx-fx__level span { font-size: 0.72rem; opacity: 0.68; }
+.mcx-fx__level:hover { border-color: var(--mcx-home); }
+
+.mcx-fx__level.is-active {
+  border-color: var(--mcx-home);
+  background: rgba(76, 159, 254, 0.14);
+}
+
+.mcx-fx__try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  font-size: 0.8rem;
+}
+
 /* --- Event grid: all types visible, no scrolling to find one --- */
 
 .mcx-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 0.5rem;
+
+  /* Feedback intensity, set from the recorder's saved preference. Every
+     animation below scales off these three, so one attribute tunes the lot. */
+  --fx-lift: 2px;
+  --fx-glow: 0.5;
+  --fx-pop: 1.05;
+  --fx-dur: 420ms;
+}
+
+.mcx-grid[data-intensity="low"] {
+  --fx-lift: 1px;
+  --fx-glow: 0.22;
+  --fx-pop: 1.02;
+  --fx-dur: 260ms;
+}
+
+.mcx-grid[data-intensity="high"] {
+  --fx-lift: 3px;
+  --fx-glow: 0.85;
+  --fx-pop: 1.09;
+  --fx-dur: 560ms;
+}
+
+/* Visuals switched off: the grid still works, it just stops performing. */
+.mcx-grid[data-intensity="off"] {
+  --fx-lift: 0px;
+  --fx-glow: 0;
+  --fx-pop: 1;
+  --fx-dur: 1ms;
 }
 
 .mcx-grid__btn {
+  position: relative;
+  overflow: hidden;
   min-height: 58px;
   padding: 0.5rem 0.4rem;
-  border: 1px solid var(--mcx-line);
+  border: 1px solid var(--btn-edge, var(--mcx-line));
   border-radius: 12px;
   background: var(--mcx-surface);
   color: var(--color-text);
@@ -715,12 +923,155 @@
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
-  transition: transform 0.08s ease, border-color 0.15s ease;
+  isolation: isolate;
+  transition: transform 0.1s ease, border-color 0.18s ease, box-shadow 0.18s ease,
+    background-color 0.18s ease;
 }
 
-.mcx-grid__btn:active { transform: scale(0.96); }
-.mcx-grid__btn--home:active { border-color: var(--mcx-home); }
-.mcx-grid__btn--away:active { border-color: var(--mcx-away); }
+.mcx-grid__label { position: relative; z-index: 1; }
+
+/* A hairline in the category colour along the top edge: enough to group the
+   grid at a glance without turning it into a colour chart. */
+.mcx-grid__btn::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--btn-accent, transparent);
+  opacity: 0.75;
+}
+
+/* --- Category aesthetics ------------------------------------------------- */
+
+/* High impact — the moments the ground reacts to. */
+.mcx-grid__btn--impact {
+  --btn-accent: #f43f5e;
+  --btn-edge: rgba(244, 63, 94, 0.38);
+  background: linear-gradient(180deg, rgba(244, 63, 94, 0.09), var(--mcx-surface) 70%);
+}
+
+/* Defensive and goalkeeping — danger stopped. */
+.mcx-grid__btn--defensive {
+  --btn-accent: #34d399;
+  --btn-edge: rgba(52, 211, 153, 0.34);
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.08), var(--mcx-surface) 70%);
+}
+
+/* Standard play — deliberately quiet; it is most of the grid. */
+.mcx-grid__btn--standard {
+  --btn-accent: rgba(148, 163, 184, 0.55);
+  --btn-edge: var(--mcx-line);
+}
+
+.mcx-grid__btn:not(.is-locked):hover {
+  border-color: var(--btn-accent);
+  transform: translateY(calc(var(--fx-lift) * -1));
+  box-shadow: 0 calc(var(--fx-lift) * 3) calc(var(--fx-lift) * 6)
+    rgba(2, 6, 23, calc(0.45 * var(--fx-glow)));
+}
+
+.mcx-grid__btn:not(.is-locked):active { transform: scale(0.96); }
+
+.mcx-grid__btn:focus-visible {
+  outline: 2px solid var(--btn-accent);
+  outline-offset: 2px;
+}
+
+/* --- Confirmation: the tap landed --------------------------------------- */
+
+.mcx-grid__btn.is-firing {
+  animation: mcx-fire var(--fx-dur) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes mcx-fire {
+  0% {
+    transform: scale(0.94);
+    box-shadow: 0 0 0 0 var(--btn-accent);
+  }
+  35% {
+    transform: scale(var(--fx-pop));
+    box-shadow: 0 0 calc(18px * var(--fx-glow)) rgba(255, 255, 255, calc(0.28 * var(--fx-glow)));
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+/* Ripple, positioned at the finger by the component. */
+.mcx-grid__ripple {
+  position: absolute;
+  z-index: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--btn-accent, rgba(255, 255, 255, 0.6));
+  pointer-events: none;
+  animation: mcx-ripple 600ms ease-out forwards;
+}
+
+@keyframes mcx-ripple {
+  from { transform: scale(1); opacity: calc(0.55 * var(--fx-glow)); }
+  to { transform: scale(18); opacity: 0; }
+}
+
+/* --- Auto-capture: this tap also files a statistic ------------------------ */
+
+/* A dotted underline on the label, the quietest mark that still reads as
+   "this one does something extra". */
+.mcx-grid__btn--captures .mcx-grid__label {
+  text-decoration: underline dotted rgba(148, 163, 184, 0.55);
+  text-underline-offset: 3px;
+}
+
+/* The floating "+".
+   The button clips its overflow for the ripple, so the travel is kept inside
+   the box: it rises from just below the middle to the top edge and fades there,
+   rather than sliding out of a hidden overflow and vanishing mid-flight. */
+.mcx-grid__plus {
+  position: absolute;
+  top: 6px;
+  z-index: 2;
+  margin-left: -0.4em;
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #34d399;
+  text-shadow: 0 1px 6px rgba(2, 6, 23, 0.7);
+  pointer-events: none;
+  animation: mcx-plus 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes mcx-plus {
+  0% { transform: translateY(24px) scale(0.6); opacity: 0; }
+  20% { transform: translateY(18px) scale(1.15); opacity: 1; }
+  70% { transform: translateY(4px) scale(1); opacity: 1; }
+  100% { transform: translateY(0) scale(0.95); opacity: 0; }
+}
+
+/* --- Locked: tappable, but it pushes back -------------------------------- */
+
+/* Not `:disabled` — the button must still receive the tap so it can explain
+   itself. `aria-disabled` carries the state to assistive technology. */
+.mcx-grid__btn.is-locked {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.mcx-grid__btn.is-nudging {
+  animation: mcx-nudge 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  border-color: rgba(244, 63, 94, 0.5);
+}
+
+@keyframes mcx-nudge {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(calc(-3px * var(--fx-pop))); }
+  30% { transform: translateX(calc(3px * var(--fx-pop))); }
+  45% { transform: translateX(-2px); }
+  60% { transform: translateX(2px); }
+  75% { transform: translateX(-1px); }
+}
 
 /* --- Log --- */
 
@@ -990,8 +1341,66 @@
 
 /* --- Step 4: grid gated on step 1 --- */
 
-.mcx-grid__btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.mcx-grid__btn:disabled:active { transform: none; }
+/* Motion is decoration here — the state is already carried by opacity, colour
+   and `aria-disabled`, so removing it costs nothing but the flourish. */
+@media (prefers-reduced-motion: reduce) {
+  .mcx-grid__btn,
+  .mcx-grid__btn.is-firing,
+  .mcx-grid__btn.is-nudging {
+    animation: none;
+    transition: border-color 0.18s ease;
+  }
+  .mcx-grid__btn:not(.is-locked):hover { transform: none; box-shadow: none; }
+  .mcx-grid__ripple { display: none; }
+  /* The "+" still appears — it carries information, not just flourish — but it
+     holds still and fades rather than travelling. */
+  .mcx-grid__plus { animation: mcx-plus-still 900ms ease-out forwards; }
+}
+
+@keyframes mcx-plus-still {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* --- Statistics rows fed by the event log -------------------------------- */
+
+.mcx-sheet__divider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 1.35rem 0 0.35rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--mcx-line);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.mcx-sheet__divider span {
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+/* The event-fed rows read as secondary without being hard to use: a recorder
+   still needs to reach the counters for anything the log missed. */
+.mcx-row--auto .mcx-row__label { opacity: 0.85; }
+
+.mcx-row__auto {
+  display: inline-block;
+  margin-top: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.16);
+  color: #34d399;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
 
 .mcx-step--grid .mcx-step__body { gap: 0.6rem; }
 
@@ -1412,3 +1821,155 @@
 
 /* The Training section heading pairs the badge with its title. */
 .mcx-fixtures__head h2 { display: flex; align-items: center; gap: 0.45rem; }
+
+/* ==========================================================================
+   Submission history, status banner, and the recorder's totals.
+   ========================================================================== */
+
+.mcx-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--mcx-line);
+  border-left-width: 3px;
+  border-radius: var(--mcx-radius);
+  background: rgba(148, 163, 184, 0.08);
+  font-size: 0.82rem;
+}
+
+.mcx-banner--info { border-left-color: var(--mcx-home); }
+.mcx-banner--good { border-left-color: #22c55e; }
+.mcx-banner--warn { border-left-color: var(--mcx-away); }
+.mcx-banner--bad  { border-left-color: #f87171; }
+
+.mcx-banner__text { font-weight: 600; }
+.mcx-banner__note { color: var(--color-muted); font-style: italic; }
+
+.mcx-historywrap { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.mcx-historytoggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 1px dashed var(--mcx-line);
+  border-radius: var(--mcx-radius);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mcx-historytoggle:hover { color: var(--color-text); border-color: var(--mcx-home); }
+
+.mhl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.mhl__item {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--mcx-line);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--mcx-surface);
+}
+
+.mhl__item--info { border-left-color: var(--mcx-home); }
+.mhl__item--good { border-left-color: #22c55e; }
+.mhl__item--warn { border-left-color: var(--mcx-away); }
+.mhl__item--bad  { border-left-color: #f87171; }
+
+.mhl__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mhl__action { font-size: 0.85rem; font-weight: 600; }
+
+.mhl__section {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.mhl__meta { margin-top: 0.15rem; font-size: 0.72rem; color: var(--color-muted); }
+
+.mhl__summary {
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+
+.mhl__note {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: #fde68a;
+}
+
+/* --- Second-player prompt --- */
+
+.mcx-prompt__label {
+  display: block;
+  margin-top: 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.mcx-prompt__actions { display: flex; gap: 0.5rem; }
+.mcx-prompt__actions .mcx-btn { flex: 1; }
+
+.mcx-prompt__cancel {
+  margin-top: 0.6rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+/* --- Recorder totals --- */
+
+.mcx-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.mcx-total {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.15rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: var(--mcx-radius);
+  background: var(--mcx-surface);
+}
+
+.mcx-total dt {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.mcx-total dd {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}

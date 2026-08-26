@@ -12,6 +12,8 @@
 
 export type RecordedEventInput = {
   type: string;
+  /** Incoming player on a substitution, or the assist provider on a goal. */
+  secondaryPlayerNumber?: number | null;
   /** Logged match minute. Added time is carried separately, football-style. */
   minute: number;
   addedMinute?: number | null;
@@ -24,6 +26,8 @@ export type CommentContext = {
   opponentName: string;
   /** Resolved from the matchday squad when one exists, else null. */
   playerName?: string | null;
+  /** The second player's name, resolved the same way. */
+  secondaryName?: string | null;
 };
 
 /** "23'" or "45+2'" — the prefix every comment opens with. */
@@ -40,6 +44,15 @@ function playerPhrase(ctx: CommentContext, event: RecordedEventInput): string {
   const number = event.playerNumber;
   if (playerName && number) return `No. ${number} ${playerName}`;
   if (playerName) return playerName;
+  if (number) return `No. ${number}`;
+  return "";
+}
+
+/** The second player, named where the squad allows it. */
+function secondaryPhrase(ctx: CommentContext, event: RecordedEventInput): string {
+  const number = event.secondaryPlayerNumber;
+  if (ctx.secondaryName && number) return `No. ${number} ${ctx.secondaryName}`;
+  if (ctx.secondaryName) return ctx.secondaryName;
   if (number) return `No. ${number}`;
   return "";
 }
@@ -70,10 +83,57 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c, e) => `Corner Kick! ${actor(c, e)} takes another corner for ${c.teamName}.`,
     (c) => `Corner Kick! Sustained pressure from ${c.teamName} forces another corner.`,
   ],
+  /* Retired in favour of the accurate/inaccurate split, but kept so sheets
+     recorded before the change still read correctly. */
   cross: [
     (c, e) => `Cross! ${actor(c, e)} swings a dangerous ball into the box.`,
     (c) => `Cross! ${c.teamName} work the ball wide and whip a delivery towards the far post.`,
     (c, e) => `Cross! ${actor(c, e)} picks out a team-mate with an inviting delivery.`,
+  ],
+  accurate_cross: [
+    (c, e) => `Accurate Cross! ${actor(c, e)} picks out a team-mate with an inviting delivery.`,
+    (c) => `Accurate Cross! ${c.teamName} work the ball wide and find a head in the middle.`,
+    (c, e) => `Accurate Cross! ${actor(c, e)} whips it onto the striker's boot from the byline.`,
+  ],
+  inaccurate_cross: [
+    (c, e) => `Inaccurate Cross! ${actor(c, e)} overhits the delivery and it sails out of play.`,
+    (c) => `Inaccurate Cross! ${c.teamName} get into a good wide area but waste the opportunity.`,
+    (c, e) => `Inaccurate Cross! ${actor(c, e)} finds only the first defender with the delivery.`,
+  ],
+  long_pass: [
+    (c, e) => `Long Pass! ${actor(c, e)} switches play with a raking ball across the pitch.`,
+    (c, e) => `Long Pass! ${actor(c, e)} picks out a runner with an ambitious diagonal.`,
+    (c) => `Long Pass! ${c.teamName} go long to relieve the pressure and turn ${c.opponentName} around.`,
+  ],
+  through_ball: [
+    (c, e) => `Through Ball! ${actor(c, e)} splits the defence with a perfectly weighted pass.`,
+    (c, e) => `Through Ball! ${actor(c, e)} threads it between the centre-backs to release the runner.`,
+    (c) => `Through Ball! ${c.teamName} find the gap as the ${c.opponentName} back line steps up too late.`,
+  ],
+  tackle_won: [
+    (c, e) => `Tackle Won! ${actor(c, e)} times the challenge perfectly and comes away with the ball.`,
+    (c, e) => `Tackle Won! ${actor(c, e)} stands his man up and wins possession cleanly.`,
+    (c) => `Tackle Won! A strong ${c.teamName} challenge halts the ${c.opponentName} attack.`,
+  ],
+  aerial_duel_won: [
+    (c, e) => `Aerial Duel Won! ${actor(c, e)} climbs highest to win the header.`,
+    (c, e) => `Aerial Duel Won! ${actor(c, e)} dominates in the air and nods it clear.`,
+    (c) => `Aerial Duel Won! ${c.teamName} win the second ball with a commanding header.`,
+  ],
+  blocked_shot: [
+    (c, e) => `Shot Blocked! ${actor(c, e)} throws himself in front of the effort.`,
+    (c, e) => `Shot Blocked! ${actor(c, e)} reads it early and smothers the strike.`,
+    (c) => `Shot Blocked! A brave ${c.teamName} body gets in the way to deflect it behind.`,
+  ],
+  goalkeeper_punch: [
+    (c, e) => `Goalkeeper Punch! ${actor(c, e)} elects to punch clear rather than claim the cross.`,
+    (c) => `Goalkeeper Punch! The ${c.teamName} goalkeeper flaps the delivery away under pressure.`,
+    (c, e) => `Goalkeeper Punch! ${actor(c, e)} rises through the crowd and clears with both fists.`,
+  ],
+  sweeper_keep: [
+    (c, e) => `Sweeper Keep! ${actor(c, e)} races off his line to clear the ball outside the box.`,
+    (c) => `Sweeper Keep! The ${c.teamName} goalkeeper reads the danger and sweeps up behind the defence.`,
+    (c, e) => `Sweeper Keep! ${actor(c, e)} beats the striker to the through ball well outside his area.`,
   ],
   dribble: [
     (c, e) => `Dribble! ${actor(c, e)} produces an excellent run to advance ${c.teamName}'s attack.`,
@@ -87,9 +147,27 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c) => `Free-Kick! ${c.teamName} restart play from the resulting infringement.`,
   ],
   goal: [
-    (c, e) => `GOAL! ${c.teamName.toUpperCase()} – ${playerPhrase(c, e) || "the striker"} finds the back of the net.`,
-    (c, e) => `GOAL! ${c.teamName.toUpperCase()} – ${playerPhrase(c, e) || "the forward"} finishes brilliantly to beat the goalkeeper.`,
-    (c, e) => `GOAL! ${c.teamName.toUpperCase()} – ${playerPhrase(c, e) || "the attacker"} converts to extend ${c.teamName}'s advantage.`,
+    (c, e) => {
+      const scorer = playerPhrase(c, e) || "the striker";
+      const assist = secondaryPhrase(c, e);
+      return assist
+        ? `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finds the back of the net, set up by ${assist}.`
+        : `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finds the back of the net.`;
+    },
+    (c, e) => {
+      const scorer = playerPhrase(c, e) || "the forward";
+      const assist = secondaryPhrase(c, e);
+      return assist
+        ? `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finishes an assist from ${assist} to beat the goalkeeper.`
+        : `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finishes brilliantly to beat the goalkeeper.`;
+    },
+    (c, e) => {
+      const scorer = playerPhrase(c, e) || "the attacker";
+      const assist = secondaryPhrase(c, e);
+      return assist
+        ? `GOAL! ${c.teamName.toUpperCase()} – ${scorer} converts ${assist}'s pass to extend ${c.teamName}'s advantage.`
+        : `GOAL! ${c.teamName.toUpperCase()} – ${scorer} converts to extend ${c.teamName}'s advantage.`;
+    },
   ],
   goal_line_clearance: [
     (c, e) => `Goal-Line Clearance! ${actor(c, e)} hooks the ball off the line with the goalkeeper beaten.`,
@@ -163,14 +241,24 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c) => `Save! Another important stop from the ${c.teamName} goalkeeper.`,
   ],
   shot: [
-    (c, e) => `Shot! ${actor(c, e)} tests the goalkeeper with an effort on goal.`,
-    (c) => `Shot! ${c.teamName} work an opening and strike towards goal.`,
-    (c, e) => `Shot! ${actor(c, e)} lets fly from distance and forces the defence into action.`,
+    (c, e) => `Shot On Target! ${actor(c, e)} tests the goalkeeper with an effort on goal.`,
+    (c) => `Shot On Target! ${c.teamName} work an opening and force a stop from the keeper.`,
+    (c, e) => `Shot On Target! ${actor(c, e)} lets fly from distance and draws a save.`,
   ],
   shot_off_target: [
     (c, e) => `Shot Off Target! ${actor(c, e)} sends the effort wide.`,
     (c, e) => `Shot Off Target! ${actor(c, e)} attempts an ambitious strike but misses the target.`,
     (c) => `Shot Off Target! ${c.teamName} attempt an effort on goal, but it drifts off target.`,
+  ],
+  substitution: [
+    (c, e) => {
+      const off = playerPhrase(c, e);
+      const on = secondaryPhrase(c, e);
+      if (off && on) return `Substitution! ${c.teamName} bring on ${on} for ${off}.`;
+      if (on) return `Substitution! ${c.teamName} bring on ${on}.`;
+      if (off) return `Substitution! ${c.teamName} withdraw ${off}.`;
+      return `Substitution! ${c.teamName} make a change.`;
+    },
   ],
   sustained_pressure: [
     (c) => `Sustained Pressure! ${c.teamName} pin ${c.opponentName} deep in their own half with relentless possession.`,

@@ -29,7 +29,24 @@ export type SidePair = { home: number; away: number };
 export type SplitTally = Record<Half, SidePair>;
 export type TallyValue = SidePair | SplitTally;
 
-export type MatchStatDef = { key: string; label: string; split: boolean };
+/**
+ * Event type to the statistics it also counts toward.
+ *
+ * `side` is whose column the count lands in: "opponent" covers cases like a
+ * saved penalty, which is a save for one side and a penalty awarded the other.
+ */
+export type EventCaptureMap = Record<
+  string,
+  ReadonlyArray<{ key: string; side: "same" | "opponent" }>
+>;
+
+export type MatchStatDef = {
+  key: string;
+  label: string;
+  split: boolean;
+  /** True when the event log can feed this statistic on its own. */
+  autoCaptured?: boolean;
+};
 
 /** One tapped pitch event. `minute` is the logged minute; added time is separate. */
 export type RecordedEvent = {
@@ -39,7 +56,45 @@ export type RecordedEvent = {
   addedMinute: number | null;
   side: Side;
   playerNumber: number | null;
+  /** Incoming player on a substitution, or the assist provider on a goal. */
+  secondaryPlayerNumber: number | null;
   half: 1 | 2;
+};
+
+export type SheetLogAction =
+  | "submitted"
+  | "resubmitted"
+  | "approved"
+  | "sent_back"
+  | "correction_requested"
+  | "correction_approved"
+  | "correction_declined";
+
+export type SheetLogEntry = {
+  id: string;
+  section: SheetSection;
+  action: SheetLogAction;
+  actorName: string | null;
+  actorRole: string | null;
+  note: string | null;
+  summary: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type CorrectionRequest = {
+  section: SheetSection;
+  byName: string | null;
+  at: string | null;
+  note: string | null;
+};
+
+/** Headline counts for the recorder's landing page. */
+export type MatchStatsTotals = {
+  statisticsApproved: number;
+  eventLogsApproved: number;
+  awaitingApproval: number;
+  fixturesRecorded: number;
+  correctionsPending: number;
 };
 
 export type ClockPhase =
@@ -74,9 +129,18 @@ export type MatchStatsSheet = {
   status: SheetStatus;
   eventsStatus: SheetStatus;
   tallies: Record<string, TallyValue>;
+  /** The event log's contribution, kept apart from what was tapped by hand. */
+  captured: Record<string, TallyValue>;
+  /** Which event types feed which statistic. The server owns this definition. */
+  eventCapture: EventCaptureMap;
   totals: Record<string, SidePair>;
   /** Stat vocabulary comes from the server so the two cannot drift. */
   stats: MatchStatDef[];
+  /** What the read-only views show, including derived figures like total shots. */
+  displayStats: Array<MatchStatDef & { derived: boolean }>;
+  /** True once the clock reaches full time; edits need a correction approved. */
+  lockedAtFullTime: boolean;
+  correctionRequest: CorrectionRequest | null;
   events: RecordedEvent[];
   /** Live scoreline implied by the logged goal events. */
   derivedScore: { home: number; away: number };
@@ -185,6 +249,30 @@ export const matchStatsApi = {
     }),
 
   queue: () => adminFetch<MatchStatsQueueItem[]>(`${base}/queue`),
+
+  history: (matchId: string) => adminFetch<SheetLogEntry[]>(`${base}/${matchId}/history`),
+
+  totals: () => adminFetch<MatchStatsTotals>(`${base}/totals`),
+
+  /** Start a practice match of your own, cloned from the seeded template. */
+  startTraining: () =>
+    adminFetch<{ matchId: string }>(`${base}/training`, { method: "POST" }),
+
+  /** Throw your own practice match away so a clean one can be started. */
+  deleteTraining: (matchId: string) =>
+    adminFetch<{ deleted: boolean }>(`${base}/training/${matchId}`, { method: "DELETE" }),
+
+  requestCorrection: (matchId: string, section: SheetSection, note?: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/${section}/request-correction`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+
+  declineCorrection: (matchId: string, note?: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/decline-correction`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
 
   fixtures: (range: { from?: string; to?: string }) => {
     const params = new URLSearchParams();

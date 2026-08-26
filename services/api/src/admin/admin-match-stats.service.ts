@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
@@ -43,6 +44,60 @@ export const HALVES = ["1st", "2nd"] as const;
 type Half = (typeof HALVES)[number];
 type Side = "home" | "away";
 
+/**
+ * Statistics an event in the Events tab also counts toward.
+ *
+ * A recorder logging a corner has already told us a corner happened; making
+ * them cross to the Statistics tab and tap it again is duplicate work and a
+ * chance for the two figures to disagree. These contributions are added to
+ * whatever was tapped by hand rather than replacing it, because the counters
+ * remain much the faster way to record volume — a keeper's eight saves are
+ * eight taps here, against eight four-step event entries there.
+ *
+ * `side` is whose column the count lands in. Most are "same", but a saved
+ * penalty is a save for the keeper's side and a penalty awarded to the other.
+ * Types whose outcome is ambiguous — one_on_one, own_goal, penalty_shootout —
+ * are deliberately absent: a guess in a published statistic is worse than a gap.
+ */
+export const EVENT_STAT_CAPTURE: Record<
+  string,
+  ReadonlyArray<{ key: string; side: "same" | "opponent" }>
+> = {
+  corner_kick: [{ key: "corners", side: "same" }],
+  offside: [{ key: "offsides", side: "same" }],
+  save: [{ key: "saves", side: "same" }],
+  goal: [{ key: "shotsOnTarget", side: "same" }],
+  shot: [{ key: "shotsOnTarget", side: "same" }],
+  goal_penalty: [
+    { key: "shotsOnTarget", side: "same" },
+    { key: "penaltiesAwarded", side: "same" },
+  ],
+  penalty_saved: [
+    { key: "saves", side: "same" },
+    { key: "shotsOnTarget", side: "opponent" },
+    { key: "penaltiesAwarded", side: "opponent" },
+  ],
+  shot_off_target: [{ key: "shotsOffTarget", side: "same" }],
+  missed_chance: [{ key: "shotsOffTarget", side: "same" }],
+  volley_missed: [{ key: "shotsOffTarget", side: "same" }],
+  woodwork: [{ key: "shotsOffTarget", side: "same" }],
+};
+
+/** Stat keys any event can feed. Drives the ordering of the Statistics tab. */
+export const AUTO_CAPTURED_STAT_KEYS: ReadonlySet<string> = new Set(
+  Object.values(EVENT_STAT_CAPTURE).flatMap((list) => list.map((c) => c.key))
+);
+
+/**
+ * Statistics ordered for the tab: everything needing a human tap first, then
+ * the ones the event log already fills in. A recorder works top-down and stops
+ * where the automation takes over.
+ */
+export const ORDERED_STAT_DEFS = [
+  ...MATCH_STAT_DEFS.filter((d) => !AUTO_CAPTURED_STAT_KEYS.has(d.key)),
+  ...MATCH_STAT_DEFS.filter((d) => AUTO_CAPTURED_STAT_KEYS.has(d.key)),
+].map((d) => ({ ...d, autoCaptured: AUTO_CAPTURED_STAT_KEYS.has(d.key) }));
+
 const STAT_BY_KEY = new Map(MATCH_STAT_DEFS.map((d) => [d.key as string, d]));
 
 type SidePair = { home: number; away: number };
@@ -57,10 +112,11 @@ const APPROVE_PERMISSION = "scoreboard.stats.approve";
  * laid out on the tap grid, so a recorder always finds one in the same place.
  */
 export const MATCH_EVENT_TYPES = [
-  "assist",
+  "accurate_cross",
+  "aerial_duel_won",
+  "blocked_shot",
   "clearance",
   "corner_kick",
-  "cross",
   "dribble",
   "freekick",
   "goal",
@@ -70,7 +126,10 @@ export const MATCH_EVENT_TYPES = [
   "goalkeeper_command",
   "goalkeeper_distribution",
   "goalkeeper_intervention",
+  "goalkeeper_punch",
+  "inaccurate_cross",
   "interception",
+  "long_pass",
   "long_throw",
   "midfield_battle",
   "missed_chance",
@@ -83,12 +142,27 @@ export const MATCH_EVENT_TYPES = [
   "save",
   "shot",
   "shot_off_target",
+  "substitution",
   "sustained_pressure",
+  "sweeper_keep",
+  "tackle_won",
+  "through_ball",
   "volley_missed",
   "woodwork",
 ] as const;
 
-const EVENT_TYPE_SET = new Set<string>(MATCH_EVENT_TYPES);
+/**
+ * Types the grid no longer offers, kept readable so sheets recorded before the
+ * change keep their events.
+ *
+ * `assist` was retired when the goal prompt began capturing the provider on the
+ * goal itself; `cross` was split into accurate and inaccurate. Dropping either
+ * from the accepted set would make readEvents discard those events silently on
+ * the next save, which is data loss disguised as a vocabulary change.
+ */
+const RETIRED_EVENT_TYPES = ["assist", "cross"] as const;
+
+const EVENT_TYPE_SET = new Set<string>([...MATCH_EVENT_TYPES, ...RETIRED_EVENT_TYPES]);
 
 /** Event types that put a goal on the board for the side that logged them. */
 const SCORING_TYPES = new Set(["goal", "goal_penalty"]);
@@ -125,6 +199,11 @@ export type RecordedEvent = {
   addedMinute: number | null;
   side: "home" | "away";
   playerNumber: number | null;
+  /**
+   * The second player an event involves: the incoming player on a substitution,
+   * or whoever provided the assist on a goal. Null on a solo effort.
+   */
+  secondaryPlayerNumber: number | null;
   half: 1 | 2;
 };
 
@@ -173,6 +252,12 @@ function readEvents(input: unknown): RecordedEvent[] {
       typeof e.playerNumber === "number" && Number.isFinite(e.playerNumber) && e.playerNumber > 0
         ? Math.floor(e.playerNumber)
         : null;
+    const secondary =
+      typeof e.secondaryPlayerNumber === "number" &&
+      Number.isFinite(e.secondaryPlayerNumber) &&
+      e.secondaryPlayerNumber > 0
+        ? Math.floor(e.secondaryPlayerNumber)
+        : null;
     out.push({
       id: typeof e.id === "string" && e.id ? e.id : `${type}-${minute}-${out.length}`,
       type,
@@ -180,6 +265,7 @@ function readEvents(input: unknown): RecordedEvent[] {
       addedMinute: added,
       side: e.side === "away" ? "away" : "home",
       playerNumber: number,
+      secondaryPlayerNumber: secondary,
       half: e.half === 2 ? 2 : 1,
     });
   }
@@ -316,6 +402,74 @@ export function totalsFor(tallies: Tallies): Record<string, SidePair> {
   return out;
 }
 
+/**
+ * What the event log contributes to each statistic.
+ *
+ * Recomputed from the events every time rather than accumulated as the events
+ * are logged: deleting an event then correctly takes its contribution with it,
+ * and no running counter can drift out of step with the log it came from.
+ */
+export function capturedFromEvents(events: RecordedEvent[]): Tallies {
+  const out = emptyTallies();
+
+  for (const event of events) {
+    const captures = EVENT_STAT_CAPTURE[event.type];
+    if (!captures) continue;
+
+    for (const capture of captures) {
+      const def = STAT_BY_KEY.get(capture.key);
+      if (!def) continue;
+
+      const side: Side =
+        capture.side === "same" ? event.side : event.side === "home" ? "away" : "home";
+
+      if (def.split) {
+        const half: Half = event.half === 2 ? "2nd" : "1st";
+        const split = out[capture.key] as SplitTally;
+        split[half][side] += 1;
+      } else {
+        (out[capture.key] as SidePair)[side] += 1;
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * The figures that count: tapped by hand plus captured from the event log.
+ *
+ * This is what gets published on approval, so the public site sees one number
+ * per statistic rather than a manual figure that silently ignores the log.
+ */
+export function effectiveTallies(tallies: Tallies, events: RecordedEvent[]): Tallies {
+  const captured = capturedFromEvents(events);
+  const out: Tallies = {};
+
+  for (const def of MATCH_STAT_DEFS) {
+    if (def.split) {
+      const manual = tallies[def.key] as SplitTally;
+      const auto = captured[def.key] as SplitTally;
+      out[def.key] = {
+        "1st": {
+          home: (manual?.["1st"]?.home ?? 0) + auto["1st"].home,
+          away: (manual?.["1st"]?.away ?? 0) + auto["1st"].away,
+        },
+        "2nd": {
+          home: (manual?.["2nd"]?.home ?? 0) + auto["2nd"].home,
+          away: (manual?.["2nd"]?.away ?? 0) + auto["2nd"].away,
+        },
+      };
+    } else {
+      const manual = readPair(tallies[def.key]);
+      const auto = captured[def.key] as SidePair;
+      out[def.key] = { home: manual.home + auto.home, away: manual.away + auto.away };
+    }
+  }
+
+  return out;
+}
+
 export type SheetSection = "stats" | "events";
 
 /**
@@ -373,12 +527,60 @@ function isTrainingCompetition(competition: { formatConfig?: unknown } | null): 
   return Boolean(cfg && typeof cfg === "object" && (cfg as Record<string, unknown>).isTraining);
 }
 
+/**
+ * Practice fixtures belong to one recorder each.
+ *
+ * The seeded fixture is a template, not a pitch: when every trainee opened the
+ * same match they shared a single sheet, so one person's kick-off reset another
+ * person's half and their events landed in the same log. A recorder now gets
+ * their own copy of it, recorded in the match's `meta`, and can throw it away
+ * and take another whenever they want a clean run.
+ */
+type TrainingMeta = { trainingOwnerId?: string; trainingOwnerName?: string };
+
+function trainingOwnerId(match: { meta?: unknown } | null): string | null {
+  const meta = match?.meta;
+  if (!meta || typeof meta !== "object") return null;
+  const id = (meta as TrainingMeta).trainingOwnerId;
+  return typeof id === "string" && id ? id : null;
+}
+
+/** The seeded fixture every practice copy is cloned from. */
+function isTrainingTemplate(match: { meta?: unknown } | null): boolean {
+  return trainingOwnerId(match) === null;
+}
+
+/** Accounts that see and manage every practice match, not just their own. */
+function seesAllTraining(ctx: AdminAuthContext): boolean {
+  return ctx.method === "api_key" || ctx.roleSlug === "super_admin" || !ctx.userId;
+}
+
 /** Half length the competition prefers, if it declares one. */
 function competitionHalfLength(competition: { formatConfig?: unknown } | null): number | null {
   const cfg = competition?.formatConfig;
   if (!cfg || typeof cfg !== "object") return null;
   const value = (cfg as Record<string, unknown>).halfLengthMinutes;
   return typeof value === "number" && value > 0 ? Math.floor(value) : null;
+}
+
+export type SheetLogAction =
+  | "submitted"
+  | "resubmitted"
+  | "approved"
+  | "sent_back"
+  | "correction_requested"
+  | "correction_approved"
+  | "correction_declined";
+
+/**
+ * A sheet locks itself at full time.
+ *
+ * Once the clock has run out the record is finished, and editing it afterwards
+ * needs someone to sign off — otherwise a "final" sheet quietly changes after
+ * the fact. An approved correction request is what lifts the lock.
+ */
+function isFullTime(clock: ClockState | null): boolean {
+  return clock?.phase === "finished";
 }
 
 function actorName(ctx: AdminAuthContext): string {
@@ -409,14 +611,24 @@ export class AdminMatchStatsService {
       include: { homeTeam: true, awayTeam: true, competition: true },
     });
     if (!match) throw new NotFoundException("Match not found");
+
+    if (isTrainingCompetition(match.competition)) {
+      /* Practice matches are personal. Reaching someone else's — or the
+         template every copy is cut from — is refused even by match id, so two
+         trainees can never end up sharing one sheet again. */
+      if (!seesAllTraining(ctx) && trainingOwnerId(match) !== ctx.userId) {
+        throw new ForbiddenException(
+          isTrainingTemplate(match)
+            ? "Start your own practice match from the Training page"
+            : "This practice match belongs to another recorder"
+        );
+      }
+      return match;
+    }
+
     /* A scoped recorder must not reach a fixture outside their competition,
-       even by typing the match id straight into the URL — training fixtures
-       excepted, since every recorder needs somewhere to practise. */
-    if (
-      ctx.competitionId &&
-      match.competitionId !== ctx.competitionId &&
-      !isTrainingCompetition(match.competition)
-    ) {
+       even by typing the match id straight into the URL. */
+    if (ctx.competitionId && match.competitionId !== ctx.competitionId) {
       throw new ForbiddenException("This match is outside the competition you are assigned to");
     }
     return match;
@@ -436,56 +648,55 @@ export class AdminMatchStatsService {
     }
 
     const isTraining = { competition: { formatType: TRAINING_FORMAT_TYPE } };
-    const matches = await this.prisma.sbMatch.findMany({
-      where: {
-        isPublished: true,
-        /* Deliberately not filtering on competition.isPublished: the training
-           competition is unpublished so it stays off the public ScoreBoard,
-           but recorders still need to reach it here. This endpoint is
-           permission-gated, so nothing leaks. */
-        AND: [
-          /* Training fixtures sit outside a recorder's competition scope. The
-             scope exists to keep a contractor away from other competitions'
-             real games; a sandbox is not that, and a scoped recorder is
-             precisely who needs somewhere to practise. */
-          ...(ctx.competitionId
-            ? [{ OR: [{ competitionId: ctx.competitionId }, isTraining] }]
-            : []),
-          /* They also ignore the date window: a sandbox match's kickoff date is
-             arbitrary and must not fall out of reach as the calendar moves. */
-          ...(range.from || range.to
-            ? [
-                {
-                  OR: [
-                    {
-                      kickoffAt: {
-                        ...(range.from ? { gte: range.from } : {}),
-                        ...(range.to ? { lte: range.to } : {}),
-                      },
-                    },
-                    isTraining,
-                  ],
-                },
-              ]
-            : []),
-        ],
-      },
-      orderBy: [{ kickoffAt: "desc" }],
-      take: 200,
-      include: {
-        homeTeam: true,
-        awayTeam: true,
-        competition: true,
-        statisticsSheet: { select: { status: true, recorderName: true } },
-      },
-    });
+    const include = {
+      homeTeam: true,
+      awayTeam: true,
+      competition: true,
+      statisticsSheet: { select: { status: true, recorderName: true } },
+    } as const;
 
-    // Training fixtures lead the list; they are what a trainee came for.
-    matches.sort((a, b) => {
-      const at = a.competition.formatType === TRAINING_FORMAT_TYPE ? 0 : 1;
-      const bt = b.competition.formatType === TRAINING_FORMAT_TYPE ? 0 : 1;
-      return at - bt;
-    });
+    const scope = ctx.competitionId ? { competitionId: ctx.competitionId } : {};
+
+    /* Training fixtures are fetched separately rather than relying on the take
+       below. They are few, their kickoff dates are arbitrary, and once the real
+       fixture list grew past the page size they fell out of it entirely. */
+    const [trainingRows, real] = await Promise.all([
+      this.prisma.sbMatch.findMany({
+        where: { isPublished: true, ...isTraining },
+        orderBy: [{ kickoffAt: "desc" }],
+        include,
+      }),
+      this.prisma.sbMatch.findMany({
+        where: {
+          isPublished: true,
+          ...scope,
+          competition: { formatType: { not: TRAINING_FORMAT_TYPE } },
+          ...(range.from || range.to
+            ? {
+                kickoffAt: {
+                  ...(range.from ? { gte: range.from } : {}),
+                  ...(range.to ? { lte: range.to } : {}),
+                },
+              }
+            : {}),
+        },
+        orderBy: [{ kickoffAt: "desc" }],
+        take: 200,
+        include,
+      }),
+    ]);
+
+    /* Practice matches are personal, and the template is nobody's. Filtered
+       here rather than in the query: there are only ever a handful, and this
+       keeps the ownership rule in one readable place alongside loadMatch's. */
+    const training = trainingRows.filter((match) =>
+      seesAllTraining(ctx)
+        ? !isTrainingTemplate(match)
+        : trainingOwnerId(match) === ctx.userId
+    );
+
+    // Training first: it is what a trainee came for, and it is never in the way.
+    const matches = [...training, ...real];
 
     return matches.map((match) => ({
       id: match.id,
@@ -505,6 +716,109 @@ export class AdminMatchStatsService {
         isTraining: isTrainingCompetition(match.competition),
       },
     }));
+  }
+
+  /**
+   * Start a practice match of your own, cloned from the seeded template.
+   *
+   * The squad is copied with it, so the generated commentary still resolves
+   * "No. 10" to a real name — that is most of what a trainee is here to see.
+   */
+  async createTrainingMatch(ctx: AdminAuthContext) {
+    this.assertCanRecord(ctx);
+
+    /* Ownership is what separates a practice match from the template, so a
+       caller with no user behind it — the API key — cannot start one. */
+    if (!ctx.userId) {
+      throw new ForbiddenException("Sign in as a recorder to start a practice match");
+    }
+
+    const template = await this.prisma.sbMatch.findFirst({
+      where: { competition: { formatType: TRAINING_FORMAT_TYPE } },
+      orderBy: [{ createdAt: "asc" }],
+      include: { competition: true },
+    });
+    if (!template) {
+      throw new NotFoundException(
+        "No practice fixture is set up yet — run the database seed first"
+      );
+    }
+
+    const squad = await this.prisma.sbMatchSquadPlayer.findMany({
+      where: { matchId: template.id },
+    });
+
+    const id = randomUUID();
+    const owner = actorName(ctx);
+    const meta: TrainingMeta & Record<string, unknown> = {
+      ...(template.meta && typeof template.meta === "object" ? template.meta : {}),
+      trainingOwnerId: ctx.userId,
+      trainingOwnerName: owner,
+    };
+
+    await this.prisma.$transaction([
+      this.prisma.sbMatch.create({
+        data: {
+          id,
+          // Unique per copy, and never public: these fixtures are unpublished.
+          slug: `practice-${id.slice(0, 8)}`,
+          competitionId: template.competitionId,
+          stageId: template.stageId,
+          homeTeamId: template.homeTeamId,
+          awayTeamId: template.awayTeamId,
+          status: "scheduled",
+          kickoffAt: new Date(),
+          venue: template.venue,
+          roundLabel: `Practice — ${owner}`,
+          stageKey: template.stageKey,
+          matchday: template.matchday,
+          isPublished: template.isPublished,
+          meta: meta as Prisma.InputJsonValue,
+        },
+      }),
+      ...(squad.length
+        ? [
+            this.prisma.sbMatchSquadPlayer.createMany({
+              data: squad.map(({ id: _drop, matchId: _m, ...row }) => ({
+                ...row,
+                matchId: id,
+              })),
+            }),
+          ]
+        : []),
+    ]);
+
+    return { matchId: id };
+  }
+
+  /**
+   * Throw a practice match away so a clean one can be started.
+   *
+   * Only your own, and only a practice one: the guard is the point, since this
+   * is the single delete a match recorder is trusted with. Everything hanging
+   * off the match — sheet, history log, squad, events — cascades with it.
+   */
+  async deleteTrainingMatch(matchId: string, ctx: AdminAuthContext) {
+    this.assertCanRecord(ctx);
+
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      include: { competition: true },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+
+    if (!isTrainingCompetition(match.competition)) {
+      throw new ForbiddenException("Only practice matches can be deleted");
+    }
+    if (isTrainingTemplate(match)) {
+      throw new ForbiddenException("The practice template cannot be deleted");
+    }
+    if (!seesAllTraining(ctx) && trainingOwnerId(match) !== ctx.userId) {
+      throw new ForbiddenException("This practice match belongs to another recorder");
+    }
+
+    await this.prisma.sbMatch.delete({ where: { id: matchId } });
+    return { deleted: true };
   }
 
   /**
@@ -561,6 +875,14 @@ export class AdminMatchStatsService {
 
     this.assertOwnsSheet(sheet, ctx, match);
 
+    /* Full time locks the record. Only an admin approving a correction request
+       reopens it, which clears the clock's finished phase. */
+    if (isFullTime(readClock(sheet.clock)) && !isTrainingCompetition(match.competition)) {
+      throw new BadRequestException(
+        "This record is locked at full time. Request a correction and a ScoreBoard admin will reopen it."
+      );
+    }
+
     /* Sections lock independently: an approved stat sheet stops accepting
        tallies while the event log is still being tidied, and vice versa. */
     const statsLocked = sectionStatus(sheet, "stats") === "approved";
@@ -604,6 +926,7 @@ export class AdminMatchStatsService {
     }
     this.assertOwnsSheet(sheet, ctx, match);
 
+    const wasSubmittedBefore = sectionStatus(sheet, section) === "submitted";
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
       data: {
@@ -615,7 +938,31 @@ export class AdminMatchStatsService {
         [col.sentBackNote]: null,
       } as Prisma.SbMatchStatisticsUpdateInput,
     });
+
+    await this.log(sheet, section, wasSubmittedBefore ? "resubmitted" : "submitted", ctx, {
+      summary: this.summarise(sheet, section) as Prisma.InputJsonValue,
+    });
     return this.present(match, updated, ctx);
+  }
+
+  /** A compact snapshot of what the section held, for the history entry. */
+  private summarise(
+    sheet: { tallies: unknown; events: unknown },
+    section: SheetSection
+  ) {
+    if (section === "events") {
+      const events = readEvents(sheet.events);
+      return { events: events.length, score: scoreFromEvents(events) };
+    }
+    const totals = totalsFor(
+      effectiveTallies(normaliseTallies(sheet.tallies), readEvents(sheet.events))
+    );
+    return {
+      shots: totals.shots,
+      shotsOnTarget: totals.shotsOnTarget,
+      corners: totals.corners,
+      fouls: totals.fouls,
+    };
   }
 
   /**
@@ -669,6 +1016,11 @@ export class AdminMatchStatsService {
       event.playerNumber
         ? squadByKey.get(`${teamIdFor(event.side)}:${event.playerNumber}`)
         : undefined;
+    /* The assist provider or incoming substitute, resolved the same way. */
+    const secondaryFor = (event: RecordedEvent) =>
+      event.secondaryPlayerNumber
+        ? squadByKey.get(`${teamIdFor(event.side)}:${event.secondaryPlayerNumber}`)
+        : undefined;
 
     const comments = generateEventComments(
       recorded as RecordedEventInput[],
@@ -678,6 +1030,7 @@ export class AdminMatchStatsService {
           teamName: isHome ? match.homeTeam.name : match.awayTeam.name,
           opponentName: isHome ? match.awayTeam.name : match.homeTeam.name,
           playerName: squadFor(event as RecordedEvent)?.playerName ?? null,
+          secondaryName: secondaryFor(event as RecordedEvent)?.playerName ?? null,
         };
       }
     );
@@ -697,6 +1050,17 @@ export class AdminMatchStatsService {
       playerLabel:
         squadFor(event)?.playerName ??
         (event.playerNumber ? `No. ${event.playerNumber}` : null),
+      /* The timeline already has fields for a second player: an assist on a
+         goal, the incoming player on a substitution. */
+      playerLabel2:
+        secondaryFor(event)?.playerName ??
+        (event.secondaryPlayerNumber ? `No. ${event.secondaryPlayerNumber}` : null),
+      assistPlayerId: event.type === "goal" ? secondaryFor(event)?.playerId ?? null : null,
+      assistLabel:
+        event.type === "goal"
+          ? secondaryFor(event)?.playerName ??
+            (event.secondaryPlayerNumber ? `No. ${event.secondaryPlayerNumber}` : null)
+          : null,
       type: event.type,
       minute: event.minute,
       detail: comments[index],
@@ -706,6 +1070,7 @@ export class AdminMatchStatsService {
         addedMinute: event.addedMinute,
         half: event.half,
         playerNumber: event.playerNumber,
+        secondaryPlayerNumber: event.secondaryPlayerNumber,
       } as Prisma.InputJsonValue,
     }));
 
@@ -744,7 +1109,10 @@ export class AdminMatchStatsService {
               data: {
                 stats: {
                   ...existingStats,
-                  ...totalsFor(tallies),
+                  /* Published figures include what the event log captured, so
+                     the public site never shows a corner count that the match
+                     timeline beside it contradicts. */
+                  ...totalsFor(effectiveTallies(tallies, recorded)),
                   manualStatsMeta: {
                     source: "manual",
                     updatedAt: new Date().toISOString(),
@@ -763,6 +1131,9 @@ export class AdminMatchStatsService {
     const updated = results[results.length - 1] as Awaited<
       ReturnType<PrismaService["sbMatchStatistics"]["update"]>
     >;
+    await this.log(sheet, section, "approved", ctx, {
+      summary: this.summarise(sheet, section) as Prisma.InputJsonValue,
+    });
     return this.present({ ...match }, updated, ctx);
   }
 
@@ -813,8 +1184,30 @@ export class AdminMatchStatsService {
         [col.submittedById]: null,
         [col.submittedByName]: null,
         [col.submittedAt]: null,
+        /* A send-back answers any pending correction request for this section
+           and reopens the record, so the full-time lock lifts with it. */
+        ...(sheet.correctionRequestedSection === section
+          ? {
+              correctionRequestedSection: null,
+              correctionRequestedById: null,
+              correctionRequestedByName: null,
+              correctionRequestedAt: null,
+              correctionRequestNote: null,
+            }
+          : {}),
+        ...(isFullTime(readClock(sheet.clock))
+          ? { clock: { ...readClock(sheet.clock), phase: "running" } as Prisma.InputJsonValue }
+          : {}),
       } as Prisma.SbMatchStatisticsUpdateInput,
     });
+
+    await this.log(
+      sheet,
+      section,
+      sheet.correctionRequestedSection === section ? "correction_approved" : "sent_back",
+      ctx,
+      { note: note?.trim() || null }
+    );
 
     /* Withdraw the published event log so the public timeline matches the
        sheet's state. Statistics cannot be unwound the same way — the totals
@@ -834,6 +1227,120 @@ export class AdminMatchStatsService {
     }
 
     return this.present(match, updated, ctx);
+  }
+
+  /**
+   * A recorder asking for a locked record back.
+   *
+   * This only records the ask — the sheet stays locked until a ScoreBoard admin
+   * approves it by sending the section back.
+   */
+  async requestCorrection(
+    matchId: string,
+    section: SheetSection,
+    note: string | undefined,
+    ctx: AdminAuthContext
+  ) {
+    this.assertCanRecord(ctx);
+    const match = await this.loadMatch(matchId, ctx);
+    const sheet = await this.requireSheet(matchId);
+    this.assertOwnsSheet(sheet, ctx, match);
+
+    if (sheet.correctionRequestedSection) {
+      throw new BadRequestException(
+        "A correction request is already pending on this sheet"
+      );
+    }
+
+    const updated = await this.prisma.sbMatchStatistics.update({
+      where: { matchId },
+      data: {
+        correctionRequestedSection: section,
+        correctionRequestedById: ctx.userId ?? null,
+        correctionRequestedByName: actorName(ctx),
+        correctionRequestedAt: new Date(),
+        correctionRequestNote: note?.trim() ? note.trim() : null,
+      },
+    });
+
+    await this.log(sheet, section, "correction_requested", ctx, {
+      note: note?.trim() || null,
+    });
+    return this.present(match, updated, ctx);
+  }
+
+  /** An admin turning down a correction request, leaving the record locked. */
+  async declineCorrection(
+    matchId: string,
+    note: string | undefined,
+    ctx: AdminAuthContext
+  ) {
+    this.assertCanApprove(ctx);
+    const match = await this.loadMatch(matchId, ctx);
+    const sheet = await this.requireSheet(matchId);
+
+    if (!sheet.correctionRequestedSection) {
+      throw new BadRequestException("There is no correction request to decline");
+    }
+    const section = sheet.correctionRequestedSection as SheetSection;
+
+    const updated = await this.prisma.sbMatchStatistics.update({
+      where: { matchId },
+      data: {
+        correctionRequestedSection: null,
+        correctionRequestedById: null,
+        correctionRequestedByName: null,
+        correctionRequestedAt: null,
+        correctionRequestNote: null,
+      },
+    });
+
+    await this.log(sheet, section, "correction_declined", ctx, {
+      note: note?.trim() || null,
+    });
+    return this.present(match, updated, ctx);
+  }
+
+  /**
+   * Headline numbers for the recorder's landing page: how much of their work
+   * has been signed off. Counts only — no match detail.
+   */
+  async myTotals(ctx: AdminAuthContext) {
+    if (!hasPermission(ctx, RECORD_PERMISSION) && !hasPermission(ctx, APPROVE_PERMISSION)) {
+      throw new ForbiddenException("You cannot view match statistics totals");
+    }
+
+    /* Scoped to the recorder's own sheets where they have one, so the numbers
+       describe their work rather than the whole competition. */
+    const mine = ctx.userId ? { recorderId: ctx.userId } : {};
+    const scope = ctx.competitionId
+      ? { match: { competitionId: ctx.competitionId } }
+      : {};
+    const where = { ...mine, ...scope };
+
+    const [statsApproved, eventsApproved, submitted, fixturesRecorded, pending] =
+      await Promise.all([
+        this.prisma.sbMatchStatistics.count({ where: { ...where, status: "approved" } }),
+        this.prisma.sbMatchStatistics.count({ where: { ...where, eventsStatus: "approved" } }),
+        this.prisma.sbMatchStatistics.count({
+          where: {
+            ...where,
+            OR: [{ status: "submitted" }, { eventsStatus: "submitted" }],
+          },
+        }),
+        this.prisma.sbMatchStatistics.count({ where }),
+        this.prisma.sbMatchStatistics.count({
+          where: { ...where, correctionRequestedSection: { not: null } },
+        }),
+      ]);
+
+    return {
+      statisticsApproved: statsApproved,
+      eventLogsApproved: eventsApproved,
+      awaitingApproval: submitted,
+      fixturesRecorded,
+      correctionsPending: pending,
+    };
   }
 
   /** Supervisor queue: everything waiting on a decision. */
@@ -871,6 +1378,50 @@ export class AdminMatchStatsService {
         awayTeam: { name: sheet.match.awayTeam.name, logoUrl: sheet.match.awayTeam.logoUrl },
         competition: { name: sheet.match.competition.name, logoUrl: sheet.match.competition.logoUrl },
       },
+    }));
+  }
+
+  /** Append one entry to the sheet's history. Never updates, only appends. */
+  private async log(
+    sheet: { id: string; matchId: string },
+    section: SheetSection,
+    action: SheetLogAction,
+    ctx: AdminAuthContext,
+    extra?: { note?: string | null; summary?: Prisma.InputJsonValue }
+  ) {
+    await this.prisma.sbMatchSheetLog.create({
+      data: {
+        sheetId: sheet.id,
+        matchId: sheet.matchId,
+        section,
+        action,
+        actorId: ctx.userId ?? null,
+        actorName: actorName(ctx),
+        actorRole: ctx.roleName ?? ctx.roleSlug ?? null,
+        note: extra?.note ?? null,
+        summary: extra?.summary,
+      },
+    });
+  }
+
+  /** The sheet's history, newest first. */
+  async history(matchId: string, ctx: AdminAuthContext) {
+    const match = await this.loadMatch(matchId, ctx);
+    void match;
+    const rows = await this.prisma.sbMatchSheetLog.findMany({
+      where: { matchId },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      section: r.section as SheetSection,
+      action: r.action as SheetLogAction,
+      actorName: r.actorName,
+      actorRole: r.actorRole,
+      note: r.note,
+      summary: r.summary,
+      createdAt: r.createdAt,
     }));
   }
 
@@ -921,16 +1472,31 @@ export class AdminMatchStatsService {
       canApproveThis: canApprove && sectionState === "submitted",
     });
 
+    const recorded = readEvents(sheet?.events);
+
     return {
       matchId: match.id,
       status,
       eventsStatus,
+      /** What was tapped by hand. The console edits this and nothing else. */
       tallies,
-      totals: totalsFor(tallies),
-      stats: MATCH_STAT_DEFS,
-      events: readEvents(sheet?.events),
+      /** What the event log contributed, shown alongside but never edited. */
+      captured: capturedFromEvents(recorded),
+      totals: totalsFor(effectiveTallies(tallies, recorded)),
+      /* Manual stats first, event-fed ones last: the recorder's attention
+         belongs on the rows only they can fill. */
+      stats: ORDERED_STAT_DEFS,
+      /* What the read-only views show. Total shots appears here but not in
+         MATCH_STAT_DEFS, because it is derived rather than tapped. */
+      displayStats: [
+        { key: "shots", label: "Total shots", split: false, derived: true, autoCaptured: false },
+        ...ORDERED_STAT_DEFS.map((d) => ({ ...d, derived: false })),
+      ],
+      /** Which event types feed which statistic, so the console can say so. */
+      eventCapture: EVENT_STAT_CAPTURE,
+      events: recorded,
       /** Live scoreline implied by the logged goal events. */
-      derivedScore: scoreFromEvents(readEvents(sheet?.events)),
+      derivedScore: scoreFromEvents(recorded),
       clock: readClock(sheet?.clock),
       kits: readKits(sheet?.kits) ?? { home: "#4c9ffe", away: "#f5a524" },
       eventTypes: MATCH_EVENT_TYPES,
@@ -954,6 +1520,16 @@ export class AdminMatchStatsService {
         sentBackAt: sheet?.eventsSentBackAt ?? null,
         sentBackNote: sheet?.eventsSentBackNote ?? null,
       },
+      /** Full time locks the record until a correction is approved. */
+      lockedAtFullTime: isFullTime(readClock(sheet?.clock)),
+      correctionRequest: sheet?.correctionRequestedSection
+        ? {
+            section: sheet.correctionRequestedSection as SheetSection,
+            byName: sheet.correctionRequestedByName,
+            at: sheet.correctionRequestedAt,
+            note: sheet.correctionRequestNote,
+          }
+        : null,
       permissions: {
         canRecord,
         canApprove,

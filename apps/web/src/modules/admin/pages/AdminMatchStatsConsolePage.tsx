@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   matchStatsApi,
@@ -10,6 +10,7 @@ import {
   type SectionAudit,
   type SectionPermissions,
   type SheetSection,
+  type SheetLogEntry,
   type SheetStatus,
   type SidePair,
   type Side,
@@ -17,6 +18,8 @@ import {
   type TallyValue,
 } from "../../../api/adminMatchStats";
 import { MatchEventsTab } from "./MatchEventsTab";
+import { capturedFromEvents } from "./eventStatCapture";
+import { MatchSheetHistory, latestActionBanner } from "./MatchSheetHistory";
 import { clearDraft, draftIsAhead, markSynced, readDraft, writeDraft } from "./matchSheetDraft";
 import {
   HALF_LENGTH_CHOICES,
@@ -306,6 +309,10 @@ export function AdminMatchStatsConsolePage() {
   const [addedInput, setAddedInput] = useState("2");
   /** Minute captured by step 1, held until an event is logged. */
   const [captured, setCaptured] = useState<{ minute: number; added: number | null } | null>(null);
+  const [history, setHistory] = useState<SheetLogEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState("");
+  const [askCorrection, setAskCorrection] = useState(false);
   /* Entry controls live here rather than in the Events tab so they can sit in
      the frozen header — they are needed constantly while the grid scrolls. */
   const [side, setSide] = useState<Side | null>(null);
@@ -384,6 +391,19 @@ export function AdminMatchStatsConsolePage() {
       active = false;
     };
   }, [matchId, applySheet]);
+
+  const loadHistory = useCallback(() => {
+    if (!matchId) return;
+    matchStatsApi
+      .history(matchId)
+      .then(setHistory)
+      .catch(() => {
+        /* History is supporting detail: failing to load it must not take the
+           console down mid-match. */
+      });
+  }, [matchId]);
+
+  useEffect(() => loadHistory(), [loadHistory]);
 
   const flush = useCallback(async () => {
     if (!pending.current || !matchId) return;
@@ -509,6 +529,7 @@ export function AdminMatchStatsConsolePage() {
       await flush();
       applySheet(await fn());
       clearDraft(matchId);
+      loadHistory();
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -536,11 +557,31 @@ export function AdminMatchStatsConsolePage() {
     return { home, away };
   }, [events]);
 
+  const splitKeys = useMemo(
+    () => new Set((sheet?.stats ?? []).filter((d) => d.split).map((d) => d.key)),
+    [sheet]
+  );
+
+  /* Recomputed from the events held here rather than read from the sheet, so a
+     tap on the Events tab moves these counters before the save lands. */
+  const capturedStats = useMemo(
+    () => capturedFromEvents(sheet?.eventCapture ?? {}, events, splitKeys),
+    [sheet, events, splitKeys]
+  );
+
   const totals = useMemo(() => {
     const out: Record<string, SidePair> = {};
-    for (const def of sheet?.stats ?? []) out[def.key] = totalOf(tallies[def.key]);
+    for (const def of sheet?.stats ?? []) {
+      const manual = totalOf(tallies[def.key]);
+      const auto = totalOf(capturedStats[def.key]);
+      out[def.key] = { home: manual.home + auto.home, away: manual.away + auto.away };
+    }
+    /* Total shots is derived, never tapped: on target plus off target. */
+    const on = out.shotsOnTarget ?? { home: 0, away: 0 };
+    const off = out.shotsOffTarget ?? { home: 0, away: 0 };
+    out.shots = { home: on.home + off.home, away: on.away + off.away };
     return out;
-  }, [sheet, tallies]);
+  }, [sheet, tallies, capturedStats]);
 
   /* The stats half toggle follows the match clock: the other half is not in
      play, so it must not be tallyable. */
@@ -558,6 +599,9 @@ export function AdminMatchStatsConsolePage() {
   }
 
   const { match, audit, eventsAudit, status, eventsStatus } = sheet;
+  void audit;
+  void eventsAudit;
+  const banner = latestActionBanner(history);
   const halfLengthChoices = match.competition.isTraining
     ? TRAINING_HALF_LENGTH_CHOICES
     : HALF_LENGTH_CHOICES;
@@ -788,6 +832,94 @@ export function AdminMatchStatsConsolePage() {
 
       {error && <p className="mcx-error" role="alert">{error}</p>}
 
+      {/* The banner always reflects the most recent action, not a stale note. */}
+      {banner && (
+        <div className={`mcx-banner mcx-banner--${banner.tone}`}>
+          <span className="mcx-banner__text">{banner.text}</span>
+          {banner.note && <span className="mcx-banner__note">“{banner.note}”</span>}
+        </div>
+      )}
+
+      {sheet.lockedAtFullTime && (
+        <div className="mcx-callout mcx-callout--warn">
+          <strong>Locked at full time.</strong> This record can no longer be edited.
+          {sheet.correctionRequest
+            ? " A correction request is with the ScoreBoard admin."
+            : " Request a correction if something needs changing."}
+        </div>
+      )}
+
+      {/* Recorder: ask for a locked record back. */}
+      {sheet.lockedAtFullTime &&
+        !sheet.correctionRequest &&
+        (statsPerms?.canRecord ?? false) && (
+          <div className="mcx-review">
+            {askCorrection && (
+              <textarea
+                className="mcx-note"
+                value={correctionNote}
+                onChange={(e) => setCorrectionNote(e.target.value)}
+                placeholder="What needs correcting? (shown to the admin)"
+                rows={2}
+                maxLength={500}
+              />
+            )}
+            <button
+              type="button"
+              className="mcx-btn"
+              disabled={busy}
+              onClick={() =>
+                askCorrection
+                  ? act(() =>
+                      matchStatsApi.requestCorrection(matchId, tab, correctionNote)
+                    ).then(() => {
+                      setAskCorrection(false);
+                      setCorrectionNote("");
+                    })
+                  : setAskCorrection(true)
+              }
+            >
+              {askCorrection ? "Send correction request" : "Request a correction"}
+            </button>
+          </div>
+        )}
+
+      {/* Admin: decide on a pending request. Approving is a send-back. */}
+      {sheet.correctionRequest && (statsPerms?.canApprove ?? false) && (
+        <div className="mcx-callout mcx-callout--warn">
+          <strong>
+            Correction requested by {sheet.correctionRequest.byName ?? "the recorder"}
+          </strong>
+          {sheet.correctionRequest.note ? ` — “${sheet.correctionRequest.note}”` : ""}
+          <div className="mcx-review__buttons">
+            <button
+              type="button"
+              className="mcx-btn"
+              disabled={busy}
+              onClick={() => act(() => matchStatsApi.declineCorrection(matchId))}
+            >
+              Decline
+            </button>
+            <button
+              type="button"
+              className="mcx-btn mcx-btn--approve"
+              disabled={busy}
+              onClick={() =>
+                act(() =>
+                  matchStatsApi.sendBack(
+                    matchId,
+                    sheet.correctionRequest!.section,
+                    "Correction approved"
+                  )
+                )
+              }
+            >
+              Approve &amp; reopen
+            </button>
+          </div>
+        </div>
+      )}
+
       {(status !== "live" || eventsStatus !== "live") && (
         <Link to={`/admin/match-stats/${matchId}/preview`} className="mcx-previewlink">
           View match summary — screenshot it for your records →
@@ -796,20 +928,15 @@ export function AdminMatchStatsConsolePage() {
 
       {tab === "stats" ? (
         <>
-          {audit.sentBackNote && status === "live" && (
-            <div className="mcx-callout mcx-callout--warn">
-              <strong>Sent back by {audit.sentBackByName ?? "a supervisor"}:</strong>{" "}
-              {audit.sentBackNote}
-            </div>
-          )}
-
           {approved ? (
             <section className="mcx-card">
               <div className="mcx-card__head">
                 <h2>Match statistics</h2>
                 <span className="mcx-approved-flag">Approved · live on the public site</span>
               </div>
-              {sheet.stats.map((def) => (
+              {/* Display list, so the derived Total shots appears here even
+                  though it is never tapped. */}
+              {sheet.displayStats.map((def) => (
                 <StatBar
                   key={def.key}
                   label={def.label}
@@ -840,38 +967,68 @@ export function AdminMatchStatsConsolePage() {
               </div>
 
               <section className="mcx-sheet">
-                {sheet.stats.map((def) => {
+                {sheet.stats.map((def, index) => {
                   const pair = pairOf(tallies[def.key], half);
                   const total = totals[def.key] ?? { home: 0, away: 0 };
+                  /* Split stats tally per half, so the chip shows this half's
+                     contribution beside the counter it belongs to. */
+                  const auto = def.split
+                    ? pairOf(capturedStats[def.key], half)
+                    : totalOf(capturedStats[def.key]);
+                  /* The stats arrive manual-first; this is where that changes. */
+                  const opensAutoGroup =
+                    def.autoCaptured && !sheet.stats[index - 1]?.autoCaptured;
+
                   return (
-                    <div key={def.key} className="mcx-row">
-                      <div className="mcx-row__label">
-                        {def.label}
-                        {def.split && <span className="mcx-row__half">{half} half</span>}
-                      </div>
-                      <div className="mcx-row__counters">
-                        <div className="mcx-row__side">
-                          <Counter
-                            value={pair.home}
-                            side="home"
-                            disabled={!statsEditable}
-                            onBump={(d) => bump(def.key, "home", d)}
-                            label={`${def.label}, ${match.homeTeam.name}`}
-                          />
-                          {def.split && <span className="mcx-row__total">match total {total.home}</span>}
+                    <Fragment key={def.key}>
+                      {opensAutoGroup && (
+                        <p className="mcx-sheet__divider">
+                          Filled in from the event log
+                          <span>
+                            Tap these in the Events tab and they count here automatically. The
+                            counters stay open for anything the log does not cover.
+                          </span>
+                        </p>
+                      )}
+                      <div className={`mcx-row${def.autoCaptured ? " mcx-row--auto" : ""}`}>
+                        <div className="mcx-row__label">
+                          {def.label}
+                          {def.split && <span className="mcx-row__half">{half} half</span>}
                         </div>
-                        <div className="mcx-row__side mcx-row__side--away">
-                          <Counter
-                            value={pair.away}
-                            side="away"
-                            disabled={!statsEditable}
-                            onBump={(d) => bump(def.key, "away", d)}
-                            label={`${def.label}, ${match.awayTeam.name}`}
-                          />
-                          {def.split && <span className="mcx-row__total">match total {total.away}</span>}
+                        <div className="mcx-row__counters">
+                          <div className="mcx-row__side">
+                            <Counter
+                              value={pair.home}
+                              side="home"
+                              disabled={!statsEditable}
+                              onBump={(d) => bump(def.key, "home", d)}
+                              label={`${def.label}, ${match.homeTeam.name}`}
+                            />
+                            {auto.home > 0 && (
+                              <span className="mcx-row__auto">+{auto.home} from events</span>
+                            )}
+                            {def.split && (
+                              <span className="mcx-row__total">match total {total.home}</span>
+                            )}
+                          </div>
+                          <div className="mcx-row__side mcx-row__side--away">
+                            <Counter
+                              value={pair.away}
+                              side="away"
+                              disabled={!statsEditable}
+                              onBump={(d) => bump(def.key, "away", d)}
+                              label={`${def.label}, ${match.awayTeam.name}`}
+                            />
+                            {auto.away > 0 && (
+                              <span className="mcx-row__auto">+{auto.away} from events</span>
+                            )}
+                            {def.split && (
+                              <span className="mcx-row__total">match total {total.away}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </Fragment>
                   );
                 })}
               </section>
@@ -893,13 +1050,6 @@ export function AdminMatchStatsConsolePage() {
         </>
       ) : (
         <>
-          {eventsAudit.sentBackNote && eventsStatus === "live" && (
-            <div className="mcx-callout mcx-callout--warn">
-              <strong>Sent back by {eventsAudit.sentBackByName ?? "a supervisor"}:</strong>{" "}
-              {eventsAudit.sentBackNote}
-            </div>
-          )}
-
           <MatchEventsTab
             sheet={sheet}
             editable={eventsEditable}
@@ -937,6 +1087,19 @@ export function AdminMatchStatsConsolePage() {
           )}
         </>
       )}
+
+      <section className="mcx-historywrap">
+        <button
+          type="button"
+          className="mcx-historytoggle"
+          onClick={() => setShowHistory((v) => !v)}
+          aria-expanded={showHistory}
+        >
+          {showHistory ? "Hide" : "Show"} submission history
+          {history.length > 0 && <span className="mcx-log__count">{history.length}</span>}
+        </button>
+        {showHistory && <MatchSheetHistory entries={history} />}
+      </section>
 
       <dl className="mcx-audit">
         {audit.recorderName && (

@@ -620,6 +620,19 @@ model SbMatchStatistics {
    */
   kits Json?
 
+  /**
+   * A recorder's pending request to reopen a locked sheet.
+   *
+   * At full time the sheet locks. The recorder can ask for it back; a
+   * ScoreBoard admin approving that request is what unlocks it, so a locked
+   * record is never edited without someone signing off.
+   */
+  correctionRequestedSection String?   @map("correction_requested_section")
+  correctionRequestedById    String?   @map("correction_requested_by")
+  correctionRequestedByName  String?   @map("correction_requested_by_name")
+  correctionRequestedAt      DateTime? @map("correction_requested_at")
+  correctionRequestNote      String?   @map("correction_request_note") @db.Text
+
   recorderId   String? @map("recorder_id")
   recorderName String? @map("recorder_name")
 
@@ -640,10 +653,53 @@ model SbMatchStatistics {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   match SbMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  log   SbMatchSheetLog[]
 
   @@index([status])
   @@index([eventsStatus])
+  @@index([correctionRequestedAt])
   @@map("sb_match_statistics")
+}
+
+/**
+ * Append-only history of everything that happened to a match sheet.
+ *
+ * Submissions, resubmissions, approvals, send-backs, correction requests and
+ * the approvals of those requests all land here, so a recorder can see what was
+ * asked of them and an admin can trace who changed what. Actor names are stored
+ * flat: a history has to survive the deletion of the account it refers to.
+ */
+model SbMatchSheetLog {
+  id      String @id @default(uuid())
+  sheetId String @map("sheet_id")
+  matchId String @map("match_id")
+
+  /** stats | events */
+  section String
+
+  /**
+   * submitted | resubmitted | approved | sent_back | correction_requested |
+   * correction_approved | correction_declined
+   */
+  action String
+
+  actorId   String? @map("actor_id")
+  actorName String? @map("actor_name")
+  /** The role the actor held, so "who could do this" stays answerable later. */
+  actorRole String? @map("actor_role")
+
+  note String? @db.Text
+
+  /** Snapshot of what the sheet held at that moment, for change tracking. */
+  summary Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  sheet SbMatchStatistics @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, createdAt])
+  @@index([sheetId, createdAt])
+  @@map("sb_match_sheet_log")
 }
 
 model SbSipIngestAudit {

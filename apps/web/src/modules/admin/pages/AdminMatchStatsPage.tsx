@@ -4,8 +4,10 @@ import {
   matchStatsApi,
   type MatchStatsFixture,
   type MatchStatsQueueItem,
+  type MatchStatsTotals,
 } from "../../../api/adminMatchStats";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { FeedbackSettings } from "./FeedbackSettings";
 
 /** Fixtures worth offering a sheet for: recent enough to have been played,
  *  near enough ahead to be today's assignment. */
@@ -36,10 +38,18 @@ export function AdminMatchStatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [totals, setTotals] = useState<MatchStatsTotals | null>(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+
+    matchStatsApi
+      .totals()
+      .then((t) => active && setTotals(t))
+      .catch(() => {
+        /* Counts are supporting detail; the fixture list still stands. */
+      });
 
     Promise.allSettled([
       matchStatsApi.queue(),
@@ -109,6 +119,30 @@ export function AdminMatchStatsPage() {
       </header>
 
       {error && <p className="mcx-error" role="alert">{error}</p>}
+
+      {/* Counts only — how much work has been signed off, no match detail. */}
+      {totals && (
+        <dl className="mcx-totals" aria-label="Your recording totals">
+          <div className="mcx-total">
+            <dt>Statistics approved</dt>
+            <dd>{totals.statisticsApproved}</dd>
+          </div>
+          <div className="mcx-total">
+            <dt>Event logs approved</dt>
+            <dd>{totals.eventLogsApproved}</dd>
+          </div>
+          <div className="mcx-total">
+            <dt>Fixtures recorded</dt>
+            <dd>{totals.fixturesRecorded}</dd>
+          </div>
+          <div className="mcx-total">
+            <dt>Awaiting approval</dt>
+            <dd>{totals.awaitingApproval}</dd>
+          </div>
+        </dl>
+      )}
+
+      <FeedbackSettings />
 
       {queue && queue.length > 0 && (
         <section className="mcx-queue">
