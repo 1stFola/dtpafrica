@@ -66,6 +66,19 @@ export class AdminMatchStatsController {
     });
   }
 
+  /** Headline counts for the recorder's landing page. */
+  @Get("totals")
+  @RequirePermissions("scoreboard.stats.record", "scoreboard.stats.approve")
+  totals(@Req() req: AdminRequest) {
+    return this.stats.myTotals(req.adminAuth);
+  }
+
+  @Get(":matchId/history")
+  @RequirePermissions("scoreboard.stats.record", "scoreboard.stats.approve")
+  history(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
+    return this.stats.history(matchId, req.adminAuth);
+  }
+
   @Get(":matchId")
   @RequirePermissions("scoreboard.stats.record", "scoreboard.stats.approve")
   open(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
@@ -95,6 +108,29 @@ export class AdminMatchStatsController {
     @Req() req: AdminRequest
   ) {
     return this.stats.submit(matchId, readSection(section), req.adminAuth);
+  }
+
+  /** A recorder asking for a locked record back. */
+  @Post(":matchId/:section/request-correction")
+  @RequirePermissions("scoreboard.stats.record")
+  requestCorrection(
+    @Param("matchId") matchId: string,
+    @Param("section") section: string,
+    @Body() dto: SendBackMatchStatsDto,
+    @Req() req: AdminRequest
+  ) {
+    return this.stats.requestCorrection(matchId, readSection(section), dto.note, req.adminAuth);
+  }
+
+  /** An admin turning that request down, leaving the record locked. */
+  @Post(":matchId/decline-correction")
+  @RequirePermissions("scoreboard.stats.approve")
+  declineCorrection(
+    @Param("matchId") matchId: string,
+    @Body() dto: SendBackMatchStatsDto,
+    @Req() req: AdminRequest
+  ) {
+    return this.stats.declineCorrection(matchId, dto.note, req.adminAuth);
   }
 
   @Post(":matchId/:section/approve")

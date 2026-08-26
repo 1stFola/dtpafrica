@@ -83,6 +83,7 @@ export const MATCH_EVENT_TYPES = [
   "save",
   "shot",
   "shot_off_target",
+  "substitution",
   "sustained_pressure",
   "volley_missed",
   "woodwork",
@@ -125,6 +126,11 @@ export type RecordedEvent = {
   addedMinute: number | null;
   side: "home" | "away";
   playerNumber: number | null;
+  /**
+   * The second player an event involves: the incoming player on a substitution,
+   * or whoever provided the assist on a goal. Null on a solo effort.
+   */
+  secondaryPlayerNumber: number | null;
   half: 1 | 2;
 };
 
@@ -173,6 +179,12 @@ function readEvents(input: unknown): RecordedEvent[] {
       typeof e.playerNumber === "number" && Number.isFinite(e.playerNumber) && e.playerNumber > 0
         ? Math.floor(e.playerNumber)
         : null;
+    const secondary =
+      typeof e.secondaryPlayerNumber === "number" &&
+      Number.isFinite(e.secondaryPlayerNumber) &&
+      e.secondaryPlayerNumber > 0
+        ? Math.floor(e.secondaryPlayerNumber)
+        : null;
     out.push({
       id: typeof e.id === "string" && e.id ? e.id : `${type}-${minute}-${out.length}`,
       type,
@@ -180,6 +192,7 @@ function readEvents(input: unknown): RecordedEvent[] {
       addedMinute: added,
       side: e.side === "away" ? "away" : "home",
       playerNumber: number,
+      secondaryPlayerNumber: secondary,
       half: e.half === 2 ? 2 : 1,
     });
   }
@@ -381,6 +394,26 @@ function competitionHalfLength(competition: { formatConfig?: unknown } | null): 
   return typeof value === "number" && value > 0 ? Math.floor(value) : null;
 }
 
+export type SheetLogAction =
+  | "submitted"
+  | "resubmitted"
+  | "approved"
+  | "sent_back"
+  | "correction_requested"
+  | "correction_approved"
+  | "correction_declined";
+
+/**
+ * A sheet locks itself at full time.
+ *
+ * Once the clock has run out the record is finished, and editing it afterwards
+ * needs someone to sign off — otherwise a "final" sheet quietly changes after
+ * the fact. An approved correction request is what lifts the lock.
+ */
+function isFullTime(clock: ClockState | null): boolean {
+  return clock?.phase === "finished";
+}
+
 function actorName(ctx: AdminAuthContext): string {
   return ctx.displayName || ctx.email || ctx.roleName || "Admin";
 }
@@ -436,56 +469,46 @@ export class AdminMatchStatsService {
     }
 
     const isTraining = { competition: { formatType: TRAINING_FORMAT_TYPE } };
-    const matches = await this.prisma.sbMatch.findMany({
-      where: {
-        isPublished: true,
-        /* Deliberately not filtering on competition.isPublished: the training
-           competition is unpublished so it stays off the public ScoreBoard,
-           but recorders still need to reach it here. This endpoint is
-           permission-gated, so nothing leaks. */
-        AND: [
-          /* Training fixtures sit outside a recorder's competition scope. The
-             scope exists to keep a contractor away from other competitions'
-             real games; a sandbox is not that, and a scoped recorder is
-             precisely who needs somewhere to practise. */
-          ...(ctx.competitionId
-            ? [{ OR: [{ competitionId: ctx.competitionId }, isTraining] }]
-            : []),
-          /* They also ignore the date window: a sandbox match's kickoff date is
-             arbitrary and must not fall out of reach as the calendar moves. */
-          ...(range.from || range.to
-            ? [
-                {
-                  OR: [
-                    {
-                      kickoffAt: {
-                        ...(range.from ? { gte: range.from } : {}),
-                        ...(range.to ? { lte: range.to } : {}),
-                      },
-                    },
-                    isTraining,
-                  ],
-                },
-              ]
-            : []),
-        ],
-      },
-      orderBy: [{ kickoffAt: "desc" }],
-      take: 200,
-      include: {
-        homeTeam: true,
-        awayTeam: true,
-        competition: true,
-        statisticsSheet: { select: { status: true, recorderName: true } },
-      },
-    });
+    const include = {
+      homeTeam: true,
+      awayTeam: true,
+      competition: true,
+      statisticsSheet: { select: { status: true, recorderName: true } },
+    } as const;
 
-    // Training fixtures lead the list; they are what a trainee came for.
-    matches.sort((a, b) => {
-      const at = a.competition.formatType === TRAINING_FORMAT_TYPE ? 0 : 1;
-      const bt = b.competition.formatType === TRAINING_FORMAT_TYPE ? 0 : 1;
-      return at - bt;
-    });
+    const scope = ctx.competitionId ? { competitionId: ctx.competitionId } : {};
+
+    /* Training fixtures are fetched separately rather than relying on the take
+       below. They are few, their kickoff dates are arbitrary, and once the real
+       fixture list grew past the page size they fell out of it entirely. */
+    const [training, real] = await Promise.all([
+      this.prisma.sbMatch.findMany({
+        where: { isPublished: true, ...isTraining },
+        orderBy: [{ kickoffAt: "desc" }],
+        include,
+      }),
+      this.prisma.sbMatch.findMany({
+        where: {
+          isPublished: true,
+          ...scope,
+          competition: { formatType: { not: TRAINING_FORMAT_TYPE } },
+          ...(range.from || range.to
+            ? {
+                kickoffAt: {
+                  ...(range.from ? { gte: range.from } : {}),
+                  ...(range.to ? { lte: range.to } : {}),
+                },
+              }
+            : {}),
+        },
+        orderBy: [{ kickoffAt: "desc" }],
+        take: 200,
+        include,
+      }),
+    ]);
+
+    // Training first: it is what a trainee came for, and it is never in the way.
+    const matches = [...training, ...real];
 
     return matches.map((match) => ({
       id: match.id,
@@ -561,6 +584,14 @@ export class AdminMatchStatsService {
 
     this.assertOwnsSheet(sheet, ctx, match);
 
+    /* Full time locks the record. Only an admin approving a correction request
+       reopens it, which clears the clock's finished phase. */
+    if (isFullTime(readClock(sheet.clock)) && !isTrainingCompetition(match.competition)) {
+      throw new BadRequestException(
+        "This record is locked at full time. Request a correction and a ScoreBoard admin will reopen it."
+      );
+    }
+
     /* Sections lock independently: an approved stat sheet stops accepting
        tallies while the event log is still being tidied, and vice versa. */
     const statsLocked = sectionStatus(sheet, "stats") === "approved";
@@ -604,6 +635,7 @@ export class AdminMatchStatsService {
     }
     this.assertOwnsSheet(sheet, ctx, match);
 
+    const wasSubmittedBefore = sectionStatus(sheet, section) === "submitted";
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
       data: {
@@ -615,7 +647,29 @@ export class AdminMatchStatsService {
         [col.sentBackNote]: null,
       } as Prisma.SbMatchStatisticsUpdateInput,
     });
+
+    await this.log(sheet, section, wasSubmittedBefore ? "resubmitted" : "submitted", ctx, {
+      summary: this.summarise(sheet, section) as Prisma.InputJsonValue,
+    });
     return this.present(match, updated, ctx);
+  }
+
+  /** A compact snapshot of what the section held, for the history entry. */
+  private summarise(
+    sheet: { tallies: unknown; events: unknown },
+    section: SheetSection
+  ) {
+    if (section === "events") {
+      const events = readEvents(sheet.events);
+      return { events: events.length, score: scoreFromEvents(events) };
+    }
+    const totals = totalsFor(normaliseTallies(sheet.tallies));
+    return {
+      shots: totals.shots,
+      shotsOnTarget: totals.shotsOnTarget,
+      corners: totals.corners,
+      fouls: totals.fouls,
+    };
   }
 
   /**
@@ -669,6 +723,11 @@ export class AdminMatchStatsService {
       event.playerNumber
         ? squadByKey.get(`${teamIdFor(event.side)}:${event.playerNumber}`)
         : undefined;
+    /* The assist provider or incoming substitute, resolved the same way. */
+    const secondaryFor = (event: RecordedEvent) =>
+      event.secondaryPlayerNumber
+        ? squadByKey.get(`${teamIdFor(event.side)}:${event.secondaryPlayerNumber}`)
+        : undefined;
 
     const comments = generateEventComments(
       recorded as RecordedEventInput[],
@@ -678,6 +737,7 @@ export class AdminMatchStatsService {
           teamName: isHome ? match.homeTeam.name : match.awayTeam.name,
           opponentName: isHome ? match.awayTeam.name : match.homeTeam.name,
           playerName: squadFor(event as RecordedEvent)?.playerName ?? null,
+          secondaryName: secondaryFor(event as RecordedEvent)?.playerName ?? null,
         };
       }
     );
@@ -697,6 +757,17 @@ export class AdminMatchStatsService {
       playerLabel:
         squadFor(event)?.playerName ??
         (event.playerNumber ? `No. ${event.playerNumber}` : null),
+      /* The timeline already has fields for a second player: an assist on a
+         goal, the incoming player on a substitution. */
+      playerLabel2:
+        secondaryFor(event)?.playerName ??
+        (event.secondaryPlayerNumber ? `No. ${event.secondaryPlayerNumber}` : null),
+      assistPlayerId: event.type === "goal" ? secondaryFor(event)?.playerId ?? null : null,
+      assistLabel:
+        event.type === "goal"
+          ? secondaryFor(event)?.playerName ??
+            (event.secondaryPlayerNumber ? `No. ${event.secondaryPlayerNumber}` : null)
+          : null,
       type: event.type,
       minute: event.minute,
       detail: comments[index],
@@ -706,6 +777,7 @@ export class AdminMatchStatsService {
         addedMinute: event.addedMinute,
         half: event.half,
         playerNumber: event.playerNumber,
+        secondaryPlayerNumber: event.secondaryPlayerNumber,
       } as Prisma.InputJsonValue,
     }));
 
@@ -763,6 +835,9 @@ export class AdminMatchStatsService {
     const updated = results[results.length - 1] as Awaited<
       ReturnType<PrismaService["sbMatchStatistics"]["update"]>
     >;
+    await this.log(sheet, section, "approved", ctx, {
+      summary: this.summarise(sheet, section) as Prisma.InputJsonValue,
+    });
     return this.present({ ...match }, updated, ctx);
   }
 
@@ -813,8 +888,30 @@ export class AdminMatchStatsService {
         [col.submittedById]: null,
         [col.submittedByName]: null,
         [col.submittedAt]: null,
+        /* A send-back answers any pending correction request for this section
+           and reopens the record, so the full-time lock lifts with it. */
+        ...(sheet.correctionRequestedSection === section
+          ? {
+              correctionRequestedSection: null,
+              correctionRequestedById: null,
+              correctionRequestedByName: null,
+              correctionRequestedAt: null,
+              correctionRequestNote: null,
+            }
+          : {}),
+        ...(isFullTime(readClock(sheet.clock))
+          ? { clock: { ...readClock(sheet.clock), phase: "running" } as Prisma.InputJsonValue }
+          : {}),
       } as Prisma.SbMatchStatisticsUpdateInput,
     });
+
+    await this.log(
+      sheet,
+      section,
+      sheet.correctionRequestedSection === section ? "correction_approved" : "sent_back",
+      ctx,
+      { note: note?.trim() || null }
+    );
 
     /* Withdraw the published event log so the public timeline matches the
        sheet's state. Statistics cannot be unwound the same way — the totals
@@ -834,6 +931,120 @@ export class AdminMatchStatsService {
     }
 
     return this.present(match, updated, ctx);
+  }
+
+  /**
+   * A recorder asking for a locked record back.
+   *
+   * This only records the ask — the sheet stays locked until a ScoreBoard admin
+   * approves it by sending the section back.
+   */
+  async requestCorrection(
+    matchId: string,
+    section: SheetSection,
+    note: string | undefined,
+    ctx: AdminAuthContext
+  ) {
+    this.assertCanRecord(ctx);
+    const match = await this.loadMatch(matchId, ctx);
+    const sheet = await this.requireSheet(matchId);
+    this.assertOwnsSheet(sheet, ctx, match);
+
+    if (sheet.correctionRequestedSection) {
+      throw new BadRequestException(
+        "A correction request is already pending on this sheet"
+      );
+    }
+
+    const updated = await this.prisma.sbMatchStatistics.update({
+      where: { matchId },
+      data: {
+        correctionRequestedSection: section,
+        correctionRequestedById: ctx.userId ?? null,
+        correctionRequestedByName: actorName(ctx),
+        correctionRequestedAt: new Date(),
+        correctionRequestNote: note?.trim() ? note.trim() : null,
+      },
+    });
+
+    await this.log(sheet, section, "correction_requested", ctx, {
+      note: note?.trim() || null,
+    });
+    return this.present(match, updated, ctx);
+  }
+
+  /** An admin turning down a correction request, leaving the record locked. */
+  async declineCorrection(
+    matchId: string,
+    note: string | undefined,
+    ctx: AdminAuthContext
+  ) {
+    this.assertCanApprove(ctx);
+    const match = await this.loadMatch(matchId, ctx);
+    const sheet = await this.requireSheet(matchId);
+
+    if (!sheet.correctionRequestedSection) {
+      throw new BadRequestException("There is no correction request to decline");
+    }
+    const section = sheet.correctionRequestedSection as SheetSection;
+
+    const updated = await this.prisma.sbMatchStatistics.update({
+      where: { matchId },
+      data: {
+        correctionRequestedSection: null,
+        correctionRequestedById: null,
+        correctionRequestedByName: null,
+        correctionRequestedAt: null,
+        correctionRequestNote: null,
+      },
+    });
+
+    await this.log(sheet, section, "correction_declined", ctx, {
+      note: note?.trim() || null,
+    });
+    return this.present(match, updated, ctx);
+  }
+
+  /**
+   * Headline numbers for the recorder's landing page: how much of their work
+   * has been signed off. Counts only — no match detail.
+   */
+  async myTotals(ctx: AdminAuthContext) {
+    if (!hasPermission(ctx, RECORD_PERMISSION) && !hasPermission(ctx, APPROVE_PERMISSION)) {
+      throw new ForbiddenException("You cannot view match statistics totals");
+    }
+
+    /* Scoped to the recorder's own sheets where they have one, so the numbers
+       describe their work rather than the whole competition. */
+    const mine = ctx.userId ? { recorderId: ctx.userId } : {};
+    const scope = ctx.competitionId
+      ? { match: { competitionId: ctx.competitionId } }
+      : {};
+    const where = { ...mine, ...scope };
+
+    const [statsApproved, eventsApproved, submitted, fixturesRecorded, pending] =
+      await Promise.all([
+        this.prisma.sbMatchStatistics.count({ where: { ...where, status: "approved" } }),
+        this.prisma.sbMatchStatistics.count({ where: { ...where, eventsStatus: "approved" } }),
+        this.prisma.sbMatchStatistics.count({
+          where: {
+            ...where,
+            OR: [{ status: "submitted" }, { eventsStatus: "submitted" }],
+          },
+        }),
+        this.prisma.sbMatchStatistics.count({ where }),
+        this.prisma.sbMatchStatistics.count({
+          where: { ...where, correctionRequestedSection: { not: null } },
+        }),
+      ]);
+
+    return {
+      statisticsApproved: statsApproved,
+      eventLogsApproved: eventsApproved,
+      awaitingApproval: submitted,
+      fixturesRecorded,
+      correctionsPending: pending,
+    };
   }
 
   /** Supervisor queue: everything waiting on a decision. */
@@ -871,6 +1082,50 @@ export class AdminMatchStatsService {
         awayTeam: { name: sheet.match.awayTeam.name, logoUrl: sheet.match.awayTeam.logoUrl },
         competition: { name: sheet.match.competition.name, logoUrl: sheet.match.competition.logoUrl },
       },
+    }));
+  }
+
+  /** Append one entry to the sheet's history. Never updates, only appends. */
+  private async log(
+    sheet: { id: string; matchId: string },
+    section: SheetSection,
+    action: SheetLogAction,
+    ctx: AdminAuthContext,
+    extra?: { note?: string | null; summary?: Prisma.InputJsonValue }
+  ) {
+    await this.prisma.sbMatchSheetLog.create({
+      data: {
+        sheetId: sheet.id,
+        matchId: sheet.matchId,
+        section,
+        action,
+        actorId: ctx.userId ?? null,
+        actorName: actorName(ctx),
+        actorRole: ctx.roleName ?? ctx.roleSlug ?? null,
+        note: extra?.note ?? null,
+        summary: extra?.summary,
+      },
+    });
+  }
+
+  /** The sheet's history, newest first. */
+  async history(matchId: string, ctx: AdminAuthContext) {
+    const match = await this.loadMatch(matchId, ctx);
+    void match;
+    const rows = await this.prisma.sbMatchSheetLog.findMany({
+      where: { matchId },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      section: r.section as SheetSection,
+      action: r.action as SheetLogAction,
+      actorName: r.actorName,
+      actorRole: r.actorRole,
+      note: r.note,
+      summary: r.summary,
+      createdAt: r.createdAt,
     }));
   }
 
@@ -928,6 +1183,12 @@ export class AdminMatchStatsService {
       tallies,
       totals: totalsFor(tallies),
       stats: MATCH_STAT_DEFS,
+      /* What the read-only views show. Total shots appears here but not in
+         MATCH_STAT_DEFS, because it is derived rather than tapped. */
+      displayStats: [
+        { key: "shots", label: "Total shots", split: false, derived: true },
+        ...MATCH_STAT_DEFS.map((d) => ({ ...d, derived: false })),
+      ],
       events: readEvents(sheet?.events),
       /** Live scoreline implied by the logged goal events. */
       derivedScore: scoreFromEvents(readEvents(sheet?.events)),
@@ -954,6 +1215,16 @@ export class AdminMatchStatsService {
         sentBackAt: sheet?.eventsSentBackAt ?? null,
         sentBackNote: sheet?.eventsSentBackNote ?? null,
       },
+      /** Full time locks the record until a correction is approved. */
+      lockedAtFullTime: isFullTime(readClock(sheet?.clock)),
+      correctionRequest: sheet?.correctionRequestedSection
+        ? {
+            section: sheet.correctionRequestedSection as SheetSection,
+            byName: sheet.correctionRequestedByName,
+            at: sheet.correctionRequestedAt,
+            note: sheet.correctionRequestNote,
+          }
+        : null,
       permissions: {
         canRecord,
         canApprove,

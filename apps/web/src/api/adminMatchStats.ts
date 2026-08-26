@@ -39,7 +39,45 @@ export type RecordedEvent = {
   addedMinute: number | null;
   side: Side;
   playerNumber: number | null;
+  /** Incoming player on a substitution, or the assist provider on a goal. */
+  secondaryPlayerNumber: number | null;
   half: 1 | 2;
+};
+
+export type SheetLogAction =
+  | "submitted"
+  | "resubmitted"
+  | "approved"
+  | "sent_back"
+  | "correction_requested"
+  | "correction_approved"
+  | "correction_declined";
+
+export type SheetLogEntry = {
+  id: string;
+  section: SheetSection;
+  action: SheetLogAction;
+  actorName: string | null;
+  actorRole: string | null;
+  note: string | null;
+  summary: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type CorrectionRequest = {
+  section: SheetSection;
+  byName: string | null;
+  at: string | null;
+  note: string | null;
+};
+
+/** Headline counts for the recorder's landing page. */
+export type MatchStatsTotals = {
+  statisticsApproved: number;
+  eventLogsApproved: number;
+  awaitingApproval: number;
+  fixturesRecorded: number;
+  correctionsPending: number;
 };
 
 export type ClockPhase =
@@ -77,6 +115,11 @@ export type MatchStatsSheet = {
   totals: Record<string, SidePair>;
   /** Stat vocabulary comes from the server so the two cannot drift. */
   stats: MatchStatDef[];
+  /** What the read-only views show, including derived figures like total shots. */
+  displayStats: Array<MatchStatDef & { derived: boolean }>;
+  /** True once the clock reaches full time; edits need a correction approved. */
+  lockedAtFullTime: boolean;
+  correctionRequest: CorrectionRequest | null;
   events: RecordedEvent[];
   /** Live scoreline implied by the logged goal events. */
   derivedScore: { home: number; away: number };
@@ -185,6 +228,22 @@ export const matchStatsApi = {
     }),
 
   queue: () => adminFetch<MatchStatsQueueItem[]>(`${base}/queue`),
+
+  history: (matchId: string) => adminFetch<SheetLogEntry[]>(`${base}/${matchId}/history`),
+
+  totals: () => adminFetch<MatchStatsTotals>(`${base}/totals`),
+
+  requestCorrection: (matchId: string, section: SheetSection, note?: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/${section}/request-correction`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+
+  declineCorrection: (matchId: string, note?: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/decline-correction`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
 
   fixtures: (range: { from?: string; to?: string }) => {
     const params = new URLSearchParams();

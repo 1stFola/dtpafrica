@@ -12,6 +12,8 @@
 
 export type RecordedEventInput = {
   type: string;
+  /** Incoming player on a substitution, or the assist provider on a goal. */
+  secondaryPlayerNumber?: number | null;
   /** Logged match minute. Added time is carried separately, football-style. */
   minute: number;
   addedMinute?: number | null;
@@ -24,6 +26,8 @@ export type CommentContext = {
   opponentName: string;
   /** Resolved from the matchday squad when one exists, else null. */
   playerName?: string | null;
+  /** The second player's name, resolved the same way. */
+  secondaryName?: string | null;
 };
 
 /** "23'" or "45+2'" — the prefix every comment opens with. */
@@ -40,6 +44,15 @@ function playerPhrase(ctx: CommentContext, event: RecordedEventInput): string {
   const number = event.playerNumber;
   if (playerName && number) return `No. ${number} ${playerName}`;
   if (playerName) return playerName;
+  if (number) return `No. ${number}`;
+  return "";
+}
+
+/** The second player, named where the squad allows it. */
+function secondaryPhrase(ctx: CommentContext, event: RecordedEventInput): string {
+  const number = event.secondaryPlayerNumber;
+  if (ctx.secondaryName && number) return `No. ${number} ${ctx.secondaryName}`;
+  if (ctx.secondaryName) return ctx.secondaryName;
   if (number) return `No. ${number}`;
   return "";
 }
@@ -87,9 +100,27 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c) => `Free-Kick! ${c.teamName} restart play from the resulting infringement.`,
   ],
   goal: [
-    (c, e) => `GOAL! ${c.teamName.toUpperCase()} – ${playerPhrase(c, e) || "the striker"} finds the back of the net.`,
-    (c, e) => `GOAL! ${c.teamName.toUpperCase()} – ${playerPhrase(c, e) || "the forward"} finishes brilliantly to beat the goalkeeper.`,
-    (c, e) => `GOAL! ${c.teamName.toUpperCase()} – ${playerPhrase(c, e) || "the attacker"} converts to extend ${c.teamName}'s advantage.`,
+    (c, e) => {
+      const scorer = playerPhrase(c, e) || "the striker";
+      const assist = secondaryPhrase(c, e);
+      return assist
+        ? `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finds the back of the net, set up by ${assist}.`
+        : `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finds the back of the net.`;
+    },
+    (c, e) => {
+      const scorer = playerPhrase(c, e) || "the forward";
+      const assist = secondaryPhrase(c, e);
+      return assist
+        ? `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finishes an assist from ${assist} to beat the goalkeeper.`
+        : `GOAL! ${c.teamName.toUpperCase()} – ${scorer} finishes brilliantly to beat the goalkeeper.`;
+    },
+    (c, e) => {
+      const scorer = playerPhrase(c, e) || "the attacker";
+      const assist = secondaryPhrase(c, e);
+      return assist
+        ? `GOAL! ${c.teamName.toUpperCase()} – ${scorer} converts ${assist}'s pass to extend ${c.teamName}'s advantage.`
+        : `GOAL! ${c.teamName.toUpperCase()} – ${scorer} converts to extend ${c.teamName}'s advantage.`;
+    },
   ],
   goal_line_clearance: [
     (c, e) => `Goal-Line Clearance! ${actor(c, e)} hooks the ball off the line with the goalkeeper beaten.`,
@@ -171,6 +202,16 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c, e) => `Shot Off Target! ${actor(c, e)} sends the effort wide.`,
     (c, e) => `Shot Off Target! ${actor(c, e)} attempts an ambitious strike but misses the target.`,
     (c) => `Shot Off Target! ${c.teamName} attempt an effort on goal, but it drifts off target.`,
+  ],
+  substitution: [
+    (c, e) => {
+      const off = playerPhrase(c, e);
+      const on = secondaryPhrase(c, e);
+      if (off && on) return `Substitution! ${c.teamName} bring on ${on} for ${off}.`;
+      if (on) return `Substitution! ${c.teamName} bring on ${on}.`;
+      if (off) return `Substitution! ${c.teamName} withdraw ${off}.`;
+      return `Substitution! ${c.teamName} make a change.`;
+    },
   ],
   sustained_pressure: [
     (c) => `Sustained Pressure! ${c.teamName} pin ${c.opponentName} deep in their own half with relentless possession.`,

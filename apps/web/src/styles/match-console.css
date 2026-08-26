@@ -1412,3 +1412,155 @@
 
 /* The Training section heading pairs the badge with its title. */
 .mcx-fixtures__head h2 { display: flex; align-items: center; gap: 0.45rem; }
+
+/* ==========================================================================
+   Submission history, status banner, and the recorder's totals.
+   ========================================================================== */
+
+.mcx-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--mcx-line);
+  border-left-width: 3px;
+  border-radius: var(--mcx-radius);
+  background: rgba(148, 163, 184, 0.08);
+  font-size: 0.82rem;
+}
+
+.mcx-banner--info { border-left-color: var(--mcx-home); }
+.mcx-banner--good { border-left-color: #22c55e; }
+.mcx-banner--warn { border-left-color: var(--mcx-away); }
+.mcx-banner--bad  { border-left-color: #f87171; }
+
+.mcx-banner__text { font-weight: 600; }
+.mcx-banner__note { color: var(--color-muted); font-style: italic; }
+
+.mcx-historywrap { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.mcx-historytoggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 1px dashed var(--mcx-line);
+  border-radius: var(--mcx-radius);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mcx-historytoggle:hover { color: var(--color-text); border-color: var(--mcx-home); }
+
+.mhl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.mhl__item {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--mcx-line);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--mcx-surface);
+}
+
+.mhl__item--info { border-left-color: var(--mcx-home); }
+.mhl__item--good { border-left-color: #22c55e; }
+.mhl__item--warn { border-left-color: var(--mcx-away); }
+.mhl__item--bad  { border-left-color: #f87171; }
+
+.mhl__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mhl__action { font-size: 0.85rem; font-weight: 600; }
+
+.mhl__section {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.mhl__meta { margin-top: 0.15rem; font-size: 0.72rem; color: var(--color-muted); }
+
+.mhl__summary {
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+
+.mhl__note {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: #fde68a;
+}
+
+/* --- Second-player prompt --- */
+
+.mcx-prompt__label {
+  display: block;
+  margin-top: 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.mcx-prompt__actions { display: flex; gap: 0.5rem; }
+.mcx-prompt__actions .mcx-btn { flex: 1; }
+
+.mcx-prompt__cancel {
+  margin-top: 0.6rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+/* --- Recorder totals --- */
+
+.mcx-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.mcx-total {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.15rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: var(--mcx-radius);
+  background: var(--mcx-surface);
+}
+
+.mcx-total dt {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.mcx-total dd {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}

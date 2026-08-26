@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { EVENT_LABELS } from "../../../api/scoreboard";
 import type {
   KitColours,
@@ -6,6 +7,15 @@ import type {
   Side,
 } from "../../../api/adminMatchStats";
 import { displayMinute, type useMatchClock } from "./useMatchClock";
+
+/**
+ * Event types that need a second player before they can be logged: the incoming
+ * player on a substitution, and the assist provider on a goal.
+ */
+const SECOND_PLAYER_PROMPT: Record<string, { title: string; label: string; allowNone?: string }> = {
+  substitution: { title: "Substitution", label: "Incoming player's number" },
+  goal: { title: "Goal", label: "Assist — jersey number", allowNone: "Solo Effort" },
+};
 
 function labelFor(type: string): string {
   return EVENT_LABELS[type] ?? type.replace(/_/g, " ");
@@ -50,6 +60,11 @@ export function MatchEventsTab({
   homeName: string;
   awayName: string;
 }) {
+  /* Held while the second-player prompt is open, so the event is only written
+     once that answer is given or explicitly waived. */
+  const [pendingType, setPendingType] = useState<string | null>(null);
+  const [secondNumber, setSecondNumber] = useState("");
+
   const teamFor = (s: Side) => (s === "home" ? homeName : awayName);
   const stepsEnabled = editable && clock.started;
   /* Every earlier step must be answered before step 4 unlocks: no event can be
@@ -57,9 +72,20 @@ export function MatchEventsTab({
   const canLog =
     stepsEnabled && Boolean(captured) && Boolean(side) && playerNumber.trim() !== "";
 
-  /** Step 4 — the tap that actually writes the event. */
+  /** Step 4 — the tap. Types needing a second player open a prompt first. */
   const addEvent = (type: string) => {
     if (!canLog || !captured || !side) return;
+    if (SECOND_PLAYER_PROMPT[type]) {
+      setSecondNumber("");
+      setPendingType(type);
+      return;
+    }
+    writeEvent(type, null);
+  };
+
+  /** Commit the event, with the second player's number when one was given. */
+  const writeEvent = (type: string, secondary: number | null) => {
+    if (!captured || !side) return;
     const next: RecordedEvent = {
       id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type,
@@ -67,9 +93,12 @@ export function MatchEventsTab({
       addedMinute: captured.added,
       side,
       playerNumber: playerNumber ? Number(playerNumber) : null,
+      secondaryPlayerNumber: secondary,
       half: clock.half,
     };
     onChange({ events: [...events, next] });
+    setPendingType(null);
+    setSecondNumber("");
     // Clear the entry so the next event starts from a clean step 1.
     onCapturedUsed();
   };
@@ -137,6 +166,11 @@ export function MatchEventsTab({
                   <span className="mcx-logitem__meta">
                     {teamFor(e.side)}
                     {e.playerNumber ? ` · No. ${e.playerNumber}` : ""}
+                    {e.secondaryPlayerNumber
+                      ? e.type === "substitution"
+                        ? ` → No. ${e.secondaryPlayerNumber}`
+                        : ` · assist No. ${e.secondaryPlayerNumber}`
+                      : ""}
                   </span>
                 </span>
                 {editable && (
@@ -154,6 +188,60 @@ export function MatchEventsTab({
           </ul>
         )}
       </section>
+
+      {/* ---- Second player prompt: substitution in, or the assist ---- */}
+      {pendingType && SECOND_PLAYER_PROMPT[pendingType] && (
+        <div className="mcx-prompt" role="dialog" aria-modal="true">
+          <div className="mcx-prompt__card">
+            <h3>{SECOND_PLAYER_PROMPT[pendingType].title}</h3>
+            <p className="muted">
+              {displayMinute(captured?.minute ?? 0, captured?.added ?? null)} ·{" "}
+              {side ? teamFor(side) : ""}
+              {playerNumber ? ` · No. ${playerNumber}` : ""}
+            </p>
+            <label className="mcx-prompt__label">
+              {SECOND_PLAYER_PROMPT[pendingType].label}
+            </label>
+            <div className="mcx-prompt__row">
+              <input
+                type="number"
+                min={1}
+                max={99}
+                inputMode="numeric"
+                value={secondNumber}
+                onChange={(e) => setSecondNumber(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="mcx-prompt__actions">
+              {SECOND_PLAYER_PROMPT[pendingType].allowNone && (
+                <button
+                  type="button"
+                  className="mcx-btn"
+                  onClick={() => writeEvent(pendingType, null)}
+                >
+                  {SECOND_PLAYER_PROMPT[pendingType].allowNone}
+                </button>
+              )}
+              <button
+                type="button"
+                className="mcx-btn mcx-btn--primary"
+                disabled={secondNumber.trim() === ""}
+                onClick={() => writeEvent(pendingType, Number(secondNumber) || null)}
+              >
+                OK
+              </button>
+            </div>
+            <button
+              type="button"
+              className="mcx-prompt__cancel"
+              onClick={() => setPendingType(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ---- Added time prompt ---- */}
       {clock.phase === "awaiting_added" && editable && (

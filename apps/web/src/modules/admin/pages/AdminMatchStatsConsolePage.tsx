@@ -10,6 +10,7 @@ import {
   type SectionAudit,
   type SectionPermissions,
   type SheetSection,
+  type SheetLogEntry,
   type SheetStatus,
   type SidePair,
   type Side,
@@ -17,6 +18,7 @@ import {
   type TallyValue,
 } from "../../../api/adminMatchStats";
 import { MatchEventsTab } from "./MatchEventsTab";
+import { MatchSheetHistory, latestActionBanner } from "./MatchSheetHistory";
 import { clearDraft, draftIsAhead, markSynced, readDraft, writeDraft } from "./matchSheetDraft";
 import {
   HALF_LENGTH_CHOICES,
@@ -306,6 +308,10 @@ export function AdminMatchStatsConsolePage() {
   const [addedInput, setAddedInput] = useState("2");
   /** Minute captured by step 1, held until an event is logged. */
   const [captured, setCaptured] = useState<{ minute: number; added: number | null } | null>(null);
+  const [history, setHistory] = useState<SheetLogEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState("");
+  const [askCorrection, setAskCorrection] = useState(false);
   /* Entry controls live here rather than in the Events tab so they can sit in
      the frozen header — they are needed constantly while the grid scrolls. */
   const [side, setSide] = useState<Side | null>(null);
@@ -384,6 +390,19 @@ export function AdminMatchStatsConsolePage() {
       active = false;
     };
   }, [matchId, applySheet]);
+
+  const loadHistory = useCallback(() => {
+    if (!matchId) return;
+    matchStatsApi
+      .history(matchId)
+      .then(setHistory)
+      .catch(() => {
+        /* History is supporting detail: failing to load it must not take the
+           console down mid-match. */
+      });
+  }, [matchId]);
+
+  useEffect(() => loadHistory(), [loadHistory]);
 
   const flush = useCallback(async () => {
     if (!pending.current || !matchId) return;
@@ -509,6 +528,7 @@ export function AdminMatchStatsConsolePage() {
       await flush();
       applySheet(await fn());
       clearDraft(matchId);
+      loadHistory();
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -539,6 +559,10 @@ export function AdminMatchStatsConsolePage() {
   const totals = useMemo(() => {
     const out: Record<string, SidePair> = {};
     for (const def of sheet?.stats ?? []) out[def.key] = totalOf(tallies[def.key]);
+    /* Total shots is derived, never tapped: on target plus off target. */
+    const on = out.shotsOnTarget ?? { home: 0, away: 0 };
+    const off = out.shotsOffTarget ?? { home: 0, away: 0 };
+    out.shots = { home: on.home + off.home, away: on.away + off.away };
     return out;
   }, [sheet, tallies]);
 
@@ -558,6 +582,9 @@ export function AdminMatchStatsConsolePage() {
   }
 
   const { match, audit, eventsAudit, status, eventsStatus } = sheet;
+  void audit;
+  void eventsAudit;
+  const banner = latestActionBanner(history);
   const halfLengthChoices = match.competition.isTraining
     ? TRAINING_HALF_LENGTH_CHOICES
     : HALF_LENGTH_CHOICES;
@@ -788,6 +815,94 @@ export function AdminMatchStatsConsolePage() {
 
       {error && <p className="mcx-error" role="alert">{error}</p>}
 
+      {/* The banner always reflects the most recent action, not a stale note. */}
+      {banner && (
+        <div className={`mcx-banner mcx-banner--${banner.tone}`}>
+          <span className="mcx-banner__text">{banner.text}</span>
+          {banner.note && <span className="mcx-banner__note">“{banner.note}”</span>}
+        </div>
+      )}
+
+      {sheet.lockedAtFullTime && (
+        <div className="mcx-callout mcx-callout--warn">
+          <strong>Locked at full time.</strong> This record can no longer be edited.
+          {sheet.correctionRequest
+            ? " A correction request is with the ScoreBoard admin."
+            : " Request a correction if something needs changing."}
+        </div>
+      )}
+
+      {/* Recorder: ask for a locked record back. */}
+      {sheet.lockedAtFullTime &&
+        !sheet.correctionRequest &&
+        (statsPerms?.canRecord ?? false) && (
+          <div className="mcx-review">
+            {askCorrection && (
+              <textarea
+                className="mcx-note"
+                value={correctionNote}
+                onChange={(e) => setCorrectionNote(e.target.value)}
+                placeholder="What needs correcting? (shown to the admin)"
+                rows={2}
+                maxLength={500}
+              />
+            )}
+            <button
+              type="button"
+              className="mcx-btn"
+              disabled={busy}
+              onClick={() =>
+                askCorrection
+                  ? act(() =>
+                      matchStatsApi.requestCorrection(matchId, tab, correctionNote)
+                    ).then(() => {
+                      setAskCorrection(false);
+                      setCorrectionNote("");
+                    })
+                  : setAskCorrection(true)
+              }
+            >
+              {askCorrection ? "Send correction request" : "Request a correction"}
+            </button>
+          </div>
+        )}
+
+      {/* Admin: decide on a pending request. Approving is a send-back. */}
+      {sheet.correctionRequest && (statsPerms?.canApprove ?? false) && (
+        <div className="mcx-callout mcx-callout--warn">
+          <strong>
+            Correction requested by {sheet.correctionRequest.byName ?? "the recorder"}
+          </strong>
+          {sheet.correctionRequest.note ? ` — “${sheet.correctionRequest.note}”` : ""}
+          <div className="mcx-review__buttons">
+            <button
+              type="button"
+              className="mcx-btn"
+              disabled={busy}
+              onClick={() => act(() => matchStatsApi.declineCorrection(matchId))}
+            >
+              Decline
+            </button>
+            <button
+              type="button"
+              className="mcx-btn mcx-btn--approve"
+              disabled={busy}
+              onClick={() =>
+                act(() =>
+                  matchStatsApi.sendBack(
+                    matchId,
+                    sheet.correctionRequest!.section,
+                    "Correction approved"
+                  )
+                )
+              }
+            >
+              Approve &amp; reopen
+            </button>
+          </div>
+        </div>
+      )}
+
       {(status !== "live" || eventsStatus !== "live") && (
         <Link to={`/admin/match-stats/${matchId}/preview`} className="mcx-previewlink">
           View match summary — screenshot it for your records →
@@ -796,20 +911,15 @@ export function AdminMatchStatsConsolePage() {
 
       {tab === "stats" ? (
         <>
-          {audit.sentBackNote && status === "live" && (
-            <div className="mcx-callout mcx-callout--warn">
-              <strong>Sent back by {audit.sentBackByName ?? "a supervisor"}:</strong>{" "}
-              {audit.sentBackNote}
-            </div>
-          )}
-
           {approved ? (
             <section className="mcx-card">
               <div className="mcx-card__head">
                 <h2>Match statistics</h2>
                 <span className="mcx-approved-flag">Approved · live on the public site</span>
               </div>
-              {sheet.stats.map((def) => (
+              {/* Display list, so the derived Total shots appears here even
+                  though it is never tapped. */}
+              {sheet.displayStats.map((def) => (
                 <StatBar
                   key={def.key}
                   label={def.label}
@@ -893,13 +1003,6 @@ export function AdminMatchStatsConsolePage() {
         </>
       ) : (
         <>
-          {eventsAudit.sentBackNote && eventsStatus === "live" && (
-            <div className="mcx-callout mcx-callout--warn">
-              <strong>Sent back by {eventsAudit.sentBackByName ?? "a supervisor"}:</strong>{" "}
-              {eventsAudit.sentBackNote}
-            </div>
-          )}
-
           <MatchEventsTab
             sheet={sheet}
             editable={eventsEditable}
@@ -937,6 +1040,19 @@ export function AdminMatchStatsConsolePage() {
           )}
         </>
       )}
+
+      <section className="mcx-historywrap">
+        <button
+          type="button"
+          className="mcx-historytoggle"
+          onClick={() => setShowHistory((v) => !v)}
+          aria-expanded={showHistory}
+        >
+          {showHistory ? "Hide" : "Show"} submission history
+          {history.length > 0 && <span className="mcx-log__count">{history.length}</span>}
+        </button>
+        {showHistory && <MatchSheetHistory entries={history} />}
+      </section>
 
       <dl className="mcx-audit">
         {audit.recorderName && (
