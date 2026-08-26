@@ -21,7 +21,13 @@ const ACTION_TONE: Record<SheetLogAction, string> = {
   correction_declined: "bad",
 };
 
-const SECTION_COPY = { stats: "Statistics", events: "Event log" } as const;
+/* "sheet" is what whole-sheet actions record now that statistics and events are
+   submitted together; the other two still appear on entries from before that. */
+const SECTION_COPY: Record<string, string> = {
+  stats: "Statistics",
+  events: "Event log",
+  sheet: "Statistics & events",
+};
 
 /** Compact rendering of the snapshot stored with a submission. */
 function summaryLine(summary: Record<string, unknown> | null): string | null {

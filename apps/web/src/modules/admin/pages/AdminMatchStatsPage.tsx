@@ -124,12 +124,8 @@ export function AdminMatchStatsPage() {
       {totals && (
         <dl className="mcx-totals" aria-label="Your recording totals">
           <div className="mcx-total">
-            <dt>Statistics approved</dt>
-            <dd>{totals.statisticsApproved}</dd>
-          </div>
-          <div className="mcx-total">
-            <dt>Event logs approved</dt>
-            <dd>{totals.eventLogsApproved}</dd>
+            <dt>Sheets approved</dt>
+            <dd>{totals.sheetsApproved}</dd>
           </div>
           <div className="mcx-total">
             <dt>Fixtures recorded</dt>

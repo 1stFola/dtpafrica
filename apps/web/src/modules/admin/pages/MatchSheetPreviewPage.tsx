@@ -93,7 +93,7 @@ export function MatchSheetPreviewPage() {
     );
   }
 
-  const { match, events, derivedScore, status, eventsStatus, audit } = sheet;
+  const { match, events, derivedScore, status, audit } = sheet;
   const kickoff = match.kickoffAt ? new Date(match.kickoffAt) : null;
   const ordered = [...events].sort((a, b) => a.minute - b.minute);
 
@@ -175,7 +175,7 @@ export function MatchSheetPreviewPage() {
             {audit.submittedAt ? ` · submitted ${new Date(audit.submittedAt).toLocaleString()}` : ""}
           </span>
           <span className="mpv-states">
-            Statistics: <strong>{status}</strong> · Events: <strong>{eventsStatus}</strong>
+            Statistics &amp; events: <strong>{status}</strong>
           </span>
         </footer>
       </article>
