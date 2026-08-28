@@ -241,6 +241,15 @@ export const adminScoreboardApi = {
       method: "DELETE",
     }),
 
+  setMatchLiveFeature: (matchId: string, enabled: boolean) =>
+    sbFetch<{ ok: boolean; liveFeature: { enabled: boolean; updatedAt: string | null } }>(
+      `/admin/scoreboard/matches/${matchId}/live-feature`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      }
+    ),
+
   patchMatchGameday: (
     matchId: string,
     body: {

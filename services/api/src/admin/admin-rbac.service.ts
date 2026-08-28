@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminAuthService } from "./auth/admin-auth.service";
-import { ADMIN_PERMISSIONS } from "./rbac/permissions.catalog";
+import { ADMIN_PERMISSIONS, DEFAULT_ROLES } from "./rbac/permissions.catalog";
 
 /**
  * Generate a readable but strong password.
@@ -42,6 +42,7 @@ export class AdminRbacService {
   }
 
   async listRoles() {
+    await this.syncCatalog();
     const roles = await this.prisma.adminRole.findMany({
       orderBy: { name: "asc" },
       include: {
@@ -60,6 +61,7 @@ export class AdminRbacService {
   }
 
   async getRole(slug: string) {
+    await this.syncCatalog();
     const role = await this.prisma.adminRole.findUnique({
       where: { slug },
       include: {
@@ -79,6 +81,7 @@ export class AdminRbacService {
   }
 
   async updateRolePermissions(slug: string, permissionSlugs: string[]) {
+    await this.syncCatalog();
     if (slug === "super_admin") {
       throw new BadRequestException("Cannot modify super_admin permissions");
     }
@@ -123,6 +126,7 @@ export class AdminRbacService {
     competitionIds?: string[];
     allCompetitions?: boolean;
   }) {
+    await this.syncCatalog();
     await this.adminAuth.assertUniqueEmail(input.email);
     const role = await this.prisma.adminRole.findUnique({
       where: { slug: input.roleSlug },
@@ -327,6 +331,7 @@ export class AdminRbacService {
       allCompetitions?: boolean;
     }
   ) {
+    await this.syncCatalog();
     const existing = await this.prisma.adminUser.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("User not found");
 
@@ -394,5 +399,65 @@ export class AdminRbacService {
     });
     void user;
     return this.present(fresh);
+  }
+
+  private async syncCatalog() {
+    for (const perm of ADMIN_PERMISSIONS) {
+      await this.prisma.adminPermission.upsert({
+        where: { slug: perm.slug },
+        create: {
+          slug: perm.slug,
+          resource: perm.resource,
+          action: perm.action,
+          description: perm.description,
+        },
+        update: {
+          resource: perm.resource,
+          action: perm.action,
+          description: perm.description,
+        },
+      });
+    }
+
+    for (const roleDef of DEFAULT_ROLES) {
+      const existing = await this.prisma.adminRole.findUnique({
+        where: { slug: roleDef.slug },
+      });
+      if (existing) {
+        await this.prisma.adminRole.update({
+          where: { id: existing.id },
+          data: {
+            name: roleDef.name,
+            description: roleDef.description,
+          },
+        });
+        continue;
+      }
+
+      const role = await this.prisma.adminRole.create({
+        data: {
+          slug: roleDef.slug,
+          name: roleDef.name,
+          description: roleDef.description,
+        },
+      });
+      const slugs =
+        roleDef.permissionSlugs === "all"
+          ? ADMIN_PERMISSIONS.map((permission) => permission.slug)
+          : roleDef.permissionSlugs;
+      const permissions = await this.prisma.adminPermission.findMany({
+        where: { slug: { in: slugs } },
+        select: { id: true },
+      });
+      if (permissions.length > 0) {
+        await this.prisma.adminRolePermission.createMany({
+          data: permissions.map((permission) => ({
+            roleId: role.id,
+            permissionId: permission.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
   }
 }

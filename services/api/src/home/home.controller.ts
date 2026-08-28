@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { AdsConfigService } from "../ads/ads-config.service";
 import { ContactDto } from "./dto/contact.dto";
+import { NewsletterDto } from "./dto/newsletter.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
 import { HomeService } from "./home.service";
 
@@ -49,6 +50,11 @@ export class HomeController {
   @Post("contact")
   contact(@Body() dto: ContactDto) {
     return this.home.submitContact(dto);
+  }
+
+  @Post("newsletter")
+  newsletter(@Body() dto: NewsletterDto) {
+    return this.home.subscribeNewsletter(dto);
   }
 
   @Get("blog")

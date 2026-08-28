@@ -219,11 +219,13 @@ export class AdminController {
   listInbox(
     @Query("status") status?: string,
     @Query("q") q?: string,
+    @Query("source") source?: string,
     @Query("limit") limit?: string
   ) {
     return this.inbox.list({
       status,
       q,
+      source,
       limit: limit != null ? Number(limit) : undefined,
     });
   }

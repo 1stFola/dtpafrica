@@ -25,6 +25,7 @@ const links: AdminNavLink[] = [
   { to: "/admin/ads", label: "Ads", icon: "▣" },
   { to: "/admin/academies", label: "Academies", icon: "▦" },
   { to: "/admin/content", label: "Content", icon: "⎘" },
+  { to: "/admin/records", label: "Records", icon: "▦" },
   { to: "/admin/database", label: "Database", icon: "⛁" },
   { to: "/admin/ops-support", label: "Ops Support", icon: "AI" },
   { to: "/admin/blog", label: "Blog", icon: "✎" },

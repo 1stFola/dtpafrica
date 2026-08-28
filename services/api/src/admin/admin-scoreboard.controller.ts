@@ -68,7 +68,7 @@ export class AdminScoreboardController {
   }
 
   @Post("competitions/from-template")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   createFromTemplate(@Body() dto: CreateCompetitionFromTemplateDto) {
     if (!isCompetitionFormat(dto.formatType)) {
       throw new BadRequestException("Unknown competition format");
@@ -99,7 +99,7 @@ export class AdminScoreboardController {
   }
 
   @Patch("competitions/:competitionId")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   updateCompetition(
     @Param("competitionId") competitionId: string,
     @Body() dto: UpdateAdminCompetitionDto
@@ -108,7 +108,7 @@ export class AdminScoreboardController {
   }
 
   @Delete("competitions/:competitionId")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   deleteCompetition(@Param("competitionId") competitionId: string) {
     return this.sb.deleteCompetition(competitionId);
   }
@@ -126,25 +126,25 @@ export class AdminScoreboardController {
   }
 
   @Post("teams")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   createTeam(@Body() dto: UpsertAdminTeamDto) {
     return this.sb.createTeam(dto);
   }
 
   @Patch("teams/:teamId")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   updateTeam(@Param("teamId") teamId: string, @Body() dto: UpsertAdminTeamDto) {
     return this.sb.updateTeam(teamId, dto);
   }
 
   @Put("teams/:teamId")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   replaceTeam(@Param("teamId") teamId: string, @Body() dto: UpsertAdminTeamDto) {
     return this.sb.updateTeam(teamId, dto);
   }
 
   @Delete("teams/:teamId")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   deleteTeam(@Param("teamId") teamId: string) {
     return this.sb.deleteTeam(teamId);
   }
@@ -156,7 +156,7 @@ export class AdminScoreboardController {
   }
 
   @Post("players/merge")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   mergePlayers(
     @Body()
     body: {
@@ -171,7 +171,7 @@ export class AdminScoreboardController {
   }
 
   @Patch("squad/:squadId")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   updateSquadRow(
     @Param("squadId") squadId: string,
     @Body() dto: UpsertScoreboardSquadRowDto
@@ -180,7 +180,7 @@ export class AdminScoreboardController {
   }
 
   @Delete("squad/:squadId")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   deleteSquadRow(@Param("squadId") squadId: string) {
     return this.sb.deleteSquadRow(squadId);
   }
@@ -196,7 +196,7 @@ export class AdminScoreboardController {
    * Backs the admin fixtures calendar; `from`/`to` are ISO timestamps.
    */
   @Get("fixtures-calendar")
-  @RequirePermissions("scoreboard.read")
+  @RequirePermissions("scoreboard.fixtures.read", "scoreboard.read")
   fixturesCalendar(
     @Query("from") from?: string,
     @Query("to") to?: string,
@@ -236,25 +236,25 @@ export class AdminScoreboardController {
   }
 
   @Get("seed/competitions/export")
-  @RequirePermissions("scoreboard.read")
+  @RequirePermissions("scoreboard.records.manage")
   async exportCompetitions() {
     return { csv: await this.sb.exportCompetitionsCsv() };
   }
 
   @Get("seed/teams/export")
-  @RequirePermissions("scoreboard.read")
+  @RequirePermissions("scoreboard.records.manage")
   async exportTeams(@Query("competitionId") competitionId?: string) {
     return { csv: await this.sb.exportTeamsCsv(competitionId) };
   }
 
   @Post("seed/competitions/import")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   importCompetitions(@Body() body: { csv: string }) {
     return this.sb.importCompetitionsCsv(body.csv);
   }
 
   @Post("seed/teams/import")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   importTeams(@Body() body: { csv: string; competitionId: string }) {
     return this.sb.importTeamsCsv(body.csv, body.competitionId);
   }
@@ -305,6 +305,18 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.matches.write")
   updateMatch(@Param("matchId") matchId: string, @Body() dto: UpdateMatchDto) {
     return this.sb.updateMatch(matchId, dto);
+  }
+
+  @Patch("matches/:matchId/live-feature")
+  @RequirePermissions("scoreboard.matches.write")
+  setMatchLiveFeature(
+    @Param("matchId") matchId: string,
+    @Body() body: { enabled?: unknown }
+  ) {
+    if (typeof body.enabled !== "boolean") {
+      throw new BadRequestException("enabled must be a boolean");
+    }
+    return this.sb.setMatchLiveFeature(matchId, body.enabled);
   }
 
   @Delete("matches/:matchId")
@@ -398,7 +410,7 @@ export class AdminScoreboardController {
   }
 
   @Get("competitions/:competitionId/squad/export")
-  @RequirePermissions("scoreboard.read")
+  @RequirePermissions("scoreboard.records.manage")
   exportSquad(
     @Param("competitionId") competitionId: string,
     @Query("format") format?: "json" | "csv"
@@ -407,7 +419,7 @@ export class AdminScoreboardController {
   }
 
   @Post("teams/:teamId/squad/import")
-  @RequirePermissions("scoreboard.competitions.write")
+  @RequirePermissions("scoreboard.records.manage")
   importSquad(@Param("teamId") teamId: string, @Body() body: { csv: string }) {
     return this.sb.importSquadCsv(teamId, body.csv);
   }

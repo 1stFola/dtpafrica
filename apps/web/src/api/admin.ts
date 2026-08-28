@@ -1,4 +1,5 @@
 import { cachedFetch, invalidateCachePrefix } from "./fetch-cache";
+import { parseApiErrorMessage } from "./error-message";
 import type { SbMatchListItem } from "./scoreboard";
 
 const STORAGE_KEY = "dtp_admin_api_key";
@@ -100,7 +101,7 @@ export class AdminApiError extends Error {
     message: string,
     public status: number
   ) {
-    super(message);
+    super(parseApiErrorMessage(message, `Request failed (${status})`));
   }
 }
 
@@ -391,6 +392,7 @@ export type AdminContactMessage = {
   phone: string | null;
   subject: string | null;
   message: string;
+  source?: "contact" | "newsletter";
   readAt: string | null;
   archivedAt: string | null;
   createdAt: string;
@@ -701,10 +703,11 @@ export const adminApi = {
       invalidateAdminPlayersCache();
       return result;
     }),
-  inbox: (status?: string, q?: string) => {
+  inbox: (status?: string, q?: string, source?: string) => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (q) params.set("q", q);
+    if (source) params.set("source", source);
     const qs = params.toString();
     return adminFetch<AdminContactMessage[]>(`/admin/inbox${qs ? `?${qs}` : ""}`);
   },

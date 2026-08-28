@@ -1,11 +1,17 @@
 import { NavLink, Outlet, useOutletContext } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { adminScoreboardApi } from "../../../api/admin-scoreboard";
+import { useAdminAuth } from "../AdminAuthContext";
 import type { AdminSbStats } from "./types";
 
 const subLinks = [
   { to: "/admin/scoreboard", end: true, label: "Overview", icon: "◆" },
-  { to: "/admin/scoreboard/entities", label: "Master records", icon: "▦" },
+  {
+    to: "/admin/scoreboard/squads",
+    label: "Squad upload",
+    icon: "⇧",
+    permission: "scoreboard.records.manage",
+  },
   { to: "/admin/scoreboard/roster", label: "Matchday roster", icon: "☰" },
   { to: "/admin/scoreboard/match-center", label: "Match center", icon: "⏱" },
   { to: "/admin/scoreboard/highlights-manager", label: "Latest videos", icon: "▶" },
@@ -22,8 +28,12 @@ export function useAdminScoreboardContext() {
 }
 
 export function AdminScoreboardLayout() {
+  const { hasPermission } = useAdminAuth();
   const [stats, setStats] = useState<AdminSbStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const visibleSubLinks = subLinks.filter((link) =>
+    link.permission ? hasPermission(link.permission) : true
+  );
 
   const refreshStats = useCallback(() => {
     setStatsLoading(true);
@@ -76,7 +86,7 @@ export function AdminScoreboardLayout() {
       <div className="admin-sb-shell">
         <aside className="admin-sb-sidebar" aria-label="ScoreBoard sections">
           <nav className="admin-sb-sidebar-nav">
-            {subLinks.map((l) => (
+            {visibleSubLinks.map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}
@@ -92,14 +102,6 @@ export function AdminScoreboardLayout() {
               </NavLink>
             ))}
           </nav>
-          <div className="admin-sb-sidebar-external">
-            <a href="/scoreboard/supervisor" className="admin-sb-sidebar-link external">
-              Supervisor ↗
-            </a>
-            <a href="/spotter-tablet" className="admin-sb-sidebar-link external">
-              Spotter tablet ↗
-            </a>
-          </div>
         </aside>
 
         <div className="admin-sb-shell-main">

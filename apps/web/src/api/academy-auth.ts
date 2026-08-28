@@ -1,3 +1,5 @@
+import { parseApiErrorMessage } from "./error-message";
+
 const STORAGE_KEY = "dtp_academy_token";
 
 export function getAcademyToken(): string | null {
@@ -17,7 +19,7 @@ export class AcademyAuthError extends Error {
     message: string,
     public status: number
   ) {
-    super(message);
+    super(parseApiErrorMessage(message, `Request failed (${status})`));
   }
 }
 

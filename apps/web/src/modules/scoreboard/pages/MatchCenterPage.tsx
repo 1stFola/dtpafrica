@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   fetchMatch,
@@ -29,6 +30,8 @@ const TABS: { id: MatchTab; label: string }[] = [
 const TAB_IDS = new Set<string>(TABS.map((tab) => tab.id));
 
 type MatchPhoto = { url: string; caption?: string | null };
+
+const GOAL_ALERTS_KEY = "dtp_scoreboard_goal_alerts";
 
 type StatusKind = "live" | "ht" | "ft" | "scheduled" | "other";
 
@@ -198,6 +201,145 @@ function MatchPhotosGrid({ photos }: { photos: MatchPhoto[] }) {
   );
 }
 
+function formatLiveUpdate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Updated now";
+  return `Updated ${date.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })}`;
+}
+
+function isGoalEvent(type: string): boolean {
+  return type === "goal" || type === "goal_penalty" || type === "own_goal";
+}
+
+function playGoalWhistle(ctxRef: MutableRefObject<AudioContext | null>) {
+  if (typeof window === "undefined") return;
+  const Ctor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return;
+  try {
+    const ctx = ctxRef.current ?? new Ctor();
+    ctxRef.current = ctx;
+    if (ctx.state === "suspended") void ctx.resume();
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(0.28, now + 0.02);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 1.15);
+    master.connect(ctx.destination);
+
+    [0, 0.34].forEach((offset) => {
+      const whistle = ctx.createOscillator();
+      const gain = ctx.createGain();
+      whistle.type = "sine";
+      whistle.frequency.setValueAtTime(1560, now + offset);
+      whistle.frequency.exponentialRampToValueAtTime(1180, now + offset + 0.24);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.9, now + offset + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.28);
+      whistle.connect(gain).connect(master);
+      whistle.start(now + offset);
+      whistle.stop(now + offset + 0.32);
+    });
+  } catch {
+    /* Browser audio is best-effort: notifications still carry the alert. */
+  }
+}
+
+function LiveMatchModal({
+  match,
+  onClose,
+}: {
+  match: SbMatchDetail;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<"timeline" | "stats">("timeline");
+  const liveSheet = match.liveSheet;
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!liveSheet) return null;
+
+  return (
+    <div className="sbm-live-modal" role="dialog" aria-modal="true" aria-labelledby="sbm-live-title">
+      <button className="sbm-live-modal__scrim" type="button" onClick={onClose} aria-label="Close live match view" />
+      <section className="sbm-live-modal__panel">
+        <header className="sbm-live-modal__head">
+          <div>
+            <span className="sbm-live-kicker">
+              <span className="sbm-live-dot" aria-hidden="true" />
+              Live Match Feed
+            </span>
+            <h2 id="sbm-live-title">
+              {match.homeTeam.shortName ?? match.homeTeam.name} {liveSheet.score.home}
+              <span> - </span>
+              {liveSheet.score.away} {match.awayTeam.shortName ?? match.awayTeam.name}
+            </h2>
+            <p>
+              {formatLiveUpdate(liveSheet.updatedAt)}
+              {liveSheet.recorderName ? ` by ${liveSheet.recorderName}` : ""}
+            </p>
+          </div>
+          <button type="button" className="sbm-live-modal__close" onClick={onClose} aria-label="Close live match view">
+            ×
+          </button>
+        </header>
+
+        <div className="sbm-live-switch" role="tablist" aria-label="Live match view">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "timeline"}
+            className={mode === "timeline" ? "is-active" : undefined}
+            onClick={() => setMode("timeline")}
+          >
+            Timeline
+            <span>{liveSheet.events.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "stats"}
+            className={mode === "stats" ? "is-active" : undefined}
+            onClick={() => setMode("stats")}
+          >
+            Statistics
+          </button>
+        </div>
+
+        <div className="sbm-live-modal__body">
+          {mode === "timeline" ? (
+            <EventTimeline
+              events={liveSheet.events}
+              homeTeam={match.homeTeam}
+              awayTeam={match.awayTeam}
+              competition={match.competition.name}
+            />
+          ) : (
+            <div className="sbm-stats-card sbm-stats-card--live">
+              <MatchStatsBars
+                stats={liveSheet.stats}
+                homeTeam={match.homeTeam}
+                awayTeam={match.awayTeam}
+              />
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function MatchCenterSkeleton({ squadsTab }: { squadsTab?: boolean }) {
   return (
     <div className="sb-page dbx-page sbm-page" aria-busy="true">
@@ -248,6 +390,17 @@ export function MatchCenterPage() {
   const [squadsLoading, setSquadsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [liveModalOpen, setLiveModalOpen] = useState(false);
+  const [goalAlertsEnabled, setGoalAlertsEnabled] = useState(() => {
+    try {
+      return localStorage.getItem(GOAL_ALERTS_KEY) === "on";
+    } catch {
+      return false;
+    }
+  });
+  const [goalAlert, setGoalAlert] = useState<string | null>(null);
+  const seenLiveEventIds = useRef<Set<string> | null>(null);
+  const goalAudioContext = useRef<AudioContext | null>(null);
 
   const selectTab = (tab: MatchTab) => {
     setActiveTab(tab);
@@ -331,7 +484,76 @@ export function MatchCenterPage() {
     if (match.photos?.length) return match.photos;
     return parseMatchPhotos(match.meta);
   }, [match]);
+  const liveSheet = match?.liveSheet ?? null;
   const squadsTabFromUrl = initialTab === "squads";
+
+  useEffect(() => {
+    if (!liveSheet) setLiveModalOpen(false);
+  }, [liveSheet]);
+
+  useEffect(() => {
+    if (!liveSheet) {
+      seenLiveEventIds.current = null;
+      return;
+    }
+    const currentIds = new Set(liveSheet.events.map((event) => event.id));
+    if (!seenLiveEventIds.current) {
+      seenLiveEventIds.current = currentIds;
+      return;
+    }
+    const newGoals = liveSheet.events.filter(
+      (event) => !seenLiveEventIds.current?.has(event.id) && isGoalEvent(event.type)
+    );
+    seenLiveEventIds.current = currentIds;
+    if (!goalAlertsEnabled || newGoals.length === 0) return;
+
+    const latest = newGoals[newGoals.length - 1];
+    const scoringTeam =
+      latest.teamId === match?.homeTeam.id
+        ? match.homeTeam.shortName ?? match.homeTeam.name
+        : latest.teamId === match?.awayTeam.id
+          ? match.awayTeam.shortName ?? match.awayTeam.name
+          : "Goal";
+    const player = latest.player?.displayName ?? latest.playerLabel;
+    const title = `${scoringTeam} goal`;
+    const body = [
+      player ? `${player} scored` : "A goal has been recorded",
+      `${liveSheet.score.home}-${liveSheet.score.away}`,
+      `${latest.minute}'`,
+    ].join(" · ");
+
+    playGoalWhistle(goalAudioContext);
+    setGoalAlert(`${title}: ${body}`);
+    window.setTimeout(() => setGoalAlert(null), 7000);
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification(title, {
+        body,
+        tag: `dtp-goal-${match?.id ?? matchSlug}`,
+      });
+    }
+  }, [goalAlertsEnabled, liveSheet, match, matchSlug]);
+
+  const enableGoalAlerts = async () => {
+    playGoalWhistle(goalAudioContext);
+    let allowed = true;
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      allowed = (await Notification.requestPermission()) === "granted";
+    } else if (typeof Notification !== "undefined") {
+      allowed = Notification.permission === "granted";
+    }
+    setGoalAlertsEnabled(allowed);
+    try {
+      localStorage.setItem(GOAL_ALERTS_KEY, allowed ? "on" : "off");
+    } catch {
+      /* Non-persistent storage just means the user can enable again next time. */
+    }
+    setGoalAlert(
+      allowed
+        ? "Goal alerts enabled for this browser."
+        : "Browser notifications are blocked, but this tab can still show live updates."
+    );
+    window.setTimeout(() => setGoalAlert(null), 6000);
+  };
 
   if (error) {
     return (
@@ -432,6 +654,44 @@ export function MatchCenterPage() {
       </div>
 
       <AdPlacement slotKey="matchCenterInline" />
+
+      {liveSheet && (
+        <section className="sbm-live-callout" aria-label="Live match feed">
+          <div>
+            <span className="sbm-live-kicker">
+              <span className="sbm-live-dot" aria-hidden="true" />
+              Live Feed
+            </span>
+            <strong>
+              {match.homeTeam.shortName ?? match.homeTeam.name} {liveSheet.score.home}
+              <span> - </span>
+              {liveSheet.score.away} {match.awayTeam.shortName ?? match.awayTeam.name}
+            </strong>
+            <p>
+              {liveSheet.events.length} event{liveSheet.events.length === 1 ? "" : "s"} logged ·{" "}
+              {formatLiveUpdate(liveSheet.updatedAt)}
+            </p>
+          </div>
+          <div className="sbm-live-callout__actions">
+            <button type="button" className="sbm-live-callout__button" onClick={() => setLiveModalOpen(true)}>
+              Open Live
+            </button>
+            <button
+              type="button"
+              className="sbm-live-callout__button sbm-live-callout__button--ghost"
+              onClick={() => void enableGoalAlerts()}
+            >
+              {goalAlertsEnabled ? "Goal Alerts On" : "Enable Goal Alerts"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {goalAlert && (
+        <div className="sbm-goal-toast" role="status" aria-live="polite">
+          {goalAlert}
+        </div>
+      )}
 
       <div className="dbx-segmented sbc-tabs sbm-tabs" role="tablist" aria-label="Match sections">
         {TABS.map((tab) => (
@@ -551,6 +811,8 @@ export function MatchCenterPage() {
           </section>
         )}
       </div>
+
+      {liveModalOpen && <LiveMatchModal match={match} onClose={() => setLiveModalOpen(false)} />}
     </div>
   );
 }

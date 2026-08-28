@@ -370,7 +370,7 @@ export function AdminScoreboardRosterPage() {
     <section className="admin-sb-section">
       <AdminSbPageHeader
         title="Matchday roster"
-        description="Build 11 starters plus bench for each side, then lock lineups on the spotter tablet."
+        description="Build 11 starters plus bench for each side, then confirm matchday readiness."
         crumbs={[{ label: "Roster" }]}
       />
 
@@ -465,7 +465,7 @@ export function AdminScoreboardRosterPage() {
       {selectedMatch && (
         <div className="admin-sb-panel admin-sb-squad-upload">
           <div>
-            <h3>Upload squad CSV</h3>
+            <h3>Upload matchday squad CSV</h3>
             <p className="muted">
               Replaces the selected team's matchday squad for this fixture. Required columns:
               jersey_number, player_name, position, is_starter. Optional columns: date_of_birth,

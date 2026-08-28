@@ -17,8 +17,10 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { slug: "calibration.run", resource: "calibration", action: "run", description: "Preview calibration runs" },
   { slug: "calibration.create", resource: "calibration", action: "create", description: "Create players from calibration" },
   { slug: "scoreboard.read", resource: "scoreboard", action: "read", description: "View scoreboard data" },
-  { slug: "scoreboard.matches.write", resource: "scoreboard", action: "matches.write", description: "Manage matches and events" },
-  { slug: "scoreboard.competitions.write", resource: "scoreboard", action: "competitions.write", description: "Manage competitions and teams" },
+  { slug: "scoreboard.fixtures.read", resource: "scoreboard", action: "fixtures.read", description: "View admin fixtures calendar" },
+  { slug: "scoreboard.matches.write", resource: "scoreboard", action: "matches.write", description: "Manage fixtures, scores, rosters, and match events" },
+  { slug: "scoreboard.competitions.write", resource: "scoreboard", action: "competitions.write", description: "Create competitions from templates and manage competition setup" },
+  { slug: "scoreboard.records.manage", resource: "scoreboard_records", action: "manage", description: "Manage master records: competitions, teams, squad directory, name QA, and seed imports" },
   { slug: "scoreboard.highlights.write", resource: "scoreboard", action: "highlights.write", description: "Manage highlights" },
   { slug: "scoreboard.stats.record", resource: "scoreboard", action: "stats.record", description: "Record live match statistics pitch-side" },
   { slug: "scoreboard.stats.approve", resource: "scoreboard", action: "stats.approve", description: "Approve or send back submitted match statistics" },
@@ -48,11 +50,24 @@ export const SCOREBOARD_OPS_PERMISSION_SLUGS = [
   "admin.stats.read",
   "players.read",
   "scoreboard.read",
+  "scoreboard.fixtures.read",
   "scoreboard.matches.write",
   "scoreboard.competitions.write",
   "scoreboard.highlights.write",
   "scoreboard.stats.record",
   "scoreboard.stats.approve",
+  "ops.support.read",
+];
+
+export const SCOREBOARD_RECORDS_MANAGER_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "admin.stats.read",
+  "players.read",
+  "players.write",
+  "scoreboard.read",
+  "scoreboard.fixtures.read",
+  "scoreboard.records.manage",
+  "scoreboard.competitions.write",
   "ops.support.read",
 ];
 
@@ -102,8 +117,14 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
   {
     slug: "scoreboard_ops",
     name: "Scoreboard Ops",
-    description: "Manage competitions, matches, and highlights",
+    description: "Run fixtures, rosters, scores, stats review, and highlights",
     permissionSlugs: SCOREBOARD_OPS_PERMISSION_SLUGS,
+  },
+  {
+    slug: "scoreboard_records_manager",
+    name: "ScoreBoard Records Manager",
+    description: "Maintain master competitions, teams, squad records, name QA, and seed imports",
+    permissionSlugs: SCOREBOARD_RECORDS_MANAGER_PERMISSION_SLUGS,
   },
   {
     slug: "calibration_editor",

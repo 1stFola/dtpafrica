@@ -46,6 +46,7 @@ export function MatchEventsTab({
   onChange,
   homeName,
   awayName,
+  playerLabelsByKey,
 }: {
   sheet: MatchStatsSheet;
   editable: boolean;
@@ -62,11 +63,22 @@ export function MatchEventsTab({
   onChange: (next: { events?: RecordedEvent[]; kits?: KitColours }) => void;
   homeName: string;
   awayName: string;
+  playerLabelsByKey?: Map<string, string>;
 }) {
   /* Held while the second-player prompt is open, so the event is only written
      once that answer is given or explicitly waived. */
   const [pendingType, setPendingType] = useState<string | null>(null);
   const [secondNumber, setSecondNumber] = useState("");
+  const [editing, setEditing] = useState<RecordedEvent | null>(null);
+  const [editDraft, setEditDraft] = useState({
+    type: "",
+    minute: "",
+    addedMinute: "",
+    side: "home" as Side,
+    playerNumber: "",
+    secondaryPlayerNumber: "",
+    half: "1",
+  });
 
   const { prefs } = useFeedbackPrefs();
   const playSound = useUISound({ enabled: prefs.sound, intensity: prefs.intensity });
@@ -79,6 +91,11 @@ export function MatchEventsTab({
   );
 
   const teamFor = (s: Side) => (s === "home" ? homeName : awayName);
+  const labelForNumber = (s: Side, number: number | null) => {
+    if (!number) return "";
+    const teamId = s === "home" ? sheet.match.homeTeam.id : sheet.match.awayTeam.id;
+    return playerLabelsByKey?.get(`${teamId}:${number}`) ?? `No. ${number}`;
+  };
   const stepsEnabled = editable && clock.started;
   /* Every earlier step must be answered before step 4 unlocks: no event can be
      filed against the wrong minute, the wrong side, or no player at all. */
@@ -122,6 +139,49 @@ export function MatchEventsTab({
   const removeEvent = (id: string) => {
     if (!editable) return;
     onChange({ events: events.filter((e) => e.id !== id) });
+  };
+
+  const openEdit = (event: RecordedEvent) => {
+    setEditing(event);
+    setEditDraft({
+      type: event.type,
+      minute: String(event.minute),
+      addedMinute: event.addedMinute == null ? "" : String(event.addedMinute),
+      side: event.side,
+      playerNumber: event.playerNumber == null ? "" : String(event.playerNumber),
+      secondaryPlayerNumber:
+        event.secondaryPlayerNumber == null ? "" : String(event.secondaryPlayerNumber),
+      half: String(event.half),
+    });
+  };
+
+  const parsePositiveInt = (value: string): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+  };
+
+  const parseMinute = (value: string): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  };
+
+  const saveEdit = () => {
+    if (!editable || !editing) return;
+    const needsSecond = Boolean(SECOND_PLAYER_PROMPT[editDraft.type]);
+    const next: RecordedEvent = {
+      ...editing,
+      type: editDraft.type,
+      minute: parseMinute(editDraft.minute),
+      addedMinute: parsePositiveInt(editDraft.addedMinute),
+      side: editDraft.side,
+      playerNumber: parsePositiveInt(editDraft.playerNumber),
+      secondaryPlayerNumber: needsSecond
+        ? parsePositiveInt(editDraft.secondaryPlayerNumber)
+        : null,
+      half: editDraft.half === "2" ? 2 : 1,
+    };
+    onChange({ events: events.map((event) => (event.id === editing.id ? next : event)) });
+    setEditing(null);
   };
 
   return (
@@ -177,29 +237,160 @@ export function MatchEventsTab({
                   <strong>{labelFor(e.type)}</strong>
                   <span className="mcx-logitem__meta">
                     {teamFor(e.side)}
-                    {e.playerNumber ? ` · No. ${e.playerNumber}` : ""}
+                    {e.playerNumber ? ` · ${labelForNumber(e.side, e.playerNumber)}` : ""}
                     {e.secondaryPlayerNumber
                       ? e.type === "substitution"
-                        ? ` → No. ${e.secondaryPlayerNumber}`
-                        : ` · assist No. ${e.secondaryPlayerNumber}`
+                        ? ` → ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
+                        : ` · assist ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
                       : ""}
                   </span>
                 </span>
                 {editable && (
-                  <button
-                    type="button"
-                    className="mcx-logitem__del"
-                    onClick={() => removeEvent(e.id)}
-                    aria-label={`Remove ${labelFor(e.type)} at ${e.minute} minutes`}
-                  >
-                    ✕
-                  </button>
+                  <span className="mcx-logitem__actions">
+                    <button
+                      type="button"
+                      className="mcx-logitem__edit"
+                      onClick={() => openEdit(e)}
+                      aria-label={`Edit ${labelFor(e.type)} at ${e.minute} minutes`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="mcx-logitem__del"
+                      onClick={() => removeEvent(e.id)}
+                      aria-label={`Remove ${labelFor(e.type)} at ${e.minute} minutes`}
+                    >
+                      ✕
+                    </button>
+                  </span>
                 )}
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {editing && (
+        <div className="mcx-prompt" role="dialog" aria-modal="true">
+          <div className="mcx-prompt__card mcx-prompt__card--wide">
+            <h3>Edit event</h3>
+            <p className="muted">
+              Correct the event before the sheet is submitted or approved.
+            </p>
+            <div className="mcx-edit-grid">
+              <label>
+                <span>Event type</span>
+                <select
+                  value={editDraft.type}
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, type: event.target.value }))
+                  }
+                >
+                  {sheet.eventTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {labelFor(type)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Team</span>
+                <select
+                  value={editDraft.side}
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, side: event.target.value as Side }))
+                  }
+                >
+                  <option value="home">{homeName}</option>
+                  <option value="away">{awayName}</option>
+                </select>
+              </label>
+              <label>
+                <span>Minute</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={130}
+                  inputMode="numeric"
+                  value={editDraft.minute}
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, minute: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Added time</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={30}
+                  inputMode="numeric"
+                  value={editDraft.addedMinute}
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, addedMinute: event.target.value }))
+                  }
+                  placeholder="0"
+                />
+              </label>
+              <label>
+                <span>Half</span>
+                <select
+                  value={editDraft.half}
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, half: event.target.value }))
+                  }
+                >
+                  <option value="1">1st half</option>
+                  <option value="2">2nd half</option>
+                </select>
+              </label>
+              <label>
+                <span>Player number</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  inputMode="numeric"
+                  value={editDraft.playerNumber}
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, playerNumber: event.target.value }))
+                  }
+                />
+              </label>
+              {SECOND_PLAYER_PROMPT[editDraft.type] && (
+                <label>
+                  <span>{SECOND_PLAYER_PROMPT[editDraft.type].label}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    inputMode="numeric"
+                    value={editDraft.secondaryPlayerNumber}
+                    onChange={(event) =>
+                      setEditDraft((draft) => ({
+                        ...draft,
+                        secondaryPlayerNumber: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      SECOND_PLAYER_PROMPT[editDraft.type].allowNone ? "Optional" : undefined
+                    }
+                  />
+                </label>
+              )}
+            </div>
+            <div className="mcx-prompt__actions">
+              <button type="button" className="mcx-btn" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+              <button type="button" className="mcx-btn mcx-btn--primary" onClick={saveEdit}>
+                Save changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Second player prompt: substitution in, or the assist ---- */}
       {pendingType && SECOND_PLAYER_PROMPT[pendingType] && (

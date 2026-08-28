@@ -19,6 +19,7 @@ export function AdminInboxPage() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState("active");
+  const [source, setSource] = useState("all");
   const [q, setQ] = useState("");
 
   const selected = useMemo(
@@ -29,7 +30,7 @@ export function AdminInboxPage() {
   const load = useCallback(() => {
     setLoading(true);
     adminApi
-      .inbox(status, q || undefined)
+      .inbox(status, q || undefined, source === "all" ? undefined : source)
       .then((items) => {
         setRows(items);
         setSelectedId((current) =>
@@ -43,7 +44,7 @@ export function AdminInboxPage() {
         setRows([]);
       })
       .finally(() => setLoading(false));
-  }, [q, status, toast]);
+  }, [q, source, status, toast]);
 
   useEffect(() => {
     load();
@@ -68,7 +69,7 @@ export function AdminInboxPage() {
     <section className="admin-page admin-sb-section">
       <AdminPageHeader
         title="Inbox"
-        description="Review contact form submissions and keep active work visible."
+        description="Review contact messages and newsletter signups."
         crumbs={[{ label: "Inbox" }]}
       />
 
@@ -86,6 +87,15 @@ export function AdminInboxPage() {
             <option value="read">Read</option>
             <option value="archived">Archived</option>
             <option value="all">All</option>
+          </select>
+          <select
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            aria-label="Filter inbox source"
+          >
+            <option value="all">All inbox</option>
+            <option value="contact">Contact messages</option>
+            <option value="newsletter">Newsletter signups</option>
           </select>
           <button type="button" className="admin-inline-button" onClick={load}>
             Refresh
@@ -123,7 +133,13 @@ export function AdminInboxPage() {
                       <br />
                       <span className="muted">{row.email}</span>
                     </td>
-                    <td>{row.subject || "Contact form message"}</td>
+                    <td>
+                      {row.subject || "Contact form message"}
+                      <br />
+                      <span className="muted">
+                        {row.source === "newsletter" ? "Newsletter" : "Contact"}
+                      </span>
+                    </td>
                     <td>
                       <span
                         className={
@@ -169,6 +185,9 @@ export function AdminInboxPage() {
                   }
                 >
                   {selected.archivedAt ? "archived" : selected.readAt ? "read" : "unread"}
+                </span>
+                <span className="admin-sb-status admin-sb-status--upcoming">
+                  {selected.source === "newsletter" ? "newsletter" : "contact"}
                 </span>
               </div>
               <p className="admin-message-body">{selected.message}</p>

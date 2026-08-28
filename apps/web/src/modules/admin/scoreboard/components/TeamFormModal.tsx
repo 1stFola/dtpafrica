@@ -36,6 +36,9 @@ export function TeamFormModal({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const friendlyCompetitionId = competitions.find((competition) =>
+    /friendly match/i.test(competition.name)
+  )?.id;
 
   useEffect(() => {
     if (!open) return;
@@ -115,7 +118,7 @@ export function TeamFormModal({
               <option value="">Select competition…</option>
               {competitions.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.id === friendlyCompetitionId ? "Friendly Match" : c.name}
                 </option>
               ))}
             </select>

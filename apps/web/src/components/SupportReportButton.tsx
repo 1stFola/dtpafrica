@@ -33,7 +33,6 @@ const SEVERITIES = [
 
 function audienceForPath(pathname: string): SupportAudience | null {
   if (pathname.startsWith("/admin")) return "internal_admin";
-  if (pathname.startsWith("/spotter-tablet")) return "scoreboard_operator";
   if (pathname.startsWith("/scoreboard/supervisor")) return "scoreboard_operator";
   if (pathname.startsWith("/scoreboard")) return "scout";
   if (pathname.startsWith("/scouting")) return "scout";

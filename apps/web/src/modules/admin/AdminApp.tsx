@@ -24,6 +24,7 @@ import { AdminScoreboardApp } from "./scoreboard/AdminScoreboardApp";
 import { AdminRequirePermission } from "./AdminRequirePermission";
 import { AdminRolesPage } from "./settings/AdminRolesPage";
 import { AdminUsersPage } from "./settings/AdminUsersPage";
+import { AdminScoreboardEntitiesPage } from "./scoreboard/pages/AdminScoreboardEntitiesPage";
 
 export function AdminApp() {
   return (
@@ -36,7 +37,15 @@ export function AdminApp() {
             <Route index element={<AdminIndexRoute />} />
             <Route path="inbox" element={<AdminInboxPage />} />
             <Route path="players" element={<AdminPlayersPage />} />
-            <Route path="fixtures" element={<AdminFixturesPage />} />
+            <Route
+              element={
+                <AdminRequirePermission
+                  permission={["scoreboard.fixtures.read", "scoreboard.read"]}
+                />
+              }
+            >
+              <Route path="fixtures" element={<AdminFixturesPage />} />
+            </Route>
             <Route path="match-stats" element={<AdminMatchStatsPage />} />
             <Route path="training" element={<AdminTrainingPage />} />
             <Route path="calibration" element={<AdminCalibrationPage />} />
@@ -47,6 +56,9 @@ export function AdminApp() {
             <Route path="academies" element={<AdminAcademiesPage />} />
             <Route path="content" element={<AdminContentPage />} />
             <Route path="database" element={<AdminDatabasePage />} />
+            <Route element={<AdminRequirePermission permission="scoreboard.records.manage" />}>
+              <Route path="records" element={<AdminScoreboardEntitiesPage />} />
+            </Route>
             <Route path="blog" element={<AdminBlogListPage />} />
             <Route path="blog/new" element={<AdminBlogEditPage />} />
             <Route path="blog/:id" element={<AdminBlogEditPage />} />

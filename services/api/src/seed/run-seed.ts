@@ -810,7 +810,7 @@ Parents and guardians can register minors with consent workflows built for youth
             key: "contact.panel.title",
             value: "For clubs, scouts, academies, partners, and football families.",
           },
-          { key: "contact.whatsapp", value: "+2348000000000" },
+          { key: "contact.whatsapp", value: "+19452756104" },
           { key: "contact.email", value: "hello@dtp.africa" },
         ];
 

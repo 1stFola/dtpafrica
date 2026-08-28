@@ -87,9 +87,49 @@
 }
 
 .mcx-status--live { color: #34d399; }
-.mcx-status--live .mcx-status__dot { animation: mcx-pulse 1.6s ease-in-out infinite; }
+.mcx-status--live .mcx-status__dot,
+.mcx-live-indicator.is-on .mcx-live-dot,
+.mcx-live-preview__kicker .mcx-live-dot { animation: mcx-pulse 1.6s ease-in-out infinite; }
 .mcx-status--submitted { color: var(--mcx-away); }
 .mcx-status--approved { color: #22c55e; }
+
+.mcx-live-indicator,
+.mcx-live-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.6rem;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.mcx-live-indicator.is-on {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+
+.mcx-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mcx-live-link {
+  cursor: pointer;
+}
+
+.mcx-live-link:hover {
+  border-color: var(--mcx-home);
+  color: var(--color-text);
+}
 
 @keyframes mcx-pulse {
   0%, 100% { opacity: 1; }
@@ -97,7 +137,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mcx-status--live .mcx-status__dot { animation: none; }
+  .mcx-status--live .mcx-status__dot,
+  .mcx-live-indicator.is-on .mcx-live-dot,
+  .mcx-live-preview__kicker .mcx-live-dot { animation: none; }
 }
 
 .mcx-fixture {
@@ -1126,9 +1168,17 @@
 .mcx-logitem__body strong { font-size: 0.85rem; font-weight: 600; }
 .mcx-logitem__meta { font-size: 0.72rem; color: var(--color-muted); }
 
+.mcx-logitem__actions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mcx-logitem__edit,
 .mcx-logitem__del {
   flex: none;
-  width: 32px;
+  min-width: 32px;
   height: 32px;
   border: 0;
   border-radius: 8px;
@@ -1138,6 +1188,14 @@
   cursor: pointer;
 }
 
+.mcx-logitem__edit {
+  padding: 0 0.55rem;
+  border: 1px solid var(--mcx-line);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.mcx-logitem__edit:hover { background: rgba(76, 159, 254, 0.14); color: #bfdbfe; }
 .mcx-logitem__del:hover { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
 
 /* --- Prompts: added time, and the half-time hold --- */
@@ -1164,6 +1222,40 @@
 .mcx-prompt__card h3 { margin: 0 0 0.4rem; font-size: 1.15rem; }
 .mcx-prompt__card .muted { font-size: 0.85rem; }
 
+.mcx-prompt__card--wide {
+  width: min(520px, 100%);
+  text-align: left;
+}
+
+.mcx-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.mcx-edit-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.mcx-edit-grid input,
+.mcx-edit-grid select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--mcx-line);
+  border-radius: 10px;
+  background: var(--mcx-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.65rem;
+}
+
 .mcx-prompt__row {
   display: flex;
   align-items: center;
@@ -1173,6 +1265,22 @@
 }
 
 .mcx-prompt__row input { max-width: 110px; }
+
+@media (max-width: 560px) {
+  .mcx-logitem {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .mcx-logitem__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .mcx-edit-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 @media (max-width: 560px) {
   .mcx-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
@@ -1657,6 +1765,128 @@
 }
 
 .mcx-previewlink:hover { border-color: var(--mcx-home); }
+
+.mcx-live-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.mcx-live-preview__scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(2, 6, 23, 0.78);
+  cursor: pointer;
+}
+
+.mcx-live-preview__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 980px);
+  max-height: min(84vh, 760px);
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background:
+    radial-gradient(100% 80% at 50% 0%, rgba(14, 165, 233, 0.14), transparent 48%),
+    #06111f;
+  color: #f8fafc;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.54);
+}
+
+.mcx-live-preview__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.05rem 1.2rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.mcx-live-preview__head h2 {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.35rem, 4vw, 2rem);
+  line-height: 1.05;
+}
+
+.mcx-live-preview__head p {
+  margin: 0.35rem 0 0;
+  color: var(--color-muted);
+}
+
+.mcx-live-preview__kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #7dd3fc;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mcx-live-preview__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.mcx-live-preview__tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin: 1rem 1.2rem 0;
+  padding: 0.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
+}
+
+.mcx-live-preview__tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0.62rem 0.8rem;
+}
+
+.mcx-live-preview__tabs button.is-active {
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  color: #fff;
+}
+
+.mcx-live-preview__tabs span {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+}
+
+.mcx-live-preview__body {
+  overflow: auto;
+  padding: 1.1rem 1.2rem 1.3rem;
+}
 
 /* ==========================================================================
    Match summary preview (.mpv-*). Laid out to be screenshotted: one

@@ -36,6 +36,19 @@ import {
   resolvePlayerNameCandidate,
   type PlayerNameCandidate,
 } from "./player-name-normalization";
+import {
+  effectiveTallies,
+  normaliseTallies,
+  readClock,
+  readEvents,
+  readKits,
+  readLiveFeature,
+  scoreFromEvents,
+  sheetStatus,
+  totalsFor,
+  type RecordedEvent,
+} from "../admin/admin-match-stats.service";
+import { generateEventComments, type RecordedEventInput } from "../admin/match-event-comments";
 
 const MATCH_INCLUDE = {
   homeTeam: {
@@ -113,6 +126,7 @@ const MATCH_INCLUDE = {
     orderBy: { publishedAt: "desc" as const },
     include: { event: true },
   },
+  statisticsSheet: true,
 } satisfies Prisma.SbMatchInclude;
 
 /** Public team profile match rows — goal events power cards + scorer stats. */
@@ -1370,6 +1384,118 @@ export class ScoreboardService {
     return this.matchById(resolved.id, publicOnly);
   }
 
+  private async liveSheetSnapshot(match: {
+    id: string;
+    status: string;
+    stats: Prisma.JsonValue | null;
+    homeTeamId: string;
+    awayTeamId: string;
+    homeTeam: { name: string };
+    awayTeam: { name: string };
+    statisticsSheet?: {
+      id: string;
+      status: string;
+      eventsStatus: string | null;
+      tallies: Prisma.JsonValue;
+      events: Prisma.JsonValue | null;
+      clock: Prisma.JsonValue | null;
+      kits: Prisma.JsonValue | null;
+      recorderName: string | null;
+      updatedAt: Date;
+    } | null;
+  }) {
+    const sheet = match.statisticsSheet;
+    if (!sheet) return null;
+    if (!readLiveFeature(match.stats).enabled) return null;
+
+    const status = sheetStatus(sheet as Record<string, unknown>);
+    if (status === "approved") return null;
+
+    const events = readEvents(sheet.events);
+    const tallies = normaliseTallies(sheet.tallies);
+    const totals = totalsFor(effectiveTallies(tallies, events));
+    const score = scoreFromEvents(events);
+    const clock = readClock(sheet.clock);
+
+    const hasStats = Object.values(totals).some(
+      (pair) => (pair?.home ?? 0) > 0 || (pair?.away ?? 0) > 0
+    );
+    if (events.length === 0 && !hasStats && !clock) return null;
+
+    const squad = events.length
+      ? await this.prisma.sbMatchSquadPlayer.findMany({
+          where: { matchId: match.id, jerseyNumber: { not: null } },
+          select: { teamId: true, jerseyNumber: true, playerName: true, playerId: true },
+        })
+      : [];
+    const squadByKey = new Map(
+      squad.map((row) => [`${row.teamId}:${row.jerseyNumber}`, row])
+    );
+    const teamIdFor = (side: "home" | "away") =>
+      side === "home" ? match.homeTeamId : match.awayTeamId;
+    const squadFor = (event: RecordedEvent) =>
+      event.playerNumber
+        ? squadByKey.get(`${teamIdFor(event.side)}:${event.playerNumber}`)
+        : undefined;
+    const secondaryFor = (event: RecordedEvent) =>
+      event.secondaryPlayerNumber
+        ? squadByKey.get(`${teamIdFor(event.side)}:${event.secondaryPlayerNumber}`)
+        : undefined;
+    const playerLabel = (
+      player: { playerName: string; jerseyNumber: number | null } | undefined,
+      number: number | null
+    ) => {
+      if (player?.playerName && number) return `No. ${number} ${player.playerName}`;
+      if (player?.playerName) return player.playerName;
+      return number ? `No. ${number}` : null;
+    };
+
+    const comments = generateEventComments(events as RecordedEventInput[], (event) => {
+      const isHome = event.side === "home";
+      return {
+        teamName: isHome ? match.homeTeam.name : match.awayTeam.name,
+        opponentName: isHome ? match.awayTeam.name : match.homeTeam.name,
+        playerName: squadFor(event as RecordedEvent)?.playerName ?? null,
+        secondaryName: secondaryFor(event as RecordedEvent)?.playerName ?? null,
+      };
+    });
+
+    return presentScoreboardPayload({
+      status,
+      updatedAt: sheet.updatedAt,
+      recorderName: sheet.recorderName,
+      score,
+      clock,
+      kits: readKits(sheet.kits) ?? { home: "#4c9ffe", away: "#f5a524" },
+      stats: {
+        ...totals,
+        goals: score,
+      },
+      events: events.map((event, index) => ({
+        id: `live-${event.id}`,
+        type: event.type,
+        minute: event.minute,
+        teamId: teamIdFor(event.side),
+        playerId: squadFor(event)?.playerId ?? null,
+        playerLabel: playerLabel(squadFor(event), event.playerNumber),
+        playerLabel2: playerLabel(secondaryFor(event), event.secondaryPlayerNumber),
+        assistPlayerId: event.type === "goal" ? secondaryFor(event)?.playerId ?? null : null,
+        assistLabel:
+          event.type === "goal"
+            ? playerLabel(secondaryFor(event), event.secondaryPlayerNumber)
+            : null,
+        detail: comments[index],
+        metadata: {
+          source: "live_match_stats",
+          addedMinute: event.addedMinute,
+          half: event.half,
+          playerNumber: event.playerNumber,
+          secondaryPlayerNumber: event.secondaryPlayerNumber,
+        },
+      })),
+    });
+  }
+
   async matchById(id: string, publicOnly = true) {
     const match = await this.prisma.sbMatch.findFirst({
       where: {
@@ -1381,6 +1507,8 @@ export class ScoreboardService {
       include: MATCH_INCLUDE,
     });
     if (!match) throw new NotFoundException("Match not found");
+    const liveSheet = await this.liveSheetSnapshot(match);
+    const { statisticsSheet: _sheet, ...matchPayload } = match;
     const stats =
       match.stats && typeof match.stats === "object" && !Array.isArray(match.stats)
         ? (match.stats as Record<string, unknown>)
@@ -1391,7 +1519,8 @@ export class ScoreboardService {
         : {};
     return presentMatchDetail(
       presentScoreboardPayload({
-        ...match,
+        ...matchPayload,
+        liveSheet,
         stats: {
           ...stats,
           spotter: {

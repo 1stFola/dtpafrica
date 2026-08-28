@@ -1,5 +1,6 @@
 import { getAdminApiKey, getAdminJwt } from "./admin";
 import { ApiError, apiGet } from "./client";
+import { parseApiErrorMessage } from "./error-message";
 
 export type SbTeamRef = {
   id: string;
@@ -104,6 +105,10 @@ export type SbMatchStats = {
     lineupsLocked?: boolean;
     formation?: { home: string; away: string };
   };
+  liveFeature?: {
+    enabled?: boolean;
+    updatedAt?: string | null;
+  } | null;
 };
 
 export type SbMatchGoal = {
@@ -198,6 +203,24 @@ export type SbMatchDetail = Omit<SbMatchListItem, "homeTeam" | "awayTeam"> & {
   events: SbMatchEvent[];
   highlights: SbHighlight[];
   photos?: SbMatchPhoto[];
+  liveSheet?: {
+    status: "live" | "submitted";
+    updatedAt: string;
+    recorderName: string | null;
+    score: { home: number; away: number };
+    stats: SbMatchStats;
+    events: SbMatchEvent[];
+    clock: {
+      halfLength: number;
+      half: 1 | 2;
+      phase: string;
+      addedFirst: number | null;
+      addedSecond: number | null;
+      firstHalfStartedAt: string | null;
+      secondHalfStartedAt: string | null;
+    } | null;
+    kits: { home: string; away: string };
+  } | null;
 };
 
 export type SipIngestResult = {
@@ -480,7 +503,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(parseApiErrorMessage(text || res.statusText, res.statusText));
   }
   return res.json() as Promise<T>;
 }

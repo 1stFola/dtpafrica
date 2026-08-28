@@ -238,7 +238,32 @@ export type ClockState = {
 /** Kit colours the recorder picked for each side today. */
 export type KitColours = { home: string; away: string };
 
-function readEvents(input: unknown): RecordedEvent[] {
+export type LiveFeatureState = {
+  enabled: boolean;
+  updatedAt: string | null;
+};
+
+export function readLiveFeature(input: unknown): LiveFeatureState {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { enabled: false, updatedAt: null };
+  }
+  const stats = input as Record<string, unknown>;
+  const raw = stats.liveFeature;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { enabled: false, updatedAt: null };
+  }
+  const live = raw as Record<string, unknown>;
+  const timestamp = live.updatedAt ?? live.enabledAt;
+  return {
+    enabled: live.enabled === true,
+    updatedAt:
+      typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp))
+        ? new Date(timestamp).toISOString()
+        : null,
+  };
+}
+
+export function readEvents(input: unknown): RecordedEvent[] {
   if (!Array.isArray(input)) return [];
   const out: RecordedEvent[] = [];
   for (const raw of input) {
@@ -286,7 +311,7 @@ const CLOCK_PHASES = new Set<string>([
   "finished",
 ]);
 
-function readClock(input: unknown): ClockState | null {
+export function readClock(input: unknown): ClockState | null {
   if (!input || typeof input !== "object") return null;
   const c = input as Record<string, unknown>;
   const halfLength =
@@ -318,7 +343,7 @@ function readAnchor(value: unknown): string | null {
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-function readKits(input: unknown): KitColours | null {
+export function readKits(input: unknown): KitColours | null {
   if (!input || typeof input !== "object") return null;
   const k = input as Record<string, unknown>;
   const pick = (v: unknown, fallback: string) =>
@@ -548,7 +573,7 @@ const STATUS_RANK: Record<SheetStatus, number> = { live: 0, submitted: 1, approv
  * Sheets recorded before the merge can still disagree. The lesser of the two
  * wins there, so a half-approved sheet is never treated as finished.
  */
-function sheetStatus(sheet: SheetRow | null): SheetStatus {
+export function sheetStatus(sheet: SheetRow | null): SheetStatus {
   const stats = sectionStatus(sheet, "stats");
   const events = sectionStatus(sheet, "events");
   return STATUS_RANK[stats] <= STATUS_RANK[events] ? stats : events;
@@ -623,6 +648,15 @@ function actorName(ctx: AdminAuthContext): string {
   return ctx.displayName || ctx.email || ctx.roleName || "Admin";
 }
 
+function playerDisplayLabel(
+  player: { playerName: string; jerseyNumber: number | null } | undefined,
+  jerseyNumber: number | null
+): string | null {
+  if (player?.playerName && jerseyNumber) return `No. ${jerseyNumber} ${player.playerName}`;
+  if (player?.playerName) return player.playerName;
+  return jerseyNumber ? `No. ${jerseyNumber}` : null;
+}
+
 @Injectable()
 export class AdminMatchStatsService {
   constructor(
@@ -644,7 +678,20 @@ export class AdminMatchStatsService {
   private async loadMatch(matchId: string, ctx: AdminAuthContext) {
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },
-      include: { homeTeam: true, awayTeam: true, competition: true },
+      include: {
+        homeTeam: true,
+        awayTeam: true,
+        competition: true,
+        squadPlayers: {
+          where: { jerseyNumber: { not: null } },
+          select: {
+            teamId: true,
+            playerId: true,
+            playerName: true,
+            jerseyNumber: true,
+          },
+        },
+      },
     });
     if (!match) throw new NotFoundException("Match not found");
 
@@ -763,11 +810,7 @@ export class AdminMatchStatsService {
   async createTrainingMatch(ctx: AdminAuthContext) {
     this.assertCanRecord(ctx);
 
-    /* Ownership is what separates a practice match from the template, so a
-       caller with no user behind it — the API key — cannot start one. */
-    if (!ctx.userId) {
-      throw new ForbiddenException("Sign in as a recorder to start a practice match");
-    }
+    const ownerId = ctx.userId ?? ctx.email ?? ctx.roleSlug ?? "super_admin";
 
     const template = await this.prisma.sbMatch.findFirst({
       where: { competition: { formatType: TRAINING_FORMAT_TYPE } },
@@ -788,7 +831,7 @@ export class AdminMatchStatsService {
     const owner = actorName(ctx);
     const meta: TrainingMeta & Record<string, unknown> = {
       ...(template.meta && typeof template.meta === "object" ? template.meta : {}),
-      trainingOwnerId: ctx.userId,
+      trainingOwnerId: ownerId,
       trainingOwnerName: owner,
     };
 
@@ -1083,19 +1126,14 @@ export class AdminMatchStatsService {
       matchId,
       teamId: teamIdFor(event.side),
       playerId: squadFor(event)?.playerId ?? null,
-      playerLabel:
-        squadFor(event)?.playerName ??
-        (event.playerNumber ? `No. ${event.playerNumber}` : null),
+      playerLabel: playerDisplayLabel(squadFor(event), event.playerNumber),
       /* The timeline already has fields for a second player: an assist on a
          goal, the incoming player on a substitution. */
-      playerLabel2:
-        secondaryFor(event)?.playerName ??
-        (event.secondaryPlayerNumber ? `No. ${event.secondaryPlayerNumber}` : null),
+      playerLabel2: playerDisplayLabel(secondaryFor(event), event.secondaryPlayerNumber),
       assistPlayerId: event.type === "goal" ? secondaryFor(event)?.playerId ?? null : null,
       assistLabel:
         event.type === "goal"
-          ? secondaryFor(event)?.playerName ??
-            (event.secondaryPlayerNumber ? `No. ${event.secondaryPlayerNumber}` : null)
+          ? playerDisplayLabel(secondaryFor(event), event.secondaryPlayerNumber)
           : null,
       type: event.type,
       minute: event.minute,
@@ -1555,6 +1593,13 @@ export class AdminMatchStatsService {
         matchday: match.matchday,
         homeScore: match.homeScore,
         awayScore: match.awayScore,
+        liveFeature: readLiveFeature(match.stats),
+        squadPlayers: match.squadPlayers.map((player) => ({
+          teamId: player.teamId,
+          playerId: player.playerId,
+          playerName: player.playerName,
+          jerseyNumber: player.jerseyNumber,
+        })),
         homeTeam: {
           id: match.homeTeam.id,
           name: match.homeTeam.name,
