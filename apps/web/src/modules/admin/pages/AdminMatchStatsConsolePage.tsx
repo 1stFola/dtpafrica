@@ -20,6 +20,8 @@ import {
 import { MatchEventsTab } from "./MatchEventsTab";
 import { capturedFromEvents } from "./eventStatCapture";
 import { MatchSheetHistory, latestActionBanner } from "./MatchSheetHistory";
+import { EventTimeline } from "../../scoreboard/components/EventTimeline";
+import { MatchStatsBars } from "../../scoreboard/components/MatchStatsBars";
 import { clearDraft, draftIsAhead, markSynced, readDraft, writeDraft } from "./matchSheetDraft";
 import {
   HALF_LENGTH_CHOICES,
@@ -29,6 +31,12 @@ import {
   useMatchClock,
 } from "./useMatchClock";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import {
+  EVENT_LABELS,
+  type SbMatchEvent,
+  type SbMatchStats,
+  type SbTeamRef,
+} from "../../../api/scoreboard";
 
 const HALVES: Half[] = ["1st", "2nd"];
 
@@ -181,6 +189,147 @@ const STATUS_COPY: Record<SheetStatus, string> = {
   approved: "Approved",
 };
 
+type TrainingPreviewTab = "timeline" | "statistics";
+
+function teamRef(team: MatchStatsSheet["match"]["homeTeam"]): SbTeamRef {
+  return {
+    id: team.id,
+    name: team.name,
+    shortName: team.shortName,
+    logoUrl: team.logoUrl,
+  };
+}
+
+function playerLookupKey(teamId: string, jerseyNumber: number | null): string | null {
+  return jerseyNumber ? `${teamId}:${jerseyNumber}` : null;
+}
+
+function matchSquadLookup(match: MatchStatsSheet["match"]) {
+  return new Map(
+    (match.squadPlayers ?? [])
+      .filter((player) => player.jerseyNumber != null)
+      .map((player) => [`${player.teamId}:${player.jerseyNumber}`, player])
+  );
+}
+
+function playerLabelForNumber(
+  match: MatchStatsSheet["match"],
+  teamId: string,
+  jerseyNumber: number | null
+): string | null {
+  const key = playerLookupKey(teamId, jerseyNumber);
+  const player = key ? matchSquadLookup(match).get(key) : undefined;
+  if (player?.playerName && jerseyNumber) return `No. ${jerseyNumber} ${player.playerName}`;
+  if (player?.playerName) return player.playerName;
+  return jerseyNumber ? `No. ${jerseyNumber}` : null;
+}
+
+function previewEvents(
+  events: RecordedEvent[],
+  match: MatchStatsSheet["match"]
+): SbMatchEvent[] {
+  return events.map((event) => {
+    const team = event.side === "home" ? match.homeTeam : match.awayTeam;
+    const primary = playerLabelForNumber(match, team.id, event.playerNumber);
+    const secondary = playerLabelForNumber(match, team.id, event.secondaryPlayerNumber);
+    const label = EVENT_LABELS[event.type] ?? event.type.replace(/_/g, " ");
+    return {
+      id: `training-live-${event.id}`,
+      type: event.type,
+      minute: event.minute,
+      teamId: team.id,
+      playerId: null,
+      playerLabel: primary,
+      playerLabel2: secondary,
+      assistPlayerId: null,
+      assistLabel: event.type === "goal" ? secondary : null,
+      detail: `${team.shortName ?? team.name}: ${label}`,
+      metadata: {
+        source: "training_live_preview",
+        addedMinute: event.addedMinute,
+        half: event.half,
+      },
+    };
+  });
+}
+
+function TrainingLivePreviewModal({
+  sheet,
+  totals,
+  score,
+  events,
+  onClose,
+}: {
+  sheet: MatchStatsSheet;
+  totals: Record<string, SidePair>;
+  score: { home: number; away: number };
+  events: RecordedEvent[];
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<TrainingPreviewTab>("timeline");
+  const stats: SbMatchStats = { ...totals, goals: score };
+  const homeTeam = teamRef(sheet.match.homeTeam);
+  const awayTeam = teamRef(sheet.match.awayTeam);
+  const timeline = previewEvents(events, sheet.match);
+
+  return (
+    <div className="mcx-live-preview" role="dialog" aria-modal="true" aria-label="Training live preview">
+      <button type="button" className="mcx-live-preview__scrim" onClick={onClose} aria-label="Close preview" />
+      <section className="mcx-live-preview__panel">
+        <header className="mcx-live-preview__head">
+          <div>
+            <span className="mcx-live-preview__kicker">
+              <span className="mcx-live-dot" />
+              Training live view
+            </span>
+            <h2>
+              {sheet.match.homeTeam.name} {score.home}-{score.away} {sheet.match.awayTeam.name}
+            </h2>
+            <p>Preview of the live timeline and statistics from this practice sheet.</p>
+          </div>
+          <button type="button" className="mcx-live-preview__close" onClick={onClose} aria-label="Close preview">
+            ×
+          </button>
+        </header>
+        <div className="mcx-live-preview__tabs" role="tablist" aria-label="Training live preview sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "timeline"}
+            className={tab === "timeline" ? "is-active" : undefined}
+            onClick={() => setTab("timeline")}
+          >
+            Timeline <span>{timeline.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "statistics"}
+            className={tab === "statistics" ? "is-active" : undefined}
+            onClick={() => setTab("statistics")}
+          >
+            Statistics
+          </button>
+        </div>
+        <div className="mcx-live-preview__body">
+          {tab === "timeline" ? (
+            <EventTimeline
+              events={timeline}
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              competition={sheet.match.competition.name}
+            />
+          ) : (
+            <div className="sbm-stats-card sbm-stats-card--live">
+              <MatchStatsBars stats={stats} homeTeam={homeTeam} awayTeam={awayTeam} />
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 /** Submit / approve / send-back controls for one track. */
 /**
  * Submit, approve and send-back for the whole sheet.
@@ -234,8 +383,8 @@ function SheetActions({
       {status === "approved" && (
         <p className="mcx-submitted__note">
           Approved{audit.approvedByName ? ` by ${audit.approvedByName}` : ""}
-          {audit.approvedAt ? ` · ${new Date(audit.approvedAt).toLocaleString()}` : ""}. Live on
-          the public site.
+          {audit.approvedAt ? ` · ${new Date(audit.approvedAt).toLocaleString()}` : ""}. Final
+          statistics are published.
         </p>
       )}
 
@@ -314,6 +463,7 @@ export function AdminMatchStatsConsolePage() {
   const [captured, setCaptured] = useState<{ minute: number; added: number | null } | null>(null);
   const [history, setHistory] = useState<SheetLogEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTrainingLive, setShowTrainingLive] = useState(false);
   const [correctionNote, setCorrectionNote] = useState("");
   const [askCorrection, setAskCorrection] = useState(false);
   /* Entry controls live here rather than in the Events tab so they can sit in
@@ -571,6 +721,17 @@ export function AdminMatchStatsConsolePage() {
     () => capturedFromEvents(sheet?.eventCapture ?? {}, events, splitKeys),
     [sheet, events, splitKeys]
   );
+  const playerLabelsByKey = useMemo(() => {
+    if (!sheet) return new Map<string, string>();
+    return new Map(
+      (sheet.match.squadPlayers ?? [])
+        .filter((player) => player.jerseyNumber != null)
+        .map((player) => [
+          `${player.teamId}:${player.jerseyNumber}`,
+          `No. ${player.jerseyNumber} ${player.playerName}`,
+        ])
+    );
+  }, [sheet]);
 
   const totals = useMemo(() => {
     const out: Record<string, SidePair> = {};
@@ -608,6 +769,7 @@ export function AdminMatchStatsConsolePage() {
     : HALF_LENGTH_CHOICES;
   const approved = status === "approved";
   const activeStatus = status;
+  const liveFeatureEnabled = Boolean(match.liveFeature?.enabled);
 
   return (
     <div className="mcx-page">
@@ -616,6 +778,19 @@ export function AdminMatchStatsConsolePage() {
         <div className="mcx-sticky__bar">
           <Link to="/admin/match-stats" className="mcx-backlink">← All sheets</Link>
           {match.competition.isTraining && <span className="mcx-training">Training</span>}
+          {match.competition.isTraining && (
+            <button
+              type="button"
+              className="mcx-live-link"
+              onClick={() => setShowTrainingLive(true)}
+            >
+              View Live
+            </button>
+          )}
+          <span className={liveFeatureEnabled ? "mcx-live-indicator is-on" : "mcx-live-indicator"}>
+            <span className="mcx-live-dot" />
+            {liveFeatureEnabled ? "Public live approved" : "Public live off"}
+          </span>
           <span className={`mcx-status mcx-status--${activeStatus}`}>
             <span className="mcx-status__dot" />
             {STATUS_COPY[activeStatus]}
@@ -1056,6 +1231,7 @@ export function AdminMatchStatsConsolePage() {
             onChange={handleEventsChange}
             homeName={match.homeTeam.name}
             awayName={match.awayTeam.name}
+            playerLabelsByKey={playerLabelsByKey}
           />
         </>
       )}
@@ -1092,6 +1268,16 @@ export function AdminMatchStatsConsolePage() {
         )}
         <div><dt>Statistics &amp; events</dt><dd>{STATUS_COPY[status]}</dd></div>
       </dl>
+
+      {showTrainingLive && (
+        <TrainingLivePreviewModal
+          sheet={sheet}
+          totals={totals}
+          score={liveScore}
+          events={events}
+          onClose={() => setShowTrainingLive(false)}
+        />
+      )}
     </div>
   );
 }

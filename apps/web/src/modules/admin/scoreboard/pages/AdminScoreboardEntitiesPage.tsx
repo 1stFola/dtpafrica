@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import { adminApi, type AdminPlayerRow } from "../../../../api/admin";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { useDebouncedValue } from "../../../../hooks/useDebouncedValue";
@@ -19,7 +19,7 @@ import { FixtureFormModal } from "../components/FixtureFormModal";
 import { TeamFormModal } from "../components/TeamFormModal";
 import { CsvDropzone } from "../components/CsvDropzone";
 import { StatusBadge } from "../components/StatusBadge";
-import { useAdminScoreboardContext } from "../AdminScoreboardLayout";
+import type { AdminScoreboardOutletContext } from "../AdminScoreboardLayout";
 import {
   COMPETITION_STATUSES,
   COMPETITION_TYPES,
@@ -74,16 +74,11 @@ const TEAM_CSV_TEMPLATE = `name,slug,region,logo
 SGFC Athletics,sgfc-athletics,Lagos,https://example.com/sgfc.png
 36 Lions FC,36-lions-fc,Lagos,https://example.com/36-lions.png`;
 
-const SQUAD_CSV_TEMPLATE = `shirtNumber,displayName,position
-1,Goalkeeper Name,GK
-2,Right Back Name,RB
-5,Centre Back Name,CB
-9,Striker Name,ST`;
-
 export function AdminScoreboardEntitiesPage() {
-  usePageTitle("Admin — ScoreBoard entities");
+  usePageTitle("Admin — Records");
   const toast = useAdminToast();
-  const { refreshStats } = useAdminScoreboardContext();
+  const scoreboardContext = useOutletContext<AdminScoreboardOutletContext | undefined>();
+  const refreshStats = scoreboardContext?.refreshStats ?? (async () => {});
   const [tab, setTab] = useState<Tab>("competitions");
   const [competitions, setCompetitions] = useState<AdminSbCompetition[]>([]);
   const [teams, setTeams] = useState<AdminSbTeam[]>([]);
@@ -108,8 +103,6 @@ export function AdminScoreboardEntitiesPage() {
   const [playerLinkFilter, setPlayerLinkFilter] = useState("");
   const [nameQaFlagFilter, setNameQaFlagFilter] = useState("");
   const [seedCompId, setSeedCompId] = useState("");
-  const [seedTeamId, setSeedTeamId] = useState("");
-  const [seedTeams, setSeedTeams] = useState<AdminSbTeam[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
   const [editingFixture, setEditingFixture] = useState<FixtureEditState | null>(null);
@@ -436,24 +429,6 @@ export function AdminScoreboardEntitiesPage() {
     }
   }, [seedCompId]);
 
-  const loadSeedTeams = useCallback(async () => {
-    if (!seedCompId) {
-      setSeedTeams([]);
-      setSeedTeamId("");
-      return;
-    }
-    try {
-      const rows = await adminScoreboardApi.teams({ competitionId: seedCompId });
-      setSeedTeams(rows);
-      setSeedTeamId((current) =>
-        current && rows.some((team) => team.id === current) ? current : rows[0]?.id ?? ""
-      );
-    } catch {
-      setSeedTeams([]);
-      setSeedTeamId("");
-    }
-  }, [seedCompId]);
-
   useEffect(() => {
     if (tab === "competitions") void loadCompetitions();
   }, [tab, loadCompetitions]);
@@ -520,10 +495,6 @@ export function AdminScoreboardEntitiesPage() {
   useEffect(() => {
     if (tab === "seeders" && !loadedRef.current.seeders) void loadPicker();
   }, [tab, loadPicker]);
-
-  useEffect(() => {
-    if (tab === "seeders") void loadSeedTeams();
-  }, [tab, loadSeedTeams]);
 
   const playerPath = (slug: string | null, displayName: string) =>
     slug ? `/player/${slug}` : `/player/${encodeURIComponent(displayName.toLowerCase().replace(/\s+/g, "-"))}`;
@@ -1984,10 +1955,7 @@ export function AdminScoreboardEntitiesPage() {
             <span>Target competition</span>
             <select
               value={seedCompId}
-              onChange={(e) => {
-                setSeedCompId(e.target.value);
-                setSeedTeamId("");
-              }}
+              onChange={(e) => setSeedCompId(e.target.value)}
               disabled={loading.seeders}
             >
               <option value="">Select competition...</option>
@@ -1998,24 +1966,8 @@ export function AdminScoreboardEntitiesPage() {
               ))}
             </select>
             <small className="muted">
-              Used for team imports, squad exports, and team-scoped squad CSV uploads.
+              Used for team imports and full squad directory exports.
             </small>
-          </label>
-          <label className="admin-sb-field admin-sb-panel">
-            <span>Target team for squad import</span>
-            <select
-              value={seedTeamId}
-              onChange={(e) => setSeedTeamId(e.target.value)}
-              disabled={!seedCompId || seedTeams.length === 0}
-            >
-              <option value="">Select team...</option>
-              {seedTeams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
-            <small className="muted">Importing a squad CSV upserts players into this club only.</small>
           </label>
           <CsvDropzone
             label="Competitions"
@@ -2051,32 +2003,6 @@ export function AdminScoreboardEntitiesPage() {
               try {
                 const r = await adminScoreboardApi.importTeamsCsv(csv, seedCompId);
                 toast.success(`Imported ${r.imported} team(s)`);
-                void loadSeedTeams();
-                void refreshStats();
-              } catch (e) {
-                throw new Error(formatAdminScoreboardError(e));
-              }
-            }}
-          />
-          <CsvDropzone
-            label="Team squad"
-            hint="Required: displayName or name. Optional: shirtNumber/number, position."
-            disabled={!seedTeamId}
-            disabledReason="Select a target competition and team before importing squad rows."
-            templateCsv={SQUAD_CSV_TEMPLATE}
-            templateFileName="team-squad-seed-template.csv"
-            onExport={async () => {
-              if (!seedCompId) throw new Error("Select a competition before exporting squads");
-              const r = await adminScoreboardApi.exportCompetitionSquad(seedCompId, "csv");
-              return r.csv ?? "";
-            }}
-            onImport={async (csv) => {
-              if (!seedTeamId) throw new Error("Select a team before importing squad rows");
-              try {
-                const r = await adminScoreboardApi.importSquadCsv(seedTeamId, csv);
-                toast.success(`Imported ${r.imported} squad row(s)`);
-                loadedRef.current.players = false;
-                void loadSeedTeams();
                 void refreshStats();
               } catch (e) {
                 throw new Error(formatAdminScoreboardError(e));

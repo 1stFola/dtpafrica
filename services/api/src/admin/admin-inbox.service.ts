@@ -3,13 +3,15 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 type InboxStatus = "all" | "active" | "unread" | "read" | "archived";
+type InboxSource = "all" | "contact" | "newsletter";
 
 @Injectable()
 export class AdminInboxService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  list(query: { status?: string; q?: string; limit?: number }) {
+  list(query: { status?: string; q?: string; source?: string; limit?: number }) {
     const status = this.normalizeStatus(query.status);
+    const source = this.normalizeSource(query.source);
     const where: Prisma.ContactMessageWhereInput = {};
 
     if (status === "active") {
@@ -33,11 +35,25 @@ export class AdminInboxService {
       ];
     }
 
+    if (source === "newsletter") {
+      where.subject = { equals: "Newsletter signup", mode: "insensitive" };
+    } else if (source === "contact") {
+      where.NOT = { subject: { equals: "Newsletter signup", mode: "insensitive" } };
+    }
+
     return this.prisma.contactMessage.findMany({
       where,
       take: Math.min(query.limit ?? 100, 200),
       orderBy: { createdAt: "desc" },
-    });
+    }).then((rows) =>
+      rows.map((row) => ({
+        ...row,
+        source:
+          row.subject?.toLowerCase() === "newsletter signup"
+            ? "newsletter"
+            : "contact",
+      }))
+    );
   }
 
   async get(id: string) {
@@ -78,5 +94,10 @@ export class AdminInboxService {
       return status;
     }
     return "active";
+  }
+
+  private normalizeSource(source?: string): InboxSource {
+    if (source === "contact" || source === "newsletter") return source;
+    return "all";
   }
 }

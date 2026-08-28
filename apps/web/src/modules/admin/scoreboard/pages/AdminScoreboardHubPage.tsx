@@ -27,7 +27,7 @@ const cards: Array<{
   {
     to: "/admin/scoreboard/roster",
     title: "Matchday roster",
-    desc: "Build XI + bench per team. GK clean sheets logged here only. Lock lineups on spotter.",
+    desc: "Build XI + bench per team. GK clean sheets logged here only. Lock lineups from roster readiness.",
     tag: "Pre-match",
   },
   {
@@ -41,13 +41,6 @@ const cards: Array<{
     title: "Match clips",
     desc: "Attach YouTube clips with timeline minutes to specific fixtures.",
     tag: "Match media",
-  },
-  {
-    to: "/spotter-tablet",
-    title: "Stadium spotter",
-    desc: "Tablet-first pitch tagging after admin rosters are saved and locked.",
-    tag: "Field",
-    external: true,
   },
 ];
 

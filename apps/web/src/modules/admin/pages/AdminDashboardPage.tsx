@@ -56,7 +56,7 @@ const cards: Array<{ to: string; title: string; desc: string; tag: string }> = [
   {
     to: "/admin/scoreboard",
     title: "ScoreBoard ops",
-    desc: "Entities, rosters, highlights, match center, spotter tablet",
+    desc: "Entities, rosters, highlights, match center, live ops",
     tag: "Live ops",
   },
 ];

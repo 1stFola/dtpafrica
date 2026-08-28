@@ -49,11 +49,6 @@ const ScoreboardApp = lazy(() =>
     default: module.ScoreboardApp,
   }))
 );
-const SpotterTabletPage = lazy(() =>
-  import("./modules/scoreboard/pages/SpotterTabletPage").then((module) => ({
-    default: module.SpotterTabletPage,
-  }))
-);
 const ScoutingApp = lazy(() =>
   import("./modules/scouting/ScoutingApp").then((module) => ({
     default: module.ScoutingApp,
@@ -128,7 +123,6 @@ export default function App() {
         {/* Super admin sign-in lives outside the /admin tree so the API key
             field is never rendered on the page staff use. */}
         <Route path="superadmin" element={<LazyRoute><SuperAdminApp /></LazyRoute>} />
-        <Route path="spotter-tablet" element={<LazyRoute><SpotterTabletPage /></LazyRoute>} />
         <Route path="academy/*" element={<LazyRoute><AcademyApp /></LazyRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

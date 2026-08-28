@@ -22,6 +22,7 @@ export function adminLandingPath(session: {
 }): string {
   if (session.method === "api_key") return "/admin";
   if (session.permissions.includes("admin.stats.read")) return "/admin";
+  if (session.permissions.includes("scoreboard.fixtures.read")) return "/admin/fixtures";
   if (
     session.permissions.includes("scoreboard.stats.record") ||
     session.permissions.includes("scoreboard.stats.approve")
@@ -68,7 +69,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
   "/admin/players": "players.read",
   /* Fixtures had no entry, so it was visible to everyone — including contracted
      recorders, who should only ever see their own match sheets. */
-  "/admin/fixtures": "scoreboard.read",
+  "/admin/fixtures": ["scoreboard.fixtures.read", "scoreboard.read"],
   "/admin/match-stats": ["scoreboard.stats.record", "scoreboard.stats.approve"],
   "/admin/training": ["scoreboard.stats.record", "scoreboard.stats.approve"],
   "/admin/calibration": ["calibration.run", "players.calibrate"],
@@ -76,6 +77,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
   "/admin/ads": "ads.write",
   "/admin/academies": "academies.read",
   "/admin/content": "content.read",
+  "/admin/records": "scoreboard.records.manage",
   "/admin/database": "database.seed",
   "/admin/ops-support": "ops.support.read",
   "/admin/blog": "blog.read",

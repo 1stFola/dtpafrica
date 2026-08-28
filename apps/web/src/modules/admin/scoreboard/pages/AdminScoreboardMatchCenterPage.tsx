@@ -37,6 +37,7 @@ export function AdminScoreboardMatchCenterPage() {
   const [matchesLoading, setMatchesLoading] = useState(true);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [liveFeatureBusy, setLiveFeatureBusy] = useState(false);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [fixtureOpen, setFixtureOpen] = useState(false);
@@ -171,6 +172,26 @@ export function AdminScoreboardMatchCenterPage() {
     }
   };
 
+  const setLiveFeature = async (enabled: boolean) => {
+    if (!selected || liveFeatureBusy) return;
+    setLiveFeatureBusy(true);
+    try {
+      const result = await adminScoreboardApi.setMatchLiveFeature(selected.id, enabled);
+      patchSelectedMatch({
+        stats: {
+          ...(selected.stats ?? {}),
+          liveFeature: result.liveFeature,
+        },
+      });
+      toast.success(enabled ? "Public live feed approved" : "Public live feed disabled");
+      refresh();
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setLiveFeatureBusy(false);
+    }
+  };
+
   const matchStatusClass = (status: string) => {
     if (status === "live") return "admin-sb-status--live";
     if (status === "halftime") return "admin-sb-status--halftime";
@@ -208,15 +229,9 @@ export function AdminScoreboardMatchCenterPage() {
         >
           Supervisor {supervisorOk ? "online" : supervisorOk === false ? "offline" : "…"}
         </span>
-        <Link to="/scoreboard/supervisor" className="text-link">
-          Public supervisor
-        </Link>
         <Link to="/admin/scoreboard/roster" className="text-link">
           Rosters
         </Link>
-        <a href="/spotter-tablet" className="text-link">
-          Spotter tablet ↗
-        </a>
       </div>
 
       <div className="admin-sb-sticky-bar">
@@ -365,6 +380,18 @@ export function AdminScoreboardMatchCenterPage() {
                 onClick={() => setCsvModalOpen(true)}
               >
                 CSV upload
+              </button>
+              <button
+                type="button"
+                className={
+                  selected.stats?.liveFeature?.enabled
+                    ? "admin-inline-button admin-inline-button--danger"
+                    : "admin-inline-button admin-inline-button--primary"
+                }
+                disabled={liveFeatureBusy}
+                onClick={() => setLiveFeature(!selected.stats?.liveFeature?.enabled)}
+              >
+                {selected.stats?.liveFeature?.enabled ? "Disable public live" : "Approve public live"}
               </button>
             </div>
 

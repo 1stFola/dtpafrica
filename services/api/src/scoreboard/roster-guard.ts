@@ -32,7 +32,7 @@ export function assertMatchReadyForLiveEvents(
     return {
       ok: false,
       reason:
-        "Lineups are not locked. Save matchday rosters in admin and lock lineups on the spotter tablet.",
+        "Lineups are not locked. Save matchday rosters in admin and confirm lineup readiness first.",
     };
   }
 

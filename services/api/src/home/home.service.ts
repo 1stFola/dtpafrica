@@ -17,6 +17,7 @@ import { normalizePlayerAgeCategory } from "../players/age-category";
 import { presentScoreboardPayload } from "../scoreboard/present-scoreboard";
 import { matchPathSegment } from "../scoreboard/match-slug";
 import { ContactDto } from "./dto/contact.dto";
+import { NewsletterDto } from "./dto/newsletter.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
 import {
   buildSkeletonProfile,
@@ -359,6 +360,19 @@ export class HomeService {
         phone: dto.phone,
         subject: dto.subject,
         message: dto.message,
+      },
+      select: { id: true, createdAt: true },
+    });
+  }
+
+  subscribeNewsletter(dto: NewsletterDto) {
+    const email = dto.email.trim().toLowerCase();
+    return this.prisma.contactMessage.create({
+      data: {
+        name: "Newsletter subscriber",
+        email,
+        subject: "Newsletter signup",
+        message: `${email} subscribed to the DirectToPro Africa newsletter.`,
       },
       select: { id: true, createdAt: true },
     });

@@ -163,6 +163,16 @@ export type MatchStatsSheet = {
     matchday: number | null;
     homeScore: number;
     awayScore: number;
+    liveFeature?: {
+      enabled: boolean;
+      updatedAt: string | null;
+    };
+    squadPlayers?: Array<{
+      teamId: string;
+      playerId: string | null;
+      playerName: string;
+      jerseyNumber: number | null;
+    }>;
     homeTeam: { id: string; name: string; shortName: string | null; logoUrl: string | null };
     awayTeam: { id: string; name: string; shortName: string | null; logoUrl: string | null };
     competition: {

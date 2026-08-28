@@ -3317,6 +3317,13 @@ a.mvce-card:focus-visible {
   color: #c81e1e;
 }
 
+.dtp-form__success {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.875rem;
+  color: #166534;
+}
+
 .dtp-form__actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 
 /* Direct channels column */

@@ -1,4 +1,5 @@
 import { cachedFetch } from "./fetch-cache";
+import { parseApiErrorMessage } from "./error-message";
 
 const API_PREFIX = "/api/v1";
 
@@ -7,7 +8,7 @@ export class ApiError extends Error {
     message: string,
     public status: number
   ) {
-    super(message);
+    super(parseApiErrorMessage(message, `Request failed (${status})`));
   }
 }
 

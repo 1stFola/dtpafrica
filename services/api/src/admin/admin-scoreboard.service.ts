@@ -44,6 +44,7 @@ import { parseMatchSquadCsv, type ParsedMatchSquadCsvRow } from "./match-squad-c
 import type { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
 import type { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
 import { CreateFriendlyMatchDto } from "./dto/create-friendly-match.dto";
+import { readLiveFeature } from "./admin-match-stats.service";
 
 const SCOREBOARD_TIMEZONE = "Africa/Lagos";
 const DEFAULT_FORMATION = "4-3-3";
@@ -374,7 +375,8 @@ export class AdminScoreboardService {
   }
 
   /** Lightweight list for seeders / dropdowns (no match status derivation). */
-  listCompetitionPicker() {
+  async listCompetitionPicker() {
+    await this.ensureFriendlyCompetition();
     return this.prisma.sbCompetition.findMany({
       select: { id: true, name: true, slug: true, season: true },
       orderBy: { name: "asc" },
@@ -1646,6 +1648,42 @@ export class AdminScoreboardService {
 
   updateMatch(matchId: string, dto: UpdateMatchDto) {
     return this.scoreboard.updateMatch(matchId, dto);
+  }
+
+  async setMatchLiveFeature(matchId: string, enabled: boolean) {
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: matchId },
+      select: { id: true, stats: true },
+    });
+    if (!match) throw new NotFoundException("Match not found");
+
+    const existingStats =
+      match.stats && typeof match.stats === "object" && !Array.isArray(match.stats)
+        ? (match.stats as Record<string, unknown>)
+        : {};
+    const existingLive =
+      existingStats.liveFeature &&
+      typeof existingStats.liveFeature === "object" &&
+      !Array.isArray(existingStats.liveFeature)
+        ? (existingStats.liveFeature as Record<string, unknown>)
+        : {};
+    const updatedAt = new Date().toISOString();
+    const stats = {
+      ...existingStats,
+      liveFeature: {
+        ...existingLive,
+        enabled,
+        updatedAt,
+        ...(enabled ? { enabledAt: updatedAt } : { disabledAt: updatedAt }),
+      },
+    };
+
+    await this.prisma.sbMatch.update({
+      where: { id: matchId },
+      data: { stats: stats as Prisma.InputJsonValue },
+    });
+
+    return { ok: true, liveFeature: readLiveFeature(stats) };
   }
 
   async deleteMatch(matchId: string) {

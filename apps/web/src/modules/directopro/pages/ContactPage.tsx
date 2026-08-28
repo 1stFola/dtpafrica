@@ -22,9 +22,18 @@ export function ContactPage() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [newsletterSent, setNewsletterSent] = useState(false);
+  const [newsletterError, setNewsletterError] = useState<string | null>(null);
+  const [newsletterLoading, setNewsletterLoading] = useState(false);
 
-  const whatsappDisplay = contentValue(contact, "contact.whatsapp", "+1 945 275 6104");
+  const rawWhatsappDisplay = contentValue(contact, "contact.whatsapp", "+1 945 275 6104");
+  const whatsappDisplay =
+    rawWhatsappDisplay.replace(/\D/g, "") === "2348000000000"
+      ? "+1 945 275 6104"
+      : rawWhatsappDisplay;
   const whatsappDigits = whatsappDisplay.replace(/\D/g, "");
+  const whatsappMessage =
+    "Hello DirectToPro Africa, I'm interested in learning more about your scouting and talent profiling platform. How can we get started?";
   const contactEmail = contact["contact.email"] || "hello@dtp.africa";
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -101,7 +110,7 @@ export function ContactPage() {
               <li>
                 <a
                   className="dtp-channels__link"
-                  href={`https://wa.me/${whatsappDigits}`}
+                  href={`https://wa.me/${whatsappDigits}?text=${encodeURIComponent(whatsappMessage)}`}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -253,17 +262,24 @@ export function ContactPage() {
             </div>
             <form
               className="dtp-subscribe__form"
-              onSubmit={(event) => {
+              onSubmit={async (event) => {
                 event.preventDefault();
+                setNewsletterError(null);
                 const input = event.currentTarget.elements.namedItem(
                   "newsletterEmail"
                 ) as HTMLInputElement | null;
-                if (input?.value) {
-                  window.location.href = `mailto:${
-                    contact["contact.email"] || "hello@dtp.africa"
-                  }?subject=Newsletter%20signup&body=Please%20subscribe%20${encodeURIComponent(
-                    input.value
-                  )}`;
+                if (!input?.value) {
+                  return;
+                }
+                setNewsletterLoading(true);
+                try {
+                  await apiPost("/home/newsletter", { email: input.value });
+                  setNewsletterSent(true);
+                  input.value = "";
+                } catch (err) {
+                  setNewsletterError(String(err));
+                } finally {
+                  setNewsletterLoading(false);
                 }
               }}
             >
@@ -278,10 +294,14 @@ export function ContactPage() {
                 placeholder="Enter your email"
                 required
               />
-              <button type="submit" className="dtp-subscribe__btn">
-                Subscribe
+              <button type="submit" className="dtp-subscribe__btn" disabled={newsletterLoading}>
+                {newsletterLoading ? "Subscribing..." : "Subscribe"}
               </button>
             </form>
+            {newsletterSent && (
+              <p className="dtp-form__success">Thanks. You are on the newsletter list.</p>
+            )}
+            {newsletterError && <p className="dtp-form__error">{newsletterError}</p>}
           </div>
         </div>
       </section>
