@@ -34,6 +34,7 @@ type Plus = { id: number; x: number };
 function EventButton({
   type,
   locked,
+  lockedForType,
   prefs,
   captureMap,
   statLabels,
@@ -42,6 +43,7 @@ function EventButton({
 }: {
   type: string;
   locked: boolean;
+  lockedForType?: (type: string) => boolean;
   prefs: FeedbackPrefs;
   captureMap: EventCaptureMap;
   /** Stat key to display label, for saying what a tap will also capture. */
@@ -51,6 +53,7 @@ function EventButton({
 }) {
   const category = categoryFor(type);
   const captures = capturesStat(captureMap, type);
+  const isLocked = lockedForType?.(type) ?? locked;
   const [ripples, setRipples] = useState<Ripple[]>([]);
   const [pluses, setPluses] = useState<Plus[]>([]);
   const [nudging, setNudging] = useState(false);
@@ -72,7 +75,7 @@ function EventButton({
   );
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (locked) {
+    if (isLocked) {
       if (prefs.visuals) {
         setNudging(true);
         window.setTimeout(() => setNudging(false), 420);
@@ -108,7 +111,7 @@ function EventButton({
     "mcx-grid__btn",
     `mcx-grid__btn--${category}`,
     captures ? "mcx-grid__btn--captures" : "",
-    locked ? "is-locked" : "",
+    isLocked ? "is-locked" : "",
     nudging ? "is-nudging" : "",
     firing ? "is-firing" : "",
   ]
@@ -120,7 +123,7 @@ function EventButton({
       type="button"
       className={cls}
       onClick={handleClick}
-      aria-disabled={locked}
+      aria-disabled={isLocked}
       title={captures ? (captureSummary(captureMap, type, statLabels) ?? undefined) : undefined}
     >
       <span className="mcx-grid__label">{labelFor(type)}</span>
@@ -146,6 +149,7 @@ function EventButton({
 export function EventGrid({
   types,
   locked,
+  lockedForType,
   prefs,
   captureMap,
   statLabels,
@@ -154,6 +158,7 @@ export function EventGrid({
 }: {
   types: readonly string[];
   locked: boolean;
+  lockedForType?: (type: string) => boolean;
   prefs: FeedbackPrefs;
   captureMap: EventCaptureMap;
   statLabels: Record<string, string>;
@@ -171,6 +176,7 @@ export function EventGrid({
           key={type}
           type={type}
           locked={locked}
+          lockedForType={lockedForType}
           prefs={prefs}
           captureMap={captureMap}
           statLabels={statLabels}

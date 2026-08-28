@@ -324,6 +324,7 @@ function LiveMatchModal({
               homeTeam={match.homeTeam}
               awayTeam={match.awayTeam}
               competition={match.competition.name}
+              order="latest"
             />
           ) : (
             <div className="sbm-stats-card sbm-stats-card--live">

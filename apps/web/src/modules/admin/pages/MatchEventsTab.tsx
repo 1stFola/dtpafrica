@@ -97,10 +97,12 @@ export function MatchEventsTab({
     return playerLabelsByKey?.get(`${teamId}:${number}`) ?? `No. ${number}`;
   };
   const stepsEnabled = editable && clock.started;
+  const hasSide = Boolean(side);
+  const hasPlayerNumber = playerNumber.trim() !== "";
   /* Every earlier step must be answered before step 4 unlocks: no event can be
      filed against the wrong minute, the wrong side, or no player at all. */
   const canLog =
-    stepsEnabled && Boolean(captured) && Boolean(side) && playerNumber.trim() !== "";
+    stepsEnabled && Boolean(captured) && hasSide && hasPlayerNumber;
 
   /** Step 4 — the tap. Types needing a second player open a prompt first. */
   const addEvent = (type: string) => {
@@ -287,7 +289,7 @@ export function MatchEventsTab({
                     setEditDraft((draft) => ({ ...draft, type: event.target.value }))
                   }
                 >
-                  {sheet.eventTypes.map((type) => (
+                  {Array.from(new Set([editing.type, ...sheet.eventTypes])).map((type) => (
                     <option key={type} value={type}>
                       {labelFor(type)}
                     </option>

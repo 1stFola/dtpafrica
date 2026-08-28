@@ -560,7 +560,7 @@ export const EVENT_LABELS: Record<string, string> = {
   dominance: "Dominance",
   dribble: "Dribble",
   double_save: "Double save",
-  foul: "Foul",
+  foul: "Fouls committed",
   freekick: "Free kick",
   full_time: "Full time",
   game_management: "Game management",

@@ -69,8 +69,11 @@ export const EVENT_STAT_CAPTURE: Record<
   ReadonlyArray<{ key: string; side: "same" | "opponent" }>
 > = {
   corner_kick: [{ key: "corners", side: "same" }],
+  foul: [{ key: "fouls", side: "same" }],
   offside: [{ key: "offsides", side: "same" }],
+  red_card: [{ key: "redCards", side: "same" }],
   save: [{ key: "saves", side: "same" }],
+  yellow_card: [{ key: "yellowCards", side: "same" }],
   goal: [{ key: "shotsOnTarget", side: "same" }],
   shot: [{ key: "shotsOnTarget", side: "same" }],
   goal_penalty: [
@@ -123,6 +126,7 @@ export const MATCH_EVENT_TYPES = [
   "clearance",
   "corner_kick",
   "dribble",
+  "foul",
   "freekick",
   "goal",
   "goal_line_clearance",
@@ -144,6 +148,7 @@ export const MATCH_EVENT_TYPES = [
   "penalty_saved",
   "penalty_shootout",
   "recovery_tackle",
+  "red_card",
   "save",
   "shot",
   "shot_off_target",
@@ -154,6 +159,7 @@ export const MATCH_EVENT_TYPES = [
   "through_ball",
   "volley_missed",
   "woodwork",
+  "yellow_card",
 ] as const;
 
 /**
@@ -1145,6 +1151,7 @@ export class AdminMatchStatsService {
         half: event.half,
         playerNumber: event.playerNumber,
         secondaryPlayerNumber: event.secondaryPlayerNumber,
+        recorderSequence: index,
       } as Prisma.InputJsonValue,
     }));
 
