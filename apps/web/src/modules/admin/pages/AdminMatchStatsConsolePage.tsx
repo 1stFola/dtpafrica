@@ -383,6 +383,7 @@ function TrainingLivePreviewModal({
             Statistics
           </button>
         </div>
+        <TrainingLiveAudioPreview />
         <div className="mcx-live-preview__body">
           {tab === "timeline" ? (
             <EventTimeline
@@ -421,12 +422,116 @@ function liveAudioSocketUrl(path: string): string {
   return url.toString();
 }
 
+function playTrainingAudioSample(onDone: () => void): () => void {
+  const text =
+    "Live audio preview. The recorder's voice would stream here during the match, without being saved after full time.";
+  let completed = false;
+  let timeout: number | null = null;
+  const done = () => {
+    if (completed) return;
+    completed = true;
+    if (timeout != null) window.clearTimeout(timeout);
+    timeout = null;
+    onDone();
+  };
+  timeout = window.setTimeout(done, 6500);
+
+  if ("speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined") {
+    window.speechSynthesis.cancel();
+    const sample = new SpeechSynthesisUtterance(text);
+    sample.rate = 0.95;
+    sample.pitch = 0.92;
+    sample.volume = 0.9;
+    sample.onend = done;
+    sample.onerror = done;
+    window.speechSynthesis.speak(sample);
+    return () => {
+      window.speechSynthesis.cancel();
+      done();
+    };
+  }
+
+  const Ctor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) {
+    done();
+    return () => undefined;
+  }
+  const ctx = new Ctor();
+  const now = ctx.currentTime;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.18, now + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 3.5);
+  gain.connect(ctx.destination);
+  [220, 277, 330, 392].forEach((freq, index) => {
+    const tone = ctx.createOscillator();
+    tone.type = "sine";
+    tone.frequency.setValueAtTime(freq, now + index * 0.45);
+    tone.connect(gain);
+    tone.start(now + index * 0.45);
+    tone.stop(now + 3.5);
+  });
+  timeout = window.setTimeout(() => {
+    void ctx.close();
+    done();
+  }, 3600);
+  return () => {
+    void ctx.close();
+    done();
+  };
+}
+
+function TrainingLiveAudioPreview() {
+  const [playing, setPlaying] = useState(false);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  const stop = useCallback(() => {
+    stopRef.current?.();
+    stopRef.current = null;
+    setPlaying(false);
+  }, []);
+
+  useEffect(() => () => stop(), [stop]);
+
+  const toggle = () => {
+    if (playing) {
+      stop();
+      return;
+    }
+    setPlaying(true);
+    stopRef.current = playTrainingAudioSample(() => {
+      stopRef.current = null;
+      setPlaying(false);
+    });
+  };
+
+  return (
+    <div className="mcx-training-audio-preview">
+      <button
+        type="button"
+        className={playing ? "sbm-live-audio__btn is-listening" : "sbm-live-audio__btn"}
+        onClick={toggle}
+      >
+        <span className={playing ? "sbm-live-dot" : "sbm-live-audio__idle"} aria-hidden="true" />
+        {playing ? "Stop sample" : "Listen live audio"}
+      </button>
+      <span className="mcx-training-audio-preview__note">
+        This is how the public live audio control appears on match day.
+      </span>
+    </div>
+  );
+}
+
 function LiveAudioCommentaryControl({
   matchId,
   disabled,
+  trainingPreview = false,
 }: {
   matchId: string;
   disabled: boolean;
+  trainingPreview?: boolean;
 }) {
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -436,6 +541,7 @@ function LiveAudioCommentaryControl({
   const socketRef = useRef<WebSocket | null>(null);
   const pendingChunksRef = useRef(0);
   const stopAfterFlushRef = useRef(false);
+  const sampleStopRef = useRef<(() => void) | null>(null);
 
   const closeSocket = useCallback(() => {
     const socket = socketRef.current;
@@ -453,6 +559,8 @@ function LiveAudioCommentaryControl({
   }, [closeSocket]);
 
   const stop = useCallback(() => {
+    sampleStopRef.current?.();
+    sampleStopRef.current = null;
     stopAfterFlushRef.current = true;
     const recorder = recorderRef.current;
     recorderRef.current = null;
@@ -479,6 +587,16 @@ function LiveAudioCommentaryControl({
   }, [active, disabled, stop]);
 
   const start = async () => {
+    if (trainingPreview) {
+      setMessage("Playing a short public live audio sample.");
+      setActive(true);
+      sampleStopRef.current = playTrainingAudioSample(() => {
+        sampleStopRef.current = null;
+        setActive(false);
+        setMessage(null);
+      });
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setMessage("Live audio is not supported in this browser.");
       return;
@@ -1070,7 +1188,12 @@ export function AdminMatchStatsConsolePage() {
           </span>
           <LiveAudioCommentaryControl
             matchId={matchId}
-            disabled={!editable || !liveFeatureEnabled || matchClock.phase === "finished"}
+            disabled={
+              !editable ||
+              matchClock.phase === "finished" ||
+              (!match.competition.isTraining && !liveFeatureEnabled)
+            }
+            trainingPreview={Boolean(match.competition.isTraining)}
           />
           <span className={`mcx-status mcx-status--${activeStatus}`}>
             <span className="mcx-status__dot" />
