@@ -92,6 +92,8 @@ const HIGH_IMPACT = new Set([
   "woodwork",
   "penalty_saved",
   "penalty_shootout",
+  "shootout_goal",
+  "shootout_miss",
   "one_on_one",
 ]);
 

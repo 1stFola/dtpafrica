@@ -1,5 +1,18 @@
 import { adminFetch } from "./admin";
 
+export type LiveAudioStatus = {
+  active: boolean;
+  sequence: number;
+  startedAt: string | null;
+  mimeType: string | null;
+};
+
+export type LiveAudioTicket = {
+  ticket: string;
+  expiresAt: string;
+  wsPath: string;
+};
+
 export type SheetStatus = "live" | "submitted" | "approved";
 
 /** Statistics and the event log are reviewed independently. */
@@ -108,6 +121,8 @@ export type ClockPhase =
   | "awaiting_added"
   | "added_running"
   | "awaiting_second_half"
+  | "awaiting_full_time"
+  | "penalty_shootout"
   | "finished";
 
 /**
@@ -292,4 +307,7 @@ export const matchStatsApi = {
     const qs = params.toString();
     return adminFetch<MatchStatsFixture[]>(`${base}/fixtures${qs ? `?${qs}` : ""}`);
   },
+
+  createLiveAudioTicket: (matchId: string) =>
+    adminFetch<LiveAudioTicket>(`${base}/${matchId}/live-audio/ticket`, { method: "POST" }),
 };

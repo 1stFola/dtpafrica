@@ -250,6 +250,123 @@ function playGoalWhistle(ctxRef: MutableRefObject<AudioContext | null>) {
   }
 }
 
+function base64ToBlob(data: string, mimeType: string): Blob {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
+
+function LiveAudioListener({ matchId }: { matchId: string }) {
+  const [listening, setListening] = useState(false);
+  const [active, setActive] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const playbackRef = useRef(Promise.resolve());
+  const urlsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!listening) return;
+    let closedByClient = false;
+    const url = new URL(
+      `/api/v1/live-audio/listen/${encodeURIComponent(matchId)}`,
+      window.location.origin
+    );
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(url.toString());
+
+    const playChunk = (data: string, mimeType: string) => {
+      playbackRef.current = playbackRef.current
+        .then(
+          () =>
+            new Promise<void>((resolve) => {
+              const url = URL.createObjectURL(base64ToBlob(data, mimeType));
+              urlsRef.current.push(url);
+              const audio = new Audio(url);
+              const cleanup = () => {
+                URL.revokeObjectURL(url);
+                urlsRef.current = urlsRef.current.filter((item) => item !== url);
+                resolve();
+              };
+              audio.onended = cleanup;
+              audio.onerror = cleanup;
+              void audio.play().catch(() => {
+                setMessage("Tap listen again if the browser paused audio.");
+                cleanup();
+              });
+            })
+        )
+        .catch(() => undefined);
+    };
+
+    socket.onopen = () => {
+      setMessage("Waiting for live audio commentary.");
+    };
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(String(event.data)) as
+          | {
+              type: "status";
+              active: boolean;
+              sequence: number;
+              startedAt: string | null;
+              mimeType: string | null;
+            }
+          | { type: "chunk"; sequence: number; mimeType: string; data: string; createdAt: number };
+        if (data.type === "status") {
+          setActive(data.active);
+          setMessage(data.active ? null : "Waiting for live audio commentary.");
+          return;
+        }
+        if (data.type === "chunk") {
+          setActive(true);
+          setMessage(null);
+          playChunk(data.data, data.mimeType);
+        }
+      } catch (error) {
+        setMessage("Live audio is having trouble playing.");
+      }
+    };
+    socket.onerror = () => setMessage("Live audio is unavailable right now.");
+    socket.onclose = (event) => {
+      setActive(false);
+      if (event.code === 1008) {
+        setMessage(event.reason || "Live audio is not enabled for this match.");
+      } else if (!closedByClient) {
+        setMessage("Live audio stream closed.");
+      }
+    };
+    return () => {
+      closedByClient = true;
+      socket.close(1000, "Listener stopped live audio");
+    };
+  }, [listening, matchId]);
+
+  useEffect(
+    () => () => {
+      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      urlsRef.current = [];
+    },
+    []
+  );
+
+  return (
+    <div className="sbm-live-audio">
+      <button
+        type="button"
+        className={listening ? "sbm-live-audio__btn is-listening" : "sbm-live-audio__btn"}
+        onClick={() => {
+          setListening((value) => !value);
+          setMessage(null);
+        }}
+      >
+        <span className={active ? "sbm-live-dot" : "sbm-live-audio__idle"} aria-hidden="true" />
+        {listening ? "Stop listening" : "Listen live audio"}
+      </button>
+      {message && <span className="sbm-live-audio__msg">{message}</span>}
+    </div>
+  );
+}
+
 function LiveMatchModal({
   match,
   onClose,
@@ -316,6 +433,7 @@ function LiveMatchModal({
             Statistics
           </button>
         </div>
+        <LiveAudioListener matchId={match.id} />
 
         <div className="sbm-live-modal__body">
           {mode === "timeline" ? (

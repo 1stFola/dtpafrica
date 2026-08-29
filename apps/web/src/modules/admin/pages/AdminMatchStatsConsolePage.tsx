@@ -277,6 +277,14 @@ function previewEventComment(
         return `Free-Kick! ${actor} takes the resulting set piece.`;
       case "offside":
         return `Offside! ${teamName} are caught beyond the ${opponentName} defensive line.`;
+      case "full_time":
+        return `Full-Time! The referee ends the match between ${teamName} and ${opponentName}.`;
+      case "penalty_shootout":
+        return `Penalty Shootout! The match goes to spot-kicks between ${teamName} and ${opponentName}.`;
+      case "shootout_goal":
+        return `Penalty Scored! ${actor} converts from the spot for ${teamName}.`;
+      case "shootout_miss":
+        return `Penalty Missed! ${actor} cannot convert for ${teamName}.`;
       default: {
         const label = EVENT_LABELS[event.type] ?? event.type.replace(/_/g, " ");
         return `${label}! ${actor}.`;
@@ -391,6 +399,170 @@ function TrainingLivePreviewModal({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read audio chunk"));
+    reader.onload = () => {
+      const value = typeof reader.result === "string" ? reader.result : "";
+      resolve(value.split(",", 2)[1] ?? "");
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+function liveAudioSocketUrl(path: string): string {
+  const url = new URL(path, window.location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
+function LiveAudioCommentaryControl({
+  matchId,
+  disabled,
+}: {
+  matchId: string;
+  disabled: boolean;
+}) {
+  const [active, setActive] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const pendingChunksRef = useRef(0);
+  const stopAfterFlushRef = useRef(false);
+
+  const closeSocket = useCallback(() => {
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "stop" }));
+      socket.close(1000, "Recorder stopped live audio");
+    } else {
+      socket?.close();
+    }
+  }, []);
+
+  const finishStop = useCallback(() => {
+    if (pendingChunksRef.current === 0) closeSocket();
+  }, [closeSocket]);
+
+  const stop = useCallback(() => {
+    stopAfterFlushRef.current = true;
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (recorder && recorder.state !== "inactive") {
+      try {
+        recorder.requestData();
+      } catch {
+        /* Some browsers throw if no chunk is currently buffered. */
+      }
+      recorder.stop();
+      window.setTimeout(finishStop, 1000);
+    } else {
+      finishStop();
+    }
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setActive(false);
+  }, [finishStop]);
+
+  useEffect(() => () => void stop(), [stop]);
+
+  useEffect(() => {
+    if (disabled && active) void stop();
+  }, [active, disabled, stop]);
+
+  const start = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMessage("Live audio is not supported in this browser.");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "";
+      const recorder = preferredType
+        ? new MediaRecorder(stream, { mimeType: preferredType })
+        : new MediaRecorder(stream);
+      const mimeType = recorder.mimeType || preferredType || "audio/webm";
+      const ticket = await matchStatsApi.createLiveAudioTicket(matchId);
+      const socket = new WebSocket(liveAudioSocketUrl(ticket.wsPath));
+      await new Promise<void>((resolve, reject) => {
+        socket.onopen = () => resolve();
+        socket.onerror = () => reject(new Error("Could not connect live audio stream."));
+        socket.onclose = (event) => {
+          if (!event.wasClean) reject(new Error(event.reason || "Live audio stream closed."));
+        };
+      });
+      socket.send(JSON.stringify({ type: "start", mimeType }));
+      socket.onclose = () => {
+        setActive(false);
+        recorderRef.current?.stop();
+        recorderRef.current = null;
+      };
+      socketRef.current = socket;
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (!event.data.size || socket.readyState !== WebSocket.OPEN) return;
+        pendingChunksRef.current += 1;
+        void blobToBase64(event.data)
+          .then((data) => {
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: "chunk", mimeType, data }));
+            }
+          })
+          .catch(() => setMessage("Audio stream is having trouble sending."))
+          .finally(() => {
+            pendingChunksRef.current = Math.max(0, pendingChunksRef.current - 1);
+            if (stopAfterFlushRef.current) finishStop();
+          });
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (stopAfterFlushRef.current) finishStop();
+      };
+      recorder.start(700);
+      stopAfterFlushRef.current = false;
+      setActive(true);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not start live audio.");
+      setActive(false);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      recorderRef.current = null;
+      socketRef.current?.close();
+      socketRef.current = null;
+      pendingChunksRef.current = 0;
+      stopAfterFlushRef.current = false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mcx-audio-live">
+      <button
+        type="button"
+        className={active ? "mcx-audio-live__btn is-active" : "mcx-audio-live__btn"}
+        disabled={disabled || busy}
+        onClick={() => (active ? void stop() : void start())}
+      >
+        <span className="mcx-live-dot" aria-hidden="true" />
+        {active ? "Stop live audio" : "Live audio"}
+      </button>
+      {message && <span className="mcx-audio-live__msg">{message}</span>}
     </div>
   );
 }
@@ -896,6 +1068,10 @@ export function AdminMatchStatsConsolePage() {
             <span className="mcx-live-dot" />
             {liveFeatureEnabled ? "Public live approved" : "Public live off"}
           </span>
+          <LiveAudioCommentaryControl
+            matchId={matchId}
+            disabled={!editable || !liveFeatureEnabled || matchClock.phase === "finished"}
+          />
           <span className={`mcx-status mcx-status--${activeStatus}`}>
             <span className="mcx-status__dot" />
             {STATUS_COPY[activeStatus]}

@@ -16478,6 +16478,45 @@ a.dbx-comp-card:hover {
   padding: 0.1rem 0.45rem;
 }
 
+.sbm-live-audio {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.75rem 1.25rem 0;
+}
+
+.sbm-live-audio__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 38px;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid rgba(52, 211, 153, 0.36);
+  border-radius: var(--radius-pill);
+  background: rgba(16, 185, 129, 0.14);
+  color: #bbf7d0;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.sbm-live-audio__btn.is-listening {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(37, 99, 235, 0.18);
+  color: #dbeafe;
+}
+
+.sbm-live-audio__idle {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.72);
+}
+
+.sbm-live-audio__msg {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+}
+
 .sbm-live-modal__body {
   overflow: auto;
   padding: 1.15rem 1.25rem 1.35rem;

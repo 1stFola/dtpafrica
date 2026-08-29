@@ -18,6 +18,7 @@ import { RequirePermissions } from "./decorators/require-permissions.decorator";
 import { AdminMatchStatsService, type SheetSection } from "./admin-match-stats.service";
 import { SaveMatchStatsDto, SendBackMatchStatsDto } from "./dto/match-stats.dto";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
+import { LiveAudioCommentaryService } from "../scoreboard/live-audio-commentary.service";
 
 type AdminRequest = { adminAuth: AdminAuthContext };
 
@@ -33,7 +34,8 @@ type AdminRequest = { adminAuth: AdminAuthContext };
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 export class AdminMatchStatsController {
   constructor(
-    @Inject(AdminMatchStatsService) private readonly stats: AdminMatchStatsService
+    @Inject(AdminMatchStatsService) private readonly stats: AdminMatchStatsService,
+    @Inject(LiveAudioCommentaryService) private readonly liveAudio: LiveAudioCommentaryService
   ) {}
 
   /** Supervisor queue — sheets waiting on a decision. */
@@ -86,6 +88,20 @@ export class AdminMatchStatsController {
   @RequirePermissions("scoreboard.stats.record", "scoreboard.stats.approve")
   history(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
     return this.stats.history(matchId, req.adminAuth);
+  }
+
+  @Post(":matchId/live-audio/ticket")
+  @RequirePermissions("scoreboard.stats.record")
+  async createLiveAudioTicket(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
+    await this.stats.assertLiveAudioAccess(matchId, req.adminAuth);
+    return this.liveAudio.createRecorderTicket(matchId);
+  }
+
+  @Get(":matchId/live-audio/status")
+  @RequirePermissions("scoreboard.stats.record", "scoreboard.stats.approve")
+  async liveAudioStatus(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
+    await this.stats.openSheet(matchId, req.adminAuth);
+    return this.liveAudio.status(matchId);
   }
 
   @Get(":matchId")

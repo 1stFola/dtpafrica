@@ -14,6 +14,7 @@ import { getRosterReadiness } from "../scoreboard/roster-guard";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { CompetitionEngineService } from "../scoreboard/competition-engine.service";
 import { ScoreboardService } from "../scoreboard/scoreboard.service";
+import { LiveAudioCommentaryService } from "../scoreboard/live-audio-commentary.service";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
 import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
 import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
@@ -339,7 +340,9 @@ export class AdminScoreboardService {
     @Inject(CompetitionEngineService)
     private readonly competitionEngine: CompetitionEngineService,
     @Inject(PlayerDirectoryService)
-    private readonly playerDirectory: PlayerDirectoryService
+    private readonly playerDirectory: PlayerDirectoryService,
+    @Inject(LiveAudioCommentaryService)
+    private readonly liveAudio: LiveAudioCommentaryService
   ) {}
 
   async stats() {
@@ -1682,6 +1685,7 @@ export class AdminScoreboardService {
       where: { id: matchId },
       data: { stats: stats as Prisma.InputJsonValue },
     });
+    if (!enabled) this.liveAudio.endPublicStream(matchId);
 
     return { ok: true, liveFeature: readLiveFeature(stats) };
   }

@@ -43,6 +43,8 @@ const EVENT_ICONS: Record<string, string> = {
   late_defense: "🛡",
   full_time: "🏁",
   penalty_shootout: "⚽",
+  shootout_goal: "🟢",
+  shootout_miss: "🔴",
 };
 
 /** Match-wide events — centered cards, never home/away aligned (mirrors FLOW_CSV_TYPES + specials). */
@@ -107,8 +109,6 @@ const EVENT_ICON_FALLBACKS: Record<string, string> = {
   possession_lost: "-",
   recovery_tackle: "T",
   restart_play: ">",
-  shootout_goal: "P",
-  shootout_miss: "X",
   sustained_pressure: "!!",
   tactical_substitution: "T/S",
   volley_missed: "V",
