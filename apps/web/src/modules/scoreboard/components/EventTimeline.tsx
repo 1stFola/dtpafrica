@@ -140,14 +140,20 @@ function resolveCsvEventType(ev: SbMatchEvent): string {
 
 function resolveCsvSequence(ev: SbMatchEvent): number {
   const sequence = ev.metadata?.csvSequence;
-  return typeof sequence === "number" && Number.isFinite(sequence)
-    ? sequence
+  if (typeof sequence === "number" && Number.isFinite(sequence)) return sequence;
+  const recorderSequence = ev.metadata?.recorderSequence;
+  return typeof recorderSequence === "number" && Number.isFinite(recorderSequence)
+    ? recorderSequence
     : Number.MAX_SAFE_INTEGER;
 }
 
 function compareTimelineEvents(a: SbMatchEvent, b: SbMatchEvent): number {
   const minuteDiff = a.minute - b.minute;
   if (minuteDiff !== 0) return minuteDiff;
+
+  const aKickOff = resolveCsvEventType(a) === "kick_off";
+  const bKickOff = resolveCsvEventType(b) === "kick_off";
+  if (aKickOff !== bKickOff) return aKickOff ? -1 : 1;
 
   const aFullTime = resolveCsvEventType(a) === "full_time";
   const bFullTime = resolveCsvEventType(b) === "full_time";
@@ -157,6 +163,16 @@ function compareTimelineEvents(a: SbMatchEvent, b: SbMatchEvent): number {
   if (sequenceDiff !== 0) return sequenceDiff;
 
   return a.id.localeCompare(b.id);
+}
+
+function compareLatestEvents(a: SbMatchEvent, b: SbMatchEvent): number {
+  const sequenceDiff = resolveCsvSequence(b) - resolveCsvSequence(a);
+  if (sequenceDiff !== 0 && Number.isFinite(sequenceDiff)) return sequenceDiff;
+
+  const minuteDiff = b.minute - a.minute;
+  if (minuteDiff !== 0) return minuteDiff;
+
+  return -compareTimelineEvents(a, b);
 }
 
 function assistPrefixForEvent(ev: SbMatchEvent): string {
@@ -687,13 +703,15 @@ export function EventTimeline({
   homeTeam,
   awayTeam,
   competition,
+  order = "chronological",
 }: {
   events: SbMatchEvent[];
   homeTeam: SbTeamRef;
   awayTeam: SbTeamRef;
   competition?: string;
+  order?: "chronological" | "latest";
 }) {
-  const sorted = [...events].sort(compareTimelineEvents);
+  const sorted = [...events].sort(order === "latest" ? compareLatestEvents : compareTimelineEvents);
 
   if (sorted.length === 0) {
     return (

@@ -1491,6 +1491,7 @@ export class ScoreboardService {
           half: event.half,
           playerNumber: event.playerNumber,
           secondaryPlayerNumber: event.secondaryPlayerNumber,
+          recorderSequence: index,
         },
       })),
     });

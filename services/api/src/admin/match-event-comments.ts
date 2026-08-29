@@ -146,6 +146,11 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c, e) => `Free-Kick! ${actor(c, e)} takes another set piece for ${c.teamName}.`,
     (c) => `Free-Kick! ${c.teamName} restart play from the resulting infringement.`,
   ],
+  foul: [
+    (c, e) => `Foul Committed! ${actor(c, e)} concedes a free-kick and ${c.opponentName} can reset play.`,
+    (c) => `Foul Committed! ${c.teamName} break up the move, but the referee brings play back.`,
+    (c, e) => `Foul Committed! ${actor(c, e)} is penalised after arriving late to the challenge.`,
+  ],
   goal: [
     (c, e) => {
       const scorer = playerPhrase(c, e) || "the striker";
@@ -198,6 +203,11 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c) => `Interception! ${c.teamName} cut out a ${c.opponentName} attack with an important defensive intervention.`,
     (c, e) => `Interception! ${actor(c, e)} steps in to win the ball back.`,
   ],
+  kick_off: [
+    (c) => `Kick-Off! ${c.teamName} get the match underway against ${c.opponentName}.`,
+    (c) => `Kick-Off! ${c.teamName} restart play and look to establish the tempo early.`,
+    (c) => `Kick-Off! The whistle goes and ${c.teamName} put the ball in motion.`,
+  ],
   long_throw: [
     (c, e) => `Long Throw! ${actor(c, e)} launches the ball deep into the penalty area.`,
     (c) => `Long Throw! ${c.teamName} use the throw as a set piece and cause problems in the box.`,
@@ -233,6 +243,11 @@ const TEMPLATES: Record<string, Variant[]> = {
   recovery_tackle: [
     (c, e) => `Recovery Tackle! ${actor(c, e)} chases back and wins the ball with a perfectly timed challenge.`,
     (c) => `Recovery Tackle! A ${c.teamName} defender recovers ground to snuff out the counter.`,
+  ],
+  red_card: [
+    (c, e) => `Red Card! ${actor(c, e)} is sent off, leaving ${c.teamName} to finish with fewer players.`,
+    (c) => `Red Card! Drama here as ${c.teamName} are reduced after the referee reaches for red.`,
+    (c, e) => `Red Card! ${actor(c, e)} receives marching orders after a major incident.`,
   ],
   save: [
     (c, e) => `Save! ${actor(c, e)} makes an important stop to deny ${c.opponentName}.`,
@@ -275,6 +290,11 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c, e) => `Woodwork! ${actor(c, e)} unleashes a thunderous strike that beats the keeper but crashes back off the crossbar.`,
     (c) => `Woodwork! A curling ${c.teamName} effort clips the outside of the post and bounces wide.`,
     (c, e) => `Woodwork! ${actor(c, e)} rattles the upright with the goalkeeper completely beaten.`,
+  ],
+  yellow_card: [
+    (c, e) => `Yellow Card! ${actor(c, e)} goes into the book after the referee signals a caution.`,
+    (c) => `Yellow Card! ${c.teamName} receive a caution as the match edge rises.`,
+    (c, e) => `Yellow Card! ${actor(c, e)} is cautioned and will need to be careful from here.`,
   ],
 };
 

@@ -224,15 +224,78 @@ function playerLabelForNumber(
   return jerseyNumber ? `No. ${jerseyNumber}` : null;
 }
 
+function formatEventMinute(minute: number, addedMinute: number | null): string {
+  return addedMinute && addedMinute > 0 ? `${minute}+${addedMinute}'` : `${minute}'`;
+}
+
+function eventActor(teamName: string, playerLabel: string | null): string {
+  return playerLabel ? `${teamName} ${playerLabel}` : teamName;
+}
+
+function previewEventComment(
+  event: RecordedEvent,
+  team: MatchStatsSheet["match"]["homeTeam"],
+  opponent: MatchStatsSheet["match"]["awayTeam"],
+  primary: string | null,
+  secondary: string | null
+): string {
+  const teamName = team.shortName ?? team.name;
+  const opponentName = opponent.shortName ?? opponent.name;
+  const actor = eventActor(teamName, primary);
+  const prefix = formatEventMinute(event.minute, event.addedMinute);
+
+  const body = (() => {
+    switch (event.type) {
+      case "kick_off":
+        return `Kick-Off! ${teamName} get the match underway against ${opponentName}.`;
+      case "yellow_card":
+        return `Yellow Card! ${actor} goes into the book after the referee signals a caution.`;
+      case "red_card":
+        return `Red Card! ${actor} is sent off, leaving ${teamName} to finish with fewer players.`;
+      case "foul":
+        return `Foul Committed! ${actor} concedes a free-kick and ${opponentName} can reset play.`;
+      case "goal":
+        return secondary
+          ? `GOAL! ${teamName.toUpperCase()} - ${primary ?? "the striker"} finds the back of the net, set up by ${secondary}.`
+          : `GOAL! ${teamName.toUpperCase()} - ${primary ?? "the striker"} finds the back of the net.`;
+      case "goal_penalty":
+        return `GOAL! ${teamName.toUpperCase()} - ${primary ?? "the taker"} converts from the penalty spot.`;
+      case "substitution":
+        if (primary && secondary) return `Substitution! ${teamName} bring on ${secondary} for ${primary}.`;
+        if (secondary) return `Substitution! ${teamName} bring on ${secondary}.`;
+        if (primary) return `Substitution! ${teamName} withdraw ${primary}.`;
+        return `Substitution! ${teamName} make a change.`;
+      case "save":
+        return `Save! ${actor} makes an important stop to deny ${opponentName}.`;
+      case "shot":
+        return `Shot On Target! ${actor} tests the goalkeeper with an effort on goal.`;
+      case "shot_off_target":
+        return `Shot Off Target! ${actor} sends the effort wide.`;
+      case "corner_kick":
+        return `Corner Kick! ${actor} delivers the set piece.`;
+      case "freekick":
+        return `Free-Kick! ${actor} takes the resulting set piece.`;
+      case "offside":
+        return `Offside! ${teamName} are caught beyond the ${opponentName} defensive line.`;
+      default: {
+        const label = EVENT_LABELS[event.type] ?? event.type.replace(/_/g, " ");
+        return `${label}! ${actor}.`;
+      }
+    }
+  })();
+
+  return `${prefix} - ${body}`;
+}
+
 function previewEvents(
   events: RecordedEvent[],
   match: MatchStatsSheet["match"]
 ): SbMatchEvent[] {
-  return events.map((event) => {
+  return events.map((event, index) => {
     const team = event.side === "home" ? match.homeTeam : match.awayTeam;
+    const opponent = event.side === "home" ? match.awayTeam : match.homeTeam;
     const primary = playerLabelForNumber(match, team.id, event.playerNumber);
     const secondary = playerLabelForNumber(match, team.id, event.secondaryPlayerNumber);
-    const label = EVENT_LABELS[event.type] ?? event.type.replace(/_/g, " ");
     return {
       id: `training-live-${event.id}`,
       type: event.type,
@@ -243,11 +306,12 @@ function previewEvents(
       playerLabel2: secondary,
       assistPlayerId: null,
       assistLabel: event.type === "goal" ? secondary : null,
-      detail: `${team.shortName ?? team.name}: ${label}`,
+      detail: previewEventComment(event, team, opponent, primary, secondary),
       metadata: {
         source: "training_live_preview",
         addedMinute: event.addedMinute,
         half: event.half,
+        recorderSequence: index,
       },
     };
   });
@@ -318,6 +382,7 @@ function TrainingLivePreviewModal({
               homeTeam={homeTeam}
               awayTeam={awayTeam}
               competition={sheet.match.competition.name}
+              order="latest"
             />
           ) : (
             <div className="sbm-stats-card sbm-stats-card--live">
@@ -471,6 +536,9 @@ export function AdminMatchStatsConsolePage() {
   const [side, setSide] = useState<Side | null>(null);
   const [playerNumber, setPlayerNumber] = useState("");
   const [kitPicker, setKitPicker] = useState<Side | null>(null);
+  const [showKickoffStarter, setShowKickoffStarter] = useState(false);
+  const [kickoffSide, setKickoffSide] = useState<Side | null>(null);
+  const [kickoffNumber, setKickoffNumber] = useState("");
 
   usePageTitle(sheet ? `${sheet.match.homeTeam.name} vs ${sheet.match.awayTeam.name}` : "Match console");
 
@@ -656,6 +724,43 @@ export function AdminMatchStatsConsolePage() {
     [queueSave]
   );
 
+  const openKickoffStarter = () => {
+    setKickoffSide(side);
+    setKickoffNumber(playerNumber);
+    setShowKickoffStarter(true);
+  };
+
+  const confirmKickoffStarter = () => {
+    if (!kickoffSide) {
+      setError("Choose the team that played the kick-off.");
+      return;
+    }
+    const jersey = Number(kickoffNumber);
+    if (!Number.isFinite(jersey) || jersey < 1 || jersey > 99) {
+      setError("Enter the jersey number of the player who played the kick-off.");
+      return;
+    }
+    const nextKickoff: RecordedEvent = {
+      id: `kick_off-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: "kick_off",
+      minute: 0,
+      addedMinute: null,
+      side: kickoffSide,
+      playerNumber: Math.floor(jersey),
+      secondaryPlayerNumber: null,
+      half: 1,
+    };
+    const nextEvents = [...events.filter((event) => event.type !== "kick_off"), nextKickoff];
+    setError(null);
+    setShowKickoffStarter(false);
+    setCaptured(null);
+    setSide(null);
+    setPlayerNumber("");
+    setTab("events");
+    matchClock.kickOff(pendingHalfLength);
+    handleEventsChange({ events: nextEvents });
+  };
+
   const bump = (key: string, side: Side, delta: number) => {
     if (!editable) return;
     setTallies((prev) => {
@@ -776,7 +881,7 @@ export function AdminMatchStatsConsolePage() {
       {/* Everything down to the tab bar stays pinned while the sheet scrolls. */}
       <div className="mcx-sticky">
         <div className="mcx-sticky__bar">
-          <Link to="/admin/match-stats" className="mcx-backlink">← All sheets</Link>
+          <Link to="/admin/match-stats" className="mcx-backlink">← Back</Link>
           {match.competition.isTraining && <span className="mcx-training">Training</span>}
           {match.competition.isTraining && (
             <button
@@ -871,7 +976,7 @@ export function AdminMatchStatsConsolePage() {
                 <button
                   type="button"
                   className="mcx-btn mcx-btn--primary"
-                  onClick={() => matchClock.kickOff(pendingHalfLength)}
+                  onClick={openKickoffStarter}
                 >
                   Kick Off
                 </button>
@@ -926,11 +1031,10 @@ export function AdminMatchStatsConsolePage() {
                           : undefined
                       }
                       onClick={() => setSide(target)}
-                      /* Step 2 unlocks only once step 1 has captured a minute. */
-                      disabled={!editable || !captured}
+                      disabled={!editable}
                     >
                       <span
-                        className={`mcx-step__n mcx-step__n--inline${captured ? "" : " is-locked"}`}
+                        className={`mcx-step__n mcx-step__n--inline${side ? "" : " is-locked"}`}
                       >
                         2
                       </span>
@@ -967,8 +1071,7 @@ export function AdminMatchStatsConsolePage() {
                 placeholder="No."
                 value={playerNumber}
                 onChange={(e) => setPlayerNumber(e.target.value)}
-                /* Step 3 unlocks only once a side is chosen. */
-                disabled={!editable || !captured || !side}
+                disabled={!editable || !side}
                 aria-label="Jersey number"
               />
             </label>
@@ -1268,6 +1371,68 @@ export function AdminMatchStatsConsolePage() {
         )}
         <div><dt>Statistics &amp; events</dt><dd>{STATUS_COPY[status]}</dd></div>
       </dl>
+
+      {showKickoffStarter && (
+        <div className="mcx-prompt" role="dialog" aria-modal="true">
+          <div className="mcx-prompt__card mcx-prompt__card--wide mcx-kickoff-prompt">
+            <h3>Kick Off</h3>
+            <p className="muted">
+              Select the team and jersey number of the player who starts the game.
+            </p>
+            <div className="mcx-entrybar__sides">
+              {(["home", "away"] as Side[]).map((target) => {
+                const colour = kits[target];
+                const active = kickoffSide === target;
+                const name = target === "home" ? match.homeTeam.name : match.awayTeam.name;
+                return (
+                  <button
+                    key={target}
+                    type="button"
+                    className={active ? "mcx-sidebtn is-active" : "mcx-sidebtn"}
+                    style={
+                      active
+                        ? { background: colour, color: readableOn(colour), borderColor: colour }
+                        : undefined
+                    }
+                    onClick={() => setKickoffSide(target)}
+                  >
+                    <span className="mcx-kit" style={{ background: colour }} aria-hidden="true" />
+                    <span className="mcx-sidebtn__name">{name}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <label className="mcx-prompt__label">
+              <span>Starter jersey number</span>
+              <input
+                type="number"
+                min={1}
+                max={99}
+                inputMode="numeric"
+                value={kickoffNumber}
+                onChange={(event) => setKickoffNumber(event.target.value)}
+                autoFocus
+              />
+            </label>
+            <div className="mcx-prompt__actions">
+              <button
+                type="button"
+                className="mcx-prompt__cancel"
+                onClick={() => setShowKickoffStarter(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="mcx-btn mcx-btn--primary"
+                onClick={confirmKickoffStarter}
+              >
+                Start match
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTrainingLive && (
         <TrainingLivePreviewModal

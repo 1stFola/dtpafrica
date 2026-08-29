@@ -1523,10 +1523,10 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.75rem;
   /* Pull past the page padding so the pinned block spans the full width. */
   margin: -1rem -1rem 0;
-  padding: 0.75rem 1rem 0.6rem;
+  padding: 0.95rem 1rem 0.85rem;
   border-bottom: 1px solid var(--mcx-line);
   background: var(--color-bg, #0b1220);
 }
@@ -1538,7 +1538,24 @@
   gap: 0.75rem;
 }
 
-.mcx-sticky .mcx-backlink { align-self: auto; }
+.mcx-sticky .mcx-backlink {
+  align-self: auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(76, 159, 254, 0.42);
+  border-radius: 999px;
+  background: rgba(76, 159, 254, 0.16);
+  color: #dbeafe;
+  font-weight: 800;
+}
+
+.mcx-sticky .mcx-backlink:hover {
+  border-color: rgba(147, 197, 253, 0.7);
+  background: rgba(76, 159, 254, 0.24);
+  color: #ffffff;
+}
 
 .mcx-fixture--compact { gap: 0.5rem; }
 .mcx-fixture--compact .mcx-fixture__team { font-size: 0.85rem; }
@@ -2148,13 +2165,35 @@
 /* --- Second-player prompt --- */
 
 .mcx-prompt__label {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
   margin-top: 0.6rem;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--color-muted);
+}
+
+.mcx-prompt__label input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--mcx-line);
+  border-radius: 10px;
+  background: var(--mcx-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.mcx-kickoff-prompt .mcx-prompt__label {
+  margin: 1rem 0 0;
+}
+
+.mcx-kickoff-prompt .mcx-prompt__actions {
+  margin-top: 1rem;
 }
 
 .mcx-prompt__actions { display: flex; gap: 0.5rem; }
