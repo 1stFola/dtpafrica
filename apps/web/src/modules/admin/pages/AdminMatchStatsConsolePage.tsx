@@ -239,8 +239,8 @@ function previewEventComment(
   primary: string | null,
   secondary: string | null
 ): string {
-  const teamName = team.shortName ?? team.name;
-  const opponentName = opponent.shortName ?? opponent.name;
+  const teamName = team.name;
+  const opponentName = opponent.name;
   const actor = eventActor(teamName, primary);
   const prefix = formatEventMinute(event.minute, event.addedMinute);
 
