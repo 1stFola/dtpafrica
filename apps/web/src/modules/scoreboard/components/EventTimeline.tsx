@@ -34,7 +34,7 @@ const EVENT_ICONS: Record<string, string> = {
   double_save: "🧤",
   long_throw: "↗",
   water_break: "💧",
-  interception: "✋",
+  interception: "↯",
   match_control: "◉",
   goal_scorers_update: "📋",
   missed_chance: "○",
@@ -124,6 +124,29 @@ function isUnknownPlayer(name: string | null | undefined): boolean {
 function visiblePlayerLabel(name: string | null | undefined): string | null {
   if (!name?.trim() || isUnknownPlayer(name)) return null;
   return name.trim();
+}
+
+function stripJerseyPrefix(label: string | null | undefined): string | null {
+  const value = visiblePlayerLabel(label);
+  if (!value) return null;
+  const match = value.match(/^No\.\s*\d+\s+(.+)$/i);
+  return match?.[1]?.trim() || value;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cleanTimelineDetail(
+  detail: string | null | undefined,
+  labels: Array<{ raw: string | null; clean: string | null }>
+): string | null {
+  const value = detail?.trim();
+  if (!value) return null;
+  return labels.reduce((text, item) => {
+    if (!item.raw || !item.clean || item.raw === item.clean) return text;
+    return text.replace(new RegExp(escapeRegExp(item.raw), "g"), item.clean);
+  }, value);
 }
 
 function hasCompletePlayerName(name: string | null | undefined): boolean {
@@ -378,6 +401,7 @@ function resolveSaveDisplay(
 
 type ParsedEvent = {
   ev: SbMatchEvent;
+  detail: string | null;
   side: EventSide;
   csvType: string;
   playerLabel: string | null;
@@ -401,9 +425,21 @@ function parseEvent(
   const side = eventSide(ev, homeTeam, awayTeam);
   const club = teamNameForEvent(ev, homeTeam, awayTeam);
   const csvType = resolveCsvEventType(ev);
-  const playerLabel = visiblePlayerLabel(ev.player?.displayName ?? ev.playerLabel);
-  const playerLabel2 = visiblePlayerLabel(ev.playerLabel2);
-  const assistLabel = visiblePlayerLabel(ev.assistPlayer?.displayName ?? ev.assistLabel);
+  const rawPlayerLabel = visiblePlayerLabel(ev.player?.displayName ?? ev.playerLabel);
+  const rawPlayerLabel2 = visiblePlayerLabel(ev.playerLabel2);
+  const rawAssistLabel = visiblePlayerLabel(ev.assistPlayer?.displayName ?? ev.assistLabel);
+  const storedPlayerLabel = visiblePlayerLabel(ev.playerLabel);
+  const storedAssistLabel = visiblePlayerLabel(ev.assistLabel);
+  const playerLabel = stripJerseyPrefix(rawPlayerLabel);
+  const playerLabel2 = stripJerseyPrefix(rawPlayerLabel2);
+  const assistLabel = stripJerseyPrefix(rawAssistLabel);
+  const detail = cleanTimelineDetail(ev.detail, [
+    { raw: rawPlayerLabel, clean: playerLabel },
+    { raw: storedPlayerLabel, clean: stripJerseyPrefix(storedPlayerLabel) },
+    { raw: rawPlayerLabel2, clean: playerLabel2 },
+    { raw: rawAssistLabel, clean: assistLabel },
+    { raw: storedAssistLabel, clean: stripJerseyPrefix(storedAssistLabel) },
+  ]);
   const saveDisplay = isSaveDisplayEvent(ev, csvType)
     ? resolveSaveDisplay(ev, playerLabel, playerLabel2, assistLabel, club)
     : null;
@@ -412,12 +448,13 @@ function parseEvent(
   const baseLabel = resolveEventLabel(ev);
   const typeLabel = parenName ? `${baseLabel} (${parenName})` : baseLabel;
   const narrative = isNarrativeEvent(ev);
-  const showDetail = Boolean(ev.detail?.trim());
+  const showDetail = Boolean(detail);
   const showPrimary = !parenFormat && Boolean(playerLabel);
   const showAssist = !parenFormat && Boolean(assistLabel);
 
   return {
     ev,
+    detail,
     side,
     csvType,
     playerLabel,
@@ -445,7 +482,7 @@ function EventCard({
 }) {
   const {
     ev,
-    typeLabel,
+    detail,
     showDetail,
     showPrimary,
     showAssist,
@@ -457,11 +494,9 @@ function EventCard({
 
   return (
     <div className={`sbm-event__card sbm-event__card--${align}`}>
-      <div className="sbm-event__head">
-        <span className="sbm-event__type">{typeLabel}</span>
-      </div>
-      {(saveDisplay || showPrimary || showAssist || showDetail || (ev.highlights?.length ?? 0) > 0) && (
+      {(club || saveDisplay || showPrimary || showAssist || showDetail || (ev.highlights?.length ?? 0) > 0) && (
         <div className="sbm-event__body">
+          {club && <span className="sbm-event__club">{club}</span>}
           {saveDisplay?.kickerLabel && (
             <>
               <PlayerLink
@@ -502,7 +537,7 @@ function EventCard({
               />
             </span>
           )}
-          {showDetail && <p className="sbm-event__comment">{ev.detail}</p>}
+          {showDetail && <p className="sbm-event__comment">{detail}</p>}
           {ev.highlights && ev.highlights.length > 0 && (
             <a
               href={ev.highlights[0].youtubeUrl}
@@ -549,7 +584,7 @@ function NeutralEventCard({
 }) {
   const {
     ev,
-    typeLabel,
+    detail,
     showDetail,
     showPrimary,
     showAssist,
@@ -559,11 +594,9 @@ function NeutralEventCard({
   } = parsed;
   return (
     <article className="sbm-event__neutral-card">
-      <div className="sbm-event__neutral-head">
-        <span className="sbm-event__type">{typeLabel}</span>
-      </div>
-      {(showPrimary || showAssist || showDetail) && (
+      {(club || showPrimary || showAssist || showDetail) && (
         <div className="sbm-event__body">
+          {club && <span className="sbm-event__club">{club}</span>}
           {showPrimary && playerLabel && (
             <PlayerLink
               slug={ev.player?.slug}
@@ -583,7 +616,7 @@ function NeutralEventCard({
               />
             </span>
           )}
-          {showDetail && <p className="sbm-event__comment">{ev.detail}</p>}
+          {showDetail && <p className="sbm-event__comment">{detail}</p>}
         </div>
       )}
     </article>
