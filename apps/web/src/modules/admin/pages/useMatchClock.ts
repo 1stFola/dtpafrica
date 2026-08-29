@@ -70,7 +70,10 @@ export function useMatchClock(
     const ceiling =
       phase === "awaiting_added"
         ? halfLength * 60
-        : phase === "awaiting_second_half" || phase === "finished"
+        : phase === "awaiting_second_half" ||
+            phase === "awaiting_full_time" ||
+            phase === "penalty_shootout" ||
+            phase === "finished"
           ? (halfLength + addedAllowance) * 60
           : Number.POSITIVE_INFINITY;
     return Math.max(0, Math.min(raw, ceiling));
@@ -91,7 +94,7 @@ export function useMatchClock(
   useEffect(() => {
     if (phase !== "added_running") return;
     if (elapsed >= (halfLength + addedAllowance) * 60) {
-      patch({ phase: half === 1 ? "awaiting_second_half" : "finished" });
+      patch({ phase: half === 1 ? "awaiting_second_half" : "awaiting_full_time" });
     }
   }, [phase, elapsed, halfLength, addedAllowance, half, patch]);
 
@@ -139,7 +142,7 @@ export function useMatchClock(
           value === 0
             ? half === 1
               ? "awaiting_second_half"
-              : "finished"
+              : "awaiting_full_time"
             : "added_running",
       } as Partial<ClockState>);
     },
@@ -148,6 +151,25 @@ export function useMatchClock(
 
   const startSecondHalf = useCallback(
     () => patch({ half: 2, phase: "running", secondHalfStartedAt: new Date().toISOString() }),
+    [patch]
+  );
+
+  const playAdditionalMinute = useCallback(() => {
+    const key = half === 1 ? "addedFirst" : "addedSecond";
+    const nextAllowance = addedAllowance + 1;
+    const elapsedAtRestart = (halfLength + addedAllowance) * 60;
+    const anchorAt = new Date(Date.now() - elapsedAtRestart * 1000).toISOString();
+    patch({
+      [key]: nextAllowance,
+      phase: "added_running",
+      ...(half === 1 ? { firstHalfStartedAt: anchorAt } : { secondHalfStartedAt: anchorAt }),
+    } as Partial<ClockState>);
+  }, [addedAllowance, half, halfLength, patch]);
+
+  const endGame = useCallback(() => patch({ phase: "finished" }), [patch]);
+
+  const startPenaltyShootout = useCallback(
+    () => patch({ phase: "penalty_shootout" }),
     [patch]
   );
 
@@ -164,5 +186,8 @@ export function useMatchClock(
     kickOff,
     confirmAddedTime,
     startSecondHalf,
+    playAdditionalMinute,
+    endGame,
+    startPenaltyShootout,
   };
 }

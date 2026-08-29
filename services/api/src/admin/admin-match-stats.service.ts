@@ -146,7 +146,6 @@ export const MATCH_EVENT_TYPES = [
   "one_on_one",
   "own_goal",
   "penalty_saved",
-  "penalty_shootout",
   "recovery_tackle",
   "red_card",
   "save",
@@ -171,7 +170,14 @@ export const MATCH_EVENT_TYPES = [
  * from the accepted set would make readEvents discard those events silently on
  * the next save, which is data loss disguised as a vocabulary change.
  */
-const RETIRED_EVENT_TYPES = ["assist", "cross"] as const;
+const RETIRED_EVENT_TYPES = [
+  "assist",
+  "cross",
+  "full_time",
+  "penalty_shootout",
+  "shootout_goal",
+  "shootout_miss",
+] as const;
 
 const EVENT_TYPE_SET = new Set<string>([...MATCH_EVENT_TYPES, ...RETIRED_EVENT_TYPES]);
 
@@ -229,6 +235,8 @@ export type ClockPhase =
   | "awaiting_added"
   | "added_running"
   | "awaiting_second_half"
+  | "awaiting_full_time"
+  | "penalty_shootout"
   | "finished";
 
 export type ClockState = {
@@ -314,6 +322,8 @@ const CLOCK_PHASES = new Set<string>([
   "awaiting_added",
   "added_running",
   "awaiting_second_half",
+  "awaiting_full_time",
+  "penalty_shootout",
   "finished",
 ]);
 
@@ -941,6 +951,23 @@ export class AdminMatchStatsService {
     }
 
     return this.present(match, sheet, ctx);
+  }
+
+  async assertLiveAudioAccess(
+    matchId: string,
+    ctx: AdminAuthContext,
+    options: { allowAfterFullTime?: boolean; allowWhenPublicLiveOff?: boolean } = {}
+  ) {
+    this.assertCanRecord(ctx);
+    const match = await this.loadMatch(matchId, ctx);
+    const sheet = await this.requireSheet(matchId);
+    this.assertOwnsSheet(sheet, ctx, match);
+    if (!options.allowWhenPublicLiveOff && !readLiveFeature(match.stats).enabled) {
+      throw new ForbiddenException("Public live must be approved before live audio commentary can start");
+    }
+    if (!options.allowAfterFullTime && isFullTime(readClock(sheet.clock))) {
+      throw new BadRequestException("Live audio commentary is closed after full time");
+    }
   }
 
   /**

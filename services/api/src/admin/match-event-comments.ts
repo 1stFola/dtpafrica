@@ -146,6 +146,9 @@ const TEMPLATES: Record<string, Variant[]> = {
     (c, e) => `Free-Kick! ${actor(c, e)} takes another set piece for ${c.teamName}.`,
     (c) => `Free-Kick! ${c.teamName} restart play from the resulting infringement.`,
   ],
+  full_time: [
+    (c) => `Full-Time! The referee ends the match between ${c.teamName} and ${c.opponentName}.`,
+  ],
   foul: [
     (c, e) => `Foul Committed! ${actor(c, e)} concedes a free-kick and ${c.opponentName} can reset play.`,
     (c) => `Foul Committed! ${c.teamName} break up the move, but the referee brings play back.`,
@@ -239,6 +242,14 @@ const TEMPLATES: Record<string, Variant[]> = {
   ],
   penalty_shootout: [
     (c) => `Penalty Shootout! The match goes to spot-kicks between ${c.teamName} and ${c.opponentName}.`,
+  ],
+  shootout_goal: [
+    (c, e) => `Penalty Scored! ${actor(c, e)} converts from the spot for ${c.teamName}.`,
+    (c, e) => `Shootout Goal! ${actor(c, e)} keeps composure and scores.`,
+  ],
+  shootout_miss: [
+    (c, e) => `Penalty Missed! ${actor(c, e)} cannot convert for ${c.teamName}.`,
+    (c, e) => `Shootout Miss! ${actor(c, e)} is denied from the spot.`,
   ],
   recovery_tackle: [
     (c, e) => `Recovery Tackle! ${actor(c, e)} chases back and wins the ball with a perfectly timed challenge.`,

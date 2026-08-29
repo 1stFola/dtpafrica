@@ -79,6 +79,9 @@ export function MatchEventsTab({
     secondaryPlayerNumber: "",
     half: "1",
   });
+  const [shootoutSide, setShootoutSide] = useState<Side>("home");
+  const [shootoutPlayerNumber, setShootoutPlayerNumber] = useState("");
+  const [shootoutOutcome, setShootoutOutcome] = useState<"goal" | "miss">("goal");
 
   const { prefs } = useFeedbackPrefs();
   const playSound = useUISound({ enabled: prefs.sound, intensity: prefs.intensity });
@@ -184,6 +187,66 @@ export function MatchEventsTab({
     };
     onChange({ events: events.map((event) => (event.id === editing.id ? next : event)) });
     setEditing(null);
+  };
+
+  const systemMinute = () => ({
+    minute: clock.liveMinute,
+    addedMinute: clock.liveAdded,
+    half: clock.half,
+  });
+
+  const appendEvent = (event: RecordedEvent) => {
+    onChange({ events: [...events, event] });
+  };
+
+  const logFullTime = () => {
+    const t = systemMinute();
+    const next: RecordedEvent = {
+      id: `full_time-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: "full_time",
+      minute: t.minute,
+      addedMinute: t.addedMinute,
+      side: "home",
+      playerNumber: null,
+      secondaryPlayerNumber: null,
+      half: t.half,
+    };
+    onChange({ events: [...events.filter((event) => event.type !== "full_time"), next] });
+    clock.endGame();
+  };
+
+  const startShootout = () => {
+    const alreadyStarted = events.some((event) => event.type === "penalty_shootout");
+    const t = systemMinute();
+    const marker: RecordedEvent = {
+      id: `penalty_shootout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: "penalty_shootout",
+      minute: t.minute,
+      addedMinute: t.addedMinute,
+      side: "home",
+      playerNumber: null,
+      secondaryPlayerNumber: null,
+      half: t.half,
+    };
+    if (!alreadyStarted) appendEvent(marker);
+    clock.startPenaltyShootout();
+  };
+
+  const logShootoutKick = () => {
+    const jersey = Number(shootoutPlayerNumber);
+    if (!Number.isFinite(jersey) || jersey < 1 || jersey > 99) return;
+    const t = systemMinute();
+    appendEvent({
+      id: `shootout_${shootoutOutcome}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: shootoutOutcome === "goal" ? "shootout_goal" : "shootout_miss",
+      minute: t.minute,
+      addedMinute: t.addedMinute,
+      side: shootoutSide,
+      playerNumber: Math.floor(jersey),
+      secondaryPlayerNumber: null,
+      half: t.half,
+    });
+    setShootoutPlayerNumber("");
   };
 
   return (
@@ -316,9 +379,7 @@ export function MatchEventsTab({
                   max={130}
                   inputMode="numeric"
                   value={editDraft.minute}
-                  onChange={(event) =>
-                    setEditDraft((draft) => ({ ...draft, minute: event.target.value }))
-                  }
+                  disabled
                 />
               </label>
               <label>
@@ -329,19 +390,15 @@ export function MatchEventsTab({
                   max={30}
                   inputMode="numeric"
                   value={editDraft.addedMinute}
-                  onChange={(event) =>
-                    setEditDraft((draft) => ({ ...draft, addedMinute: event.target.value }))
-                  }
                   placeholder="0"
+                  disabled
                 />
               </label>
               <label>
                 <span>Half</span>
                 <select
                   value={editDraft.half}
-                  onChange={(event) =>
-                    setEditDraft((draft) => ({ ...draft, half: event.target.value }))
-                  }
+                  disabled
                 >
                   <option value="1">1st half</option>
                   <option value="2">2nd half</option>
@@ -491,6 +548,103 @@ export function MatchEventsTab({
             <button type="button" className="mcx-btn mcx-btn--primary" onClick={clock.startSecondHalf}>
               Start Second Half
             </button>
+          </div>
+        </div>
+      )}
+
+      {clock.phase === "awaiting_full_time" && editable && (
+        <div className="mcx-prompt" role="dialog" aria-modal="true">
+          <div className="mcx-prompt__card mcx-prompt__card--wide">
+            <h3>Full-time decision</h3>
+            <p className="muted">
+              Regulation and added time are complete. Choose what happens next.
+            </p>
+            <div className="mcx-prompt__actions mcx-prompt__actions--stack">
+              <button type="button" className="mcx-btn" onClick={clock.playAdditionalMinute}>
+                More Time
+              </button>
+              <button type="button" className="mcx-btn" onClick={startShootout}>
+                Penalty Shootout
+              </button>
+              <button type="button" className="mcx-btn mcx-btn--primary" onClick={logFullTime}>
+                End Game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clock.phase === "penalty_shootout" && editable && (
+        <div className="mcx-prompt" role="dialog" aria-modal="true">
+          <div className="mcx-prompt__card mcx-prompt__card--wide">
+            <h3>Penalty shootout</h3>
+            <p className="muted">Record each penalty as a goal or miss for the live timeline.</p>
+            <div className="mcx-entrybar__sides">
+              {(["home", "away"] as Side[]).map((target) => (
+                <button
+                  key={target}
+                  type="button"
+                  className={shootoutSide === target ? "mcx-sidebtn is-active" : "mcx-sidebtn"}
+                  style={
+                    shootoutSide === target
+                      ? {
+                          background: kits[target],
+                          color: "#06121f",
+                          borderColor: kits[target],
+                        }
+                      : undefined
+                  }
+                  onClick={() => setShootoutSide(target)}
+                >
+                  {teamFor(target)}
+                </button>
+              ))}
+            </div>
+            <label className="mcx-prompt__label">
+              <span>Penalty taker jersey number</span>
+              <input
+                type="number"
+                min={1}
+                max={99}
+                inputMode="numeric"
+                value={shootoutPlayerNumber}
+                onChange={(event) => setShootoutPlayerNumber(event.target.value)}
+                autoFocus
+              />
+            </label>
+            <div className="mcx-shootout-choice" role="radiogroup" aria-label="Penalty outcome">
+              <label className="mcx-shootout-choice__option is-goal">
+                <input
+                  type="radio"
+                  name="shootout-outcome"
+                  checked={shootoutOutcome === "goal"}
+                  onChange={() => setShootoutOutcome("goal")}
+                />
+                <span>Goal</span>
+              </label>
+              <label className="mcx-shootout-choice__option is-miss">
+                <input
+                  type="radio"
+                  name="shootout-outcome"
+                  checked={shootoutOutcome === "miss"}
+                  onChange={() => setShootoutOutcome("miss")}
+                />
+                <span>Miss</span>
+              </label>
+            </div>
+            <div className="mcx-prompt__actions">
+              <button
+                type="button"
+                className="mcx-btn"
+                disabled={shootoutPlayerNumber.trim() === ""}
+                onClick={logShootoutKick}
+              >
+                Record penalty
+              </button>
+              <button type="button" className="mcx-btn mcx-btn--primary" onClick={logFullTime}>
+                End Game
+              </button>
+            </div>
           </div>
         </div>
       )}
