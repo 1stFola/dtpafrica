@@ -2282,6 +2282,23 @@
   color: #fecaca;
 }
 
+.mcx-training-audio-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.8rem 1rem 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.45);
+}
+
+.mcx-training-audio-preview__note {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+}
+
 .mcx-prompt__cancel {
   margin-top: 0.6rem;
   border: 0;
