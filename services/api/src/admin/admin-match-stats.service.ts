@@ -209,6 +209,23 @@ export function scoreFromEvents(events: RecordedEvent[]): { home: number; away: 
   return { home, away };
 }
 
+export function penaltyShootoutFromEvents(
+  events: RecordedEvent[]
+): { home: number; away: number; winner: "home" | "away" } | null {
+  let home = 0;
+  let away = 0;
+  let kicks = 0;
+  for (const event of events) {
+    if (event.type !== "shootout_goal" && event.type !== "shootout_miss") continue;
+    kicks += 1;
+    if (event.type !== "shootout_goal") continue;
+    if (event.side === "home") home += 1;
+    else away += 1;
+  }
+  if (kicks === 0 || home === away) return null;
+  return { home, away, winner: home > away ? "home" : "away" };
+}
+
 export type RecordedEvent = {
   id: string;
   type: string;
@@ -1151,6 +1168,10 @@ export class AdminMatchStatsService {
       match.stats && typeof match.stats === "object" && !Array.isArray(match.stats)
         ? (match.stats as Record<string, unknown>)
         : {};
+    const existingMeta =
+      match.meta && typeof match.meta === "object" && !Array.isArray(match.meta)
+        ? (match.meta as Record<string, unknown>)
+        : {};
 
     /* Re-approval must not duplicate the timeline, so this sheet's previously
        published events are cleared first. Only rows this console wrote are
@@ -1195,6 +1216,15 @@ export class AdminMatchStatsService {
        and the figures derived from it now reach the public site together or
        not at all — there is no window where they can disagree. */
     const score = scoreFromEvents(recorded);
+    const penaltyShootout = penaltyShootoutFromEvents(recorded);
+    const nextMeta = { ...existingMeta };
+    if (penaltyShootout) {
+      nextMeta.penaltyShootout = penaltyShootout;
+      nextMeta.regulationScore = score;
+    } else {
+      delete nextMeta.penaltyShootout;
+      delete nextMeta.regulationScore;
+    }
     const writes: Prisma.PrismaPromise<unknown>[] = [
       /* Re-approval must not duplicate the timeline, so this sheet's previously
          published events are cleared first. */
@@ -1211,6 +1241,7 @@ export class AdminMatchStatsService {
              and its timeline can never disagree. */
           homeScore: score.home,
           awayScore: score.away,
+          meta: nextMeta as Prisma.InputJsonValue,
           stats: {
             ...existingStats,
             /* Published figures include what the event log captured, so the
@@ -1324,9 +1355,19 @@ export class AdminMatchStatsService {
       /* The score follows the approved log, so withdrawing the log has to
          withdraw the scoreline too — otherwise the public match would show
          goals with an empty timeline behind them. */
+      const reopenedMeta =
+        match.meta && typeof match.meta === "object" && !Array.isArray(match.meta)
+          ? { ...(match.meta as Record<string, unknown>) }
+          : {};
+      delete reopenedMeta.penaltyShootout;
+      delete reopenedMeta.regulationScore;
       await this.prisma.sbMatch.update({
         where: { id: matchId },
-        data: { homeScore: 0, awayScore: 0 },
+        data: {
+          homeScore: 0,
+          awayScore: 0,
+          meta: reopenedMeta as Prisma.InputJsonValue,
+        },
       });
     }
 

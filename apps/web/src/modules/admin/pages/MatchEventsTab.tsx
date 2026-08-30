@@ -20,8 +20,61 @@ const SECOND_PLAYER_PROMPT: Record<string, { title: string; label: string; allow
   goal: { title: "Goal", label: "Assist — jersey number", allowNone: "Solo Effort" },
 };
 
+const SHOOTOUT_TYPES = new Set(["shootout_goal", "shootout_miss"]);
+
 function labelFor(type: string): string {
   return EVENT_LABELS[type] ?? type.replace(/_/g, " ");
+}
+
+function shootoutScore(events: RecordedEvent[]): Record<Side, number> {
+  return events.reduce(
+    (score, event) => {
+      if (event.type === "shootout_goal") score[event.side] += 1;
+      return score;
+    },
+    { home: 0, away: 0 }
+  );
+}
+
+function shootoutCounts(events: RecordedEvent[]): Record<Side, number> {
+  return events.reduce(
+    (count, event) => {
+      if (SHOOTOUT_TYPES.has(event.type)) count[event.side] += 1;
+      return count;
+    },
+    { home: 0, away: 0 }
+  );
+}
+
+function nextShootoutSide(events: RecordedEvent[]): Side {
+  const kicks = events.filter((event) => SHOOTOUT_TYPES.has(event.type));
+  return kicks.length % 2 === 0 ? "home" : "away";
+}
+
+function normalizeShootoutSides(events: RecordedEvent[]): RecordedEvent[] {
+  let shootoutIndex = 0;
+  return events.map((event) => {
+    if (!SHOOTOUT_TYPES.has(event.type)) return event;
+    const side: Side = shootoutIndex % 2 === 0 ? "home" : "away";
+    shootoutIndex += 1;
+    return event.side === side ? event : { ...event, side };
+  });
+}
+
+function shootoutIsDecided(events: RecordedEvent[]): boolean {
+  const score = shootoutScore(events);
+  const count = shootoutCounts(events);
+  const homeInitialRemaining = Math.max(0, 5 - count.home);
+  const awayInitialRemaining = Math.max(0, 5 - count.away);
+
+  if (count.home <= 5 && count.away <= 5) {
+    if (score.home > score.away + awayInitialRemaining) return true;
+    if (score.away > score.home + homeInitialRemaining) return true;
+  }
+
+  const initialComplete = count.home >= 5 && count.away >= 5;
+  const completeSuddenDeathPair = initialComplete && count.home === count.away;
+  return completeSuddenDeathPair && score.home !== score.away;
 }
 
 /**
@@ -79,7 +132,6 @@ export function MatchEventsTab({
     secondaryPlayerNumber: "",
     half: "1",
   });
-  const [shootoutSide, setShootoutSide] = useState<Side>("home");
   const [shootoutPlayerNumber, setShootoutPlayerNumber] = useState("");
   const [shootoutOutcome, setShootoutOutcome] = useState<"goal" | "miss">("goal");
 
@@ -143,7 +195,7 @@ export function MatchEventsTab({
 
   const removeEvent = (id: string) => {
     if (!editable) return;
-    onChange({ events: events.filter((e) => e.id !== id) });
+    onChange({ events: normalizeShootoutSides(events.filter((e) => e.id !== id)) });
   };
 
   const openEdit = (event: RecordedEvent) => {
@@ -185,7 +237,11 @@ export function MatchEventsTab({
         : null,
       half: editDraft.half === "2" ? 2 : 1,
     };
-    onChange({ events: events.map((event) => (event.id === editing.id ? next : event)) });
+    onChange({
+      events: normalizeShootoutSides(
+        events.map((event) => (event.id === editing.id ? next : event))
+      ),
+    });
     setEditing(null);
   };
 
@@ -199,7 +255,7 @@ export function MatchEventsTab({
     onChange({ events: [...events, event] });
   };
 
-  const logFullTime = () => {
+  const finishWithEvents = (baseEvents: RecordedEvent[]) => {
     const t = systemMinute();
     const next: RecordedEvent = {
       id: `full_time-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -211,8 +267,17 @@ export function MatchEventsTab({
       secondaryPlayerNumber: null,
       half: t.half,
     };
-    onChange({ events: [...events.filter((event) => event.type !== "full_time"), next] });
+    onChange({
+      events: normalizeShootoutSides([
+        ...baseEvents.filter((event) => event.type !== "full_time"),
+        next,
+      ]),
+    });
     clock.endGame();
+  };
+
+  const logFullTime = () => {
+    finishWithEvents(events);
   };
 
   const startShootout = () => {
@@ -236,18 +301,32 @@ export function MatchEventsTab({
     const jersey = Number(shootoutPlayerNumber);
     if (!Number.isFinite(jersey) || jersey < 1 || jersey > 99) return;
     const t = systemMinute();
-    appendEvent({
+    const nextEvent: RecordedEvent = {
       id: `shootout_${shootoutOutcome}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: shootoutOutcome === "goal" ? "shootout_goal" : "shootout_miss",
       minute: t.minute,
       addedMinute: t.addedMinute,
-      side: shootoutSide,
+      side: nextShootoutSide(events),
       playerNumber: Math.floor(jersey),
       secondaryPlayerNumber: null,
       half: t.half,
-    });
+    };
+    const nextEvents = normalizeShootoutSides([...events, nextEvent]);
     setShootoutPlayerNumber("");
+    if (shootoutIsDecided(nextEvents)) {
+      finishWithEvents(nextEvents);
+      return;
+    }
+    onChange({ events: nextEvents });
   };
+
+  const shootoutKicks = events.filter((event) => SHOOTOUT_TYPES.has(event.type));
+  const shootoutCurrentScore = shootoutScore(events);
+  const shootoutCurrentCounts = shootoutCounts(events);
+  const shootoutNextSide = nextShootoutSide(events);
+  const shootoutRound =
+    Math.max(shootoutCurrentCounts.home, shootoutCurrentCounts.away) +
+    (shootoutNextSide === "home" ? 1 : 0);
 
   return (
     <div className="mcx-events">
@@ -545,7 +624,14 @@ export function MatchEventsTab({
               The first half and its added time are complete. Start the clock again when the second
               half kicks off.
             </p>
-            <button type="button" className="mcx-btn mcx-btn--primary" onClick={clock.startSecondHalf}>
+            <button
+              type="button"
+              className="mcx-btn mcx-btn--primary"
+              onClick={() => {
+                onCapturedUsed();
+                clock.startSecondHalf();
+              }}
+            >
               Start Second Half
             </button>
           </div>
@@ -578,27 +664,26 @@ export function MatchEventsTab({
         <div className="mcx-prompt" role="dialog" aria-modal="true">
           <div className="mcx-prompt__card mcx-prompt__card--wide">
             <h3>Penalty shootout</h3>
-            <p className="muted">Record each penalty as a goal or miss for the live timeline.</p>
-            <div className="mcx-entrybar__sides">
-              {(["home", "away"] as Side[]).map((target) => (
-                <button
-                  key={target}
-                  type="button"
-                  className={shootoutSide === target ? "mcx-sidebtn is-active" : "mcx-sidebtn"}
-                  style={
-                    shootoutSide === target
-                      ? {
-                          background: kits[target],
-                          color: "#06121f",
-                          borderColor: kits[target],
-                        }
-                      : undefined
-                  }
-                  onClick={() => setShootoutSide(target)}
-                >
-                  {teamFor(target)}
-                </button>
-              ))}
+            <p className="muted">
+              Teams alternate automatically. The game ends when the shootout is decided.
+            </p>
+            <div className="mcx-shootout-board" aria-label="Penalty shootout score">
+              <span>{teamFor("home")}</span>
+              <strong>{shootoutCurrentScore.home}</strong>
+              <span className="mcx-shootout-board__sep">–</span>
+              <strong>{shootoutCurrentScore.away}</strong>
+              <span>{teamFor("away")}</span>
+            </div>
+            <div
+              className="mcx-shootout-next"
+              style={{ borderColor: kits[shootoutNextSide] }}
+            >
+              <span>Next penalty</span>
+              <strong>{teamFor(shootoutNextSide)}</strong>
+              <em>
+                Kick {shootoutKicks.length + 1}
+                {shootoutRound > 0 ? ` · round ${shootoutRound}` : ""}
+              </em>
             </div>
             <label className="mcx-prompt__label">
               <span>Penalty taker jersey number</span>

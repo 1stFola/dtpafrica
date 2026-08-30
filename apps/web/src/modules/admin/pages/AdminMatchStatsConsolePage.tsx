@@ -1004,6 +1004,15 @@ export function AdminMatchStatsConsolePage() {
   );
 
   const matchClock = useMatchClock(clock, handleClockChange);
+  const previousClockHalf = useRef(matchClock.half);
+
+  useEffect(() => {
+    if (previousClockHalf.current === matchClock.half) return;
+    previousClockHalf.current = matchClock.half;
+    setCaptured(null);
+    setSide(null);
+    setPlayerNumber("");
+  }, [matchClock.half]);
 
   const handleEventsChange = useCallback(
     (next: { events?: RecordedEvent[]; kits?: KitColours }) => {
