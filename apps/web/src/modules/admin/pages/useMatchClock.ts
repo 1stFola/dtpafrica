@@ -100,7 +100,7 @@ export function useMatchClock(
 
   /** The minute a tap would log right now. */
   const liveMinute = useMemo(() => {
-    const played = Math.floor(elapsed / 60);
+    const played = Math.floor(elapsed / 60) + 1;
     if (half === 1) return Math.min(played, halfLength);
     return halfLength + Math.min(played, halfLength);
   }, [elapsed, half, halfLength]);
