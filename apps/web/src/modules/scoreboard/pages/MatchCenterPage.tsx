@@ -16,6 +16,7 @@ import { TeamCrest } from "../components/TeamCrest";
 import { isMatchUuid, matchCenterPath } from "../utils/matchPath";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
+import { liveAudioSocketUrl } from "../../../api/liveAudio";
 
 type MatchTab = "timeline" | "stats" | "video" | "photos" | "squads";
 
@@ -228,25 +229,55 @@ function playGoalWhistle(ctxRef: MutableRefObject<AudioContext | null>) {
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.28, now + 0.02);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + 1.15);
+    master.gain.exponentialRampToValueAtTime(0.72, now + 0.02);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 1.7);
     master.connect(ctx.destination);
 
-    [0, 0.34].forEach((offset) => {
+    [0, 0.42, 0.84].forEach((offset) => {
       const whistle = ctx.createOscillator();
       const gain = ctx.createGain();
       whistle.type = "sine";
-      whistle.frequency.setValueAtTime(1560, now + offset);
-      whistle.frequency.exponentialRampToValueAtTime(1180, now + offset + 0.24);
+      whistle.frequency.setValueAtTime(1780, now + offset);
+      whistle.frequency.exponentialRampToValueAtTime(1240, now + offset + 0.3);
       gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.9, now + offset + 0.018);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.28);
+      gain.gain.exponentialRampToValueAtTime(1, now + offset + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.36);
       whistle.connect(gain).connect(master);
       whistle.start(now + offset);
-      whistle.stop(now + offset + 0.32);
+      whistle.stop(now + offset + 0.42);
     });
   } catch {
     /* Browser audio is best-effort: notifications still carry the alert. */
+  }
+}
+
+function unlockGoalAudio(ctxRef: MutableRefObject<AudioContext | null>) {
+  if (typeof window === "undefined") return;
+  const Ctor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return;
+  try {
+    const ctx = ctxRef.current ?? new Ctor();
+    ctxRef.current = ctx;
+    if (ctx.state === "suspended") void ctx.resume();
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start();
+  } catch {
+    /* Browsers may still block audio until a later gesture. */
+  }
+}
+
+function vibrateGoalAlert() {
+  try {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate([240, 90, 240, 90, 420]);
+    }
+  } catch {
+    /* Vibration support varies by browser and device. */
   }
 }
 
@@ -267,12 +298,9 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
   useEffect(() => {
     if (!listening) return;
     let closedByClient = false;
-    const url = new URL(
-      `/api/v1/live-audio/listen/${encodeURIComponent(matchId)}`,
-      window.location.origin
+    const socket = new WebSocket(
+      liveAudioSocketUrl(`/api/v1/live-audio/listen/${encodeURIComponent(matchId)}`)
     );
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(url.toString());
 
     const playChunk = (data: string, mimeType: string) => {
       playbackRef.current = playbackRef.current
@@ -331,8 +359,13 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
       setActive(false);
       if (event.code === 1008) {
         setMessage(event.reason || "Live audio is not enabled for this match.");
+      } else if (event.code === 1000 || closedByClient) {
+        setMessage(null);
       } else if (!closedByClient) {
-        setMessage("Live audio stream closed.");
+        setMessage(
+          event.reason ||
+            "Live audio stream closed. Check that the API server is running with websocket support."
+        );
       }
     };
     return () => {
@@ -520,6 +553,7 @@ export function MatchCenterPage() {
   const [goalAlert, setGoalAlert] = useState<string | null>(null);
   const seenLiveEventIds = useRef<Set<string> | null>(null);
   const goalAudioContext = useRef<AudioContext | null>(null);
+  const goalAlertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectTab = (tab: MatchTab) => {
     setActiveTab(tab);
@@ -567,7 +601,7 @@ export function MatchCenterPage() {
     setError(null);
     setLoading(true);
     load();
-    timer = setInterval(load, 15000);
+    timer = setInterval(load, 5000);
 
     return () => {
       cancelled = true;
@@ -642,36 +676,41 @@ export function MatchCenterPage() {
     ].join(" · ");
 
     playGoalWhistle(goalAudioContext);
+    vibrateGoalAlert();
     setGoalAlert(`${title}: ${body}`);
-    window.setTimeout(() => setGoalAlert(null), 7000);
+    if (goalAlertTimer.current) window.clearTimeout(goalAlertTimer.current);
+    goalAlertTimer.current = window.setTimeout(() => setGoalAlert(null), 8500);
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       new Notification(title, {
         body,
         tag: `dtp-goal-${match?.id ?? matchSlug}`,
+        requireInteraction: true,
+        silent: false,
       });
     }
   }, [goalAlertsEnabled, liveSheet, match, matchSlug]);
 
   const enableGoalAlerts = async () => {
-    playGoalWhistle(goalAudioContext);
-    let allowed = true;
+    unlockGoalAudio(goalAudioContext);
+    let notificationStatus: NotificationPermission | "unsupported" = "unsupported";
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      allowed = (await Notification.requestPermission()) === "granted";
+      notificationStatus = await Notification.requestPermission();
     } else if (typeof Notification !== "undefined") {
-      allowed = Notification.permission === "granted";
+      notificationStatus = Notification.permission;
     }
-    setGoalAlertsEnabled(allowed);
+    setGoalAlertsEnabled(true);
     try {
-      localStorage.setItem(GOAL_ALERTS_KEY, allowed ? "on" : "off");
+      localStorage.setItem(GOAL_ALERTS_KEY, "on");
     } catch {
       /* Non-persistent storage just means the user can enable again next time. */
     }
+    if (goalAlertTimer.current) window.clearTimeout(goalAlertTimer.current);
     setGoalAlert(
-      allowed
+      notificationStatus === "granted"
         ? "Goal alerts enabled for this browser."
-        : "Browser notifications are blocked, but this tab can still show live updates."
+        : "Goal alerts enabled in this tab. Phone notifications need browser permission support."
     );
-    window.setTimeout(() => setGoalAlert(null), 6000);
+    goalAlertTimer.current = window.setTimeout(() => setGoalAlert(null), 6500);
   };
 
   if (error) {
@@ -692,8 +731,9 @@ export function MatchCenterPage() {
   }
 
   const kind = statusKind(match.status);
-  const live = kind === "live" || kind === "ht";
-  const hasScore = match.status !== "scheduled";
+  const live = kind === "live" || kind === "ht" || Boolean(liveSheet);
+  const displayScore = liveSheet?.score ?? { home: match.homeScore, away: match.awayScore };
+  const hasScore = match.status !== "scheduled" || Boolean(liveSheet);
   const kickoff = formatKickoff(match.kickoffAt);
   const dayLabel = matchdayLabel(match);
 
@@ -727,7 +767,39 @@ export function MatchCenterPage() {
         </span>
       </div>
 
-      <header className={`sbm-hero${live ? " sbm-hero--live" : ""}`}>
+      {liveSheet && (
+        <section className="sbm-live-callout sbm-live-callout--attached" aria-label="Live match feed">
+          <div>
+            <span className="sbm-live-kicker">
+              <span className="sbm-live-dot" aria-hidden="true" />
+              Live Feed
+            </span>
+            <strong>
+              {match.homeTeam.name} {liveSheet.score.home}
+              <span> - </span>
+              {liveSheet.score.away} {match.awayTeam.name}
+            </strong>
+            <p>
+              {liveSheet.events.length} event{liveSheet.events.length === 1 ? "" : "s"} logged ·{" "}
+              {formatLiveUpdate(liveSheet.updatedAt)}
+            </p>
+          </div>
+          <div className="sbm-live-callout__actions">
+            <button type="button" className="sbm-live-callout__button" onClick={() => setLiveModalOpen(true)}>
+              Open Live
+            </button>
+            <button
+              type="button"
+              className="sbm-live-callout__button sbm-live-callout__button--ghost"
+              onClick={() => void enableGoalAlerts()}
+            >
+              {goalAlertsEnabled ? "Goal Alerts On" : "Enable Goal Alerts"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      <header className={`sbm-hero${live ? " sbm-hero--live" : ""}${liveSheet ? " sbm-hero--attached-live" : ""}`}>
         <div className="sbm-hero__team sbm-hero__team--home">
           <Link to={`/scoreboard/team/${match.homeTeam.id}`} className="sbm-hero__team-link">
             <TeamCrest team={match.homeTeam} />
@@ -739,9 +811,9 @@ export function MatchCenterPage() {
           <div className="sbm-hero__score" aria-label="Scoreline">
             {hasScore ? (
               <>
-                <span className="sbm-hero__score-num">{match.homeScore}</span>
+                <span className="sbm-hero__score-num">{displayScore.home}</span>
                 <span className="sbm-hero__score-dash">–</span>
-                <span className="sbm-hero__score-num">{match.awayScore}</span>
+                <span className="sbm-hero__score-num">{displayScore.away}</span>
               </>
             ) : (
               <span className="sbm-hero__vs">vs</span>
@@ -773,38 +845,6 @@ export function MatchCenterPage() {
       </div>
 
       <AdPlacement slotKey="matchCenterInline" />
-
-      {liveSheet && (
-        <section className="sbm-live-callout" aria-label="Live match feed">
-          <div>
-            <span className="sbm-live-kicker">
-              <span className="sbm-live-dot" aria-hidden="true" />
-              Live Feed
-            </span>
-            <strong>
-              {match.homeTeam.shortName ?? match.homeTeam.name} {liveSheet.score.home}
-              <span> - </span>
-              {liveSheet.score.away} {match.awayTeam.shortName ?? match.awayTeam.name}
-            </strong>
-            <p>
-              {liveSheet.events.length} event{liveSheet.events.length === 1 ? "" : "s"} logged ·{" "}
-              {formatLiveUpdate(liveSheet.updatedAt)}
-            </p>
-          </div>
-          <div className="sbm-live-callout__actions">
-            <button type="button" className="sbm-live-callout__button" onClick={() => setLiveModalOpen(true)}>
-              Open Live
-            </button>
-            <button
-              type="button"
-              className="sbm-live-callout__button sbm-live-callout__button--ghost"
-              onClick={() => void enableGoalAlerts()}
-            >
-              {goalAlertsEnabled ? "Goal Alerts On" : "Enable Goal Alerts"}
-            </button>
-          </div>
-        </section>
-      )}
 
       {goalAlert && (
         <div className="sbm-goal-toast" role="status" aria-live="polite">

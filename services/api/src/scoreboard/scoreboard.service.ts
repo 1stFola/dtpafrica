@@ -1417,11 +1417,6 @@ export class ScoreboardService {
     const score = scoreFromEvents(events);
     const clock = readClock(sheet.clock);
 
-    const hasStats = Object.values(totals).some(
-      (pair) => (pair?.home ?? 0) > 0 || (pair?.away ?? 0) > 0
-    );
-    if (events.length === 0 && !hasStats && !clock) return null;
-
     const squad = events.length
       ? await this.prisma.sbMatchSquadPlayer.findMany({
           where: { matchId: match.id, jerseyNumber: { not: null } },
