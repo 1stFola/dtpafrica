@@ -134,6 +134,7 @@ const TEAM_MATCH_LIST_INCLUDE = {
   homeTeam: true,
   awayTeam: true,
   competition: true,
+  statisticsSheet: true,
   events: {
     where: { type: { in: ["goal", "own_goal"] } },
     orderBy: { minute: "asc" as const },
@@ -211,6 +212,23 @@ type EventSnapshot = { minute: number; type: string; playerId: string };
 type MatchWithCompetition = Prisma.SbMatchGetPayload<{
   include: { competition: true };
 }>;
+type PublicScoreSheet = {
+  status: string;
+  eventsStatus: string | null;
+  tallies: Prisma.JsonValue;
+  events: Prisma.JsonValue | null;
+  clock: Prisma.JsonValue | null;
+  kits: Prisma.JsonValue | null;
+  recorderName: string | null;
+  updatedAt: Date;
+} | null;
+type PublicScoreMatch = {
+  status: string;
+  homeScore: number;
+  awayScore: number;
+  stats: Prisma.JsonValue | null;
+  statisticsSheet?: PublicScoreSheet;
+};
 type SipIngestPlayerResult =
   | { playerId: string; status: "created" | "updated" }
   | { playerId: string; status: "skipped"; reason: string };
@@ -400,6 +418,33 @@ export class ScoreboardService {
     if (teamId === match.homeTeamId) return match.awayTeamId;
     if (teamId === match.awayTeamId) return match.homeTeamId;
     return null;
+  }
+
+  private publicScoreFor(match: PublicScoreMatch) {
+    const sheet = match.statisticsSheet;
+    if (
+      !sheet ||
+      !readLiveFeature(match.stats).enabled ||
+      sheetStatus(sheet) === "approved" ||
+      !LIVE_STATUSES.includes(match.status)
+    ) {
+      return { home: match.homeScore, away: match.awayScore };
+    }
+    return scoreFromEvents(readEvents(sheet.events));
+  }
+
+  private withPublicScore<T extends PublicScoreMatch>(match: T): Omit<T, "statisticsSheet"> {
+    const { statisticsSheet: _sheet, ...payload } = match;
+    const score = this.publicScoreFor(match);
+    return {
+      ...payload,
+      homeScore: score.home,
+      awayScore: score.away,
+    };
+  }
+
+  private presentPublicMatches<T extends PublicScoreMatch>(matches: T[]) {
+    return presentScoreboardPayload(matches.map((match) => this.withPublicScore(match)));
   }
 
   private async resolveOrCreateTimelinePlayer(args: {
@@ -748,7 +793,9 @@ export class ScoreboardService {
       }
     }
 
-    const recentMatches = [...live, ...interleaved].slice(0, OVERVIEW_TAKE);
+    const recentMatches = this.presentPublicMatches(
+      [...live, ...interleaved].slice(0, OVERVIEW_TAKE)
+    );
     return presentScoreboardPayload({ stats, recentMatches });
   }
 
@@ -1248,9 +1295,11 @@ export class ScoreboardService {
     });
     if (!team) throw new NotFoundException("Team not found");
 
-    const matches = [...team.homeMatches, ...team.awayMatches]
-      .sort((a, b) => (b.kickoffAt?.getTime() ?? 0) - (a.kickoffAt?.getTime() ?? 0))
-      .slice(0, 12);
+    const matches = this.presentPublicMatches(
+      [...team.homeMatches, ...team.awayMatches]
+        .sort((a, b) => (b.kickoffAt?.getTime() ?? 0) - (a.kickoffAt?.getTime() ?? 0))
+        .slice(0, 12)
+    );
     const { homeMatches, awayMatches, ...rest } = team;
     return presentScoreboardPayload({ ...rest, matches });
   }
@@ -1359,6 +1408,7 @@ export class ScoreboardService {
         homeTeam: true,
         awayTeam: true,
         competition: true,
+        statisticsSheet: true,
         _count: { select: { events: true } },
         // Goal events power the scorer snippet on Match Center cards.
         events: {
@@ -1375,7 +1425,7 @@ export class ScoreboardService {
         },
       },
     });
-    return presentScoreboardPayload(rows);
+    return this.presentPublicMatches(rows);
   }
 
   async matchBySlugOrId(slugOrId: string, publicOnly = true) {
@@ -1407,6 +1457,7 @@ export class ScoreboardService {
     const sheet = match.statisticsSheet;
     if (!sheet) return null;
     if (!readLiveFeature(match.stats).enabled) return null;
+    if (!LIVE_STATUSES.includes(match.status)) return null;
 
     const status = sheetStatus(sheet as Record<string, unknown>);
     if (status === "approved") return null;
@@ -1513,9 +1564,12 @@ export class ScoreboardService {
       stats.spotter && typeof stats.spotter === "object" && !Array.isArray(stats.spotter)
         ? (stats.spotter as Record<string, unknown>)
         : {};
+    const publicScore = this.publicScoreFor(match);
     return presentMatchDetail(
       presentScoreboardPayload({
         ...matchPayload,
+        homeScore: publicScore.home,
+        awayScore: publicScore.away,
         liveSheet,
         stats: {
           ...stats,
