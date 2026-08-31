@@ -14,6 +14,7 @@ import { getRosterReadiness } from "../scoreboard/roster-guard";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { CompetitionEngineService } from "../scoreboard/competition-engine.service";
 import { ScoreboardService } from "../scoreboard/scoreboard.service";
+import { ScoreboardLifecycleService } from "../scoreboard/scoreboard-lifecycle.service";
 import { LiveAudioCommentaryService } from "../scoreboard/live-audio-commentary.service";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
 import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
@@ -45,7 +46,12 @@ import { parseMatchSquadCsv, type ParsedMatchSquadCsvRow } from "./match-squad-c
 import type { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
 import type { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
 import { CreateFriendlyMatchDto } from "./dto/create-friendly-match.dto";
-import { readLiveFeature } from "./admin-match-stats.service";
+import {
+  readClock,
+  readEvents,
+  readLiveFeature,
+  scoreFromEvents,
+} from "./admin-match-stats.service";
 
 const SCOREBOARD_TIMEZONE = "Africa/Lagos";
 const DEFAULT_FORMATION = "4-3-3";
@@ -342,7 +348,9 @@ export class AdminScoreboardService {
     @Inject(PlayerDirectoryService)
     private readonly playerDirectory: PlayerDirectoryService,
     @Inject(LiveAudioCommentaryService)
-    private readonly liveAudio: LiveAudioCommentaryService
+    private readonly liveAudio: LiveAudioCommentaryService,
+    @Inject(ScoreboardLifecycleService)
+    private readonly lifecycle: ScoreboardLifecycleService
   ) {}
 
   async stats() {
@@ -1656,7 +1664,16 @@ export class AdminScoreboardService {
   async setMatchLiveFeature(matchId: string, enabled: boolean) {
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },
-      select: { id: true, stats: true },
+      select: {
+        id: true,
+        status: true,
+        homeScore: true,
+        awayScore: true,
+        minute: true,
+        stats: true,
+        competition: { select: { formatType: true } },
+        statisticsSheet: { select: { events: true, clock: true } },
+      },
     });
     if (!match) throw new NotFoundException("Match not found");
 
@@ -1686,6 +1703,27 @@ export class AdminScoreboardService {
       data: { stats: stats as Prisma.InputJsonValue },
     });
     if (!enabled) this.liveAudio.endPublicStream(matchId);
+    if (
+      enabled &&
+      match.competition.formatType !== "TRAINING_SANDBOX" &&
+      readClock(match.statisticsSheet?.clock)?.phase === "finished"
+    ) {
+      const score = scoreFromEvents(readEvents(match.statisticsSheet?.events));
+      await this.prisma.sbMatch.update({
+        where: { id: matchId },
+        data: {
+          homeScore: score.home,
+          awayScore: score.away,
+          status: "finished",
+          minute: match.minute ?? 90,
+        },
+      });
+      if (match.status !== "finished") {
+        await this.lifecycle.onMatchFinished(matchId);
+      } else if (match.homeScore !== score.home || match.awayScore !== score.away) {
+        await this.lifecycle.refreshStandingsForFinishedMatch(matchId);
+      }
+    }
 
     return { ok: true, liveFeature: readLiveFeature(stats) };
   }

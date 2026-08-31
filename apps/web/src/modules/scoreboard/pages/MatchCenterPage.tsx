@@ -281,6 +281,30 @@ function vibrateGoalAlert() {
   }
 }
 
+function showGoalNotification(title: string, body: string, tag: string) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try {
+    new Notification(title, {
+      body,
+      tag,
+      requireInteraction: true,
+      silent: false,
+    });
+  } catch {
+    /* Some mobile browsers expose Notification but refuse page-created alerts. */
+  }
+}
+
+function publicFixtureErrorMessage(error: unknown): string {
+  if (isAbortError(error)) return "";
+  const message = error instanceof Error ? error.message : String(error);
+  if (/match not found/i.test(message)) return "We could not find this fixture.";
+  if (/failed to fetch|network|request failed|api|server|websocket|socket/i.test(message)) {
+    return "We could not load this fixture right now. Please refresh the page.";
+  }
+  return message.trim() || "We could not load this fixture right now. Please refresh the page.";
+}
+
 function base64ToBlob(data: string, mimeType: string): Blob {
   const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
@@ -358,14 +382,11 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
     socket.onclose = (event) => {
       setActive(false);
       if (event.code === 1008) {
-        setMessage(event.reason || "Live audio is not enabled for this match.");
+        setMessage("Live audio is not available for this match yet.");
       } else if (event.code === 1000 || closedByClient) {
         setMessage(null);
       } else if (!closedByClient) {
-        setMessage(
-          event.reason ||
-            "Live audio stream closed. Check that the API server is running with websocket support."
-        );
+        setMessage("Live audio was interrupted. Tap Listen live to try again.");
       }
     };
     return () => {
@@ -593,7 +614,7 @@ export function MatchCenterPage() {
         })
         .catch((e) => {
           if (cancelled || isAbortError(e)) return;
-          setError(String(e));
+          setError(publicFixtureErrorMessage(e));
           setLoading(false);
         });
 
@@ -617,7 +638,8 @@ export function MatchCenterPage() {
     fetchMatchSquads(matchSlug, controller.signal)
       .then((data) => setMatchSquads(data))
       .catch((e) => {
-        if (!isAbortError(e)) setError(String(e));
+        const message = publicFixtureErrorMessage(e);
+        if (message) setError(message);
       })
       .finally(() => setSquadsLoading(false));
 
@@ -680,14 +702,7 @@ export function MatchCenterPage() {
     setGoalAlert(`${title}: ${body}`);
     if (goalAlertTimer.current) window.clearTimeout(goalAlertTimer.current);
     goalAlertTimer.current = window.setTimeout(() => setGoalAlert(null), 8500);
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      new Notification(title, {
-        body,
-        tag: `dtp-goal-${match?.id ?? matchSlug}`,
-        requireInteraction: true,
-        silent: false,
-      });
-    }
+    showGoalNotification(title, body, `dtp-goal-${match?.id ?? matchSlug}`);
   }, [goalAlertsEnabled, liveSheet, match, matchSlug]);
 
   const enableGoalAlerts = async () => {
@@ -847,7 +862,7 @@ export function MatchCenterPage() {
       <AdPlacement slotKey="matchCenterInline" />
 
       {goalAlert && (
-        <div className="sbm-goal-toast" role="status" aria-live="polite">
+        <div className="sbm-goal-toast" role="alert" aria-live="assertive">
           {goalAlert}
         </div>
       )}
