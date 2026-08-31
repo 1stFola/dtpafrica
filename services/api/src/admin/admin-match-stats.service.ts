@@ -19,6 +19,7 @@ import {
   generateEventComments,
   type RecordedEventInput,
 } from "./match-event-comments";
+import { ScoreboardLifecycleService } from "../scoreboard/scoreboard-lifecycle.service";
 
 export type SheetStatus = "live" | "submitted" | "approved";
 
@@ -693,7 +694,9 @@ function playerDisplayLabel(
 @Injectable()
 export class AdminMatchStatsService {
   constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ScoreboardLifecycleService)
+    private readonly lifecycle: ScoreboardLifecycleService
   ) {}
 
   private assertCanRecord(ctx: AdminAuthContext) {
@@ -748,6 +751,33 @@ export class AdminMatchStatsService {
       throw new ForbiddenException("This match is outside the competitions you are assigned to");
     }
     return match;
+  }
+
+  private async syncFinalScoreFromSheet(
+    match: Awaited<ReturnType<AdminMatchStatsService["loadMatch"]>>,
+    sheet: { events: unknown; clock: unknown }
+  ) {
+    if (isTrainingCompetition(match.competition)) return;
+    if (!readLiveFeature(match.stats).enabled) return;
+    if (!isFullTime(readClock(sheet.clock))) return;
+
+    const score = scoreFromEvents(readEvents(sheet.events));
+    const wasFinished = match.status === "finished";
+    await this.prisma.sbMatch.update({
+      where: { id: match.id },
+      data: {
+        homeScore: score.home,
+        awayScore: score.away,
+        status: "finished",
+        minute: match.minute ?? 90,
+      },
+    });
+
+    if (!wasFinished) {
+      await this.lifecycle.onMatchFinished(match.id);
+    } else if (match.homeScore !== score.home || match.awayScore !== score.away) {
+      await this.lifecycle.refreshStandingsForFinishedMatch(match.id);
+    }
   }
 
   /**
@@ -1035,6 +1065,7 @@ export class AdminMatchStatsService {
           : {}),
       },
     });
+    await this.syncFinalScoreFromSheet(match, updated);
     return this.present(match, updated, ctx);
   }
 
@@ -1217,6 +1248,7 @@ export class AdminMatchStatsService {
        not at all — there is no window where they can disagree. */
     const score = scoreFromEvents(recorded);
     const penaltyShootout = penaltyShootoutFromEvents(recorded);
+    const finished = isFullTime(readClock(sheet.clock));
     const nextMeta = { ...existingMeta };
     if (penaltyShootout) {
       nextMeta.penaltyShootout = penaltyShootout;
@@ -1241,6 +1273,9 @@ export class AdminMatchStatsService {
              and its timeline can never disagree. */
           homeScore: score.home,
           awayScore: score.away,
+          ...(finished && !isTrainingCompetition(match.competition)
+            ? { status: "finished", minute: match.minute ?? 90 }
+            : {}),
           meta: nextMeta as Prisma.InputJsonValue,
           stats: {
             ...existingStats,
@@ -1272,6 +1307,13 @@ export class AdminMatchStatsService {
     await this.log(sheet, WHOLE_SHEET, "approved", ctx, {
       summary: this.summarise(sheet) as Prisma.InputJsonValue,
     });
+    if (finished && !isTrainingCompetition(match.competition)) {
+      if (match.status !== "finished") {
+        await this.lifecycle.onMatchFinished(matchId);
+      } else if (match.homeScore !== score.home || match.awayScore !== score.away) {
+        await this.lifecycle.refreshStandingsForFinishedMatch(matchId);
+      }
+    }
     return this.present({ ...match }, updated, ctx);
   }
 

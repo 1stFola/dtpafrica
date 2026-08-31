@@ -422,15 +422,18 @@ export class ScoreboardService {
 
   private publicScoreFor(match: PublicScoreMatch) {
     const sheet = match.statisticsSheet;
+    const events = sheet ? readEvents(sheet.events) : [];
+    const clock = sheet ? readClock(sheet.clock) : null;
     if (
       !sheet ||
       !readLiveFeature(match.stats).enabled ||
       sheetStatus(sheet) === "approved" ||
-      !LIVE_STATUSES.includes(match.status)
+      match.status === "finished" ||
+      (events.length === 0 && (!clock || clock.phase === "pre_kickoff"))
     ) {
       return { home: match.homeScore, away: match.awayScore };
     }
-    return scoreFromEvents(readEvents(sheet.events));
+    return scoreFromEvents(events);
   }
 
   private withPublicScore<T extends PublicScoreMatch>(match: T): Omit<T, "statisticsSheet"> {
@@ -1457,7 +1460,6 @@ export class ScoreboardService {
     const sheet = match.statisticsSheet;
     if (!sheet) return null;
     if (!readLiveFeature(match.stats).enabled) return null;
-    if (!LIVE_STATUSES.includes(match.status)) return null;
 
     const status = sheetStatus(sheet as Record<string, unknown>);
     if (status === "approved") return null;
