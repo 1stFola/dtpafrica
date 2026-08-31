@@ -37,6 +37,7 @@ import {
   type SbMatchStats,
   type SbTeamRef,
 } from "../../../api/scoreboard";
+import { liveAudioSocketUrl } from "../../../api/liveAudio";
 
 const HALVES: Half[] = ["1st", "2nd"];
 
@@ -416,12 +417,6 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-function liveAudioSocketUrl(path: string): string {
-  const url = new URL(path, window.location.origin);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-}
-
 function playTrainingAudioSample(onDone: () => void): () => void {
   const text =
     "Live audio preview. The recorder's voice would stream here during the match, without being saved after full time.";
@@ -617,10 +612,26 @@ function LiveAudioCommentaryControl({
       const ticket = await matchStatsApi.createLiveAudioTicket(matchId);
       const socket = new WebSocket(liveAudioSocketUrl(ticket.wsPath));
       await new Promise<void>((resolve, reject) => {
-        socket.onopen = () => resolve();
-        socket.onerror = () => reject(new Error("Could not connect live audio stream."));
+        let opened = false;
+        socket.onopen = () => {
+          opened = true;
+          resolve();
+        };
+        socket.onerror = () => {
+          if (!opened) {
+            reject(
+              new Error(
+                "Could not connect live audio stream. Check that the API server supports websocket live audio."
+              )
+            );
+          }
+        };
         socket.onclose = (event) => {
-          if (!event.wasClean) reject(new Error(event.reason || "Live audio stream closed."));
+          if (!opened) {
+            reject(new Error(event.reason || "Live audio stream closed before it could start."));
+          } else if (!event.wasClean) {
+            reject(new Error(event.reason || "Live audio stream closed."));
+          }
         };
       });
       socket.send(JSON.stringify({ type: "start", mimeType }));
