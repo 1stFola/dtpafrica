@@ -535,6 +535,7 @@ function LiveAudioCommentaryControl({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const httpSessionRef = useRef<string | null>(null);
   const pendingChunksRef = useRef(0);
   const stopAfterFlushRef = useRef(false);
   const sampleStopRef = useRef<(() => void) | null>(null);
@@ -559,7 +560,7 @@ function LiveAudioCommentaryControl({
     return message || "Could not start live audio.";
   };
 
-  const closeSocket = useCallback(() => {
+  const closeTransport = useCallback(() => {
     const socket = socketRef.current;
     socketRef.current = null;
     if (socket?.readyState === WebSocket.OPEN) {
@@ -568,11 +569,16 @@ function LiveAudioCommentaryControl({
     } else {
       socket?.close();
     }
-  }, []);
+    const httpSessionId = httpSessionRef.current;
+    httpSessionRef.current = null;
+    if (httpSessionId) {
+      void matchStatsApi.stopLiveAudioHttp(matchId, httpSessionId).catch(() => undefined);
+    }
+  }, [matchId]);
 
   const finishStop = useCallback(() => {
-    if (pendingChunksRef.current === 0) closeSocket();
-  }, [closeSocket]);
+    if (pendingChunksRef.current === 0) closeTransport();
+  }, [closeTransport]);
 
   const stop = useCallback(() => {
     sampleStopRef.current?.();
@@ -641,43 +647,83 @@ function LiveAudioCommentaryControl({
         : new MediaRecorder(stream, { audioBitsPerSecond: 24_000 });
       const mimeType = recorder.mimeType || preferredType || "audio/webm";
       const ticket = await matchStatsApi.createLiveAudioTicket(matchId);
-      const socket = new WebSocket(liveAudioSocketUrl(ticket.wsPath));
-      await new Promise<void>((resolve, reject) => {
-        let opened = false;
-        socket.onopen = () => {
-          opened = true;
-          resolve();
-        };
-        socket.onerror = () => {
-          if (!opened) {
-            reject(new Error("Could not connect live audio."));
-          }
-        };
-        socket.onclose = (event) => {
-          if (!opened) {
-            reject(new Error(event.reason || "Live audio stream closed before it could start."));
-          } else if (!event.wasClean) {
-            reject(new Error(event.reason || "Live audio stream closed."));
-          }
-        };
-      });
-      socket.send(JSON.stringify({ type: "start", mimeType }));
-      socket.onclose = () => {
-        setActive(false);
-        recorderRef.current?.stop();
-        recorderRef.current = null;
+      const openSocket = () => {
+        const socket = new WebSocket(liveAudioSocketUrl(ticket.wsPath));
+        return new Promise<WebSocket>((resolve, reject) => {
+          let opened = false;
+          const timeout = window.setTimeout(() => {
+            if (!opened) {
+              socket.close();
+              reject(new Error("Live audio WebSocket timed out."));
+            }
+          }, 6000);
+          socket.onopen = () => {
+            opened = true;
+            window.clearTimeout(timeout);
+            resolve(socket);
+          };
+          socket.onerror = () => {
+            if (!opened) {
+              window.clearTimeout(timeout);
+              reject(new Error("Could not connect live audio."));
+            }
+          };
+          socket.onclose = (event) => {
+            if (!opened) {
+              window.clearTimeout(timeout);
+              reject(new Error(event.reason || "Live audio stream closed before it could start."));
+            } else if (!event.wasClean) {
+              reject(new Error(event.reason || "Live audio stream closed."));
+            }
+          };
+        });
       };
-      socketRef.current = socket;
+
+      try {
+        const socket = await openSocket();
+        socket.send(JSON.stringify({ type: "start", mimeType }));
+        socket.onclose = () => {
+          setActive(false);
+          recorderRef.current?.stop();
+          recorderRef.current = null;
+        };
+        socketRef.current = socket;
+      } catch {
+        const session = await matchStatsApi.startLiveAudioHttp(matchId, {
+          ticket: ticket.ticket,
+          mimeType,
+        });
+        httpSessionRef.current = session.sessionId;
+        setMessage("Live audio is running in network-safe mode.");
+      }
       streamRef.current = stream;
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
-        if (!event.data.size || socket.readyState !== WebSocket.OPEN) return;
+        const currentSocket = socketRef.current;
+        const currentHttpSession = httpSessionRef.current;
+        if (
+          !event.data.size ||
+          (!currentHttpSession && currentSocket?.readyState !== WebSocket.OPEN)
+        ) {
+          return;
+        }
         pendingChunksRef.current += 1;
         void blobToBase64(event.data)
           .then((data) => {
-            if (socket.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({ type: "chunk", mimeType, data }));
+            const latestSocket = socketRef.current;
+            const latestHttpSession = httpSessionRef.current;
+            if (latestSocket?.readyState === WebSocket.OPEN) {
+              latestSocket.send(JSON.stringify({ type: "chunk", mimeType, data }));
+              return undefined;
             }
+            if (latestHttpSession) {
+              return matchStatsApi.sendLiveAudioHttpChunk(matchId, {
+                sessionId: latestHttpSession,
+                mimeType,
+                data,
+              });
+            }
+            return undefined;
           })
           .catch(() => setMessage("Audio stream is having trouble sending."))
           .finally(() => {
@@ -700,6 +746,7 @@ function LiveAudioCommentaryControl({
       recorderRef.current = null;
       socketRef.current?.close();
       socketRef.current = null;
+      httpSessionRef.current = null;
       pendingChunksRef.current = 0;
       stopAfterFlushRef.current = false;
     } finally {
