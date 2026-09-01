@@ -4,6 +4,7 @@ import { BadRequestException } from "@nestjs/common";
 import { ScoreboardController } from "./scoreboard.controller";
 import { ScoreboardService } from "./scoreboard.service";
 import { CompetitionEngineService } from "./competition-engine.service";
+import { LiveAudioCommentaryService } from "./live-audio-commentary.service";
 
 // ── Minimal mocks ─────────────────────────────────────────────────────────────
 
@@ -23,6 +24,10 @@ const mockEngine = {
   groupStandings: vi.fn().mockResolvedValue([]),
 };
 
+const mockLiveAudio = {
+  poll: vi.fn().mockResolvedValue({ active: false, sequence: 0, startedAt: null, mimeType: null, chunks: [] }),
+};
+
 describe("ScoreboardController", () => {
   let controller: ScoreboardController;
 
@@ -30,7 +35,8 @@ describe("ScoreboardController", () => {
     vi.clearAllMocks();
     controller = new ScoreboardController(
       mockSb as unknown as ScoreboardService,
-      mockEngine as unknown as CompetitionEngineService
+      mockEngine as unknown as CompetitionEngineService,
+      mockLiveAudio as unknown as LiveAudioCommentaryService
     );
   });
 

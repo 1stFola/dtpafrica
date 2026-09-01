@@ -104,6 +104,47 @@ export class AdminMatchStatsController {
     return this.liveAudio.status(matchId);
   }
 
+  @Post(":matchId/live-audio/http/start")
+  @RequirePermissions("scoreboard.stats.record")
+  async startLiveAudioHttp(
+    @Param("matchId") matchId: string,
+    @Body() body: { ticket?: string; mimeType?: string },
+    @Req() req: AdminRequest
+  ) {
+    await this.stats.assertLiveAudioAccess(matchId, req.adminAuth);
+    try {
+      return this.liveAudio.startHttpRecorder(matchId, body.ticket || "", body.mimeType);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : "Could not start live audio"
+      );
+    }
+  }
+
+  @Post(":matchId/live-audio/http/chunk")
+  @RequirePermissions("scoreboard.stats.record")
+  liveAudioHttpChunk(
+    @Param("matchId") matchId: string,
+    @Body() body: { sessionId?: string; mimeType?: string; data?: string }
+  ) {
+    try {
+      return this.liveAudio.pushHttpChunk(body.sessionId || "", body.mimeType, body.data);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : "Could not send live audio"
+      );
+    }
+  }
+
+  @Post(":matchId/live-audio/http/stop")
+  @RequirePermissions("scoreboard.stats.record")
+  liveAudioHttpStop(
+    @Param("matchId") matchId: string,
+    @Body() body: { sessionId?: string }
+  ) {
+    return this.liveAudio.stopHttpRecorder(body.sessionId || "");
+  }
+
   @Get(":matchId")
   @RequirePermissions("scoreboard.stats.record", "scoreboard.stats.approve")
   open(@Param("matchId") matchId: string, @Req() req: AdminRequest) {

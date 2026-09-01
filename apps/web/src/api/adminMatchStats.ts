@@ -13,6 +13,11 @@ export type LiveAudioTicket = {
   wsPath: string;
 };
 
+export type LiveAudioHttpSession = {
+  sessionId: string;
+  status: LiveAudioStatus;
+};
+
 export type SheetStatus = "live" | "submitted" | "approved";
 
 /** Statistics and the event log are reviewed independently. */
@@ -312,4 +317,25 @@ export const matchStatsApi = {
 
   createLiveAudioTicket: (matchId: string) =>
     adminFetch<LiveAudioTicket>(`${base}/${matchId}/live-audio/ticket`, { method: "POST" }),
+
+  startLiveAudioHttp: (matchId: string, body: { ticket: string; mimeType: string }) =>
+    adminFetch<LiveAudioHttpSession>(`${base}/${matchId}/live-audio/http/start`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  sendLiveAudioHttpChunk: (
+    matchId: string,
+    body: { sessionId: string; mimeType: string; data: string }
+  ) =>
+    adminFetch<LiveAudioStatus>(`${base}/${matchId}/live-audio/http/chunk`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  stopLiveAudioHttp: (matchId: string, sessionId: string) =>
+    adminFetch<{ stopped: boolean }>(`${base}/${matchId}/live-audio/http/stop`, {
+      method: "POST",
+      body: JSON.stringify({ sessionId }),
+    }),
 };

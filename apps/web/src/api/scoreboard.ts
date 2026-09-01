@@ -415,6 +415,35 @@ export function fetchMatchSquads(slugOrId: string, signal?: AbortSignal) {
   return apiGet<SbMatchSquadsResponse>(`/scoreboard/matches/${slugOrId}/squads`, signal);
 }
 
+export type LiveAudioPollChunk = {
+  type: "chunk";
+  sequence: number;
+  mimeType: string;
+  data: string;
+  createdAt: number;
+};
+
+export type LiveAudioPollResponse = {
+  active: boolean;
+  sequence: number;
+  startedAt: string | null;
+  mimeType: string | null;
+  chunks: LiveAudioPollChunk[];
+};
+
+export function fetchLiveAudioPoll(
+  matchId: string,
+  afterSequence: number,
+  signal?: AbortSignal
+) {
+  const q = new URLSearchParams({ after: String(afterSequence) });
+  return apiGet<LiveAudioPollResponse>(
+    `/scoreboard/matches/${matchId}/live-audio/poll?${q.toString()}`,
+    signal,
+    { cache: "no-store" }
+  );
+}
+
 export type StatLeaderMetric = "goals" | "assists" | "yellow" | "red";
 
 export type StatLeaderRow = {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  fetchLiveAudioPoll,
   fetchMatch,
   fetchMatchSquads,
   type SbMatchDetail,
@@ -520,6 +521,69 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
   useEffect(() => {
     if (!listening) return;
     let closedByClient = false;
+    let usingHttpFallback = false;
+    let pollTimer: number | null = null;
+    let pollController: AbortController | null = null;
+    let lastSequence = 0;
+
+    const handleAudioPayload = (data:
+      | {
+          type: "status";
+          active: boolean;
+          sequence: number;
+          startedAt: string | null;
+          mimeType: string | null;
+        }
+      | { type: "chunk"; sequence: number; mimeType: string; data: string; createdAt: number }) => {
+      if (data.type === "status") {
+        setActive(data.active);
+        setMessage(data.active ? null : "Waiting for live audio commentary.");
+        lastSequence = Math.max(lastSequence, data.sequence);
+        return;
+      }
+      if (data.type === "chunk") {
+        lastSequence = Math.max(lastSequence, data.sequence);
+        setActive(true);
+        if (ensureSourceBuffer(data.mimeType)) {
+          if (!playbackBlockedRef.current) setMessage(null);
+          pendingBuffersRef.current.push(base64ToArrayBuffer(data.data));
+          appendPendingBuffer();
+        } else {
+          if (!playbackBlockedRef.current) setMessage(null);
+          playFallbackChunk(data.data, data.mimeType);
+        }
+      }
+    };
+
+    const startHttpFallback = () => {
+      if (usingHttpFallback || closedByClient) return;
+      usingHttpFallback = true;
+      setMessage("Using network-safe live audio mode.");
+      const poll = async () => {
+        if (closedByClient) return;
+        pollController?.abort();
+        pollController = new AbortController();
+        try {
+          const data = await fetchLiveAudioPoll(matchId, lastSequence, pollController.signal);
+          setActive(data.active);
+          if (!data.active && !data.chunks.length) {
+            setMessage("Waiting for live audio commentary.");
+          }
+          data.chunks
+            .slice()
+            .sort((a, b) => a.sequence - b.sequence)
+            .forEach((chunk) => handleAudioPayload(chunk));
+          pollTimer = window.setTimeout(poll, data.active ? 900 : 2000);
+        } catch (error) {
+          if (!closedByClient && !isAbortError(error)) {
+            setMessage("Live audio is unavailable right now.");
+            pollTimer = window.setTimeout(poll, 3000);
+          }
+        }
+      };
+      void poll();
+    };
+
     const socket = new WebSocket(
       liveAudioSocketUrl(`/api/v1/live-audio/listen/${encodeURIComponent(matchId)}`)
     );
@@ -538,39 +602,30 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
               mimeType: string | null;
             }
           | { type: "chunk"; sequence: number; mimeType: string; data: string; createdAt: number };
-        if (data.type === "status") {
-          setActive(data.active);
-          setMessage(data.active ? null : "Waiting for live audio commentary.");
-          return;
-        }
-        if (data.type === "chunk") {
-          setActive(true);
-          if (ensureSourceBuffer(data.mimeType)) {
-            if (!playbackBlockedRef.current) setMessage(null);
-            pendingBuffersRef.current.push(base64ToArrayBuffer(data.data));
-            appendPendingBuffer();
-          } else {
-            if (!playbackBlockedRef.current) setMessage(null);
-            playFallbackChunk(data.data, data.mimeType);
-          }
-        }
+        handleAudioPayload(data);
       } catch (error) {
         setMessage("Live audio is having trouble playing.");
       }
     };
-    socket.onerror = () => setMessage("Live audio is unavailable right now.");
+    socket.onerror = () => {
+      if (!closedByClient) startHttpFallback();
+    };
     socket.onclose = (event) => {
       setActive(false);
-      if (event.code === 1008) {
+      if (!closedByClient && !usingHttpFallback && event.code !== 1000 && event.code !== 1008) {
+        startHttpFallback();
+      } else if (event.code === 1008) {
         setMessage("Live audio is not available for this match yet.");
       } else if (event.code === 1000 || closedByClient) {
         setMessage(null);
-      } else if (!closedByClient) {
+      } else if (!closedByClient && !usingHttpFallback) {
         setMessage("Live audio was interrupted. Tap Listen live to try again.");
       }
     };
     return () => {
       closedByClient = true;
+      if (pollTimer) window.clearTimeout(pollTimer);
+      pollController?.abort();
       socket.close(1000, "Listener stopped live audio");
       clearAudioStream();
     };

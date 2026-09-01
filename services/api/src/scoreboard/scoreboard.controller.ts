@@ -15,12 +15,14 @@ import { CreateMatchEventDto } from "./dto/create-event.dto";
 import { UpdateMatchDto } from "./dto/update-match.dto";
 import { CompetitionEngineService } from "./competition-engine.service";
 import { ScoreboardService } from "./scoreboard.service";
+import { LiveAudioCommentaryService } from "./live-audio-commentary.service";
 
 @Controller("scoreboard")
 export class ScoreboardController {
   constructor(
     @Inject(ScoreboardService) private readonly sb: ScoreboardService,
-    @Inject(CompetitionEngineService) private readonly competitionEngine: CompetitionEngineService
+    @Inject(CompetitionEngineService) private readonly competitionEngine: CompetitionEngineService,
+    @Inject(LiveAudioCommentaryService) private readonly liveAudio: LiveAudioCommentaryService
   ) {}
 
   @Get("overview")
@@ -118,6 +120,15 @@ export class ScoreboardController {
   @Get("matches/:slugOrId/squads")
   matchSquads(@Param("slugOrId") slugOrId: string) {
     return this.sb.matchSquadsBySlugOrId(slugOrId, true);
+  }
+
+  @Get("matches/:matchId/live-audio/poll")
+  liveAudioPoll(
+    @Param("matchId") matchId: string,
+    @Query("after") after?: string
+  ) {
+    const afterSequence = after ? Number.parseInt(after, 10) : 0;
+    return this.liveAudio.poll(matchId, Number.isFinite(afterSequence) ? afterSequence : 0);
   }
 
   @Get("standings/:competitionId")
