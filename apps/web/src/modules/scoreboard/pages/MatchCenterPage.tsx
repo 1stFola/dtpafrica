@@ -277,15 +277,38 @@ function isGoalEvent(type: string): boolean {
 function playGoalWhistle(audioRef: MutableRefObject<HTMLAudioElement | null>) {
   if (typeof window === "undefined") return;
   try {
+    const unlocked = audioRef.current;
+    const audio = unlocked?.cloneNode(true) as HTMLAudioElement | null;
+    const playable = audio ?? new Audio(GOAL_WHISTLE_SRC);
+    if (!audioRef.current) audioRef.current = playable;
+    playable.preload = "auto";
+    playable.src = GOAL_WHISTLE_SRC;
+    playable.volume = 1;
+    playable.muted = false;
+    playable.currentTime = 0;
+    void playable.play();
+  } catch {
+    try {
+      const audio = new Audio(GOAL_WHISTLE_SRC);
+      audio.volume = 1;
+      void audio.play();
+    } catch {
+      /* Browser audio is best-effort: notifications still carry the alert. */
+    }
+  }
+}
+
+function primeGoalWhistle(audioRef: MutableRefObject<HTMLAudioElement | null>) {
+  if (typeof window === "undefined") return;
+  try {
     const audio = audioRef.current ?? new Audio(GOAL_WHISTLE_SRC);
     audioRef.current = audio;
+    audio.preload = "auto";
     audio.src = GOAL_WHISTLE_SRC;
     audio.volume = 1;
     audio.muted = false;
-    audio.currentTime = 0;
-    void audio.play();
   } catch {
-    /* Browser audio is best-effort: notifications still carry the alert. */
+    /* Preloading is opportunistic. */
   }
 }
 
@@ -304,9 +327,11 @@ function unlockGoalAudio(audioRef: MutableRefObject<HTMLAudioElement | null>) {
         audio.pause();
         audio.currentTime = 0;
         audio.muted = false;
+        primeGoalWhistle(audioRef);
       })
       .catch(() => {
         audio.muted = false;
+        primeGoalWhistle(audioRef);
       });
   } catch {
     /* Browsers may still block audio until a later gesture. */
@@ -386,8 +411,10 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
   const streamMimeTypeRef = useRef<string | null>(null);
   const streamingUnavailableRef = useRef(false);
   const playbackBlockedRef = useRef(false);
+  const playbackAllowedRef = useRef(false);
 
   const clearAudioStream = () => {
+    playbackAllowedRef.current = false;
     const sourceBuffer = sourceBufferRef.current;
     if (sourceBuffer) sourceBuffer.onupdateend = null;
     sourceBufferRef.current = null;
@@ -416,11 +443,11 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
 
   const requestPlayback = () => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !playbackAllowedRef.current) return;
     void audio.play().catch(() => {
-      if (!playbackBlockedRef.current) {
+      if (playbackAllowedRef.current && !playbackBlockedRef.current) {
         playbackBlockedRef.current = true;
-        setMessage("Audio is paused by the browser. Stop and start listening again.");
+        setMessage("Tap Listen live audio again if your browser paused playback.");
       }
     });
   };
@@ -436,7 +463,9 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
     } catch (error) {
       streamingUnavailableRef.current = true;
       pendingBuffersRef.current = [];
-      setMessage("Live audio is having trouble playing. Tap Listen live audio again.");
+      if (playbackAllowedRef.current) {
+        setMessage("Live audio playback needs a restart. Tap Listen live audio again.");
+      }
     }
   };
 
@@ -466,6 +495,7 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
 
   const prepareAudioStream = () => {
     clearAudioStream();
+    playbackAllowedRef.current = true;
     const audio = audioRef.current;
     if (!audio || typeof MediaSource === "undefined") return;
     const mediaSource = new MediaSource();
@@ -539,6 +569,10 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         setActive(data.active);
         setMessage(data.active ? null : "Waiting for live audio commentary.");
         lastSequence = Math.max(lastSequence, data.sequence);
+        if (!data.active) {
+          pendingBuffersRef.current = [];
+          playbackBlockedRef.current = false;
+        }
         return;
       }
       if (data.type === "chunk") {
@@ -618,6 +652,7 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         setMessage("Live audio is not available for this match yet.");
       } else if (event.code === 1000 || closedByClient) {
         setMessage(null);
+        playbackBlockedRef.current = false;
       } else if (!closedByClient && !usingHttpFallback) {
         setMessage("Live audio was interrupted. Tap Listen live to try again.");
       }
@@ -696,10 +731,7 @@ function LiveMatchModal({
               <span> - </span>
               {liveSheet.score.away} {match.awayTeam.shortName ?? match.awayTeam.name}
             </h2>
-            <p>
-              {formatLiveUpdate(liveSheet.updatedAt)}
-              {liveSheet.recorderName ? ` by ${liveSheet.recorderName}` : ""}
-            </p>
+            <p>{formatLiveUpdate(liveSheet.updatedAt)}</p>
           </div>
           <button type="button" className="sbm-live-modal__close" onClick={onClose} aria-label="Close live match view">
             ×
@@ -932,8 +964,9 @@ export function MatchCenterPage() {
           ? match.awayTeam.shortName ?? match.awayTeam.name
           : "Goal";
     const player = latest.player?.displayName ?? latest.playerLabel;
-    const title = latest.type === "own_goal" ? `${scoringTeam} goal: own goal` : `${scoringTeam} goal`;
+    const title = "GOAL";
     const body = [
+      scoringTeam,
       latest.type === "own_goal"
         ? player
           ? `Own goal by ${player}`
