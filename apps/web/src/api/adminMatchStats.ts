@@ -180,7 +180,9 @@ export type MatchStatsSheet = {
     awayScore: number;
     liveFeature?: {
       enabled: boolean;
+      audioEnabled: boolean;
       updatedAt: string | null;
+      audioUpdatedAt: string | null;
     };
     squadPlayers?: Array<{
       teamId: string;

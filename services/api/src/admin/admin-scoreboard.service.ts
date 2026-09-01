@@ -1661,7 +1661,10 @@ export class AdminScoreboardService {
     return this.scoreboard.updateMatch(matchId, dto);
   }
 
-  async setMatchLiveFeature(matchId: string, enabled: boolean) {
+  async setMatchLiveFeature(
+    matchId: string,
+    patch: { enabled?: boolean; audioEnabled?: boolean }
+  ) {
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },
       select: {
@@ -1688,13 +1691,26 @@ export class AdminScoreboardService {
         ? (existingStats.liveFeature as Record<string, unknown>)
         : {};
     const updatedAt = new Date().toISOString();
+    const liveEnabled = patch.enabled ?? existingLive.enabled === true;
+    const audioEnabled = liveEnabled && (patch.audioEnabled ?? existingLive.audioEnabled === true);
     const stats = {
       ...existingStats,
       liveFeature: {
         ...existingLive,
-        enabled,
+        enabled: liveEnabled,
+        audioEnabled,
         updatedAt,
-        ...(enabled ? { enabledAt: updatedAt } : { disabledAt: updatedAt }),
+        ...(patch.audioEnabled !== undefined
+          ? {
+              audioUpdatedAt: updatedAt,
+              ...(audioEnabled ? { audioEnabledAt: updatedAt } : { audioDisabledAt: updatedAt }),
+            }
+          : {}),
+        ...(patch.enabled !== undefined
+          ? liveEnabled
+            ? { enabledAt: updatedAt }
+            : { disabledAt: updatedAt, audioDisabledAt: updatedAt, audioUpdatedAt: updatedAt }
+          : {}),
       },
     };
 
@@ -1702,9 +1718,9 @@ export class AdminScoreboardService {
       where: { id: matchId },
       data: { stats: stats as Prisma.InputJsonValue },
     });
-    if (!enabled) this.liveAudio.endPublicStream(matchId);
+    if (!liveEnabled || !audioEnabled) this.liveAudio.endPublicStream(matchId);
     if (
-      enabled &&
+      liveEnabled &&
       match.competition.formatType !== "TRAINING_SANDBOX" &&
       readClock(match.statisticsSheet?.clock)?.phase === "finished"
     ) {

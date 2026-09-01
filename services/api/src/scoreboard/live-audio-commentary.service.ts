@@ -9,6 +9,16 @@ import { readLiveFeature } from "../admin/admin-match-stats.service";
 const SESSION_TTL_MS = 90_000;
 const TICKET_TTL_MS = 30_000;
 const MAX_CHUNK_BYTES = 256_000;
+const RECENT_REPLAY_WINDOW_MS = 20_000;
+const RECENT_REPLAY_HARD_LIMIT = 48;
+
+type AudioChunk = {
+  type: "chunk";
+  sequence: number;
+  mimeType: string;
+  data: string;
+  createdAt: number;
+};
 
 type AudioStream = {
   matchId: string;
@@ -17,6 +27,7 @@ type AudioStream = {
   mimeType: string;
   startedAt: string;
   updatedAt: number;
+  recentChunks: AudioChunk[];
   recorder: WebSocket | null;
   listeners: Set<WebSocket>;
 };
@@ -164,8 +175,13 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
       ws.close(1008, "Match not found");
       return;
     }
-    if (!readLiveFeature(match.stats).enabled) {
+    const liveFeature = readLiveFeature(match.stats);
+    if (!liveFeature.enabled) {
       ws.close(1008, "Public live is not enabled for this match");
+      return;
+    }
+    if (!liveFeature.audioEnabled) {
+      ws.close(1008, "Live audio commentary is not enabled for this match");
       return;
     }
 
@@ -173,6 +189,13 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     stream.listeners.add(ws);
     stream.updatedAt = Date.now();
     ws.send(JSON.stringify({ type: "status", ...this.statusFor(stream) }));
+    if (stream.active) {
+      this.trimRecentChunks(stream);
+      for (const chunk of stream.recentChunks) {
+        if (ws.readyState !== WebSocket.OPEN) break;
+        ws.send(JSON.stringify(chunk));
+      }
+    }
     ws.on("close", () => {
       stream.listeners.delete(ws);
       stream.updatedAt = Date.now();
@@ -212,13 +235,23 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     stream.sequence += 1;
     stream.mimeType = message.mimeType || stream.mimeType;
     stream.updatedAt = Date.now();
-    this.broadcast(stream, {
+    const chunk: AudioChunk = {
       type: "chunk",
       sequence: stream.sequence,
       mimeType: stream.mimeType,
       data,
       createdAt: stream.updatedAt,
-    });
+    };
+    stream.recentChunks.push(chunk);
+    this.trimRecentChunks(stream);
+    this.broadcast(stream, chunk);
+  }
+
+  private trimRecentChunks(stream: AudioStream) {
+    const cutoff = Date.now() - RECENT_REPLAY_WINDOW_MS;
+    stream.recentChunks = stream.recentChunks
+      .filter((chunk) => chunk.createdAt >= cutoff)
+      .slice(-RECENT_REPLAY_HARD_LIMIT);
   }
 
   private startStream(stream: AudioStream, mimeType: string | undefined) {
@@ -228,6 +261,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     stream.mimeType = mimeType || "audio/webm";
     stream.startedAt = new Date(now).toISOString();
     stream.updatedAt = now;
+    stream.recentChunks = [];
     this.broadcastStatus(stream);
   }
 
@@ -254,6 +288,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
       mimeType: "audio/webm",
       startedAt: new Date(now).toISOString(),
       updatedAt: now,
+      recentChunks: [],
       recorder: null,
       listeners: new Set(),
     };

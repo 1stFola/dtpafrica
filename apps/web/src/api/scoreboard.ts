@@ -107,7 +107,9 @@ export type SbMatchStats = {
   };
   liveFeature?: {
     enabled?: boolean;
+    audioEnabled?: boolean;
     updatedAt?: string | null;
+    audioUpdatedAt?: string | null;
   } | null;
 };
 

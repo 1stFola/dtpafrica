@@ -311,12 +311,21 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.matches.write")
   setMatchLiveFeature(
     @Param("matchId") matchId: string,
-    @Body() body: { enabled?: unknown }
+    @Body() body: { enabled?: unknown; audioEnabled?: unknown }
   ) {
-    if (typeof body.enabled !== "boolean") {
-      throw new BadRequestException("enabled must be a boolean");
+    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
+      throw new BadRequestException("enabled must be a boolean when provided");
     }
-    return this.sb.setMatchLiveFeature(matchId, body.enabled);
+    if (body.audioEnabled !== undefined && typeof body.audioEnabled !== "boolean") {
+      throw new BadRequestException("audioEnabled must be a boolean when provided");
+    }
+    if (body.enabled === undefined && body.audioEnabled === undefined) {
+      throw new BadRequestException("enabled or audioEnabled is required");
+    }
+    return this.sb.setMatchLiveFeature(matchId, {
+      enabled: body.enabled,
+      audioEnabled: body.audioEnabled,
+    });
   }
 
   @Delete("matches/:matchId")

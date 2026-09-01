@@ -33,8 +33,10 @@ const TAB_IDS = new Set<string>(TABS.map((tab) => tab.id));
 type MatchPhoto = { url: string; caption?: string | null };
 
 const GOAL_ALERTS_KEY = "dtp_scoreboard_goal_alerts";
+const GOAL_WHISTLE_SRC = "/audio/mixkit-police-short-whistle-615.wav";
 
 type StatusKind = "live" | "ht" | "ft" | "scheduled" | "other";
+type GoalAlertState = { title: string; body: string; score: string };
 
 function statusKind(status: string): StatusKind {
   if (status === "live") return "live";
@@ -212,60 +214,99 @@ function formatLiveUpdate(value: string): string {
   })}`;
 }
 
+function formatClockSeconds(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function liveClockSeconds(
+  clock: NonNullable<SbMatchDetail["liveSheet"]>["clock"] | null | undefined
+): number | null {
+  if (!clock || clock.phase === "pre_kickoff") return null;
+  const halfLengthSeconds = clock.halfLength * 60;
+  const addedFirstSeconds = (clock.addedFirst ?? 0) * 60;
+  const addedSecondSeconds = (clock.addedSecond ?? 0) * 60;
+  const firstStarted = clock.firstHalfStartedAt
+    ? new Date(clock.firstHalfStartedAt).getTime()
+    : NaN;
+  const secondStarted = clock.secondHalfStartedAt
+    ? new Date(clock.secondHalfStartedAt).getTime()
+    : NaN;
+
+  if (clock.phase === "awaiting_second_half") {
+    return halfLengthSeconds + addedFirstSeconds;
+  }
+  if (
+    clock.phase === "finished" ||
+    clock.phase === "penalty_shootout" ||
+    (clock.half === 2 && !Number.isFinite(secondStarted))
+  ) {
+    return halfLengthSeconds * 2 + addedSecondSeconds;
+  }
+  if (clock.half === 2 && Number.isFinite(secondStarted)) {
+    return halfLengthSeconds + Math.max(0, Math.floor((Date.now() - secondStarted) / 1000));
+  }
+  if (!Number.isFinite(firstStarted)) return null;
+  return Math.max(0, Math.floor((Date.now() - firstStarted) / 1000));
+}
+
+function useLiveClockLabel(
+  clock: NonNullable<SbMatchDetail["liveSheet"]>["clock"] | null | undefined
+): string | null {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!clock || clock.phase === "finished" || clock.phase === "penalty_shootout") return;
+    const id = window.setInterval(() => setTick((value) => value + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [clock?.phase, clock?.firstHalfStartedAt, clock?.secondHalfStartedAt]);
+
+  return useMemo(() => {
+    void tick;
+    const seconds = liveClockSeconds(clock);
+    return seconds == null ? null : formatClockSeconds(seconds);
+  }, [clock, tick]);
+}
+
 function isGoalEvent(type: string): boolean {
   return type === "goal" || type === "goal_penalty" || type === "own_goal";
 }
 
-function playGoalWhistle(ctxRef: MutableRefObject<AudioContext | null>) {
+function playGoalWhistle(audioRef: MutableRefObject<HTMLAudioElement | null>) {
   if (typeof window === "undefined") return;
-  const Ctor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctor) return;
   try {
-    const ctx = ctxRef.current ?? new Ctor();
-    ctxRef.current = ctx;
-    if (ctx.state === "suspended") void ctx.resume();
-    const now = ctx.currentTime;
-    const master = ctx.createGain();
-    master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.72, now + 0.02);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + 1.7);
-    master.connect(ctx.destination);
-
-    [0, 0.42, 0.84].forEach((offset) => {
-      const whistle = ctx.createOscillator();
-      const gain = ctx.createGain();
-      whistle.type = "sine";
-      whistle.frequency.setValueAtTime(1780, now + offset);
-      whistle.frequency.exponentialRampToValueAtTime(1240, now + offset + 0.3);
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(1, now + offset + 0.018);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.36);
-      whistle.connect(gain).connect(master);
-      whistle.start(now + offset);
-      whistle.stop(now + offset + 0.42);
-    });
+    const audio = audioRef.current ?? new Audio(GOAL_WHISTLE_SRC);
+    audioRef.current = audio;
+    audio.src = GOAL_WHISTLE_SRC;
+    audio.volume = 1;
+    audio.muted = false;
+    audio.currentTime = 0;
+    void audio.play();
   } catch {
     /* Browser audio is best-effort: notifications still carry the alert. */
   }
 }
 
-function unlockGoalAudio(ctxRef: MutableRefObject<AudioContext | null>) {
+function unlockGoalAudio(audioRef: MutableRefObject<HTMLAudioElement | null>) {
   if (typeof window === "undefined") return;
-  const Ctor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctor) return;
   try {
-    const ctx = ctxRef.current ?? new Ctor();
-    ctxRef.current = ctx;
-    if (ctx.state === "suspended") void ctx.resume();
-    const buffer = ctx.createBuffer(1, 1, 22050);
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start();
+    const audio = audioRef.current ?? new Audio(GOAL_WHISTLE_SRC);
+    audioRef.current = audio;
+    audio.preload = "auto";
+    audio.src = GOAL_WHISTLE_SRC;
+    audio.volume = 1;
+    audio.muted = true;
+    void audio
+      .play()
+      .then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      })
+      .catch(() => {
+        audio.muted = false;
+      });
   } catch {
     /* Browsers may still block audio until a later gesture. */
   }
@@ -323,12 +364,158 @@ function base64ToBlob(data: string, mimeType: string): Blob {
   return new Blob([bytes], { type: mimeType });
 }
 
+function base64ToArrayBuffer(data: string): ArrayBuffer {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
 function LiveAudioListener({ matchId }: { matchId: string }) {
   const [listening, setListening] = useState(false);
   const [active, setActive] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const playbackRef = useRef(Promise.resolve());
   const urlsRef = useRef<string[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const pendingBuffersRef = useRef<ArrayBuffer[]>([]);
+  const streamMimeTypeRef = useRef<string | null>(null);
+  const streamingUnavailableRef = useRef(false);
+  const playbackBlockedRef = useRef(false);
+
+  const clearAudioStream = () => {
+    const sourceBuffer = sourceBufferRef.current;
+    if (sourceBuffer) sourceBuffer.onupdateend = null;
+    sourceBufferRef.current = null;
+    mediaSourceRef.current = null;
+    pendingBuffersRef.current = [];
+    streamMimeTypeRef.current = null;
+    streamingUnavailableRef.current = false;
+    playbackBlockedRef.current = false;
+
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.onended = null;
+      audio.onerror = null;
+      audio.removeAttribute("src");
+      audio.load();
+    }
+
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    urlsRef.current = [];
+  };
+
+  const requestPlayback = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    void audio.play().catch(() => {
+      if (!playbackBlockedRef.current) {
+        playbackBlockedRef.current = true;
+        setMessage("Audio is paused by the browser. Stop and start listening again.");
+      }
+    });
+  };
+
+  const appendPendingBuffer = () => {
+    const sourceBuffer = sourceBufferRef.current;
+    if (!sourceBuffer || sourceBuffer.updating || pendingBuffersRef.current.length === 0) return;
+    const nextBuffer = pendingBuffersRef.current.shift();
+    if (!nextBuffer) return;
+    try {
+      sourceBuffer.appendBuffer(nextBuffer);
+      requestPlayback();
+    } catch (error) {
+      streamingUnavailableRef.current = true;
+      pendingBuffersRef.current = [];
+      setMessage("Live audio is having trouble playing. Tap Listen live audio again.");
+    }
+  };
+
+  const ensureSourceBuffer = (mimeType: string) => {
+    const mediaSource = mediaSourceRef.current;
+    if (!mediaSource || streamingUnavailableRef.current || sourceBufferRef.current) {
+      return Boolean(sourceBufferRef.current);
+    }
+    if (!MediaSource.isTypeSupported(mimeType)) {
+      streamingUnavailableRef.current = true;
+      return false;
+    }
+    streamMimeTypeRef.current = mimeType;
+    if (mediaSource.readyState !== "open") return true;
+    try {
+      const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+      sourceBuffer.mode = "sequence";
+      sourceBuffer.onupdateend = appendPendingBuffer;
+      sourceBufferRef.current = sourceBuffer;
+      appendPendingBuffer();
+      return true;
+    } catch (error) {
+      streamingUnavailableRef.current = true;
+      return false;
+    }
+  };
+
+  const prepareAudioStream = () => {
+    clearAudioStream();
+    const audio = audioRef.current;
+    if (!audio || typeof MediaSource === "undefined") return;
+    const mediaSource = new MediaSource();
+    mediaSourceRef.current = mediaSource;
+    mediaSource.addEventListener("sourceopen", () => {
+      const mimeType = streamMimeTypeRef.current;
+      if (mimeType) ensureSourceBuffer(mimeType);
+      appendPendingBuffer();
+    });
+    const objectUrl = URL.createObjectURL(mediaSource);
+    objectUrlRef.current = objectUrl;
+    audio.src = objectUrl;
+    audio.muted = false;
+    audio.volume = 1;
+    audio.setAttribute("playsinline", "true");
+    requestPlayback();
+  };
+
+  const playFallbackChunk = (data: string, mimeType: string) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    playbackRef.current = playbackRef.current
+      .then(
+        () =>
+          new Promise<void>((resolve) => {
+            const url = URL.createObjectURL(base64ToBlob(data, mimeType));
+            urlsRef.current.push(url);
+            const cleanup = () => {
+              URL.revokeObjectURL(url);
+              urlsRef.current = urlsRef.current.filter((item) => item !== url);
+              resolve();
+            };
+            audio.onended = cleanup;
+            audio.onerror = cleanup;
+            audio.src = url;
+            requestPlayback();
+          })
+      )
+      .catch(() => undefined);
+  };
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onPlaying = () => {
+      playbackBlockedRef.current = false;
+      setMessage(null);
+    };
+    audio.addEventListener("playing", onPlaying);
+    return () => audio.removeEventListener("playing", onPlaying);
+  }, []);
 
   useEffect(() => {
     if (!listening) return;
@@ -336,30 +523,6 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
     const socket = new WebSocket(
       liveAudioSocketUrl(`/api/v1/live-audio/listen/${encodeURIComponent(matchId)}`)
     );
-
-    const playChunk = (data: string, mimeType: string) => {
-      playbackRef.current = playbackRef.current
-        .then(
-          () =>
-            new Promise<void>((resolve) => {
-              const url = URL.createObjectURL(base64ToBlob(data, mimeType));
-              urlsRef.current.push(url);
-              const audio = new Audio(url);
-              const cleanup = () => {
-                URL.revokeObjectURL(url);
-                urlsRef.current = urlsRef.current.filter((item) => item !== url);
-                resolve();
-              };
-              audio.onended = cleanup;
-              audio.onerror = cleanup;
-              void audio.play().catch(() => {
-                setMessage("Tap listen again if the browser paused audio.");
-                cleanup();
-              });
-            })
-        )
-        .catch(() => undefined);
-    };
 
     socket.onopen = () => {
       setMessage("Waiting for live audio commentary.");
@@ -382,8 +545,14 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         }
         if (data.type === "chunk") {
           setActive(true);
-          setMessage(null);
-          playChunk(data.data, data.mimeType);
+          if (ensureSourceBuffer(data.mimeType)) {
+            if (!playbackBlockedRef.current) setMessage(null);
+            pendingBuffersRef.current.push(base64ToArrayBuffer(data.data));
+            appendPendingBuffer();
+          } else {
+            if (!playbackBlockedRef.current) setMessage(null);
+            playFallbackChunk(data.data, data.mimeType);
+          }
         }
       } catch (error) {
         setMessage("Live audio is having trouble playing.");
@@ -403,13 +572,13 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
     return () => {
       closedByClient = true;
       socket.close(1000, "Listener stopped live audio");
+      clearAudioStream();
     };
   }, [listening, matchId]);
 
   useEffect(
     () => () => {
-      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-      urlsRef.current = [];
+      clearAudioStream();
     },
     []
   );
@@ -420,6 +589,8 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         type="button"
         className={listening ? "sbm-live-audio__btn is-listening" : "sbm-live-audio__btn"}
         onClick={() => {
+          if (!listening) prepareAudioStream();
+          else clearAudioStream();
           setListening((value) => !value);
           setMessage(null);
         }}
@@ -427,6 +598,7 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         <span className={active ? "sbm-live-dot" : "sbm-live-audio__idle"} aria-hidden="true" />
         {listening ? "Stop listening" : "Listen live audio"}
       </button>
+      <audio ref={audioRef} className="sbm-live-audio__element" aria-hidden="true" />
       {message && <span className="sbm-live-audio__msg">{message}</span>}
     </div>
   );
@@ -441,6 +613,7 @@ function LiveMatchModal({
 }) {
   const [mode, setMode] = useState<"timeline" | "stats">("timeline");
   const liveSheet = match.liveSheet;
+  const liveClockLabel = useLiveClockLabel(liveSheet?.clock);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -461,6 +634,7 @@ function LiveMatchModal({
             <span className="sbm-live-kicker">
               <span className="sbm-live-dot" aria-hidden="true" />
               Live Match Feed
+              {liveClockLabel && <strong className="sbm-live-clock">{liveClockLabel}</strong>}
             </span>
             <h2 id="sbm-live-title">
               {match.homeTeam.shortName ?? match.homeTeam.name} {liveSheet.score.home}
@@ -498,7 +672,7 @@ function LiveMatchModal({
             Statistics
           </button>
         </div>
-        <LiveAudioListener matchId={match.id} />
+        {match.stats?.liveFeature?.audioEnabled && <LiveAudioListener matchId={match.id} />}
 
         <div className="sbm-live-modal__body">
           {mode === "timeline" ? (
@@ -582,9 +756,9 @@ export function MatchCenterPage() {
       return false;
     }
   });
-  const [goalAlert, setGoalAlert] = useState<string | null>(null);
+  const [goalAlert, setGoalAlert] = useState<GoalAlertState | null>(null);
   const seenLiveEventIds = useRef<Set<string> | null>(null);
-  const goalAudioContext = useRef<AudioContext | null>(null);
+  const goalWhistleAudio = useRef<HTMLAudioElement | null>(null);
   const goalAlertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectTab = (tab: MatchTab) => {
@@ -671,6 +845,7 @@ export function MatchCenterPage() {
     return parseMatchPhotos(match.meta);
   }, [match]);
   const liveSheet = match?.liveSheet ?? null;
+  const liveClockLabel = useLiveClockLabel(liveSheet?.clock);
   const squadsTabFromUrl = initialTab === "squads";
 
   useEffect(() => {
@@ -711,20 +886,23 @@ export function MatchCenterPage() {
         : player
           ? `${player} scored`
           : "A goal has been recorded",
-      `${liveSheet.score.home}-${liveSheet.score.away}`,
       `${latest.minute}'`,
     ].join(" · ");
 
-    playGoalWhistle(goalAudioContext);
+    playGoalWhistle(goalWhistleAudio);
     vibrateGoalAlert();
-    setGoalAlert(`${title}: ${body}`);
+    setGoalAlert({
+      title,
+      body,
+      score: `${liveSheet.score.home}-${liveSheet.score.away}`,
+    });
     if (goalAlertTimer.current) window.clearTimeout(goalAlertTimer.current);
     goalAlertTimer.current = window.setTimeout(() => setGoalAlert(null), 8500);
     showGoalNotification(title, body, `dtp-goal-${match?.id ?? matchSlug}`);
   }, [goalAlertsEnabled, liveSheet, match, matchSlug]);
 
   const enableGoalAlerts = async () => {
-    unlockGoalAudio(goalAudioContext);
+    unlockGoalAudio(goalWhistleAudio);
     let notificationStatus: NotificationPermission | "unsupported" = "unsupported";
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
       notificationStatus = await Notification.requestPermission();
@@ -738,11 +916,14 @@ export function MatchCenterPage() {
       /* Non-persistent storage just means the user can enable again next time. */
     }
     if (goalAlertTimer.current) window.clearTimeout(goalAlertTimer.current);
-    setGoalAlert(
-      notificationStatus === "granted"
-        ? "Goal alerts enabled for this browser."
-        : "Goal alerts enabled in this tab. Phone notifications need browser permission support."
-    );
+    setGoalAlert({
+      title: "Goal Alerts Ready",
+      body:
+        notificationStatus === "granted"
+          ? "This browser will alert you when a goal is recorded."
+          : "In-tab alerts are on. Phone notifications need browser permission support.",
+      score: "DTP",
+    });
     goalAlertTimer.current = window.setTimeout(() => setGoalAlert(null), 6500);
   };
 
@@ -764,6 +945,18 @@ export function MatchCenterPage() {
   }
 
   const kind = statusKind(match.status);
+  const displayStatus =
+    liveSheet?.status === "submitted" || liveSheet?.clock?.phase === "finished"
+      ? "finished"
+      : liveSheet?.clock?.phase === "awaiting_second_half"
+        ? "halftime"
+        : liveSheet
+          ? "live"
+          : match.status;
+  const displayMinute =
+    liveSheet?.clock && liveSheet.clock.phase !== "pre_kickoff"
+      ? Math.max(1, Math.floor((liveClockSeconds(liveSheet.clock) ?? 0) / 60) + 1)
+      : match.minute;
   const live = kind === "live" || kind === "ht" || Boolean(liveSheet);
   const displayScore = liveSheet?.score ?? { home: match.homeScore, away: match.awayScore };
   const hasScore = match.status !== "scheduled" || Boolean(liveSheet);
@@ -796,7 +989,7 @@ export function MatchCenterPage() {
                   : ""
           }`}
         >
-          {statusLabel(match.status, match.minute)}
+          {statusLabel(displayStatus, displayMinute)}
         </span>
       </div>
 
@@ -806,6 +999,7 @@ export function MatchCenterPage() {
             <span className="sbm-live-kicker">
               <span className="sbm-live-dot" aria-hidden="true" />
               Live Feed
+              {liveClockLabel && <strong className="sbm-live-clock">{liveClockLabel}</strong>}
             </span>
             <strong>
               {match.homeTeam.name} {liveSheet.score.home}
@@ -881,7 +1075,12 @@ export function MatchCenterPage() {
 
       {goalAlert && (
         <div className="sbm-goal-toast" role="alert" aria-live="assertive">
-          {goalAlert}
+          <img src="/brand/favicon-white.png" alt="" aria-hidden="true" />
+          <span>
+            <strong>{goalAlert.title}</strong>
+            <em>{goalAlert.body}</em>
+          </span>
+          <b>{goalAlert.score}</b>
         </div>
       )}
 

@@ -241,12 +241,23 @@ export const adminScoreboardApi = {
       method: "DELETE",
     }),
 
-  setMatchLiveFeature: (matchId: string, enabled: boolean) =>
-    sbFetch<{ ok: boolean; liveFeature: { enabled: boolean; updatedAt: string | null } }>(
+  setMatchLiveFeature: (
+    matchId: string,
+    patch: { enabled?: boolean; audioEnabled?: boolean }
+  ) =>
+    sbFetch<{
+      ok: boolean;
+      liveFeature: {
+        enabled: boolean;
+        audioEnabled: boolean;
+        updatedAt: string | null;
+        audioUpdatedAt: string | null;
+      };
+    }>(
       `/admin/scoreboard/matches/${matchId}/live-feature`,
       {
         method: "PATCH",
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify(patch),
       }
     ),
 

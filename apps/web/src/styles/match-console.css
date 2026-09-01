@@ -2240,6 +2240,20 @@
 .mcx-prompt__actions { display: flex; gap: 0.5rem; }
 .mcx-prompt__actions .mcx-btn { flex: 1; }
 
+.mcx-btn--note {
+  align-items: center;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  line-height: 1.15;
+}
+
+.mcx-btn--note small {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
 .mcx-prompt__actions--stack {
   flex-direction: column;
   margin-top: 1rem;
