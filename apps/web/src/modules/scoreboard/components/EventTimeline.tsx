@@ -3,8 +3,10 @@ import { EVENT_LABELS, type SbMatchEvent, type SbTeamRef } from "../../../api/sc
 
 const EVENT_ICONS: Record<string, string> = {
   goal: "⚽",
+  goal_penalty: "⚽",
   own_goal: "⚽",
   yellow_card: "🟨",
+  second_yellow_red: "🟨🟥",
   red_card: "🟥",
   substitution: "↔",
   injury: "✚",
@@ -95,7 +97,6 @@ const EVENT_ICON_FALLBACKS: Record<string, string> = {
   game_management: "G",
   goal_kick: "GK",
   goal_line_clearance: "GL",
-  goal_penalty: "P",
   goalkeeper_claim: "GC",
   goalkeeper_command: "CMD",
   goalkeeper_distribution: "GD",
@@ -308,6 +309,13 @@ function resolveEventIcon(ev: SbMatchEvent): string {
   return EVENT_ICONS[ev.type] ?? EVENT_ICON_FALLBACKS[ev.type] ?? "•";
 }
 
+function resolveTimelineIcon(parsed: ParsedEvent): string {
+  if (parsed.presentationType === "second_yellow_red") {
+    return EVENT_ICONS.second_yellow_red;
+  }
+  return resolveEventIcon(parsed.ev);
+}
+
 function isNarrativeEvent(ev: SbMatchEvent): boolean {
   if (ev.type === "match_flow") return true;
   const flowKind = ev.metadata?.flowKind ?? ev.metadata?.csvEventType;
@@ -328,6 +336,51 @@ function parentheticalPlayerName(
 
 function isSaveDisplayEvent(ev: SbMatchEvent, csvType: string): boolean {
   return SAVE_DISPLAY_TYPES.has(csvType) || SAVE_DISPLAY_TYPES.has(ev.type);
+}
+
+function normalizedTimelineLabel(value: string | null | undefined): string | null {
+  const label = stripJerseyPrefix(value);
+  if (!label) return null;
+  return label.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function playerDisciplineKeys(ev: SbMatchEvent): string[] {
+  const csvType = resolveCsvEventType(ev);
+  if (csvType !== "yellow_card" || !ev.teamId) return [];
+
+  const keys = new Set<string>();
+  if (ev.playerId) keys.add(`${ev.teamId}:id:${ev.playerId}`);
+
+  [
+    ev.player?.displayName,
+    ev.playerLabel,
+    ev.assistPlayer?.displayName,
+    ev.assistLabel,
+  ].forEach((value) => {
+    const label = normalizedTimelineLabel(value);
+    if (label) keys.add(`${ev.teamId}:label:${label}`);
+  });
+
+  return [...keys];
+}
+
+function collectSecondYellowEventIds(events: SbMatchEvent[]): Set<string> {
+  const yellowCounts = new Map<string, number>();
+  const secondYellowEventIds = new Set<string>();
+
+  for (const ev of [...events].sort(compareTimelineEvents)) {
+    const keys = playerDisciplineKeys(ev);
+    if (keys.length === 0) continue;
+
+    const count = Math.max(0, ...keys.map((key) => yellowCounts.get(key) ?? 0)) + 1;
+    keys.forEach((key) => yellowCounts.set(key, count));
+
+    if (count >= 2) {
+      secondYellowEventIds.add(ev.id);
+    }
+  }
+
+  return secondYellowEventIds;
 }
 
 function namesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -404,6 +457,7 @@ type ParsedEvent = {
   detail: string | null;
   side: EventSide;
   csvType: string;
+  presentationType: string;
   playerLabel: string | null;
   playerLabel2: string | null;
   assistLabel: string | null;
@@ -420,11 +474,16 @@ type ParsedEvent = {
 function parseEvent(
   ev: SbMatchEvent,
   homeTeam: SbTeamRef,
-  awayTeam: SbTeamRef
+  awayTeam: SbTeamRef,
+  secondYellowEventIds: Set<string>
 ): ParsedEvent {
   const side = eventSide(ev, homeTeam, awayTeam);
   const club = teamNameForEvent(ev, homeTeam, awayTeam);
   const csvType = resolveCsvEventType(ev);
+  const presentationType =
+    csvType === "yellow_card" && secondYellowEventIds.has(ev.id)
+      ? "second_yellow_red"
+      : csvType;
   const rawPlayerLabel = visiblePlayerLabel(ev.player?.displayName ?? ev.playerLabel);
   const rawPlayerLabel2 = visiblePlayerLabel(ev.playerLabel2);
   const rawAssistLabel = visiblePlayerLabel(ev.assistPlayer?.displayName ?? ev.assistLabel);
@@ -457,6 +516,7 @@ function parseEvent(
     detail,
     side,
     csvType,
+    presentationType,
     playerLabel,
     playerLabel2,
     assistLabel,
@@ -631,11 +691,11 @@ function NeutralTimelineRow({
   competition?: string;
 }) {
   const { ev, csvType } = parsed;
-  const icon = resolveEventIcon(ev);
+  const icon = resolveTimelineIcon(parsed);
 
   return (
     <li
-      className={`sbm-timeline__row sbm-timeline__row--neutral sbm-event--${csvType}`}
+      className={`sbm-timeline__row sbm-timeline__row--neutral sbm-event--${parsed.presentationType} sbm-event--${csvType}`}
     >
       <div className="sbm-timeline__neutral-break">
         <div className="sbm-timeline__neutral-marker">
@@ -664,13 +724,13 @@ function TeamTimelineRow({
   competition?: string;
 }) {
   const { ev, side, csvType, playerLabel2 } = parsed;
-  const icon = resolveEventIcon(ev);
+  const icon = resolveTimelineIcon(parsed);
   const opp = oppositeSide(side);
   const player2Side = opp && playerLabel2 && !parsed.saveDisplay ? opp : null;
 
   return (
     <li
-      className={`sbm-timeline__row sbm-timeline__row--${side} sbm-event--${csvType}`}
+      className={`sbm-timeline__row sbm-timeline__row--${side} sbm-event--${parsed.presentationType} sbm-event--${csvType}`}
     >
       <div className="sbm-timeline__col sbm-timeline__col--home">
         {side === "home" && (
@@ -745,6 +805,7 @@ export function EventTimeline({
   order?: "chronological" | "latest";
 }) {
   const sorted = [...events].sort(order === "latest" ? compareLatestEvents : compareTimelineEvents);
+  const secondYellowEventIds = collectSecondYellowEventIds(events);
 
   if (sorted.length === 0) {
     return (
@@ -758,7 +819,7 @@ export function EventTimeline({
   return (
     <ol className="sbm-timeline">
       {sorted.map((ev) => {
-        const parsed = parseEvent(ev, homeTeam, awayTeam);
+        const parsed = parseEvent(ev, homeTeam, awayTeam, secondYellowEventIds);
         if (parsed.side === "neutral") {
           return <NeutralTimelineRow key={ev.id} parsed={parsed} competition={competition} />;
         }

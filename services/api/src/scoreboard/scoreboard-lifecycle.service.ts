@@ -61,7 +61,7 @@ export class ScoreboardLifecycleService {
     if (meta.statsApplied) return;
 
     const deltas = new Map<string, PlayerStatDeltas>();
-    if (event.type === "goal" && event.playerId) {
+    if ((event.type === "goal" || event.type === "goal_penalty") && event.playerId) {
       this.mergeDeltas(deltas, event.playerId, { goals: 1, careerGoals: 1 });
     }
     if (event.type === "goal" && event.assistPlayerId) {

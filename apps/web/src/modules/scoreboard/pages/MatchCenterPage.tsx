@@ -305,6 +305,17 @@ function publicFixtureErrorMessage(error: unknown): string {
   return message.trim() || "We could not load this fixture right now. Please refresh the page.";
 }
 
+function scoringTeamIdForLiveEvent(
+  event: { type: string; teamId: string | null },
+  match: SbMatchDetail
+) {
+  if (event.type === "own_goal") {
+    if (event.teamId === match.homeTeam.id) return match.awayTeam.id;
+    if (event.teamId === match.awayTeam.id) return match.homeTeam.id;
+  }
+  return event.teamId;
+}
+
 function base64ToBlob(data: string, mimeType: string): Blob {
   const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
@@ -683,16 +694,23 @@ export function MatchCenterPage() {
     if (!goalAlertsEnabled || newGoals.length === 0) return;
 
     const latest = newGoals[newGoals.length - 1];
+    const scoringTeamId = match ? scoringTeamIdForLiveEvent(latest, match) : latest.teamId;
     const scoringTeam =
-      latest.teamId === match?.homeTeam.id
+      scoringTeamId === match?.homeTeam.id
         ? match.homeTeam.shortName ?? match.homeTeam.name
-        : latest.teamId === match?.awayTeam.id
+        : scoringTeamId === match?.awayTeam.id
           ? match.awayTeam.shortName ?? match.awayTeam.name
           : "Goal";
     const player = latest.player?.displayName ?? latest.playerLabel;
-    const title = `${scoringTeam} goal`;
+    const title = latest.type === "own_goal" ? `${scoringTeam} goal: own goal` : `${scoringTeam} goal`;
     const body = [
-      player ? `${player} scored` : "A goal has been recorded",
+      latest.type === "own_goal"
+        ? player
+          ? `Own goal by ${player}`
+          : "Own goal recorded"
+        : player
+          ? `${player} scored`
+          : "A goal has been recorded",
       `${liveSheet.score.home}-${liveSheet.score.away}`,
       `${latest.minute}'`,
     ].join(" · ");
