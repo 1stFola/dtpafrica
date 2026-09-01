@@ -15309,6 +15309,7 @@ a.dbx-comp-card:hover {
 }
 
 .sbm-event--goal .sbm-timeline__dot,
+.sbm-event--goal_penalty .sbm-timeline__dot,
 .sbm-event--own_goal .sbm-timeline__dot {
   background: #22c55e;
   box-shadow:
@@ -15328,6 +15329,19 @@ a.dbx-comp-card:hover {
   box-shadow:
     0 0 0 3px rgba(239, 68, 68, 0.2),
     0 0 0 1px rgba(15, 23, 42, 0.9);
+}
+
+.sbm-event--second_yellow_red .sbm-timeline__dot {
+  background: #ef4444;
+  box-shadow:
+    0 0 0 3px rgba(239, 68, 68, 0.22),
+    0 0 0 1px rgba(15, 23, 42, 0.9);
+}
+
+.sbm-event--second_yellow_red .sbm-timeline__icon {
+  width: 2.8rem;
+  font-size: 1rem;
+  letter-spacing: 0;
 }
 
 .sbm-event__card {

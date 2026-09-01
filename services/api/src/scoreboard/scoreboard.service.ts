@@ -1839,9 +1839,15 @@ export class ScoreboardService {
 
     const event = await this.prisma.$transaction(async (tx) => {
       const created = await tx.sbMatchEvent.create({ data: eventData });
-      if (dto.type === "goal" && dto.teamId) {
-        const homeGoal = dto.teamId === match.homeTeamId;
-        const awayGoal = dto.teamId === match.awayTeamId;
+      if (["goal", "goal_penalty", "own_goal"].includes(dto.type) && dto.teamId) {
+        const homeGoal =
+          dto.type === "own_goal"
+            ? dto.teamId === match.awayTeamId
+            : dto.teamId === match.homeTeamId;
+        const awayGoal =
+          dto.type === "own_goal"
+            ? dto.teamId === match.homeTeamId
+            : dto.teamId === match.awayTeamId;
         if (homeGoal || awayGoal) {
           await tx.sbMatch.update({
             where: { id: matchId },
