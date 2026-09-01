@@ -44,6 +44,12 @@ jobs:
       - name: Build UI package
         run: pnpm --filter @dtp/ui build
 
+      - name: Run engines tests
+        run: pnpm --filter @dtp/engines test
+
+      - name: Run API tests
+        run: pnpm --filter @dtp/api test
+
       - name: Typecheck workspace
         run: pnpm typecheck
 
