@@ -224,6 +224,7 @@ type PublicScoreSheet = {
 } | null;
 type PublicScoreMatch = {
   status: string;
+  minute?: number | null;
   homeScore: number;
   awayScore: number;
   stats: Prisma.JsonValue | null;
@@ -436,11 +437,45 @@ export class ScoreboardService {
     return scoreFromEvents(events);
   }
 
+  private publicLiveStateFor(match: PublicScoreMatch): { status: string; minute: number | null } | null {
+    const sheet = match.statisticsSheet;
+    if (!sheet || !readLiveFeature(match.stats).enabled) return null;
+    const status = sheetStatus(sheet);
+    if (status === "approved" || match.status === "finished") return null;
+    const events = readEvents(sheet.events);
+    const clock = readClock(sheet.clock);
+    if (events.length === 0 && (!clock || clock.phase === "pre_kickoff")) return null;
+
+    if (status === "submitted" || clock?.phase === "finished") {
+      return { status: "finished", minute: match.minute ?? null };
+    }
+    if (clock?.phase === "awaiting_second_half") {
+      return { status: "halftime", minute: match.minute ?? null };
+    }
+    if (!clock || clock.phase === "pre_kickoff") {
+      return { status: "live", minute: match.minute ?? null };
+    }
+
+    const halfLength = Math.max(1, clock.halfLength || 45);
+    const anchor =
+      clock.half === 2 && clock.secondHalfStartedAt
+        ? new Date(clock.secondHalfStartedAt).getTime()
+        : clock.firstHalfStartedAt
+          ? new Date(clock.firstHalfStartedAt).getTime()
+          : NaN;
+    if (!Number.isFinite(anchor)) return { status: "live", minute: match.minute ?? null };
+    const played = Math.max(0, Math.floor((Date.now() - anchor) / 60000)) + 1;
+    const minute = clock.half === 2 ? halfLength + played : played;
+    return { status: "live", minute };
+  }
+
   private withPublicScore<T extends PublicScoreMatch>(match: T): Omit<T, "statisticsSheet"> {
     const { statisticsSheet: _sheet, ...payload } = match;
     const score = this.publicScoreFor(match);
+    const liveState = this.publicLiveStateFor(match);
     return {
       ...payload,
+      ...(liveState ? liveState : {}),
       homeScore: score.home,
       awayScore: score.away,
     };

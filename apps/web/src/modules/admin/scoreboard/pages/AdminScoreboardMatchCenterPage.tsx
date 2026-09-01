@@ -172,18 +172,26 @@ export function AdminScoreboardMatchCenterPage() {
     }
   };
 
-  const setLiveFeature = async (enabled: boolean) => {
+  const setLiveFeature = async (patch: { enabled?: boolean; audioEnabled?: boolean }) => {
     if (!selected || liveFeatureBusy) return;
     setLiveFeatureBusy(true);
     try {
-      const result = await adminScoreboardApi.setMatchLiveFeature(selected.id, enabled);
+      const result = await adminScoreboardApi.setMatchLiveFeature(selected.id, patch);
       patchSelectedMatch({
         stats: {
           ...(selected.stats ?? {}),
           liveFeature: result.liveFeature,
         },
       });
-      toast.success(enabled ? "Public live feed approved" : "Public live feed disabled");
+      if (patch.enabled !== undefined) {
+        toast.success(patch.enabled ? "Public live feed approved" : "Public live feed disabled");
+      } else if (patch.audioEnabled !== undefined) {
+        toast.success(
+          patch.audioEnabled
+            ? "Live commentary audio approved"
+            : "Live commentary audio disabled"
+        );
+      }
       refresh();
     } catch (e) {
       toast.error(formatAdminScoreboardError(e));
@@ -381,18 +389,45 @@ export function AdminScoreboardMatchCenterPage() {
               >
                 CSV upload
               </button>
-              <button
-                type="button"
-                className={
-                  selected.stats?.liveFeature?.enabled
-                    ? "admin-inline-button admin-inline-button--danger"
-                    : "admin-inline-button admin-inline-button--primary"
-                }
-                disabled={liveFeatureBusy}
-                onClick={() => setLiveFeature(!selected.stats?.liveFeature?.enabled)}
-              >
-                {selected.stats?.liveFeature?.enabled ? "Disable public live" : "Approve public live"}
-              </button>
+              {(() => {
+                const publicLiveEnabled = Boolean(selected.stats?.liveFeature?.enabled);
+                const liveAudioEnabled = Boolean(selected.stats?.liveFeature?.audioEnabled);
+                return (
+                  <>
+                    <button
+                      type="button"
+                      className={
+                        publicLiveEnabled
+                          ? "admin-inline-button admin-inline-button--danger"
+                          : "admin-inline-button admin-inline-button--primary"
+                      }
+                      disabled={liveFeatureBusy}
+                      onClick={() => setLiveFeature({ enabled: !publicLiveEnabled })}
+                    >
+                      {publicLiveEnabled ? "Disable public live" : "Approve public live"}
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        liveAudioEnabled
+                          ? "admin-inline-button admin-inline-button--danger"
+                          : "admin-inline-button admin-inline-button--primary"
+                      }
+                      disabled={liveFeatureBusy || !publicLiveEnabled}
+                      title={
+                        publicLiveEnabled
+                          ? undefined
+                          : "Approve public live before enabling commentary audio"
+                      }
+                      onClick={() => setLiveFeature({ audioEnabled: !liveAudioEnabled })}
+                    >
+                      {liveAudioEnabled
+                        ? "Disable live commentary"
+                        : "Approve live commentary"}
+                    </button>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="admin-sb-quick-events">

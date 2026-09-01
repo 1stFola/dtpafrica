@@ -272,25 +272,34 @@ export type KitColours = { home: string; away: string };
 
 export type LiveFeatureState = {
   enabled: boolean;
+  audioEnabled: boolean;
   updatedAt: string | null;
+  audioUpdatedAt: string | null;
 };
 
 export function readLiveFeature(input: unknown): LiveFeatureState {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { enabled: false, updatedAt: null };
+    return { enabled: false, audioEnabled: false, updatedAt: null, audioUpdatedAt: null };
   }
   const stats = input as Record<string, unknown>;
   const raw = stats.liveFeature;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { enabled: false, updatedAt: null };
+    return { enabled: false, audioEnabled: false, updatedAt: null, audioUpdatedAt: null };
   }
   const live = raw as Record<string, unknown>;
   const timestamp = live.updatedAt ?? live.enabledAt;
+  const audioTimestamp = live.audioUpdatedAt ?? live.audioEnabledAt;
+  const enabled = live.enabled === true;
   return {
-    enabled: live.enabled === true,
+    enabled,
+    audioEnabled: enabled && live.audioEnabled === true,
     updatedAt:
       typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp))
         ? new Date(timestamp).toISOString()
+        : null,
+    audioUpdatedAt:
+      typeof audioTimestamp === "string" && Number.isFinite(Date.parse(audioTimestamp))
+        ? new Date(audioTimestamp).toISOString()
         : null,
   };
 }
@@ -1009,8 +1018,12 @@ export class AdminMatchStatsService {
     const match = await this.loadMatch(matchId, ctx);
     const sheet = await this.requireSheet(matchId);
     this.assertOwnsSheet(sheet, ctx, match);
-    if (!options.allowWhenPublicLiveOff && !readLiveFeature(match.stats).enabled) {
+    const liveFeature = readLiveFeature(match.stats);
+    if (!options.allowWhenPublicLiveOff && !liveFeature.enabled) {
       throw new ForbiddenException("Public live must be approved before live audio commentary can start");
+    }
+    if (!options.allowWhenPublicLiveOff && !liveFeature.audioEnabled) {
+      throw new ForbiddenException("Live audio commentary must be approved before it can start");
     }
     if (!options.allowAfterFullTime && isFullTime(readClock(sheet.clock))) {
       throw new BadRequestException("Live audio commentary is closed after full time");

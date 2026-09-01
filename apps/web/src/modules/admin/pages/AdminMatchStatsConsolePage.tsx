@@ -46,6 +46,7 @@ const HALVES: Half[] = ["1st", "2nd"];
 const AUTOSAVE_DELAY_MS = 700;
 /* How often to retry a failed sync while the network is down. */
 const RETRY_DELAY_MS = 8000;
+const LIVE_AUDIO_CHUNK_MS = 700;
 
 function isSplit(value: TallyValue | undefined): value is SplitTally {
   return Boolean(value && "1st" in (value as SplitTally));
@@ -538,6 +539,26 @@ function LiveAudioCommentaryControl({
   const stopAfterFlushRef = useRef(false);
   const sampleStopRef = useRef<(() => void) | null>(null);
 
+  const friendlyLiveAudioError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : "";
+    if (/public live must be approved|public live is not enabled/i.test(message)) {
+      return "Ask a scoreboard admin to approve public live before starting audio.";
+    }
+    if (/live audio commentary must be approved|live audio commentary is not enabled/i.test(message)) {
+      return "Ask a scoreboard admin to approve live commentary before starting audio.";
+    }
+    if (/ticket expired/i.test(message)) {
+      return "The live audio start window expired. Tap Live audio and try again.";
+    }
+    if (/microphone|permission|notallowed|denied/i.test(message)) {
+      return "Microphone access is needed to start live audio.";
+    }
+    if (/network|websocket|socket|server|failed to fetch|closed before it could start/i.test(message)) {
+      return "Could not connect live audio. Check your connection and try again.";
+    }
+    return message || "Could not start live audio.";
+  };
+
   const closeSocket = useCallback(() => {
     const socket = socketRef.current;
     socketRef.current = null;
@@ -599,15 +620,25 @@ function LiveAudioCommentaryControl({
     setBusy(true);
     setMessage(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "";
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const preferredType =
+        [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4;codecs=mp4a.40.2",
+          "audio/mp4",
+          "audio/ogg;codecs=opus",
+          "audio/ogg",
+        ].find((type) => MediaRecorder.isTypeSupported(type)) || "";
       const recorder = preferredType
-        ? new MediaRecorder(stream, { mimeType: preferredType })
-        : new MediaRecorder(stream);
+        ? new MediaRecorder(stream, { mimeType: preferredType, audioBitsPerSecond: 24_000 })
+        : new MediaRecorder(stream, { audioBitsPerSecond: 24_000 });
       const mimeType = recorder.mimeType || preferredType || "audio/webm";
       const ticket = await matchStatsApi.createLiveAudioTicket(matchId);
       const socket = new WebSocket(liveAudioSocketUrl(ticket.wsPath));
@@ -619,11 +650,7 @@ function LiveAudioCommentaryControl({
         };
         socket.onerror = () => {
           if (!opened) {
-            reject(
-              new Error(
-                "Could not connect live audio stream. Check that the API server supports websocket live audio."
-              )
-            );
+            reject(new Error("Could not connect live audio."));
           }
         };
         socket.onclose = (event) => {
@@ -662,11 +689,11 @@ function LiveAudioCommentaryControl({
         stream.getTracks().forEach((track) => track.stop());
         if (stopAfterFlushRef.current) finishStop();
       };
-      recorder.start(700);
+      recorder.start(LIVE_AUDIO_CHUNK_MS);
       stopAfterFlushRef.current = false;
       setActive(true);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not start live audio.");
+      setMessage(friendlyLiveAudioError(error));
       setActive(false);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -1185,6 +1212,7 @@ export function AdminMatchStatsConsolePage() {
   const approved = status === "approved";
   const activeStatus = status;
   const liveFeatureEnabled = Boolean(match.liveFeature?.enabled);
+  const liveAudioEnabled = Boolean(match.liveFeature?.audioEnabled);
 
   return (
     <div className="mcx-page">
@@ -1206,12 +1234,18 @@ export function AdminMatchStatsConsolePage() {
             <span className="mcx-live-dot" />
             {liveFeatureEnabled ? "Public live approved" : "Public live off"}
           </span>
+          {!match.competition.isTraining && (
+            <span className={liveAudioEnabled ? "mcx-live-indicator is-on" : "mcx-live-indicator"}>
+              <span className="mcx-live-dot" />
+              {liveAudioEnabled ? "Commentary approved" : "Commentary off"}
+            </span>
+          )}
           <LiveAudioCommentaryControl
             matchId={matchId}
             disabled={
               !editable ||
               matchClock.phase === "finished" ||
-              (!match.competition.isTraining && !liveFeatureEnabled)
+              (!match.competition.isTraining && (!liveFeatureEnabled || !liveAudioEnabled))
             }
             trainingPreview={Boolean(match.competition.isTraining)}
           />

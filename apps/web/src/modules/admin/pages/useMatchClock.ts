@@ -54,7 +54,9 @@ export function useMatchClock(
      would sit frozen at 00:00. */
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    if (phase !== "running" && phase !== "added_running") return;
+    if (phase !== "running" && phase !== "added_running" && phase !== "awaiting_full_time") {
+      return;
+    }
     const id = setInterval(() => setTick((n) => n + 1), TICK_MS);
     return () => clearInterval(id);
   }, [phase]);
@@ -71,7 +73,6 @@ export function useMatchClock(
       phase === "awaiting_added"
         ? halfLength * 60
         : phase === "awaiting_second_half" ||
-            phase === "awaiting_full_time" ||
             phase === "penalty_shootout" ||
             phase === "finished"
           ? (halfLength + addedAllowance) * 60
@@ -157,14 +158,11 @@ export function useMatchClock(
   const playAdditionalMinute = useCallback(() => {
     const key = half === 1 ? "addedFirst" : "addedSecond";
     const nextAllowance = addedAllowance + 1;
-    const elapsedAtRestart = (halfLength + addedAllowance) * 60;
-    const anchorAt = new Date(Date.now() - elapsedAtRestart * 1000).toISOString();
     patch({
       [key]: nextAllowance,
       phase: "added_running",
-      ...(half === 1 ? { firstHalfStartedAt: anchorAt } : { secondHalfStartedAt: anchorAt }),
     } as Partial<ClockState>);
-  }, [addedAllowance, half, halfLength, patch]);
+  }, [addedAllowance, half, patch]);
 
   const endGame = useCallback(() => patch({ phase: "finished" }), [patch]);
 

@@ -646,8 +646,13 @@ export function MatchEventsTab({
               Regulation and added time are complete. Choose what happens next.
             </p>
             <div className="mcx-prompt__actions mcx-prompt__actions--stack">
-              <button type="button" className="mcx-btn" onClick={clock.playAdditionalMinute}>
-                More Time
+              <button
+                type="button"
+                className="mcx-btn mcx-btn--note"
+                onClick={clock.playAdditionalMinute}
+              >
+                <span>More Time</span>
+                <small>Adds 1 minute only</small>
               </button>
               <button type="button" className="mcx-btn" onClick={startShootout}>
                 Penalty Shootout
