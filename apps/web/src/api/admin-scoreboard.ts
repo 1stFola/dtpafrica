@@ -550,4 +550,75 @@ export const adminScoreboardApi = {
     sbFetch<{ ok: boolean }>(`/admin/scoreboard/highlights/${id}`, {
       method: "DELETE",
     }),
+
+  // Squad Management
+  listSquads: (filters?: {
+    q?: string;
+    teamId?: string;
+    competitionId?: string;
+    position?: string;
+    shirtNumber?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (filters?.q) qs.set("q", filters.q);
+    if (filters?.teamId) qs.set("teamId", filters.teamId);
+    if (filters?.competitionId) qs.set("competitionId", filters.competitionId);
+    if (filters?.position) qs.set("position", filters.position);
+    if (filters?.shirtNumber !== undefined) qs.set("shirtNumber", filters.shirtNumber.toString());
+    const query = qs.toString();
+    return sbFetch<Array<{
+      squadId: string;
+      teamId: string;
+      playerId: string | null;
+      displayName: string;
+      slug: string | null;
+      positionPrimary: string | null;
+      shirtNumber: number | null;
+      team: {
+        id: string;
+        name: string;
+        slug: string;
+        competition: {
+          id: string;
+          name: string;
+          slug: string;
+        };
+      };
+    }>>(`/admin/scoreboard/squads${query ? `?${query}` : ""}`);
+  },
+
+  createSquad: (data: {
+    displayName: string;
+    teamId: string;
+    position?: string | null;
+    shirtNumber?: number | null;
+  }) =>
+    sbFetch<{
+      squadId: string;
+      teamId: string;
+      playerId: string | null;
+      displayName: string;
+      slug: string | null;
+      positionPrimary: string | null;
+      shirtNumber: number | null;
+      team: {
+        id: string;
+        name: string;
+        slug: string;
+        competition: {
+          id: string;
+          name: string;
+          slug: string;
+        };
+      };
+    }>("/admin/scoreboard/squads", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSquads: (body: { squadIds: string[] }) =>
+    sbFetch<{ deleted: number }>("/admin/scoreboard/squads", {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
 };

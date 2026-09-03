@@ -28,6 +28,16 @@ type SeedScoutToProInternationalTournament2026Fn = (
   options?: SeedOptions
 ) => Promise<void>;
 
+type SeedScoutToProTeamsFixturesSquadsFn = (
+  prisma: PrismaClient,
+  options?: SeedOptions
+) => Promise<{
+  teamsCreated: number;
+  matchesCreated: number;
+  squadRecordsCreated: number;
+  playersProcessed: number;
+}>;
+
 const requireFromDist = createRequire(__filename);
 const prismaSeedDir = path.join(__dirname, "../../prisma");
 
@@ -69,7 +79,17 @@ export function seedScoutToProInternationalTournament2026(
   options?: SeedOptions
 ) {
   const mod = loadModule<{ seedScoutToProInternationalTournament2026: SeedScoutToProInternationalTournament2026Fn }>(
-    "scout-to-pro-international-tournament-2026"
+    "seed-scout-to-pro-international-tournament-2026"
   );
   return mod.seedScoutToProInternationalTournament2026(prisma, seedPlayerId, options);
+}
+
+export function seedScoutToProTeamsFixturesSquads(
+  prisma: PrismaClient,
+  options?: SeedOptions
+) {
+  const mod = loadModule<{ seedScoutToProTeamsFixturesSquads: SeedScoutToProTeamsFixturesSquadsFn }>(
+    "seed-scout-to-pro-international-tournament-2026-teams-fixtures"
+  );
+  return mod.seedScoutToProTeamsFixturesSquads(prisma, options);
 }
