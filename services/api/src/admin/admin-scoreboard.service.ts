@@ -1243,14 +1243,10 @@ export class AdminScoreboardService {
           lastName: nameParts.lastName,
           displayName,
           normalizedName,
-          positionPrimary: dto.position?.trim() || null,
+          slug: slugify(displayName),
+          positionPrimary: dto.position?.trim() ?? '',
           registrationStatus: "approved",
           isPublic: true,
-        },
-        select: {
-          id: true,
-          displayName: true,
-          normalizedName: true,
         },
       });
       playerId = createdPlayer.id;
@@ -1402,30 +1398,14 @@ export class AdminScoreboardService {
       where,
       include: {
         team: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            competition: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-            },
+          include: {
+            competition: true,
           },
         },
-        player: {
-          select: {
-            id: true,
-            slug: true,
-            displayName: true,
-            positionPrimary: true,
-          },
-        },
+        player: true,
       },
       orderBy: [
-        { shirtNumber: { sortOrder: "asc", nulls: "last" } },
+        { shirtNumber: { sort: "asc", nulls: "last" } },
         { displayName: "asc" },
       ],
     });
