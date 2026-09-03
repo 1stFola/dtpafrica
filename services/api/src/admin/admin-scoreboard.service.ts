@@ -1205,6 +1205,282 @@ export class AdminScoreboardService {
     return { ok: true };
   }
 
+  async createSquadRow(dto: UpsertScoreboardSquadRowDto) {
+    // Validate teamId if provided
+    let targetTeamId: string | undefined = undefined;
+    if (dto.teamId) {
+      const team = await this.prisma.sbTeam.findUnique({
+        where: { id: dto.teamId },
+        select: { id: true, competitionId: true },
+      });
+      if (!team) throw new NotFoundException("Team not found");
+      targetTeamId = team.id;
+    }
+
+    const displayName = normalizePlayerName(dto.displayName?.trim() ?? "");
+    if (!displayName) throw new BadRequestException("displayName is required");
+
+    // Find or create player
+    const normalizedName = playerLookupKey(displayName);
+    let playerId: string | null = null;
+    let player: { id: string; displayName: string; normalizedName: string | null } | null = null;
+
+    if (normalizedName) {
+      player = await this.prisma.player.findUnique({
+        where: { normalizedName },
+        select: { id: true, displayName: true, normalizedName: true },
+      });
+    }
+
+    if (player) {
+      playerId = player.id;
+    } else {
+      // Create new player
+      const nameParts = splitPlayerName(displayName);
+      const createdPlayer = await this.prisma.player.create({
+        data: {
+          firstName: nameParts.firstName,
+          lastName: nameParts.lastName,
+          displayName,
+          normalizedName,
+          positionPrimary: dto.position?.trim() || null,
+          registrationStatus: "approved",
+          isPublic: true,
+        },
+        select: {
+          id: true,
+          displayName: true,
+          normalizedName: true,
+        },
+      });
+      playerId = createdPlayer.id;
+    }
+
+    // Check if player already exists in squad for the same team/competition
+    let finalTeamId = targetTeamId;
+    let finalCompetitionId: string | undefined = undefined;
+
+    if (finalTeamId) {
+      const team = await this.prisma.sbTeam.findUnique({
+        where: { id: finalTeamId },
+        select: { id: true, competitionId: true },
+      });
+      if (!team) throw new NotFoundException("Team not found");
+      finalCompetitionId = team.competitionId;
+    } else {
+      // If no team specified, check if player already exists in any squad
+      const existingSquad = await this.prisma.sbTeamSquad.findFirst({
+        where: {
+          playerId,
+          // We'll need to get the team to check competition
+        },
+        include: {
+          team: {
+            select: {
+              id: true,
+              competitionId: true,
+            },
+          },
+        },
+      });
+
+      if (existingSquad) {
+        finalTeamId = existingSquad.teamId;
+        finalCompetitionId = existingSquad.team.competitionId;
+      }
+    }
+
+    // If still no team, throw error
+    if (!finalTeamId) {
+      throw new BadRequestException("teamId is required when creating a new squad row");
+    }
+
+    // Check for duplicate squad entry (same player in same team/competition)
+    const duplicateSquad = await this.prisma.sbTeamSquad.findFirst({
+      where: {
+        playerId,
+        teamId: finalTeamId,
+        id: { not: undefined }, // Not checking against a specific ID since we're creating
+      },
+    });
+
+    if (duplicateSquad) {
+      throw new BadRequestException(
+        `${displayName} is already registered for a team in this competition.`,
+      );
+    }
+
+    // Create squad row
+    const squadRow = await this.prisma.sbTeamSquad.create({
+      data: {
+        teamId: finalTeamId,
+        playerId,
+        displayName,
+        position: dto.position?.trim() || null,
+        shirtNumber: Number.isFinite(dto.shirtNumber) ? dto.shirtNumber : null,
+      },
+      include: {
+        team: {
+          include: {
+            competition: true,
+          },
+        },
+        player: {
+          select: {
+            id: true,
+            slug: true,
+            displayName: true,
+            positionPrimary: true,
+          },
+        },
+      },
+    });
+
+    this.statsCache = null;
+
+    return {
+      squadId: squadRow.id,
+      playerId: squadRow.playerId,
+      slug: squadRow.player?.slug ?? null,
+      displayName: squadRow.player?.displayName ?? squadRow.displayName,
+      positionPrimary: squadRow.position ?? squadRow.player?.positionPrimary ?? null,
+      teams: [
+        {
+          squadId: squadRow.id,
+          teamId: squadRow.team.id,
+          teamName: normalizeClubName(squadRow.team.name),
+          competitionSlug: squadRow.team.competition.slug,
+          competitionName: squadRow.team.competition.name,
+          position: squadRow.position,
+          shirtNumber: squadRow.shirtNumber,
+        },
+      ],
+    };
+  }
+
+  async listSquads(
+    filters?: {
+      q?: string;
+      teamId?: string;
+      competitionId?: string;
+      position?: string;
+      shirtNumber?: number;
+    }
+  ) {
+    const where: Prisma.SbTeamSquadWhereInput = {};
+
+    if (filters?.q?.trim()) {
+      const q = filters.q.trim();
+      where.OR = [
+        { displayName: { contains: q, mode: "insensitive" } },
+        { player: { displayName: { contains: q, mode: "insensitive" } } },
+      ];
+    }
+
+    if (filters?.teamId) {
+      where.teamId = filters.teamId;
+    }
+
+    if (filters?.competitionId) {
+      where.team = {
+        competitionId: filters.competitionId,
+      };
+    }
+
+    if (filters?.position?.trim()) {
+      where.position = {
+        contains: filters.position.trim(),
+        mode: "insensitive",
+      };
+    }
+
+    if (filters?.shirtNumber !== undefined) {
+      where.shirtNumber = filters.shirtNumber;
+    }
+
+    const squadRows = await this.prisma.sbTeamSquad.findMany({
+      where,
+      include: {
+        team: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            competition: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        },
+        player: {
+          select: {
+            id: true,
+            slug: true,
+            displayName: true,
+            positionPrimary: true,
+          },
+        },
+      },
+      orderBy: [
+        { shirtNumber: { sortOrder: "asc", nulls: "last" } },
+        { displayName: "asc" },
+      ],
+    });
+
+    return squadRows.map((row) => ({
+      squadId: row.id,
+      teamId: row.teamId,
+      playerId: row.playerId,
+      displayName: row.player?.displayName ?? row.displayName,
+      slug: row.player?.slug ?? slugify(row.displayName),
+      positionPrimary: row.position ?? row.player?.positionPrimary ?? null,
+      shirtNumber: row.shirtNumber,
+      team: {
+        id: row.team.id,
+        name: normalizeClubName(row.team.name),
+        slug: row.team.slug,
+        competition: {
+          id: row.team.competition.id,
+          name: row.team.competition.name,
+          slug: row.team.competition.slug,
+        },
+      },
+    }));
+  }
+
+  async bulkDeleteSquads(squadIds: string[]) {
+    if (!squadIds.length) {
+      return { deleted: 0 };
+    }
+
+    // First, update any match squad players that reference these squad rows
+    await this.prisma.sbMatchSquadPlayer.updateMany({
+      where: {
+        squadId: {
+          in: squadIds,
+        },
+      },
+      data: {
+        squadId: null,
+      },
+    });
+
+    // Then delete the squad rows
+    const result = await this.prisma.sbTeamSquad.deleteMany({
+      where: {
+        id: {
+          in: squadIds,
+        },
+      },
+    });
+
+    this.statsCache = null;
+    return { deleted: result.count };
+  }
+
   async listMatches(competitionId?: string) {
     return this.scoreboard.listMatches({
       competitionId,

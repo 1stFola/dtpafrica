@@ -6,6 +6,7 @@ import {
   seedLegacyPlayers,
   seedMvce,
   seedScoreboard,
+  seedScoutToProInternationalTournament2026,
 } from "./prisma-seed-modules";
 import { isFullSeed, type SeedOptions } from "./seed-options";
 import { legacyMatchMetricsToPlayerMatchRecord } from "../sip/legacy-match-metrics-mapper";
@@ -843,6 +844,12 @@ Parents and guardians can register minors with consent workflows built for youth
       name: "scoreboard",
       run: async () => {
         await seedScoreboard(prisma, seedPlayerId, { mode });
+      },
+    },
+    {
+      name: "scout-to-pro-international-tournament-2026",
+      run: async () => {
+        await seedScoutToProInternationalTournament2026(prisma, seedPlayerId, { mode });
       },
     },
     {
