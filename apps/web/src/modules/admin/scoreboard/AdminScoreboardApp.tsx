@@ -6,7 +6,6 @@ import { AdminScoreboardHighlightsPage } from "./pages/AdminScoreboardHighlights
 import { AdminScoreboardHubPage } from "./pages/AdminScoreboardHubPage";
 import { AdminScoreboardMatchCenterPage } from "./pages/AdminScoreboardMatchCenterPage";
 import { AdminScoreboardRosterPage } from "./pages/AdminScoreboardRosterPage";
-import { AdminScoreboardSquadUploadPage } from "./pages/AdminScoreboardSquadUploadPage";
 import { AdminScoreboardSquadManagementPage } from "./pages/AdminScoreboardSquadManagementPage";
 
 export function AdminScoreboardApp() {

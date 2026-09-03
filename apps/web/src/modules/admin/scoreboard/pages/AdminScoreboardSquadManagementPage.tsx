@@ -5,10 +5,7 @@ import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { AdminSbTableShell } from "../components/AdminSbTableShell";
-import { CsvDropzone } from "../components/CsvDropzone";
 import type {
-  AdminSbCompetition,
-  AdminSbPlayerDirectoryRow,
   AdminSbTeam,
   AdminSbSquadRowInput,
 } from "../types";
@@ -21,11 +18,6 @@ type SquadFilters = {
   shirtNumber?: number;
 };
 
-const TEAM_SQUAD_CSV_TEMPLATE = `shirtNumber,displayName,position
-1,Goalkeeper Name,GK
-2,Right Back Name,RB
-9,Striker Name,ST
-`;
 
 export function AdminScoreboardSquadManagementPage() {
   usePageTitle("Admin - Squad Management");
@@ -52,7 +44,7 @@ export function AdminScoreboardSquadManagementPage() {
       };
     };
   }>>([]);
-  const [competitions, setCompetitions] = useState<AdminSbCompetition[]>([]);
+  const [competitions, setCompetitions] = useState<Array<{ id: string; name: string; slug: string; season: string }>>([]);
   const [teams, setTeams] = useState<AdminSbTeam[]>([]);
 
   // Loading states
@@ -71,7 +63,7 @@ export function AdminScoreboardSquadManagementPage() {
   const [editData, setEditData] = useState<AdminSbSquadRowInput>({
     displayName: "",
     position: undefined,
-    shirtNumber: undefined,
+    shirtNumber: null,
     teamId: undefined,
   });
 
@@ -87,11 +79,10 @@ export function AdminScoreboardSquadManagementPage() {
       .competitionPicker()
       .then((rows) => {
         if (cancelled) return;
-        setCompetitions(rows as AdminSbCompetition[]);
+        setCompetitions(rows as Array<{ id: string; name: string; slug: string; season: string }>);
         // Auto-select first competition if none selected
         if (!selectedCompetitionId && rows.length > 0) {
           setSelectedCompetitionId(rows[0].id);
-          setCompetitionId(rows[0].id);
         }
       })
       .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load competitions"))
@@ -108,7 +99,6 @@ export function AdminScoreboardSquadManagementPage() {
     if (!selectedCompetitionId) {
       setTeams([]);
       setSelectedTeamId("");
-      setTeamId("");
       return;
     }
 
@@ -122,7 +112,6 @@ export function AdminScoreboardSquadManagementPage() {
         // Auto-select first team if none selected
         if (!selectedTeamId && rows.length > 0) {
           setSelectedTeamId(rows[0].id);
-          setTeamId(rows[0].id);
         }
       })
       .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load teams"))
@@ -168,20 +157,22 @@ export function AdminScoreboardSquadManagementPage() {
   // Handle team/competition selection changes
   const handleCompetitionChange = useCallback((competitionId: string) => {
     setSelectedCompetitionId(competitionId);
-    setCompetitionId(competitionId);
     setSelectedTeamId(""); // Reset team selection when competition changes
-    setTeamId("");
   }, []);
 
   const handleTeamChange = useCallback((teamId: string) => {
     setSelectedTeamId(teamId);
-    setTeamId(teamId);
   }, []);
 
   // Form handlers
   const handleCreateSquad = useCallback(async (data: AdminSbSquadRowInput) => {
     try {
-      await adminScoreboardApi.createSquad(data);
+      await adminScoreboardApi.createSquad({
+        displayName: data.displayName,
+        teamId: data.teamId!,
+        position: data.position,
+        shirtNumber: data.shirtNumber,
+      });
       toast.success("Squad row created successfully");
       setCreateFormOpen(false);
       void loadSquads(); // Refresh list
@@ -192,7 +183,12 @@ export function AdminScoreboardSquadManagementPage() {
 
   const handleUpdateSquad = useCallback(async (squadId: string, data: AdminSbSquadRowInput) => {
     try {
-      await adminScoreboardApi.updateSquadRow(squadId, data);
+      await adminScoreboardApi.updateSquadRow(squadId, {
+        displayName: data.displayName,
+        teamId: data.teamId,
+        position: data.position,
+        shirtNumber: data.shirtNumber,
+      });
       toast.success("Squad row updated successfully");
       setEditFormOpen(false);
       void loadSquads(); // Refresh list
@@ -226,9 +222,6 @@ export function AdminScoreboardSquadManagementPage() {
   }, [toast, loadSquads, selectedSquadIds]);
 
   // UI helpers
-  const selectedCompetition = competitions.find(c => c.id === selectedCompetitionId) ?? null;
-  const selectedTeam = teams.find(t => t.id === selectedTeamId) ?? null;
-
   const filteredSquads = useMemo(() => {
     return squads.filter(squad => {
       // Filter by team if selected
@@ -384,8 +377,6 @@ export function AdminScoreboardSquadManagementPage() {
                 setFilters({});
                 setSelectedCompetitionId("");
                 setSelectedTeamId("");
-                setCompetitionId("");
-                setTeamId("");
               }}
             >
               Reset Filters
@@ -399,7 +390,7 @@ export function AdminScoreboardSquadManagementPage() {
         <AdminSbTableShell
           columns={8}
           loading={loading}
-          empty={filteredSquads.length === 0 && (selectedCompetitionId || selectedTeamId || Object.keys(filters).length > 0)}
+          empty={filteredSquads.length === 0 && (!!selectedCompetitionId || !!selectedTeamId || Object.keys(filters).length > 0)}
           emptyTitle={filteredSquads.length === 0 ? "No squad rows match the filters" : "No squad rows found"}
           emptyHint={filteredSquads.length === 0 ? "Adjust your filters to see squad rows" : "Add squad rows to get started"}
         >
@@ -494,9 +485,9 @@ export function AdminScoreboardSquadManagementPage() {
                       onClick={() => {
                         setEditData({
                           displayName: squad.displayName,
-                          position: squad.positionPrimary,
+                          position: squad.positionPrimary ?? undefined,
                           shirtNumber: squad.shirtNumber,
-                          teamId: squad.teamId,
+                          teamId: squad.teamId ?? undefined,
                         });
                         setEditSquadId(squad.squadId);
                         setEditFormOpen(true);
@@ -558,9 +549,9 @@ export function AdminScoreboardSquadManagementPage() {
                   Team *
                 </label>
                 <select
-                  value={editData.teamId ?? ""}
+                  value={editData.teamId}
                   onChange={(e) => {
-                    setEditData(prev => ({ ...prev, teamId: e.target.value || undefined }));
+                    setEditData(prev => ({ ...prev, teamId: e.target.value }));
                   }}
                   disabled={!!editSquadId}
                   className="admin-input w-full"
@@ -605,7 +596,8 @@ export function AdminScoreboardSquadManagementPage() {
                 <select
                   value={editData.position ?? ""}
                   onChange={(e) => {
-                    setEditData(prev => ({ ...prev, position: e.target.value || undefined }));
+                    const value = e.target.value;
+                    setEditData(prev => ({ ...prev, position: value === "" ? undefined : value }));
                   }}
                   className="admin-input w-full"
                 >
@@ -614,7 +606,7 @@ export function AdminScoreboardSquadManagementPage() {
                   <option value="RB">Right Back (RB)</option>
                   <option value="LB">Left Back (LB)</option>
                   <option value="CB">Center Back (CB)</option>
-                  <option value="DM">Defensive Midfielder (DM)</>
+                  <option value="DM">Defensive Midfielder (DM)</option>
                   <option value="CM">Central Midfielder (CM)</option>
                   <option value="AM">Attacking Midfielder (AM)</option>
                   <option value="RM">Right Midfielder (RM)</option>
@@ -635,9 +627,10 @@ export function AdminScoreboardSquadManagementPage() {
                   type="number"
                   min="0"
                   max="99"
-                  value={editData.shirtNumber ?? ""}
+                  value={editData.shirtNumber === null ? "" : String(editData.shirtNumber)}
                   onChange={(e) => {
-                    setEditData(prev => ({ ...prev, shirtNumber: e.target.value ? Number(e.target.value) : undefined }));
+                    const value = e.target.value;
+                    setEditData(prev => ({ ...prev, shirtNumber: value === "" ? null : Number(value) }));
                   }}
                   className="admin-input w-full"
                 />
