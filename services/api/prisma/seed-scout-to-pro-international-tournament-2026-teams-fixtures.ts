@@ -1,14 +1,6 @@
-// @ts-nocheck
-/**
- * Scout To Pro International Tournament 2026 — Teams, Fixtures, and Squad Seeding
- *
- * Seeds team data, match fixtures, and player squads for the Scout To Pro International Tournament 2026
- * based on the provided group structure, match schedule, and squad data.
- */
-
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
-import { splitPlayerName } from "../src/admin/admin-scoreboard.service";
+import { splitPlayerName } from "../src/utils/player-utils";
 
 const COMP_SLUG = "scout-to-pro-international-tournament-2026";
 
@@ -403,7 +395,7 @@ async function seedScoutToProTeamsFixturesSquads(
           competitionId: competition.id,
           shortName: teamName.substring(0, Math.min(3, teamName.length)).toUpperCase(),
           city: "Lagos", // All matches in Lagos
-          region: "Lagos",
+          
           logoUrl: null,
           groupKey: Object.entries(GROUPS).find(([_, teams]) => teams.includes(teamName))?.[0] || null
         }
@@ -447,8 +439,7 @@ async function seedScoutToProTeamsFixturesSquads(
           competitionId: competition.id,
           homeTeamId: teamA.id,
           awayTeamId: teamB.id,
-          kickoffDate: matchData.date,
-          kickoffTime: matchData.time,
+          
           kickoffAt: new Date(`${matchData.date}T${matchData.time}:00`),
           venue: "Bariga Stadium, Lagos",
           status: "scheduled",
