@@ -7,6 +7,7 @@ import { AdminScoreboardHubPage } from "./pages/AdminScoreboardHubPage";
 import { AdminScoreboardMatchCenterPage } from "./pages/AdminScoreboardMatchCenterPage";
 import { AdminScoreboardRosterPage } from "./pages/AdminScoreboardRosterPage";
 import { AdminScoreboardSquadUploadPage } from "./pages/AdminScoreboardSquadUploadPage";
+import { AdminScoreboardSquadManagementPage } from "./pages/AdminScoreboardSquadManagementPage";
 
 export function AdminScoreboardApp() {
   return (
@@ -22,7 +23,7 @@ export function AdminScoreboardApp() {
             />
           }
         >
-          <Route path="squads" element={<AdminScoreboardSquadUploadPage />} />
+          <Route path="squads" element={<AdminScoreboardSquadManagementPage />} />
         </Route>
         <Route path="roster" element={<AdminScoreboardRosterPage />} />
         <Route path="highlights" element={<AdminScoreboardHighlightsPage />} />
