@@ -185,6 +185,30 @@ export class AdminScoreboardController {
     return this.sb.deleteSquadRow(squadId);
   }
 
+  @Post("squads")
+  @RequirePermissions("scoreboard.records.manage")
+  createSquad(@Body() dto: UpsertScoreboardSquadRowDto) {
+    return this.sb.createSquadRow(dto);
+  }
+
+  @Get("squads")
+  @RequirePermissions("scoreboard.read")
+  listSquads(
+    @Query("q") q?: string,
+    @Query("teamId") teamId?: string,
+    @Query("competitionId") competitionId?: string,
+    @Query("position") position?: string,
+    @Query("shirtNumber") shirtNumber?: number,
+  ) {
+    return this.sb.listSquads({ q, teamId, competitionId, position, shirtNumber });
+  }
+
+  @Delete("squads")
+  @RequirePermissions("scoreboard.records.manage")
+  deleteSquads(@Body() body: { squadIds: string[] }) {
+    return this.sb.bulkDeleteSquads(body.squadIds);
+  }
+
   @Get("matches")
   @RequirePermissions("scoreboard.read")
   matches(@Query("competitionId") competitionId?: string) {

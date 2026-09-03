@@ -22,6 +22,11 @@ type SeedLegacyPlayersFn = (
   prisma: PrismaClient,
   options?: SeedOptions
 ) => Promise<LegacyPlayerSeedResult>;
+type SeedScoutToProInternationalTournament2026Fn = (
+  prisma: PrismaClient,
+  seedPlayerId?: string,
+  options?: SeedOptions
+) => Promise<void>;
 
 const requireFromDist = createRequire(__filename);
 const prismaSeedDir = path.join(__dirname, "../../prisma");
@@ -56,4 +61,15 @@ export function seedLegacyPlayers(prisma: PrismaClient, options?: SeedOptions) {
     "seed-legacy-players"
   );
   return mod.seedLegacyPlayers(prisma, options);
+}
+
+export function seedScoutToProInternationalTournament2026(
+  prisma: PrismaClient,
+  seedPlayerId?: string,
+  options?: SeedOptions
+) {
+  const mod = loadModule<{ seedScoutToProInternationalTournament2026: SeedScoutToProInternationalTournament2026Fn }>(
+    "scout-to-pro-international-tournament-2026"
+  );
+  return mod.seedScoutToProInternationalTournament2026(prisma, seedPlayerId, options);
 }
