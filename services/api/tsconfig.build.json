@@ -19,6 +19,7 @@
     "prisma/sync-player-age-categories.ts",
     "prisma/sync-scoreboard-event-player-links.ts",
     "prisma/sync-scoreboard-timeline-player-profiles.ts",
+    "prisma/seed-scout-to-pro-international-tournament-2026.ts",
     "prisma/seed-scout-to-pro-international-tournament-2026-teams-fixtures.ts",
   ],
   "exclude": ["node_modules", "dist", "prisma/seed.ts"]

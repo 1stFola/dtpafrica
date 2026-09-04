@@ -7,6 +7,7 @@ import { seedGoalkeeperProfiles } from "./seed-goalkeeper-profiles";
 import { seedJagabanCup2026 } from "./seed-jagaban-cup-2026";
 import { seedLagosQueensCup2026 } from "./seed-lagos-queens-cup-2026";
 import { seedDslLeague2026 } from "./seed-dsl-league-2026";
+import { seedDslLeaguePlayers } from "./seed-dsl-league-players-2026";
 import { seedRakLeague2026 } from "./seed-rak-league-2026";
 import { seedTrainingCup } from "./seed-training-cup";
 import { syncScoreboardEventPlayerLinks } from "./sync-scoreboard-event-player-links";
@@ -29,6 +30,7 @@ export async function seedScoreboard(
   await seed1XCup2026(prisma, options);
   await seedRakLeague2026(prisma, options);
   await seedDslLeague2026(prisma, options);
+  await seedDslLeaguePlayers(prisma, options);
   await seedTrainingCup(prisma, options);
   const goalkeeperProfiles = await seedGoalkeeperProfiles(prisma);
   console.log("Seeded goalkeeper profiles:", goalkeeperProfiles);
