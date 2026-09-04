@@ -357,7 +357,7 @@ function slugify(name: string): string {
 }
 
 // Main seeding function
-async function seedScoutToProTeamsFixturesSquads(
+export async function seedScoutToProTeamsFixturesSquads(
   prisma: PrismaClient,
   options?: SeedOptions
 ) {
