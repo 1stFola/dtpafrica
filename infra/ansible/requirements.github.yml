@@ -1,0 +1,19 @@
+---
+# Fallback for GitHub Actions when galaxy.ansible.com has a transient API
+# response issue during dependency resolution.
+collections:
+  - name: https://github.com/ansible-collections/community.general.git
+    type: git
+    version: 9.5.0
+  - name: https://github.com/ansible-collections/community.docker.git
+    type: git
+    version: 3.13.0
+  - name: https://github.com/ansible-collections/ansible.posix.git
+    type: git
+    version: 1.5.4
+  - name: https://github.com/ansible-collections/community.aws.git
+    type: git
+    version: 8.0.0
+  - name: https://github.com/ansible-collections/amazon.aws.git
+    type: git
+    version: 8.0.0
