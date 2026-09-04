@@ -250,7 +250,11 @@ jobs:
             boto3 botocore awscli
 
       - name: Install Ansible collections
-        run: ansible-galaxy collection install -r requirements.yml --force
+        run: |
+          ansible-galaxy collection install -r requirements.yml --force || {
+            echo "Galaxy collection install failed; retrying from pinned GitHub sources"
+            ansible-galaxy collection install -r requirements.github.yml --force
+          }
 
       - name: Write SSH private key
         run: |
