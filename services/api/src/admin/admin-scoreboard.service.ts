@@ -1370,6 +1370,8 @@ export class AdminScoreboardService {
       where.OR = [
         { displayName: { contains: q, mode: "insensitive" } },
         { player: { displayName: { contains: q, mode: "insensitive" } } },
+        // The search box is labelled "name or slug", so match the slug too.
+        { player: { slug: { contains: q, mode: "insensitive" } } },
       ];
     }
 
@@ -1390,7 +1392,9 @@ export class AdminScoreboardService {
       };
     }
 
-    if (filters?.shirtNumber !== undefined) {
+    // Guard on the value being a real number, not just "not undefined": NaN
+    // slips past a `!== undefined` check and Prisma rejects it on an Int column.
+    if (typeof filters?.shirtNumber === "number" && Number.isFinite(filters.shirtNumber)) {
       where.shirtNumber = filters.shirtNumber;
     }
 
