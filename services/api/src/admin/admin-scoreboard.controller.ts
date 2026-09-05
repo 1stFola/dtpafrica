@@ -39,6 +39,20 @@ import { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
 import { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
 import { UpdateMatchStatsDto } from "./dto/update-match-stats.dto";
 
+/**
+ * Parses the optional `shirtNumber` query param into an integer.
+ * Returns undefined when the param is absent or blank, so the caller can leave
+ * the filter off entirely rather than passing NaN down to Prisma.
+ */
+function parseShirtNumberQuery(raw?: string): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed)) {
+    throw new BadRequestException("shirtNumber must be an integer");
+  }
+  return parsed;
+}
+
 @Controller("admin/scoreboard")
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 export class AdminScoreboardController {
@@ -198,9 +212,21 @@ export class AdminScoreboardController {
     @Query("teamId") teamId?: string,
     @Query("competitionId") competitionId?: string,
     @Query("position") position?: string,
-    @Query("shirtNumber") shirtNumber?: number,
+    // Taken as a string and parsed below. Query params always arrive as
+    // strings, and a `?: number` param is not safe here: the global
+    // ValidationPipe has no enableImplicitConversion, so it either reaches
+    // Prisma as a string (Int column -> validation error) or, where it does
+    // coerce with `+value`, turns an *absent* param into NaN and poisons
+    // every unfiltered list call.
+    @Query("shirtNumber") shirtNumber?: string,
   ) {
-    return this.sb.listSquads({ q, teamId, competitionId, position, shirtNumber });
+    return this.sb.listSquads({
+      q,
+      teamId,
+      competitionId,
+      position,
+      shirtNumber: parseShirtNumberQuery(shirtNumber),
+    });
   }
 
   @Delete("squads")

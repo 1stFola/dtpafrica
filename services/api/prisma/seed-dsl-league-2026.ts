@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Dynasty Scouting League (DSL) 2026 — a single round-robin in Ogun State.
  *
@@ -9,7 +8,9 @@
  * TEAMS and MATCHES are generated from the published fixture list so that 78
  * fixtures are not transcribed by hand. Re-generate rather than editing them.
  */
-import type { Prisma, PrismaClient } from "@prisma/client";
+// Prisma is a value import: DbNull/JsonNull are runtime sentinels.
+import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
 import {
   isFullSeed,
@@ -745,7 +746,9 @@ export async function seedDslLeague2026(prisma: PrismaClient, options?: SeedOpti
       kickoffAt: new Date(match.kickoffAt),
       venue: VENUE,
       roundLabel: `Matchday ${match.matchday}`,
-      stats: null,
+      // `stats` is a nullable Json column; Prisma rejects a bare `null` here and
+      // requires DbNull to write a SQL NULL.
+      stats: Prisma.DbNull,
       isPublished: true,
       meta: { timezone: TIMEZONE } as Prisma.InputJsonValue,
     };

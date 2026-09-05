@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import type { SeedOptions } from "../src/seed/seed-options";
+import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
 import { backfillMissingMatchSlugs } from "../src/scoreboard/match-slug";
 import { seed1XCup2026 } from "./seed-1xcup-2026";
 import { seedExInternationalsCup2026 } from "./seed-ex-internationals-cup-2026";
@@ -29,7 +29,12 @@ export async function seedScoreboard(
   await seedLagosQueensCup2026(prisma, options);
   await seed1XCup2026(prisma, options);
   await seedRakLeague2026(prisma, options);
-  await seedDslLeague2026(prisma, options);
+  // Dynasty Scouting League teams and fixtures are live and are no longer
+  // seeded; only its player rosters are. seedDslLeague2026 is kept for
+  // bootstrapping a fresh environment via a full seed.
+  if (isFullSeed(options)) {
+    await seedDslLeague2026(prisma, options);
+  }
   await seedDslLeaguePlayers(prisma, options);
   await seedTrainingCup(prisma, options);
   const goalkeeperProfiles = await seedGoalkeeperProfiles(prisma);

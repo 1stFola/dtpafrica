@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Dynasty Scouting League (DSL) 2026 — Player Seeding
  *
@@ -6,9 +5,11 @@
  */
 
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { normalizePlayerName, playerLookupKey, normalizeClubName } from "@dtp/engines";
+import { playerLookupKey, normalizeClubName } from "@dtp/engines";
 import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
-import { splitPlayerName } from "../src/admin/admin-scoreboard.service";
+// admin-scoreboard.service declares splitPlayerName but does not export it, so
+// importing it from there resolved to undefined and threw for every player.
+import { splitPlayerName } from "../src/utils/player-utils";
 
 const COMP_SLUG = "dsl-league-2026";
 
@@ -67,7 +68,7 @@ const PLAYER_DATA: Record<string, Array<{ fullName: string; position: string; sh
     {"fullName": "ANOINTING ADELEKE", "position": "Left Wing", "shirtNumber": 2},
     {"fullName": "MICHAEL OBOH", "position": "Center Forward", "shirtNumber": 3},
     {"fullName": "FAVOUR TOLULOPE", "position": "Left Back", "shirtNumber": 4},
-    {"fullName": "ATTAH I GOCHE", "position": "Attacking Midfield", "shirtNumber": 5},
+    {"fullName": "ATTAH IGOCHE", "position": "Attacking Midfield", "shirtNumber": 5},
     {"fullName": "TOHEEB AKANFA", "position": "Attacking Midfield", "shirtNumber": 6},
     {"fullName": "OGHENETEGA JAMES", "position": "Right Back", "shirtNumber": 7},
     {"fullName": "OLAWALE ODE", "position": "Center Back", "shirtNumber": 8},
@@ -469,7 +470,11 @@ async function seedDslLeaguePlayers(
         const shirtNumber = normalizeShirtNumber(rawShirtNumber);
         const { firstName, lastName } = splitPlayerName(fullName);
         const displayName = fullName.trim();
-        const normalizedName = normalizePlayerName(displayName);
+        // playerLookupKey is the directory's canonical dedupe key — it is what
+        // admin-scoreboard.service writes and looks up by. normalizePlayerName
+        // preserves casing, so using it here stored a key the admin UI could
+        // never match, and re-adding a seeded player collided on Player.slug.
+        const normalizedName = playerLookupKey(displayName);
         const slug = slugifyPlayerName(displayName); // We'll need to import this or create it
 
         // Check if player already exists by normalizedName

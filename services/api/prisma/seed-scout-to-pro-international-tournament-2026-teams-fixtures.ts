@@ -1,5 +1,6 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
-import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
+import type { PrismaClient } from "@prisma/client";
+import { playerLookupKey } from "@dtp/engines";
+import { type SeedOptions } from "../src/seed/seed-options";
 import { splitPlayerName } from "../src/utils/player-utils";
 
 const COMP_SLUG = "scout-to-pro-international-tournament-2026";
@@ -32,10 +33,10 @@ const MATCH_SCHEDULE = [
   { date: "2026-09-04", time: "10:00", match: ["OBA’S FC7", "UTMOST FC"] },
   { date: "2026-09-04", time: "11:00", match: ["PRINCE KAZEEM ELETU FC", "ELITE STARS FC"] },
   { date: "2026-09-04", time: "12:00", match: ["BOX 2 BOX FC", "PATNIK FA"] },
-  { date: "2026-09-04", time: "13:00", match: ["FIMA FC", "FC BETHEL SPORTING FC"] }, // Fima FC vs FC Bethel Sporting
+  { date: "2026-09-04", time: "13:00", match: ["IKORODU CITY FA", "FC BETHEL SPORTING FC"] }, // was "FIMA FC" (a DSL team) — Group E side is Ikorodu City FA
 
   // Day 3 - 06-09-2026
-  { date: "2026-09-06", time: "08:00", match: ["AWONIYI FC", "FIMA FC"] },
+  { date: "2026-09-06", time: "08:00", match: ["AWONIYI FC", "IKORODU CITY FA"] }, // was "FIMA FC" (a DSL team)
   { date: "2026-09-06", time: "09:00", match: ["AMULUDUN FC", "AKOKA CITY FC"] },
   { date: "2026-09-06", time: "10:00", match: ["OOA FC", "DREAM 2 REALITY FA"] },
   { date: "2026-09-06", time: "11:00", match: ["SOCCER TALENT FC", "IKONNECT FC"] },
@@ -57,6 +58,7 @@ const SQUAD_DATA = {
     {"jerseyNumber": 10, "fullName": "David Augustine", "position": "AM"},
     {"jerseyNumber": 13, "fullName": "Matthew Anthony", "position": "CB"},
     {"jerseyNumber": 3, "fullName": "Damilare Adekanbi", "position": "LB"},
+    {"jerseyNumber": 16, "fullName": "Malik Olamilekan", "position": "GK"},
     {"jerseyNumber": 2, "fullName": "Basit Adeniyi", "position": "RB"},
     {"jerseyNumber": 18, "fullName": "Peters Emmanuel", "position": "DM"},
     {"jerseyNumber": 19, "fullName": "Toyeeb Alli", "position": "AM"},
@@ -85,7 +87,7 @@ const SQUAD_DATA = {
     {"jerseyNumber": 12, "fullName": "Kayode Olamilekan", "position": "MF"},
     {"jerseyNumber": 20, "fullName": "Adeleke Habeeb", "position": "MF"},
     {"jerseyNumber": 22, "fullName": "Muhammad Ibrahim", "position": "MF"},
-    {"jerseyNumber": 28, "fullName": "Oyasope Oluwatosin", "position": "FW"},
+    {"jerseyNumber": 28, "fullName": "Oluwasegun Damilola", "position": "FW"},
     {"jerseyNumber": 16, "fullName": "Salahudeen Farounk", "position": "FW"},
     {"jerseyNumber": 39, "fullName": "Oladosu Tobiloba", "position": "FW"},
     {"jerseyNumber": 24, "fullName": "Baidoo Joe", "position": "FW"},
@@ -149,6 +151,7 @@ const SQUAD_DATA = {
     {"jerseyNumber": 22, "fullName": "Yusuf Rashed", "position": "GK"},
     {"jerseyNumber": 70, "fullName": "Ali Rabiu", "position": "RB"},
     {"jerseyNumber": 11, "fullName": "Samuel Ezeh", "position": "WF"},
+    {"jerseyNumber": 99, "fullName": "Nasir Fetuga", "position": "CB"},
     {"jerseyNumber": 77, "fullName": "Kamaldeen Abdullahi", "position": "WF"},
     {"jerseyNumber": 80, "fullName": "Wisdom Opkara", "position": "LB"},
     {"jerseyNumber": 31, "fullName": "Emmanuel Edet", "position": "DM"},
@@ -242,6 +245,9 @@ const SQUAD_DATA = {
     {"jerseyNumber": 8, "fullName": "Yeboah Morgan", "position": "AM"},
     {"jerseyNumber": 16, "fullName": "Ishola Elijah", "position": "RW"}
   ],
+  // FIMA FC is a Dynasty Scouting League team and this roster is identical to
+  // the one in seed-dsl-league-players-2026.ts. It is DSL data that leaked into
+  // this file; the Scout To Pro seed skips it because FIMA FC is not in GROUPS.
   "FIMA FC": [
     {"jerseyNumber": 2, "fullName": "Anointing Adeleke", "position": "LW"},
     {"jerseyNumber": 3, "fullName": "Michael Oboh", "position": "CF"},
@@ -374,85 +380,32 @@ export async function seedScoutToProTeamsFixturesSquads(
 
   console.log(`📍 Found competition: ${competition.name} (${competition.id})`);
 
-  // 1. Create teams
-  console.log("\n🏆 Creating teams...");
+  // 1. Resolve teams. Teams and fixtures are live and are no longer seeded from
+  // here — this step only looks them up so squads can be attached. A missing
+  // team is reported and its squad skipped rather than created.
+  console.log("\n🏆 Resolving live teams...");
   const teamRecords: Record<string, { id: string }> = {};
 
   for (const teamName of ALL_TEAMS) {
-    // Check if team already exists
-    let team = await prisma.sbTeam.findFirst({
+    const team = await prisma.sbTeam.findFirst({
       where: {
-        name: teamName,
-        competitionId: competition.id
-      }
+        competitionId: competition.id,
+        OR: [{ name: teamName }, { slug: slugify(teamName) }],
+      },
     });
 
     if (!team) {
-      team = await prisma.sbTeam.create({
-        data: {
-          name: teamName,
-          slug: slugify(teamName),
-          competitionId: competition.id,
-          shortName: teamName.substring(0, Math.min(3, teamName.length)).toUpperCase(),
-          city: "Lagos", // All matches in Lagos
-          
-          logoUrl: null,
-          groupKey: Object.entries(GROUPS).find(([_, teams]) => teams.includes(teamName))?.[0] || null
-        }
-      });
-
-      console.log(`  ✅ Created team: ${teamName}`);
-    } else {
-      console.log(`  🔄 Team already exists: ${teamName}`);
+      console.log(`  ⚠️  Team not found live, squad will be skipped: ${teamName}`);
+      continue;
     }
 
     teamRecords[teamName] = { id: team.id };
   }
+  console.log(`  Resolved ${Object.keys(teamRecords).length}/${ALL_TEAMS.length} teams`);
 
-  // 2. Create match fixtures
-  console.log("\n📅 Creating match fixtures...");
-  let matchesCreated = 0;
-
-  for (const matchData of MATCH_SCHEDULE) {
-    const [teamAName, teamBName] = matchData.match;
-    const teamA = teamRecords[teamAName];
-    const teamB = teamRecords[teamBName];
-
-    if (!teamA || !teamB) {
-      console.log(`  ⚠️  Skipping match: ${teamAName} vs ${teamBName} - team not found`);
-      continue;
-    }
-
-    // Check if match already exists
-    const existingMatch = await prisma.sbMatch.findFirst({
-      where: {
-        competitionId: competition.id,
-        homeTeamId: teamA.id,
-        awayTeamId: teamB.id,
-        kickoffAt: new Date(`${matchData.date}T${matchData.time}:00`)
-      }
-    });
-
-    if (!existingMatch) {
-      await prisma.sbMatch.create({
-        data: {
-          competitionId: competition.id,
-          homeTeamId: teamA.id,
-          awayTeamId: teamB.id,
-          
-          kickoffAt: new Date(`${matchData.date}T${matchData.time}:00`),
-          venue: "Bariga Stadium, Lagos",
-          status: "scheduled",
-          roundLabel: `Group ${Object.entries(GROUPS).find(([_, teams]) => teams.includes(teamAName))?.[0] ?? 'Unknown'}`
-        }
-      });
-
-      console.log(`  ✅ Created match: ${teamAName} vs ${teamBName} (${matchData.date} ${matchData.time})`);
-      matchesCreated++;
-    } else {
-      console.log(`  🔄 Match already exists: ${teamAName} vs ${teamBName}`);
-    }
-  }
+  // 2. Fixtures are live and are no longer seeded from here. MATCH_SCHEDULE is
+  //    kept for reference only; edit fixtures through the admin UI instead.
+  const matchesCreated = 0;
 
   // 3. Create squad records (player assignments) for teams with squad data
   console.log("\n👥 Creating squad records (player assignments)...");
@@ -478,11 +431,13 @@ export async function seedScoutToProTeamsFixturesSquads(
         const { firstName, lastName } = splitPlayerName(fullName);
         const displayName = fullName.trim();
 
-        // Find or create player
-        let player = await prisma.player.findFirst({
-          where: {
-            displayName: displayName
-          }
+        // Find or create player. Look up by normalizedName, not displayName:
+        // normalizedName is the directory's canonical dedupe key and is unique,
+        // so matching on displayName missed existing players whose name differed
+        // only by case or spacing and then collided on insert.
+        const normalizedName = playerLookupKey(displayName);
+        let player = await prisma.player.findUnique({
+          where: { normalizedName }
         });
 
         if (!player) {
@@ -492,8 +447,8 @@ export async function seedScoutToProTeamsFixturesSquads(
               firstName,
               lastName,
               displayName,
-              normalizedName: displayName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
-              slug: displayName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+              normalizedName,
+              slug: slugify(displayName),
               positionPrimary: position,
               registrationStatus: "approved",
               isPublic: true,

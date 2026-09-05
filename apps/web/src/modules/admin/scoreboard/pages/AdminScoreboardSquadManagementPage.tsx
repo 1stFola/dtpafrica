@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
@@ -10,10 +10,13 @@ import type {
   AdminSbSquadRowInput,
 } from "../types";
 
+/**
+ * Free-text filters only. Competition and team live in their own state
+ * (`selectedCompetitionId` / `selectedTeamId`) because they also drive the
+ * team dropdown and the create form's default team.
+ */
 type SquadFilters = {
   q?: string;
-  teamId?: string;
-  competitionId?: string;
   position?: string;
   shirtNumber?: number;
 };
@@ -56,9 +59,9 @@ export function AdminScoreboardSquadManagementPage() {
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>("");
 
-  // Form states
-  const [createFormOpen, setCreateFormOpen] = useState(false);
-  const [editFormOpen, setEditFormOpen] = useState(false);
+  // Form state. One flag for both create and edit — `editSquadId` is what
+  // distinguishes the two modes.
+  const [formOpen, setFormOpen] = useState(false);
   const [editSquadId, setEditSquadId] = useState<string>("");
   const [editData, setEditData] = useState<AdminSbSquadRowInput>({
     displayName: "",
@@ -71,7 +74,13 @@ export function AdminScoreboardSquadManagementPage() {
   const [selectedSquadIds, setSelectedSquadIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
-  // Load competitions
+  // Guards the one-time "default to the first competition" behaviour.
+  const didDefaultCompetition = useRef(false);
+
+  // Load competitions. Runs once: `selectedCompetitionId` is deliberately not a
+  // dependency, because this effect *sets* it — depending on it would refetch
+  // the list and re-apply the default every time the user cleared the field,
+  // which is what made "Reset Filters" snap back to the first competition.
   useEffect(() => {
     let cancelled = false;
     setCompetitionsLoading(true);
@@ -80,8 +89,9 @@ export function AdminScoreboardSquadManagementPage() {
       .then((rows) => {
         if (cancelled) return;
         setCompetitions(rows as Array<{ id: string; name: string; slug: string; season: string }>);
-        // Auto-select first competition if none selected
-        if (!selectedCompetitionId && rows.length > 0) {
+        // Default to the first competition on first load only.
+        if (!didDefaultCompetition.current && rows.length > 0) {
+          didDefaultCompetition.current = true;
           setSelectedCompetitionId(rows[0].id);
         }
       })
@@ -92,7 +102,7 @@ export function AdminScoreboardSquadManagementPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCompetitionId, toast]);
+  }, [toast]);
 
   // Load teams based on selected competition
   useEffect(() => {
@@ -109,49 +119,53 @@ export function AdminScoreboardSquadManagementPage() {
       .then((rows) => {
         if (cancelled) return;
         setTeams(rows as AdminSbTeam[]);
-        // Auto-select first team if none selected
-        if (!selectedTeamId && rows.length > 0) {
-          setSelectedTeamId(rows[0].id);
-        }
       })
       .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load teams"))
       .finally(() => {
         if (!cancelled) setTeamsLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedCompetitionId, toast]);
 
-  // Load squads based on filters
+  // Load squads. Every filter goes to the server, including the competition and
+  // team pickers — previously those were only applied client-side, so the page
+  // fetched every squad row in the database on each change.
   const loadSquads = useCallback(async () => {
     setLoading(true);
     try {
-      const filterObj: SquadFilters = {};
-      if (filters.q?.trim()) filterObj.q = filters.q.trim();
-      if (filters.teamId) filterObj.teamId = filters.teamId;
-      if (filters.competitionId) filterObj.competitionId = filters.competitionId;
-      if (filters.position?.trim()) filterObj.position = filters.position.trim();
-      if (filters.shirtNumber !== undefined) filterObj.shirtNumber = filters.shirtNumber;
-
-      const result = await adminScoreboardApi.listSquads(filterObj);
-      setSquads(result as any);
+      const result = await adminScoreboardApi.listSquads({
+        q: filters.q?.trim() || undefined,
+        position: filters.position?.trim() || undefined,
+        shirtNumber: filters.shirtNumber,
+        competitionId: selectedCompetitionId || undefined,
+        teamId: selectedTeamId || undefined,
+      });
+      setSquads(result);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load squads");
     } finally {
       setLoading(false);
     }
-  }, [filters, toast]);
+  }, [filters, selectedCompetitionId, selectedTeamId, toast]);
 
   useEffect(() => {
-    if (selectedCompetitionId || selectedTeamId || filters.q || filters.position || filters.shirtNumber !== undefined) {
-      void loadSquads();
-    }
-  }, [selectedCompetitionId, selectedTeamId, filters, loadSquads]);
+    void loadSquads();
+  }, [loadSquads]);
 
-  // Handle filter changes
-  const handleFilterChange = useCallback((field: keyof SquadFilters, value: any) => {
-    setFilters(prev => ({
-      ...prev,
-      [field]: value === "" ? undefined : value
-    }));
+  // Handle filter changes. Cleared fields are removed rather than set to
+  // undefined, so `Object.keys(filters)` actually reflects what is active.
+  const handleFilterChange = useCallback((field: keyof SquadFilters, value: string | number | undefined) => {
+    setFilters(prev => {
+      const next = { ...prev };
+      if (value === "" || value === undefined) {
+        delete next[field];
+      } else {
+        (next[field] as string | number) = value;
+      }
+      return next;
+    });
   }, []);
 
   // Handle team/competition selection changes
@@ -174,7 +188,7 @@ export function AdminScoreboardSquadManagementPage() {
         shirtNumber: data.shirtNumber,
       });
       toast.success("Squad row created successfully");
-      setCreateFormOpen(false);
+      setFormOpen(false);
       void loadSquads(); // Refresh list
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create squad row");
@@ -190,7 +204,7 @@ export function AdminScoreboardSquadManagementPage() {
         shirtNumber: data.shirtNumber,
       });
       toast.success("Squad row updated successfully");
-      setEditFormOpen(false);
+      setFormOpen(false);
       void loadSquads(); // Refresh list
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update squad row");
@@ -221,38 +235,9 @@ export function AdminScoreboardSquadManagementPage() {
     }
   }, [toast, loadSquads, selectedSquadIds]);
 
-  // UI helpers
-  const filteredSquads = useMemo(() => {
-    return squads.filter(squad => {
-      // Filter by team if selected
-      if (selectedTeamId && squad.teamId !== selectedTeamId) return false;
-
-      // Filter by competition if selected
-      if (selectedCompetitionId && squad.team.competition.id !== selectedCompetitionId) return false;
-
-      // Filter by search query
-      if (filters.q?.trim()) {
-        const query = filters.q.trim().toLowerCase();
-        const matchesDisplay = squad.displayName.toLowerCase().includes(query);
-        const matchesSlug = squad.slug?.toLowerCase().includes(query) ?? false;
-        if (!matchesDisplay && !matchesSlug) return false;
-      }
-
-      // Filter by position
-      if (filters.position?.trim()) {
-        const positionQuery = filters.position.trim().toLowerCase();
-        const squadPosition = squad.positionPrimary?.toLowerCase() ?? "";
-        if (!squadPosition.includes(positionQuery)) return false;
-      }
-
-      // Filter by shirt number
-      if (filters.shirtNumber !== undefined && squad.shirtNumber !== filters.shirtNumber) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [squads, selectedTeamId, selectedCompetitionId, filters]);
+  // The server applies every filter now, so `squads` is already the view.
+  const hasActiveFilters =
+    !!selectedCompetitionId || !!selectedTeamId || Object.keys(filters).length > 0;
 
   return (
     <div className="admin-sb-section">
@@ -307,7 +292,6 @@ export function AdminScoreboardSquadManagementPage() {
               placeholder="Search by name or slug..."
               value={filters.q ?? ""}
               onChange={(e) => handleFilterChange("q", e.target.value)}
-              className="admin-input"
             />
           </label>
 
@@ -336,25 +320,24 @@ export function AdminScoreboardSquadManagementPage() {
               placeholder="Number"
               value={filters.shirtNumber ?? ""}
               onChange={(e) => handleFilterChange("shirtNumber", e.target.value ? Number(e.target.value) : undefined)}
-              className="admin-input"
             />
           </label>
 
           {/* Actions */}
-          <div className="admin-actions">
+          <div className="admin-sb-form-actions">
             <button
               type="button"
-              className="admin-primary-button"
+              className="admin-inline-button admin-inline-button--primary"
               disabled={loading || !selectedCompetitionId}
               onClick={() => {
                 setEditData({
                   displayName: "",
                   position: undefined,
-                  shirtNumber: undefined,
+                  shirtNumber: null,
                   teamId: selectedTeamId || undefined,
                 });
                 setEditSquadId("");
-                setEditFormOpen(true);
+                setFormOpen(true);
               }}
             >
               Add Squad Row
@@ -363,7 +346,7 @@ export function AdminScoreboardSquadManagementPage() {
             {selectedSquadIds.size > 0 && (
               <button
                 type="button"
-                className="admin-danger-button"
+                className="admin-inline-button admin-inline-button--danger"
                 onClick={() => setBulkDeleteOpen(true)}
               >
                 Delete Selected ({selectedSquadIds.size})
@@ -390,22 +373,22 @@ export function AdminScoreboardSquadManagementPage() {
         <AdminSbTableShell
           columns={8}
           loading={loading}
-          empty={filteredSquads.length === 0 && (!!selectedCompetitionId || !!selectedTeamId || Object.keys(filters).length > 0)}
-          emptyTitle={filteredSquads.length === 0 ? "No squad rows match the filters" : "No squad rows found"}
-          emptyHint={filteredSquads.length === 0 ? "Adjust your filters to see squad rows" : "Add squad rows to get started"}
+          empty={squads.length === 0}
+          emptyTitle={hasActiveFilters ? "No squad rows match the filters" : "No squad rows yet"}
+          emptyHint={hasActiveFilters ? "Adjust your filters to see squad rows" : "Add squad rows to get started"}
         >
           <table className="admin-table admin-sb-table">
             <thead>
               <tr>
-                <th className="w-4">
+                <th>
                   <input
                     type="checkbox"
-                    checked={selectedSquadIds.size === filteredSquads.length && filteredSquads.length > 0}
+                    checked={selectedSquadIds.size === squads.length && squads.length > 0}
                     onChange={(e) => {
                       if (e.target.checked) {
-                        filteredSquads.forEach(squad => selectedSquadIds.add(squad.squadId));
+                        squads.forEach(squad => selectedSquadIds.add(squad.squadId));
                       } else {
-                        filteredSquads.forEach(squad => selectedSquadIds.delete(squad.squadId));
+                        squads.forEach(squad => selectedSquadIds.delete(squad.squadId));
                       }
                       setSelectedSquadIds(new Set(selectedSquadIds));
                     }}
@@ -417,13 +400,13 @@ export function AdminScoreboardSquadManagementPage() {
                 <th>Shirt #</th>
                 <th>Team</th>
                 <th>Competition</th>
-                <th className="text-right">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredSquads.map((squad) => (
+              {squads.map((squad) => (
                 <tr key={squad.squadId}>
-                  <td className="w-4">
+                  <td>
                     <input
                       type="checkbox"
                       checked={selectedSquadIds.has(squad.squadId)}
@@ -439,48 +422,39 @@ export function AdminScoreboardSquadManagementPage() {
                   </td>
                   <td>{squad.shirtNumber ?? "-"}</td>
                   <td>
-                    <div className="flex items-center space-x-2">
                       {squad.slug ? (
                         <Link
-                          className="admin-inline-link"
-                          to={`/players/${squad.slug}`}
+                                                    to={`/players/${squad.slug}`}
                           title="View player profile"
                         >
                           {squad.displayName}
                         </Link>
                       ) : (
-                        <span className="font-medium">{squad.displayName}</span>
+                        <span>{squad.displayName}</span>
                       )}
-                    </div>
                   </td>
                   <td>{squad.positionPrimary ?? "-"}</td>
-                  <td className="text-center">{squad.shirtNumber ?? "-"}</td>
+                  <td>{squad.shirtNumber ?? "-"}</td>
                   <td>
-                    <div className="flex items-center space-x-2">
                       <Link
-                        className="admin-inline-link"
-                        to={`/admin/scoreboard/teams/${squad.team.id}`}
+                                                to={`/admin/scoreboard/teams/${squad.team.id}`}
                         title="View team"
                       >
                         {squad.team.name}
                       </Link>
-                    </div>
                   </td>
                   <td>
-                    <div className="flex items-center space-x-2">
                       <Link
-                        className="admin-inline-link"
-                        to={`/admin/scoreboard/competitions/${squad.team.competition.id}`}
+                                                to={`/admin/scoreboard/competitions/${squad.team.competition.id}`}
                         title="View competition"
                       >
                         {squad.team.competition.name}
                       </Link>
-                    </div>
                   </td>
-                  <td className="text-right space-x-2">
+                  <td>
                     <button
                       type="button"
-                      className="admin-icon-button"
+                      className="admin-inline-button"
                       title="Edit squad row"
                       onClick={() => {
                         setEditData({
@@ -490,7 +464,7 @@ export function AdminScoreboardSquadManagementPage() {
                           teamId: squad.teamId ?? undefined,
                         });
                         setEditSquadId(squad.squadId);
-                        setEditFormOpen(true);
+                        setFormOpen(true);
                       }}
                     >
                       ✏️
@@ -498,7 +472,7 @@ export function AdminScoreboardSquadManagementPage() {
 
                     <button
                       type="button"
-                      className="admin-icon-button"
+                      className="admin-inline-button"
                       title="Delete squad row"
                       onClick={() => handleDeleteSquad(squad.squadId)}
                     >
@@ -513,24 +487,28 @@ export function AdminScoreboardSquadManagementPage() {
       </div>
 
       {/* Create/Edit Squad Form Modal */}
-      <div className={`fixed inset-0 z-50 flex items-center justify-center ${createFormOpen || editFormOpen ? "block" : "hidden"}`}>
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold">
+      {formOpen && (
+      <div className="admin-sb-modal-backdrop" role="presentation" onClick={() => setFormOpen(false)}>
+        <div
+          className="admin-sb-modal admin-sb-modal--wide"
+          role="dialog"
+          aria-modal="true"
+          aria-label={editSquadId ? "Edit squad row" : "Add squad row"}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <header className="admin-sb-modal__header">
+            <h2>
               {editSquadId ? "Edit Squad Row" : "Add Squad Row"}
             </h2>
             <button
               type="button"
-              className="float-right text-gray-500 hover:text-gray-700"
-              onClick={() => {
-                setCreateFormOpen(false);
-                setEditFormOpen(false);
-              }}
+              className="admin-sb-modal__close"
+              aria-label="Close"
+              onClick={() => setFormOpen(false)}
             >
               ×
             </button>
-          </div>
+          </header>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -540,21 +518,17 @@ export function AdminScoreboardSquadManagementPage() {
                 await handleCreateSquad(editData);
               }
             }}
-            className="px-6 py-4"
           >
-            <div className="grid grid-cols-1 gap-4">
+            <div className="admin-sb-modal__body">
               {/* Team Selection (disabled when editing) */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Team *
-                </label>
+              <label className="admin-sb-field">
+                <span>Team *</span>
                 <select
-                  value={editData.teamId}
+                  value={editData.teamId ?? ""}
                   onChange={(e) => {
-                    setEditData(prev => ({ ...prev, teamId: e.target.value }));
+                    setEditData(prev => ({ ...prev, teamId: e.target.value || undefined }));
                   }}
                   disabled={!!editSquadId}
-                  className="admin-input w-full"
                   required
                 >
                   <option value="">Select a team</option>
@@ -565,41 +539,35 @@ export function AdminScoreboardSquadManagementPage() {
                   ))}
                 </select>
                 {!editSquadId && !editData.teamId && (
-                  <p className="text-xs text-red-500 mt-1">Team is required</p>
+                  <span className="admin-sb-field-hint">Team is required</span>
                 )}
-              </div>
+              </label>
 
               {/* Display Name */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Player Name *
-                </label>
+              <label className="admin-sb-field">
+                <span>Player Name *</span>
                 <input
                   type="text"
                   value={editData.displayName ?? ""}
                   onChange={(e) => {
                     setEditData(prev => ({ ...prev, displayName: e.target.value }));
                   }}
-                  className="admin-input w-full"
                   required
                 />
                 {!editData.displayName && (
-                  <p className="text-xs text-red-500 mt-1">Player name is required</p>
+                  <span className="admin-sb-field-hint">Player name is required</span>
                 )}
-              </div>
+              </label>
 
               {/* Position */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Position
-                </label>
+              <label className="admin-sb-field">
+                <span>Position</span>
                 <select
                   value={editData.position ?? ""}
                   onChange={(e) => {
                     const value = e.target.value;
                     setEditData(prev => ({ ...prev, position: value === "" ? undefined : value }));
                   }}
-                  className="admin-input w-full"
                 >
                   <option value="">Select position</option>
                   <option value="GK">Goalkeeper (GK)</option>
@@ -616,93 +584,94 @@ export function AdminScoreboardSquadManagementPage() {
                   <option value="ST">Striker (ST)</option>
                   <option value="CF">Center Forward (CF)</option>
                 </select>
-              </div>
+              </label>
 
               {/* Shirt Number */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Shirt Number
-                </label>
+              <label className="admin-sb-field">
+                <span>Shirt Number</span>
                 <input
                   type="number"
                   min="0"
                   max="99"
-                  value={editData.shirtNumber === null ? "" : String(editData.shirtNumber)}
+                  value={editData.shirtNumber == null ? "" : String(editData.shirtNumber)}
                   onChange={(e) => {
                     const value = e.target.value;
                     setEditData(prev => ({ ...prev, shirtNumber: value === "" ? null : Number(value) }));
                   }}
-                  className="admin-input w-full"
                 />
-              </div>
+              </label>
             </div>
 
-            <div className="px-6 py-4 border-t">
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  className="admin-outline-button"
-                  onClick={() => {
-                    setCreateFormOpen(false);
-                    setEditFormOpen(false);
-                  }}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  className="admin-primary-button"
-                  disabled={loading || !editData.displayName || (!editSquadId && !editData.teamId)}
-                >
-                  {editSquadId ? "Update" : "Create"}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      {/* Bulk Delete Confirmation Modal */}
-      <div className={`fixed inset-0 z-50 flex items-center justify-center ${bulkDeleteOpen ? "block" : "hidden"}`}>
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-          <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold">Confirm Bulk Delete</h2>
-            <button
-              type="button"
-              className="float-right text-gray-500 hover:text-gray-700"
-              onClick={() => setBulkDeleteOpen(false)}
-            >
-              ×
-            </button>
-          </div>
-          <div className="px-6 py-4">
-            <p className="mb-4">
-              Are you sure you want to delete <strong className="text-red-600">{selectedSquadIds.size}</strong>
-              squad row(s)? This action cannot be undone.
-            </p>
-
-            <div className="flex justify-end space-x-3">
+            <footer className="admin-sb-modal__footer">
               <button
                 type="button"
-                className="admin-outline-button"
-                onClick={() => setBulkDeleteOpen(false)}
+                className="admin-inline-button"
+                onClick={() => setFormOpen(false)}
               >
                 Cancel
               </button>
 
               <button
-                type="button"
-                className="admin-danger-button"
-                onClick={handleBulkDelete}
+                type="submit"
+                className="admin-inline-button admin-inline-button--primary"
+                disabled={loading || !editData.displayName || (!editSquadId && !editData.teamId)}
               >
-                Delete {selectedSquadIds.size} Squad Row(s)
+                {editSquadId ? "Update" : "Create"}
               </button>
-            </div>
-          </div>
+            </footer>
+          </form>
         </div>
       </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {bulkDeleteOpen && (
+      <div className="admin-sb-modal-backdrop" role="presentation" onClick={() => setBulkDeleteOpen(false)}>
+        <div
+          className="admin-sb-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm bulk delete"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <header className="admin-sb-modal__header">
+            <h2>Confirm Bulk Delete</h2>
+            <button
+              type="button"
+              className="admin-sb-modal__close"
+              aria-label="Close"
+              onClick={() => setBulkDeleteOpen(false)}
+            >
+              ×
+            </button>
+          </header>
+          <div className="admin-sb-modal__body">
+            <p>
+              Are you sure you want to delete <strong>{selectedSquadIds.size}</strong>{" "}
+              squad row(s)? This action cannot be undone.
+            </p>
+          </div>
+
+          <footer className="admin-sb-modal__footer">
+            <button
+              type="button"
+              className="admin-inline-button"
+              onClick={() => setBulkDeleteOpen(false)}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              className="admin-inline-button admin-inline-button--danger"
+              onClick={handleBulkDelete}
+            >
+              Delete {selectedSquadIds.size} Squad Row(s)
+            </button>
+          </footer>
+        </div>
+      </div>
+      )}
     </div>
   );
 }
