@@ -55,10 +55,8 @@ const TEAMS: TeamSeed[] = [
     id: "dead19d2-be03-40cc-9d2a-c1794bc1dda7",
     slug: "gloriousday-fa",
     name: "Gloriousday FA",
-    /* The supplied Gloriousday logo was the Ikorodu City crest
-       (ikoroducityfc.com/.../ikd-logo.png), byte-identical to the Ikorodu City
-       entry below. Left null rather than shipping a rival club's badge. */
-    logoUrl: null,
+    logoUrl:
+      "https://lh3.googleusercontent.com/pw/AP1GczNLc2Vzb6VtlW-MmfT7j37YilndNo1o-vrCdilZIttKIgxTEKAyX-q962HitwcmwqytO7ebpwi9webFxGtv9tCn99MJP-QvYjNiqnsWoMYgPfCBlCyZgeYppUuv1_ya2dvYK2QgGqA4ozFE6DV1lAin=w225-h205-s-no-gm?authuser=0",
   },
   {
     id: "bc08241c-c435-4b16-a398-1cde925b9589",
@@ -68,8 +66,8 @@ const TEAMS: TeamSeed[] = [
   },
   {
     id: "f15094b0-7524-4598-8aee-9fd7e09171ac",
-    slug: "goal-getter-fa",
-    name: "Goal Getter FA",
+    slug: "goal-getters-fa",
+    name: "Goal Getters FA",
     logoUrl:
       "https://api.1xcup.ng/storage/team-registrations/logos/fcd17b47d32de0ad8fdf98c7fe253f5d.jpg",
   },
@@ -142,7 +140,7 @@ const MATCHES: MatchSeed[] = [
   {
     id: "46364cad-fc3d-4920-ac0d-6f1026ce21bc",
     matchday: 1,
-    homeSlug: "goal-getter-fa",
+    homeSlug: "goal-getters-fa",
     awaySlug: "042-fc",
     kickoffAt: "2026-09-15T09:00:00.000+01:00",
   },
@@ -152,7 +150,7 @@ const MATCHES: MatchSeed[] = [
     id: "632a7381-2b5b-407f-8ca5-317bf80ae4d4",
     matchday: 2,
     homeSlug: "ikorodu-city-fc",
-    awaySlug: "goal-getter-fa",
+    awaySlug: "goal-getters-fa",
     kickoffAt: "2026-09-16T07:00:00.000+01:00",
   },
   {
@@ -216,7 +214,7 @@ const MATCHES: MatchSeed[] = [
   {
     id: "cdb7c0bb-145f-4a2d-ac1c-56ea90a40b2e",
     matchday: 3,
-    homeSlug: "goal-getter-fa",
+    homeSlug: "goal-getters-fa",
     awaySlug: "klassisch-fa",
     kickoffAt: "2026-09-17T11:00:00.000+01:00",
   },

@@ -265,7 +265,9 @@ export async function runDatabaseSeed(
     {
       name: "rbac",
       run: async () => {
-        await seedRbac(prisma);
+        // Pass the mode: in incremental mode seedRbac must not reset the
+        // permissions an admin has granted through the UI.
+        await seedRbac(prisma, { mode });
       },
     },
     {
