@@ -35,7 +35,15 @@ import {
   presentAcademyListing,
 } from "../academy/academy-directory.util";
 
+/** How many matched events the profile payload renders. */
 const SCOREBOARD_HISTORY_EVENT_LIMIT = 50;
+/**
+ * Per-query candidate ceiling. Deliberately well above the render limit: the
+ * aggregate counts (appearances, goals, assists, cards) are derived from every
+ * matched row, not just the rendered slice, so a prolific player's totals stay
+ * correct even though only the most recent events are listed.
+ */
+const SCOREBOARD_HISTORY_CANDIDATE_LIMIT = 500;
 const HOMEPAGE_VIDEO_HIGHLIGHTS_KEY = "homepage.video-highlights";
 export type HomeVideoHighlight = {
   id: string;
@@ -580,31 +588,77 @@ export class HomeService {
       ],
     };
 
-    const rows = await this.prisma.sbMatchEvent.findMany({
-      where: {
-        match: { isPublished: true, competition: { isPublished: true } },
-        OR: [
-          { playerId: player.id },
-          { assistPlayerId: player.id },
-          { metadata: { path: ["secondaryPlayerId"], equals: player.id } },
-          ...(teamIds.length
-            ? [{ teamId: { in: teamIds }, ...labelFields }]
-            : [labelFields]),
-        ],
-      },
-      orderBy: [{ createdAt: "desc" }],
-      take: Math.max(SCOREBOARD_HISTORY_EVENT_LIMIT * 6, 150),
-      include: {
-        team: true,
-        match: {
-          include: {
-            competition: true,
-            homeTeam: true,
-            awayTeam: true,
-          },
+    const published: Prisma.SbMatchEventWhereInput = {
+      match: { isPublished: true, competition: { isPublished: true } },
+    };
+
+    const include = {
+      team: true,
+      match: {
+        include: {
+          competition: true,
+          homeTeam: true,
+          awayTeam: true,
         },
       },
-    });
+    } as const;
+
+    /*
+     * Ordered by kickoff, not createdAt. The rows are truncated by `take` and
+     * then presented newest-match-first, so truncating on a different axis
+     * silently dropped events: a match played long ago whose events were
+     * entered recently would survive, while a recent match entered earlier
+     * would not.
+     */
+    const orderBy: Prisma.SbMatchEventOrderByWithRelationInput[] = [
+      { match: { kickoffAt: "desc" } },
+      { createdAt: "desc" },
+    ];
+
+    /*
+     * Two queries rather than one OR. The label branch matches every labelled
+     * event belonging to any of the player's teams, which on a busy squad is
+     * far more rows than this player's own. Sharing a single `take` with that
+     * branch let teammates' events starve out this player's exact,
+     * foreign-key-linked ones. Giving the linked query its own budget means a
+     * linked event can never be crowded out by a fuzzy candidate.
+     */
+    const [linkedRows, labelRows] = await Promise.all([
+      this.prisma.sbMatchEvent.findMany({
+        where: {
+          ...published,
+          OR: [
+            { playerId: player.id },
+            { assistPlayerId: player.id },
+            { metadata: { path: ["secondaryPlayerId"], equals: player.id } },
+          ],
+        },
+        orderBy,
+        take: SCOREBOARD_HISTORY_CANDIDATE_LIMIT,
+        include,
+      }),
+      lookupKeys.size
+        ? this.prisma.sbMatchEvent.findMany({
+            where: {
+              ...published,
+              ...(teamIds.length ? { teamId: { in: teamIds } } : {}),
+              ...labelFields,
+            },
+            orderBy,
+            take: SCOREBOARD_HISTORY_CANDIDATE_LIMIT,
+            include,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // A linked event can also carry a matching label; keep the linked copy.
+    const rows = [...linkedRows];
+    const seen = new Set(linkedRows.map((row) => row.id));
+    for (const row of labelRows) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
 
     const matched: ScoreboardHistoryEventRow[] = [];
     for (const event of rows) {
@@ -643,13 +697,11 @@ export class HomeService {
       matched.push({ ...event, historyRole, historyLabel, historyMatchedBy });
     }
 
-    return matched
-      .sort((a, b) => {
-        const aTime = a.match.kickoffAt?.getTime() ?? a.createdAt.getTime();
-        const bTime = b.match.kickoffAt?.getTime() ?? b.createdAt.getTime();
-        return bTime - aTime || b.minute - a.minute;
-      })
-      .slice(0, SCOREBOARD_HISTORY_EVENT_LIMIT);
+    return matched.sort((a, b) => {
+      const aTime = a.match.kickoffAt?.getTime() ?? a.createdAt.getTime();
+      const bTime = b.match.kickoffAt?.getTime() ?? b.createdAt.getTime();
+      return bTime - aTime || b.minute - a.minute;
+    });
   }
 
   private buildScoutingIntelligence(args: {
@@ -917,7 +969,13 @@ export class HomeService {
     return presentScoreboardPayload({
       teams,
       appearances,
-      events,
+      /*
+       * Only the most recent events are shipped, but `appearances` and
+       * `aggregates` below are computed from every matched row. Deriving the
+       * totals from this slice understated them for any player with more
+       * events than the render limit.
+       */
+      events: events.slice(0, SCOREBOARD_HISTORY_EVENT_LIMIT),
       aggregates: {
         teams: teams.length,
         competitions: new Set(teams.map((team) => team.competition.id)).size,
