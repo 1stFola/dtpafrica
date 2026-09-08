@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
 import { backfillMissingMatchSlugs } from "../src/scoreboard/match-slug";
 import { seed1XCup2026 } from "./seed-1xcup-2026";
+import { seedCoalCityScoutingTournament2026 } from "./seed-coal-city-scouting-tournament-2026";
 import { seedExInternationalsCup2026 } from "./seed-ex-internationals-cup-2026";
 import { seedGoalkeeperProfiles } from "./seed-goalkeeper-profiles";
 import { seedJagabanCup2026 } from "./seed-jagaban-cup-2026";
@@ -13,7 +14,7 @@ import { seedTrainingCup } from "./seed-training-cup";
 import { syncScoreboardEventPlayerLinks } from "./sync-scoreboard-event-player-links";
 import { syncScoreboardTimelinePlayerProfiles } from "./sync-scoreboard-timeline-player-profiles";
 
-/** ScoreBoard seed: Jagaban Cup 2026, Ex Internationals Cup 2026, Lagos Queens Cup 2026, 1XCup 2026, RAK BDFA League, Dynasty Scouting League, DTP Training Cup. */
+/** ScoreBoard seed: Jagaban Cup 2026, Ex Internationals Cup 2026, Lagos Queens Cup 2026, 1XCup 2026, RAK BDFA League, Dynasty Scouting League, Coal City Scouting Tournament 2026, DTP Training Cup. */
 export async function seedScoreboard(
   prisma: PrismaClient,
   _seedPlayerId?: string,
@@ -36,6 +37,9 @@ export async function seedScoreboard(
     await seedDslLeague2026(prisma, options);
   }
   await seedDslLeaguePlayers(prisma, options);
+  // New competition: teams and fixtures are not live yet, so this one still
+  // seeds them. Every write is an upsert keyed on fixed ids.
+  await seedCoalCityScoutingTournament2026(prisma, options);
   await seedTrainingCup(prisma, options);
   const goalkeeperProfiles = await seedGoalkeeperProfiles(prisma);
   console.log("Seeded goalkeeper profiles:", goalkeeperProfiles);
