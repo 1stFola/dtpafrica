@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import { normalizePlayerAgeCategory } from "../src/players/age-category";
 import { slugifyPlayerName } from "../src/players/player-slug";
-import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
+
 import { LEGACY_PLAYER_ROWS, type LegacyPlayerSeedRow } from "./seed-legacy-players-data";
 
 const SLUG_OVERRIDES: Record<string, string> = {
@@ -211,11 +211,7 @@ function incrementalPlayerUpdate(
   };
 }
 
-export async function seedLegacyPlayers(
-  prisma: PrismaClient,
-  options?: SeedOptions
-): Promise<LegacyPlayerSeedResult> {
-  const full = isFullSeed(options);
+export async function seedLegacyPlayers(prisma: PrismaClient): Promise<LegacyPlayerSeedResult> {
   const academies = await prisma.academy.findMany({
     select: { id: true, slug: true },
   });
@@ -235,7 +231,7 @@ export async function seedLegacyPlayers(
     await prisma.player.upsert({
       where: { slug },
       create: data,
-      update: full ? data : incrementalPlayerUpdate(data),
+      update: incrementalPlayerUpdate(data),
     });
 
     if (sampleSlugs.length < 8) sampleSlugs.push(slug);

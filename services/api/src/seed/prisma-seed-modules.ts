@@ -1,17 +1,14 @@
 import { createRequire } from "module";
 import * as path from "path";
 import type { PrismaClient } from "@prisma/client";
-import type { SeedOptions } from "./seed-options";
 
 type SeedScoreboardFn = (
   prisma: PrismaClient,
-  seedPlayerId?: string,
-  options?: SeedOptions
+  seedPlayerId?: string
 ) => Promise<void>;
 type SeedMvceFn = (prisma: PrismaClient, playerId: string) => Promise<void>;
 type SeedLegacyAcademiesFn = (
-  prisma: PrismaClient,
-  options?: SeedOptions
+  prisma: PrismaClient
 ) => Promise<number>;
 type LegacyPlayerSeedResult = {
   playerCount: number;
@@ -19,18 +16,15 @@ type LegacyPlayerSeedResult = {
   sampleSlugs: string[];
 };
 type SeedLegacyPlayersFn = (
-  prisma: PrismaClient,
-  options?: SeedOptions
+  prisma: PrismaClient
 ) => Promise<LegacyPlayerSeedResult>;
 type SeedScoutToProInternationalTournament2026Fn = (
   prisma: PrismaClient,
-  seedPlayerId?: string,
-  options?: SeedOptions
+  seedPlayerId?: string
 ) => Promise<void>;
 
 type SeedScoutToProTeamsFixturesSquadsFn = (
-  prisma: PrismaClient,
-  options?: SeedOptions
+  prisma: PrismaClient
 ) => Promise<{
   teamsCreated: number;
   matchesCreated: number;
@@ -47,11 +41,10 @@ function loadModule<T>(filename: string): T {
 
 export function seedScoreboard(
   prisma: PrismaClient,
-  seedPlayerId?: string,
-  options?: SeedOptions
+  seedPlayerId?: string
 ) {
   const mod = loadModule<{ seedScoreboard: SeedScoreboardFn }>("seed-scoreboard");
-  return mod.seedScoreboard(prisma, seedPlayerId, options);
+  return mod.seedScoreboard(prisma, seedPlayerId);
 }
 
 export function seedMvce(prisma: PrismaClient, playerId: string) {
@@ -59,37 +52,35 @@ export function seedMvce(prisma: PrismaClient, playerId: string) {
   return mod.seedMvce(prisma, playerId);
 }
 
-export function seedLegacyAcademies(prisma: PrismaClient, options?: SeedOptions) {
+export function seedLegacyAcademies(prisma: PrismaClient) {
   const mod = loadModule<{ seedLegacyAcademies: SeedLegacyAcademiesFn }>(
     "seed-legacy-academies"
   );
-  return mod.seedLegacyAcademies(prisma, options);
+  return mod.seedLegacyAcademies(prisma);
 }
 
-export function seedLegacyPlayers(prisma: PrismaClient, options?: SeedOptions) {
+export function seedLegacyPlayers(prisma: PrismaClient) {
   const mod = loadModule<{ seedLegacyPlayers: SeedLegacyPlayersFn }>(
     "seed-legacy-players"
   );
-  return mod.seedLegacyPlayers(prisma, options);
+  return mod.seedLegacyPlayers(prisma);
 }
 
 export function seedScoutToProInternationalTournament2026(
   prisma: PrismaClient,
-  seedPlayerId?: string,
-  options?: SeedOptions
+  seedPlayerId?: string
 ) {
   const mod = loadModule<{ seedScoutToProInternationalTournament2026: SeedScoutToProInternationalTournament2026Fn }>(
     "seed-scout-to-pro-international-tournament-2026"
   );
-  return mod.seedScoutToProInternationalTournament2026(prisma, seedPlayerId, options);
+  return mod.seedScoutToProInternationalTournament2026(prisma, seedPlayerId);
 }
 
 export function seedScoutToProTeamsFixturesSquads(
-  prisma: PrismaClient,
-  options?: SeedOptions
+  prisma: PrismaClient
 ) {
   const mod = loadModule<{ seedScoutToProTeamsFixturesSquads: SeedScoutToProTeamsFixturesSquadsFn }>(
     "seed-scout-to-pro-international-tournament-2026-teams-fixtures"
   );
-  return mod.seedScoutToProTeamsFixturesSquads(prisma, options);
+  return mod.seedScoutToProTeamsFixturesSquads(prisma);
 }

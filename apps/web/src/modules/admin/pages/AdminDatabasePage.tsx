@@ -44,9 +44,9 @@ export function AdminDatabasePage() {
     setRunning(true);
     setConfirmOpen(false);
     try {
-      /* Incremental is the only mode offered. Full re-seed resets ad config and
-         academy passwords, and there is no workflow that wants that. */
-      const nextStatus = await adminApi.runDatabaseSeed("incremental");
+      /* Incremental is the only mode there is: the destructive full re-seed
+         was removed, so seeding can never reset admin edits. */
+      const nextStatus = await adminApi.runDatabaseSeed();
       setStatus(nextStatus);
       setLastResult(null);
       if (nextStatus.running) {

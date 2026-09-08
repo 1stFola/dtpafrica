@@ -452,7 +452,7 @@ export type AdminSeedPhaseError = {
 
 export type AdminSeedResult = {
   ok: boolean;
-  mode: "incremental" | "full";
+  mode: "incremental";
   durationMs: number;
   seedPlayerId: string;
   counts: {
@@ -845,10 +845,10 @@ export const adminApi = {
     }),
   databaseSeedStatus: () =>
     adminFetch<AdminSeedStatus>("/admin/database/seed/status"),
-  runDatabaseSeed: (mode: "incremental" | "full" = "incremental") =>
+  runDatabaseSeed: () =>
     adminFetch<AdminSeedStatus>("/admin/database/seed", {
       method: "POST",
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify({ mode: "incremental" }),
     }),
   supportDiagnostics: () => adminFetch<SupportDiagnostics>("/admin/support/diagnostics"),
   supportSummary: () => adminFetch<SupportSummary>("/admin/support/summary"),

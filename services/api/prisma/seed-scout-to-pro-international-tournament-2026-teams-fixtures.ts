@@ -1,6 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
 import { playerLookupKey } from "@dtp/engines";
-import { type SeedOptions } from "../src/seed/seed-options";
 import { splitPlayerName } from "../src/utils/player-utils";
 
 const COMP_SLUG = "scout-to-pro-international-tournament-2026";
@@ -363,10 +362,7 @@ function slugify(name: string): string {
 }
 
 // Main seeding function
-export async function seedScoutToProTeamsFixturesSquads(
-  prisma: PrismaClient,
-  options?: SeedOptions
-) {
+export async function seedScoutToProTeamsFixturesSquads(prisma: PrismaClient) {
   console.log("🔄 Starting Scout To Pro International Tournament 2026 seeding...");
 
   // Find the competition

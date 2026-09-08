@@ -1,11 +1,7 @@
 // @ts-nocheck
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
-import {
-  isFullSeed,
-  shouldPreserveSbMatch,
-  type SeedOptions,
-} from "../src/seed/seed-options";
+import { shouldPreserveSbMatch } from "../src/seed/seed-options";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
 import { resolvePlayerNameCandidate } from "../src/scoreboard/player-name-normalization";
 
@@ -926,7 +922,7 @@ function zoneKey(zone: string): string {
   return slugify(zone).replace(/-/g, "_");
 }
 
-export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions) {
+export async function seed1XCup2026(prisma: PrismaClient) {
   const teamZoneBySlug = new Map<string, string>();
   const teamByKey = new Map<string, TeamSeed>();
   for (const team of TEAMS) teamByKey.set(nameKey(team.name), team);
@@ -1054,11 +1050,6 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
 
   const matchIds = MATCHES.map((m) => matchId(m.matchCode));
   const teamSlugs = TEAMS.map((t) => t.slug);
-  if (isFullSeed(options)) {
-    await prisma.sbMatch.deleteMany({ where: { competitionId: comp.id, id: { notIn: matchIds } } });
-    await prisma.sbTeam.deleteMany({ where: { competitionId: comp.id, slug: { notIn: teamSlugs } } });
-  }
-
   const teamIds: Record<string, string> = {};
   for (const team of TEAMS) {
     const zone = teamZoneBySlug.get(team.slug) ?? team.zone ?? null;
@@ -1088,7 +1079,7 @@ export async function seed1XCup2026(prisma: PrismaClient, options?: SeedOptions)
   const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
   for (const match of MATCHES) {
     const id = matchId(match.matchCode);
-    if (await shouldPreserveSbMatch(prisma, id, options)) continue;
+    if (await shouldPreserveSbMatch(prisma, id)) continue;
     const home = teamByKey.get(nameKey(match.homeName))!;
     const away = teamByKey.get(nameKey(match.awayName))!;
     const slug = allocateMatchSlug(home.slug, away.slug, usedMatchSlugs);
