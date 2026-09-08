@@ -11,11 +11,7 @@
  * "No. 10" into a real player name in the generated commentary.
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
-import {
-  isFullSeed,
-  shouldPreserveSbMatch,
-  type SeedOptions,
-} from "../src/seed/seed-options";
+import { shouldPreserveSbMatch } from "../src/seed/seed-options";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "dtp-training-cup";
@@ -85,7 +81,7 @@ const SQUADS: Record<string, Array<{ name: string; number: number | null }>> = {
   ],
 };
 
-export async function seedTrainingCup(prisma: PrismaClient, options?: SeedOptions) {
+export async function seedTrainingCup(prisma: PrismaClient) {
   const formatConfig = {
     format: "training_sandbox",
     purpose: "Training fixtures for match recorders. Never shown on the public site.",
@@ -116,15 +112,6 @@ export async function seedTrainingCup(prisma: PrismaClient, options?: SeedOption
     create: { id: COMP_ID, slug: COMP_SLUG, ...fields },
   });
 
-  if (isFullSeed(options)) {
-    await prisma.sbMatch.deleteMany({
-      where: { competitionId: comp.id, id: { notIn: MATCHES.map((m) => m.id) } },
-    });
-    await prisma.sbTeam.deleteMany({
-      where: { competitionId: comp.id, slug: { notIn: TEAMS.map((t) => t.slug) } },
-    });
-  }
-
   const teamIds: Record<string, string> = {};
   for (const team of TEAMS) {
     const row = await prisma.sbTeam.upsert({
@@ -143,7 +130,7 @@ export async function seedTrainingCup(prisma: PrismaClient, options?: SeedOption
 
   const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
   for (const match of MATCHES) {
-    if (await shouldPreserveSbMatch(prisma, match.id, options)) continue;
+    if (await shouldPreserveSbMatch(prisma, match.id)) continue;
     const shared = {
       slug: allocateMatchSlug(match.slugBase[0], match.slugBase[1], usedMatchSlugs),
       homeTeamId: teamIds[match.homeSlug],

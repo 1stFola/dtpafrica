@@ -10,11 +10,7 @@ import {
   toGoogleDrivePreviewUrl,
   toMatchPhotoEntries,
 } from "@dtp/engines";
-import {
-  isFullSeed,
-  shouldPreserveSbMatch,
-  type SeedOptions,
-} from "../src/seed/seed-options";
+import { shouldPreserveSbMatch } from "../src/seed/seed-options";
 import { JAGABAN_MATCH_MEDIA } from "./seed-jagaban-media-data";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
 import { resolveUniquePlayerSlug } from "../src/players/player-slug";
@@ -889,10 +885,9 @@ async function buildTeamRoster(prisma: PrismaClient, teamId: string) {
 async function seedMatchSquads(
   prisma: PrismaClient,
   match: MatchSeed,
-  teamIds: Record<string, string>,
-  options?: SeedOptions
+  teamIds: Record<string, string>
 ) {
-  if (await shouldPreserveSbMatch(prisma, match.id, options)) return;
+  if (await shouldPreserveSbMatch(prisma, match.id)) return;
 
   const homeTeamId = teamIds[match.homeSlug];
   const awayTeamId = teamIds[match.awaySlug];
@@ -951,7 +946,7 @@ async function seedMatchSquads(
   });
 }
 
-export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOptions) {
+export async function seedJagabanCup2026(prisma: PrismaClient) {
   const jagabanConfig = {
     editionLabel: "Jagaban Cup 2026",
     groupCount: 2,
@@ -1022,15 +1017,6 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
   const matchIds = MATCHES.map((m) => m.id);
   const teamSlugs = TEAMS.map((t) => t.slug);
 
-  if (isFullSeed(options)) {
-    await prisma.sbMatch.deleteMany({
-      where: { competitionId: comp.id, id: { notIn: matchIds } },
-    });
-    await prisma.sbTeam.deleteMany({
-      where: { competitionId: comp.id, slug: { notIn: teamSlugs } },
-    });
-  }
-
   const teamIds: Record<string, string> = {};
   for (const t of TEAMS) {
     const name = normalizeClubName(t.name);
@@ -1061,7 +1047,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
   let eventCount = 0;
   const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
   for (const m of MATCHES) {
-    const preserve = await shouldPreserveSbMatch(prisma, m.id, options);
+    const preserve = await shouldPreserveSbMatch(prisma, m.id);
     const stageId = stageByKey.get(m.stageKey);
     const slug = allocateMatchSlug(m.homeSlug, m.awaySlug, usedMatchSlugs);
 
@@ -1104,10 +1090,6 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
         },
       });
 
-      if (isFullSeed(options)) {
-        await prisma.sbMatchEvent.deleteMany({ where: { matchId: m.id } });
-      }
-
       for (const ev of m.events) {
         await prisma.sbMatchEvent.create({
           data: {
@@ -1126,7 +1108,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
   }
 
   for (const m of MATCHES) {
-    await seedMatchSquads(prisma, m, teamIds, options);
+    await seedMatchSquads(prisma, m, teamIds);
   }
 
   const [matchCount, squadCount] = await Promise.all([
@@ -1136,7 +1118,7 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
     }),
   ]);
 
-  await seedJagabanMatchMedia(prisma, comp.id, options);
+  await seedJagabanMatchMedia(prisma, comp.id);
 
   console.log("Jagaban Cup 2026 seeded:", COMP_SLUG);
   console.log("  matches:", matchCount, "(expected 14)");
@@ -1148,23 +1130,16 @@ export async function seedJagabanCup2026(prisma: PrismaClient, options?: SeedOpt
 
 async function seedJagabanMatchMedia(
   prisma: PrismaClient,
-  competitionId: string,
-  options?: SeedOptions
+  competitionId: string
 ) {
   const matchIds = JAGABAN_MATCH_MEDIA.map((m) => m.matchId);
-  if (isFullSeed(options)) {
-    await prisma.sbHighlight.deleteMany({
-      where: { competitionId, matchId: { in: matchIds } },
-    });
-  }
-
   for (const block of JAGABAN_MATCH_MEDIA) {
     const match = await prisma.sbMatch.findUnique({
       where: { id: block.matchId },
       select: { id: true, meta: true },
     });
     if (!match) continue;
-    if (await shouldPreserveSbMatch(prisma, block.matchId, options)) continue;
+    if (await shouldPreserveSbMatch(prisma, block.matchId)) continue;
 
     const existingMeta =
       match.meta && typeof match.meta === "object" && !Array.isArray(match.meta)

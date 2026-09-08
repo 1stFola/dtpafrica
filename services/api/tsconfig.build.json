@@ -21,6 +21,9 @@
     "prisma/sync-scoreboard-timeline-player-profiles.ts",
     "prisma/seed-scout-to-pro-international-tournament-2026.ts",
     "prisma/seed-scout-to-pro-international-tournament-2026-teams-fixtures.ts",
+    // Not imported by seed-scoreboard any more (DSL teams/fixtures are live),
+    // but still typechecked so the retained fixture data cannot rot.
+    "prisma/seed-dsl-league-2026.ts",
   ],
   "exclude": ["node_modules", "dist", "prisma/seed.ts"]
 }

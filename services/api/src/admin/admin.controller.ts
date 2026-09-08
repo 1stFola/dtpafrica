@@ -379,7 +379,9 @@ export class AdminController {
 
   @Post("database/seed")
   @RequirePermissions("database.seed")
-  runDatabaseSeed(@Body() dto: RunDatabaseSeedDto) {
-    return this.seed.run(dto.mode ?? "incremental");
+  runDatabaseSeed(@Body() _dto: RunDatabaseSeedDto) {
+    // Only one mode exists; the DTO is validated purely to reject a "full"
+    // request rather than silently treating it as incremental.
+    return this.seed.run();
   }
 }

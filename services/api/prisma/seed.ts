@@ -4,7 +4,7 @@ import { runDatabaseSeed } from "../src/seed/run-seed";
 const prisma = new PrismaClient();
 
 async function main() {
-  const result = await runDatabaseSeed(prisma, { mode: "full" });
+  const result = await runDatabaseSeed(prisma);
 
   if (result.errors.length > 0) {
     for (const err of result.errors) {

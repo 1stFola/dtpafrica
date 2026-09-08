@@ -9,7 +9,6 @@ import {
   seedScoutToProInternationalTournament2026,
   seedScoutToProTeamsFixturesSquads,
 } from "./prisma-seed-modules";
-import { isFullSeed, type SeedOptions } from "./seed-options";
 import { legacyMatchMetricsToPlayerMatchRecord } from "../sip/legacy-match-metrics-mapper";
 import type { LegacyMatchMetricsDto } from "../admin/dto/calibration-player-info.dto";
 import { normalizePlayerAgeCategory } from "../players/age-category";
@@ -18,8 +17,10 @@ import { matchAcademyByClubName } from "../academy/academy-linking.util";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
- * Incremental mode (default) upserts missing seed entities without resetting
- * admin-edited statuses. Full mode overwrites ads.config and academy passwords.
+ *
+ * Seeding is incremental and additive: it upserts missing seed entities and
+ * never resets admin-edited statuses, role permissions, ads config or academy
+ * passwords. The destructive "full" mode has been removed — see seed-options.ts.
  */
 export const SEED_PLAYER_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -224,7 +225,7 @@ export type SeedPhaseError = {
 
 export type SeedResult = {
   ok: boolean;
-  mode: "incremental" | "full";
+  mode: "incremental";
   durationMs: number;
   seedPlayerId: string;
   counts: {
@@ -247,11 +248,9 @@ type SeedPhase = {
   run: () => Promise<void>;
 };
 
-export async function runDatabaseSeed(
-  prisma: PrismaClient,
-  options?: SeedOptions
-): Promise<SeedResult> {
-  const mode = isFullSeed(options) ? "full" : "incremental";
+export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult> {
+  // Seeding is incremental and additive only; there is no destructive mode.
+  const mode = "incremental" as const;
   const startedAt = Date.now();
   const errors: SeedPhaseError[] = [];
   let seedPlayerId = SEED_PLAYER_ID;
@@ -265,9 +264,7 @@ export async function runDatabaseSeed(
     {
       name: "rbac",
       run: async () => {
-        // Pass the mode: in incremental mode seedRbac must not reset the
-        // permissions an admin has granted through the UI.
-        await seedRbac(prisma, { mode });
+        await seedRbac(prisma);
       },
     },
     {
@@ -292,13 +289,6 @@ export async function runDatabaseSeed(
           mediaItems: SEED_MEDIA_ITEMS,
           scoutingSummary:
             "ALLI O. SANNI profiles as an Under 18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
-          ...(mode === "full"
-            ? {
-                isFeatured: true,
-                isPublic: true,
-                registrationStatus: "approved",
-              }
-            : {}),
         };
 
         const player = await prisma.player.upsert({
@@ -550,7 +540,7 @@ Parents and guardians can register minors with consent workflows built for youth
       run: async () => {
         const dtpAcademy = await prisma.academy.upsert({
           where: { slug: "dtp-lagos-hub" },
-          update: mode === "full" ? { isPublished: true } : {},
+          update: {},
           create: {
             slug: "dtp-lagos-hub",
             name: "DTP Lagos Development Hub",
@@ -821,7 +811,7 @@ Parents and guardians can register minors with consent workflows built for youth
         for (const row of staticRows) {
           await prisma.staticContent.upsert({
             where: { key: row.key },
-            update: mode === "full" ? { value: row.value } : {},
+            update: {},
             create: row,
           });
         }
@@ -832,10 +822,7 @@ Parents and guardians can register minors with consent workflows built for youth
       run: async () => {
         await prisma.staticContent.upsert({
           where: { key: ADS_CONFIG_KEY },
-          update:
-            mode === "full"
-              ? { value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }) }
-              : {},
+          update: {},
           create: {
             key: ADS_CONFIG_KEY,
             value: JSON.stringify({ slots: DEFAULT_AD_SLOTS }),
@@ -846,14 +833,14 @@ Parents and guardians can register minors with consent workflows built for youth
     {
       name: "scoreboard",
       run: async () => {
-        await seedScoreboard(prisma, seedPlayerId, { mode });
+        await seedScoreboard(prisma, seedPlayerId);
       },
     },
     {
       name: "scout-to-pro-international-tournament-2026",
       run: async () => {
-        await seedScoutToProInternationalTournament2026(prisma, seedPlayerId, { mode });
-        await seedScoutToProTeamsFixturesSquads(prisma, { mode });
+        await seedScoutToProInternationalTournament2026(prisma, seedPlayerId);
+        await seedScoutToProTeamsFixturesSquads(prisma);
       },
     },
     {
@@ -865,13 +852,13 @@ Parents and guardians can register minors with consent workflows built for youth
     {
       name: "legacy-academies",
       run: async () => {
-        legacyAcademyCount = await seedLegacyAcademies(prisma, { mode });
+        legacyAcademyCount = await seedLegacyAcademies(prisma);
       },
     },
     {
       name: "legacy-players",
       run: async () => {
-        const legacyResult = await seedLegacyPlayers(prisma, { mode });
+        const legacyResult = await seedLegacyPlayers(prisma);
         legacyPlayers = legacyResult.playerCount;
         legacyAcademyLinks = legacyResult.academyLinkCount;
         legacySampleSlugs = legacyResult.sampleSlugs;

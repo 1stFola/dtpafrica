@@ -4,7 +4,7 @@ import {
   ALL_PERMISSION_SLUGS,
   DEFAULT_ROLES,
 } from "../admin/rbac/permissions.catalog";
-import { isFullSeed, type SeedOptions } from "./seed-options";
+
 
 /**
  * RBAC seed.
@@ -23,7 +23,7 @@ import { isFullSeed, type SeedOptions } from "./seed-options";
  * A full seed bootstraps an empty database, so there it still resets each
  * non-super_admin role to the catalogue defaults.
  */
-export async function seedRbac(prisma: PrismaClient, options?: SeedOptions) {
+export async function seedRbac(prisma: PrismaClient) {
   // Catalogue rows are system-defined and are not editable from the admin UI,
   // so refreshing them is safe in either mode.
   for (const perm of ADMIN_PERMISSIONS) {
@@ -48,7 +48,6 @@ export async function seedRbac(prisma: PrismaClient, options?: SeedOptions) {
   });
   const permBySlug = new Map(permissionRows.map((p) => [p.slug, p]));
 
-  const fullSeed = isFullSeed(options);
   let rolesCreated = 0;
   let rolesPreserved = 0;
 
@@ -75,7 +74,7 @@ export async function seedRbac(prisma: PrismaClient, options?: SeedOptions) {
     // newly introduced permission still reaches the super admin.
     const isSuperAdmin = roleDef.slug === "super_admin";
 
-    if (existing && !fullSeed && !isSuperAdmin) {
+    if (existing && !isSuperAdmin) {
       // Live role — leave its grants exactly as the admin left them.
       rolesPreserved++;
       continue;
@@ -88,11 +87,7 @@ export async function seedRbac(prisma: PrismaClient, options?: SeedOptions) {
       .map((slug) => permBySlug.get(slug)?.id)
       .filter((id): id is string => Boolean(id));
 
-    // Only a full seed is allowed to revoke. Incremental never deletes a grant.
-    if (fullSeed && !isSuperAdmin) {
-      await prisma.adminRolePermission.deleteMany({ where: { roleId: role.id } });
-    }
-
+    // Nothing here ever revokes a grant; seeding is additive only.
     if (permissionIds.length > 0) {
       await prisma.adminRolePermission.createMany({
         data: permissionIds.map((permissionId) => ({ roleId: role.id, permissionId })),

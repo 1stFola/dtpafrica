@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
-import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
+
 
 type LegacyAcademySeed = {
   name: string;
@@ -189,11 +189,7 @@ function normalizeCountry(country: string): string {
   return trimmed;
 }
 
-export async function seedLegacyAcademies(
-  prisma: PrismaClient,
-  options?: SeedOptions
-): Promise<number> {
-  const full = isFullSeed(options);
+export async function seedLegacyAcademies(prisma: PrismaClient): Promise<number> {
   let count = 0;
 
   for (const academy of LEGACY_ACADEMIES) {
@@ -216,9 +212,7 @@ export async function seedLegacyAcademies(
 
     await prisma.academy.upsert({
       where: { slug },
-      update: full
-        ? { ...sharedFields, passwordHash }
-        : sharedFields,
+      update: sharedFields,
       create: {
         slug,
         name: academy.name,

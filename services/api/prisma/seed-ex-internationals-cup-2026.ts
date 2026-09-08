@@ -2,11 +2,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { COMPETITION_TEMPLATES, normalizeClubName } from "@dtp/engines";
 import * as bcrypt from "bcrypt";
-import {
-  isFullSeed,
-  shouldPreserveSbMatch,
-  type SeedOptions,
-} from "../src/seed/seed-options";
+import { shouldPreserveSbMatch } from "../src/seed/seed-options";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
 
 /** Shared dev password for all Ex Internationals seeded academy accounts. */
@@ -1086,10 +1082,7 @@ const BRACKET_LAYOUT = {
   ],
 };
 
-export async function seedExInternationalsCup2026(
-  prisma: PrismaClient,
-  options?: SeedOptions
-) {
+export async function seedExInternationalsCup2026(prisma: PrismaClient) {
   const template = COMPETITION_TEMPLATES.KNOCKOUT_CUP;
   const formatConfig = {
     format: "knockout",
@@ -1156,19 +1149,9 @@ export async function seedExInternationalsCup2026(
   const matchIds = MATCHES.map((m) => m.id);
   const teamSlugs = TEAMS.map((t) => t.slug);
 
-  if (isFullSeed(options)) {
-    await prisma.sbMatch.deleteMany({
-      where: { competitionId: comp.id, id: { notIn: matchIds } },
-    });
-    await prisma.sbTeam.deleteMany({
-      where: { competitionId: comp.id, slug: { notIn: teamSlugs } },
-    });
-  }
-
   let academyCount = 0;
   const teamIds: Record<string, string> = {};
   const passwordHash = await bcrypt.hash(EX_INTL_ACADEMY_SEED_PASSWORD, 10);
-  const full = isFullSeed(options);
 
   for (const t of TEAMS) {
     const academySlug = `ex-intl-${t.slug}`;
@@ -1183,7 +1166,7 @@ export async function seedExInternationalsCup2026(
     };
     await prisma.academy.upsert({
       where: { slug: academySlug },
-      update: full ? { ...academyShared, passwordHash } : academyShared,
+      update: academyShared,
       create: {
         id: t.academyId,
         slug: academySlug,
@@ -1227,7 +1210,7 @@ export async function seedExInternationalsCup2026(
   let eventCount = 0;
   const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
   for (const m of MATCHES) {
-    const preserve = await shouldPreserveSbMatch(prisma, m.id, options);
+    const preserve = await shouldPreserveSbMatch(prisma, m.id);
     const status = m.status ?? "scheduled";
     const homeScore = m.homeScore ?? 0;
     const awayScore = m.awayScore ?? 0;
@@ -1290,10 +1273,6 @@ export async function seedExInternationalsCup2026(
           meta,
         },
       });
-
-      if (full) {
-        await prisma.sbMatchEvent.deleteMany({ where: { matchId: m.id } });
-      }
 
       for (const ev of m.events ?? []) {
         await prisma.sbMatchEvent.create({

@@ -1,11 +1,7 @@
 // @ts-nocheck
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
-import {
-  isFullSeed,
-  shouldPreserveSbMatch,
-  type SeedOptions,
-} from "../src/seed/seed-options";
+import { shouldPreserveSbMatch } from "../src/seed/seed-options";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "lagos-queens-cup-2026";
@@ -216,10 +212,7 @@ const MATCHES: MatchSeed[] = [
   },
 ];
 
-export async function seedLagosQueensCup2026(
-  prisma: PrismaClient,
-  options?: SeedOptions
-) {
+export async function seedLagosQueensCup2026(prisma: PrismaClient) {
   const formatConfig = {
     format: "group_stage",
     editionLabel: "Lagos Queens Cup 2026",
@@ -285,11 +278,6 @@ export async function seedLagosQueensCup2026(
 
   const matchIds = MATCHES.map((m) => m.id);
   const teamSlugs = TEAMS.map((t) => t.slug);
-  if (isFullSeed(options)) {
-    await prisma.sbMatch.deleteMany({ where: { competitionId: comp.id, id: { notIn: matchIds } } });
-    await prisma.sbTeam.deleteMany({ where: { competitionId: comp.id, slug: { notIn: teamSlugs } } });
-  }
-
   const teamIds: Record<string, string> = {};
   for (const team of TEAMS) {
     const row = await prisma.sbTeam.upsert({
@@ -317,7 +305,7 @@ export async function seedLagosQueensCup2026(
 
   const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
   for (const match of MATCHES) {
-    if (await shouldPreserveSbMatch(prisma, match.id, options)) continue;
+    if (await shouldPreserveSbMatch(prisma, match.id)) continue;
     const stageKey = `group_${match.groupKey.toLowerCase()}`;
     const slug = allocateMatchSlug(match.homeSlug, match.awaySlug, usedMatchSlugs);
     await prisma.sbMatch.upsert({

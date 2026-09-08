@@ -6,7 +6,7 @@
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { playerLookupKey, normalizeClubName } from "@dtp/engines";
-import { isFullSeed, type SeedOptions } from "../src/seed/seed-options";
+
 // admin-scoreboard.service declares splitPlayerName but does not export it, so
 // importing it from there resolved to undefined and threw for every player.
 import { splitPlayerName } from "../src/utils/player-utils";
@@ -406,10 +406,7 @@ function normalizeShirtNumber(shirtNumber: unknown): number | null {
   return null; // Will use null in DB if invalid
 }
 
-async function seedDslLeaguePlayers(
-  prisma: PrismaClient,
-  options?: SeedOptions
-) {
+async function seedDslLeaguePlayers(prisma: PrismaClient) {
   console.log("🔄 Starting Dynasty Scouting League player seeding...");
 
   // Find the DSL competition

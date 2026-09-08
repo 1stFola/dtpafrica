@@ -16,11 +16,7 @@
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
-import {
-  isFullSeed,
-  shouldPreserveSbMatch,
-  type SeedOptions,
-} from "../src/seed/seed-options";
+import { shouldPreserveSbMatch } from "../src/seed/seed-options";
 import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "coal-city-scouting-tournament-2026";
@@ -220,10 +216,7 @@ const MATCHES: MatchSeed[] = [
   },
 ];
 
-export async function seedCoalCityScoutingTournament2026(
-  prisma: PrismaClient,
-  options?: SeedOptions
-) {
+export async function seedCoalCityScoutingTournament2026(prisma: PrismaClient) {
   const formatConfig = {
     format: "fixture_list",
     overview: DESCRIPTION,
@@ -259,15 +252,6 @@ export async function seedCoalCityScoutingTournament2026(
     create: { id: COMP_ID, slug: COMP_SLUG, ...fields },
   });
 
-  if (isFullSeed(options)) {
-    await prisma.sbMatch.deleteMany({
-      where: { competitionId: comp.id, id: { notIn: MATCHES.map((m) => m.id) } },
-    });
-    await prisma.sbTeam.deleteMany({
-      where: { competitionId: comp.id, slug: { notIn: TEAMS.map((t) => t.slug) } },
-    });
-  }
-
   const teamIds: Record<string, string> = {};
   for (const team of TEAMS) {
     const teamFields = {
@@ -288,7 +272,7 @@ export async function seedCoalCityScoutingTournament2026(
 
   const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
   for (const match of MATCHES) {
-    if (await shouldPreserveSbMatch(prisma, match.id, options)) continue;
+    if (await shouldPreserveSbMatch(prisma, match.id)) continue;
     const shared = {
       slug: allocateMatchSlug(match.homeSlug, match.awaySlug, usedMatchSlugs),
       matchday: match.matchday,
