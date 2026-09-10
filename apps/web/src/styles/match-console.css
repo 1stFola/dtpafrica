@@ -2417,3 +2417,70 @@
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
+
+/* ---------- penalty shootout: header, close, starter choice ---------- */
+
+.mcx-prompt__header {
+  position: relative;
+  margin-bottom: 0.4rem;
+}
+
+.mcx-prompt__header h3 {
+  margin: 0;
+  padding: 0 2.2rem;
+}
+
+.mcx-prompt__close {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  transform: translateY(-50%);
+  border: 1px solid var(--mcx-line);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mcx-prompt__close:hover,
+.mcx-prompt__close:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Starter choice: one button per team, edged in that team's kit colour. */
+.mcx-shootout-starter {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.16rem;
+  border-left-width: 5px;
+  line-height: 1.15;
+}
+
+.mcx-shootout-starter small {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+/* Shown in place of the modal once the operator closes it mid-shootout. */
+.mcx-callout--action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-color: rgba(245, 165, 36, 0.45);
+  background: rgba(245, 165, 36, 0.1);
+  color: var(--color-text);
+}
+
+.mcx-callout--action .mcx-btn {
+  width: auto;
+}
