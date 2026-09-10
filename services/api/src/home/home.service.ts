@@ -216,9 +216,11 @@ export class HomeService {
       careerAppearances,
       careerMinutes,
       careerCleanSheets,
-      age,
-      ageGroup,
-      dateOfBirth,
+      // Pulled out so they never reach ...profile: the public profile carries
+      // no age group or age-derived data.
+      age: _age,
+      ageGroup: _ageGroup,
+      dateOfBirth: _dateOfBirth,
       ...profile
     } = player;
 
@@ -237,7 +239,6 @@ export class HomeService {
     return {
       isSkeleton: false as const,
       ...profile,
-      ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
       minutesPlayed: this.resolveMinutesPlayed(
         careerMinutes,
         aggregatedMetrics[0]?.minutesPlayed
@@ -268,7 +269,6 @@ export class HomeService {
         this.buildScoutingSummary({
           displayName: profile.displayName,
           position: profile.positionPrimary,
-          ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
           overallRating: profile.overallRating,
           offensiveRating: profile.offensiveRating,
           defensiveRating: profile.defensiveRating,
@@ -1050,7 +1050,6 @@ export class HomeService {
   private buildScoutingSummary(args: {
     displayName: string;
     position: string;
-    ageGroup?: string | null;
     overallRating?: number | null;
     offensiveRating?: number | null;
     defensiveRating?: number | null;
@@ -1068,8 +1067,6 @@ export class HomeService {
       (args.offensiveRating ?? 0) >= (args.defensiveRating ?? 0)
         ? "attacking contribution"
         : "defensive reliability";
-    const ageBand = args.ageGroup ? `${args.ageGroup} ` : "";
-
-    return `${args.displayName} profiles as a ${ageBand}${tier} at ${args.position}, with the clearest current signal in ${strongest}. Scouts should validate the rating against recent match footage, tactical context, and benchmark fit.`;
+    return `${args.displayName} profiles as a ${tier} at ${args.position}, with the clearest current signal in ${strongest}. Scouts should validate the rating against recent match footage, tactical context, and benchmark fit.`;
   }
 }

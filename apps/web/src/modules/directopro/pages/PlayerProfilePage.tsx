@@ -226,7 +226,6 @@ function buildBioFacts(
   const facts: BioFact[] = [];
   if (player.club) facts.push({ label: "Club", value: player.club });
   if (player.nationality) facts.push({ label: "Nationality", value: player.nationality });
-  if (player.ageGroup) facts.push({ label: "Category", value: player.ageGroup });
   if (player.heightCm != null && player.heightCm >= 100 && player.heightCm <= 230) {
     facts.push({ label: "Height", value: `${player.heightCm} cm` });
   }
@@ -484,7 +483,6 @@ export function PlayerProfilePage() {
   const positionLabel = resolvePositionFullLabel(player.positionPrimary.trim(), null);
   const highlights = [
     `${ratingTier(player.overallRating)} ${player.positionPrimary} profile`,
-    player.ageGroup ? `${player.ageGroup} pathway candidate` : "Open category profile",
     tactical ? "Tactical scores available" : "Tactical profile building",
     scoreboard?.aggregates.goals
       ? `${scoreboard.aggregates.goals} ScoreBoard goal${scoreboard.aggregates.goals === 1 ? "" : "s"}`

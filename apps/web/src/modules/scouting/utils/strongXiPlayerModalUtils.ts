@@ -226,11 +226,6 @@ export function formatStatValue(value: number | null | undefined): string {
   return String(value);
 }
 
-export function resolvePlayerAge(player: PublicPlayerProfile): string {
-  if (player.ageGroup?.trim()) return player.ageGroup.trim();
-  return "—";
-}
-
 export function resolvePlayerClub(player: PublicPlayerProfile): string {
   if (player.club?.trim()) return player.club.trim();
   const team = player.scoreboardHistory?.teams?.[0];

@@ -288,7 +288,7 @@ export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult>
           benchmarkMetadata: SEED_BENCHMARK_METADATA,
           mediaItems: SEED_MEDIA_ITEMS,
           scoutingSummary:
-            "ALLI O. SANNI profiles as an Under 18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
+            "ALLI O. SANNI profiles as a pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
         };
 
         const player = await prisma.player.upsert({
@@ -326,7 +326,7 @@ export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult>
             benchmarkMetadata: SEED_BENCHMARK_METADATA,
             mediaItems: SEED_MEDIA_ITEMS,
             scoutingSummary:
-              "ALLI O. SANNI profiles as an Under 18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
+              "ALLI O. SANNI profiles as a pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
           },
         });
         seedPlayerId = player.id;

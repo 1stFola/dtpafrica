@@ -114,7 +114,12 @@ export type PublicPositionFit = {
   confidence: number;
 };
 
-export type PublicPlayerProfile = FeaturedPlayer & {
+/**
+ * The public profile deliberately carries no age group. Omitting it here makes
+ * any reintroduction on the profile page a compile error rather than a quiet
+ * regression; FeaturedPlayer keeps it for the featured-players listing.
+ */
+export type PublicPlayerProfile = Omit<FeaturedPlayer, "ageGroup"> & {
   isSkeleton?: false;
   stats?: PublicProfileStats;
   club?: string | null;

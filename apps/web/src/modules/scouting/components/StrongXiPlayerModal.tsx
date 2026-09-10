@@ -20,7 +20,6 @@ import {
   isGkProfile,
   philosophyFitTier,
   philosophyFitTierClass,
-  resolvePlayerAge,
   resolvePlayerClub,
 } from "../utils/strongXiPlayerModalUtils";
 import { PositionScoutingMetricsRow } from "./PositionScoutingMetricsRow";
@@ -434,8 +433,6 @@ export function StrongXiPlayerModal({
                 <span className="strong-xi-modal__position-pill">{positionLabel}</span>
                 <p className="strong-xi-modal__meta">
                   <span>{resolvePlayerClub(mergedProfile)}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{resolvePlayerAge(mergedProfile)}</span>
                 </p>
                 {selection.slotLabel && (
                   <span className="strong-xi-modal__slot">{selection.slotLabel}</span>
