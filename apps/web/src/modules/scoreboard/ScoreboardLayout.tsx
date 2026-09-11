@@ -22,12 +22,13 @@ export function ScoreboardLayout() {
     <div className="scoreboard-module dtp-page">
       {/* Figma "DTP" -> Scoreboard 186:139: black hero, cyan eyebrow,
           Gasoek 90px display, live ribbon and subnav beneath. */}
-      <section className="dtp-hero">
+      <section className="dtp-hero dtp-hero--stack dtp-hero--bleed">
         <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-scoreboard.webp" alt="" aria-hidden="true" />
         <div className="dtp-hero__scrim" aria-hidden="true" />
         <div className="dtp-shell dtp-hero__inner">
           <p className="dtp-eyebrow">Nigeria Grassroots Football</p>
-          <h1 className="dtp-display dtp-display--hero dtp-hero__title">Scoreboard</h1>
+          {/* Two lines, as Figma sets it; .dtp-hero__title is pre-line. */}
+          <h1 className="dtp-display dtp-display--hero dtp-hero__title">{"Score\nboard"}</h1>
           {/* Figma 186:139 carries a lead under the title that was never built.
               The frame spells it "mach stats" — kept as "match" here. */}
           <p className="dtp-lead dtp-hero__lead">

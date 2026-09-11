@@ -1,10 +1,11 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { ModuleAdRails } from "../../components/ModuleAdRails";
 import { HIGH_FETCH_PRIORITY } from "../../utils/imgPriority";
 
 /* Figma "DTP" -> Scouting Hubs 118:1711. Black hero plate, orange eyebrow,
-   Gasoek 90px display. The sub-navigation is not drawn in the frame but the
-   module's child routes need it, so it renders as chips under the lead. */
+   Gasoek 90px display. The sub-navigation is not drawn in the frame: on the
+   overview its three tool tiles are the way in, so the chips only render on
+   the tool routes, where the tiles are not shown. */
 
 const links = [
   { to: "/scouting", end: true, label: "Overview" },
@@ -14,39 +15,45 @@ const links = [
 ];
 
 export function ScoutingLayout() {
+  const { pathname } = useLocation();
+  const isOverview = pathname === "/scouting" || pathname === "/scouting/";
+
   return (
     <div className="scouting-module dtp-page">
-      <section className="dtp-hero">
+      <section className="dtp-hero dtp-hero--stack dtp-hero--bleed">
         <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-scouting.webp" alt="" aria-hidden="true" />
         <div className="dtp-hero__scrim" aria-hidden="true" />
         <div className="dtp-shell dtp-hero__inner">
           <p className="dtp-eyebrow">Talent Pipeline &amp; Scouting Overview</p>
-          <h1 className="dtp-display dtp-display--hero dtp-hero__title">Scouting Hub</h1>
+          {/* Two lines, as Figma sets it; .dtp-hero__title is pre-line. */}
+          <h1 className="dtp-display dtp-display--hero dtp-hero__title">{"Scouting\nHub"}</h1>
           <p className="dtp-lead dtp-hero__lead">
             Real-time target tracking, scout assignments, and performance metrics.
           </p>
-          <nav className="dtp-chips" aria-label="Scouting">
-            {links.map((l) => (
-              <NavLink
-                key={l.to}
-                to={l.to}
-                end={l.end}
-                className={({ isActive }) => (isActive ? "dtp-chip is-active" : "dtp-chip")}
-                style={({ isActive }) =>
-                  isActive
-                    ? {
-                        background: "var(--dtp-lime)",
-                        borderColor: "var(--dtp-lime)",
-                        color: "var(--dtp-green)",
-                        fontWeight: 600,
-                      }
-                    : undefined
-                }
-              >
-                {l.label}
-              </NavLink>
-            ))}
-          </nav>
+          {!isOverview && (
+            <nav className="dtp-chips" aria-label="Scouting">
+              {links.map((l) => (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  end={l.end}
+                  className={({ isActive }) => (isActive ? "dtp-chip is-active" : "dtp-chip")}
+                  style={({ isActive }) =>
+                    isActive
+                      ? {
+                          background: "var(--dtp-lime)",
+                          borderColor: "var(--dtp-lime)",
+                          color: "var(--dtp-green)",
+                          fontWeight: 600,
+                        }
+                      : undefined
+                  }
+                >
+                  {l.label}
+                </NavLink>
+              ))}
+            </nav>
+          )}
         </div>
       </section>
 
