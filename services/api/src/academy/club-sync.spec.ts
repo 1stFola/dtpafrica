@@ -203,11 +203,24 @@ describe("syncTeamsToClubs", () => {
 
   // Deliberately conservative: a wrong merge would publish one club's history
   // under another's name.
-  it("keeps differently suffixed clubs apart", async () => {
-    const d = db([team("t-fa", "IKORODU CITY FA", 1), team("t-fc", "Ikorodu City FC", 2)]);
+  it("keeps differently suffixed clubs apart unless aliased", async () => {
+    const d = db([team("t-fa", "LAGOS STARS FA", 1), team("t-fc", "Lagos Stars FC", 2)]);
     await syncTeamsToClubs(d.prisma);
     expect(d.academies).toHaveLength(2);
     expect(clubOf(d, "t-fa")).not.toBe(clubOf(d, "t-fc"));
+  });
+
+  it("merges the aliased pairs into one club each", async () => {
+    const d = db([
+      team("t-ikd-s2p", "IKORODU CITY FA", 1),
+      team("t-ikd-coal", "Ikorodu City FC", 5),
+      team("t-ath-s2p", "ATHLETIC FC", 1),
+      team("t-ath-coal", "Athletic SC", 5),
+    ]);
+    await syncTeamsToClubs(d.prisma);
+    expect(d.academies.map((a) => a.name).sort()).toEqual(["Athletic SC", "Ikorodu City FC"]);
+    expect(clubOf(d, "t-ikd-s2p")).toBe(clubOf(d, "t-ikd-coal"));
+    expect(clubOf(d, "t-ath-s2p")).toBe(clubOf(d, "t-ath-coal"));
   });
 
   it("only touches the clubs of the given teams when scoped", async () => {

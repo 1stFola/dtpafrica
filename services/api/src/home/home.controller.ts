@@ -77,6 +77,12 @@ export class HomeController {
     return this.home.academyBySlug(slug);
   }
 
+  /** Data for the public "View club" modal; fetched when it opens. */
+  @Get("academies/:slug/showcase")
+  clubShowcase(@Param("slug") slug: string) {
+    return this.home.clubShowcase(slug);
+  }
+
   @Get("content")
   staticContent(@Query("keys") keys?: string) {
     return this.home.staticContent(keys);

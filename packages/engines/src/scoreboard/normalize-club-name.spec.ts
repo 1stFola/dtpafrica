@@ -82,8 +82,19 @@ describe("clubIdentityKey", () => {
   // Conservative on purpose: a different suffix is not assumed to be the same
   // club, because a wrong merge would publish one club's history under another.
   it("keeps differently suffixed names apart unless aliased", () => {
-    expect(clubIdentityKey("Ikorodu City FA")).not.toBe(clubIdentityKey("Ikorodu City FC"));
-    expect(clubIdentityKey("Athletic FC")).not.toBe(clubIdentityKey("Athletic SC"));
+    expect(clubIdentityKey("Lagos Stars FA")).not.toBe(clubIdentityKey("Lagos Stars FC"));
+  });
+
+  // Confirmed to be one club each; see CLUB_ALIASES.
+  it("treats Ikorodu City FA and Ikorodu City FC as one club", () => {
+    expect(clubIdentityKey("IKORODU CITY FA")).toBe(clubIdentityKey("Ikorodu City FC"));
+    expect(normalizeClubName("IKORODU CITY FA")).toBe("Ikorodu City FC");
+  });
+
+  it("treats Athletic FC and Athletic SC as one club named Athletic SC", () => {
+    expect(clubIdentityKey("ATHLETIC FC")).toBe(clubIdentityKey("Athletic SC"));
+    expect(normalizeClubName("ATHLETIC FC")).toBe("Athletic SC");
+    expect(normalizeClubName("athletic sc")).toBe("Athletic SC");
   });
 
   it("returns an empty key for a blank name", () => {

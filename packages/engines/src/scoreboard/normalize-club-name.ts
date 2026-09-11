@@ -8,6 +8,13 @@ const CLUB_ALIASES: Readonly<Record<string, string>> = {
 
   "ikorodu city": "Ikorodu City FC",
   "ikorodu city fc": "Ikorodu City FC",
+  // Entered as "Ikorodu City FA" in Scout To Pro; confirmed to be the same club.
+  "ikorodu city fa": "Ikorodu City FC",
+
+  // Entered as "Athletic FC" in Scout To Pro and "Athletic SC" in Coal City;
+  // confirmed to be one club. "Athletic SC" is the name on its crest.
+  "athletic fc": "Athletic SC",
+  "athletic sc": "Athletic SC",
 
   "sgfc athletics": "SGFC Athletics SC",
   "sgfc athletic sc": "SGFC Athletics SC",

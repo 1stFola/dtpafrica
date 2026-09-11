@@ -663,7 +663,7 @@ export function TeamPage() {
           {team.club && (team.clubCompetitions?.length ?? 0) > 0 && (
             <div className="sbt-hero__club" aria-label={`${team.club.name} in other competitions`}>
               <span className="sbt-hero__club-label">
-                <Link to={`/partners/academies?q=${encodeURIComponent(team.club.name)}`}>
+                <Link to={`/partners/academies?club=${encodeURIComponent(team.club.slug)}`}>
                   {team.club.name}
                 </Link>{" "}
                 also competed in

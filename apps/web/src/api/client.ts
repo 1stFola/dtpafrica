@@ -325,6 +325,53 @@ export type ClubCompetitionEntry = {
   teamId: string;
 };
 
+export type ClubShowcaseTeamRef = { name: string; shortName: string | null; logoUrl: string | null };
+
+export type ClubShowcaseMatch = {
+  matchId: string;
+  matchSlug: string;
+  kickoffAt: string | null;
+  status: string;
+  competitionName: string;
+  season: string;
+  home: ClubShowcaseTeamRef;
+  away: ClubShowcaseTeamRef;
+  score: { home: number; away: number };
+  clubSide: "home" | "away";
+  /** From the club's point of view; null until the match is finished. */
+  outcome: "W" | "D" | "L" | null;
+};
+
+/** Everything the "View club" modal shows, from GET /home/academies/:slug/showcase. */
+export type ClubShowcase = {
+  club: Academy;
+  record: {
+    played: number;
+    won: number;
+    drawn: number;
+    lost: number;
+    goalsFor: number;
+    goalsAgainst: number;
+    cleanSheets: number;
+  };
+  recentResults: ClubShowcaseMatch[];
+  upcoming: ClubShowcaseMatch[];
+  topScorers: Array<{ name: string; goals: number; slug: string | null; photoUrl: string | null }>;
+  players: Array<{
+    name: string;
+    position: string | null;
+    shirtNumber: number | null;
+    slug: string | null;
+    photoUrl: string | null;
+    overallRating: number | null;
+  }>;
+  squadSize: number;
+};
+
+export function fetchClubShowcase(slug: string, signal?: AbortSignal) {
+  return apiGet<ClubShowcase>(`/home/academies/${encodeURIComponent(slug)}/showcase`, signal);
+}
+
 export type RegisterResponse = {
   id: string;
   displayName: string;

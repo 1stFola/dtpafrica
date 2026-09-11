@@ -1,22 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiGet, isAbortError, type Academy, type ClubCompetitionEntry } from "../../../api/client";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { HIGH_FETCH_PRIORITY } from "../../../utils/imgPriority";
+import { clubInitials } from "../../../utils/identity";
+import { ClubShowcaseModal } from "../components/ClubShowcaseModal";
 
 type QuickFilter = "" | "ex-intl" | "lagos";
-
-function academyInitials(name: string) {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "AC";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return words
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join("")
-    .toUpperCase();
-}
 
 function locationLabel(academy: Academy) {
   return [academy.city, academy.country].filter(Boolean).join(", ");
@@ -74,7 +65,9 @@ export function AcademyPage() {
   const [academies, setAcademies] = useState<Academy[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // ?club=<slug> opens that club's modal, so a team page can link straight to it.
+  const clubParam = searchParams.get("club");
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("q") ?? "");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("");
   const debouncedSearch = useDebouncedValue(searchQuery, 200);
@@ -98,6 +91,26 @@ export function AcademyPage() {
       controller.abort();
     };
   }, []);
+
+  const selectedClub = useMemo(
+    () => (clubParam ? academies.find((academy) => academy.slug === clubParam) ?? null : null),
+    [academies, clubParam]
+  );
+
+  const openClub = useCallback(
+    (academy: Academy) => {
+      const next = new URLSearchParams(searchParams);
+      next.set("club", academy.slug);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const closeClub = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("club");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const filtered = useMemo(() => {
     return academies.filter((academy) => {
@@ -228,7 +241,7 @@ export function AcademyPage() {
                             color: "var(--dtp-lime)",
                           }}
                         >
-                          {academyInitials(academy.name)}
+                          {clubInitials(academy.name)}
                         </span>
                       )}
                     </div>
@@ -267,25 +280,34 @@ export function AcademyPage() {
                       )}
                     </div>
 
-                    {academy.loginUsername ? (
-                      <Link to={loginHref(academy)} className="dtp-btn">
-                        Enter Club Portal
-                      </Link>
-                    ) : competitions.length > 0 ? (
-                      /* Clubs created from ScoreBoard have no partner login, so
-                         a "Sign in" button would lead nowhere they can use. */
-                      <Link to={`/scoreboard/team/${competitions[0].teamId}`} className="dtp-btn">
+                    <div className="dtp-club-actions">
+                      {/* Only partners have a login; every club can be viewed. */}
+                      {academy.loginUsername && (
+                        <Link to={loginHref(academy)} className="dtp-btn dtp-btn--secondary">
+                          Partner login
+                        </Link>
+                      )}
+                      <button
+                        type="button"
+                        className="dtp-btn"
+                        onClick={() => openClub(academy)}
+                        aria-haspopup="dialog"
+                      >
                         View club
-                      </Link>
-                    ) : (
-                      <Link to={loginHref(academy)} className="dtp-btn">
-                        Sign in
-                      </Link>
-                    )}
+                      </button>
+                    </div>
                   </article>
                 );
               })}
           </div>
+
+          {selectedClub && (
+            <ClubShowcaseModal
+              club={selectedClub}
+              partnerLoginHref={selectedClub.loginUsername ? loginHref(selectedClub) : null}
+              onClose={closeClub}
+            />
+          )}
 
           {!loading && !error && filtered.length === 0 && (
             <div style={{ textAlign: "center", color: "var(--dtp-white)" }}>

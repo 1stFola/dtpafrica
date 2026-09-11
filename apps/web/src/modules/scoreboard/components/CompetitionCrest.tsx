@@ -4,6 +4,8 @@
  * badge rather than an empty box.
  */
 
+import { stableHue } from "../../../utils/identity";
+
 const PIXELS: Record<CrestSize, number> = { sm: 28, md: 44, lg: 64, xl: 96 };
 
 export type CrestSize = "sm" | "md" | "lg" | "xl";
@@ -30,10 +32,8 @@ function competitionMonogram(name: string): string {
 }
 
 /** Stable hue per competition so the fallback badge is consistent per id. */
-function competitionHue(seed: string): number {
-  let h = 0;
-  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) % 360;
-  return h;
+export function competitionHue(seed: string): number {
+  return stableHue(seed);
 }
 
 export function CompetitionCrest({

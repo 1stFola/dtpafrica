@@ -30,6 +30,7 @@ import {
   playerMatchMetricsToLegacyMetrics,
   readCalibrationMetricsFromBenchmark,
 } from "../sip/legacy-match-metrics-mapper";
+import { buildClubShowcase } from "../academy/club-showcase";
 import {
   CLUB_TEAMS_SELECT,
   buildSeedByTeamSlug,
@@ -441,6 +442,30 @@ export class HomeService {
     });
     const { teams, ...row } = academy;
     return presentAcademyListing(row, buildSeedByTeamSlug(comp?.teams ?? []), teams);
+  }
+
+  /**
+   * Everything the public "View club" modal shows: the club's listing plus its
+   * record, form, fixtures, scorers and players across every published
+   * competition it has entered.
+   */
+  async clubShowcase(slug: string) {
+    const academy = await this.prisma.academy.findFirst({
+      where: { slug, isPublished: true },
+      include: { teams: CLUB_TEAMS_SELECT },
+    });
+    if (!academy) throw new NotFoundException("Club not found");
+    const comp = await this.prisma.sbCompetition.findUnique({
+      where: { slug: "ex-internationals-cup-2026" },
+      include: { teams: true },
+    });
+    const { teams, ...row } = academy;
+    const club = presentAcademyListing(row, buildSeedByTeamSlug(comp?.teams ?? []), teams);
+    const showcase = await buildClubShowcase(
+      this.prisma,
+      teams.filter((team) => team.competition.isPublished).map((team) => team.id)
+    );
+    return { club, ...showcase };
   }
 
   async staticContent(keys?: string) {
