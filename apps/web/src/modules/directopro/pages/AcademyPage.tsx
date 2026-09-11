@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { apiGet, isAbortError, type Academy } from "../../../api/client";
+import { Link, useSearchParams } from "react-router-dom";
+import { apiGet, isAbortError, type Academy, type ClubCompetitionEntry } from "../../../api/client";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { HIGH_FETCH_PRIORITY } from "../../../utils/imgPriority";
@@ -32,6 +32,13 @@ function loginHref(academy: Academy) {
   return `/academy/login?redirect=${encodeURIComponent(redirect)}&slug=${encodeURIComponent(hint)}`;
 }
 
+function competitionTitle(entry: ClubCompetitionEntry) {
+  const year = entry.season.match(/\d{4}/)?.[0] ?? "";
+  return !year || entry.competitionName.includes(year)
+    ? entry.competitionName
+    : `${entry.competitionName} ${year}`;
+}
+
 function matchesSearch(academy: Academy, query: string) {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -41,7 +48,10 @@ function matchesSearch(academy: Academy, query: string) {
     (academy.city ?? "").toLowerCase().includes(q) ||
     (academy.country ?? "").toLowerCase().includes(q) ||
     academy.slug.toLowerCase().includes(q) ||
-    seedLabel.includes(q)
+    seedLabel.includes(q) ||
+    (academy.competitions ?? []).some((entry) =>
+      entry.competitionName.toLowerCase().includes(q)
+    )
   );
 }
 
@@ -64,7 +74,8 @@ export function AcademyPage() {
   const [academies, setAcademies] = useState<Academy[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("q") ?? "");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("");
   const debouncedSearch = useDebouncedValue(searchQuery, 200);
 
@@ -197,6 +208,7 @@ export function AcademyPage() {
               filtered.map((academy) => {
                 const location = locationLabel(academy);
                 const badges = academy.badges ?? ["Partner Academy"];
+                const competitions = academy.competitions ?? [];
 
                 return (
                   <article key={academy.id} className="dtp-row">
@@ -235,11 +247,41 @@ export function AcademyPage() {
                           Seed #{academy.seed}
                         </p>
                       )}
+                      {competitions.length > 0 && (
+                        <div className="dtp-club-competitions">
+                          <p className="dtp-row__kicker">
+                            {competitions.length === 1
+                              ? "1 competition"
+                              : `${competitions.length} competitions`}
+                          </p>
+                          <ul>
+                            {competitions.map((entry) => (
+                              <li key={entry.competitionId}>
+                                <Link to={`/scoreboard/team/${entry.teamId}`}>
+                                  {competitionTitle(entry)}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
 
-                    <Link to={loginHref(academy)} className="dtp-btn">
-                      {academy.loginUsername ? "Enter Club Portal" : "Sign in"}
-                    </Link>
+                    {academy.loginUsername ? (
+                      <Link to={loginHref(academy)} className="dtp-btn">
+                        Enter Club Portal
+                      </Link>
+                    ) : competitions.length > 0 ? (
+                      /* Clubs created from ScoreBoard have no partner login, so
+                         a "Sign in" button would lead nowhere they can use. */
+                      <Link to={`/scoreboard/team/${competitions[0].teamId}`} className="dtp-btn">
+                        View club
+                      </Link>
+                    ) : (
+                      <Link to={loginHref(academy)} className="dtp-btn">
+                        Sign in
+                      </Link>
+                    )}
                   </article>
                 );
               })}

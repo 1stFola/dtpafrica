@@ -31,6 +31,7 @@ import {
   readCalibrationMetricsFromBenchmark,
 } from "../sip/legacy-match-metrics-mapper";
 import {
+  CLUB_TEAMS_SELECT,
   buildSeedByTeamSlug,
   presentAcademyListing,
 } from "../academy/academy-directory.util";
@@ -418,8 +419,9 @@ export class HomeService {
     const rows = await this.prisma.academy.findMany({
       where: { isPublished: true },
       orderBy: { name: "asc" },
+      include: { teams: CLUB_TEAMS_SELECT },
     });
-    return rows.map((row) => presentAcademyListing(row, seedByTeamSlug));
+    return rows.map(({ teams, ...row }) => presentAcademyListing(row, seedByTeamSlug, teams));
   }
 
   /**
@@ -430,13 +432,15 @@ export class HomeService {
   async academyBySlug(slug: string) {
     const academy = await this.prisma.academy.findFirst({
       where: { slug, isPublished: true },
+      include: { teams: CLUB_TEAMS_SELECT },
     });
     if (!academy) throw new NotFoundException("Academy not found");
     const comp = await this.prisma.sbCompetition.findUnique({
       where: { slug: "ex-internationals-cup-2026" },
       include: { teams: true },
     });
-    return presentAcademyListing(academy, buildSeedByTeamSlug(comp?.teams ?? []));
+    const { teams, ...row } = academy;
+    return presentAcademyListing(row, buildSeedByTeamSlug(comp?.teams ?? []), teams);
   }
 
   async staticContent(keys?: string) {

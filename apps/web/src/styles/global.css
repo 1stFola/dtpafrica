@@ -16901,6 +16901,28 @@ a.dbx-comp-card:hover {
   transition: opacity 0.15s ease;
 }
 
+/* The same club's entries in other competitions. */
+.sbt-hero__club {
+  margin-top: 0.9rem;
+}
+
+.sbt-hero__club-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.sbt-hero__club-label a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sbt-hero__club .sbt-hero__geo {
+  margin-top: 0.4rem;
+}
+
 .sbt-hero__comp-link:hover {
   opacity: 0.85;
 }

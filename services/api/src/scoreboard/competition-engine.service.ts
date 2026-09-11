@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { linkTeamsToClubsQuietly } from "../academy/club-sync";
 import {
   buildProgressionPreview,
   cloneJagabanConfigForEdition,
@@ -159,6 +160,10 @@ export class CompetitionEngineService {
           groupKey: row.groupKey,
         });
       }
+      await linkTeamsToClubsQuietly(
+        this.prisma,
+        createdTeams.map((team) => team.id)
+      );
     }
 
     let fixturesCreated = 0;

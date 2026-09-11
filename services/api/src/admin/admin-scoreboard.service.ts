@@ -20,6 +20,7 @@ import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
 import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
 import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
 import type { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
+import { linkTeamsToClubsQuietly } from "../academy/club-sync";
 import {
   academyFieldsForTeamSync,
   scoreboardTeamSlugForAcademy,
@@ -683,6 +684,8 @@ export class AdminScoreboardService {
         include: this.teamInclude,
       });
       this.statsCache = null;
+      // Tie this competition entry to its club, creating the profile if needed.
+      await linkTeamsToClubsQuietly(this.prisma, [team.id]);
       return this.presentTeamRow(team);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -765,23 +768,36 @@ export class AdminScoreboardService {
     return { ok: true };
   }
 
-  /** Sync scoreboard teams that share a slug with the given academy profile. */
+  /**
+   * Push a club profile's name, crest and city to every one of its teams, in
+   * every competition.
+   *
+   * Teams are the ones linked by academyId. An unlinked team whose slug matches
+   * the profile — the convention this relied on before academyId existed — is
+   * linked first, so the two stay in step. A team already linked to a different
+   * club is never touched.
+   */
   async syncTeamsFromAcademy(academy: {
+    id: string;
     slug: string;
     name: string;
     logoUrl: string | null;
     city: string | null;
   }) {
     const teamSlug = scoreboardTeamSlugForAcademy(academy);
-    if (!teamSlug) return { updated: 0, teamSlug: null };
+    const linkedBySlug = teamSlug
+      ? await this.prisma.sbTeam.updateMany({
+          where: { slug: teamSlug, academyId: null },
+          data: { academyId: academy.id },
+        })
+      : { count: 0 };
 
-    const fields = academyFieldsForTeamSync(academy);
     const result = await this.prisma.sbTeam.updateMany({
-      where: { slug: teamSlug },
-      data: fields,
+      where: { academyId: academy.id },
+      data: academyFieldsForTeamSync(academy),
     });
     if (result.count > 0) this.statsCache = null;
-    return { updated: result.count, teamSlug };
+    return { updated: result.count, linked: linkedBySlug.count, teamSlug };
   }
 
   async listScoreboardPlayers(q?: string) {
@@ -3229,12 +3245,13 @@ export class AdminScoreboardService {
     const logoIdx = header.indexOf("logo");
 
     let imported = 0;
+    const importedIds: string[] = [];
     for (const row of table.slice(1)) {
       const rawName = row[nameIdx];
       if (!rawName) continue;
       const name = normalizeClubName(rawName);
       const slug = slugIdx >= 0 && row[slugIdx] ? row[slugIdx] : slugify(name);
-      await this.prisma.sbTeam.upsert({
+      const upserted = await this.prisma.sbTeam.upsert({
         where: { competitionId_slug: { competitionId, slug } },
         create: {
           competitionId,
@@ -3248,9 +3265,13 @@ export class AdminScoreboardService {
           city: regionIdx >= 0 ? row[regionIdx] : undefined,
           logoUrl: logoIdx >= 0 ? row[logoIdx] : undefined,
         },
+        select: { id: true },
       });
+      importedIds.push(upserted.id);
       imported++;
     }
+    // One pass for the whole file rather than a club lookup per row.
+    await linkTeamsToClubsQuietly(this.prisma, importedIds);
     return { imported };
   }
 }

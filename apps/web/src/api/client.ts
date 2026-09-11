@@ -312,6 +312,17 @@ export type Academy = {
   teamSlug?: string | null;
   seed?: number | null;
   badges?: string[];
+  /** Every published competition the club has entered, newest season first. */
+  competitions?: ClubCompetitionEntry[];
+};
+
+/** One competition a club has entered; teamId opens that season's team page. */
+export type ClubCompetitionEntry = {
+  competitionId: string;
+  competitionName: string;
+  competitionSlug: string;
+  season: string;
+  teamId: string;
 };
 
 export type RegisterResponse = {

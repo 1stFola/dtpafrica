@@ -47,3 +47,13 @@ export function normalizeClubName(name: string): string {
   const official = CLUB_ALIASES[clubLookupKey(cleaned)];
   return official ?? cleaned;
 }
+
+/**
+ * Identity of a club across competitions: alias-resolved, then compared
+ * without case, spacing or punctuation. "Ikorodu City" and "IKORODU CITY FC"
+ * share one. "Ikorodu City FA" does not — add an alias above if a differently
+ * suffixed name is genuinely the same club.
+ */
+export function clubIdentityKey(name: string): string {
+  return clubLookupKey(normalizeClubName(name));
+}

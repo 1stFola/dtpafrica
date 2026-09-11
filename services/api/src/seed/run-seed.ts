@@ -14,6 +14,7 @@ import type { LegacyMatchMetricsDto } from "../admin/dto/calibration-player-info
 import { normalizePlayerAgeCategory } from "../players/age-category";
 import { syncPlayerAgeCategories } from "../../prisma/sync-player-age-categories";
 import { matchAcademyByClubName } from "../academy/academy-linking.util";
+import { syncTeamsToClubs } from "../academy/club-sync";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
@@ -889,6 +890,20 @@ Parents and guardians can register minors with consent workflows built for youth
         const updated = await syncPlayerAgeCategories(prisma);
         if (updated > 0) {
           console.log("Synced player age categories:", updated);
+        }
+      },
+    },
+    {
+      // Last, so every competition's teams exist before they are grouped into
+      // clubs. Additive: it links unlinked teams and never re-points a link.
+      name: "club-sync",
+      run: async () => {
+        const result = await syncTeamsToClubs(prisma);
+        console.log(
+          `Club sync: ${result.teamsLinked} team(s) linked, ${result.clubsCreated} club profile(s) created, ${result.clubsMatched} matched to existing profiles`
+        );
+        if (result.ambiguous.length) {
+          console.log("Club sync skipped (teams split across profiles):", result.ambiguous.join(", "));
         }
       },
     },

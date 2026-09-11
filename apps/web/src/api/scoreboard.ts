@@ -290,6 +290,16 @@ export type SbTeamDetail = SbTeamWithSquad & {
   logoUrl: string | null;
   competition: SbCompetition;
   matches: SbMatchListItem[];
+  /** The club this competition entry belongs to, when its profile is published. */
+  club?: { id: string; slug: string; name: string; logoUrl: string | null } | null;
+  /** The same club's entries in other competitions, newest season first. */
+  clubCompetitions?: Array<{
+    teamId: string;
+    competitionId: string;
+    competitionName: string;
+    competitionSlug: string;
+    season: string;
+  }>;
 };
 
 export type SbSearchResult = {

@@ -1302,6 +1302,23 @@ export class ScoreboardService {
       where: { id, competition: { isPublished: true } },
       include: {
         competition: true,
+        // The club this entry belongs to, and its entries in other competitions.
+        academy: {
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            logoUrl: true,
+            isPublished: true,
+            teams: {
+              where: { competition: { isPublished: true } },
+              select: {
+                id: true,
+                competition: { select: { id: true, name: true, slug: true, season: true } },
+              },
+            },
+          },
+        },
         squad: {
           orderBy: [{ shirtNumber: "asc" }, { displayName: "asc" }],
           include: {
@@ -1338,8 +1355,34 @@ export class ScoreboardService {
         .sort((a, b) => (b.kickoffAt?.getTime() ?? 0) - (a.kickoffAt?.getTime() ?? 0))
         .slice(0, 12)
     );
-    const { homeMatches, awayMatches, ...rest } = team;
-    return presentScoreboardPayload({ ...rest, matches });
+    const { homeMatches, awayMatches, academy, ...rest } = team;
+    /*
+     * A club enters each competition as a separate team, so this page used to
+     * show one competition in isolation. club + clubCompetitions tie the entry
+     * back to its club and to its other seasons. An unpublished club profile
+     * is not surfaced; the rest of the page is unaffected.
+     */
+    const club =
+      academy?.isPublished
+        ? { id: academy.id, slug: academy.slug, name: academy.name, logoUrl: academy.logoUrl }
+        : null;
+    const clubCompetitions = club
+      ? academy!.teams
+          .filter((entry) => entry.id !== team.id)
+          .map((entry) => ({
+            teamId: entry.id,
+            competitionId: entry.competition.id,
+            competitionName: entry.competition.name,
+            competitionSlug: entry.competition.slug,
+            season: entry.competition.season,
+          }))
+          .sort(
+            (a, b) =>
+              b.season.localeCompare(a.season, undefined, { numeric: true }) ||
+              a.competitionName.localeCompare(b.competitionName)
+          )
+      : [];
+    return presentScoreboardPayload({ ...rest, matches, club, clubCompetitions });
   }
 
   async search(query: string) {

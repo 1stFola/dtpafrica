@@ -113,6 +113,8 @@ model Academy {
 
   players        Player[]
   changeRequests AcademyChangeRequest[]
+  /// The club's teams across every competition it has entered.
+  teams          SbTeam[]
 
   @@map("academies")
 }
@@ -443,10 +445,14 @@ model SbTeam {
   groupKey      String?  @map("group_key")
   logoUrl       String?  @map("logo_url")
   city          String?
+  /// The club this entry belongs to. A club that enters several competitions
+  /// has one SbTeam per competition; they share an academyId.
+  academyId     String?  @map("academy_id")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   competition       SbCompetition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  academy           Academy?             @relation(fields: [academyId], references: [id], onDelete: SetNull)
   homeMatches       SbMatch[]            @relation("SbHomeTeam")
   awayMatches       SbMatch[]            @relation("SbAwayTeam")
   squad             SbTeamSquad[]
@@ -454,6 +460,7 @@ model SbTeam {
   matchSquadPlayers SbMatchSquadPlayer[]
 
   @@unique([competitionId, slug])
+  @@index([academyId])
   @@map("sb_teams")
 }
 

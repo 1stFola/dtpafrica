@@ -3257,6 +3257,36 @@ a.mvce-card:focus-visible {
   color: rgba(255, 255, 255, 0.72);
 }
 
+/* Competitions a club has entered, on the Clubs page. */
+.dtp-club-competitions {
+  margin-top: var(--dtp-space-3, 0.75rem);
+}
+
+.dtp-club-competitions ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dtp-club-competitions a {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font-size: var(--dtp-fs-sm);
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+}
+
+.dtp-club-competitions a:hover,
+.dtp-club-competitions a:focus-visible {
+  border-color: var(--dtp-lime);
+  color: var(--dtp-white, #fff);
+}
+
 /* ------------------------------------------------------------------ *
  * 11. Forms — Contact 113:4
  * ------------------------------------------------------------------ */
