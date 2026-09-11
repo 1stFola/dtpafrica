@@ -3257,34 +3257,334 @@ a.mvce-card:focus-visible {
   color: rgba(255, 255, 255, 0.72);
 }
 
-/* Competitions a club has entered, on the Clubs page. */
-.dtp-club-competitions {
-  margin-top: var(--dtp-space-3, 0.75rem);
+/* Partner Academies — hero search and chips as the Figma frame draws them:
+   a squared translucent field with a search glyph, and a blue "All" chip. */
+.dtp-academies .dtp-search {
+  width: min(820px, 100%);
+  padding: var(--dtp-space-3) var(--dtp-space-5);
+  border-color: rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.22);
 }
 
-.dtp-club-competitions ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.dtp-club-competitions a {
-  display: inline-block;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  font-size: var(--dtp-fs-sm);
+.dtp-search__icon {
+  display: grid;
+  flex: none;
   color: rgba(255, 255, 255, 0.85);
-  text-decoration: none;
 }
 
-.dtp-club-competitions a:hover,
-.dtp-club-competitions a:focus-visible {
-  border-color: var(--dtp-lime);
-  color: var(--dtp-white, #fff);
+.dtp-academies .dtp-chip {
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.dtp-academies .dtp-chip[aria-pressed="true"] {
+  background: rgba(9, 29, 244, 0.28);
+  border-color: var(--dtp-blue);
+  color: var(--dtp-white);
+  font-weight: 500;
+}
+
+/* Club cards — three across, the image banner with the club's name pill
+   riding its bottom edge, then the kind of club and the one main action. */
+.dtp-academy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1rem, 2.2vw, 31px);
+  max-width: 1112px;
+  margin-inline: auto;
+  scroll-margin-top: calc(var(--dtp-nav-top) + var(--dtp-nav-h) + var(--dtp-space-4));
+}
+
+.dtp-academy-card {
+  --club-accent: hsl(var(--club-hue, 230) 90% 58%);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: #0d0d0f;
+  color: var(--dtp-white);
+  transition: border-color var(--dtp-t-med), transform var(--dtp-t-med),
+    box-shadow var(--dtp-t-med);
+}
+
+.dtp-academy-card:hover,
+.dtp-academy-card:focus-within {
+  border-color: rgba(178, 224, 6, 0.55);
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px -22px var(--club-accent);
+}
+
+.dtp-academy-card__top {
+  position: relative;
+}
+
+.dtp-academy-card__media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 350 / 186;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 14px),
+    linear-gradient(135deg, hsl(var(--club-hue, 230) 88% 50%) 0%, hsl(calc(var(--club-hue, 230) + 28) 85% 26%) 100%);
+  color: var(--dtp-white);
+  cursor: pointer;
+}
+
+.dtp-academy-card__media:focus-visible {
+  outline: 2px solid var(--dtp-lime);
+  outline-offset: 2px;
+}
+
+.dtp-academy-card__backdrop {
+  position: absolute;
+  inset: -20%;
+  width: 140%;
+  height: 140%;
+  object-fit: cover;
+  filter: blur(22px) saturate(1.4) brightness(0.7);
+  opacity: 0.75;
+}
+
+/* Absolutely inset so the crest always fits inside the banner, whatever its
+   proportions: a percentage height on a grid item did not resolve. */
+.dtp-academy-card__logo {
+  position: absolute;
+  inset: 14% 15%;
+  width: 70%;
+  height: 72%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
+  transition: transform var(--dtp-t-med);
+}
+
+.dtp-academy-card__initials {
+  position: relative;
+  font-family: var(--dtp-font-display);
+  font-size: clamp(2.6rem, 5vw, 4rem);
+  line-height: 1;
+  color: var(--dtp-white);
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: transform var(--dtp-t-med);
+}
+
+.dtp-academy-card__media:hover .dtp-academy-card__logo,
+.dtp-academy-card__media:hover .dtp-academy-card__initials {
+  transform: scale(1.05);
+}
+
+.dtp-academy-card__flag {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 0.5rem;
+  font-weight: 800;
+  color: var(--dtp-white);
+}
+
+.dtp-academy-card__flag--ng {
+  background: linear-gradient(90deg, #008751 0 33.4%, #fff 33.4% 66.6%, #008751 66.6% 100%);
+}
+
+.dtp-academy-card__name {
+  position: absolute;
+  left: 16px;
+  bottom: 0;
+  max-width: calc(100% - 64px);
+  margin: 0;
+  padding: 4px 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--dtp-radius-pill);
+  background: #000;
+  font-family: var(--dtp-font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateY(50%);
+}
+
+.dtp-academy-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 26px 14px 10px;
+}
+
+.dtp-academy-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dtp-space-3);
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 0.75rem;
+  color: var(--dtp-grey-soft);
+}
+
+.dtp-academy-card__view {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dtp-lime);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dtp-academy-card__view:hover,
+.dtp-academy-card__view:focus-visible {
+  text-decoration: underline;
+}
+
+.dtp-academy-card__cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dtp-space-3);
+  width: 100%;
+  margin-top: auto;
+  padding: 14px 0 4px;
+  border: 0;
+  background: none;
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dtp-academy-card__arrow {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--dtp-lime);
+  color: var(--dtp-ink);
+  transition: transform var(--dtp-t-fast);
+}
+
+.dtp-academy-card__cta:hover .dtp-academy-card__arrow,
+.dtp-academy-card__cta:focus-visible .dtp-academy-card__arrow {
+  transform: translateX(3px);
+}
+
+.dtp-academy-card__cta:focus-visible {
+  outline: 2px solid var(--dtp-lime);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/* Loading cards keep the real card's shape so nothing shifts on arrival. */
+.dtp-academy-card--skeleton .dtp-academy-card__media {
+  background: linear-gradient(90deg, #17171b, #242429, #17171b);
+  background-size: 200% 100%;
+  animation: dtp-academy-shimmer 1.2s linear infinite;
+  cursor: default;
+}
+
+.dtp-academy-card__line {
+  display: block;
+  width: 45%;
+  height: 10px;
+  border-radius: 4px;
+  background: #1f1f24;
+}
+
+.dtp-academy-card__line--wide {
+  width: 70%;
+  height: 14px;
+  margin-top: 22px;
+}
+
+@keyframes dtp-academy-shimmer {
+  to { background-position: -200% 0; }
+}
+
+/* Page bars under the grid; the current page is the light one. */
+.dtp-academy-pager {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: clamp(2rem, 4vw, 48px);
+}
+
+.dtp-academy-pager__bar {
+  width: clamp(56px, 7vw, 104px);
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dtp-radius-pill);
+  background: #4a4a4f;
+  cursor: pointer;
+  transition: background var(--dtp-t-fast);
+}
+
+.dtp-academy-pager__bar:hover { background: #77777d; }
+.dtp-academy-pager__bar[aria-current="page"] { background: #d4d4d8; }
+
+.dtp-academy-pager__bar:focus-visible {
+  outline: 2px solid var(--dtp-lime);
+  outline-offset: 3px;
+}
+
+.dtp-academy-partner {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--dtp-space-4);
+  margin-top: clamp(1.5rem, 3vw, 32px);
+}
+
+.dtp-academy-partner__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--dtp-white);
+}
+
+@media (max-width: 960px) {
+  .dtp-academy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .dtp-academy-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dtp-academy-card,
+  .dtp-academy-card__logo,
+  .dtp-academy-card__initials,
+  .dtp-academy-card__arrow {
+    transition: none;
+  }
+  .dtp-academy-card:hover,
+  .dtp-academy-card:focus-within {
+    transform: none;
+  }
+  .dtp-academy-card--skeleton .dtp-academy-card__media {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -6441,17 +6741,10 @@ a.mvce-card:focus-visible {
 }
 
 /* ------------------------------------------------------------------ *
- * Clubs page: actions, and the "View club" showcase modal.            *
+ * Clubs page: the "View club" showcase modal.                         *
  * --club-hue is set per club (stableHue of its slug) so every modal   *
  * carries that club's own accent over the shared dark-glass shell.    *
  * ------------------------------------------------------------------ */
-
-.dtp-club-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--dtp-space-3);
-}
 
 .club-sc-backdrop {
   position: fixed;

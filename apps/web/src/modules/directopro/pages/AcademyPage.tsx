@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { apiGet, isAbortError, type Academy, type ClubCompetitionEntry } from "../../../api/client";
+import { apiGet, isAbortError, type Academy } from "../../../api/client";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { HIGH_FETCH_PRIORITY } from "../../../utils/imgPriority";
-import { clubInitials } from "../../../utils/identity";
+import { clubInitials, stableHue } from "../../../utils/identity";
 import { ClubShowcaseModal } from "../components/ClubShowcaseModal";
 
 type QuickFilter = "" | "ex-intl" | "lagos";
 
-function locationLabel(academy: Academy) {
-  return [academy.city, academy.country].filter(Boolean).join(", ");
-}
+/** Four rows of three, as the Figma grid lays out one page. */
+const PAGE_SIZE = 12;
 
 function loginHint(academy: Academy) {
   return academy.loginUsername ?? academy.teamSlug ?? academy.slug;
@@ -23,11 +22,54 @@ function loginHref(academy: Academy) {
   return `/academy/login?redirect=${encodeURIComponent(redirect)}&slug=${encodeURIComponent(hint)}`;
 }
 
-function competitionTitle(entry: ClubCompetitionEntry) {
-  const year = entry.season.match(/\d{4}/)?.[0] ?? "";
-  return !year || entry.competitionName.includes(year)
-    ? entry.competitionName
-    : `${entry.competitionName} ${year}`;
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        d="m21 21-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"
+      />
+    </svg>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5 12h14m-6-6 6 6-6 6"
+      />
+    </svg>
+  );
+}
+
+/** The round flag on the card image. Nigeria is drawn; elsewhere shows its initials. */
+function CountryFlag({ country }: { country: string | null }) {
+  const name = country?.trim();
+  if (!name) return null;
+  const nigeria = /nigeria/i.test(name);
+  return (
+    <span
+      className={`dtp-academy-card__flag${nigeria ? " dtp-academy-card__flag--ng" : ""}`}
+      role="img"
+      aria-label={name}
+      title={name}
+    >
+      {nigeria ? null : name.slice(0, 2).toUpperCase()}
+    </span>
+  );
 }
 
 function matchesSearch(academy: Academy, query: string) {
@@ -71,6 +113,8 @@ export function AcademyPage() {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("q") ?? "");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("");
   const debouncedSearch = useDebouncedValue(searchQuery, 200);
+  const [page, setPage] = useState(0);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -119,6 +163,30 @@ export function AcademyPage() {
     });
   }, [academies, debouncedSearch, quickFilter]);
 
+  useEffect(() => setPage(0), [debouncedSearch, quickFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageItems = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  // Scroll back to the top of the grid once the new page has rendered; doing
+  // it on click aimed at where the grid sat before a shorter page shrank it.
+  const scrollOnPageChange = useRef(false);
+  useEffect(() => {
+    if (!scrollOnPageChange.current) return;
+    scrollOnPageChange.current = false;
+    gridRef.current?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
+  }, [currentPage]);
+
+  const goToPage = (index: number) => {
+    if (index === currentPage) return;
+    scrollOnPageChange.current = true;
+    setPage(index);
+  };
+
   const hasFilters = Boolean(debouncedSearch.trim() || quickFilter);
   const showLagosChip = hasLagosAcademies(academies);
 
@@ -133,7 +201,7 @@ export function AcademyPage() {
       : `${filtered.length} of ${academies.length} matching`;
 
   return (
-    <div className="dtp-page">
+    <div className="dtp-page dtp-academies">
       {/* Hero — Figma 115:615 */}
       <section className="dtp-hero">
         <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-clubs.webp" alt="" aria-hidden="true" />
@@ -149,6 +217,9 @@ export function AcademyPage() {
           </p>
 
           <label className="dtp-search" style={{ marginTop: "var(--dtp-space-6)" }}>
+            <span className="dtp-search__icon">
+              <SearchIcon />
+            </span>
             <span className="sr-only">Search academies</span>
             <input
               className="dtp-search__input"
@@ -189,13 +260,13 @@ export function AcademyPage() {
             )}
           </div>
 
-          <p className="dtp-row__meta" aria-live="polite" style={{ marginTop: "var(--dtp-space-4)" }}>
+          <p className="sr-only" aria-live="polite">
             {countLabel}
           </p>
         </div>
       </section>
 
-      {/* Directory rows */}
+      {/* Club cards — Figma: three across, twelve to a page */}
       <section className="dtp-band dtp-band--ink">
         <div className="dtp-shell">
           {error && (
@@ -204,102 +275,130 @@ export function AcademyPage() {
             </p>
           )}
 
-          <div className="dtp-rows" aria-busy={loading}>
+          <div ref={gridRef} className="dtp-academy-grid" aria-busy={loading}>
             {loading &&
-              Array.from({ length: 4 }).map((_, idx) => (
-                <article key={`skeleton-${idx}`} className="dtp-row" aria-hidden="true">
-                  <div className="dtp-row__media" />
-                  <div>
-                    <p className="dtp-row__kicker">Loading</p>
-                    <h2 className="dtp-row__title">&nbsp;</h2>
+              Array.from({ length: 6 }).map((_, idx) => (
+                <article
+                  key={`skeleton-${idx}`}
+                  className="dtp-academy-card dtp-academy-card--skeleton"
+                  aria-hidden="true"
+                >
+                  <div className="dtp-academy-card__top">
+                    <div className="dtp-academy-card__media" />
                   </div>
-                  <span />
+                  <div className="dtp-academy-card__body">
+                    <span className="dtp-academy-card__line" />
+                    <span className="dtp-academy-card__line dtp-academy-card__line--wide" />
+                  </div>
                 </article>
               ))}
 
             {!loading &&
-              filtered.map((academy) => {
-                const location = locationLabel(academy);
-                const badges = academy.badges ?? ["Partner Academy"];
-                const competitions = academy.competitions ?? [];
+              pageItems.map((academy) => {
+                const isPartner = Boolean(academy.loginUsername);
+                const kicker = academy.badges?.[0] ?? (isPartner ? "Partner Academy" : "Club");
+                const hue = { "--club-hue": String(stableHue(academy.slug)) } as CSSProperties;
 
                 return (
-                  <article key={academy.id} className="dtp-row">
-                    <div className="dtp-row__media">
-                      {academy.logoUrl ? (
-                        <img src={academy.logoUrl} alt="" loading="lazy" />
-                      ) : (
-                        <span
-                          aria-hidden="true"
-                          style={{
-                            display: "grid",
-                            placeItems: "center",
-                            width: "100%",
-                            height: "100%",
-                            fontFamily: "var(--dtp-font-display)",
-                            fontSize: "2.5rem",
-                            color: "var(--dtp-lime)",
-                          }}
-                        >
-                          {clubInitials(academy.name)}
-                        </span>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="dtp-row__kicker">{badges[0] ?? "Partner Academy"}</p>
-                      <h2 className="dtp-row__title">{academy.name}</h2>
-                      {location && <p className="dtp-row__meta">{location}</p>}
-                      {academy.description && (
-                        <p className="dtp-row__meta" style={{ marginTop: "var(--dtp-space-2)" }}>
-                          {academy.description}
-                        </p>
-                      )}
-                      {academy.seed != null && (
-                        <p className="dtp-row__kicker" style={{ marginTop: "var(--dtp-space-2)" }}>
-                          Seed #{academy.seed}
-                        </p>
-                      )}
-                      {competitions.length > 0 && (
-                        <div className="dtp-club-competitions">
-                          <p className="dtp-row__kicker">
-                            {competitions.length === 1
-                              ? "1 competition"
-                              : `${competitions.length} competitions`}
-                          </p>
-                          <ul>
-                            {competitions.map((entry) => (
-                              <li key={entry.competitionId}>
-                                <Link to={`/scoreboard/team/${entry.teamId}`}>
-                                  {competitionTitle(entry)}
-                                </Link>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="dtp-club-actions">
-                      {/* Only partners have a login; every club can be viewed. */}
-                      {academy.loginUsername && (
-                        <Link to={loginHref(academy)} className="dtp-btn dtp-btn--secondary">
-                          Partner login
-                        </Link>
-                      )}
+                  <article key={academy.id} className="dtp-academy-card" style={hue}>
+                    <div className="dtp-academy-card__top">
                       <button
                         type="button"
-                        className="dtp-btn"
+                        className="dtp-academy-card__media"
                         onClick={() => openClub(academy)}
                         aria-haspopup="dialog"
+                        aria-label={`View ${academy.name}`}
                       >
-                        View club
+                        {academy.logoUrl ? (
+                          <>
+                            {/* A blurred copy fills the banner behind the crest. */}
+                            <img
+                              className="dtp-academy-card__backdrop"
+                              src={academy.logoUrl}
+                              alt=""
+                              aria-hidden="true"
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                            />
+                            <img
+                              className="dtp-academy-card__logo"
+                              src={academy.logoUrl}
+                              alt=""
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                            />
+                          </>
+                        ) : (
+                          <span className="dtp-academy-card__initials" aria-hidden="true">
+                            {clubInitials(academy.name)}
+                          </span>
+                        )}
+                        <CountryFlag country={academy.country} />
                       </button>
+                      <h2 className="dtp-academy-card__name" title={academy.name}>
+                        {academy.name}
+                      </h2>
+                    </div>
+
+                    <div className="dtp-academy-card__body">
+                      <div className="dtp-academy-card__meta">
+                        <span>
+                          {kicker}
+                          {academy.city ? ` · ${academy.city}` : ""}
+                        </span>
+                        {/* Partners' main action is their portal; the club view stays one click away. */}
+                        {isPartner && (
+                          <button
+                            type="button"
+                            className="dtp-academy-card__view"
+                            onClick={() => openClub(academy)}
+                            aria-haspopup="dialog"
+                          >
+                            View club
+                          </button>
+                        )}
+                      </div>
+
+                      {isPartner ? (
+                        <Link to={loginHref(academy)} className="dtp-academy-card__cta">
+                          Enter Club Portal
+                          <span className="dtp-academy-card__arrow">
+                            <ArrowIcon />
+                          </span>
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          className="dtp-academy-card__cta"
+                          onClick={() => openClub(academy)}
+                          aria-haspopup="dialog"
+                        >
+                          View Club
+                          <span className="dtp-academy-card__arrow">
+                            <ArrowIcon />
+                          </span>
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
               })}
           </div>
+
+          {!loading && pageCount > 1 && (
+            <nav className="dtp-academy-pager" aria-label="Academy pages">
+              {Array.from({ length: pageCount }).map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className="dtp-academy-pager__bar"
+                  aria-label={`Page ${index + 1} of ${pageCount}`}
+                  aria-current={index === currentPage ? "page" : undefined}
+                  onClick={() => goToPage(index)}
+                />
+              ))}
+            </nav>
+          )}
 
           {selectedClub && (
             <ClubShowcaseModal
@@ -322,10 +421,8 @@ export function AcademyPage() {
             </div>
           )}
 
-          <div className="dtp-band__actions" style={{ flexDirection: "column", gap: "var(--dtp-space-4)" }}>
-            <p style={{ margin: 0, fontSize: "1.25rem", fontWeight: 500, color: "var(--dtp-white)" }}>
-              Interested in partnering?
-            </p>
+          <div className="dtp-band__actions dtp-academy-partner">
+            <p className="dtp-academy-partner__title">Interested In Partnering?</p>
             <Link to="/contact" className="dtp-btn dtp-btn--ghost">
               Contact Us
             </Link>
