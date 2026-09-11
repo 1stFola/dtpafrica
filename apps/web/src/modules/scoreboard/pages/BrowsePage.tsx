@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  fetchCompetitionTallies,
   fetchCompetitions,
   searchScoreboard,
   type SbCompetition,
@@ -10,7 +11,13 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { isAbortError } from "../../../api/client";
 import { MatchCard } from "../components/MatchCard";
-import { CompetitionCrest } from "../components/CompetitionCrest";
+import { CompetitionCrest, competitionHue } from "../components/CompetitionCrest";
+import { SplitFlapCounter } from "../components/SplitFlapCounter";
+
+/** How often the card counters re-read teams and goals while the tab is visible. */
+const TALLY_POLL_MS = 20_000;
+
+type Tally = { teams: number; goals: number };
 
 const COMPETITION_DESCRIPTION =
   "Competition hub with standings, fixtures, results, leaders, totals, and team-by-team navigation.";
@@ -132,7 +139,11 @@ function SearchIcon() {
   );
 }
 
-function CompetitionGridCard({ card }: { card: FeaturedCard }) {
+function CompetitionGridCard({ card, tally }: { card: FeaturedCard; tally?: Tally }) {
+  // The counters take the competition's crest hue, so each board matches its card.
+  const style = card.id
+    ? ({ "--sb-comp-hue": String(competitionHue(card.id)) } as CSSProperties)
+    : undefined;
   const inner = (
     <>
       {/* Crest leads the card so competitions are identifiable before reading. */}
@@ -157,22 +168,30 @@ function CompetitionGridCard({ card }: { card: FeaturedCard }) {
         ))}
       </div>
       <p className="dbx-comp-card__desc">{COMPETITION_DESCRIPTION}</p>
-      <div className="dbx-comp-card__foot">
-        <span className="dbx-foot-marker">
-          <PinIcon />
-          {card.geo.split("·")[1]?.trim() ?? card.geo}
-        </span>
-        <span className="dbx-foot-marker">
-          <TrophyIcon />
-          {card.geo.split("·")[0]?.trim() ?? "Competition"}
-        </span>
+      <div className={`dbx-comp-card__foot${tally ? " dbx-comp-card__foot--board" : ""}`}>
+        <div className="dbx-comp-card__markers">
+          <span className="dbx-foot-marker">
+            <PinIcon />
+            {card.geo.split("·")[1]?.trim() ?? card.geo}
+          </span>
+          <span className="dbx-foot-marker">
+            <TrophyIcon />
+            {card.geo.split("·")[0]?.trim() ?? "Competition"}
+          </span>
+        </div>
+        {tally && (
+          <div className="dbx-comp-card__board">
+            <SplitFlapCounter value={tally.teams} label="Teams" />
+            <SplitFlapCounter value={tally.goals} label="Goals" minDigits={3} />
+          </div>
+        )}
       </div>
     </>
   );
 
   if (card.slug) {
     return (
-      <Link to={`/scoreboard/competition/${card.slug}`} className="dbx-comp-card">
+      <Link to={`/scoreboard/competition/${card.slug}`} className="dbx-comp-card" style={style}>
         {inner}
       </Link>
     );
@@ -197,6 +216,8 @@ export function BrowsePage() {
   const [competitions, setCompetitions] = useState<SbCompetition[]>([]);
   const [competitionsLoading, setCompetitionsLoading] = useState(true);
   const [competitionsError, setCompetitionsError] = useState<string | null>(null);
+  // Teams and goals per competition id, for the card counters.
+  const [tallies, setTallies] = useState<Record<string, Tally>>({});
 
   const debouncedQuery = useDebouncedValue(query, 350);
 
@@ -218,11 +239,49 @@ export function BrowsePage() {
       .then((data) => {
         setCompetitions(data);
         setCompetitionsError(null);
+        setTallies((prev) => {
+          const next = { ...prev };
+          for (const c of data) next[c.id] = { teams: c._count?.teams ?? 0, goals: c.goals ?? 0 };
+          return next;
+        });
       })
       .catch((e) => {
         if (!isAbortError(e)) setCompetitionsError(String(e));
       })
       .finally(() => setCompetitionsLoading(false));
+  }, []);
+
+  // Keep the counters current: poll while the tab is visible, and catch up the
+  // moment it becomes visible again. A failed poll keeps the last counts.
+  useEffect(() => {
+    let controller: AbortController | null = null;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      controller?.abort();
+      controller = new AbortController();
+      fetchCompetitionTallies(controller.signal)
+        .then((rows) =>
+          setTallies((prev) => {
+            const changed = rows.some(
+              (row) =>
+                prev[row.competitionId]?.teams !== row.teams ||
+                prev[row.competitionId]?.goals !== row.goals
+            );
+            if (!changed) return prev;
+            const next = { ...prev };
+            for (const row of rows) next[row.competitionId] = { teams: row.teams, goals: row.goals };
+            return next;
+          })
+        )
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, TALLY_POLL_MS);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      controller?.abort();
+    };
   }, []);
 
   // Debounced search that keeps the URL query (q) in sync.
@@ -305,7 +364,7 @@ export function BrowsePage() {
       return (
         <div className="dbx-comp-grid">
           {searchedCompetitionCards.map((card) => (
-            <CompetitionGridCard key={card.key} card={card} />
+            <CompetitionGridCard key={card.key} card={card} tally={card.id ? tallies[card.id] : undefined} />
           ))}
         </div>
       );
@@ -330,7 +389,7 @@ export function BrowsePage() {
     return (
       <div className="dbx-comp-grid">
         {featuredCards.map((card) => (
-          <CompetitionGridCard key={card.key} card={card} />
+          <CompetitionGridCard key={card.key} card={card} tally={card.id ? tallies[card.id] : undefined} />
         ))}
       </div>
     );

@@ -744,14 +744,60 @@ export class ScoreboardService {
   }
 
   async competitions() {
-    const rows = await this.prisma.sbCompetition.findMany({
-      where: { isPublished: true },
-      orderBy: { name: "asc" },
-      include: {
-        _count: { select: { teams: true, matches: true } },
+    const [rows, goals] = await Promise.all([
+      this.prisma.sbCompetition.findMany({
+        where: { isPublished: true },
+        orderBy: { name: "asc" },
+        include: {
+          _count: { select: { teams: true, matches: true } },
+        },
+      }),
+      this.goalsByCompetition(),
+    ]);
+    return presentScoreboardPayload(
+      rows.map((row) => ({ ...row, goals: goals.get(row.id) ?? 0 }))
+    );
+  }
+
+  /**
+   * Teams and goals per published competition, for the Browse card counters.
+   * Small and uncached so the cards can poll it and tick over as goals go in.
+   */
+  async competitionTallies() {
+    const [rows, goals] = await Promise.all([
+      this.prisma.sbCompetition.findMany({
+        where: { isPublished: true },
+        select: { id: true, _count: { select: { teams: true } } },
+      }),
+      this.goalsByCompetition(),
+    ]);
+    return rows.map((row) => ({
+      competitionId: row.id,
+      teams: row._count.teams,
+      goals: goals.get(row.id) ?? 0,
+    }));
+  }
+
+  /**
+   * Goals scored per competition: the scorelines of its published matches that
+   * have kicked off, so a live goal counts the moment the score changes.
+   */
+  private async goalsByCompetition(): Promise<Map<string, number>> {
+    const sums = await this.prisma.sbMatch.groupBy({
+      by: ["competitionId"],
+      where: {
+        isPublished: true,
+        status: { in: [...LIVE_STATUSES, "finished"] },
+        competition: { isPublished: true },
       },
+      _sum: { homeScore: true, awayScore: true },
     });
-    return presentScoreboardPayload(rows);
+    return new Map(
+      sums.map((row) => [
+        row.competitionId,
+        (row._sum.homeScore ?? 0) + (row._sum.awayScore ?? 0),
+      ])
+    );
   }
 
   /**
