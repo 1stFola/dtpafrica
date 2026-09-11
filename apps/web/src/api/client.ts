@@ -114,7 +114,12 @@ export type PublicPositionFit = {
   confidence: number;
 };
 
-export type PublicPlayerProfile = FeaturedPlayer & {
+/**
+ * The public profile deliberately carries no age group. Omitting it here makes
+ * any reintroduction on the profile page a compile error rather than a quiet
+ * regression; FeaturedPlayer keeps it for the featured-players listing.
+ */
+export type PublicPlayerProfile = Omit<FeaturedPlayer, "ageGroup"> & {
   isSkeleton?: false;
   stats?: PublicProfileStats;
   club?: string | null;
@@ -307,7 +312,65 @@ export type Academy = {
   teamSlug?: string | null;
   seed?: number | null;
   badges?: string[];
+  /** Every published competition the club has entered, newest season first. */
+  competitions?: ClubCompetitionEntry[];
 };
+
+/** One competition a club has entered; teamId opens that season's team page. */
+export type ClubCompetitionEntry = {
+  competitionId: string;
+  competitionName: string;
+  competitionSlug: string;
+  season: string;
+  teamId: string;
+};
+
+export type ClubShowcaseTeamRef = { name: string; shortName: string | null; logoUrl: string | null };
+
+export type ClubShowcaseMatch = {
+  matchId: string;
+  matchSlug: string;
+  kickoffAt: string | null;
+  status: string;
+  competitionName: string;
+  season: string;
+  home: ClubShowcaseTeamRef;
+  away: ClubShowcaseTeamRef;
+  score: { home: number; away: number };
+  clubSide: "home" | "away";
+  /** From the club's point of view; null until the match is finished. */
+  outcome: "W" | "D" | "L" | null;
+};
+
+/** Everything the "View club" modal shows, from GET /home/academies/:slug/showcase. */
+export type ClubShowcase = {
+  club: Academy;
+  record: {
+    played: number;
+    won: number;
+    drawn: number;
+    lost: number;
+    goalsFor: number;
+    goalsAgainst: number;
+    cleanSheets: number;
+  };
+  recentResults: ClubShowcaseMatch[];
+  upcoming: ClubShowcaseMatch[];
+  topScorers: Array<{ name: string; goals: number; slug: string | null; photoUrl: string | null }>;
+  players: Array<{
+    name: string;
+    position: string | null;
+    shirtNumber: number | null;
+    slug: string | null;
+    photoUrl: string | null;
+    overallRating: number | null;
+  }>;
+  squadSize: number;
+};
+
+export function fetchClubShowcase(slug: string, signal?: AbortSignal) {
+  return apiGet<ClubShowcase>(`/home/academies/${encodeURIComponent(slug)}/showcase`, signal);
+}
 
 export type RegisterResponse = {
   id: string;

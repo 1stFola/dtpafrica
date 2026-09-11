@@ -8,6 +8,13 @@ const CLUB_ALIASES: Readonly<Record<string, string>> = {
 
   "ikorodu city": "Ikorodu City FC",
   "ikorodu city fc": "Ikorodu City FC",
+  // Entered as "Ikorodu City FA" in Scout To Pro; confirmed to be the same club.
+  "ikorodu city fa": "Ikorodu City FC",
+
+  // Entered as "Athletic FC" in Scout To Pro and "Athletic SC" in Coal City;
+  // confirmed to be one club. "Athletic SC" is the name on its crest.
+  "athletic fc": "Athletic SC",
+  "athletic sc": "Athletic SC",
 
   "sgfc athletics": "SGFC Athletics SC",
   "sgfc athletic sc": "SGFC Athletics SC",
@@ -46,4 +53,14 @@ export function normalizeClubName(name: string): string {
 
   const official = CLUB_ALIASES[clubLookupKey(cleaned)];
   return official ?? cleaned;
+}
+
+/**
+ * Identity of a club across competitions: alias-resolved, then compared
+ * without case, spacing or punctuation. "Ikorodu City" and "IKORODU CITY FC"
+ * share one. "Ikorodu City FA" does not — add an alias above if a differently
+ * suffixed name is genuinely the same club.
+ */
+export function clubIdentityKey(name: string): string {
+  return clubLookupKey(normalizeClubName(name));
 }

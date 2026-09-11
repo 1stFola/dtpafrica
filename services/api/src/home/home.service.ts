@@ -30,7 +30,9 @@ import {
   playerMatchMetricsToLegacyMetrics,
   readCalibrationMetricsFromBenchmark,
 } from "../sip/legacy-match-metrics-mapper";
+import { buildClubShowcase } from "../academy/club-showcase";
 import {
+  CLUB_TEAMS_SELECT,
   buildSeedByTeamSlug,
   presentAcademyListing,
 } from "../academy/academy-directory.util";
@@ -216,9 +218,11 @@ export class HomeService {
       careerAppearances,
       careerMinutes,
       careerCleanSheets,
-      age,
-      ageGroup,
-      dateOfBirth,
+      // Pulled out so they never reach ...profile: the public profile carries
+      // no age group or age-derived data.
+      age: _age,
+      ageGroup: _ageGroup,
+      dateOfBirth: _dateOfBirth,
       ...profile
     } = player;
 
@@ -237,7 +241,6 @@ export class HomeService {
     return {
       isSkeleton: false as const,
       ...profile,
-      ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
       minutesPlayed: this.resolveMinutesPlayed(
         careerMinutes,
         aggregatedMetrics[0]?.minutesPlayed
@@ -268,7 +271,6 @@ export class HomeService {
         this.buildScoutingSummary({
           displayName: profile.displayName,
           position: profile.positionPrimary,
-          ageGroup: normalizePlayerAgeCategory({ age, ageGroup, dateOfBirth }),
           overallRating: profile.overallRating,
           offensiveRating: profile.offensiveRating,
           defensiveRating: profile.defensiveRating,
@@ -418,16 +420,52 @@ export class HomeService {
     const rows = await this.prisma.academy.findMany({
       where: { isPublished: true },
       orderBy: { name: "asc" },
+      include: { teams: CLUB_TEAMS_SELECT },
     });
-    return rows.map((row) => presentAcademyListing(row, seedByTeamSlug));
+    return rows.map(({ teams, ...row }) => presentAcademyListing(row, seedByTeamSlug, teams));
   }
 
+  /**
+   * Public, unauthenticated. Returns the same shape as the listing. This used
+   * to return the raw row, which exposed passwordHash — and the private contact
+   * fields the listing deliberately omits — to anyone who knew a slug.
+   */
   async academyBySlug(slug: string) {
     const academy = await this.prisma.academy.findFirst({
       where: { slug, isPublished: true },
+      include: { teams: CLUB_TEAMS_SELECT },
     });
     if (!academy) throw new NotFoundException("Academy not found");
-    return academy;
+    const comp = await this.prisma.sbCompetition.findUnique({
+      where: { slug: "ex-internationals-cup-2026" },
+      include: { teams: true },
+    });
+    const { teams, ...row } = academy;
+    return presentAcademyListing(row, buildSeedByTeamSlug(comp?.teams ?? []), teams);
+  }
+
+  /**
+   * Everything the public "View club" modal shows: the club's listing plus its
+   * record, form, fixtures, scorers and players across every published
+   * competition it has entered.
+   */
+  async clubShowcase(slug: string) {
+    const academy = await this.prisma.academy.findFirst({
+      where: { slug, isPublished: true },
+      include: { teams: CLUB_TEAMS_SELECT },
+    });
+    if (!academy) throw new NotFoundException("Club not found");
+    const comp = await this.prisma.sbCompetition.findUnique({
+      where: { slug: "ex-internationals-cup-2026" },
+      include: { teams: true },
+    });
+    const { teams, ...row } = academy;
+    const club = presentAcademyListing(row, buildSeedByTeamSlug(comp?.teams ?? []), teams);
+    const showcase = await buildClubShowcase(
+      this.prisma,
+      teams.filter((team) => team.competition.isPublished).map((team) => team.id)
+    );
+    return { club, ...showcase };
   }
 
   async staticContent(keys?: string) {
@@ -1050,7 +1088,6 @@ export class HomeService {
   private buildScoutingSummary(args: {
     displayName: string;
     position: string;
-    ageGroup?: string | null;
     overallRating?: number | null;
     offensiveRating?: number | null;
     defensiveRating?: number | null;
@@ -1068,8 +1105,6 @@ export class HomeService {
       (args.offensiveRating ?? 0) >= (args.defensiveRating ?? 0)
         ? "attacking contribution"
         : "defensive reliability";
-    const ageBand = args.ageGroup ? `${args.ageGroup} ` : "";
-
-    return `${args.displayName} profiles as a ${ageBand}${tier} at ${args.position}, with the clearest current signal in ${strongest}. Scouts should validate the rating against recent match footage, tactical context, and benchmark fit.`;
+    return `${args.displayName} profiles as a ${tier} at ${args.position}, with the clearest current signal in ${strongest}. Scouts should validate the rating against recent match footage, tactical context, and benchmark fit.`;
   }
 }

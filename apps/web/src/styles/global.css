@@ -12486,8 +12486,14 @@ a {
 
 .admin-sb-dropzone-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+/* Squad list upload on /admin/scoreboard/squads, between filters and table. */
+.admin-sb-squad-csv {
+  margin-bottom: 1rem;
 }
 
 .admin-sb-csv-ingest-dropzone {
@@ -13874,6 +13880,160 @@ a.dbx-comp-card:hover {
 
 .dbx-foot-marker svg {
   color: var(--color-primary);
+}
+
+/* —— Card counters: teams and goals on a split-flap board —— */
+.dbx-comp-card__markers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.dbx-comp-card__foot--board {
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.dbx-comp-card__foot--board .dbx-comp-card__markers {
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dbx-comp-card__board {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.sf-counter {
+  --sf-hue: var(--sb-comp-hue, 215);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* The housing: a recessed slot in the card's own slate, rimmed in its hue. */
+.sf-counter__digits {
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #060a13, #0b1220);
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 0 1px hsl(var(--sf-hue) 55% 55% / 0.32),
+    0 8px 16px -10px hsl(var(--sf-hue) 80% 55% / 0.7);
+}
+
+.sf-digit {
+  position: relative;
+  display: block;
+  width: 1.3rem;
+  height: 1.85rem;
+  font-family: var(--dtp-font-ui, system-ui, sans-serif);
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #f1f5f9;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  perspective: 12rem;
+}
+
+.sf-half,
+.sf-flap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  overflow: hidden;
+}
+
+.sf-half--top,
+.sf-flap--top {
+  top: 0;
+  border-radius: 3px 3px 0 0;
+  transform-origin: 50% 100%;
+  background: linear-gradient(180deg, hsl(var(--sf-hue) 22% 25%), hsl(var(--sf-hue) 24% 19%));
+}
+
+.sf-half--bottom,
+.sf-flap--bottom {
+  bottom: 0;
+  border-radius: 0 0 3px 3px;
+  transform-origin: 50% 0;
+  background: linear-gradient(180deg, hsl(var(--sf-hue) 24% 16%), hsl(var(--sf-hue) 26% 12%));
+}
+
+/* Each half shows its half of a full-height card. */
+.sf-half > span,
+.sf-flap > span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 200%;
+  display: grid;
+  place-items: center;
+}
+
+.sf-half--top > span,
+.sf-flap--top > span {
+  top: 0;
+}
+
+.sf-half--bottom > span,
+.sf-flap--bottom > span {
+  bottom: 0;
+}
+
+.sf-flap {
+  z-index: 2;
+}
+
+/* Two-phase flip: the old top falls away, then the new bottom drops into place. */
+.sf-flap--top {
+  animation: sf-fall-top calc(var(--sf-step, 280ms) / 2) ease-in both;
+}
+
+.sf-flap--bottom {
+  animation: sf-fall-bottom calc(var(--sf-step, 280ms) / 2) ease-out calc(var(--sf-step, 280ms) / 2) both;
+}
+
+@keyframes sf-fall-top {
+  from { transform: rotateX(0deg); filter: brightness(1); }
+  to { transform: rotateX(-90deg); filter: brightness(0.5); }
+}
+
+@keyframes sf-fall-bottom {
+  from { transform: rotateX(90deg); filter: brightness(1.6); }
+  to { transform: rotateX(0deg); filter: brightness(1); }
+}
+
+/* The hinge the cards turn on, with a glint of the competition hue. */
+.sf-digit::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 0.5px);
+  z-index: 3;
+  height: 1px;
+  background: rgba(2, 6, 15, 0.9);
+  box-shadow: 0 1px 0 hsl(var(--sf-hue) 70% 65% / 0.22);
+}
+
+.sf-counter__label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: hsl(var(--sf-hue) 70% 74%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-flap {
+    display: none;
+  }
 }
 
 /* —— Team card crest alignment —— */
@@ -16893,6 +17053,28 @@ a.dbx-comp-card:hover {
 .sbt-hero__comp-link {
   text-decoration: none;
   transition: opacity 0.15s ease;
+}
+
+/* The same club's entries in other competitions. */
+.sbt-hero__club {
+  margin-top: 0.9rem;
+}
+
+.sbt-hero__club-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.sbt-hero__club-label a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sbt-hero__club .sbt-hero__geo {
+  margin-top: 0.4rem;
 }
 
 .sbt-hero__comp-link:hover {

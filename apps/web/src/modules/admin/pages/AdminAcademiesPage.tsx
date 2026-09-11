@@ -101,6 +101,7 @@ export function AdminAcademiesPage() {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("");
   const [reviews, setReviews] = useState<AdminAcademyChangeRequest[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const debouncedSearch = useDebouncedValue(searchQuery, 200);
 
   const load = useCallback(() => {
@@ -236,6 +237,29 @@ export function AdminAcademiesPage() {
     }
   };
 
+  const syncClubs = async () => {
+    setSyncing(true);
+    try {
+      const result = await adminApi.syncClubsFromTeams();
+      const parts = [
+        `${result.teamsLinked} team${result.teamsLinked === 1 ? "" : "s"} linked`,
+        `${result.clubsCreated} new club${result.clubsCreated === 1 ? "" : "s"}`,
+        `${result.clubsMatched} matched to existing profiles`,
+      ];
+      toast.success(`Club sync: ${parts.join(", ")}`);
+      if (result.ambiguous.length) {
+        toast.info(
+          `Left alone (teams already split across profiles): ${result.ambiguous.join(", ")}`
+        );
+      }
+      load();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <section className="admin-page admin-sb-section admin-academies-page">
       <AdminPageHeader
@@ -243,13 +267,24 @@ export function AdminAcademiesPage() {
         description="Manage partner academies, club portal logins, and the authenticated directory."
         crumbs={[{ label: "Academies" }]}
         actions={
-          <button
-            type="button"
-            className="admin-inline-button admin-inline-button--primary"
-            onClick={startNew}
-          >
-            New academy
-          </button>
+          <>
+            <button
+              type="button"
+              className="admin-inline-button"
+              onClick={() => void syncClubs()}
+              disabled={syncing}
+              title="Link every ScoreBoard team to its club profile, creating any that are missing"
+            >
+              {syncing ? "Syncing clubs…" : "Sync clubs from ScoreBoard"}
+            </button>
+            <button
+              type="button"
+              className="admin-inline-button admin-inline-button--primary"
+              onClick={startNew}
+            >
+              New academy
+            </button>
+          </>
         }
       />
 

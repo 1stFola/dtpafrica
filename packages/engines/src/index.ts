@@ -30,7 +30,7 @@ export * from "./scoreboard/competition-types";
 export * from "./scoreboard/competition-templates";
 export * from "./scoreboard/generate-fixtures";
 export * from "./scoreboard/group-standings";
-export { normalizeClubName } from "./scoreboard/normalize-club-name";
+export { clubIdentityKey, normalizeClubName } from "./scoreboard/normalize-club-name";
 export {
   normalizePlayerName,
   playerLookupKey,

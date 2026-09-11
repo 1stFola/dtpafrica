@@ -5,7 +5,8 @@ import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 type Props = {
   label: string;
   hint: string;
-  onImport: (csv: string) => Promise<void>;
+  /** Resolve with a message to show it instead of the generic success toast. */
+  onImport: (csv: string) => Promise<string | void>;
   onExport: () => Promise<string>;
   disabled?: boolean;
   disabledReason?: string;
@@ -14,14 +15,25 @@ type Props = {
 };
 
 function downloadTextFile(fileName: string, text: string) {
+  /*
+   * The byte-order mark makes Excel read the file as UTF-8, so accented names
+   * (e.g. "Musa Babà") survive a round trip. Every importer strips it again.
+   */
   const url = URL.createObjectURL(
-    new Blob([text], { type: "text/csv;charset=utf-8" })
+    new Blob(["\uFEFF", text], { type: "text/csv;charset=utf-8" })
   );
   const a = document.createElement("a");
   a.href = url;
   a.download = fileName;
+  /*
+   * Attached to the document, and revoked on a later tick: Firefox ignores a
+   * click on a detached anchor, and revoking synchronously can cancel the
+   * download before it has started.
+   */
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export function CsvDropzone({
@@ -43,11 +55,13 @@ export function CsvDropzone({
       toast.error(disabledReason ?? "Select the required context before importing.");
       return;
     }
+    // A second drop mid-import would start a concurrent import of the same team.
+    if (busy) return;
     setBusy(true);
     try {
       const csv = await file.text();
-      await onImport(csv);
-      toast.success(`Imported ${file.name}`);
+      const message = await onImport(csv);
+      toast.success(message || `Imported ${file.name}`);
     } catch (e) {
       toast.error(formatAdminScoreboardError(e));
     } finally {

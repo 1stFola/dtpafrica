@@ -17,13 +17,19 @@ export type AcademyTeamSyncFields = {
   city?: string | null;
 };
 
-/** Build SbTeam update payload from academy profile fields. */
+/**
+ * Build SbTeam update payload from academy profile fields.
+ *
+ * An empty crest or city on the profile is left out rather than written as
+ * null: saving a club profile without a logo used to wipe the logo from every
+ * one of its teams, in every competition.
+ */
 export function academyFieldsForTeamSync(
   academy: Pick<Academy, "name" | "logoUrl" | "city">
 ): AcademyTeamSyncFields {
   return {
     name: normalizeClubName(academy.name),
-    logoUrl: academy.logoUrl,
-    city: academy.city,
+    ...(academy.logoUrl?.trim() ? { logoUrl: academy.logoUrl } : {}),
+    ...(academy.city?.trim() ? { city: academy.city } : {}),
   };
 }

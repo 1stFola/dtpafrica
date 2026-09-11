@@ -436,7 +436,15 @@ export const adminScoreboardApi = {
   },
 
   importSquadCsv: (teamId: string, csv: string) =>
-    sbFetch<{ imported: number }>(`/admin/scoreboard/teams/${teamId}/squad/import`, {
+    sbFetch<{
+      imported: number;
+      created: number;
+      updated: number;
+      /** Non-blocking notes, e.g. a shirt number used twice. */
+      warnings: string[];
+      teamId: string;
+      competitionId: string;
+    }>(`/admin/scoreboard/teams/${teamId}/squad/import`, {
       method: "POST",
       body: JSON.stringify({ csv }),
     }),

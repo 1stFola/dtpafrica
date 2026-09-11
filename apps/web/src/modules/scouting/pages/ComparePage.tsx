@@ -17,7 +17,6 @@ import {
 import {
   buildPerformanceRadarScores,
   initialsFromName,
-  resolvePlayerAge,
   resolvePlayerClub,
 } from "../utils/strongXiPlayerModalUtils";
 import { withCalibratedMetrics } from "../utils/resolveCalibratedPlayerMetrics";
@@ -250,10 +249,6 @@ export function ComparePage() {
                     {resolvePositionFullLabel(player.positionPrimary)}
                   </p>
                   <dl className="scouting-compare__card-meta">
-                    <div>
-                      <dt>Category</dt>
-                      <dd>{resolvePlayerAge(player)}</dd>
-                    </div>
                     <div>
                       <dt>Club</dt>
                       <dd>{resolvePlayerClub(player)}</dd>

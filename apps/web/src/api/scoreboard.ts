@@ -49,6 +49,15 @@ export type SbCompetition = {
   logoUrl?: string | null;
   description: string | null;
   _count?: { teams: number; matches: number };
+  /** Goals across the competition's published matches (list endpoint only). */
+  goals?: number;
+};
+
+/** Live counters for a Browse card, from GET /scoreboard/competitions/tallies. */
+export type SbCompetitionTally = {
+  competitionId: string;
+  teams: number;
+  goals: number;
 };
 
 export type SbCompetitionHubTeam = SbTeamRef & {
@@ -290,6 +299,16 @@ export type SbTeamDetail = SbTeamWithSquad & {
   logoUrl: string | null;
   competition: SbCompetition;
   matches: SbMatchListItem[];
+  /** The club this competition entry belongs to, when its profile is published. */
+  club?: { id: string; slug: string; name: string; logoUrl: string | null } | null;
+  /** The same club's entries in other competitions, newest season first. */
+  clubCompetitions?: Array<{
+    teamId: string;
+    competitionId: string;
+    competitionName: string;
+    competitionSlug: string;
+    season: string;
+  }>;
 };
 
 export type SbSearchResult = {
@@ -315,6 +334,12 @@ export type SbTeamListItem = SbTeamRef & {
 
 export function fetchCompetitions() {
   return apiGet<SbCompetition[]>("/scoreboard/competitions");
+}
+
+export function fetchCompetitionTallies(signal?: AbortSignal) {
+  return apiGet<SbCompetitionTally[]>("/scoreboard/competitions/tallies", signal, {
+    cache: "no-store",
+  });
 }
 
 export function fetchTeams(signal?: AbortSignal) {

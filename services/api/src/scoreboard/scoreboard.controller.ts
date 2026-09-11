@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Inject,
   Param,
   Patch,
@@ -33,6 +34,13 @@ export class ScoreboardController {
   @Get("competitions")
   competitions() {
     return this.sb.competitions();
+  }
+
+  // Declared before competitions/:slug so "tallies" is not read as a slug.
+  @Get("competitions/tallies")
+  @Header("Cache-Control", "no-store")
+  competitionTallies() {
+    return this.sb.competitionTallies();
   }
 
   @Get("competitions/:competitionId/hub")

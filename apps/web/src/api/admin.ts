@@ -24,8 +24,26 @@ function playersQueryKey(query: AdminPlayerListQuery): string {
   return params.toString();
 }
 
+export type AdminClubSyncResult = {
+  teamsScanned: number;
+  teamsLinked: number;
+  clubsCreated: number;
+  clubsMatched: number;
+  /** Clubs skipped because their teams already point at different profiles. */
+  ambiguous: string[];
+};
+
 function invalidateAdminPlayersCache() {
   invalidateCachePrefix("admin:players:");
+}
+
+/*
+ * The academy list is cached for two minutes. Without this every create,
+ * update or delete — and a club sync — stayed invisible until the cache
+ * expired, because the page reloads from the same cache.
+ */
+function invalidateAdminAcademiesCache() {
+  invalidateCachePrefix("admin:academies");
 }
 
 export function getAdminApiKey(): string | null {
@@ -731,18 +749,35 @@ export const adminApi = {
     ),
   academyGet: (id: string) =>
     adminFetch<AdminAcademy>(`/admin/academies/${id}`),
-  academyCreate: (body: AdminAcademyInput) =>
-    adminFetch<AdminAcademy>("/admin/academies", {
+  academyCreate: async (body: AdminAcademyInput) => {
+    const row = await adminFetch<AdminAcademy>("/admin/academies", {
       method: "POST",
       body: JSON.stringify(body),
-    }),
-  academyUpdate: (id: string, body: AdminAcademyInput) =>
-    adminFetch<AdminAcademy>(`/admin/academies/${id}`, {
+    });
+    invalidateAdminAcademiesCache();
+    return row;
+  },
+  academyUpdate: async (id: string, body: AdminAcademyInput) => {
+    const row = await adminFetch<AdminAcademy>(`/admin/academies/${id}`, {
       method: "PUT",
       body: JSON.stringify(body),
-    }),
-  academyDelete: (id: string) =>
-    adminFetch(`/admin/academies/${id}`, { method: "DELETE" }),
+    });
+    invalidateAdminAcademiesCache();
+    return row;
+  },
+  academyDelete: async (id: string) => {
+    const result = await adminFetch(`/admin/academies/${id}`, { method: "DELETE" });
+    invalidateAdminAcademiesCache();
+    return result;
+  },
+  /** Link every ScoreBoard team to its club profile, creating any that are missing. */
+  syncClubsFromTeams: async () => {
+    const result = await adminFetch<AdminClubSyncResult>("/admin/academies/sync-clubs", {
+      method: "POST",
+    });
+    invalidateAdminAcademiesCache();
+    return result;
+  },
   academyChangeRequests: (status = "pending") => {
     const qs = status ? `?status=${encodeURIComponent(status)}` : "";
     return adminFetch<AdminAcademyChangeRequest[]>(`/admin/academy-change-requests${qs}`);

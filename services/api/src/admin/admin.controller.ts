@@ -275,6 +275,17 @@ export class AdminController {
     return this.academies.create(dto);
   }
 
+  /**
+   * Link every ScoreBoard team to its club profile, creating published
+   * profiles for clubs that have none. Additive and repeatable; the same
+   * pass runs at the end of every seed and after each team is created.
+   */
+  @Post("academies/sync-clubs")
+  @RequirePermissions("academies.write")
+  syncClubsFromTeams() {
+    return this.academies.syncClubsFromTeams();
+  }
+
   @Put("academies/:id")
   @RequirePermissions("academies.write")
   updateAcademy(@Param("id") id: string, @Body() dto: UpsertAcademyDto) {

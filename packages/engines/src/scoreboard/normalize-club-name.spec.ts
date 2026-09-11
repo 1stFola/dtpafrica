@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as allure from "allure-js-commons";
-import { normalizeClubName } from "./normalize-club-name";
+import { clubIdentityKey, normalizeClubName } from "./normalize-club-name";
 
 describe("normalizeClubName", () => {
   it("maps known alias 'ikorodu city' to official name", async () => {
@@ -60,5 +60,44 @@ describe("normalizeClubName", () => {
     await allure.feature("Scoreboard Utilities");
 
     expect(normalizeClubName("")).toBe("");
+  });
+});
+
+describe("clubIdentityKey", () => {
+  it("treats spellings of one club as the same identity", () => {
+    const key = clubIdentityKey("Box 2 Box FC");
+    expect(clubIdentityKey("BOX 2 BOX FC")).toBe(key);
+    expect(clubIdentityKey("  box  2 box fc ")).toBe(key);
+  });
+
+  it("resolves known aliases before comparing", () => {
+    expect(clubIdentityKey("Ikorodu City")).toBe(clubIdentityKey("IKORODU CITY FC"));
+    expect(clubIdentityKey("Bethel FC")).toBe(clubIdentityKey("FC Bethel Sporting"));
+  });
+
+  it("ignores punctuation such as an apostrophe", () => {
+    expect(clubIdentityKey("OBA’S FC7")).toBe(clubIdentityKey("Obas FC7"));
+  });
+
+  // Conservative on purpose: a different suffix is not assumed to be the same
+  // club, because a wrong merge would publish one club's history under another.
+  it("keeps differently suffixed names apart unless aliased", () => {
+    expect(clubIdentityKey("Lagos Stars FA")).not.toBe(clubIdentityKey("Lagos Stars FC"));
+  });
+
+  // Confirmed to be one club each; see CLUB_ALIASES.
+  it("treats Ikorodu City FA and Ikorodu City FC as one club", () => {
+    expect(clubIdentityKey("IKORODU CITY FA")).toBe(clubIdentityKey("Ikorodu City FC"));
+    expect(normalizeClubName("IKORODU CITY FA")).toBe("Ikorodu City FC");
+  });
+
+  it("treats Athletic FC and Athletic SC as one club named Athletic SC", () => {
+    expect(clubIdentityKey("ATHLETIC FC")).toBe(clubIdentityKey("Athletic SC"));
+    expect(normalizeClubName("ATHLETIC FC")).toBe("Athletic SC");
+    expect(normalizeClubName("athletic sc")).toBe("Athletic SC");
+  });
+
+  it("returns an empty key for a blank name", () => {
+    expect(clubIdentityKey("   ")).toBe("");
   });
 });

@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AcademyAuthService } from "../academy-auth/academy-auth.service";
 import { sanitizeAcademy } from "../academy-auth/academy-auth.util";
 import { PrismaService } from "../prisma/prisma.service";
+import { syncTeamsToClubs } from "../academy/club-sync";
 import { AdminScoreboardService } from "./admin-scoreboard.service";
 import { UpsertAcademyDto } from "./dto/upsert-academy.dto";
 
@@ -37,6 +38,10 @@ export class AdminAcademiesService {
     @Inject(AcademyAuthService) private readonly academyAuth: AcademyAuthService,
     @Inject(AdminScoreboardService) private readonly scoreboard: AdminScoreboardService
   ) {}
+
+  syncClubsFromTeams() {
+    return syncTeamsToClubs(this.prisma);
+  }
 
   async list() {
     const rows = await this.prisma.academy.findMany({

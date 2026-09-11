@@ -14,6 +14,7 @@ import type { LegacyMatchMetricsDto } from "../admin/dto/calibration-player-info
 import { normalizePlayerAgeCategory } from "../players/age-category";
 import { syncPlayerAgeCategories } from "../../prisma/sync-player-age-categories";
 import { matchAcademyByClubName } from "../academy/academy-linking.util";
+import { syncTeamsToClubs } from "../academy/club-sync";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
@@ -288,7 +289,7 @@ export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult>
           benchmarkMetadata: SEED_BENCHMARK_METADATA,
           mediaItems: SEED_MEDIA_ITEMS,
           scoutingSummary:
-            "ALLI O. SANNI profiles as an Under 18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
+            "ALLI O. SANNI profiles as a pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
         };
 
         const player = await prisma.player.upsert({
@@ -326,7 +327,7 @@ export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult>
             benchmarkMetadata: SEED_BENCHMARK_METADATA,
             mediaItems: SEED_MEDIA_ITEMS,
             scoutingSummary:
-              "ALLI O. SANNI profiles as an Under 18 pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
+              "ALLI O. SANNI profiles as a pro-ready attacking midfielder with standout ball control, passing range, and creative decision-making. Scouts should validate the benchmark fit with recent match footage and tournament-level opposition.",
           },
         });
         seedPlayerId = player.id;
@@ -889,6 +890,20 @@ Parents and guardians can register minors with consent workflows built for youth
         const updated = await syncPlayerAgeCategories(prisma);
         if (updated > 0) {
           console.log("Synced player age categories:", updated);
+        }
+      },
+    },
+    {
+      // Last, so every competition's teams exist before they are grouped into
+      // clubs. Additive: it links unlinked teams and never re-points a link.
+      name: "club-sync",
+      run: async () => {
+        const result = await syncTeamsToClubs(prisma);
+        console.log(
+          `Club sync: ${result.teamsLinked} team(s) linked, ${result.clubsCreated} club profile(s) created, ${result.clubsMatched} matched to existing profiles`
+        );
+        if (result.ambiguous.length) {
+          console.log("Club sync skipped (teams split across profiles):", result.ambiguous.join(", "));
         }
       },
     },

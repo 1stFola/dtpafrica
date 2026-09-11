@@ -335,6 +335,12 @@ function TeamPageSkeleton() {
   );
 }
 
+/** "Coal City Scouting Tournament" + "2026" -> "... 2026", unless the name already has the year. */
+function competitionSeasonTitle(name: string, season: string): string {
+  const year = season.match(/\d{4}/)?.[0];
+  return !year || name.includes(year) ? name : `${name} ${year}`;
+}
+
 export function TeamPage() {
   const { id } = useParams<{ id: string }>();
   const [team, setTeam] = useState<SbTeamDetail | null>(null);
@@ -654,6 +660,28 @@ export function TeamPage() {
               {competitionLabel}
             </Link>
           </div>
+          {team.club && (team.clubCompetitions?.length ?? 0) > 0 && (
+            <div className="sbt-hero__club" aria-label={`${team.club.name} in other competitions`}>
+              <span className="sbt-hero__club-label">
+                <Link to={`/partners/academies?club=${encodeURIComponent(team.club.slug)}`}>
+                  {team.club.name}
+                </Link>{" "}
+                also competed in
+              </span>
+              <div className="sbt-hero__geo">
+                {team.clubCompetitions!.map((entry) => (
+                  <Link
+                    key={entry.teamId}
+                    to={`/scoreboard/team/${entry.teamId}`}
+                    className="sbc-pill sbt-hero__comp-link"
+                  >
+                    <TrophyIcon />
+                    {competitionSeasonTitle(entry.competitionName, entry.season)}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </header>
 

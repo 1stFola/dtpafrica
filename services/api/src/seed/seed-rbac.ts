@@ -5,27 +5,20 @@ import {
   DEFAULT_ROLES,
 } from "../admin/rbac/permissions.catalog";
 
-
 /**
- * RBAC seed.
+ * RBAC seed. Additive only: it guarantees that the permission catalogue and the
+ * default roles EXIST, and never touches a role that is already in the
+ * database, so the permissions an admin has granted or revoked through the UI
+ * survive every seed. Only a role this run creates receives the catalogue
+ * defaults; super_admin is additionally topped up (see below).
  *
- * Incremental mode — the mode used against live data — only guarantees that the
- * permission catalogue and the default roles EXIST. A role that is already in
- * the database keeps exactly the permissions an admin granted it: the seed must
- * never overwrite live RBAC. Only a role this run actually creates receives the
- * catalogue defaults.
- *
- * This previously reset every non-super_admin role on every run, so each
- * incremental seed silently reverted permission changes made through the admin
- * UI. `AdminRbacService.syncCatalog` already had the non-destructive shape;
- * this matches it.
- *
- * A full seed bootstraps an empty database, so there it still resets each
- * non-super_admin role to the catalogue defaults.
+ * This previously reset every non-super_admin role on every run, silently
+ * reverting permission changes. `AdminRbacService.syncCatalog` already had the
+ * non-destructive shape; this matches it.
  */
 export async function seedRbac(prisma: PrismaClient) {
   // Catalogue rows are system-defined and are not editable from the admin UI,
-  // so refreshing them is safe in either mode.
+  // so refreshing them is safe.
   for (const perm of ADMIN_PERMISSIONS) {
     await prisma.adminPermission.upsert({
       where: { slug: perm.slug },

@@ -10,6 +10,15 @@ import { displayMinute, type useMatchClock } from "./useMatchClock";
 import { EventGrid } from "./EventGrid";
 import { soundFor, useFeedbackPrefs } from "./useFeedbackPrefs";
 import { useUISound } from "./useUISound";
+import {
+  SHOOTOUT_TYPES,
+  nextShootoutSide,
+  normalizeShootoutSides,
+  shootoutIsDecided,
+  shootoutRound,
+  shootoutScore,
+  shootoutStartingSide,
+} from "./shootout";
 
 /**
  * Event types that need a second player before they can be logged: the incoming
@@ -20,61 +29,8 @@ const SECOND_PLAYER_PROMPT: Record<string, { title: string; label: string; allow
   goal: { title: "Goal", label: "Assist — jersey number", allowNone: "Solo Effort" },
 };
 
-const SHOOTOUT_TYPES = new Set(["shootout_goal", "shootout_miss"]);
-
 function labelFor(type: string): string {
   return EVENT_LABELS[type] ?? type.replace(/_/g, " ");
-}
-
-function shootoutScore(events: RecordedEvent[]): Record<Side, number> {
-  return events.reduce(
-    (score, event) => {
-      if (event.type === "shootout_goal") score[event.side] += 1;
-      return score;
-    },
-    { home: 0, away: 0 }
-  );
-}
-
-function shootoutCounts(events: RecordedEvent[]): Record<Side, number> {
-  return events.reduce(
-    (count, event) => {
-      if (SHOOTOUT_TYPES.has(event.type)) count[event.side] += 1;
-      return count;
-    },
-    { home: 0, away: 0 }
-  );
-}
-
-function nextShootoutSide(events: RecordedEvent[]): Side {
-  const kicks = events.filter((event) => SHOOTOUT_TYPES.has(event.type));
-  return kicks.length % 2 === 0 ? "home" : "away";
-}
-
-function normalizeShootoutSides(events: RecordedEvent[]): RecordedEvent[] {
-  let shootoutIndex = 0;
-  return events.map((event) => {
-    if (!SHOOTOUT_TYPES.has(event.type)) return event;
-    const side: Side = shootoutIndex % 2 === 0 ? "home" : "away";
-    shootoutIndex += 1;
-    return event.side === side ? event : { ...event, side };
-  });
-}
-
-function shootoutIsDecided(events: RecordedEvent[]): boolean {
-  const score = shootoutScore(events);
-  const count = shootoutCounts(events);
-  const homeInitialRemaining = Math.max(0, 5 - count.home);
-  const awayInitialRemaining = Math.max(0, 5 - count.away);
-
-  if (count.home <= 5 && count.away <= 5) {
-    if (score.home > score.away + awayInitialRemaining) return true;
-    if (score.away > score.home + homeInitialRemaining) return true;
-  }
-
-  const initialComplete = count.home >= 5 && count.away >= 5;
-  const completeSuddenDeathPair = initialComplete && count.home === count.away;
-  return completeSuddenDeathPair && score.home !== score.away;
 }
 
 /**
@@ -134,6 +90,9 @@ export function MatchEventsTab({
   });
   const [shootoutPlayerNumber, setShootoutPlayerNumber] = useState("");
   const [shootoutOutcome, setShootoutOutcome] = useState<"goal" | "miss">("goal");
+  // Closing the shootout modal only hides it; the shootout itself carries on
+  // and still ends automatically once it is decided.
+  const [shootoutDismissed, setShootoutDismissed] = useState(false);
 
   const { prefs } = useFeedbackPrefs();
   const playSound = useUISound({ enabled: prefs.sound, intensity: prefs.intensity });
@@ -251,10 +210,6 @@ export function MatchEventsTab({
     half: clock.half,
   });
 
-  const appendEvent = (event: RecordedEvent) => {
-    onChange({ events: [...events, event] });
-  };
-
   const finishWithEvents = (baseEvents: RecordedEvent[]) => {
     const t = systemMinute();
     const next: RecordedEvent = {
@@ -281,20 +236,29 @@ export function MatchEventsTab({
   };
 
   const startShootout = () => {
-    const alreadyStarted = events.some((event) => event.type === "penalty_shootout");
+    setShootoutDismissed(false);
+    clock.startPenaltyShootout();
+  };
+
+  /*
+   * The operator names the team that kicks first. It is recorded as the side of
+   * the penalty_shootout marker, and every kick after it alternates from there.
+   * Previously the marker was always "home", so home silently kicked first.
+   */
+  const chooseShootoutStarter = (side: Side) => {
+    if (shootoutStartingSide(events)) return;
     const t = systemMinute();
     const marker: RecordedEvent = {
       id: `penalty_shootout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: "penalty_shootout",
       minute: t.minute,
       addedMinute: t.addedMinute,
-      side: "home",
+      side,
       playerNumber: null,
       secondaryPlayerNumber: null,
       half: t.half,
     };
-    if (!alreadyStarted) appendEvent(marker);
-    clock.startPenaltyShootout();
+    onChange({ events: normalizeShootoutSides([...events, marker]) });
   };
 
   const logShootoutKick = () => {
@@ -322,11 +286,9 @@ export function MatchEventsTab({
 
   const shootoutKicks = events.filter((event) => SHOOTOUT_TYPES.has(event.type));
   const shootoutCurrentScore = shootoutScore(events);
-  const shootoutCurrentCounts = shootoutCounts(events);
   const shootoutNextSide = nextShootoutSide(events);
-  const shootoutRound =
-    Math.max(shootoutCurrentCounts.home, shootoutCurrentCounts.away) +
-    (shootoutNextSide === "home" ? 1 : 0);
+  const shootoutCurrentRound = shootoutRound(events);
+  const shootoutStarter = shootoutStartingSide(events);
 
   return (
     <div className="mcx-events">
@@ -665,76 +627,125 @@ export function MatchEventsTab({
         </div>
       )}
 
-      {clock.phase === "penalty_shootout" && editable && (
-        <div className="mcx-prompt" role="dialog" aria-modal="true">
+      {clock.phase === "penalty_shootout" && editable && shootoutDismissed && (
+        <div className="mcx-callout mcx-callout--action">
+          <span>
+            Penalty shootout in progress
+            {shootoutStarter ? ` · ${shootoutCurrentScore.home}–${shootoutCurrentScore.away}` : ""}
+          </span>
+          <button
+            type="button"
+            className="mcx-btn mcx-btn--primary"
+            onClick={() => setShootoutDismissed(false)}
+          >
+            Resume penalty shootout
+          </button>
+        </div>
+      )}
+
+      {clock.phase === "penalty_shootout" && editable && !shootoutDismissed && (
+        <div className="mcx-prompt" role="dialog" aria-modal="true" aria-labelledby="mcx-shootout-title">
           <div className="mcx-prompt__card mcx-prompt__card--wide">
-            <h3>Penalty shootout</h3>
-            <p className="muted">
-              Teams alternate automatically. The game ends when the shootout is decided.
-            </p>
-            <div className="mcx-shootout-board" aria-label="Penalty shootout score">
-              <span>{teamFor("home")}</span>
-              <strong>{shootoutCurrentScore.home}</strong>
-              <span className="mcx-shootout-board__sep">–</span>
-              <strong>{shootoutCurrentScore.away}</strong>
-              <span>{teamFor("away")}</span>
-            </div>
-            <div
-              className="mcx-shootout-next"
-              style={{ borderColor: kits[shootoutNextSide] }}
-            >
-              <span>Next penalty</span>
-              <strong>{teamFor(shootoutNextSide)}</strong>
-              <em>
-                Kick {shootoutKicks.length + 1}
-                {shootoutRound > 0 ? ` · round ${shootoutRound}` : ""}
-              </em>
-            </div>
-            <label className="mcx-prompt__label">
-              <span>Penalty taker jersey number</span>
-              <input
-                type="number"
-                min={1}
-                max={99}
-                inputMode="numeric"
-                value={shootoutPlayerNumber}
-                onChange={(event) => setShootoutPlayerNumber(event.target.value)}
-                autoFocus
-              />
-            </label>
-            <div className="mcx-shootout-choice" role="radiogroup" aria-label="Penalty outcome">
-              <label className="mcx-shootout-choice__option is-goal">
-                <input
-                  type="radio"
-                  name="shootout-outcome"
-                  checked={shootoutOutcome === "goal"}
-                  onChange={() => setShootoutOutcome("goal")}
-                />
-                <span>Goal</span>
-              </label>
-              <label className="mcx-shootout-choice__option is-miss">
-                <input
-                  type="radio"
-                  name="shootout-outcome"
-                  checked={shootoutOutcome === "miss"}
-                  onChange={() => setShootoutOutcome("miss")}
-                />
-                <span>Miss</span>
-              </label>
-            </div>
-            <div className="mcx-prompt__actions">
+            <div className="mcx-prompt__header">
+              <h3 id="mcx-shootout-title">Penalty shootout</h3>
               <button
                 type="button"
-                className="mcx-btn"
-                disabled={shootoutPlayerNumber.trim() === ""}
-                onClick={logShootoutKick}
+                className="mcx-prompt__close"
+                aria-label="Close penalty shootout"
+                onClick={() => setShootoutDismissed(true)}
               >
-                Record penalty
-              </button>
-              <button type="button" className="mcx-btn mcx-btn--primary" onClick={logFullTime}>
-                End Game
+                ×
               </button>
             </div>
+
+            {!shootoutStarter ? (
+              <>
+                <p className="muted">
+                  Which team takes the first penalty? Kicks then alternate automatically.
+                </p>
+                <div className="mcx-prompt__actions mcx-prompt__actions--stack">
+                  {(["home", "away"] as const).map((side) => (
+                    <button
+                      key={side}
+                      type="button"
+                      className="mcx-btn mcx-shootout-starter"
+                      style={{ borderColor: kits[side] }}
+                      onClick={() => chooseShootoutStarter(side)}
+                    >
+                      <span>{teamFor(side)}</span>
+                      <small>Takes the first kick</small>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="muted">
+                  {teamFor(shootoutStarter)} kicked first. Teams alternate automatically and the
+                  game ends when the shootout is decided.
+                </p>
+                <div className="mcx-shootout-board" aria-label="Penalty shootout score">
+                  <span>{teamFor("home")}</span>
+                  <strong>{shootoutCurrentScore.home}</strong>
+                  <span className="mcx-shootout-board__sep">–</span>
+                  <strong>{shootoutCurrentScore.away}</strong>
+                  <span>{teamFor("away")}</span>
+                </div>
+                <div
+                  className="mcx-shootout-next"
+                  style={{ borderColor: kits[shootoutNextSide] }}
+                >
+                  <span>Next penalty</span>
+                  <strong>{teamFor(shootoutNextSide)}</strong>
+                  <em>
+                    Kick {shootoutKicks.length + 1}
+                    {shootoutCurrentRound > 0 ? ` · round ${shootoutCurrentRound}` : ""}
+                  </em>
+                </div>
+                <label className="mcx-prompt__label">
+                  <span>Penalty taker jersey number</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    inputMode="numeric"
+                    value={shootoutPlayerNumber}
+                    onChange={(event) => setShootoutPlayerNumber(event.target.value)}
+                    autoFocus
+                  />
+                </label>
+                <div className="mcx-shootout-choice" role="radiogroup" aria-label="Penalty outcome">
+                  <label className="mcx-shootout-choice__option is-goal">
+                    <input
+                      type="radio"
+                      name="shootout-outcome"
+                      checked={shootoutOutcome === "goal"}
+                      onChange={() => setShootoutOutcome("goal")}
+                    />
+                    <span>Goal</span>
+                  </label>
+                  <label className="mcx-shootout-choice__option is-miss">
+                    <input
+                      type="radio"
+                      name="shootout-outcome"
+                      checked={shootoutOutcome === "miss"}
+                      onChange={() => setShootoutOutcome("miss")}
+                    />
+                    <span>Miss</span>
+                  </label>
+                </div>
+                <div className="mcx-prompt__actions">
+                  <button
+                    type="button"
+                    className="mcx-btn mcx-btn--primary"
+                    disabled={shootoutPlayerNumber.trim() === ""}
+                    onClick={logShootoutKick}
+                  >
+                    Record penalty
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
