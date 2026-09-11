@@ -2820,6 +2820,70 @@ a.mvce-card:focus-visible {
   color: var(--dtp-white);
 }
 
+/* Match Centre (Figma 191:433): the title alone, indented to the tab labels,
+   then the tabs, then the section line with its Watch Live button beneath the
+   rule, spanning its full width. */
+.scoreboard-module .sb-section__head--mc {
+  margin-bottom: 0;
+  /* The frame's icon sits 31px in from the rule's left end. */
+  padding-inline: 31px;
+}
+
+/* Stat cards end y803 and "Match Centre" is centred on y889. */
+.scoreboard-module .sb-stats + .sb-section {
+  margin-top: clamp(0px, 1.7vw, 24px);
+}
+
+.scoreboard-module .sb-section__head--mc h2 {
+  margin: 0;
+}
+
+.scoreboard-module .sb-section__head--mc + .sb-tabs {
+  margin-top: clamp(1.25rem, 2.95vw, 42px);
+}
+
+.sb-section__intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dtp-space-3) var(--dtp-space-5);
+  /* Centred on y1075 in the frame, 87px under the rule. This margin collapses
+     with the tab bar's own bottom margin, so it carries the whole gap. */
+  margin: clamp(1.5rem, 4.8vw, 68px) 0 clamp(1.5rem, 3vw, 40px);
+}
+
+.sb-section__intro p {
+  margin: 0;
+  font-size: clamp(0.875rem, 1.1vw, 1rem);
+  color: var(--dtp-white);
+}
+
+/* Figma: 128x39, a dark blue outline at 8px corners over a faint blue wash. */
+.sb-section__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid rgba(9, 29, 244, 0.6);
+  border-radius: 8px;
+  background: rgba(9, 29, 244, 0.08);
+  color: var(--dtp-white);
+  font-family: var(--dtp-font-ui);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--dtp-t-fast), border-color var(--dtp-t-fast);
+}
+
+.sb-section__action:hover,
+.sb-section__action:focus-visible {
+  border-color: var(--dtp-blue);
+  background: rgba(9, 29, 244, 0.25);
+}
+
 /* The only other Montserrat holdout on the hub. */
 .scoreboard-module .sb-mc-score__vs {
   font-family: var(--dtp-font-ui);
@@ -2947,13 +3011,20 @@ a.mvce-card:focus-visible {
    Text labels on a 5px rule, NOT pills. Inter 500 / 18.8px / lh 22.8, active
    #ffffff and resting #a4a4a4, 47px apart. The rule is #2e3034 with a #4cccf3
    indicator under the active label. */
+/* The rule is painted inside the bar rather than as a border: the bar scrolls
+   sideways on narrow screens, and a scroll container clips anything outside
+   its padding box — which is where the old ::after indicator sat, so the
+   selected tab never showed its underline. */
 .sb-tabs {
+  position: relative;
   display: flex;
+  flex-wrap: nowrap;
   align-items: flex-end;
   gap: 47px;
   margin: clamp(1.5rem, 3vw, 2.4rem) 0 clamp(1.5rem, 3.4vw, 2.6rem);
-  padding-inline: 28px;
-  border-bottom: 5px solid #2e3034;
+  /* Labels start 48px in from the rule's left end (rule x115, "Overview" x163). */
+  padding-inline: clamp(16px, 3.4vw, 48px);
+  background: linear-gradient(#2e3034, #2e3034) left bottom / 100% 5px no-repeat;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -2962,9 +3033,34 @@ a.mvce-card:focus-visible {
   display: none;
 }
 
+/* The cyan underline under the selected tab. One element for the whole bar,
+   moved with a transform, so choosing a tab slides it across rather than
+   swapping it: ScoreboardTabs sets its offset and width. */
+.sb-tabs__indicator {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--sb-tab-w, 0);
+  height: 5px;
+  background: var(--dtp-cyan);
+  box-shadow: 0 0 14px rgba(76, 204, 243, 0.55);
+  transform: translateX(var(--sb-tab-x, 0));
+  pointer-events: none;
+}
+
+.sb-tabs__indicator.is-animated {
+  transition: transform 380ms cubic-bezier(0.22, 0.8, 0.25, 1),
+    width 380ms cubic-bezier(0.22, 0.8, 0.25, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-tabs__indicator.is-animated { transition: none; }
+}
+
 .sb-tabs__tab {
   position: relative;
-  padding-bottom: 12px;
+  /* 12px to the rule, plus the 5px rule the indicator sits on. */
+  padding-bottom: 17px;
   font-family: var(--dtp-font-body);
   font-size: clamp(1rem, 1.31vw, 1.175rem);
   font-weight: 500;
@@ -2980,18 +3076,6 @@ a.mvce-card:focus-visible {
 .sb-tabs__tab:focus-visible { color: var(--dtp-white); }
 
 .sb-tabs__tab.is-active { color: var(--dtp-white); }
-
-/* The cyan indicator sits on the rule, spanning the active label plus the
-   24px of breathing room the frame gives it on each side. */
-.sb-tabs__tab.is-active::after {
-  content: "";
-  position: absolute;
-  left: -24px;
-  right: -24px;
-  bottom: -5px;
-  height: 5px;
-  background: var(--dtp-cyan);
-}
 
 /* ---- Scoreboard: Match Centre panel — Figma "Group 1000001929" ---
    Three 384px columns, 28px apart. Inside a column Figma alternates a 42px
@@ -3257,29 +3341,34 @@ a.mvce-card:focus-visible {
   color: rgba(255, 255, 255, 0.72);
 }
 
-/* Partner Academies hero.
+/* ------------------------------------------------------------------ *
+ * Page heroes on the Figma stack: Partner Academies, ScoreBoard and   *
+ * Scouting Hub. The three frames set the same text block at 1440 —    *
+ * eyebrow centred on y313, the two-line title's cap line at y351, the *
+ * lead's first line centred on y558 — so it is shared here, and each  *
+ * page sets only what differs.                                        *
+ * ------------------------------------------------------------------ */
 
-   Photo: hero-clubs.webp was exported with a white wash baked in — its
-   darkest pixels sit at ~200/255, so ~78% of every pixel is white. Dropping
-   it to 35% over black (the shared hero treatment) only turned that into a
-   grey film. Instead the wash is undone: brightness(0.5624) then
-   contrast(8.25) maps 200 -> 0 and 255 -> 255, restoring the photo's full
-   range; the last brightness step sets the Figma's darker exposure. */
-.dtp-academies .dtp-hero {
+/* Photos: every hero export has a white wash baked in (the clubs shot's
+   darkest pixels sit at ~200/255, ScoreBoard's and Scouting's at ~164), and
+   the shared 35%-over-black treatment only turned that into a grey film. The
+   wash is undone instead: brightness(b) then contrast(c) sends the photo's
+   black point to 0 and its white point to 255,
+     b * c = 255 / (white - black),   c = (b * c * black + 128) / 128,
+   and the exposure step after it sets the Figma's darker grade. */
+.dtp-hero--stack {
   --dtp-hero-media-opacity: 1;
   justify-content: flex-start;
   min-height: 0;
-  /* Figma 1440 frame: eyebrow at y309, chips end y770, cards start y876. */
   padding-top: calc(var(--dtp-nav-top) + var(--dtp-nav-h) + clamp(2rem, 12.1vw, 174px));
-  padding-bottom: clamp(3rem, 7.4vw, 106px);
 }
 
-.dtp-academies .dtp-hero__media {
-  filter: brightness(0.5624) contrast(8.25) brightness(0.62) saturate(1.1);
+.dtp-hero--stack .dtp-hero__media {
+  filter: var(--dtp-hero-unwash, none) brightness(var(--dtp-hero-exposure, 0.62)) saturate(1.1);
 }
 
 /* Shade the sky behind the nav and headline so the white type holds. */
-.dtp-academies .dtp-hero::before {
+.dtp-hero--stack::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -3290,25 +3379,99 @@ a.mvce-card:focus-visible {
   pointer-events: none;
 }
 
+/* Spacing measured off the frames rather than one shared gap: eyebrow ->
+   title 29px to the cap line, title -> lead 39px. */
+.dtp-hero--stack .dtp-hero__inner { gap: 0; }
+.dtp-hero--stack .dtp-hero__title { margin-top: 18px; }
+.dtp-hero--stack .dtp-hero__lead { margin-top: 28px; }
+
+/* Bleed: in all three frames the photo runs on behind the first row of
+   content (the stat cards and tabs, the tool tiles, the club cards) before
+   fading out. The hero drops beneath the content that follows it, inside a
+   page that is its own stacking root, and the photo and its fade extend by
+   --dtp-hero-bleed. Nothing overlaps the hero's own box, so its links stay
+   clickable. */
+.dtp-page:has(> .dtp-hero--bleed) {
+  isolation: isolate;
+  background: var(--dtp-ink);
+}
+
+.dtp-hero--bleed {
+  z-index: -1;
+  overflow: visible;
+}
+
+.dtp-hero--bleed .dtp-hero__media {
+  height: calc(100% + var(--dtp-hero-bleed, 0px));
+}
+
+/* Eased rather than linear, so the photo melts into the black page instead of
+   ending on the faint band a straight ramp leaves at its foot. */
+.dtp-hero--bleed .dtp-hero__scrim {
+  bottom: calc(-1 * var(--dtp-hero-bleed, 0px));
+  height: calc((100% + var(--dtp-hero-bleed, 0px)) * 0.42);
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.38) 30%,
+    rgba(0, 0, 0, 0.7) 58%,
+    rgba(0, 0, 0, 0.9) 80%,
+    #000 100%
+  );
+}
+
+/* The black band after the hero would paint over the bleed; the page is
+   already black, so the band goes clear. */
+.dtp-hero--bleed + .dtp-band--ink { background: transparent; }
+
+/* Per-image unwash values (black/white points from each export). */
+.dtp-academies .dtp-hero { --dtp-hero-unwash: brightness(0.5624) contrast(8.25); }
+.scoreboard-module .dtp-hero--stack { --dtp-hero-unwash: brightness(0.6134) contrast(4.671); }
+.scouting-module .dtp-hero--stack { --dtp-hero-unwash: brightness(0.627) contrast(5.214); }
+
+/* Partner Academies: chips end y770 and the cards start y876, with the photo
+   fading out behind the first card row. */
+.dtp-academies .dtp-hero {
+  --dtp-hero-bleed: clamp(40px, 7vw, 100px);
+  padding-bottom: clamp(3rem, 7.4vw, 106px);
+}
+
 .dtp-academies .dtp-hero + .dtp-band {
   padding-top: 0;
-}
-
-/* Text stack spacing, measured off the Figma frame rather than one shared gap:
-   eyebrow -> title 29px to the cap line, title -> lead 39px, lead -> search
-   40px, search -> chips 34px. */
-.dtp-academies .dtp-hero__inner {
-  gap: 0;
-}
-
-.dtp-academies .dtp-hero__title {
-  margin-top: 18px;
 }
 
 /* Wide enough that the first line ends "…Sign in with your club", as drawn. */
 .dtp-academies .dtp-hero__lead {
   max-width: 31em;
-  margin-top: 28px;
+}
+
+/* ScoreBoard (Figma 186:139 at 1440): pills y632-670, stat cards y709,
+   "Match Centre" centred on y889, tab labels on y957 over the rule at y983,
+   and the photo gone by y1000 — just under the rule. */
+.scoreboard-module .dtp-hero--stack {
+  /* A brighter shot than the others; the frame grades it deeper. */
+  --dtp-hero-exposure: 0.5;
+  --dtp-hero-bleed: clamp(200px, 21.4vw, 305px);
+  padding-bottom: clamp(12px, 1.9vw, 27px);
+}
+
+/* First line ends "…and historical", as drawn. */
+.scoreboard-module .dtp-hero--stack .dtp-hero__lead { max-width: 26.5em; }
+.scoreboard-module .dtp-hero--stack .sb-hero-actions { margin-top: 28px; }
+
+/* Scouting Hub (Figma 118:1711 at 1440): the three tool tiles at y692-838,
+   on the photo, which fades out by y1070. */
+.scouting-module .dtp-hero--stack {
+  --dtp-hero-bleed: clamp(260px, 32vw, 466px);
+  padding-bottom: 0;
+}
+
+/* First line ends "…scout assignments, and", as drawn. */
+.scouting-module .dtp-hero--stack .dtp-hero__lead { max-width: 24em; }
+.scouting-module .dtp-hero--stack .dtp-chips { margin-top: 34px; }
+
+.scouting-module .dtp-hero--stack + .dtp-band {
+  padding-top: clamp(2.5rem, 6.1vw, 88px);
 }
 
 .dtp-academies .dtp-search {
@@ -3318,7 +3481,7 @@ a.mvce-card:focus-visible {
   padding: 0 clamp(16px, 2.1vw, 30px);
   gap: clamp(10px, 1.4vw, 20px);
   border-color: rgba(255, 255, 255, 0.28);
-  border-radius: 8px;
+  border-radius: 7px;
   background: rgba(255, 255, 255, 0.22);
 }
 
@@ -3339,10 +3502,13 @@ a.mvce-card:focus-visible {
   margin-top: 34px;
 }
 
+/* Rounded rectangles in the frame (~5px corners on the export = 8px at
+   1440), not the pills the shared chip draws. */
 .dtp-academies .dtp-chip {
   min-width: 72px;
   min-height: 36px;
   padding: 0 18px;
+  border-radius: 8px;
   background: rgba(0, 0, 0, 0.35);
   border-color: rgba(255, 255, 255, 0.7);
 }
@@ -3371,7 +3537,7 @@ a.mvce-card:focus-visible {
   flex-direction: column;
   padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
+  border-radius: 8px;
   background: #0d0d0f;
   color: var(--dtp-white);
   transition: border-color var(--dtp-t-med), transform var(--dtp-t-med),
@@ -3397,7 +3563,7 @@ a.mvce-card:focus-visible {
   aspect-ratio: 350 / 186;
   padding: 0;
   border: 0;
-  border-radius: 3px;
+  border-radius: 5px;
   overflow: hidden;
   background:
     repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 14px),

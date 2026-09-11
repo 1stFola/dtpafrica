@@ -203,7 +203,7 @@ export function AcademyPage() {
   return (
     <div className="dtp-page dtp-academies">
       {/* Hero — Figma 115:615 */}
-      <section className="dtp-hero">
+      <section className="dtp-hero dtp-hero--stack dtp-hero--bleed">
         <img className="dtp-hero__media" {...HIGH_FETCH_PRIORITY} decoding="async" src="/figma/hero-clubs.webp" alt="" aria-hidden="true" />
         <div className="dtp-hero__scrim" aria-hidden="true" />
         <div className="dtp-shell dtp-hero__inner">

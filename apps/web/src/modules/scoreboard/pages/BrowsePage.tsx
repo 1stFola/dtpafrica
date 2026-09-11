@@ -19,8 +19,10 @@ const TALLY_POLL_MS = 20_000;
 
 type Tally = { teams: number; goals: number };
 
-const COMPETITION_DESCRIPTION =
-  "Competition hub with standings, fixtures, results, leaders, totals, and team-by-team navigation.";
+/* Said once for the whole grid rather than repeated on every card, which kept
+   the cards tall for a line that never changed. */
+const COMPETITIONS_INTRO =
+  "Open any competition for its hub: standings, fixtures, results, leaders, totals and team-by-team navigation.";
 
 type CompetitionTag = "COMPETITION" | "LIVE TABLE" | "UPCOMING" | "ARCHIVED" | "FEATURED";
 
@@ -167,7 +169,6 @@ function CompetitionGridCard({ card, tally }: { card: FeaturedCard; tally?: Tall
           </span>
         ))}
       </div>
-      <p className="dbx-comp-card__desc">{COMPETITION_DESCRIPTION}</p>
       <div className={`dbx-comp-card__foot${tally ? " dbx-comp-card__foot--board" : ""}`}>
         <div className="dbx-comp-card__markers">
           <span className="dbx-foot-marker">
@@ -431,6 +432,7 @@ export function BrowsePage() {
             <span className="dbx-section__count">{featuredCards.length} curated</span>
           )}
         </div>
+        <p className="dbx-section__lead">{COMPETITIONS_INTRO}</p>
         {renderCompetitions()}
       </section>
 

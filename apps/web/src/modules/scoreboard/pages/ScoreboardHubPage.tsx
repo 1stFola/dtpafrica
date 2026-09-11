@@ -137,24 +137,26 @@ export function ScoreboardHubPage() {
       </dl>
 
       <section className="sb-section">
-        <div className="sb-section__head">
-          <div>
-            {/* Figma 186:139 titles each section with a single line — no
-                eyebrow above it. Copy and emoji are the frame's own. */}
-            <h2>⚽ Match Centre</h2>
-            <p className="muted">
-              Follow the action closely with real-time updates and detailed
-              match logs.
-            </p>
-          </div>
-          <Link to="/scoreboard/live" className="text-link">
-            Watch Live →
-          </Link>
+        {/* Figma 186:139 titles each section with a single line — no
+            eyebrow above it. Copy and emoji are the frame's own. */}
+        <div className="sb-section__head sb-section__head--mc">
+          <h2>⚽ Match Centre</h2>
         </div>
 
         {/* Figma 191:433 puts the section tabs directly beneath the
             "⚽ Match Centre" title, on their own rule — not up under the hero. */}
         <ScoreboardTabs />
+
+        {/* The frame sets the section's line and its Watch Live button under
+            the tabs, across the full width of the rule. */}
+        <div className="sb-section__intro">
+          <p className="muted">
+            Follow the action closely with real-time updates and detailed match logs.
+          </p>
+          <Link to="/scoreboard/live" className="sb-section__action">
+            Watch Live 🔴
+          </Link>
+        </div>
 
         {loading ? (
           <div className="sb-mc-grid" aria-busy="true">
