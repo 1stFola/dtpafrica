@@ -3257,11 +3257,66 @@ a.mvce-card:focus-visible {
   color: rgba(255, 255, 255, 0.72);
 }
 
-/* Partner Academies — hero search and chips as the Figma frame draws them:
-   a squared translucent field with a search glyph, and a blue "All" chip. */
+/* Partner Academies hero.
+
+   Photo: hero-clubs.webp was exported with a white wash baked in — its
+   darkest pixels sit at ~200/255, so ~78% of every pixel is white. Dropping
+   it to 35% over black (the shared hero treatment) only turned that into a
+   grey film. Instead the wash is undone: brightness(0.5624) then
+   contrast(8.25) maps 200 -> 0 and 255 -> 255, restoring the photo's full
+   range; the last brightness step sets the Figma's darker exposure. */
+.dtp-academies .dtp-hero {
+  --dtp-hero-media-opacity: 1;
+  justify-content: flex-start;
+  min-height: 0;
+  /* Figma 1440 frame: eyebrow at y309, chips end y770, cards start y876. */
+  padding-top: calc(var(--dtp-nav-top) + var(--dtp-nav-h) + clamp(2rem, 12.1vw, 174px));
+  padding-bottom: clamp(3rem, 7.4vw, 106px);
+}
+
+.dtp-academies .dtp-hero__media {
+  filter: brightness(0.5624) contrast(8.25) brightness(0.62) saturate(1.1);
+}
+
+/* Shade the sky behind the nav and headline so the white type holds. */
+.dtp-academies .dtp-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 40%, rgba(0, 0, 0, 0.28), transparent 70%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.18) 45%, transparent 65%);
+  pointer-events: none;
+}
+
+.dtp-academies .dtp-hero + .dtp-band {
+  padding-top: 0;
+}
+
+/* Text stack spacing, measured off the Figma frame rather than one shared gap:
+   eyebrow -> title 29px to the cap line, title -> lead 39px, lead -> search
+   40px, search -> chips 34px. */
+.dtp-academies .dtp-hero__inner {
+  gap: 0;
+}
+
+.dtp-academies .dtp-hero__title {
+  margin-top: 18px;
+}
+
+/* Wide enough that the first line ends "…Sign in with your club", as drawn. */
+.dtp-academies .dtp-hero__lead {
+  max-width: 31em;
+  margin-top: 28px;
+}
+
 .dtp-academies .dtp-search {
   width: min(820px, 100%);
-  padding: var(--dtp-space-3) var(--dtp-space-5);
+  min-height: 60px;
+  margin-top: 36px;
+  padding: 0 clamp(16px, 2.1vw, 30px);
+  gap: clamp(10px, 1.4vw, 20px);
   border-color: rgba(255, 255, 255, 0.28);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.22);
@@ -3273,7 +3328,21 @@ a.mvce-card:focus-visible {
   color: rgba(255, 255, 255, 0.85);
 }
 
+.dtp-search__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.dtp-academies .dtp-chips {
+  /* 28px at the 1440 frame; tighter on phones so the three chips share a row. */
+  gap: clamp(10px, 1.95vw, 28px);
+  margin-top: 34px;
+}
+
 .dtp-academies .dtp-chip {
+  min-width: 72px;
+  min-height: 36px;
+  padding: 0 18px;
   background: rgba(0, 0, 0, 0.35);
   border-color: rgba(255, 255, 255, 0.7);
 }

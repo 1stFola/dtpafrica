@@ -210,13 +210,14 @@ export function AcademyPage() {
           <p className="dtp-eyebrow" style={{ color: "var(--dtp-lime)" }}>
             DTP Partner Network
           </p>
-          <h1 className="dtp-display dtp-display--hero dtp-hero__title">Partner Academies</h1>
+          {/* Two lines, as Figma sets it; .dtp-hero__title is pre-line. */}
+          <h1 className="dtp-display dtp-display--hero dtp-hero__title">{"Partner\nAcademies"}</h1>
           <p className="dtp-lead dtp-hero__lead">
             Browse development centres in the DTP network. Sign in with your club credentials to
             open your command centre dashboard.
           </p>
 
-          <label className="dtp-search" style={{ marginTop: "var(--dtp-space-6)" }}>
+          <label className="dtp-search">
             <span className="dtp-search__icon">
               <SearchIcon />
             </span>
