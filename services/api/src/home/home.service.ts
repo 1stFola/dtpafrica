@@ -422,12 +422,21 @@ export class HomeService {
     return rows.map((row) => presentAcademyListing(row, seedByTeamSlug));
   }
 
+  /**
+   * Public, unauthenticated. Returns the same shape as the listing. This used
+   * to return the raw row, which exposed passwordHash — and the private contact
+   * fields the listing deliberately omits — to anyone who knew a slug.
+   */
   async academyBySlug(slug: string) {
     const academy = await this.prisma.academy.findFirst({
       where: { slug, isPublished: true },
     });
     if (!academy) throw new NotFoundException("Academy not found");
-    return academy;
+    const comp = await this.prisma.sbCompetition.findUnique({
+      where: { slug: "ex-internationals-cup-2026" },
+      include: { teams: true },
+    });
+    return presentAcademyListing(academy, buildSeedByTeamSlug(comp?.teams ?? []));
   }
 
   async staticContent(keys?: string) {
