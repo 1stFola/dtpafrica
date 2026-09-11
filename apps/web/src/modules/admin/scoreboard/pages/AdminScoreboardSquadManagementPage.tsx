@@ -5,10 +5,20 @@ import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { AdminSbTableShell } from "../components/AdminSbTableShell";
+import { CsvDropzone } from "../components/CsvDropzone";
 import type {
   AdminSbTeam,
   AdminSbSquadRowInput,
 } from "../types";
+
+/** Downloadable starting point for a squad list; matches the importer's columns. */
+const SQUAD_CSV_TEMPLATE = `shirtNumber,displayName,position
+1,Goalkeeper Name,GK
+2,Right Back Name,RB
+5,Centre Back Name,CB
+8,Midfielder Name,CM
+9,Striker Name,ST
+`;
 
 /**
  * Free-text filters only. Competition and team live in their own state
@@ -366,6 +376,32 @@ export function AdminScoreboardSquadManagementPage() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Squad list upload */}
+      <div className="admin-sb-squad-csv">
+        <CsvDropzone
+          label="Squad list"
+          hint={`Upload one team's squad as CSV. Columns: shirtNumber, displayName, position (also accepted: jerseyNumber, fullName). The whole file is checked first — if any row has a problem, nothing is imported.`}
+          disabled={!selectedTeamId}
+          disabledReason="Choose a competition and a team above, then upload that team's squad list."
+          templateCsv={SQUAD_CSV_TEMPLATE}
+          templateFileName="squad-list-template.csv"
+          onExport={async () => {
+            if (!selectedCompetitionId) {
+              throw new Error("Choose a competition before exporting squads");
+            }
+            const result = await adminScoreboardApi.exportCompetitionSquad(selectedCompetitionId, "csv");
+            return result.csv ?? "";
+          }}
+          onImport={async (csv) => {
+            const result = await adminScoreboardApi.importSquadCsv(selectedTeamId, csv);
+            for (const warning of result.warnings) toast.info(`Check: ${warning}`);
+            await loadSquads();
+            const teamName = teams.find((team) => team.id === selectedTeamId)?.name ?? "the team";
+            return `Imported ${result.imported} player(s) into ${teamName}: ${result.created} added, ${result.updated} updated`;
+          }}
+        />
       </div>
 
       {/* Squads Table */}

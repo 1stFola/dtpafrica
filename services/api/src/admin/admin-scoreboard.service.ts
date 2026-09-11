@@ -250,7 +250,13 @@ function normalizeCompetitionStatus(value: string | undefined | null): SbCompeti
   throw new BadRequestException("Competition status must be active, upcoming, draft, archived, or ongoing");
 }
 
-function parseCsv(text: string): string[][] {
+function parseCsv(input: string): string[][] {
+  /*
+   * Excel's "CSV UTF-8" export prefixes a byte-order mark. Left in, it glues
+   * itself to the first header, so whichever column came first silently failed
+   * to match in every importer.
+   */
+  const text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -286,6 +292,35 @@ function parseCsv(text: string): string[][] {
   row.push(cell.trim());
   if (row.some((c) => c.length)) rows.push(row);
   return rows;
+}
+
+/** Accepted headers for a squad list. Matched after normalizedHeader(). */
+const SQUAD_CSV_COLUMNS = {
+  name: ["displayName", "name", "fullName", "playerName", "player"],
+  shirtNumber: ["shirtNumber", "number", "jerseyNumber", "jersey", "shirt", "no"],
+  position: ["position", "pos"],
+};
+const SQUAD_CSV_MAX_ROWS = 200;
+const SQUAD_CSV_MAX_REPORTED_ERRORS = 10;
+
+/** Rejects a squad file as a whole, listing the first few problems by row. */
+function squadImportRejected(errors: string[]): BadRequestException {
+  const shown = errors.slice(0, SQUAD_CSV_MAX_REPORTED_ERRORS);
+  const more = errors.length - shown.length;
+  return csvError(
+    "Squad import",
+    `nothing was imported. ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}`
+  );
+}
+
+function describeSquadConflict(
+  conflict: { playerId: string | null; displayName: string; team: { name: string } },
+  lineByPlayerId: Map<string, number | undefined>
+): string {
+  const line = lineByPlayerId.get(conflict.playerId ?? "") ?? "?";
+  return `row ${line}: ${conflict.displayName} is already registered for ${normalizeClubName(
+    conflict.team.name
+  )} in this competition`;
 }
 
 function csvError(label: string, detail: string): BadRequestException {
@@ -2979,6 +3014,19 @@ export class AdminScoreboardService {
     return { format: "csv", competitionId, csv: lines.join("\n") };
   }
 
+  /**
+   * Imports a team's squad list from CSV.
+   *
+   * Validates every row before writing anything: a bad shirt number, a missing
+   * name, a player listed twice, or a player already registered to another team
+   * in the competition rejects the whole file with row numbers, and no rows are
+   * written. The previous version wrote row by row and threw mid-loop, so a
+   * failure at row 12 left rows 1-11 committed behind an error message.
+   *
+   * Duplicate shirt numbers are reported as warnings rather than rejected: they
+   * are usually a data-entry slip the operator wants to see, not a reason to
+   * refuse an otherwise good squad.
+   */
   async importSquadCsv(teamId: string, csv: string) {
     const team = await this.prisma.sbTeam.findUnique({
       where: { id: teamId },
@@ -2990,66 +3038,178 @@ export class AdminScoreboardService {
     if (table.length < 2) {
       throw csvError("Squad import", "file must include a header row and at least one data row");
     }
-    const header = table[0].map((h) => h.toLowerCase());
-    const nameIdx = header.indexOf("displayname") >= 0 ? header.indexOf("displayname") : header.indexOf("name");
-    const posIdx = header.indexOf("position");
-    const numIdx = header.indexOf("shirtnumber") >= 0 ? header.indexOf("shirtnumber") : header.indexOf("number");
-    if (nameIdx < 0) {
-      throw csvError("Squad import", 'missing required column "displayName" or "name"');
+    const header = table[0].map(normalizedHeader);
+    const nameAliases = SQUAD_CSV_COLUMNS.name.map(normalizedHeader);
+    if (!nameAliases.some((alias) => header.includes(alias))) {
+      throw csvError(
+        "Squad import",
+        `missing a player name column (one of: ${SQUAD_CSV_COLUMNS.name.join(", ")})`
+      );
+    }
+    const dataRows = table.slice(1);
+    if (dataRows.length > SQUAD_CSV_MAX_ROWS) {
+      throw csvError(
+        "Squad import",
+        `a squad file can hold at most ${SQUAD_CSV_MAX_ROWS} players (got ${dataRows.length})`
+      );
     }
 
-    let imported = 0;
-    for (const row of table.slice(1)) {
-      const displayName = row[nameIdx];
-      if (!displayName) continue;
-      const position = posIdx >= 0 ? row[posIdx] : null;
-      const shirtNumber = numIdx >= 0 && row[numIdx] ? Number(row[numIdx]) : null;
-      const player = await this.playerDirectory.resolveOrCreatePlayer(displayName, position);
-      const activeSquad = await this.prisma.sbTeamSquad.findFirst({
-        where: {
-          playerId: player.id,
-          team: { competitionId: team.competitionId },
-        },
-        include: { team: true },
-      });
+    type SquadCsvRow = {
+      line: number;
+      displayName: string;
+      key: string;
+      position: string | null;
+      shirtNumber: number | null;
+    };
+    const rows: SquadCsvRow[] = [];
+    const errors: string[] = [];
+    const firstLineByKey = new Map<string, number>();
 
-      if (activeSquad && activeSquad.teamId !== teamId) {
-        throw csvError(
-          "Squad import",
-          `${player.displayName} is already registered for ${normalizeClubName(
-            activeSquad.team.name
-          )} in this competition`
-        );
+    dataRows.forEach((cells, index) => {
+      // +2: one for the header row, one because spreadsheets number from 1.
+      const line = index + 2;
+      const displayName = normalizePlayerName(
+        readCsvCell(cells, header, SQUAD_CSV_COLUMNS.name) ?? ""
+      );
+      const key = playerLookupKey(displayName);
+      if (!key) {
+        errors.push(`row ${line}: player name is empty`);
+        return;
       }
+      const seenAt = firstLineByKey.get(key);
+      if (seenAt !== undefined) {
+        errors.push(`row ${line}: ${displayName} is already listed on row ${seenAt}`);
+        return;
+      }
+      firstLineByKey.set(key, line);
 
-      const existing =
-        activeSquad ??
-        (await this.prisma.sbTeamSquad.findFirst({
-          where: { teamId, displayName: { equals: displayName, mode: "insensitive" } },
-        }));
-      if (existing) {
-        await this.prisma.sbTeamSquad.update({
-          where: { id: existing.id },
-          data: {
-            playerId: player.id,
-            position: position ?? existing.position,
-            shirtNumber: shirtNumber ?? existing.shirtNumber,
-          },
-        });
+      const rawShirt = (readCsvCell(cells, header, SQUAD_CSV_COLUMNS.shirtNumber) ?? "").trim();
+      let shirtNumber: number | null = null;
+      if (rawShirt) {
+        const parsed = Number(rawShirt);
+        if (!Number.isInteger(parsed) || parsed < 0 || parsed > 999) {
+          errors.push(`row ${line}: shirt number "${rawShirt}" must be a whole number from 0 to 999`);
+          return;
+        }
+        shirtNumber = parsed;
+      }
+      const position =
+        (readCsvCell(cells, header, SQUAD_CSV_COLUMNS.position) ?? "").trim() || null;
+      rows.push({ line, displayName, key, position, shirtNumber });
+    });
+
+    if (!rows.length && !errors.length) {
+      throw csvError("Squad import", "no player rows found");
+    }
+
+    // Read-only conflict check for players who already exist.
+    const knownPlayers = await this.prisma.player.findMany({
+      where: { normalizedName: { in: rows.map((row) => row.key) } },
+      select: { id: true, normalizedName: true },
+    });
+    const lineByKnownPlayer = new Map(
+      knownPlayers.map((player) => [player.id, firstLineByKey.get(player.normalizedName ?? "")])
+    );
+    const conflicts = await this.findSquadConflicts(
+      knownPlayers.map((player) => player.id),
+      team.competitionId,
+      teamId
+    );
+    errors.push(...conflicts.map((conflict) => describeSquadConflict(conflict, lineByKnownPlayer)));
+
+    if (errors.length) throw squadImportRejected(errors);
+
+    // Resolve (or create draft) players. Idempotent, so safe outside the
+    // transaction: a later failure leaves at most reusable draft players.
+    const resolved: Array<SquadCsvRow & { playerId: string }> = [];
+    for (const row of rows) {
+      const player = await this.playerDirectory.resolveOrCreatePlayer(row.displayName, row.position);
+      resolved.push({ ...row, playerId: player.id });
+    }
+
+    // Re-check now that every player has an id: resolveOrCreatePlayer also
+    // matches legacy rows by display name, which the key lookup above cannot.
+    const lineByResolved = new Map(resolved.map((row) => [row.playerId, row.line]));
+    const lateConflicts = await this.findSquadConflicts(
+      resolved.map((row) => row.playerId),
+      team.competitionId,
+      teamId
+    );
+    if (lateConflicts.length) {
+      throw squadImportRejected(
+        lateConflicts.map((conflict) => describeSquadConflict(conflict, lineByResolved))
+      );
+    }
+
+    const warnings: string[] = [];
+    const lineByShirt = new Map<number, number>();
+    for (const row of resolved) {
+      if (row.shirtNumber === null) continue;
+      const other = lineByShirt.get(row.shirtNumber);
+      if (other !== undefined) {
+        warnings.push(`shirt #${row.shirtNumber} is used on rows ${other} and ${row.line}`);
       } else {
-        await this.prisma.sbTeamSquad.create({
-          data: {
-            teamId,
-            displayName,
-            position,
-            shirtNumber: Number.isFinite(shirtNumber) ? shirtNumber : null,
-            playerId: player.id,
-          },
-        });
+        lineByShirt.set(row.shirtNumber, row.line);
       }
-      imported++;
     }
-    return { imported, teamId, competitionId: team.competitionId };
+
+    let created = 0;
+    let updated = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of resolved) {
+        const existing =
+          (await tx.sbTeamSquad.findFirst({ where: { teamId, playerId: row.playerId } })) ??
+          (await tx.sbTeamSquad.findFirst({
+            where: { teamId, displayName: { equals: row.displayName, mode: "insensitive" } },
+          }));
+        if (existing) {
+          await tx.sbTeamSquad.update({
+            where: { id: existing.id },
+            data: {
+              playerId: row.playerId,
+              // A blank cell keeps what is already recorded rather than wiping it.
+              position: row.position ?? existing.position,
+              shirtNumber: row.shirtNumber ?? existing.shirtNumber,
+            },
+          });
+          updated++;
+        } else {
+          await tx.sbTeamSquad.create({
+            data: {
+              teamId,
+              playerId: row.playerId,
+              displayName: row.displayName,
+              position: row.position,
+              shirtNumber: row.shirtNumber,
+            },
+          });
+          created++;
+        }
+      }
+    });
+
+    this.statsCache = null;
+    return {
+      imported: created + updated,
+      created,
+      updated,
+      warnings,
+      teamId,
+      competitionId: team.competitionId,
+    };
+  }
+
+  /** Squad rows placing any of these players in another team of the competition. */
+  private findSquadConflicts(playerIds: string[], competitionId: string, teamId: string) {
+    if (!playerIds.length) return Promise.resolve([]);
+    return this.prisma.sbTeamSquad.findMany({
+      where: {
+        playerId: { in: playerIds },
+        teamId: { not: teamId },
+        team: { competitionId },
+      },
+      include: { team: true },
+    });
   }
 
   async importTeamsCsv(csv: string, competitionId: string) {

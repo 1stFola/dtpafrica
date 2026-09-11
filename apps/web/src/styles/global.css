@@ -12486,8 +12486,14 @@ a {
 
 .admin-sb-dropzone-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+/* Squad list upload on /admin/scoreboard/squads, between filters and table. */
+.admin-sb-squad-csv {
+  margin-bottom: 1rem;
 }
 
 .admin-sb-csv-ingest-dropzone {
