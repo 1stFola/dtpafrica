@@ -13,6 +13,7 @@ worker silently refusing every claim in production.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -25,8 +26,20 @@ CONTRACTS = Path(__file__).resolve().parents[3] / "packages" / "vision-contracts
 
 
 def _read(name: str) -> str:
+    """Read a TypeScript contract file, skipping only where it cannot exist.
+
+    The skip is for the Docker image, which copies just this worker package and so
+    has no monorepo to read. **In CI it must never fire**: this guard is the only
+    thing checking the two languages agree, and a silent skip would let the pipeline
+    go green having verified nothing.
+    """
     path = CONTRACTS / name
     if not path.exists():  # pragma: no cover
+        if os.environ.get("CI"):
+            raise AssertionError(
+                f"Contracts package not found at {path}, but CI is set. The "
+                "cross-language guard must not be skipped here — check the checkout."
+            )
         pytest.skip(f"contracts package not available at {path}")
     return path.read_text(encoding="utf-8")
 
