@@ -107,8 +107,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Buildx, for the GitHub Actions cache backend below.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build the image
-        run: docker build -t dtp-vision-worker:ci services/vision-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: services/vision-worker
+          tags: dtp-vision-worker:ci
+          # **Required.** Buildx otherwise leaves the result in its own build cache
+          # and never in the local image store, so every `docker run` step below
+          # fails with "no such image". The build still passes, which is what makes
+          # this an easy one to get wrong.
+          load: true
+          # Nearly all the build time is `apt-get install ffmpeg`, an early layer
+          # that only changes when the Dockerfile does — so it hits on almost every
+          # run, while the later COPY and pip layers rebuild as the worker changes.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # A build that succeeds but produces an image whose entrypoint cannot start
       # is the failure this job exists to catch, and `docker build` alone would not
