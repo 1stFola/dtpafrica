@@ -17,6 +17,7 @@ import { VISION_CONFIG, loadVisionConfig, type VisionConfig } from "./config/vis
 import { VisionJobsController } from "./jobs/jobs.controller";
 import { JOB_QUEUE } from "./jobs/job-queue";
 import { PostgresJobQueue } from "./jobs/postgres-job-queue";
+import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { RightsPolicyService } from "./rights/rights-policy.service";
 import { InMemoryObjectStore } from "./storage/in-memory-object-store";
@@ -90,6 +91,7 @@ const computeRegistryProvider: Provider = {
     RightsPolicyService,
     VisionAuditService,
     VisionJobsService,
+    VisionStageResultsService,
     // Worker auth is a separate stack from admin auth on purpose: a worker token
     // must never reach an admin endpoint, and vice versa.
     WorkerTokenService,
@@ -108,6 +110,7 @@ const computeRegistryProvider: Provider = {
     RightsPolicyService,
     VisionAuditService,
     VisionJobsService,
+    VisionStageResultsService,
   ],
 })
 export class VisionModule {}

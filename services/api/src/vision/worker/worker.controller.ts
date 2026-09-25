@@ -22,6 +22,7 @@ import {
 import { PrismaService } from "../../prisma/prisma.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { JOB_QUEUE, type JobQueue } from "../jobs/job-queue";
+import { VisionStageResultsService } from "../jobs/stage-results.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CompleteJobDto } from "./dto/complete-job.dto";
 import { ClaimJobDto } from "./dto/claim-job.dto";
@@ -41,11 +42,15 @@ import { WorkerTokenService } from "./worker-token.service";
  *
  * See docs/vision/06-JOBS-AND-COMPUTE.md and docs/vision/07-API-CONTRACTS.md.
  */
+/** Stages whose terminal failure means the asset cannot be analysed at all. */
+const INGEST_STAGES = ["probe", "fingerprint", "transcode"];
+
 @Controller("vision/worker")
 export class VisionWorkerController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(WorkerTokenService) private readonly tokens: WorkerTokenService,
+    @Inject(VisionStageResultsService) private readonly stageResults: VisionStageResultsService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
     @Inject(VISION_CONFIG) private readonly config: VisionConfig
@@ -244,7 +249,7 @@ export class VisionWorkerController {
 
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
-      select: { outputPrefix: true, type: true },
+      select: { outputPrefix: true, type: true, videoAssetId: true },
     });
     if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
 
@@ -265,23 +270,51 @@ export class VisionWorkerController {
       modelVersionIds: dto.modelVersionIds ?? [],
     });
 
-    if (!outcome.alreadyApplied && dto.cost) {
-      await this.recordCost(jobId, dto);
+    // Only on the first application: a retried completion must not re-cluster an
+    // asset or duplicate its variants.
+    let applied: { applied: boolean; detail: string } | null = null;
+    if (!outcome.alreadyApplied) {
+      if (dto.cost) await this.recordCost(jobId, dto);
+      applied = await this.stageResults.apply(job.type as VisionJobType, job.videoAssetId, {
+        artifacts: (dto.artifacts ?? []).map((a) => ({
+          key: a.key,
+          bucket: a.bucket,
+          bytes: a.bytes,
+          contentType: a.contentType,
+          role: a.role,
+        })),
+        summary: dto.summary ?? {},
+      });
     }
 
-    return { ok: true, alreadyApplied: outcome.alreadyApplied };
+    return { ok: true, alreadyApplied: outcome.alreadyApplied, applied };
   }
 
   @Post("jobs/:id/fail")
   @UseGuards(VisionWorkerGuard)
   async fail(@Req() req: WorkerRequest, @Param("id") jobId: string, @Body() dto: FailJobDto) {
     const auth = this.auth(req);
+    const job = await this.prisma.visionJob.findUnique({
+      where: { id: jobId },
+      select: { type: true, videoAssetId: true },
+    });
+
     const outcome = await this.queue.fail(
       jobId,
       auth.workerId,
       { kind: "worker_reported", reason: dto.reason, detail: dto.detail ?? null },
       { retryable: dto.retryable !== false }
     );
+
+    // Only once the job is genuinely finished — a requeued attempt may still
+    // succeed, and marking the asset failed in between would be misleading.
+    if (!outcome.requeued && job?.videoAssetId && INGEST_STAGES.includes(job.type)) {
+      await this.stageResults.markIngestFailed(
+        job.videoAssetId,
+        `${job.type} failed: ${dto.reason}`
+      );
+    }
+
     return { ok: true, requeued: outcome.requeued };
   }
 

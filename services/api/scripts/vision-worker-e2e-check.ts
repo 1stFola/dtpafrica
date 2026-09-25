@@ -215,6 +215,24 @@ async function main() {
     check("cost recorded with no GPU seconds", cost?.gpuSeconds, 0);
     check("cost recorded cpu seconds", (cost?.cpuSeconds ?? 0) > 0, true);
 
+    // ── The point of Increment 3: findings reach the asset row ────────────
+    section("Asset projection (probe)");
+    const afterProbe = await prisma.visionVideoAsset.findUniqueOrThrow({
+      where: { id: assetId },
+      select: {
+        videoCodec: true,
+        durationMs: true,
+        width: true,
+        height: true,
+        isVariableFrameRate: true,
+        ingestError: true,
+      },
+    });
+    check("codec written to the asset", afterProbe.videoCodec, "h264");
+    check("duration written to the asset", typeof afterProbe.durationMs, "number");
+    check("dimensions written to the asset", `${afterProbe.width}x${afterProbe.height}`, "320x240");
+    check("no ingest error recorded", afterProbe.ingestError, null);
+
     // ── Transcode, which depends on probe having succeeded ────────────────
     section("Transcode");
 
@@ -284,6 +302,27 @@ async function main() {
         true
       );
     }
+
+    section("Asset projection (transcode)");
+    const afterTranscode = await prisma.visionVideoAsset.findUniqueOrThrow({
+      where: { id: assetId },
+      select: { ingestState: true, variants: { select: { kind: true, fps: true, objectKey: true } } },
+    });
+    check("asset marked ready", afterTranscode.ingestState, "ready");
+
+    const proxyVariant = afterTranscode.variants.find((v) => v.kind === "proxy");
+    check("proxy registered as a variant", Boolean(proxyVariant), true);
+    check("variant records the constant frame rate", proxyVariant?.fps, 25);
+    check(
+      "variant points at the object that was written",
+      proxyVariant?.objectKey,
+      proxy?.key ?? "(no proxy)"
+    );
+    check(
+      "thumbnails registered as variants",
+      afterTranscode.variants.filter((v) => v.kind === "thumbnail").length > 0,
+      true
+    );
   } finally {
     // ── Cleanup ───────────────────────────────────────────────────────────
     section("Cleanup");
@@ -302,6 +341,7 @@ async function main() {
       await prisma.visionJobEvent.deleteMany({ where: { job: { videoAssetId: assetId } } });
       await prisma.visionJobCost.deleteMany({ where: { job: { videoAssetId: assetId } } });
       await prisma.visionJob.deleteMany({ where: { videoAssetId: assetId } });
+      await prisma.visionVideoVariant.deleteMany({ where: { videoAssetId: assetId } });
       await prisma.visionVideoAsset.deleteMany({ where: { id: assetId } });
       await prisma.visionSourcePartner.delete({ where: { id: created.partnerId } }).catch(() => undefined);
     }

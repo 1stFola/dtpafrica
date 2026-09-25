@@ -35,6 +35,12 @@ const mockQueue = {
 
 const mockTokens = { register: vi.fn(), verify: vi.fn(), retire: vi.fn(), mintBootstrap: vi.fn() };
 
+/** The applier is exercised in stage-results.spec.ts; here it only needs to exist. */
+const mockStageResults = {
+  apply: vi.fn().mockResolvedValue({ applied: true, detail: "" }),
+  markIngestFailed: vi.fn(),
+};
+
 let store: InMemoryObjectStore;
 let controller: VisionWorkerController;
 
@@ -63,6 +69,7 @@ beforeEach(() => {
   controller = new VisionWorkerController(
     mockPrisma as never,
     mockTokens as never,
+    mockStageResults as never,
     mockQueue as never,
     store,
     loadVisionConfig({})

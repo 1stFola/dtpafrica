@@ -5,6 +5,7 @@ import { COMPUTE_PROVIDER_REGISTRY } from "./compute/compute-provider";
 import { VISION_CONFIG } from "./config/vision.config";
 import { JOB_QUEUE } from "./jobs/job-queue";
 import { VisionJobsController } from "./jobs/jobs.controller";
+import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { RightsPolicyService } from "./rights/rights-policy.service";
 import { VisionAuditService } from "./audit/vision-audit.service";
@@ -39,6 +40,7 @@ const EXPECTED = [
   RightsPolicyService,
   VisionAuditService,
   VisionJobsService,
+  VisionStageResultsService,
   WorkerTokenService,
 ] as const;
 
@@ -86,7 +88,7 @@ describe("VisionModule resolves through the container", () => {
     }
   );
 
-  it.each([VisionJobsService, RightsPolicyService, VisionAuditService, WorkerTokenService].map(
+  it.each([VisionJobsService, VisionStageResultsService, RightsPolicyService, VisionAuditService, WorkerTokenService].map(
     (s) => [s.name, s] as const
   ))("%s has every dependency populated", (_name, ServiceClass) => {
     const instance = moduleRef.get(ServiceClass, { strict: false }) as Record<string, unknown>;
