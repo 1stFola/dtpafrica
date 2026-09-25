@@ -177,6 +177,40 @@ above are the policy that drives them. **The build proceeds on the proposed defa
 documented in [03-RIGHTS-AND-GOVERNANCE.md](./03-RIGHTS-AND-GOVERNANCE.md) as defaults pending
 confirmation, and changing them later is a configuration change, not a redesign.
 
+### O3 — Durability strategy for the master corpus — **decide before bulk acquisition**
+
+**Owner:** DTP engineering, with leadership on the cost.
+
+The design assumed R2 object versioning would protect the irreplaceable buckets. **It does not
+exist** — Cloudflare lists `PutBucketVersioning` as unimplemented and it returns 501 against live
+buckets (confirmed 25 Sep 2026 with an admin token, so it is a capability gap, not permissions).
+
+So recovery from a deletion needs a *copy*, not a version. What protects the corpus today:
+
+| Control | Status |
+|---|---|
+| Write-once enforcement on `master` | Built, tested, verified against live R2 |
+| `deleteProtected` with a mandatory justification | Built, tested |
+| UUID-derived keys (no collisions) | Built |
+| App token scoped Object Read & Write, never Admin | **Operational discipline — verify in the dashboard** |
+| A second copy of the master corpus | **Nothing. This is the gap.** |
+
+Options, cheapest first:
+
+1. **Rely on the partner's original.** Free, and for Phase 1 partners it is largely true — they
+   shot the footage and still hold it. Weak for anything acquired as an authorized export, and it
+   depends on partner relationships lasting.
+2. **Periodic sync of `master/` to a second R2 bucket** in a different account. Cheap (zero egress
+   between R2 buckets is not guaranteed across accounts — verify), simple, protects against a stray
+   delete but not against an account-level compromise.
+3. **Sync to a different provider** (S3 Glacier Deep Archive or similar). Strongest, costs egress
+   out of R2 on the way in, then very little to hold.
+
+**Default while undecided:** option 1, with the adapter guards as the active protection. That is
+acceptable at 5 matches and clearly not at 500 — the trigger to decide is the first bulk
+acquisition, which is also when the bill starts to matter. Revisit as part of
+[12-COST-MODEL](./12-COST-MODEL.md).
+
 ### O2 — Scout portal product definition — **blocks Phase 8**
 
 **Owner:** DTP product.

@@ -16,8 +16,20 @@ export type BucketId = (typeof BUCKET_IDS)[number];
 /** Buckets whose objects are write-once. A PUT over an existing key is a bug. */
 export const WRITE_ONCE_BUCKETS: readonly BucketId[] = ["master"];
 
-/** Buckets that must have versioning enabled. */
-export const VERSIONED_BUCKETS: readonly BucketId[] = ["master", "models"];
+/**
+ * Buckets whose contents cannot be regenerated if lost.
+ *
+ * Originally `VERSIONED_BUCKETS`, on the assumption that the object store would
+ * keep version history for them. The chosen backend does not implement bucket
+ * versioning at all, so there is nothing to fall back on: the write-once and
+ * protected-delete guards in the ObjectStore adapters are the only protection
+ * these objects have.
+ *
+ * Which backend, and the evidence, is recorded in docs/vision/05-STORAGE.md —
+ * naming it here would couple the contracts to a vendor, which
+ * vision-boundaries.spec.ts asserts against.
+ */
+export const IRREPLACEABLE_BUCKETS: readonly BucketId[] = ["master", "models"];
 
 export class InvalidObjectKeySegmentError extends Error {
   constructor(segment: string) {

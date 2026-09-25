@@ -35,12 +35,24 @@ differ only in config.
 
 Four, split by **access policy, retention and durability posture** — not by content type.
 
-| `BucketId` | Real bucket | Contents | Versioning | Public read | Retention |
+| `BucketId` | Real bucket | Contents | Recoverable? | Public read | Retention |
 |---|---|---|---|---|---|
-| `master` | `dtp-{env}-vision-master` | Source originals, rights evidence documents | **On** | Never | Indefinite; deletion only via `VisionDeletionRequest` |
-| `derived` | `dtp-{env}-vision-derived` | Proxies, HLS, thumbnails, crops, inference artifacts, dataset manifests and labels, exports | Off | Never | Regenerable; lifecycle expiry on transient prefixes |
-| `models` | `dtp-{env}-vision-models` | Weights, checkpoints, benchmark artifacts | **On** | Never | Indefinite; archived, never deleted |
-| `clips` | `dtp-{env}-vision-clips` | Rendered evidence and highlight clips | Off | Never (signed only) | Tied to publication and rights state |
+| `master` | `dtp-{env}-vision-master` | Source originals, rights evidence documents | **No — irreplaceable** | Never | Indefinite; deletion only via `VisionDeletionRequest` |
+| `derived` | `dtp-{env}-vision-derived` | Proxies, HLS, thumbnails, crops, inference artifacts, dataset manifests and labels, exports | Yes, regenerable from master | Never | Lifecycle expiry on transient prefixes |
+| `models` | `dtp-{env}-vision-models` | Weights, checkpoints, benchmark artifacts | **No — retrainable only at full cost** | Never | Indefinite; archived, never deleted |
+| `clips` | `dtp-{env}-vision-clips` | Rendered evidence and highlight clips | Yes, re-renderable from master | Never (signed only) | Tied to publication and rights state |
+
+> **R2 has no object versioning.** This was originally specified as "versioning on for
+> `master` and `models`". That is not achievable: Cloudflare lists both `PutBucketVersioning`
+> and `GetBucketVersioning` under unimplemented bucket-level operations, and a `PUT` returns
+> **501 NotImplemented** against live buckets — confirmed 25 Sep 2026 with an
+> Admin Read & Write token, so it is a capability gap and not a permissions one.
+>
+> **Consequence: there is no version history to recover from.** The write-once and
+> protected-delete guards in the `ObjectStore` adapters are not belt-and-braces — they are the
+> only thing protecting source footage. See [Deletion](#deletion-is-gated-at-the-adapter-not-only-by-policy),
+> and the durability decision still open in
+> [13-OPEN-QUESTIONS](./13-OPEN-QUESTIONS.md#o3--durability-strategy-for-the-master-corpus).
 
 ### Why four and not six or one
 
@@ -173,7 +185,7 @@ The control plane issues part URLs; the bytes go browser-to-R2. EC2 never sees t
 
 | Prefix | Rule |
 |---|---|
-| `master/originals/` | No expiry. Versioning on. Deletion only through an approved `VisionDeletionRequest`. |
+| `master/originals/` | No expiry. Deletion only through an approved `VisionDeletionRequest`, via `deleteProtected`. No version history exists to undo a mistake. |
 | `master/rights/` | No expiry. This is the evidence that everything else stands on. |
 | `derived/probes/`, `derived/thumbnails/` | Cheap; keep. |
 | `derived/proxies/`, `derived/hls/` | Keep while the asset is active. Regenerable from master if evicted. |
@@ -201,15 +213,17 @@ and a justification that cannot be omitted. Callers are expected to hold an appr
 enforcement stops an *overwrite*. It said nothing about a *delete* — and a delete is the one loss
 that cannot be undone while bucket versioning is off.
 
-Versioning is off, and cannot currently be turned on from the application: the R2 token is scoped
-to object read/write, so `PutBucketVersioning` returns `AccessDenied` (403, verified against the
-live buckets). That is the correct posture for a credential the API holds in production — it
-should never be able to reconfigure a bucket — but it means the adapter is the last line of
-defence rather than a redundant one.
-
-**Enabling versioning needs a separate, temporary R2 token with Admin Read & Write**, used once and
-then deleted. Until that happens, the adapter guard is the only thing standing between a stray
+**Versioning is not available at all.** R2 does not implement it — see the note above. So the
+adapter guard is not a redundant second layer; it is the only thing standing between a stray
 `delete` call and permanent loss of a partner's master footage.
+
+Two consequences worth stating plainly:
+
+- **The app token must be Object Read & Write, never Admin.** An admin-scoped credential in the
+  API buys nothing (it cannot enable versioning either) and lets a compromise reconfigure or
+  empty a bucket. `vision:r2check` prints this as a dashboard check.
+- **Recovery from deletion requires a second copy, not a version.** That decision is open — see
+  [O3](./13-OPEN-QUESTIONS.md#o3--durability-strategy-for-the-master-corpus).
 
 ---
 

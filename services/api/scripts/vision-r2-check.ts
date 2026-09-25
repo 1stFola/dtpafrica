@@ -13,7 +13,7 @@
  */
 import {
   BUCKET_IDS,
-  VERSIONED_BUCKETS,
+  IRREPLACEABLE_BUCKETS,
   WRITE_ONCE_BUCKETS,
   visionKeys,
   type BucketId,
@@ -169,15 +169,17 @@ async function main() {
     }
   }
 
+  section("Durability");
+  // R2 has no object versioning: Cloudflare lists PutBucketVersioning as
+  // unimplemented and it returns 501 against live buckets. There is no version
+  // history to recover from, so the adapter guards are the only protection.
+  console.log(`  No version history available — R2 does not implement versioning.`);
+  console.log(`  Irreplaceable if lost:  ${IRREPLACEABLE_BUCKETS.join(", ")}`);
+  console.log(`  Write-once + protected delete enforced on: ${WRITE_ONCE_BUCKETS.join(", ")}`);
+
   section("Confirm in the dashboard");
-  // Deliberately not asserted here. A correctly scoped token grants object
-  // read/write only, so GetBucketVersioning returns AccessDenied — and widening
-  // the token just so this script could read bucket configuration would be the
-  // wrong trade. Verify these by eye, once, per environment.
-  console.log(`  Versioning ON for:      ${VERSIONED_BUCKETS.join(", ")}`);
-  console.log(`  Write-once (by policy): ${WRITE_ONCE_BUCKETS.join(", ")}`);
   console.log("  No bucket publicly readable — every read goes through a signed URL.");
-  console.log("  Token scoped to these four buckets and nothing else.");
+  console.log("  App token is Object Read & Write, NOT Admin, and scoped to these four buckets.");
 
   section("Result");
   console.log(`${checks - failures}/${checks} checks passed`);
