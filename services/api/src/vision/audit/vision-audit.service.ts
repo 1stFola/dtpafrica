@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 
@@ -63,7 +63,7 @@ export class AuditReasonRequiredError extends Error {
 
 @Injectable()
 export class VisionAuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async record(entry: VisionAuditEntry, actor?: AdminAuthContext | null): Promise<void> {
     if (REASON_REQUIRED_ACTIONS.includes(entry.action) && !entry.reason?.trim()) {

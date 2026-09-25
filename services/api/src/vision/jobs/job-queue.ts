@@ -1,0 +1,112 @@
+import type { VisionJobType, VisionResourceClass } from "@dtp/vision-contracts";
+
+/**
+ * The queue port.
+ *
+ * V1 is Postgres with `SELECT … FOR UPDATE SKIP LOCKED`, because job state has to
+ * be transactionally consistent with rights, assets and review decisions — which
+ * all live in the same database — and a 2 GB control plane does not need another
+ * broker for a handful of concurrent matches.
+ *
+ * This interface exists so that moving to Redis/BullMQ, when sustained
+ * concurrency actually justifies it, is a swap rather than a rewrite. The
+ * trigger is measured queue latency, not a hunch. See
+ * docs/vision/06-JOBS-AND-COMPUTE.md.
+ */
+
+export type EnqueueJob = {
+  /**
+   * Supplied by the caller when the id is needed before insert — the output
+   * prefix is derived from it, so an operator reading an artifact key can find
+   * the job that produced it.
+   */
+  id?: string;
+  type: VisionJobType;
+  resourceClass: VisionResourceClass;
+  priority?: number;
+  videoAssetId?: string | null;
+  datasetVersionId?: string | null;
+  modelVersionId?: string | null;
+  inputSpec: Record<string, unknown>;
+  outputPrefix: string;
+  budgetSeconds: number;
+  budgetUsdCents: number;
+  maxAttempts?: number;
+  createdBy?: string | null;
+};
+
+export type ClaimedJob = {
+  id: string;
+  type: VisionJobType;
+  resourceClass: VisionResourceClass;
+  attemptNumber: number;
+  inputSpec: Record<string, unknown>;
+  outputPrefix: string;
+  budgetSeconds: number;
+  budgetUsdCents: number;
+  videoAssetId: string | null;
+  datasetVersionId: string | null;
+  modelVersionId: string | null;
+};
+
+export type ReapResult = {
+  /** Jobs whose heartbeat went stale and were returned to the queue. */
+  requeued: string[];
+  /** Jobs that had no attempts left, or blew their budget. */
+  failed: string[];
+};
+
+export interface JobQueue {
+  enqueue(job: EnqueueJob): Promise<{ id: string }>;
+
+  /**
+   * Atomically hand one queued job to a worker.
+   *
+   * Returns null when nothing matches — the worker then waits and asks again.
+   * Never blocks: a long poll on a 2 vCPU box holding a database connection open
+   * is a worse trade than a short sleep on the worker.
+   */
+  claim(workerId: string, resourceClasses: VisionResourceClass[]): Promise<ClaimedJob | null>;
+
+  heartbeat(jobId: string, workerId: string, progress?: Record<string, unknown>): Promise<void>;
+
+  markRunning(jobId: string, workerId: string): Promise<void>;
+
+  /** Idempotent: a repeat with the same key returns without re-applying. */
+  succeed(
+    jobId: string,
+    workerId: string,
+    idempotencyKey: string,
+    summary: Record<string, unknown>
+  ): Promise<{ alreadyApplied: boolean }>;
+
+  fail(
+    jobId: string,
+    workerId: string | null,
+    error: Record<string, unknown>,
+    opts?: { retryable?: boolean }
+  ): Promise<{ requeued: boolean }>;
+
+  cancel(jobId: string, reason: string, actorId?: string | null): Promise<void>;
+
+  /** Returns stale-heartbeat and over-budget jobs to the queue or fails them. */
+  reap(now?: Date): Promise<ReapResult>;
+
+  depth(): Promise<Record<VisionResourceClass, number>>;
+}
+
+export const JOB_QUEUE = Symbol("JOB_QUEUE");
+
+export class JobNotClaimableError extends Error {
+  constructor(jobId: string, state: string) {
+    super(`Job ${jobId} is ${state} and cannot be acted on.`);
+    this.name = "JobNotClaimableError";
+  }
+}
+
+export class JobNotHeldByWorkerError extends Error {
+  constructor(jobId: string, workerId: string) {
+    super(`Worker ${workerId} does not hold job ${jobId}.`);
+    this.name = "JobNotHeldByWorkerError";
+  }
+}

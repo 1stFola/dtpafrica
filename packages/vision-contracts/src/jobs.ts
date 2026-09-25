@@ -219,3 +219,38 @@ export type CostEstimate = {
   /** True when the rate came from configuration rather than a live quote. */
   fromConfiguredRate: boolean;
 };
+
+/**
+ * Which logical bucket each job type writes its artifacts to.
+ *
+ * A worker never writes to `master`: source media and rights evidence are
+ * uploaded by an authorised client and are immutable thereafter. The control
+ * plane validates every presign request against both this and the job's
+ * `outputPrefix`, so a worker cannot choose where its output lands.
+ */
+export const OUTPUT_BUCKET_BY_JOB_TYPE: Record<VisionJobType, "derived" | "models" | "clips"> = {
+  probe: "derived",
+  fingerprint: "derived",
+  transcode: "derived",
+  detect: "derived",
+  track: "derived",
+  identify: "derived",
+  calibrate: "derived",
+  gamestate: "derived",
+  events: "derived",
+  vlm: "derived",
+  benchmark: "models",
+  train: "models",
+  clip: "clips",
+};
+
+/** Reasons a job ended without succeeding, distinct from a worker's own message. */
+export const JOB_FAILURE_KINDS = [
+  "worker_reported",
+  "heartbeat_lost",
+  "budget_exceeded",
+  "attempts_exhausted",
+  "cancelled_by_operator",
+  "prerequisite_failed",
+] as const;
+export type JobFailureKind = (typeof JOB_FAILURE_KINDS)[number];

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import {
   ACQUIRED_STATUS,
   RIGHTS_DENIAL_REMEDIATION,
@@ -60,7 +60,7 @@ type ResolvedContext = {
 
 @Injectable()
 export class RightsPolicyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   canAnalyze(subject: RightsSubject, now = new Date()): Promise<RightsDecision> {
     return this.decide("canAnalyze", subject, now);
