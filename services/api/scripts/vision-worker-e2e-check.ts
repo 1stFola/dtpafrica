@@ -16,6 +16,7 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
@@ -75,10 +76,46 @@ async function api(path: string, init?: RequestInit, attempts = 4) {
   throw lastError;
 }
 
+/**
+ * The source's dimensions, via the worker image's own ffprobe.
+ *
+ * Deliberately not the host's ffprobe: the image is guaranteed to have one and a
+ * developer's machine is not, and using the same binary the worker uses means the
+ * expectation cannot disagree with the pipeline for a codec-handling reason.
+ */
+function probeDimensions(mediaPath: string): string {
+  const dir = dirname(resolve(mediaPath));
+  const file = basename(mediaPath);
+  const out = spawnSync(
+    "docker",
+    [
+      "run", "--rm",
+      "-v", `${dir}:/probe:ro`,
+      "--entrypoint", "ffprobe",
+      IMAGE,
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0:s=x",
+      `/probe/${file}`,
+    ],
+    { encoding: "utf8" }
+  );
+  const value = (out.stdout ?? "").trim();
+  if (!/^\d+x\d+$/.test(value)) {
+    throw new Error(
+      `Could not read dimensions from ${mediaPath}: ${value || out.stderr || "no output"}`
+    );
+  }
+  return value;
+}
+
 async function main() {
   const mediaPath = process.argv[2];
   if (!mediaPath) {
-    console.error("Usage: vision:e2echeck -- <path-to-a-small-mp4>");
+    // No `--`: pnpm forwards it through as a literal argument, and the script
+    // would then take "--" for the filename.
+    console.error("Usage: pnpm --filter @dtp/api vision:e2echeck <path-to-a-small-mp4>");
     process.exitCode = 1;
     return;
   }
@@ -91,6 +128,15 @@ async function main() {
   console.log(`  image        ${IMAGE}`);
   console.log(`  object store ${store.backendId}`);
   console.log(`  source       ${mediaPath} (${statSync(mediaPath).size} bytes)`);
+
+  // The expected dimensions come from the file itself, via the same ffprobe the
+  // worker uses. They were hardcoded to one clip's 320x240, so the gate silently
+  // only worked for that clip and failed for any other file — which is not what
+  // "pass me an mp4" promises. Reading them here means the assertion checks what
+  // it claims to: that the pipeline carried the source's real dimensions through
+  // to the asset row.
+  const expectedDimensions = probeDimensions(mediaPath);
+  console.log(`  dimensions   ${expectedDimensions} (read from the file)`);
 
   const assetId = randomUUID();
   const source = visionKeys.sourceOriginal(assetId, "mp4");
@@ -230,7 +276,11 @@ async function main() {
     });
     check("codec written to the asset", afterProbe.videoCodec, "h264");
     check("duration written to the asset", typeof afterProbe.durationMs, "number");
-    check("dimensions written to the asset", `${afterProbe.width}x${afterProbe.height}`, "320x240");
+    check(
+      "dimensions written to the asset",
+      `${afterProbe.width}x${afterProbe.height}`,
+      expectedDimensions
+    );
     check("no ingest error recorded", afterProbe.ingestError, null);
 
     // ── Transcode, which depends on probe having succeeded ────────────────
