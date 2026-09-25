@@ -8,6 +8,7 @@ import {
   type ObjectStore,
   type PartRef,
   type PutConstraints,
+  type UploadedPart,
 } from "./object-store";
 
 type StoredObject = {
@@ -121,6 +122,22 @@ export class InMemoryObjectStore implements ObjectStore {
     });
     this.uploads.delete(uploadId);
     return { etag: `etag-${uploadId}` };
+  }
+
+  async listParts(
+    _bucket: BucketId,
+    _key: string,
+    uploadId: string
+  ): Promise<UploadedPart[]> {
+    const upload = this.uploads.get(uploadId);
+    if (!upload) return [];
+    return [...upload.parts.entries()]
+      .map(([partNumber, body]) => ({
+        partNumber,
+        etag: `etag-${uploadId}-${partNumber}`,
+        bytes: body.byteLength,
+      }))
+      .sort((a, b) => a.partNumber - b.partNumber);
   }
 
   async abortMultipartUpload(_bucket: BucketId, _key: string, uploadId: string) {

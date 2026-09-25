@@ -14,6 +14,9 @@ import {
 import { LocalComputeProvider } from "./compute/local-compute-provider";
 import { MockComputeProvider } from "./compute/mock-compute-provider";
 import { VISION_CONFIG, loadVisionConfig, type VisionConfig } from "./config/vision.config";
+import { VisionUploadService } from "./assets/upload.service";
+import { VisionUploadsController } from "./assets/uploads.controller";
+import { VisionJobDispatcher } from "./jobs/job-dispatcher.service";
 import { VisionJobsController } from "./jobs/jobs.controller";
 import { JOB_QUEUE } from "./jobs/job-queue";
 import { PostgresJobQueue } from "./jobs/postgres-job-queue";
@@ -82,7 +85,12 @@ const computeRegistryProvider: Provider = {
     // Same secret and lifetime as AdminModule, so one admin session works across both.
     JwtModule.register({ secret: adminJwtSecret(), signOptions: { expiresIn: "7d" } }),
   ],
-  controllers: [VisionStatusController, VisionJobsController, VisionWorkerController],
+  controllers: [
+    VisionStatusController,
+    VisionJobsController,
+    VisionWorkerController,
+    VisionUploadsController,
+  ],
   providers: [
     configProvider,
     objectStoreProvider,
@@ -92,6 +100,8 @@ const computeRegistryProvider: Provider = {
     VisionAuditService,
     VisionJobsService,
     VisionStageResultsService,
+    VisionUploadService,
+    VisionJobDispatcher,
     // Worker auth is a separate stack from admin auth on purpose: a worker token
     // must never reach an admin endpoint, and vice versa.
     WorkerTokenService,
@@ -111,6 +121,8 @@ const computeRegistryProvider: Provider = {
     VisionAuditService,
     VisionJobsService,
     VisionStageResultsService,
+    VisionUploadService,
+    VisionJobDispatcher,
   ],
 })
 export class VisionModule {}

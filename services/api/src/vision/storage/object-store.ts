@@ -27,6 +27,10 @@ export type PartRef = {
   etag: string;
 };
 
+export type UploadedPart = PartRef & {
+  bytes: number;
+};
+
 export type PutConstraints = {
   contentType?: string;
   /** Advisory: signed URL constraints vary by backend, so callers must still
@@ -63,6 +67,16 @@ export interface ObjectStore {
     uploadId: string,
     parts: PartRef[]
   ): Promise<{ etag: string | null }>;
+
+  /**
+   * What the store actually holds for an in-flight upload.
+   *
+   * The authoritative answer for resume. A client that died mid-upload never
+   * reported its last parts, and over an unreliable connection that is the normal
+   * case rather than the exception — so the server asks the store rather than
+   * trusting its own record of what it was told.
+   */
+  listParts(bucket: BucketId, key: string, uploadId: string): Promise<UploadedPart[]>;
   abortMultipartUpload(bucket: BucketId, key: string, uploadId: string): Promise<void>;
 
   head(bucket: BucketId, key: string): Promise<ObjectMeta | null>;

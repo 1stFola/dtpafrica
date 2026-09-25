@@ -7,6 +7,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  ListPartsCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -23,6 +24,7 @@ import {
   type ObjectStore,
   type PartRef,
   type PutConstraints,
+  type UploadedPart,
 } from "./object-store";
 
 /**
@@ -138,6 +140,36 @@ export class R2ObjectStore implements ObjectStore {
       })
     );
     return { etag: res.ETag ?? null };
+  }
+
+  async listParts(bucket: BucketId, key: string, uploadId: string): Promise<UploadedPart[]> {
+    const parts: UploadedPart[] = [];
+    let marker: number | undefined;
+
+    // Paginated: a 6 GB file at 16 MiB parts is ~375 parts, and S3 returns 1000
+    // at a time — but a larger part size or a bigger file should not silently
+    // truncate the resume list.
+    do {
+      const res = await this.client.send(
+        new ListPartsCommand({
+          Bucket: this.bucketName(bucket),
+          Key: key,
+          UploadId: uploadId,
+          PartNumberMarker: marker === undefined ? undefined : String(marker),
+        })
+      );
+      for (const part of res.Parts ?? []) {
+        if (part.PartNumber === undefined || !part.ETag) continue;
+        parts.push({
+          partNumber: part.PartNumber,
+          etag: part.ETag,
+          bytes: part.Size ?? 0,
+        });
+      }
+      marker = res.IsTruncated ? Number(res.NextPartNumberMarker) : undefined;
+    } while (marker !== undefined && Number.isFinite(marker));
+
+    return parts.sort((a, b) => a.partNumber - b.partNumber);
   }
 
   async abortMultipartUpload(bucket: BucketId, key: string, uploadId: string) {

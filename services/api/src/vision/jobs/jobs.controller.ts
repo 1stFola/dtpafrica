@@ -23,6 +23,7 @@ import {
 } from "../compute/compute-provider";
 import { WorkerTokenService } from "../worker/worker-token.service";
 import { jsonSafe } from "../shared/json-safe";
+import { VisionJobDispatcher } from "./job-dispatcher.service";
 import { CancelJobDto, EnqueueJobDto, ProvisionWorkerDto } from "./dto/enqueue-job.dto";
 import { JOB_QUEUE, type JobQueue } from "./job-queue";
 import { VisionJobsService } from "./vision-jobs.service";
@@ -40,6 +41,7 @@ export class VisionJobsController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(VisionJobsService) private readonly jobs: VisionJobsService,
+    @Inject(VisionJobDispatcher) private readonly dispatcher: VisionJobDispatcher,
     @Inject(WorkerTokenService) private readonly workerTokens: WorkerTokenService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(COMPUTE_PROVIDER_REGISTRY) private readonly compute: ComputeProviderRegistry,
@@ -86,6 +88,19 @@ export class VisionJobsController {
   @RequirePermissions("vision.read")
   async queueDepth() {
     return { depth: await this.queue.depth() };
+  }
+
+  @Get("jobs/dispatcher")
+  @RequirePermissions("vision.read")
+  dispatcherHealth() {
+    return this.dispatcher.health();
+  }
+
+  /** Run a reap pass now, instead of waiting for the timer. */
+  @Post("jobs/dispatcher/tick")
+  @RequirePermissions("vision.jobs.run")
+  runDispatcher() {
+    return this.dispatcher.tick();
   }
 
   @Get("jobs/:id")

@@ -3,7 +3,7 @@
 Football video intelligence for DTP Africa: turning rights-cleared Nigerian match footage into
 reviewed, reproducible player evidence.
 
-**Status:** Phase 0 complete ([gate: PASS](./15-PHASE-0-IMPLEMENTED.md)). **Phase 1 Increments 1–3 complete** — the job spine ([PASS](./16-PHASE-1-INCREMENT-1.md)), the worker container ([PASS](./17-PHASE-1-INCREMENT-2.md)) and the asset projection ([PASS](./18-PHASE-1-INCREMENT-3.md)). Next: resumable upload.
+**Status:** Phase 0 complete ([gate: PASS](./15-PHASE-0-IMPLEMENTED.md)). **Phase 1 Increments 1–4 complete** — the job spine ([PASS](./16-PHASE-1-INCREMENT-1.md)), the worker container ([PASS](./17-PHASE-1-INCREMENT-2.md)), the asset projection ([PASS](./18-PHASE-1-INCREMENT-3.md)) and resumable upload ([PASS](./19-PHASE-1-INCREMENT-4.md)). Next: the source catalog and partner upload links.
 **Source documents reconciled:** PID v2.0, Infrastructure Architecture & Build Handoff v1, Master Coding Agent Prompt v2.0 (all 24 Sep 2026).
 **Conforms to:** Architecture Freeze v1 — see [the mapping](./01-ARCHITECTURE.md#conformance-to-architecture-freeze-v1).
 **Last updated:** 24 September 2026.
@@ -33,6 +33,7 @@ reviewed, reproducible player evidence.
 | — | [16-PHASE-1-INCREMENT-1.md](./16-PHASE-1-INCREMENT-1.md) | The job spine: queue, worker API, credential model. |
 | — | [17-PHASE-1-INCREMENT-2.md](./17-PHASE-1-INCREMENT-2.md) | The worker container: probe, fingerprint, transcode. |
 | — | [18-PHASE-1-INCREMENT-3.md](./18-PHASE-1-INCREMENT-3.md) | Stage findings reaching the asset, and duplicate clustering. |
+| — | [19-PHASE-1-INCREMENT-4.md](./19-PHASE-1-INCREMENT-4.md) | Resumable upload, and the dispatcher that reaps abandoned work. |
 
 Also: [`docs/licenses/OSS_REGISTER.md`](../licenses/OSS_REGISTER.md) — every third-party
 component, with its code / weights / dataset licence tracked separately. Nothing ships without
