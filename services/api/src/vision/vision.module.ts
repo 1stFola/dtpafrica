@@ -6,13 +6,8 @@ import { adminJwtSecret } from "../admin/auth/admin-auth.util";
 import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
 import { PermissionsGuard } from "../admin/guards/permissions.guard";
 import { VisionAuditService } from "./audit/vision-audit.service";
-import {
-  COMPUTE_PROVIDER_REGISTRY,
-  ComputeProviderRegistry,
-  type ComputeProvider,
-} from "./compute/compute-provider";
-import { LocalComputeProvider } from "./compute/local-compute-provider";
-import { MockComputeProvider } from "./compute/mock-compute-provider";
+import { COMPUTE_PROVIDER_REGISTRY, type ComputeProviderRegistry } from "./compute/compute-provider";
+import { buildComputeProviderRegistry } from "./compute/provider-registry.factory";
 import { VISION_CONFIG, loadVisionConfig, type VisionConfig } from "./config/vision.config";
 import { VisionUploadService } from "./assets/upload.service";
 import { VisionUploadsController } from "./assets/uploads.controller";
@@ -77,10 +72,9 @@ const jobQueueProvider: Provider = {
 
 const computeRegistryProvider: Provider = {
   provide: COMPUTE_PROVIDER_REGISTRY,
-  useFactory: (): ComputeProviderRegistry => {
-    const providers: ComputeProvider[] = [new MockComputeProvider(), new LocalComputeProvider()];
-    return new ComputeProviderRegistry(providers);
-  },
+  // Which providers exist is decided beside the adapters, not here: the
+  // composition root has no business knowing a vendor's name.
+  useFactory: (): ComputeProviderRegistry => buildComputeProviderRegistry(),
 };
 
 @Module({
