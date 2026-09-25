@@ -22,6 +22,7 @@ import { ComputeProviderRegistry } from "../src/vision/compute/compute-provider"
 import { LocalComputeProvider } from "../src/vision/compute/local-compute-provider";
 import { MockComputeProvider } from "../src/vision/compute/mock-compute-provider";
 import { estimateUsdCents } from "../src/vision/compute/resource-rates";
+import { loadApiEnv } from "../src/shared/load-dotenv";
 import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { RightsPolicyService } from "../src/vision/rights/rights-policy.service";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
@@ -31,6 +32,9 @@ const prisma = new PrismaClient();
 
 /** Thrown to force the transaction open in this script to roll back. */
 class Rollback extends Error {}
+
+// Standalone script: nothing else populates process.env.
+loadApiEnv();
 
 let checks = 0;
 let failures = 0;

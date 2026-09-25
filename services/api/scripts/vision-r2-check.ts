@@ -18,9 +18,13 @@ import {
   visionKeys,
   type BucketId,
 } from "@dtp/vision-contracts";
+import { loadApiEnv } from "../src/shared/load-dotenv";
 import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { WriteOnceViolationError, type ObjectStore } from "../src/vision/storage/object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
+
+// Standalone script: nothing else populates process.env.
+loadApiEnv();
 
 let checks = 0;
 let failures = 0;
