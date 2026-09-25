@@ -57,7 +57,12 @@ async function main() {
     config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
   console.log(`object store: ${store.backendId}`);
 
-  let writtenKey: { bucket: "derived" | "models" | "clips"; key: string } | null = null;
+  // Declared as a mutable holder rather than a bare `let`: the assignment happens
+  // inside the transaction callback, which TypeScript will not trace, so a plain
+  // `let … = null` narrows to `null` and then to `never` in the `finally` below.
+  const written: { ref: { bucket: "derived" | "models" | "clips"; key: string } | null } = {
+    ref: null,
+  };
 
   try {
     await prisma.$transaction(
@@ -176,7 +181,7 @@ async function main() {
 
         const body = JSON.stringify({ jobId, wrote: new Date().toISOString() });
         await store.putSmallObject(bucket, goodKey, body, "application/json");
-        writtenKey = { bucket, key: goodKey };
+        written.ref = { bucket, key: goodKey };
 
         const readBack = await store.getSmallObject(bucket, goodKey);
         check("artifact round-trips through storage", readBack?.toString(), body);
@@ -244,9 +249,9 @@ async function main() {
   } catch (error) {
     if (!(error instanceof Rollback)) throw error;
   } finally {
-    if (writtenKey) {
-      await store.delete(writtenKey.bucket, writtenKey.key).catch(() => undefined);
-      const gone = await store.head(writtenKey.bucket, writtenKey.key).catch(() => null);
+    if (written.ref) {
+      await store.delete(written.ref.bucket, written.ref.key).catch(() => undefined);
+      const gone = await store.head(written.ref.bucket, written.ref.key).catch(() => null);
       check("storage cleaned up after itself", gone, null);
     }
   }

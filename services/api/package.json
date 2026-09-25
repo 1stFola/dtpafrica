@@ -21,6 +21,7 @@
     "vision:jobcheck": "tsx scripts/vision-job-loop-check.ts",
     "vision:e2echeck": "tsx scripts/vision-worker-e2e-check.ts",
     "vision:uploadcheck": "tsx scripts/vision-upload-resume-check.ts",
+    "vision:datasetcheck": "tsx scripts/vision-dataset-check.ts",
     "vision:catalogcheck": "tsx scripts/vision-catalog-check.ts"
   },
   "dependencies": {

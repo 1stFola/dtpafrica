@@ -15,6 +15,7 @@ import {
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
+import { VisionDatasetsService } from "../datasets/datasets.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
@@ -42,7 +43,10 @@ export class VisionSourcesService {
     @Inject(OBJECT_STORE) private readonly store: ObjectStore,
     @Inject(RightsPolicyService) private readonly rights: RightsPolicyService,
     @Inject(VisionAuditService) private readonly audit: VisionAuditService,
-    @Inject(VISION_CONFIG) private readonly config: VisionConfig
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig,
+    // Every parameter is explicit: mixing @Inject() with a reflected type makes the
+    // reflected ones undefined at runtime. See vision-di.spec.ts.
+    @Inject(VisionDatasetsService) private readonly datasets: VisionDatasetsService
   ) {}
 
   // ── Partners ─────────────────────────────────────────────────────────────
@@ -240,7 +244,14 @@ export class VisionSourcesService {
   async revokeScope(scopeId: string, reason: string, actor?: AdminAuthContext) {
     const scope = await this.prisma.visionRightsScope.findUnique({
       where: { id: scopeId },
-      select: { id: true, revokedAt: true },
+      select: {
+        id: true,
+        revokedAt: true,
+        canTrain: true,
+        partnerId: true,
+        sourceVideoRecordId: true,
+        playerId: true,
+      },
     });
     if (!scope) throw new NotFoundException(`Unknown rights scope ${scopeId}`);
     if (scope.revokedAt) throw new BadRequestException("This grant is already withdrawn");
@@ -254,7 +265,36 @@ export class VisionSourcesService {
       { action: "rights.scope.revoked", targetKind: "vision_rights_scope", targetId: scopeId, reason },
       actor
     );
-    return updated;
+
+    /**
+     * Withdrawing a training right has to reach the datasets that already used it.
+     *
+     * Without this the grant flipped to revoked and every frozen dataset stayed
+     * unflagged, so a later training run would use footage whose consent was gone.
+     * The datasets are flagged, never edited — see
+     * `VisionDatasetsService.flagVersionsContaining`.
+     */
+    let datasets: { datasetVersions: string[]; unresolvedPlayerScope: boolean } = {
+      datasetVersions: [],
+      unresolvedPlayerScope: false,
+    };
+    if (scope.canTrain) {
+      datasets = await this.datasets.flagVersionsForRevokedScope(scope, reason, actor);
+    }
+
+    return {
+      ...updated,
+      affectedDatasetVersions: datasets.datasetVersions,
+      // Surfaced rather than swallowed: a player-level withdrawal needs the identity
+      // graph (Phase 4) to resolve to assets, so an operator must know it still has
+      // to be actioned by hand.
+      ...(datasets.unresolvedPlayerScope
+        ? {
+            warning:
+              "Player-level withdrawal: affected datasets cannot be resolved automatically until player identity linking lands. Review datasets holding this player's footage manually.",
+          }
+        : {}),
+    };
   }
 
   // ── Source records ───────────────────────────────────────────────────────

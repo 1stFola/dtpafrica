@@ -2,6 +2,8 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
 import { VisionAuditService } from "./audit/vision-audit.service";
+import { VisionDatasetsController } from "./datasets/datasets.controller";
+import { VisionDatasetsService } from "./datasets/datasets.service";
 import { VisionUploadService } from "./assets/upload.service";
 import { VisionUploadsController } from "./assets/uploads.controller";
 import { VisionPartnerUploadsController } from "./assets/partner-uploads.controller";
@@ -34,7 +36,11 @@ import { WorkerTokenService } from "./worker/worker-token.service";
  * parameter left to a reflected type resolves to `undefined`. So every Vision
  * constructor is fully explicit, and this compiles the real module and checks it.
  *
- * **If you add a provider or controller, add it here.**
+ * The lists below were originally maintained by hand, under a comment asking the
+ * next person to remember. "Coverage is complete" and "someone remembered" are not
+ * the same claim, so the last two tests derive the expectation from the module's own
+ * metadata: a provider or controller added to `VisionModule` and not listed here
+ * fails this file rather than being silently skipped.
  */
 
 const PROVIDERS = [
@@ -49,6 +55,7 @@ const PROVIDERS = [
   VisionUploadService,
   VisionJobDispatcher,
   VisionSourcesService,
+  VisionDatasetsService,
   WorkerTokenService,
 ] as const;
 
@@ -59,6 +66,7 @@ const CONTROLLERS = [
   VisionUploadsController,
   VisionPartnerUploadsController,
   VisionSourcesController,
+  VisionDatasetsController,
 ] as const;
 
 const SERVICES = [
@@ -69,6 +77,7 @@ const SERVICES = [
   VisionSourcesService,
   RightsPolicyService,
   VisionAuditService,
+  VisionDatasetsService,
   WorkerTokenService,
 ] as const;
 
@@ -105,6 +114,39 @@ describe("VisionModule resolves through the container", () => {
 
   it("compiles", () => {
     expect(moduleRef).toBeDefined();
+  });
+
+  /**
+   * Guards the guard. Without these two, adding a controller and forgetting to list
+   * it above leaves this file passing while covering nothing new — which is how a
+   * DI bug reached production twice already.
+   */
+  it("checks every controller the module declares", () => {
+    const declared = (Reflect.getMetadata("controllers", VisionModule) ?? []) as { name: string }[];
+    const covered = new Set(CONTROLLERS.map((c) => c.name));
+    expect(declared.map((c) => c.name).filter((n) => !covered.has(n))).toEqual([]);
+  });
+
+  it("checks every class provider the module declares", () => {
+    const declared = (Reflect.getMetadata("providers", VisionModule) ?? []) as unknown[];
+    // Factory and value providers are objects with a `provide` token; their tokens
+    // are covered by PROVIDERS instead.
+    const classes = declared.filter(
+      (entry): entry is { name: string } =>
+        typeof entry === "function" && typeof (entry as { name?: string }).name === "string"
+    );
+    const covered = new Set<string>([
+      ...PROVIDERS.filter((t) => typeof t === "function").map((t) => (t as { name: string }).name),
+      ...SERVICES.map((s) => s.name),
+      // Guards are exercised through the controllers that mount them.
+      "AdminAuthGuard",
+      "PermissionsGuard",
+      "AdminAuthService",
+      "PartnerUploadGuard",
+      "VisionWorkerGuard",
+      "VisionWorkerBootstrapGuard",
+    ]);
+    expect(classes.map((c) => c.name).filter((n) => !covered.has(n))).toEqual([]);
   });
 
   it.each(PROVIDERS.map((token) => [String(token.toString()).slice(0, 48), token] as const))(

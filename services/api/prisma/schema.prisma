@@ -1214,6 +1214,8 @@ model VisionVideoAsset {
   jobs              VisionJob[]
   datasetMembers    VisionDatasetMember[]
   deletionRequests  VisionDeletionRequest[]
+  annotationTasks   VisionAnnotationTask[]
+  activeLearning    VisionActiveLearningItem[]
 
   @@index([checksumSha256])
   @@index([perceptualFingerprint])
@@ -1433,7 +1435,14 @@ model VisionDatasetVersion {
   label       String    @unique
   description String?   @db.Text
   manifestKey String?   @map("manifest_key")
+  labelSchemaVersionId String? @map("label_schema_version_id")
   splitPolicy Json?     @map("split_policy")
+  /// Proof that no duplicate cluster or match crosses a split. A dataset cannot be
+  /// frozen while this fails, and the stored report is what a later reader trusts.
+  leakageReport        Json?  @map("leakage_report")
+  /// Distribution across competition, camera, lighting, resolution and source
+  /// quality. How a corpus quietly dominated by one competition gets caught.
+  representationReport Json?  @map("representation_report")
   frozenAt    DateTime? @map("frozen_at")
   frozenBy    String?   @map("frozen_by")
   /// Set by revocation. A frozen dataset is immutable, so history is never
@@ -1442,9 +1451,10 @@ model VisionDatasetVersion {
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
 
-  members       VisionDatasetMember[]
-  jobs          VisionJob[]
-  modelVersions VisionModelVersion[]
+  members            VisionDatasetMember[]
+  jobs               VisionJob[]
+  modelVersions      VisionModelVersion[]
+  labelSchemaVersion VisionLabelSchemaVersion? @relation(fields: [labelSchemaVersionId], references: [id])
 
   @@map("vision_dataset_versions")
 }
@@ -1457,6 +1467,11 @@ model VisionDatasetMember {
   /// still prove which bytes it was built from.
   checksumSha256   String   @map("checksum_sha256")
   split            String
+  /// Denormalised so the leakage checker can group without loading every asset, and
+  /// so a frozen manifest still records how the grouping was decided even if the
+  /// asset is later re-clustered.
+  groupKey         String   @map("group_key")
+  sbMatchId        String?  @map("sb_match_id")
   createdAt        DateTime @default(now()) @map("created_at")
 
   datasetVersion VisionDatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
@@ -1464,6 +1479,7 @@ model VisionDatasetMember {
 
   @@unique([datasetVersionId, videoAssetId])
   @@index([datasetVersionId, split])
+  @@index([datasetVersionId, groupKey])
   @@map("vision_dataset_members")
 }
 
@@ -1531,4 +1547,130 @@ model VisionAuditLog {
   @@index([targetKind, targetId])
   @@index([actorId, createdAt])
   @@map("vision_audit_logs")
+}
+
+// ── Dataset factory — Phase 2 ─────────────────────────────────────────────
+
+/// A versioned label taxonomy.
+///
+/// Changing what counts as a "pass" is a schema change with a migration, not a
+/// quiet edit to a handbook — otherwise two annotators label the same footage
+/// against different definitions and the disagreement looks like noise.
+model VisionLabelSchemaVersion {
+  id            String    @id @default(uuid())
+  version       String    @unique
+  /// The definitions themselves: classes, event taxonomy, required attributes.
+  definitions   Json
+  handbookKey   String?   @map("handbook_key")
+  effectiveFrom DateTime  @map("effective_from")
+  supersededAt  DateTime? @map("superseded_at")
+  authoredBy    String?   @map("authored_by")
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  annotationTasks VisionAnnotationTask[]
+  datasetVersions VisionDatasetVersion[]
+
+  @@map("vision_label_schema_versions")
+}
+
+/// One unit of annotation work: a window of one asset, sampled for a reason.
+model VisionAnnotationTask {
+  id                   String  @id @default(uuid())
+  videoAssetId         String  @map("video_asset_id")
+  labelSchemaVersionId String  @map("label_schema_version_id")
+  /// Why this window was chosen. Random sampling produces a corpus of easy
+  /// frames, so the strategy is recorded and the mix is auditable.
+  samplingStrategy     String  @map("sampling_strategy")
+  startMs              Int     @map("start_ms")
+  endMs                Int     @map("end_ms")
+  /// Flat actor id: an annotator may leave the organisation.
+  assignedTo           String? @map("assigned_to")
+  state                String
+  /// Set when the drawing was done in an external tool.
+  externalTaskRef      String? @map("external_task_ref")
+  /// True when a model produced the starting labels. Reviewers must be able to
+  /// see this — an unmarked pre-label is an anchoring-bias machine.
+  preLabelled          Boolean @default(false) @map("pre_labelled")
+  preLabelModelVersionId String? @map("pre_label_model_version_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  videoAsset         VisionVideoAsset          @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  labelSchemaVersion VisionLabelSchemaVersion  @relation(fields: [labelSchemaVersionId], references: [id])
+  versions           VisionAnnotationVersion[]
+
+  @@index([videoAssetId, state])
+  @@index([assignedTo, state])
+  @@index([samplingStrategy])
+  @@map("vision_annotation_tasks")
+}
+
+/// One annotator's submission. Superseded, never edited.
+///
+/// The corrections are the training signal, so overwriting them throws away the
+/// most valuable data DTP generates.
+model VisionAnnotationVersion {
+  id           String   @id @default(uuid())
+  taskId       String   @map("task_id")
+  /// Labels live in object storage; only the pointer and its checksum are here.
+  payloadKey   String   @map("payload_key")
+  payloadChecksum String @map("payload_checksum")
+  annotatorId  String?  @map("annotator_id")
+  supersedesId String?  @unique @map("supersedes_id")
+  /// Minutes spent. Correction time is a first-class metric: a model that is 5%
+  /// better but doubles it is worse for DTP.
+  effortMinutes Float?  @map("effort_minutes")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  task       VisionAnnotationTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  supersedes VisionAnnotationVersion? @relation("AnnotationSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy VisionAnnotationVersion? @relation("AnnotationSupersedes")
+  reviews    VisionReviewDecision[]
+
+  @@index([taskId, createdAt])
+  @@map("vision_annotation_versions")
+}
+
+/// A reviewer's verdict. Append-only.
+model VisionReviewDecision {
+  id                  String  @id @default(uuid())
+  annotationVersionId String? @map("annotation_version_id")
+  /// Generalised so the same table records verdicts on predictions and events too.
+  targetKind          String  @map("target_kind")
+  targetId            String  @map("target_id")
+  decision            String
+  /// Structured, because these drive the next sampling batch: wrong_box,
+  /// wrong_identity, camera_cut, ball_invisible, event_ambiguous, roster_error,
+  /// rights_issue.
+  rejectionReason     String? @map("rejection_reason")
+  reviewerId          String? @map("reviewer_id")
+  notes               String? @db.Text
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  annotationVersion VisionAnnotationVersion? @relation(fields: [annotationVersionId], references: [id], onDelete: SetNull)
+
+  @@index([targetKind, targetId])
+  @@index([reviewerId, createdAt])
+  @@map("vision_review_decisions")
+}
+
+/// The correction loop, queued.
+///
+/// Ranked by low confidence, cross-stage disagreement, reviewer disagreement, a
+/// new domain slice, or business value.
+model VisionActiveLearningItem {
+  id           String   @id @default(uuid())
+  videoAssetId String   @map("video_asset_id")
+  startMs      Int      @map("start_ms")
+  endMs        Int      @map("end_ms")
+  reason       String
+  score        Float
+  state        String   @default("queued")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+
+  @@index([state, score])
+  @@map("vision_active_learning_items")
 }

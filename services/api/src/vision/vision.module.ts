@@ -6,6 +6,8 @@ import { adminJwtSecret } from "../admin/auth/admin-auth.util";
 import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
 import { PermissionsGuard } from "../admin/guards/permissions.guard";
 import { VisionAuditService } from "./audit/vision-audit.service";
+import { VisionDatasetsController } from "./datasets/datasets.controller";
+import { VisionDatasetsService } from "./datasets/datasets.service";
 import { COMPUTE_PROVIDER_REGISTRY, type ComputeProviderRegistry } from "./compute/compute-provider";
 import { buildComputeProviderRegistry } from "./compute/provider-registry.factory";
 import { VISION_CONFIG, loadVisionConfig, type VisionConfig } from "./config/vision.config";
@@ -90,6 +92,7 @@ const computeRegistryProvider: Provider = {
     VisionUploadsController,
     VisionPartnerUploadsController,
     VisionSourcesController,
+    VisionDatasetsController,
   ],
   providers: [
     configProvider,
@@ -103,6 +106,7 @@ const computeRegistryProvider: Provider = {
     VisionUploadService,
     VisionJobDispatcher,
     VisionSourcesService,
+    VisionDatasetsService,
     // A third auth stack, unrelated to admin sessions and worker tokens.
     PartnerUploadGuard,
     // Worker auth is a separate stack from admin auth on purpose: a worker token
@@ -127,6 +131,7 @@ const computeRegistryProvider: Provider = {
     VisionUploadService,
     VisionJobDispatcher,
     VisionSourcesService,
+    VisionDatasetsService,
   ],
 })
 export class VisionModule {}
