@@ -22,6 +22,7 @@ import {
   type ComputeProviderRegistry,
 } from "../compute/compute-provider";
 import { WorkerTokenService } from "../worker/worker-token.service";
+import { jsonSafe } from "../shared/json-safe";
 import { CancelJobDto, EnqueueJobDto, ProvisionWorkerDto } from "./dto/enqueue-job.dto";
 import { JOB_QUEUE, type JobQueue } from "./job-queue";
 import { VisionJobsService } from "./vision-jobs.service";
@@ -38,8 +39,8 @@ import { VisionJobsService } from "./vision-jobs.service";
 export class VisionJobsController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    private readonly jobs: VisionJobsService,
-    private readonly workerTokens: WorkerTokenService,
+    @Inject(VisionJobsService) private readonly jobs: VisionJobsService,
+    @Inject(WorkerTokenService) private readonly workerTokens: WorkerTokenService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(COMPUTE_PROVIDER_REGISTRY) private readonly compute: ComputeProviderRegistry,
     @Inject(VISION_CONFIG) private readonly config: VisionConfig
@@ -95,7 +96,8 @@ export class VisionJobsController {
       include: { cost: true },
     });
     if (!job) throw new NotFoundException(`Unknown job ${id}`);
-    return { job };
+    // The cost row carries BigInt byte counters, which JSON.stringify refuses.
+    return { job: jsonSafe(job) };
   }
 
   @Get("jobs/:id/events")

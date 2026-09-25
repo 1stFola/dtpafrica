@@ -24,8 +24,8 @@ import { JOB_QUEUE, type JobQueue } from "./job-queue";
 export class VisionJobsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    private readonly rights: RightsPolicyService,
-    private readonly audit: VisionAuditService,
+    @Inject(RightsPolicyService) private readonly rights: RightsPolicyService,
+    @Inject(VisionAuditService) private readonly audit: VisionAuditService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(VISION_CONFIG) private readonly config: VisionConfig
   ) {}

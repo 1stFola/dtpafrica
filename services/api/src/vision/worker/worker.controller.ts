@@ -15,6 +15,7 @@ import {
   OUTPUT_BUCKET_BY_JOB_TYPE,
   VISION_CONTRACT_VERSION,
   isKeyUnderPrefix,
+  visionKeys,
   type VisionJobSpec,
   type VisionJobType,
 } from "@dtp/vision-contracts";
@@ -26,6 +27,7 @@ import { CompleteJobDto } from "./dto/complete-job.dto";
 import { ClaimJobDto } from "./dto/claim-job.dto";
 import { FailJobDto } from "./dto/fail-job.dto";
 import { HeartbeatDto } from "./dto/heartbeat.dto";
+import { InputUrlDto } from "./dto/input-url.dto";
 import { PresignDto } from "./dto/presign.dto";
 import { VisionWorkerBootstrapGuard, VisionWorkerGuard, type WorkerRequest } from "./vision-worker.guard";
 import { WorkerTokenService } from "./worker-token.service";
@@ -43,7 +45,7 @@ import { WorkerTokenService } from "./worker-token.service";
 export class VisionWorkerController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    private readonly tokens: WorkerTokenService,
+    @Inject(WorkerTokenService) private readonly tokens: WorkerTokenService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
     @Inject(VISION_CONFIG) private readonly config: VisionConfig
@@ -174,6 +176,61 @@ export class VisionWorkerController {
     );
 
     return { url, bucket, key: dto.key, expiresInSeconds: this.config.upload.partUrlTtlSeconds };
+  }
+
+  /**
+   * Issue a read URL for one of the job's declared inputs.
+   *
+   * The worker asks for a ROLE, not a key. The control plane resolves it from the
+   * job's own asset, so a worker cannot read an arbitrary object any more than it
+   * can write one — asking for "source" gets you this job's source and nothing
+   * else.
+   */
+  @Post("jobs/:id/input-url")
+  @UseGuards(VisionWorkerGuard)
+  async inputUrl(@Req() req: WorkerRequest, @Param("id") jobId: string, @Body() dto: InputUrlDto) {
+    const auth = this.auth(req);
+
+    const job = await this.prisma.visionJob.findUnique({
+      where: { id: jobId },
+      select: { state: true, workerId: true, videoAssetId: true },
+    });
+    if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
+    if (job.workerId !== auth.workerId) {
+      throw new ForbiddenException("This worker does not hold that job");
+    }
+    if (!["claimed", "running"].includes(job.state)) {
+      throw new ForbiddenException(`Job is ${job.state}; it may no longer read inputs`);
+    }
+    if (!job.videoAssetId) {
+      throw new BadRequestException("This job has no video asset to read");
+    }
+
+    const asset = await this.prisma.visionVideoAsset.findUnique({
+      where: { id: job.videoAssetId },
+      select: { id: true, objectKey: true, mimeType: true },
+    });
+    if (!asset) throw new NotFoundException("The job's video asset no longer exists");
+
+    // Roles resolve to keys here, from the asset row. Never from the request.
+    const ref =
+      dto.role === "source"
+        ? { bucket: "master" as const, key: asset.objectKey }
+        : visionKeys.proxy(asset.id);
+
+    const url = await this.objectStore.presignGet(
+      ref.bucket,
+      ref.key,
+      this.config.playback.urlTtlSeconds
+    );
+
+    return {
+      url,
+      bucket: ref.bucket,
+      key: ref.key,
+      role: dto.role,
+      expiresInSeconds: this.config.playback.urlTtlSeconds,
+    };
   }
 
   @Post("jobs/:id/complete")
