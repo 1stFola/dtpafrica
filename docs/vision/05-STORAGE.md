@@ -184,9 +184,32 @@ The control plane issues part URLs; the bytes go browser-to-R2. EC2 never sees t
 | `models/` | No expiry. Archived stages stay readable. |
 | `clips/` | Retained while published or pending review; expire 180 days after rejection. |
 
-`ObjectStore.delete` is gated: the Vision module exposes no unrestricted delete path. Deletions
-go through a service that checks the deletion policy, records an audit entry, and refuses on
-`master/` unless an approved deletion request exists.
+### Deletion is gated at the adapter, not only by policy
+
+`ObjectStore` has two delete paths, and the split is deliberate:
+
+| Method | Behaviour |
+|---|---|
+| `delete(bucket, key)` | Works on regenerable buckets. **Throws `WriteOnceDeleteError` on a write-once bucket.** |
+| `deleteProtected(bucket, key, justification)` | The only way to remove source media or rights evidence. A blank justification throws. |
+
+`deleteProtected` is deliberately awkward — a distinct name that is trivial to grep for in review,
+and a justification that cannot be omitted. Callers are expected to hold an approved
+`VisionDeletionRequest` and to write an audit entry.
+
+**Why this is enforced in the adapter rather than left to a policy service.** Write-once
+enforcement stops an *overwrite*. It said nothing about a *delete* — and a delete is the one loss
+that cannot be undone while bucket versioning is off.
+
+Versioning is off, and cannot currently be turned on from the application: the R2 token is scoped
+to object read/write, so `PutBucketVersioning` returns `AccessDenied` (403, verified against the
+live buckets). That is the correct posture for a credential the API holds in production — it
+should never be able to reconfigure a bucket — but it means the adapter is the last line of
+defence rather than a redundant one.
+
+**Enabling versioning needs a separate, temporary R2 token with Admin Read & Write**, used once and
+then deleted. Until that happens, the adapter guard is the only thing standing between a stray
+`delete` call and permanent loss of a partner's master footage.
 
 ---
 

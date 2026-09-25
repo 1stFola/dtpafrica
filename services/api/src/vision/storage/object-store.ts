@@ -68,13 +68,24 @@ export interface ObjectStore {
   head(bucket: BucketId, key: string): Promise<ObjectMeta | null>;
   list(bucket: BucketId, prefix: string, cursor?: string): Promise<ObjectPage>;
   /**
-   * Low-level delete.
+   * Delete an object from a regenerable bucket.
    *
-   * Never call this directly from a controller or a domain service: deletions go
-   * through a service that checks the deletion policy, writes an audit entry and
-   * refuses on the master bucket without an approved deletion request.
+   * Refuses outright on a write-once bucket — see `deleteProtected`. Write-once
+   * enforcement stops an *overwrite*; without this, it did nothing about a
+   * delete, which is the one loss that cannot be undone while bucket versioning
+   * is off.
    */
   delete(bucket: BucketId, key: string): Promise<void>;
+
+  /**
+   * Delete from a write-once bucket. The only way to remove source media or
+   * rights evidence.
+   *
+   * Deliberately awkward: a separate method name that is trivial to grep for in
+   * review, and a `justification` that cannot be omitted. Callers are expected
+   * to have an approved deletion request, and to write an audit entry.
+   */
+  deleteProtected(bucket: BucketId, key: string, justification: string): Promise<void>;
   copy(
     from: { bucket: BucketId; key: string },
     to: { bucket: BucketId; key: string }
@@ -107,5 +118,23 @@ export class WriteOnceViolationError extends Error {
         `Source media and rights evidence are immutable.`
     );
     this.name = "WriteOnceViolationError";
+  }
+}
+
+export class WriteOnceDeleteError extends Error {
+  constructor(bucket: string, key: string) {
+    super(
+      `Refusing to delete ${bucket}/${key}: this bucket is write-once. ` +
+        `Removing source media or rights evidence requires deleteProtected() ` +
+        `with a justification, and an approved deletion request.`
+    );
+    this.name = "WriteOnceDeleteError";
+  }
+}
+
+export class MissingJustificationError extends Error {
+  constructor(bucket: string, key: string) {
+    super(`deleteProtected(${bucket}/${key}) requires a non-empty justification.`);
+    this.name = "MissingJustificationError";
   }
 }

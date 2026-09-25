@@ -1,7 +1,12 @@
 import { visionKeys } from "@dtp/vision-contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import { InMemoryObjectStore } from "./in-memory-object-store";
-import { WriteOnceViolationError, type ObjectStore } from "./object-store";
+import {
+  MissingJustificationError,
+  WriteOnceDeleteError,
+  WriteOnceViolationError,
+  type ObjectStore,
+} from "./object-store";
 
 const ASSET = "asset-1";
 
@@ -80,6 +85,56 @@ describe("the master bucket is write-once", () => {
     await store.putSmallObject(bucket, key, "v1", "video/mp4");
     await store.putSmallObject(bucket, key, "v2", "video/mp4");
     expect((await store.getSmallObject(bucket, key))?.toString()).toBe("v2");
+  });
+});
+
+/**
+ * Write-once stops an overwrite. It said nothing about a delete, which is the
+ * one loss that cannot be undone while R2 bucket versioning is off — and our
+ * application token cannot enable versioning, by design.
+ */
+describe("deletion from a write-once bucket", () => {
+  const master = visionKeys.sourceOriginal(ASSET, "mp4");
+
+  beforeEach(async () => {
+    await store.putSmallObject(master.bucket, master.key, "source bytes", "video/mp4");
+  });
+
+  it("refuses an ordinary delete of source media", async () => {
+    await expect(store.delete(master.bucket, master.key)).rejects.toThrow(WriteOnceDeleteError);
+    expect(await store.head(master.bucket, master.key)).not.toBeNull();
+  });
+
+  it("refuses an ordinary delete of rights evidence", async () => {
+    const evidence = visionKeys.rightsEvidence("partner-1", "ev-1", "pdf");
+    await store.putSmallObject(evidence.bucket, evidence.key, "contract", "application/pdf");
+    await expect(store.delete(evidence.bucket, evidence.key)).rejects.toThrow(WriteOnceDeleteError);
+  });
+
+  it("allows deleteProtected with a justification", async () => {
+    await store.deleteProtected(master.bucket, master.key, "approved deletion request DR-1");
+    expect(await store.head(master.bucket, master.key)).toBeNull();
+  });
+
+  it("records the justification so it can be audited", async () => {
+    await store.deleteProtected(master.bucket, master.key, "approved deletion request DR-1");
+    expect(store.protectedDeletes).toEqual([
+      { bucket: master.bucket, key: master.key, justification: "approved deletion request DR-1" },
+    ]);
+  });
+
+  it.each(["", "   "])("refuses deleteProtected with a blank justification %j", async (reason) => {
+    await expect(store.deleteProtected(master.bucket, master.key, reason)).rejects.toThrow(
+      MissingJustificationError
+    );
+    expect(await store.head(master.bucket, master.key)).not.toBeNull();
+  });
+
+  it("still allows an ordinary delete from a regenerable bucket", async () => {
+    const { bucket, key } = visionKeys.proxy(ASSET);
+    await store.putSmallObject(bucket, key, "proxy", "video/mp4");
+    await store.delete(bucket, key);
+    expect(await store.head(bucket, key)).toBeNull();
   });
 });
 

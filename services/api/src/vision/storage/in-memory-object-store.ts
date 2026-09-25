@@ -1,5 +1,7 @@
 import { WRITE_ONCE_BUCKETS, type BucketId } from "@dtp/vision-contracts";
 import {
+  MissingJustificationError,
+  WriteOnceDeleteError,
   WriteOnceViolationError,
   type ObjectMeta,
   type ObjectPage,
@@ -37,6 +39,9 @@ export class InMemoryObjectStore implements ObjectStore {
 
   /** Every presign issued, so tests can assert on TTLs and methods. */
   readonly issuedUrls: { method: string; bucket: BucketId; key: string; ttlSeconds: number }[] = [];
+
+  /** Every write-once deletion, so a test can assert the justification reached the adapter. */
+  readonly protectedDeletes: { bucket: BucketId; key: string; justification: string }[] = [];
 
   private id(bucket: BucketId, key: string) {
     return `${bucket}/${key}`;
@@ -145,6 +150,15 @@ export class InMemoryObjectStore implements ObjectStore {
   }
 
   async delete(bucket: BucketId, key: string) {
+    if (WRITE_ONCE_BUCKETS.includes(bucket)) {
+      throw new WriteOnceDeleteError(bucket, key);
+    }
+    this.objects.delete(this.id(bucket, key));
+  }
+
+  async deleteProtected(bucket: BucketId, key: string, justification: string) {
+    if (!justification.trim()) throw new MissingJustificationError(bucket, key);
+    this.protectedDeletes.push({ bucket, key, justification });
     this.objects.delete(this.id(bucket, key));
   }
 

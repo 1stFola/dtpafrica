@@ -155,11 +155,17 @@ async function main() {
 
       // The probe is the one thing we are allowed to remove from master: it was
       // written by this script and is not source media.
-      await store.delete(masterProbe.bucket, masterProbe.key);
+      await store.deleteProtected(
+        masterProbe.bucket,
+        masterProbe.key,
+        "connectivity-check probe object, written by this script seconds earlier"
+      );
       pass("probe removed from master");
     } catch (error) {
       fail("write-once enforced", describeError(error));
-      await store.delete(masterProbe.bucket, masterProbe.key).catch(() => undefined);
+      await store
+        .deleteProtected(masterProbe.bucket, masterProbe.key, "failed connectivity-check probe cleanup")
+        .catch(() => undefined);
     }
   }
 

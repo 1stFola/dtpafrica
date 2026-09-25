@@ -15,6 +15,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { WRITE_ONCE_BUCKETS, type BucketId } from "@dtp/vision-contracts";
 import type { VisionStorageConfig } from "../config/vision.config";
 import {
+  MissingJustificationError,
+  WriteOnceDeleteError,
   WriteOnceViolationError,
   type ObjectMeta,
   type ObjectPage,
@@ -182,6 +184,18 @@ export class R2ObjectStore implements ObjectStore {
   }
 
   async delete(bucket: BucketId, key: string) {
+    if (WRITE_ONCE_BUCKETS.includes(bucket)) {
+      throw new WriteOnceDeleteError(bucket, key);
+    }
+    await this.sendDelete(bucket, key);
+  }
+
+  async deleteProtected(bucket: BucketId, key: string, justification: string) {
+    if (!justification.trim()) throw new MissingJustificationError(bucket, key);
+    await this.sendDelete(bucket, key);
+  }
+
+  private async sendDelete(bucket: BucketId, key: string) {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucketName(bucket), Key: key })
     );
