@@ -16,7 +16,8 @@
     "db:repair:squad-duplicates": "tsx scripts/repair-sb-team-squad-duplicates.ts",
     "db:push": "prisma db push --accept-data-loss",
     "calibrate": "pnpm --filter @dtp/engines build && tsx scripts/run-calibration.ts",
-    "vision:selfcheck": "tsx scripts/vision-phase0-selfcheck.ts"
+    "vision:selfcheck": "tsx scripts/vision-phase0-selfcheck.ts",
+    "vision:r2check": "tsx scripts/vision-r2-check.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
