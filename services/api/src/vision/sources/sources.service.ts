@@ -459,12 +459,35 @@ export class VisionSourcesService {
     });
     if (!source) throw new NotFoundException(`Unknown source record ${id}`);
 
-    // What the rights engine actually decides, rather than what the rows suggest.
-    const decisions = await this.rights.describe({ sourceVideoRecordId: id });
+    /**
+     * What the rights engine actually decides, rather than what the rows suggest.
+     *
+     * Resolved against a representative **asset** when this record has one, not
+     * against the record alone. `canTrain` insists on an asset — training happens
+     * on a copy, not on a catalogue entry — so resolving the record by itself made
+     * the Train row read "not granted" on every screen, however acquired the
+     * footage and however complete the paperwork. Worse, it hid the real answer:
+     * research-only footage showed "pending acquisition" instead of naming the
+     * corpus firewall as the reason.
+     *
+     * The oldest asset, so the answer is stable between requests rather than
+     * depending on row order.
+     */
+    const representative = [...source.videoAssets].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+    )[0];
+    const decisions = await this.rights.describe(
+      representative
+        ? { sourceVideoRecordId: id, videoAssetId: representative.id }
+        : { sourceVideoRecordId: id }
+    );
 
     return {
       source,
       decisions,
+      // Which copy the decisions describe, so the screen is never ambiguous about
+      // what "granted" refers to.
+      decisionsResolvedAgainstAssetId: representative?.id ?? null,
       preference: SOURCE_QUALITY_PREFERENCE[
         source.sourceQualityRank as keyof typeof SOURCE_QUALITY_PREFERENCE
       ] ?? null,
