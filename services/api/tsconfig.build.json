@@ -1,11 +1,7 @@
 {
+  // `paths` is inherited from tsconfig.json deliberately: one mapping, so tsc,
+  // vitest and tsx cannot disagree about what a workspace import resolves to.
   "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "paths": {
-      "@dtp/engines": ["../../packages/engines/src/index.ts"],
-      "@dtp/vision-contracts": ["../../packages/vision-contracts/src/index.ts"]
-    }
-  },
   "include": [
     "src/**/*",
     "prisma/seed-scoreboard.ts",

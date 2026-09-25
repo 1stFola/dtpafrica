@@ -10,6 +10,18 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    // Workspace packages resolve to their SOURCE, here in the base config so every
+    // tool agrees: tsc, vitest (see vitest.config.mts) and tsx, which runs the dev
+    // server and every gate script and reads *this* file, not tsconfig.build.json.
+    //
+    // These lived only in tsconfig.build.json, so tsx fell through to node_modules
+    // and the package's own dist/ — which is gitignored. `pnpm dev` and the gate
+    // scripts therefore worked only on a machine that happened to have built it,
+    // and failed on a fresh clone.
+    "paths": {
+      "@dtp/engines": ["../../packages/engines/src/index.ts"],
+      "@dtp/vision-contracts": ["../../packages/vision-contracts/src/index.ts"]
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
