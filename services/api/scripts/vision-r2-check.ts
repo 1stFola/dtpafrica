@@ -163,11 +163,15 @@ async function main() {
     }
   }
 
-  section("Reminders");
-  console.log(`  Versioning should be ON for: ${VERSIONED_BUCKETS.join(", ")}`);
-  console.log(`  Write-once buckets:          ${WRITE_ONCE_BUCKETS.join(", ")}`);
-  console.log("  No bucket should be publicly readable; all reads go through signed URLs.");
-  console.log("  The API token should be scoped to these four buckets and nothing else.");
+  section("Confirm in the dashboard");
+  // Deliberately not asserted here. A correctly scoped token grants object
+  // read/write only, so GetBucketVersioning returns AccessDenied — and widening
+  // the token just so this script could read bucket configuration would be the
+  // wrong trade. Verify these by eye, once, per environment.
+  console.log(`  Versioning ON for:      ${VERSIONED_BUCKETS.join(", ")}`);
+  console.log(`  Write-once (by policy): ${WRITE_ONCE_BUCKETS.join(", ")}`);
+  console.log("  No bucket publicly readable — every read goes through a signed URL.");
+  console.log("  Token scoped to these four buckets and nothing else.");
 
   section("Result");
   console.log(`${checks - failures}/${checks} checks passed`);
