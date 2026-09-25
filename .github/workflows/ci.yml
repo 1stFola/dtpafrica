@@ -87,3 +87,70 @@ jobs:
 
       - name: Validate staging compose
         run: docker compose --env-file infra/.env.staging.example -f infra/docker-compose.staging.yml config
+  # ── Worker image ──────────────────────────────────────────────────────────
+  #
+  # Main pushes only. Nothing else in CI builds this image, so a Dockerfile that
+  # no longer builds would pass every check and fail at deploy — but an ffmpeg
+  # image on every pull request is minutes of runner time per push, so it is paid
+  # once per merge instead.
+  #
+  # `needs: verify` because building an image for code that fails its tests proves
+  # nothing. Nothing is pushed to a registry here: this job answers "does it
+  # build and start", and publishing is the deploy workflow's job.
+  worker-image:
+    name: Build the vision worker image
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t dtp-vision-worker:ci services/vision-worker
+
+      # A build that succeeds but produces an image whose entrypoint cannot start
+      # is the failure this job exists to catch, and `docker build` alone would not
+      # see it. Running with no configuration proves the entrypoint resolves, the
+      # package imported and its dependencies installed: the worker refuses to
+      # start and names every missing setting, exiting 2.
+      - name: The image starts and refuses an empty configuration
+        run: |
+          set +e
+          output=$(docker run --rm dtp-vision-worker:ci 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -ne 2 ]; then
+            echo "::error::Expected exit 2 from an unconfigured worker, got $status"
+            exit 1
+          fi
+          for setting in VISION_WORKER_CALLBACK_URL VISION_BOOTSTRAP_TOKEN VISION_RESOURCE_CLASS; do
+            echo "$output" | grep -q "$setting" || {
+              echo "::error::Startup validation no longer names $setting"
+              exit 1
+            }
+          done
+
+      # ffmpeg is the reason this image is as large as it is. If an apt-get line is
+      # ever dropped the stages break at runtime and nowhere else.
+      - name: ffmpeg is present
+        run: docker run --rm --entrypoint ffmpeg dtp-vision-worker:ci -version
+
+      # The Dockerfile promises an unprivileged worker. A regression here is silent.
+      - name: The image does not run as root
+        run: |
+          uid=$(docker run --rm --entrypoint id dtp-vision-worker:ci -u)
+          echo "runs as uid $uid"
+          [ "$uid" != "0" ] || { echo "::error::The worker image runs as root"; exit 1; }
+
+      # CUDA-free on purpose: probe, fingerprint and transcode are CPU-bound, and a
+      # GPU image would mean paying GPU rates for FFmpeg. The GPU image builds FROM
+      # this one, so the split has to stay real.
+      - name: The CPU image carries no GPU stack
+        run: |
+          packages=$(docker run --rm --entrypoint pip dtp-vision-worker:ci list)
+          found=$(echo "$packages" | grep -ciE "^(torch|nvidia|tensorrt)" || true)
+          echo "GPU packages found: $found"
+          [ "$found" = "0" ] || { echo "::error::GPU packages leaked into the CPU image"; exit 1; }
