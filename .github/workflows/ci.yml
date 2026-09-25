@@ -47,6 +47,11 @@ jobs:
       - name: Run engines tests
         run: pnpm --filter @dtp/engines test
 
+      # The shared Vision vocabulary has its own tests, including the version pin
+      # the Python worker checks itself against. They existed but had never run here.
+      - name: Run vision contracts tests
+        run: pnpm --filter @dtp/vision-contracts test
+
       - name: Run API tests
         run: pnpm --filter @dtp/api test
 

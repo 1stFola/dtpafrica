@@ -25,10 +25,6 @@
     // Not imported by seed-scoreboard any more (DSL teams/fixtures are live),
     // but still typechecked so the retained fixture data cannot rot.
     "prisma/seed-dsl-league-2026.ts",
-    // The Vision gate scripts are the evidence for every increment gate, so they
-    // are typechecked too. They were not, and a duplicate `const` in one of them
-    // got as far as running before esbuild complained.
-    "scripts/vision-*.ts",
   ],
   "exclude": ["node_modules", "dist", "prisma/seed.ts"]
 }
