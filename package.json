@@ -2,10 +2,10 @@
   "name": "dtp-africa",
   "private": true,
   "version": "0.1.0",
-  "description": "DirectToPro Africa — unified platform (Home, ScoreBoard, SIP, MVCE)",
+  "description": "DirectToPro Africa \u2014 unified platform (Home, ScoreBoard, SIP, MVCE)",
   "scripts": {
     "dev": "pnpm --filter @dtp/web dev",
-    "dev:api": "pnpm --filter @dtp/engines build && pnpm --filter @dtp/api dev",
+    "dev:api": "pnpm --filter @dtp/vision-contracts build && pnpm --filter @dtp/engines build && pnpm --filter @dtp/api dev",
     "db:up": "docker compose -f infra/docker-compose.yml up -d",
     "db:push": "pnpm --filter @dtp/api db:push",
     "db:seed": "pnpm --filter @dtp/api prisma:seed",

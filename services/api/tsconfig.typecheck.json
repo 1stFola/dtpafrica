@@ -1,0 +1,32 @@
+{
+  // Typechecking covers more than the deployed artifact does.
+  //
+  // The Vision gate scripts are the evidence behind every increment gate, and they
+  // were never typechecked — a duplicate `const` in one got as far as running before
+  // esbuild complained. They belong in the typecheck.
+  //
+  // They deliberately do NOT go in tsconfig.build.json: that config emits the
+  // production bundle, and putting test tooling in it would both ship the scripts
+  // and let a broken gate script fail a production build.
+  "extends": "./tsconfig.build.json",
+  "include": [
+    "src/**/*",
+    "prisma/seed-scoreboard.ts",
+    "prisma/seed-mvce.ts",
+    "prisma/seed-legacy-academies.ts",
+    "prisma/seed-legacy-players.ts",
+    "prisma/seed-legacy-players-data.ts",
+    "prisma/seed-ex-internationals-cup-2026.ts",
+    "prisma/seed-goalkeeper-profiles.ts",
+    "prisma/seed-jagaban-cup-2026.ts",
+    "prisma/seed-jagaban-media-data.ts",
+    "prisma/sync-player-age-categories.ts",
+    "prisma/sync-scoreboard-event-player-links.ts",
+    "prisma/sync-scoreboard-timeline-player-profiles.ts",
+    "prisma/seed-scout-to-pro-international-tournament-2026.ts",
+    "prisma/seed-scout-to-pro-international-tournament-2026-teams-fixtures.ts",
+    "prisma/seed-dsl-league-2026.ts",
+    "scripts/vision-*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "prisma/seed.ts"]
+}

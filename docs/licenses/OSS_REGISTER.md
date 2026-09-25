@@ -1,0 +1,108 @@
+# Open-source and model licence register
+
+Mandated by the Master Coding Agent Prompt v2.0 (rule 13). **Nothing enters the DTP Vision Engine
+without an entry here.**
+
+The rule that catches people out: **a repository's licence does not cover its pretrained weights,
+its training datasets, or its transitive dependencies.** Each is recorded separately.
+
+> Engineering record, not legal advice. Anything marked **REVIEW REQUIRED** needs a qualified
+> adviser before it reaches production.
+
+## Status values
+
+| Status | Meaning |
+|---|---|
+| `APPROVED` | Cleared for the stated use |
+| `REVIEW REQUIRED` | Not cleared. Do not ship. |
+| `RESEARCH ONLY` | Architecture, taxonomy, and benchmark learning only. **Never in the commercial training corpus or the production runtime.** |
+| `REJECTED` | Will not be used; reason recorded |
+| `CANDIDATE` | Under evaluation, not yet used anywhere |
+
+## Use classes
+
+`runtime` (ships in the product or worker image) · `training-only` (used to build a model, not
+shipped) · `dev-tool` (developer machines and CI only) · `reference` (read, not linked)
+
+---
+
+## Detection, tracking, calibration
+
+| Component | Link | Code licence | Weights licence | Use | Status | Notes |
+|---|---|---|---|---|---|---|
+| RF-DETR | roboflow/rf-detr | Apache-2.0 (core) | Apache-designated for core weights; **Plus/XL under separate terms** | runtime | **REVIEW REQUIRED** before first training run | Core is the baseline. Confirm the exact weight variant before use — the variant, not the repo, is what matters. |
+| ByteTrack | ifzhang/ByteTrack | MIT (verify at pinned commit) | n/a | runtime | **REVIEW REQUIRED** | Verify transitive deps; some tracking repos pull Ultralytics. |
+| BoT-SORT | NirAharon/BoT-SORT | Verify at pinned commit | n/a | runtime | **REVIEW REQUIRED** | Benchmark candidate against ByteTrack. |
+| MMTracking | open-mmlab/mmtracking | Apache-2.0 | per-model | reference | CANDIDATE | Benchmark reference. |
+| TrackLab | TrackingLaboratory/tracklab | Verify | per-model | reference | **REVIEW REQUIRED** | Dependencies include Ultralytics — see below. |
+| **Ultralytics (YOLO)** | ultralytics/ultralytics | **AGPL-3.0** (or commercial licence) | — | — | **REJECTED for runtime** | AGPL is incompatible with the proprietary product without a commercial licence. It arrives transitively through several tracking repos — **check every dependency tree**. If a commercial licence is ever bought, revisit as a deliberate decision. |
+| OpenCV | opencv/opencv | Apache-2.0 (4.5+) | n/a | runtime | APPROVED | Core video and geometry. |
+| FFmpeg | ffmpeg.org | LGPL-2.1+ or GPL-2+ **depending on build flags** | n/a | runtime | **REVIEW REQUIRED** | The build configuration is the licence. Record the exact flags used for the worker image; `--enable-gpl` and some codecs change the answer. |
+
+## Annotation, dataset and MLOps tooling
+
+| Component | Link | Licence | Use | Status | Notes |
+|---|---|---|---|---|---|
+| CVAT (Community) | cvat-ai/cvat | MIT | dev-tool | APPROVED | Self-hosted, own host. Third-party assets in integrations carry separate terms. |
+| FiftyOne | voxel51/fiftyone | Apache-2.0 | dev-tool | APPROVED | Dataset QA and error analysis. |
+| DVC | iterative/dvc | Apache-2.0 | dev-tool | APPROVED | Dataset and artifact lineage. |
+| MLflow | mlflow/mlflow | Apache-2.0 | dev-tool | APPROVED | Experiments and model registry. |
+| Kloppy | PySport/kloppy | Verify | reference | CANDIDATE | Event/tracking standardization reference. DTP keeps its own canonical schema. |
+| SportsLabKit | AtomScott/SportsLabKit | **GPL implications** | reference | **RESEARCH ONLY** | Useful reference. Do not link into the product without legal review. |
+| MinIO | min.io | **AGPL-3.0** | — | **REJECTED** | Managed S3-compatible store (R2) used instead. Recorded so the decision is not silently reversed. |
+
+## Research corpora and reference implementations
+
+**All SoccerNet footage is research-only and must never enter the DTP commercial training corpus.**
+Enforced structurally: `VisionVideoAsset.corpus = research_only` makes dataset membership
+impossible. See [04-DATA-MODEL.md](../vision/04-DATA-MODEL.md) and
+[09-ML-PIPELINE.md](../vision/09-ML-PIPELINE.md#corpus-firewall).
+
+| Component | Link | Code | Data | Status |
+|---|---|---|---|---|
+| SoccerNet Game State Reconstruction | SoccerNet/sn-gamestate | audit at pinned commit | **research-only** | RESEARCH ONLY — architecture reference |
+| SoccerNet Calibration | SoccerNet/sn-calibration | audit | **research-only** | RESEARCH ONLY |
+| SoccerNet Action Spotting | SoccerNet/sn-spotting | audit | **research-only** | RESEARCH ONLY — taxonomy reference |
+| SoccerNet Jersey Number | SoccerNet/sn-jersey | audit | **research-only** | RESEARCH ONLY |
+
+## Video-language models
+
+| Component | Link | Code | Model/data terms | Status |
+|---|---|---|---|---|
+| InternVideo (v3) | OpenGVLab/InternVideo | Apache-2.0 | per-artifact review needed | **REVIEW REQUIRED** |
+| VideoLLaMA3 | DAMO-NLP-SG/VideoLLaMA3 | Apache-2.0 code | repository describes a **research preview / non-commercial** model position | **RESEARCH ONLY** until cleared |
+| Managed VLM API (provider TBD) | — | n/a | provider terms, incl. data-retention and training-on-input | **REVIEW REQUIRED** | Phase 8 starts here. **Confirm the provider does not train on DTP footage** — that is the clause that matters for youth video. |
+
+## Infrastructure services
+
+| Service | Link | Status | Notes |
+|---|---|---|---|
+| Cloudflare R2 | developers.cloudflare.com/r2 | APPROVED (config pending Q4) | S3-compatible, zero egress. Jurisdiction and versioning per [13-OPEN-QUESTIONS Q4](../vision/13-OPEN-QUESTIONS.md). |
+| RunPod | runpod.io | APPROVED | Default compute provider. Verify data-handling terms for youth footage. |
+| Lambda Cloud | lambda.ai | CANDIDATE | Fallback provider, implemented Phase 1. |
+| Vast.ai | vast.ai | **Experiments only** | Marketplace hardware of varying provenance. **No job whose output enters a dataset or a published fact may run here.** |
+
+---
+
+## Adding an entry
+
+1. Pin the exact commit or package version. "Latest" is not a licence position.
+2. Record **three** licences separately: code, weights, training data.
+3. Walk the dependency tree. `pip-licenses` or equivalent, output attached to the entry. This is
+   where AGPL arrives uninvited.
+4. State the use class and where it ships.
+5. Set status. Anything not `APPROVED` or `RESEARCH ONLY` does not ship.
+6. For a model, also record it in the model card at `models/{modelVersionId}/model-card.md`.
+
+## Before each model promotion
+
+Part of the promotion gate in [10-EVALUATION-AND-GATES.md](../vision/10-EVALUATION-AND-GATES.md):
+
+- Every component in the training and inference path has an entry here.
+- No entry in the path is `REVIEW REQUIRED`, `RESEARCH ONLY`, or `REJECTED`.
+- No training dataset member came from a `research_only` corpus.
+- The model card records the weights lineage — including the licence of any pretrained checkpoint
+  the model was initialised from.
+
+The last point is the one most often missed: fine-tuning an encumbered checkpoint produces an
+encumbered model, no matter how clean the training data was.

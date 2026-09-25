@@ -13,6 +13,7 @@ import { SipModule } from "./sip/sip.module";
 import { AcademyAuthModule } from "./academy-auth/academy-auth.module";
 import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.module";
 import { SupportModule } from "./support/support.module";
+import { VisionModule } from "./vision/vision.module";
 
 @Module({
   controllers: [HealthController],
@@ -30,6 +31,7 @@ import { SupportModule } from "./support/support.module";
     AcademyAuthModule,
     AcademyDashboardModule,
     SupportModule,
+    VisionModule,
   ],
 })
 export class AppModule {}

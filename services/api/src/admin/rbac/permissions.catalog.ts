@@ -37,6 +37,69 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { slug: "database.seed", resource: "database", action: "seed", description: "Run database seed" },
   { slug: "ops.support.read", resource: "ops_support", action: "read", description: "View support diagnostics and reports" },
   { slug: "ops.support.write", resource: "ops_support", action: "write", description: "Triage support reports" },
+  // —— Vision Engine (docs/vision/) ——
+  { slug: "vision.read", resource: "vision", action: "read", description: "View Vision sources, assets, jobs and evidence" },
+  { slug: "vision.sources.write", resource: "vision", action: "sources.write", description: "Register and edit partner source records" },
+  { slug: "vision.rights.manage", resource: "vision", action: "rights.manage", description: "Attach rights evidence, grant and revoke scopes, authorize acquisition" },
+  { slug: "vision.assets.upload", resource: "vision", action: "assets.upload", description: "Initiate and finalize footage uploads" },
+  { slug: "vision.jobs.run", resource: "vision", action: "jobs.run", description: "Queue, retry and cancel Vision jobs" },
+  { slug: "vision.annotate", resource: "vision", action: "annotate", description: "Label frames, tracks, identities and events" },
+  { slug: "vision.review", resource: "vision", action: "review", description: "Approve, reject and correct Vision predictions" },
+  { slug: "vision.datasets.manage", resource: "vision", action: "datasets.manage", description: "Build, split and freeze dataset versions" },
+  { slug: "vision.models.train", resource: "vision", action: "models.train", description: "Train and benchmark models, request promotion" },
+  { slug: "vision.models.promote", resource: "vision", action: "models.promote", description: "Promote or roll back a model version" },
+  { slug: "vision.publish", resource: "vision", action: "publish", description: "Publish approved evidence, clips and events" },
+  { slug: "vision.media.raw.read", resource: "vision", action: "media.raw.read", description: "Access raw source footage, including youth footage" },
+  { slug: "vision.evidence.search", resource: "vision", action: "evidence.search", description: "Search approved evidence" },
+];
+
+/**
+ * Vision Engine roles. Two omissions are deliberate:
+ *
+ *   - `vision_ml_engineer` does NOT get `vision.models.promote`. Promotion needs
+ *     a second pair of eyes — the requester holds `models.train`, the approver
+ *     holds `models.promote`, and they may not be the same account.
+ *   - `vision_annotator` does NOT get `vision.media.raw.read`. Annotators work
+ *     from sampled frames and assigned clips, never the raw youth-footage
+ *     corpus.
+ *
+ * See docs/vision/04-DATA-MODEL.md and docs/vision/10-EVALUATION-AND-GATES.md.
+ */
+export const VISION_PERMISSION_SLUGS = ADMIN_PERMISSIONS.filter((p) =>
+  p.slug.startsWith("vision.")
+).map((p) => p.slug);
+
+export const VISION_ADMIN_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "admin.stats.read",
+  ...VISION_PERMISSION_SLUGS,
+];
+
+export const VISION_ANNOTATOR_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "vision.read",
+  "vision.annotate",
+];
+
+export const VISION_REVIEWER_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "vision.read",
+  "vision.review",
+  "vision.publish",
+  "vision.media.raw.read",
+];
+
+export const VISION_ML_ENGINEER_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "vision.read",
+  "vision.jobs.run",
+  "vision.datasets.manage",
+  "vision.models.train",
+];
+
+export const VISION_SCOUT_READONLY_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "vision.evidence.search",
 ];
 
 export const ALL_PERMISSION_SLUGS = ADMIN_PERMISSIONS.map((p) => p.slug);
@@ -149,5 +212,35 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
     name: "Read Only",
     description: "View admin data without making changes",
     permissionSlugs: READ_ONLY_PERMISSION_SLUGS,
+  },
+  {
+    slug: "vision_admin",
+    name: "Vision Admin",
+    description: "Configure Vision sources, rights, jobs, models and publication policy",
+    permissionSlugs: VISION_ADMIN_PERMISSION_SLUGS,
+  },
+  {
+    slug: "vision_annotator",
+    name: "Vision Annotator",
+    description: "Label frames, tracks, identities and events; cannot publish or promote",
+    permissionSlugs: VISION_ANNOTATOR_PERMISSION_SLUGS,
+  },
+  {
+    slug: "vision_reviewer",
+    name: "Vision Reviewer",
+    description: "Approve or reject Vision evidence and publish what passes review",
+    permissionSlugs: VISION_REVIEWER_PERMISSION_SLUGS,
+  },
+  {
+    slug: "vision_ml_engineer",
+    name: "Vision ML Engineer",
+    description: "Build datasets, train and benchmark models, request promotion",
+    permissionSlugs: VISION_ML_ENGINEER_PERMISSION_SLUGS,
+  },
+  {
+    slug: "vision_scout_readonly",
+    name: "Vision Scout (read only)",
+    description: "Search approved Vision evidence; no raw footage or training data",
+    permissionSlugs: VISION_SCOUT_READONLY_PERMISSION_SLUGS,
   },
 ];

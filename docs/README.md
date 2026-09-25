@@ -19,9 +19,24 @@ This folder is the **source of truth** for replacing the legacy Trickle-exported
 | [12-ADMIN-CMS-IMPLEMENTED.md](./12-ADMIN-CMS-IMPLEMENTED.md) | Admin CMS — players, blog, featured flags |
 | [14-ACADEMY-DASHBOARD-IMPLEMENTED.md](./14-ACADEMY-DASHBOARD-IMPLEMENTED.md) | Academy Dashboard — squad, fixtures, development, SIP, MVCE |
 
+## Vision Engine (Phase 0 implemented; Phase 1 next)
+
+Football video intelligence: rights-cleared footage → detections, tracks, identities, events,
+evidence clips, scouting metrics.
+
+| Document | Contents |
+|----------|----------|
+| [vision/README.md](./vision/README.md) | **Start here** — index and reading order for the Vision Engine documentation set |
+| [vision/02-DECISIONS.md](./vision/02-DECISIONS.md) | How the PID, infrastructure handoff and coding-agent prompt were reconciled, and what was added or removed |
+| [vision/11-PHASE-PLAN.md](./vision/11-PHASE-PLAN.md) | Phases, gates and the first 90 days |
+| [vision/13-OPEN-QUESTIONS.md](./vision/13-OPEN-QUESTIONS.md) | Decisions record, and the two items still open |
+| [vision/15-PHASE-0-IMPLEMENTED.md](./vision/15-PHASE-0-IMPLEMENTED.md) | What Phase 0 actually built, with gate evidence |
+| [licenses/OSS_REGISTER.md](./licenses/OSS_REGISTER.md) | Third-party code, weights and dataset licences — nothing ships without an entry |
+
 **Authoritative specs**
 
 - SIP: [specs/SCOUTING_INTELLIGENCE_PLATFORM.md](./specs/SCOUTING_INTELLIGENCE_PLATFORM.md)
 - MVCE: [specs/DTP_Market_Value_Confidence_Engine_Documentation.pdf](./specs/DTP_Market_Value_Confidence_Engine_Documentation.pdf)
+- Vision Engine: [vision/](./vision/) (this repo is the source of truth; the Word/Markdown source documents are inputs, superseded where they conflict)
 
 **Next step after you approve deletion:** scaffold the new monorepo (no Trickle runtime, no browser Babel, no `trickle-shim`).

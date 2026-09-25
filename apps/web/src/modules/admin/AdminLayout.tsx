@@ -30,6 +30,7 @@ const links: AdminNavLink[] = [
   { to: "/admin/ops-support", label: "Ops Support", icon: "AI" },
   { to: "/admin/blog", label: "Blog", icon: "✎" },
   { to: "/admin/scoreboard", label: "ScoreBoard", icon: "⏱" },
+  { to: "/admin/vision", label: "Vision", icon: "◉" },
 ];
 
 const settingsLinks = [

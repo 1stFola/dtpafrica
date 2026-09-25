@@ -1,0 +1,282 @@
+/* Vision Engine admin surfaces.
+   Scoped .vision-* rules, loaded after global.css so they win inside the
+   dark admin shell without touching any other module. */
+
+.vision-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.vision-panel {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+}
+
+.vision-panel--error {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(69, 10, 10, 0.4);
+}
+
+.vision-panel__title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  margin: 0 0 0.85rem;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.vision-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: grid;
+  gap: 0.15rem 1rem;
+  grid-template-columns: minmax(10rem, 14rem) 1fr;
+  padding: 0.6rem 0;
+}
+
+.vision-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.vision-row__label {
+  color: rgba(148, 163, 184, 0.95);
+  font-size: 0.85rem;
+}
+
+.vision-row__value {
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.vision-row__note {
+  font-size: 0.78rem;
+  grid-column: 2;
+  line-height: 1.45;
+}
+
+/* State never relies on colour alone — each carries a glyph and a word. */
+.vision-state {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.vision-state--on {
+  color: #4ade80;
+}
+
+.vision-state--off {
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.vision-buckets {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  margin-top: 0.85rem;
+}
+
+.vision-bucket {
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.vision-bucket__id {
+  color: rgba(148, 163, 184, 0.95);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vision-bucket__name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.vision-table {
+  border-collapse: collapse;
+  margin-top: 0.85rem;
+  width: 100%;
+}
+
+.vision-table th,
+.vision-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.86rem;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+}
+
+.vision-table thead th {
+  color: rgba(148, 163, 184, 0.95);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vision-footnote {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin: 0.85rem 0 0;
+}
+
+.vision-footnote code,
+.vision-row__value code {
+  background: rgba(2, 6, 23, 0.6);
+  border-radius: 4px;
+  font-size: 0.85em;
+  padding: 0.1rem 0.3rem;
+}
+
+@media (max-width: 640px) {
+  .vision-row {
+    grid-template-columns: 1fr;
+  }
+
+  .vision-row__note {
+    grid-column: 1;
+  }
+}
+
+/* Catalog screens. */
+
+.vision-panel--ok {
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(5, 46, 22, 0.35);
+}
+
+.vision-filters {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.vision-filters__grow {
+  grid-column: span 2;
+}
+
+.vision-filters label,
+.vision-fieldset label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.vision-filters span,
+.vision-fieldset span,
+.vision-fieldset legend {
+  color: rgba(148, 163, 184, 0.95);
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vision-filters input,
+.vision-filters select,
+.vision-fieldset input,
+.vision-fieldset select {
+  background: rgba(2, 6, 23, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.55rem;
+}
+
+.vision-pill {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+}
+
+/* Text carries the meaning; colour only reinforces it. */
+.vision-pill.is-acquired {
+  background: rgba(5, 46, 22, 0.6);
+  border-color: rgba(74, 222, 128, 0.5);
+  color: #86efac;
+}
+
+.vision-pill.is-catalogued {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.vision-pill.is-progress {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #bfdbfe;
+}
+
+.vision-pill.is-refused {
+  background: rgba(69, 10, 10, 0.5);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fca5a5;
+}
+
+.vision-sub {
+  font-size: 0.76rem;
+  margin-top: 0.15rem;
+}
+
+.vision-subhead {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 1.1rem 0 0.4rem;
+}
+
+.vision-warn {
+  color: #fca5a5;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin: 0.5rem 0;
+}
+
+.vision-actions {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.vision-fieldset {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+}
+
+.vision-check {
+  align-items: center;
+  flex-direction: row !important;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+
+.vision-token__value {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  margin: 0.6rem 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+@media (max-width: 640px) {
+  .vision-filters__grow {
+    grid-column: span 1;
+  }
+}

@@ -13,6 +13,8 @@ import "./styles/dtp-figma.css";
    generic .admin-page styles in global.css. */
 import "./styles/admin-fixtures.css";
 import "./styles/match-console.css";
+/* Vision Engine admin surfaces — scoped .vision-* rules. */
+import "./styles/admin-vision.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
