@@ -82,6 +82,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
   "/admin/ops-support": "ops.support.read",
   "/admin/blog": "blog.read",
   "/admin/scoreboard": "scoreboard.read",
+  "/admin/vision": "vision.read",
   "/admin/settings/roles": "admin.roles.manage",
   "/admin/settings/users": "admin.users.manage",
 };

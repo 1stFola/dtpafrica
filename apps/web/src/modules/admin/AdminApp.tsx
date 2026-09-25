@@ -25,6 +25,7 @@ import { AdminRequirePermission } from "./AdminRequirePermission";
 import { AdminRolesPage } from "./settings/AdminRolesPage";
 import { AdminUsersPage } from "./settings/AdminUsersPage";
 import { AdminScoreboardEntitiesPage } from "./scoreboard/pages/AdminScoreboardEntitiesPage";
+import { AdminVisionStatusPage } from "./vision/AdminVisionStatusPage";
 
 export function AdminApp() {
   return (
@@ -58,6 +59,9 @@ export function AdminApp() {
             <Route path="database" element={<AdminDatabasePage />} />
             <Route element={<AdminRequirePermission permission="scoreboard.records.manage" />}>
               <Route path="records" element={<AdminScoreboardEntitiesPage />} />
+            </Route>
+            <Route element={<AdminRequirePermission permission="vision.read" />}>
+              <Route path="vision" element={<AdminVisionStatusPage />} />
             </Route>
             <Route path="blog" element={<AdminBlogListPage />} />
             <Route path="blog/new" element={<AdminBlogEditPage />} />
