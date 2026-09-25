@@ -65,6 +65,9 @@ model Player {
   scoreboardAssists     SbMatchEvent[]             @relation("SbEventAssistPlayer")
   competitionStats      SbPlayerCompetitionStats[]
   mvceValuations        MvceValuationRun[]
+  /// Per-player consent, which overrides a partner-wide grant. Virtual field:
+  /// the foreign key lives on the Vision side, so this table is unchanged.
+  visionRightsScopes    VisionRightsScope[]
 
   @@index([academyId])
   @@index([positionPrimary])
@@ -115,6 +118,8 @@ model Academy {
   changeRequests AcademyChangeRequest[]
   /// The club's teams across every competition it has entered.
   teams          SbTeam[]
+  /// Set when this academy is also a Vision footage partner.
+  visionPartners VisionSourcePartner[]
 
   @@map("academies")
 }
@@ -392,6 +397,8 @@ model SbCompetition {
   playerStats      SbPlayerCompetitionStats[]
   scopedAdminUsers AdminUser[]
   recorderGrants   AdminUserCompetition[]
+  /// Catalogued Vision footage mapped to this competition.
+  visionSourceRecords VisionSourceVideoRecord[]
 
   standingsSnapshot  Json?     @map("standings_snapshot")
   standingsUpdatedAt DateTime? @map("standings_updated_at")
@@ -546,6 +553,9 @@ model SbMatch {
   ingestAudits    SbSipIngestAudit[]
   squadPlayers    SbMatchSquadPlayer[]
   statisticsSheet SbMatchStatistics?
+  /// Vision footage of this fixture: catalogued sources and acquired copies.
+  visionSourceRecords VisionSourceVideoRecord[]
+  visionVideoAssets   VisionVideoAsset[]
 
   @@index([competitionId, status])
   @@index([stageKey])
@@ -895,4 +905,628 @@ model MvceValuationRun {
 
   @@index([playerId, createdAt])
   @@map("mvce_valuation_runs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Vision Engine — Phase 0
+//
+//  Football video intelligence. Full design: docs/vision/.
+//
+//  Three rules this block obeys, and every future Vision migration must too:
+//
+//  1. Every model is `Vision`-prefixed. The schema already holds TWO match
+//     models — `Match` (SIP metrics) and `SbMatch` (ScoreBoard) — so a bare
+//     `match` or `player` here would be a foreign key pointing at the wrong
+//     table, which is a silent data-integrity failure.
+//  2. No parallel football graph. Competitions, matches, teams, squads and
+//     players already exist; Vision carries foreign keys into them.
+//  3. Actor ids are stored flat, not as relations to AdminUser — the same
+//     convention SbMatchStatistics uses. An audit trail has to survive the
+//     deletion of the user it refers to, and api-key auth has no user row at
+//     all.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Sources, rights and provenance ────────────────────────────────────────
+
+/// An organisation DTP obtains footage from. Often, but not always, an existing
+/// academy on the platform.
+model VisionSourcePartner {
+  id           String   @id @default(uuid())
+  name         String
+  academyId    String?  @map("academy_id")
+  contactName  String?  @map("contact_name")
+  contactEmail String?  @map("contact_email")
+  contactPhone String?  @map("contact_phone")
+  isActive     Boolean  @default(true) @map("is_active")
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  academy      Academy?                           @relation(fields: [academyId], references: [id], onDelete: SetNull)
+  channels     VisionSourceChannel[]
+  videoRecords VisionSourceVideoRecord[]
+  evidence     VisionRightsEvidence[]
+  rightsScopes VisionRightsScope[]
+  signatories  VisionPartnerAuthorizedSignatory[]
+  uploadGrants VisionPartnerUploadGrant[]
+
+  @@index([academyId])
+  @@index([isActive])
+  @@map("vision_source_partners")
+}
+
+/// A channel or feed a partner publishes through. Discovery metadata only.
+model VisionSourceChannel {
+  id         String   @id @default(uuid())
+  partnerId  String   @map("partner_id")
+  platform   String
+  externalId String?  @map("external_id")
+  url        String?
+  title      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  partner      VisionSourcePartner       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  videoRecords VisionSourceVideoRecord[]
+
+  @@unique([platform, externalId])
+  @@index([partnerId])
+  @@map("vision_source_channels")
+}
+
+/// Who at a partner may authorise an acquisition. Team Managers, per the
+/// decision recorded in docs/vision/13-OPEN-QUESTIONS.md (Q1).
+model VisionPartnerAuthorizedSignatory {
+  id                  String    @id @default(uuid())
+  partnerId           String    @map("partner_id")
+  name                String
+  role                String
+  contactEmail        String?   @map("contact_email")
+  contactPhone        String?   @map("contact_phone")
+  authorityEvidenceId String?   @map("authority_evidence_id")
+  activeFrom          DateTime  @map("active_from")
+  activeTo            DateTime? @map("active_to")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  partner           VisionSourcePartner       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  authorityEvidence VisionRightsEvidence?     @relation("SignatoryAuthorityEvidence", fields: [authorityEvidenceId], references: [id], onDelete: SetNull)
+  authorisedRecords VisionSourceVideoRecord[]
+
+  @@index([partnerId, activeFrom])
+  @@map("vision_partner_authorized_signatories")
+}
+
+/// The document a rights claim rests on. Stored in the master bucket alongside
+/// the footage it authorises, because the two must not be separable.
+model VisionRightsEvidence {
+  id           String    @id @default(uuid())
+  partnerId    String    @map("partner_id")
+  kind         String
+  objectKey    String    @map("object_key")
+  documentDate DateTime? @map("document_date")
+  /// Flat actor id — see the header note.
+  uploadedBy   String?   @map("uploaded_by")
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  partner              VisionSourcePartner                @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  scopes               VisionRightsScope[]
+  signatoryAuthorities VisionPartnerAuthorizedSignatory[] @relation("SignatoryAuthorityEvidence")
+
+  @@index([partnerId, kind])
+  @@map("vision_rights_evidence")
+}
+
+/// A grant of one or more of the four independent scopes.
+///
+/// Attaches at partner, source or player level. The policy service resolves
+/// most-specific-wins and deny-beats-allow, which is how a player-level
+/// withdrawal by a guardian overrides a partner-wide grant.
+model VisionRightsScope {
+  id                  String  @id @default(uuid())
+  /// Exactly one of these three is set; `grantLevel` records which.
+  partnerId           String? @map("partner_id")
+  sourceVideoRecordId String? @map("source_video_record_id")
+  playerId            String? @map("player_id")
+  grantLevel          String  @map("grant_level")
+
+  canAnalyze          Boolean @default(false) @map("can_analyze")
+  canTrain            Boolean @default(false) @map("can_train")
+  canPublishHighlight Boolean @default(false) @map("can_publish_highlight")
+  canShareWithScout   Boolean @default(false) @map("can_share_with_scout")
+
+  grantedAt     DateTime  @map("granted_at")
+  expiresAt     DateTime? @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  revokedReason String?   @map("revoked_reason") @db.Text
+  revokedBy     String?   @map("revoked_by")
+  /// Structured restrictions, e.g. territory or no-identifiable-minors.
+  restrictions  Json?
+  evidenceId    String?   @map("evidence_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  partner           VisionSourcePartner?     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  sourceVideoRecord VisionSourceVideoRecord? @relation(fields: [sourceVideoRecordId], references: [id], onDelete: Cascade)
+  player            Player?                  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  evidence          VisionRightsEvidence?    @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  @@index([partnerId, revokedAt])
+  @@index([sourceVideoRecordId, revokedAt])
+  @@index([playerId, revokedAt])
+  @@index([expiresAt])
+  @@map("vision_rights_scopes")
+}
+
+/// A known video in the world. Metadata only, and never trainable on its own:
+/// a URL registration cannot become a dataset member.
+model VisionSourceVideoRecord {
+  id              String    @id @default(uuid())
+  partnerId       String    @map("partner_id")
+  channelId       String?   @map("channel_id")
+  externalVideoId String?   @map("external_video_id")
+  url             String?
+  title           String?
+  publishedAt     DateTime? @map("published_at")
+  durationSeconds Int?      @map("duration_seconds")
+
+  sbMatchId       String? @map("sb_match_id")
+  sbCompetitionId String? @map("sb_competition_id")
+
+  /// The copyright owner, which is NOT always the partner granting access. A
+  /// club can authorise a match a third-party videographer owns and published;
+  /// conflating the two is how an unauthorised training source gets in.
+  rightsOwnerName String? @map("rights_owner_name")
+
+  sourceQualityRank String  @map("source_quality_rank")
+  originalAvailable Boolean @default(false) @map("original_available")
+
+  acquisitionStatus                  String    @map("acquisition_status")
+  acquisitionMethod                  String?   @map("acquisition_method")
+  acquisitionAuthorizedBySignatoryId String?   @map("acquisition_authorized_by_signatory_id")
+  acquisitionAuthorizedAt            DateTime? @map("acquisition_authorized_at")
+
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  partner       VisionSourcePartner               @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  channel       VisionSourceChannel?              @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  sbMatch       SbMatch?                          @relation(fields: [sbMatchId], references: [id], onDelete: SetNull)
+  sbCompetition SbCompetition?                    @relation(fields: [sbCompetitionId], references: [id], onDelete: SetNull)
+  authorizedBy  VisionPartnerAuthorizedSignatory? @relation(fields: [acquisitionAuthorizedBySignatoryId], references: [id], onDelete: SetNull)
+  rightsScopes  VisionRightsScope[]
+  videoAssets   VisionVideoAsset[]
+  uploadGrants  VisionPartnerUploadGrant[]
+
+  @@unique([channelId, externalVideoId])
+  @@index([partnerId, acquisitionStatus])
+  @@index([sbMatchId])
+  @@index([sbCompetitionId])
+  @@map("vision_source_video_records")
+}
+
+/// A scoped, expiring upload link for a partner with no DTP admin account.
+/// Without this there is no way for a club secretary to hand over a master file.
+model VisionPartnerUploadGrant {
+  id                  String @id @default(uuid())
+  partnerId           String @map("partner_id")
+  sourceVideoRecordId String @map("source_video_record_id")
+  /// Hashed at rest. The plaintext is shown once, at issue.
+  tokenHash           String @unique @map("token_hash")
+  objectKey           String @map("object_key")
+  maxBytes            BigInt @map("max_bytes")
+  allowedMimeTypes    String[] @map("allowed_mime_types")
+  expiresAt           DateTime  @map("expires_at")
+  usedAt              DateTime? @map("used_at")
+  revokedAt           DateTime? @map("revoked_at")
+  createdBy           String?   @map("created_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  partner           VisionSourcePartner     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  sourceVideoRecord VisionSourceVideoRecord @relation(fields: [sourceVideoRecordId], references: [id], onDelete: Cascade)
+  uploadSessions    VisionUploadSession[]
+
+  @@index([partnerId, expiresAt])
+  @@map("vision_partner_upload_grants")
+}
+
+/// Rights withdrawal or an erasure request, routed for approval per policy.
+/// Model lineage is never deleted: the auditable record that a source was used
+/// and then excluded is itself the compliance artifact.
+model VisionDeletionRequest {
+  id           String    @id @default(uuid())
+  videoAssetId String?   @map("video_asset_id")
+  playerId     String?   @map("player_id")
+  reason       String    @db.Text
+  requestedBy  String?   @map("requested_by")
+  requestedAt  DateTime  @default(now()) @map("requested_at")
+  state        String
+  decidedBy    String?   @map("decided_by")
+  decidedAt    DateTime? @map("decided_at")
+  executedAt   DateTime? @map("executed_at")
+  outcomeNotes String?   @map("outcome_notes") @db.Text
+
+  videoAsset VisionVideoAsset? @relation(fields: [videoAssetId], references: [id], onDelete: SetNull)
+
+  @@index([state, requestedAt])
+  @@index([videoAssetId])
+  @@map("vision_deletion_requests")
+}
+
+// ── Media ─────────────────────────────────────────────────────────────────
+
+/// Groups a match with its re-uploads, halves and highlight derivatives, so
+/// they cannot be split across a train/test boundary.
+model VisionDuplicateCluster {
+  id                    String   @id @default(uuid())
+  representativeAssetId String?  @map("representative_asset_id")
+  method                String
+  confidence            Float?
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  assets VisionVideoAsset[]
+
+  @@map("vision_duplicate_clusters")
+}
+
+/// An immutable copy of source footage under DTP control.
+model VisionVideoAsset {
+  id                  String  @id @default(uuid())
+  sourceVideoRecordId String? @map("source_video_record_id")
+  /// Nullable: a partner archive video can be catalogued and acquired before
+  /// anyone has worked out which fixture it is. Required before inference runs.
+  sbMatchId           String? @map("sb_match_id")
+
+  /// The training firewall. Only `dtp_owned` may back a dataset member, which
+  /// makes research-only footage structurally incapable of being trained on.
+  corpus String
+
+  objectKey             String  @unique @map("object_key")
+  bytes                 BigInt
+  mimeType              String  @map("mime_type")
+  checksumSha256        String  @map("checksum_sha256")
+  perceptualFingerprint String? @map("perceptual_fingerprint")
+  duplicateClusterId    String? @map("duplicate_cluster_id")
+
+  // FFprobe output, recorded by the worker. EC2 never opens a video file.
+  container           String?
+  videoCodec          String? @map("video_codec")
+  width               Int?
+  height              Int?
+  fpsNumerator        Int?    @map("fps_numerator")
+  fpsDenominator      Int?    @map("fps_denominator")
+  isVariableFrameRate Boolean @default(false) @map("is_variable_frame_rate")
+  durationMs          Int?    @map("duration_ms")
+
+  ingestState String   @map("ingest_state")
+  ingestError String?  @map("ingest_error") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  sourceVideoRecord VisionSourceVideoRecord? @relation(fields: [sourceVideoRecordId], references: [id], onDelete: SetNull)
+  sbMatch           SbMatch?                 @relation(fields: [sbMatchId], references: [id], onDelete: SetNull)
+  duplicateCluster  VisionDuplicateCluster?  @relation(fields: [duplicateClusterId], references: [id], onDelete: SetNull)
+  variants          VisionVideoVariant[]
+  cameraSegments    VisionCameraSegment[]
+  uploadSessions    VisionUploadSession[]
+  jobs              VisionJob[]
+  datasetMembers    VisionDatasetMember[]
+  deletionRequests  VisionDeletionRequest[]
+
+  @@index([checksumSha256])
+  @@index([perceptualFingerprint])
+  @@index([duplicateClusterId])
+  @@index([sbMatchId])
+  @@index([corpus, ingestState])
+  @@map("vision_video_assets")
+}
+
+/// A derived rendition. Regenerable, unlike the master.
+model VisionVideoVariant {
+  id           String @id @default(uuid())
+  videoAssetId String @map("video_asset_id")
+  kind         String
+  objectKey    String @map("object_key")
+  width        Int?
+  height       Int?
+  /// Constant by construction for a proxy, which is what makes frame seeking
+  /// deterministic.
+  fps          Float?
+  durationMs   Int?   @map("duration_ms")
+  /// Source-to-proxy offset. Both times are carried everywhere because they
+  /// diverge on variable-frame-rate sources and trimmed proxies.
+  sourceOffsetMs Int      @default(0) @map("source_offset_ms")
+  /// Hash of the encoder settings, so a re-run can be skipped rather than
+  /// producing a subtly different proxy that invalidates annotations.
+  settingsHash   String?  @map("settings_hash")
+  bytes          BigInt?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([videoAssetId, kind, objectKey])
+  @@index([videoAssetId, kind])
+  @@map("vision_video_variants")
+}
+
+/// Shot segmentation. Manual in Phase 1, model-assisted later.
+///
+/// Exists this early because replays and intros are the mechanism behind
+/// duplicated events and shortcut learning, and retrofitting once events exist
+/// is painful.
+model VisionCameraSegment {
+  id           String   @id @default(uuid())
+  videoAssetId String   @map("video_asset_id")
+  kind         String
+  startMs      Int      @map("start_ms")
+  endMs        Int      @map("end_ms")
+  source       String
+  createdBy    String?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+
+  @@index([videoAssetId, startMs])
+  @@map("vision_camera_segments")
+}
+
+/// A resumable multipart upload. Server-side state, so resume survives a closed
+/// browser, a new device or a reboot — which unstable Nigerian connectivity
+/// makes a requirement rather than a nicety.
+model VisionUploadSession {
+  id               String  @id @default(uuid())
+  videoAssetId     String? @map("video_asset_id")
+  grantId          String? @map("grant_id")
+  bucketId         String  @map("bucket_id")
+  objectKey        String  @map("object_key")
+  providerUploadId String  @map("provider_upload_id")
+  partSizeBytes    Int     @map("part_size_bytes")
+  expectedBytes    BigInt? @map("expected_bytes")
+  bytesReceived    BigInt  @default(0) @map("bytes_received")
+  /// [{ partNumber, etag, bytes }] — what the client may skip on resume.
+  receivedParts    Json      @default("[]") @map("received_parts")
+  state            String
+  expiresAt        DateTime  @map("expires_at")
+  completedAt      DateTime? @map("completed_at")
+  createdBy        String?   @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  videoAsset VisionVideoAsset?         @relation(fields: [videoAssetId], references: [id], onDelete: SetNull)
+  grant      VisionPartnerUploadGrant? @relation(fields: [grantId], references: [id], onDelete: SetNull)
+
+  @@unique([bucketId, objectKey, providerUploadId])
+  @@index([state, expiresAt])
+  @@map("vision_upload_sessions")
+}
+
+// ── Jobs and compute ──────────────────────────────────────────────────────
+
+/// The queue. Postgres rather than Redis in V1: job state has to be
+/// transactionally consistent with rights, assets and review decisions, which
+/// all live here, and a 2 GB box does not need another broker.
+model VisionJob {
+  id            String @id @default(uuid())
+  type          String
+  resourceClass String @map("resource_class")
+  state         String
+  priority      Int    @default(0)
+
+  videoAssetId     String? @map("video_asset_id")
+  datasetVersionId String? @map("dataset_version_id")
+  modelVersionId   String? @map("model_version_id")
+
+  inputSpec Json @map("input_spec")
+  /// Every artifact this job writes must land under here. The control plane
+  /// validates each presign request against it, which is why a worker needs no
+  /// standing storage credentials.
+  outputPrefix String @map("output_prefix")
+
+  attemptNumber Int @default(1) @map("attempt_number")
+  maxAttempts   Int @default(3) @map("max_attempts")
+
+  /// Mandatory, not optional: the commonest way to burn GPU budget is a pod
+  /// nobody noticed.
+  budgetSeconds  Int @map("budget_seconds")
+  budgetUsdCents Int @map("budget_usd_cents")
+
+  queuedAt    DateTime  @default(now()) @map("queued_at")
+  claimedAt   DateTime? @map("claimed_at")
+  startedAt   DateTime? @map("started_at")
+  heartbeatAt DateTime? @map("heartbeat_at")
+  finishedAt  DateTime? @map("finished_at")
+
+  workerId String? @map("worker_id")
+  /// Opaque provider handle. Nothing outside the provider adapter may parse it,
+  /// and it is deliberately named without a provider in it.
+  providerRef String? @map("provider_ref")
+  providerId  String? @map("provider_id")
+
+  progress        Json?
+  error           Json?
+  idempotencyKey  String? @unique @map("idempotency_key")
+  contractVersion String  @map("contract_version")
+
+  createdBy String?  @map("created_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  videoAsset     VisionVideoAsset?     @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  datasetVersion VisionDatasetVersion? @relation(fields: [datasetVersionId], references: [id], onDelete: SetNull)
+  modelVersion   VisionModelVersion?   @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
+  events         VisionJobEvent[]
+  cost           VisionJobCost?
+
+  /// The claim index: state, class and priority are exactly what the
+  /// SKIP LOCKED claim query filters and orders by.
+  @@index([state, resourceClass, priority, queuedAt])
+  @@index([videoAssetId, type])
+  @@index([heartbeatAt])
+  @@map("vision_jobs")
+}
+
+/// Append-only job log. Never updated, so a failure can be reconstructed.
+model VisionJobEvent {
+  id        String   @id @default(uuid())
+  jobId     String   @map("job_id")
+  kind      String
+  stage     String?
+  message   String?  @db.Text
+  data      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  job VisionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+  @@map("vision_job_events")
+}
+
+/// What a job cost. Rolled up per match so the question "what did this match
+/// cost to analyse?" has a measured number rather than an estimate.
+model VisionJobCost {
+  id                     String @id @default(uuid())
+  jobId                  String @unique @map("job_id")
+  gpuSeconds             Float  @default(0) @map("gpu_seconds")
+  cpuSeconds             Float  @default(0) @map("cpu_seconds")
+  wallClockSeconds       Float  @default(0) @map("wall_clock_seconds")
+  bytesRead              BigInt @default(0) @map("bytes_read")
+  bytesWritten           BigInt @default(0) @map("bytes_written")
+  classAOperations       Int    @default(0) @map("class_a_operations")
+  classBOperations       Int    @default(0) @map("class_b_operations")
+  thirdPartyApiCostCents Int    @default(0) @map("third_party_api_cost_cents")
+  estimatedUsdCents      Int    @default(0) @map("estimated_usd_cents")
+  /// True when the figure came from a configured rate rather than a live quote,
+  /// so a stale rate cannot silently make the cost trend misleading.
+  fromConfiguredRate     Boolean  @default(true) @map("from_configured_rate")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  job VisionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("vision_job_costs")
+}
+
+/// An ephemeral worker. Registered on boot, retired when it drains and dies.
+model VisionWorker {
+  id            String @id @default(uuid())
+  providerId    String @map("provider_id")
+  providerRef   String? @map("provider_ref")
+  resourceClass String  @map("resource_class")
+  image         String
+  /// Hashed. A worker token may only act on the job it currently holds.
+  tokenHash      String    @unique @map("token_hash")
+  tokenExpiresAt DateTime  @map("token_expires_at")
+  firstSeenAt    DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt     DateTime  @updatedAt @map("last_seen_at")
+  jobsCompleted  Int       @default(0) @map("jobs_completed")
+  retiredAt      DateTime? @map("retired_at")
+
+  @@index([providerId, resourceClass])
+  @@index([lastSeenAt])
+  @@map("vision_workers")
+}
+
+// ── Datasets and models (skeletons; filled out in Phases 2 and 3) ──────────
+
+model VisionDatasetVersion {
+  id          String    @id @default(uuid())
+  label       String    @unique
+  description String?   @db.Text
+  manifestKey String?   @map("manifest_key")
+  splitPolicy Json?     @map("split_policy")
+  frozenAt    DateTime? @map("frozen_at")
+  frozenBy    String?   @map("frozen_by")
+  /// Set by revocation. A frozen dataset is immutable, so history is never
+  /// rewritten — but it can no longer back a new training run.
+  containsRevokedMembers Boolean  @default(false) @map("contains_revoked_members")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  members       VisionDatasetMember[]
+  jobs          VisionJob[]
+  modelVersions VisionModelVersion[]
+
+  @@map("vision_dataset_versions")
+}
+
+model VisionDatasetMember {
+  id               String @id @default(uuid())
+  datasetVersionId String @map("dataset_version_id")
+  videoAssetId     String @map("video_asset_id")
+  /// Denormalised on purpose: if the asset row is ever touched, the dataset can
+  /// still prove which bytes it was built from.
+  checksumSha256   String   @map("checksum_sha256")
+  split            String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  datasetVersion VisionDatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
+  videoAsset     VisionVideoAsset     @relation(fields: [videoAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([datasetVersionId, videoAssetId])
+  @@index([datasetVersionId, split])
+  @@map("vision_dataset_members")
+}
+
+model VisionModel {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  task        String
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  versions VisionModelVersion[]
+
+  @@map("vision_models")
+}
+
+model VisionModelVersion {
+  id               String  @id @default(uuid())
+  modelId          String  @map("model_id")
+  version          String
+  datasetVersionId String? @map("dataset_version_id")
+  gitCommit        String? @map("git_commit")
+  configKey        String? @map("config_key")
+  weightsKey       String? @map("weights_key")
+  weightsChecksum  String? @map("weights_checksum")
+  workerImage      String? @map("worker_image")
+  stage            String  @default("candidate")
+  /// Licence position for the code, the weights, and any pretrained checkpoint
+  /// this was initialised from. Fine-tuning an encumbered checkpoint produces
+  /// an encumbered model, however clean the training data was.
+  licenceNote      String?   @map("licence_note") @db.Text
+  promotedBy       String?   @map("promoted_by")
+  promotedAt       DateTime? @map("promoted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  model          VisionModel           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  datasetVersion VisionDatasetVersion? @relation(fields: [datasetVersionId], references: [id], onDelete: SetNull)
+  jobs           VisionJob[]
+
+  @@unique([modelId, version])
+  @@index([stage])
+  @@map("vision_model_versions")
+}
+
+// ── Audit ─────────────────────────────────────────────────────────────────
+
+/// Who did what. Covers raw youth-footage access, identity assignment,
+/// annotation approval, model promotion, publication, rights change and
+/// deletion requests.
+model VisionAuditLog {
+  id          String  @id @default(uuid())
+  action      String
+  targetKind  String  @map("target_kind")
+  targetId    String? @map("target_id")
+  /// Flat actor fields: api-key auth has no user row, and an audit trail has to
+  /// outlive the user it refers to.
+  actorId     String? @map("actor_id")
+  actorEmail  String? @map("actor_email")
+  actorMethod String? @map("actor_method")
+  /// Required on a raw-footage read, so an access can always be justified.
+  reason      String?  @db.Text
+  data        Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([action, createdAt])
+  @@index([targetKind, targetId])
+  @@index([actorId, createdAt])
+  @@map("vision_audit_logs")
 }

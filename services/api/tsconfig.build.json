@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "paths": {
-      "@dtp/engines": ["../../packages/engines/src/index.ts"]
+      "@dtp/engines": ["../../packages/engines/src/index.ts"],
+      "@dtp/vision-contracts": ["../../packages/vision-contracts/src/index.ts"]
     }
   },
   "include": [

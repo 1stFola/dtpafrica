@@ -3,7 +3,7 @@
 Football video intelligence for DTP Africa: turning rights-cleared Nigerian match footage into
 reviewed, reproducible player evidence.
 
-**Status:** design complete; all Phase 0/1 decision blockers cleared 24 Sep 2026; implementation not started.
+**Status:** **Phase 0 implemented** ([gate: PASS](./15-PHASE-0-IMPLEMENTED.md)). All Phase 0/1 decision blockers cleared 24 Sep 2026. Phase 1 not started.
 **Source documents reconciled:** PID v2.0, Infrastructure Architecture & Build Handoff v1, Master Coding Agent Prompt v2.0 (all 24 Sep 2026).
 **Conforms to:** Architecture Freeze v1 — see [the mapping](./01-ARCHITECTURE.md#conformance-to-architecture-freeze-v1).
 **Last updated:** 24 September 2026.
@@ -29,6 +29,7 @@ reviewed, reproducible player evidence.
 | — | [12-COST-MODEL.md](./12-COST-MODEL.md) | You need the cost-per-match number or a GPU choice. |
 | — | [13-OPEN-QUESTIONS.md](./13-OPEN-QUESTIONS.md) | **Decisions record** — what leadership answered on 24 Sep 2026, and the two items still open. |
 | — | [14-RIGHTS-EVIDENCE-REQUIREMENTS.md](./14-RIGHTS-EVIDENCE-REQUIREMENTS.md) | You are onboarding a partner, or drafting the rights template. |
+| — | [15-PHASE-0-IMPLEMENTED.md](./15-PHASE-0-IMPLEMENTED.md) | **What is actually built**, gate evidence, and what is deliberately deferred. |
 
 Also: [`docs/licenses/OSS_REGISTER.md`](../licenses/OSS_REGISTER.md) — every third-party
 component, with its code / weights / dataset licence tracked separately. Nothing ships without

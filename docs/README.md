@@ -19,7 +19,7 @@ This folder is the **source of truth** for replacing the legacy Trickle-exported
 | [12-ADMIN-CMS-IMPLEMENTED.md](./12-ADMIN-CMS-IMPLEMENTED.md) | Admin CMS — players, blog, featured flags |
 | [14-ACADEMY-DASHBOARD-IMPLEMENTED.md](./14-ACADEMY-DASHBOARD-IMPLEMENTED.md) | Academy Dashboard — squad, fixtures, development, SIP, MVCE |
 
-## Vision Engine (next build — design complete, not implemented)
+## Vision Engine (Phase 0 implemented; Phase 1 next)
 
 Football video intelligence: rights-cleared footage → detections, tracks, identities, events,
 evidence clips, scouting metrics.
@@ -29,7 +29,8 @@ evidence clips, scouting metrics.
 | [vision/README.md](./vision/README.md) | **Start here** — index and reading order for the Vision Engine documentation set |
 | [vision/02-DECISIONS.md](./vision/02-DECISIONS.md) | How the PID, infrastructure handoff and coding-agent prompt were reconciled, and what was added or removed |
 | [vision/11-PHASE-PLAN.md](./vision/11-PHASE-PLAN.md) | Phases, gates and the first 90 days |
-| [vision/13-OPEN-QUESTIONS.md](./vision/13-OPEN-QUESTIONS.md) | Decisions still needing a human |
+| [vision/13-OPEN-QUESTIONS.md](./vision/13-OPEN-QUESTIONS.md) | Decisions record, and the two items still open |
+| [vision/15-PHASE-0-IMPLEMENTED.md](./vision/15-PHASE-0-IMPLEMENTED.md) | What Phase 0 actually built, with gate evidence |
 | [licenses/OSS_REGISTER.md](./licenses/OSS_REGISTER.md) | Third-party code, weights and dataset licences — nothing ships without an entry |
 
 **Authoritative specs**

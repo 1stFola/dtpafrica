@@ -10,7 +10,7 @@ Unified platform for **www.dtp.africa**:
 | ScoreBoard | `/scoreboard` | [docs/03-PRODUCT-SCOREBOARD.md](docs/03-PRODUCT-SCOREBOARD.md) |
 | Scouting Intelligence (SIP) | `/scouting` | [docs/specs/SCOUTING_INTELLIGENCE_PLATFORM.md](docs/specs/SCOUTING_INTELLIGENCE_PLATFORM.md) |
 | Market Value Confidence (MVCE) | `/valuation` | [docs/specs/DTP_Market_Value_Confidence_Engine_Documentation.pdf](docs/specs/DTP_Market_Value_Confidence_Engine_Documentation.pdf) |
-| Vision Engine *(design complete, not built)* | `/admin/vision` | [docs/vision/README.md](docs/vision/README.md) |
+| Vision Engine *(Phase 0 built; off by default)* | `/admin/vision` | [docs/vision/README.md](docs/vision/README.md) |
 
 **Architecture:** [docs/01-PLATFORM-VISION.md](docs/01-PLATFORM-VISION.md)
 **Vision Engine:** [docs/vision/](docs/vision/) — football video intelligence: rights, ingestion, detection, tracking, identity, events, evidence
