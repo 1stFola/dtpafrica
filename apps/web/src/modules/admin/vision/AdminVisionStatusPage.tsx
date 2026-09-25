@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { fetchVisionStatus, type VisionStatus } from "../../../api/vision";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -94,6 +95,13 @@ export function AdminVisionStatusPage() {
 
       {status && (
         <>
+          <Panel title="Operations">
+            <p className="muted vision-footnote">
+              <Link to="/admin/vision/sources">Partner sources →</Link> Catalogue matches, attach
+              rights evidence, authorize acquisition and issue partner upload links.
+            </p>
+          </Panel>
+
           <Panel title="Subsystem">
             <Row
               label="Status"

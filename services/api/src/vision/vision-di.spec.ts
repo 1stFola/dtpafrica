@@ -4,6 +4,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { VisionAuditService } from "./audit/vision-audit.service";
 import { VisionUploadService } from "./assets/upload.service";
 import { VisionUploadsController } from "./assets/uploads.controller";
+import { VisionPartnerUploadsController } from "./assets/partner-uploads.controller";
+import { VisionSourcesController } from "./sources/sources.controller";
+import { VisionSourcesService } from "./sources/sources.service";
 import { COMPUTE_PROVIDER_REGISTRY } from "./compute/compute-provider";
 import { VISION_CONFIG } from "./config/vision.config";
 import { VisionJobDispatcher } from "./jobs/job-dispatcher.service";
@@ -45,6 +48,7 @@ const PROVIDERS = [
   VisionStageResultsService,
   VisionUploadService,
   VisionJobDispatcher,
+  VisionSourcesService,
   WorkerTokenService,
 ] as const;
 
@@ -53,6 +57,8 @@ const CONTROLLERS = [
   VisionJobsController,
   VisionWorkerController,
   VisionUploadsController,
+  VisionPartnerUploadsController,
+  VisionSourcesController,
 ] as const;
 
 const SERVICES = [
@@ -60,6 +66,7 @@ const SERVICES = [
   VisionStageResultsService,
   VisionUploadService,
   VisionJobDispatcher,
+  VisionSourcesService,
   RightsPolicyService,
   VisionAuditService,
   WorkerTokenService,

@@ -1113,7 +1113,9 @@ model VisionPartnerUploadGrant {
   sourceVideoRecordId String @map("source_video_record_id")
   /// Hashed at rest. The plaintext is shown once, at issue.
   tokenHash           String @unique @map("token_hash")
-  objectKey           String @map("object_key")
+  /// Filled in when the holder actually starts an upload. Nothing is reserved at
+  /// issue: a grant that is never used should leave no asset row behind.
+  objectKey           String? @map("object_key")
   maxBytes            BigInt @map("max_bytes")
   allowedMimeTypes    String[] @map("allowed_mime_types")
   expiresAt           DateTime  @map("expires_at")

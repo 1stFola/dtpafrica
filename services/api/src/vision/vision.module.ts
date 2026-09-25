@@ -16,6 +16,10 @@ import { MockComputeProvider } from "./compute/mock-compute-provider";
 import { VISION_CONFIG, loadVisionConfig, type VisionConfig } from "./config/vision.config";
 import { VisionUploadService } from "./assets/upload.service";
 import { VisionUploadsController } from "./assets/uploads.controller";
+import { PartnerUploadGuard } from "./assets/partner-upload.guard";
+import { VisionPartnerUploadsController } from "./assets/partner-uploads.controller";
+import { VisionSourcesController } from "./sources/sources.controller";
+import { VisionSourcesService } from "./sources/sources.service";
 import { VisionJobDispatcher } from "./jobs/job-dispatcher.service";
 import { VisionJobsController } from "./jobs/jobs.controller";
 import { JOB_QUEUE } from "./jobs/job-queue";
@@ -90,6 +94,8 @@ const computeRegistryProvider: Provider = {
     VisionJobsController,
     VisionWorkerController,
     VisionUploadsController,
+    VisionPartnerUploadsController,
+    VisionSourcesController,
   ],
   providers: [
     configProvider,
@@ -102,6 +108,9 @@ const computeRegistryProvider: Provider = {
     VisionStageResultsService,
     VisionUploadService,
     VisionJobDispatcher,
+    VisionSourcesService,
+    // A third auth stack, unrelated to admin sessions and worker tokens.
+    PartnerUploadGuard,
     // Worker auth is a separate stack from admin auth on purpose: a worker token
     // must never reach an admin endpoint, and vice versa.
     WorkerTokenService,
@@ -123,6 +132,7 @@ const computeRegistryProvider: Provider = {
     VisionStageResultsService,
     VisionUploadService,
     VisionJobDispatcher,
+    VisionSourcesService,
   ],
 })
 export class VisionModule {}
