@@ -4,11 +4,23 @@ WORKDIR /app
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# apps/ is copied for the workspace manifest only: pnpm needs every project's
+# package.json present to resolve the lockfile, even when the install is filtered
+# down to the API. Its dependencies are not installed.
 COPY apps ./apps
 COPY packages ./packages
 COPY services ./services
 
-RUN pnpm install --frozen-lockfile
+# Only the API's own dependency closure.
+#
+# A bare `pnpm install` here installs every workspace project, so this image was
+# downloading and linking apps/web's React, Vite and Vitest trees — none of which
+# it ever uses — on top of its own. The deploy rebuilds with --no-cache, so that
+# waste was paid in full on every single deploy.
+#
+# `@dtp/api...` is pnpm's "this package and everything it depends on", which keeps
+# @dtp/engines and @dtp/vision-contracts (both built below) and drops the rest.
+RUN pnpm install --frozen-lockfile --filter @dtp/api...
 # @dtp/vision-contracts must be built here.
 #
 # The API's compiled output requires it by package name, so Node resolves it
