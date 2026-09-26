@@ -20,16 +20,30 @@
  *   - Ibadan Schools League — analysis permitted, training not. Its footage is
  *     `research_only`, so the dataset factory will refuse it.
  *
- * **No media or documents are uploaded.** The asset and evidence rows point at
- * object keys that hold nothing, so playback and document download will not
- * resolve. That is on purpose: `master` is write-once and delete-protected, and
- * filling it with fabricated partner agreements would leave objects that cannot be
- * cleanly removed. Attach the real partner PDFs through the UI instead.
+ * **No source media or documents are uploaded.** The original-footage and evidence
+ * rows point at keys that hold nothing, so document download will not resolve. That
+ * is on purpose: `master` is write-once and delete-protected, and filling it with
+ * fabricated partner agreements would leave objects nothing can cleanly remove.
+ * Attach the real partner PDFs through the UI instead.
+ *
+ * **One exception, and it is deliberate.** A five-second synthetic clip IS uploaded,
+ * as a proxy, because the annotation workstation is unusable without something to
+ * play. It goes to `derived`, which is regenerable and neither write-once nor
+ * delete-protected, so `--remove` takes it out again. It is a test pattern, not
+ * football, and it is uploaded through a presigned PUT rather than
+ * `putSmallObject` — that helper says "never video", and a demo is not a reason to
+ * quietly cross a boundary this codebase enforces elsewhere.
  */
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { loadVisionConfig } from "../src/vision/config/vision.config";
+import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
+import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
+import type { ObjectStore } from "../src/vision/storage/object-store";
 
 loadApiEnv();
 
@@ -60,6 +74,49 @@ async function removeDemoData(): Promise<number> {
     select: { id: true },
   });
   const assetIds = assets.map((a) => a.id);
+
+  // Annotation first: review rows hold a SetNull FK onto versions, so deleting the
+  // versions alone would leave orphaned verdicts behind rather than removing them.
+  const tasks = await prisma.visionAnnotationTask.findMany({
+    where: { videoAssetId: { in: assetIds } },
+    select: { id: true },
+  });
+  const taskIds = tasks.map((t) => t.id);
+  const versions = await prisma.visionAnnotationVersion.findMany({
+    where: { taskId: { in: taskIds } },
+    select: { id: true, payloadKey: true },
+  });
+
+  // The objects this seed uploaded. `derived` is regenerable and not delete-protected,
+  // which is exactly why the demo proxy went there rather than into `master`.
+  const variants = await prisma.visionVideoVariant.findMany({
+    where: { videoAssetId: { in: assetIds } },
+    select: { objectKey: true },
+  });
+  const uploadedKeys = [
+    ...variants.map((v) => v.objectKey),
+    ...versions.map((v) => v.payloadKey),
+  ];
+  if (uploadedKeys.length) {
+    const config = loadVisionConfig();
+    const store: ObjectStore =
+      config.storage.backend === "r2"
+        ? new R2ObjectStore(config.storage)
+        : new InMemoryObjectStore();
+    for (const key of uploadedKeys) {
+      // Already gone counts as removed: the point is that nothing is left behind.
+      await store.delete("derived", key).catch(() => undefined);
+    }
+    console.log(`  removed  ${uploadedKeys.length} demo object(s) from derived storage`);
+  }
+
+  await prisma.visionReviewDecision.deleteMany({
+    where: { annotationVersionId: { in: versions.map((v) => v.id) } },
+  });
+  await prisma.visionAnnotationVersion.deleteMany({ where: { taskId: { in: taskIds } } });
+  await prisma.visionActiveLearningItem.deleteMany({ where: { videoAssetId: { in: assetIds } } });
+  await prisma.visionAnnotationTask.deleteMany({ where: { id: { in: taskIds } } });
+  await prisma.visionLabelSchemaVersion.deleteMany({ where: { version: { contains: MARKER } } });
 
   // Ordered by dependency: members hold a Restrict FK onto assets, so they go first.
   await prisma.visionDatasetMember.deleteMany({ where: { videoAssetId: { in: assetIds } } });
@@ -378,6 +435,172 @@ async function main() {
     },
   });
 
+  // ── 4. Something to actually annotate ─────────────────────────────────────
+  //
+  // The workstation needs three things the rest of this seed does not provide: a
+  // label schema, a proxy it can play, and tasks in different states so the queue,
+  // the submit path and the review panel all have something to show.
+
+  const store: ObjectStore = (() => {
+    const config = loadVisionConfig();
+    return config.storage.backend === "r2"
+      ? new R2ObjectStore(config.storage)
+      : new InMemoryObjectStore();
+  })();
+
+  const schema = await prisma.visionLabelSchemaVersion.create({
+    data: {
+      version: `demo-2026.1 ${MARKER}`,
+      definitions: {
+        player: "A box round every visible player, including partially occluded ones.",
+        ball: "The ball, when you can actually see it. Mark uncertain rather than guessing.",
+        pass: "A deliberate ball transfer between two players of the same side.",
+        goalkeeper: "Tag the keeper separately — kit differs and the model needs the distinction.",
+      },
+      notes: "Demo taxonomy. Short on purpose; a real one is authored with coaches.",
+      effectiveFrom: ago(30),
+    },
+  });
+
+  // The first-half copy of the acquired fixture gets a playable proxy.
+  const firstHalf = await prisma.visionVideoAsset.findFirstOrThrow({
+    where: { sourceVideoRecordId: acquired.id },
+    orderBy: { objectKey: "asc" },
+    select: { id: true },
+  });
+
+  const clipPath = resolve(__dirname, "..", "test-media", "sample-720p.mp4");
+  const clip = readFileSync(clipPath);
+  const proxyKey = `proxies/demo-${firstHalf.id}/proxy.mp4`;
+
+  // Presigned PUT, not putSmallObject: that helper is documented "never video".
+  const uploadUrl = await store.presignPut("derived", proxyKey, 900, {
+    contentType: "video/mp4",
+  });
+  const uploaded = await fetch(uploadUrl, {
+    method: "PUT",
+    body: new Uint8Array(clip),
+    headers: { "Content-Type": "video/mp4" },
+  });
+  if (!uploaded.ok) {
+    throw new Error(
+      `Could not upload the demo proxy (${uploaded.status}). Object storage is configured as ` +
+        `"${store.backendId}" — check the Vision credentials in services/api/.env.`
+    );
+  }
+
+  const CLIP_MS = 5_000;
+  /**
+   * Five seconds, on purpose.
+   *
+   * The proxy starts five seconds into the "source", so the workstation's two clocks
+   * read differently the moment it loads — which is the behaviour most worth seeing,
+   * and the one a zero offset would hide.
+   */
+  const PROXY_OFFSET_MS = 5_000;
+
+  await prisma.visionVideoVariant.create({
+    data: {
+      videoAssetId: firstHalf.id,
+      kind: "proxy",
+      objectKey: proxyKey,
+      width: 1280,
+      height: 720,
+      fps: 25,
+      durationMs: CLIP_MS,
+      sourceOffsetMs: PROXY_OFFSET_MS,
+      settingsHash: "demo-720p25",
+      bytes: BigInt(clip.byteLength),
+    },
+  });
+
+  /** Source-time window that maps onto the whole clip. */
+  const WINDOW = { startMs: PROXY_OFFSET_MS, endMs: PROXY_OFFSET_MS + CLIP_MS };
+
+  const task = async (over: Record<string, unknown> = {}) =>
+    prisma.visionAnnotationTask.create({
+      data: {
+        videoAssetId: firstHalf.id,
+        labelSchemaVersionId: schema.id,
+        samplingStrategy: "low_confidence",
+        startMs: WINDOW.startMs,
+        endMs: WINDOW.endMs,
+        state: "queued",
+        ...over,
+      },
+    });
+
+  /**
+   * None of these use `targeted_event`, and none should.
+   *
+   * `vision:annotation-check` tags its own tasks with that strategy and filters every
+   * claim on it, which is how the gate stays isolated from this data. Before that, a
+   * gate run against a seeded database claimed three of these tasks, reassigned them
+   * and rejected one. If this seed ever needs `targeted_event`, give the gate a
+   * different strategy in the same change.
+   */
+  // Waiting, so "Claim next window" has something to hand out.
+  await task({ samplingStrategy: "new_domain_slice" });
+  await task({ samplingStrategy: "stage_disagreement" });
+  // Pre-labelled, so the anchoring-bias warning is visible on the workstation.
+  await task({
+    samplingStrategy: "low_confidence",
+    preLabelled: true,
+    preLabelModelVersionId: null,
+  });
+  // A control-group task, so the hard-case share is not a meaningless 100%.
+  await task({ samplingStrategy: "uniform_random", state: "approved" });
+
+  // One already submitted, so the review panel and the attempt history have content.
+  const submitted = await task({
+    samplingStrategy: "reviewer_disagreement",
+    state: "submitted",
+    assignedTo: "demo-annotator",
+  });
+
+  const payload = {
+    windowSourceStartMs: WINDOW.startMs,
+    windowSourceEndMs: WINDOW.endMs,
+    labelSchemaVersion: schema.version,
+    uncertain: false,
+    notes: "Demo submission. Two players clear, ball occluded from 00:02.",
+  };
+  const body = JSON.stringify(payload);
+  const versionId = randomUUID();
+  const payloadRef = visionKeys.annotationPayload(submitted.id, versionId);
+  // JSON, so putSmallObject is exactly what it is for.
+  await store.putSmallObject(payloadRef.bucket, payloadRef.key, body, "application/json");
+
+  await prisma.visionAnnotationVersion.create({
+    data: {
+      id: versionId,
+      taskId: submitted.id,
+      payloadKey: payloadRef.key,
+      payloadChecksum: createHash("sha256").update(body).digest("hex"),
+      annotatorId: "demo-annotator",
+      effortMinutes: 8.5,
+    },
+  });
+
+  // Flagged windows, so the active-learning table is not empty. Highest score first
+  // in the UI, so the numbers differ.
+  for (const [reason, score] of [
+    ["low_confidence", 0.94],
+    ["stage_disagreement", 0.71],
+    ["new_domain_slice", 0.55],
+  ] as const) {
+    await prisma.visionActiveLearningItem.create({
+      data: {
+        videoAssetId: firstHalf.id,
+        startMs: WINDOW.startMs,
+        endMs: WINDOW.endMs,
+        reason,
+        score,
+        state: "queued",
+      },
+    });
+  }
+
   // ── Summary ───────────────────────────────────────────────────────────────
   const counts = {
     partners: await prisma.visionSourcePartner.count({ where: { name: { contains: MARKER } } }),
@@ -402,7 +625,18 @@ async function main() {
   console.log(`  sources   ${counts.sources}  (catalogued, authorized and acquired)`);
   console.log(`  assets    ${counts.assets}   (2 clustered as duplicates, 1 research_only)`);
   console.log(`  grants    ${counts.grants}   (incl. one expired and one withdrawn)`);
+  console.log(`  schema    1   (${schema.version})`);
+  console.log(
+    `  tasks     ${await prisma.visionAnnotationTask.count({
+      where: { labelSchemaVersionId: schema.id },
+    })}   (queued, submitted and approved)`
+  );
+  console.log("  queue     3   (flagged windows awaiting a human)");
+  console.log(
+    `  proxy     ${(clip.byteLength / 1024).toFixed(0)} KiB synthetic clip in derived storage`
+  );
   console.log("\nOpen  http://localhost:5173/admin/vision/sources");
+  console.log("      http://localhost:5173/admin/vision/annotation");
   console.log("Remove with  pnpm --filter @dtp/api vision:seed-demo --remove");
 
   await prisma.$disconnect();

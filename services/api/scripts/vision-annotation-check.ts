@@ -203,13 +203,28 @@ async function main() {
     // ── 2. Task creation ─────────────────────────────────────────────────
     section("2. Task creation, and what it refuses");
 
+    /**
+     * Every task this gate creates carries `targeted_event`, and every claim filters
+     * on it.
+     *
+     * Without that, the gate is not isolated from whatever else is in the database:
+     * the claim endpoint hands out the oldest queued task, so a run against a seeded
+     * database claimed three of the **demo** tasks, reassigned them to gate
+     * annotators and rejected one — then cleaned up only its own rows and left the
+     * wreckage. It also made the "empty queue" assertion depend on nobody else having
+     * queued work, which is why a second run passed where the first had failed.
+     *
+     * `targeted_event` is the strategy `vision:seed-demo` deliberately does not use.
+     */
+    const GATE_STRATEGY = "targeted_event";
+
     const mk = (assetId: string, over: Record<string, unknown> = {}) =>
       api("/vision/annotation/tasks", {
         method: "POST",
         body: JSON.stringify({
           videoAssetId: assetId,
           labelSchemaVersionId: schemaId,
-          samplingStrategy: "low_confidence",
+          samplingStrategy: GATE_STRATEGY,
           startMs: 60_000,
           endMs: 120_000,
           ...over,
@@ -218,7 +233,7 @@ async function main() {
 
     const taskA = await mk(a["ok-a"]!);
     check("task created", taskA.status, 201);
-    check("sampling strategy recorded", taskA.body.samplingStrategy, "low_confidence");
+    check("sampling strategy recorded", taskA.body.samplingStrategy, GATE_STRATEGY);
     check("not marked pre-labelled without a model", taskA.body.preLabelled, false);
 
     const noProxy = await mk(a["no-proxy"]!);
@@ -263,11 +278,11 @@ async function main() {
     const [claim1, claim2] = await Promise.all([
       api("/vision/annotation/tasks/claim", {
         method: "POST",
-        body: JSON.stringify({ annotatorId: `gate-ann-1-${RUN}` }),
+        body: JSON.stringify({ annotatorId: `gate-ann-1-${RUN}`, samplingStrategy: GATE_STRATEGY }),
       }),
       api("/vision/annotation/tasks/claim", {
         method: "POST",
-        body: JSON.stringify({ annotatorId: `gate-ann-2-${RUN}` }),
+        body: JSON.stringify({ annotatorId: `gate-ann-2-${RUN}`, samplingStrategy: GATE_STRATEGY }),
       }),
     ]);
     check("first claim succeeded", claim1.status, 201);
@@ -292,7 +307,7 @@ async function main() {
 
     const empty2 = await api("/vision/annotation/tasks/claim", {
       method: "POST",
-      body: JSON.stringify({ annotatorId: `gate-ann-3-${RUN}` }),
+      body: JSON.stringify({ annotatorId: `gate-ann-3-${RUN}`, samplingStrategy: GATE_STRATEGY }),
     });
     check("an empty queue returns no task rather than erroring", empty2.status, 201);
     check("and hands out nothing", (empty2.body.task as unknown) === null, true);

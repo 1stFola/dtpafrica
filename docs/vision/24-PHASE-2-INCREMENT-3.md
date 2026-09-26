@@ -116,10 +116,33 @@ CSS          every class used by the new pages is styled
 
 CI now runs `pnpm --filter @dtp/web test`.
 
+`vision:seed-demo` now creates what the workstation needs: a label schema, five tasks
+across queued/submitted/approved, three flagged windows, and **a five-second synthetic
+clip uploaded as a real proxy** — because a workstation with nothing to play cannot be
+assessed. The clip goes to `derived`, which is regenerable and not delete-protected, so
+`--remove` takes it out again; verified by fetching the presigned URL (200, 66 KiB,
+byte-identical to the committed fixture) and then confirming zero demo objects remain
+after removal. The proxy carries a **5000 ms offset on purpose**, so the two clocks
+read differently the moment the screen loads — the behaviour a zero offset would hide.
+
+### The gate was not isolated from that data
+
+Adding seeded tasks exposed a defect in `vision:annotation-check`: the claim endpoint
+hands out the oldest queued task, so a run against a seeded database **claimed three of
+the demo tasks, reassigned them to gate annotators and rejected one** — then cleaned up
+only its own rows and left the wreckage. It also made the "empty queue" assertion depend
+on nobody else having queued work, which is why one run scored 51/53 and the next 53/53
+without anything changing.
+
+The gate now tags its own tasks `targeted_event` and filters every claim on it — the one
+strategy the seed deliberately does not use, noted in both files. Verified by running it
+twice against seeded data: 53/53 both times, with the demo tasks still unassigned
+afterwards.
+
 > **Not visually verified.** Signing in needs the operator's own credentials, which
 > are not mine to use, so the rendered screens have not been looked at — only that the
-> routes resolve, the guard holds, the bundle builds and the logic is tested. Layout
-> and legibility need a human pass.
+> routes resolve, the guard holds, the bundle builds, the seeded data reaches the API
+> correctly and the logic is tested. Layout and legibility need a human pass.
 
 ## What is not done
 
