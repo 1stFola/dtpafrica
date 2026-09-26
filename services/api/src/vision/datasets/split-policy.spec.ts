@@ -171,5 +171,34 @@ describe("split policy", () => {
     it("treats null as absent", () => {
       expect(resolvePolicy(null)).toEqual(DEFAULT_SPLIT_POLICY);
     });
+
+    it("ignores keys explicitly set to undefined", () => {
+      // This is the shape class-transformer hands a validated DTO: every declared
+      // optional property is an OWN key, set to undefined when the caller omitted it.
+      // A plain spread therefore overwrote the defaults with undefined, and
+      // `POST /vision/datasets` answered 500 for any partial policy — in production,
+      // where bodies are transformed, while development looked fine.
+      const asTransformed: Partial<SplitPolicy> = {
+        train: 60,
+        val: 20,
+        test: 20,
+        gold: 0,
+        seed: "from-the-caller",
+        groupBy: undefined,
+      };
+
+      const policy = resolvePolicy(asTransformed);
+      expect(policy.groupBy).toEqual(DEFAULT_SPLIT_POLICY.groupBy);
+      expect(policy.seed).toBe("from-the-caller");
+      expect(policy.train).toBe(60);
+    });
+
+    it("does not throw for a policy whose every optional key is undefined", () => {
+      const allUndefined = {
+        train: undefined, val: undefined, test: undefined,
+        gold: undefined, groupBy: undefined, seed: undefined,
+      } as unknown as Partial<SplitPolicy>;
+      expect(resolvePolicy(allUndefined)).toEqual(DEFAULT_SPLIT_POLICY);
+    });
   });
 });

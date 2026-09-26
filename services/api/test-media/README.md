@@ -5,7 +5,8 @@ image's own ffmpeg. They carry no footage and no rights question, so they are
 safe to commit — unlike real match video, which must never be in git.
 
 ```bash
-pnpm --filter @dtp/api vision:e2echeck services/api/test-media/sample-720p.mp4
+# The path is relative to services/api, which is where pnpm --filter runs the script.
+pnpm --filter @dtp/api vision:e2echeck test-media/sample-720p.mp4
 ```
 
 Two resolutions on purpose: the gate reads the expected dimensions from the file

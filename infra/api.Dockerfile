@@ -9,7 +9,12 @@ COPY packages ./packages
 COPY services ./services
 
 RUN pnpm install --frozen-lockfile
+# @dtp/vision-contracts is built explicitly as well as by its own `prepare` hook:
+# the API's compiled output requires it by package name, so Node resolves it
+# through node_modules to a dist that is gitignored. Without it the container
+# starts and dies with MODULE_NOT_FOUND, and --ignore-scripts skips the hook.
 RUN pnpm --filter @dtp/engines build \
+  && pnpm --filter @dtp/vision-contracts build \
   && pnpm --filter @dtp/api prisma:generate \
   && pnpm --filter @dtp/api build
 

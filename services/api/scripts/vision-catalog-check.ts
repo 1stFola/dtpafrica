@@ -75,6 +75,36 @@ async function main() {
 
   try {
     // ── Partner and evidence ──────────────────────────────────────────────
+    /**
+     * Is the ValidationPipe actually live?
+     *
+     * It was not, for the whole of development, on every endpoint: the dev server
+     * ran under a transpiler that emits no decorator metadata, so Nest found no type
+     * to validate against and passed every body through while production rejected
+     * the same request. Every gate runs against dev, so a DTO-only guard was one
+     * nothing had ever verified.
+     *
+     * This check is here so that regression cannot be silent again. If it fails, the
+     * dev runner has lost decorator metadata — look at the `dev` script before
+     * looking at anything else in this file.
+     */
+    section("Request validation is switched on");
+
+    const garbage = await fetch(`${API}/vision/partners`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ name: "x", aFieldThatDoesNotExist: true }),
+    });
+    check("an unknown field in a request body is rejected", garbage.status, 400);
+
+    const tooShort = await fetch(`${API}/vision/partners`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ name: "x" }),
+    });
+    // `@MinLength(2)` on the partner name. A DTO rule, and nothing else enforces it.
+    check("a DTO length rule is enforced", tooShort.status, 400);
+
     section("Partner");
     const partner = await api("/vision/partners", {
       method: "POST",
