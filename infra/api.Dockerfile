@@ -9,10 +9,15 @@ COPY packages ./packages
 COPY services ./services
 
 RUN pnpm install --frozen-lockfile
-# @dtp/vision-contracts is built explicitly as well as by its own `prepare` hook:
-# the API's compiled output requires it by package name, so Node resolves it
-# through node_modules to a dist that is gitignored. Without it the container
-# starts and dies with MODULE_NOT_FOUND, and --ignore-scripts skips the hook.
+# @dtp/vision-contracts must be built here.
+#
+# The API's compiled output requires it by package name, so Node resolves it
+# through node_modules to the package's own dist/ — which is gitignored. Without
+# this the image builds cleanly and then the container dies on boot with
+# MODULE_NOT_FOUND, nginx answers 502, and the site serves only static files.
+#
+# The package also builds itself from a `prepare` hook, so `pnpm install` produces
+# its dist everywhere. This step stays because --ignore-scripts would skip that.
 RUN pnpm --filter @dtp/engines build \
   && pnpm --filter @dtp/vision-contracts build \
   && pnpm --filter @dtp/api prisma:generate \
