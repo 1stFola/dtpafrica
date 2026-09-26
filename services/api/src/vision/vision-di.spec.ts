@@ -4,6 +4,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { VisionAuditService } from "./audit/vision-audit.service";
 import { VisionDatasetsController } from "./datasets/datasets.controller";
 import { VisionDatasetsService } from "./datasets/datasets.service";
+import { VisionAnnotationController } from "./annotation/annotation.controller";
+import { VisionAnnotationService } from "./annotation/annotation.service";
 import { VisionUploadService } from "./assets/upload.service";
 import { VisionUploadsController } from "./assets/uploads.controller";
 import { VisionPartnerUploadsController } from "./assets/partner-uploads.controller";
@@ -56,6 +58,7 @@ const PROVIDERS = [
   VisionJobDispatcher,
   VisionSourcesService,
   VisionDatasetsService,
+  VisionAnnotationService,
   WorkerTokenService,
 ] as const;
 
@@ -67,6 +70,7 @@ const CONTROLLERS = [
   VisionPartnerUploadsController,
   VisionSourcesController,
   VisionDatasetsController,
+  VisionAnnotationController,
 ] as const;
 
 const SERVICES = [
@@ -78,6 +82,7 @@ const SERVICES = [
   RightsPolicyService,
   VisionAuditService,
   VisionDatasetsService,
+  VisionAnnotationService,
   WorkerTokenService,
 ] as const;
 
