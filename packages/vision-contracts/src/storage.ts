@@ -142,6 +142,20 @@ export const visionKeys = {
     };
   },
 
+  /**
+   * One annotator's submitted labels.
+   *
+   * Keyed by version, never by task, because a submission is superseded and never
+   * overwritten — the corrections are the most valuable data DTP generates, and a
+   * task-keyed path would quietly destroy them on every resubmission.
+   */
+  annotationPayload(taskId: string, annotationVersionId: string): ObjectRef {
+    return {
+      bucket: "derived",
+      key: `annotations/${assertSafeKeySegment(taskId)}/${assertSafeKeySegment(annotationVersionId)}.json`,
+    };
+  },
+
   datasetLabels(datasetVersionId: string, shard: string): ObjectRef {
     return {
       bucket: "derived",

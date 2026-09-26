@@ -130,9 +130,23 @@ export function pickSplit(groupKey: string, policy: SplitPolicy): DatasetSplit {
   return "train";
 }
 
-/** Fills a partial policy from the defaults and validates the result. */
+/**
+ * Fills a partial policy from the defaults and validates the result.
+ *
+ * Keys whose value is `undefined` are dropped before merging. A plain spread looks
+ * equivalent and is not: `class-transformer` gives a validated DTO its declared
+ * optional properties as own keys set to `undefined`, so spreading the instance
+ * overwrote every default the caller did not mention. The symptom was a 500 from
+ * `POST /vision/datasets` for any request that sent a partial policy — live in
+ * production, and invisible in development until the dev server started validating
+ * and transforming bodies the way production always had.
+ */
 export function resolvePolicy(partial: Partial<SplitPolicy> | null | undefined): SplitPolicy {
-  const policy: SplitPolicy = { ...DEFAULT_SPLIT_POLICY, ...(partial ?? {}) };
+  const supplied = Object.fromEntries(
+    Object.entries(partial ?? {}).filter(([, value]) => value !== undefined)
+  ) as Partial<SplitPolicy>;
+
+  const policy: SplitPolicy = { ...DEFAULT_SPLIT_POLICY, ...supplied };
   assertPolicy(policy);
   return policy;
 }

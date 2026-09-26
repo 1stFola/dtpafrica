@@ -59,6 +59,11 @@ const MatchConsoleApp = lazy(() =>
     default: module.MatchConsoleApp,
   }))
 );
+const VisionWorkstationApp = lazy(() =>
+  import("./modules/admin/VisionWorkstationApp").then((module) => ({
+    default: module.VisionWorkstationApp,
+  }))
+);
 const SuperAdminApp = lazy(() =>
   import("./modules/admin/SuperAdminApp").then((module) => ({
     default: module.SuperAdminApp,
@@ -98,6 +103,14 @@ export default function App() {
       <Route
         path="admin/match-stats/:matchId/*"
         element={<LazyRoute><MatchConsoleApp /></LazyRoute>}
+      />
+      {/* Same reason, same precedent: a frame-accurate video tool needs the whole
+          viewport, and a site header competing for vertical space and keyboard focus
+          makes it worse at the one job it has. The wrapper carries its own auth stack,
+          because a top-level route sits outside AdminAuthProvider. */}
+      <Route
+        path="admin/vision/workstation/*"
+        element={<LazyRoute><VisionWorkstationApp /></LazyRoute>}
       />
       <Route element={<AppShell />}>
         <Route element={<MarketingLayout />}>

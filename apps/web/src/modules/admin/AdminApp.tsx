@@ -28,6 +28,7 @@ import { AdminScoreboardEntitiesPage } from "./scoreboard/pages/AdminScoreboardE
 import { AdminVisionStatusPage } from "./vision/AdminVisionStatusPage";
 import { AdminVisionSourcesPage } from "./vision/AdminVisionSourcesPage";
 import { AdminVisionSourceDetailPage } from "./vision/AdminVisionSourceDetailPage";
+import { AdminVisionAnnotationPage } from "./vision/AdminVisionAnnotationPage";
 
 export function AdminApp() {
   return (
@@ -66,6 +67,11 @@ export function AdminApp() {
               <Route path="vision" element={<AdminVisionStatusPage />} />
               <Route path="vision/sources" element={<AdminVisionSourcesPage />} />
               <Route path="vision/sources/:id" element={<AdminVisionSourceDetailPage />} />
+            </Route>
+            {/* Claiming and labelling need `vision.annotate`; reading the queue does
+                not. The workstation itself mounts outside AdminLayout — see App.tsx. */}
+            <Route element={<AdminRequirePermission permission="vision.annotate" />}>
+              <Route path="vision/annotation" element={<AdminVisionAnnotationPage />} />
             </Route>
             <Route path="blog" element={<AdminBlogListPage />} />
             <Route path="blog/new" element={<AdminBlogEditPage />} />

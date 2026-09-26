@@ -124,3 +124,90 @@ export const REJECTION_REASONS = [
   "rights_issue",
 ] as const;
 export type RejectionReason = (typeof REJECTION_REASONS)[number];
+
+// ── Annotation ─────────────────────────────────────────────────────────────
+
+/**
+ * Why a window was chosen for a human to label.
+ *
+ * Recorded per task and never optional, because uniform random sampling produces
+ * a corpus of easy frames: mostly midfield, mostly clear, mostly nothing
+ * happening. A model trained on that looks fine and fails on the crowded penalty
+ * box that decides matches. Keeping the strategy on the row makes the mix
+ * auditable — "what fraction of our labels came from hard cases?" is answerable
+ * rather than a matter of opinion.
+ */
+export const SAMPLING_STRATEGIES = [
+  /** The control group. Needed, but it must not be the whole corpus. */
+  "uniform_random",
+  /** The model was unsure here. */
+  "low_confidence",
+  /** Two stages disagreed — detection says ball, tracking says no. */
+  "stage_disagreement",
+  /** Two humans disagreed, which usually means the handbook is ambiguous. */
+  "reviewer_disagreement",
+  /** A slice the corpus barely covers: night matches, rain, one camera angle. */
+  "new_domain_slice",
+  /** Chosen because the answer matters commercially, not because it is hard. */
+  "business_value",
+  /** A specific event type someone is deliberately collecting. */
+  "targeted_event",
+] as const;
+export type SamplingStrategy = (typeof SAMPLING_STRATEGIES)[number];
+
+/** Strategies that are not the control group, for reporting the hard-case mix. */
+export const NON_RANDOM_SAMPLING_STRATEGIES: readonly SamplingStrategy[] =
+  SAMPLING_STRATEGIES.filter((s) => s !== "uniform_random");
+
+/**
+ * An annotation task's lifecycle.
+ *
+ * `rejected` is not terminal in the sense of "discarded": the task goes back for
+ * another pass, and the rejection is kept because the correction is the training
+ * signal. `abandoned` is the honest state for a task nobody will finish.
+ */
+export const ANNOTATION_TASK_STATES = [
+  "queued",
+  "assigned",
+  "submitted",
+  "approved",
+  "rejected",
+  "abandoned",
+] as const;
+export type AnnotationTaskState = (typeof ANNOTATION_TASK_STATES)[number];
+
+/** States in which a task is still expected to produce work. */
+export const OPEN_ANNOTATION_TASK_STATES: readonly AnnotationTaskState[] = [
+  "queued",
+  "assigned",
+  "rejected",
+];
+
+/**
+ * A reviewer's verdict.
+ *
+ * `corrected` is distinct from `approved` on purpose: it records that the labels
+ * were usable only after a fix, which is the number that tells DTP whether a
+ * pre-labelling model is actually saving anyone time.
+ */
+export const REVIEW_DECISIONS = ["approved", "corrected", "rejected"] as const;
+export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
+
+/** Verdicts that require a structured reason, so the next batch can be targeted. */
+export const REASON_REQUIRED_REVIEW_DECISIONS: readonly ReviewDecision[] = [
+  "corrected",
+  "rejected",
+];
+
+/**
+ * Why an item is queued for a human to look at.
+ *
+ * The same vocabulary as `SAMPLING_STRATEGIES` minus the control group: an
+ * active-learning item exists precisely because something about it is not
+ * routine, so "uniform_random" would be a contradiction.
+ */
+export const ACTIVE_LEARNING_REASONS = NON_RANDOM_SAMPLING_STRATEGIES;
+export type ActiveLearningReason = SamplingStrategy;
+
+export const ACTIVE_LEARNING_STATES = ["queued", "claimed", "converted", "discarded"] as const;
+export type ActiveLearningState = (typeof ACTIVE_LEARNING_STATES)[number];

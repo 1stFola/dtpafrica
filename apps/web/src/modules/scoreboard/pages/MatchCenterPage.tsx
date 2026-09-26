@@ -846,7 +846,11 @@ export function MatchCenterPage() {
   const [goalAlert, setGoalAlert] = useState<GoalAlertState | null>(null);
   const seenLiveEventIds = useRef<Set<string> | null>(null);
   const goalWhistleAudio = useRef<HTMLAudioElement | null>(null);
-  const goalAlertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // `number`, not `ReturnType<typeof setTimeout>`: this holds the handle from
+  // `window.setTimeout`, which is a number in a browser. The generic form resolves
+  // to Node's `Timeout` whenever @types/node is in scope, so the two disagreed as
+  // soon as a dependency pulled those types in.
+  const goalAlertTimer = useRef<number | null>(null);
 
   const selectTab = (tab: MatchTab) => {
     setActiveTab(tab);

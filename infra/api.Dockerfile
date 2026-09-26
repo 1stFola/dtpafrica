@@ -15,6 +15,9 @@ RUN pnpm install --frozen-lockfile
 # through node_modules to the package's own dist/ — which is gitignored. Without
 # this the image builds cleanly and then the container dies on boot with
 # MODULE_NOT_FOUND, nginx answers 502, and the site serves only static files.
+#
+# The package also builds itself from a `prepare` hook, so `pnpm install` produces
+# its dist everywhere. This step stays because --ignore-scripts would skip that.
 RUN pnpm --filter @dtp/engines build \
   && pnpm --filter @dtp/vision-contracts build \
   && pnpm --filter @dtp/api prisma:generate \

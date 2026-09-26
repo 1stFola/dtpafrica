@@ -3,7 +3,7 @@
 Football video intelligence for DTP Africa: turning rights-cleared Nigerian match footage into
 reviewed, reproducible player evidence.
 
-**Status:** Phase 0 complete ([gate: PASS](./15-PHASE-0-IMPLEMENTED.md)). **Phase 1 functionally complete** — job spine ([PASS](./16-PHASE-1-INCREMENT-1.md)), worker container ([PASS](./17-PHASE-1-INCREMENT-2.md)), asset projection ([PASS](./18-PHASE-1-INCREMENT-3.md)), resumable upload ([PASS](./19-PHASE-1-INCREMENT-4.md)) and the catalog with partner links ([PASS](./20-PHASE-1-INCREMENT-5.md)). Both hosted compute providers now exist with a shared conformance suite ([21](./21-COMPUTE-PROVIDERS.md)), unverified against live services until Spike S0. **Phase 2 Increment 1 complete** — the dataset factory's eligibility firewall and leakage checker ([PASS](./22-PHASE-2-INCREMENT-1.md)). Next: Increment 2, annotation tooling.
+**Status:** Phase 0 complete ([gate: PASS](./15-PHASE-0-IMPLEMENTED.md)). **Phase 1 functionally complete** — job spine ([PASS](./16-PHASE-1-INCREMENT-1.md)), worker container ([PASS](./17-PHASE-1-INCREMENT-2.md)), asset projection ([PASS](./18-PHASE-1-INCREMENT-3.md)), resumable upload ([PASS](./19-PHASE-1-INCREMENT-4.md)) and the catalog with partner links ([PASS](./20-PHASE-1-INCREMENT-5.md)). Both hosted compute providers now exist with a shared conformance suite ([21](./21-COMPUTE-PROVIDERS.md)), unverified against live services until Spike S0. **Phase 2 Increment 1 complete** — the dataset factory's eligibility firewall and leakage checker ([PASS](./22-PHASE-2-INCREMENT-1.md)). **Increment 2 complete** — annotation: supersede-never-overwrite, the claim race, and proxy-only access ([PASS](./23-PHASE-2-INCREMENT-2.md)). **Increment 3 complete** — the review workstation, and the frame arithmetic under it ([PASS](./24-PHASE-2-INCREMENT-3.md)). Next: Spike S0, which needs a GPU credential.
 **Source documents reconciled:** PID v2.0, Infrastructure Architecture & Build Handoff v1, Master Coding Agent Prompt v2.0 (all 24 Sep 2026).
 **Conforms to:** Architecture Freeze v1 — see [the mapping](./01-ARCHITECTURE.md#conformance-to-architecture-freeze-v1).
 **Last updated:** 24 September 2026.
@@ -37,6 +37,8 @@ reviewed, reproducible player evidence.
 | — | [20-PHASE-1-INCREMENT-5.md](./20-PHASE-1-INCREMENT-5.md) | The catalog, the operator screens, and partner upload links. |
 | — | [21-COMPUTE-PROVIDERS.md](./21-COMPUTE-PROVIDERS.md) | Both hosted providers, the conformance suite, and what the second one revealed. |
 | — | [22-PHASE-2-INCREMENT-1.md](./22-PHASE-2-INCREMENT-1.md) | The dataset factory: why footage cannot enter a corpus, and why a leaking dataset cannot be frozen. |
+| — | [23-PHASE-2-INCREMENT-2.md](./23-PHASE-2-INCREMENT-2.md) | Annotation: why a correction is never lost, and why the dev server was not validating anything. |
+| — | [24-PHASE-2-INCREMENT-3.md](./24-PHASE-2-INCREMENT-3.md) | The review workstation: three clocks that must never be confused, and a route that had no auth. |
 
 Also: [`docs/licenses/OSS_REGISTER.md`](../licenses/OSS_REGISTER.md) — every third-party
 component, with its code / weights / dataset licence tracked separately. Nothing ships without
