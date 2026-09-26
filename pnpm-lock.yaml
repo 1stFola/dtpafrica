@@ -109,10 +109,10 @@ importers:
   services/api:
     dependencies:
       '@aws-sdk/client-s3':
-        specifier: ^3.700.0
+        specifier: ^3.1140.0
         version: 3.1140.0
       '@aws-sdk/s3-request-presigner':
-        specifier: ^3.700.0
+        specifier: ^3.1140.0
         version: 3.1140.0
       '@dtp/engines':
         specifier: workspace:*
