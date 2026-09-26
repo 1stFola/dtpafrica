@@ -13,6 +13,7 @@
     }
   },
   "scripts": {
+    "prepare": "tsc",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "vitest run --reporter=verbose",
