@@ -137,24 +137,37 @@ jobs:
       # which must never run from CI.
       - name: The image boots far enough to reach its database
         run: |
-          set +e
-          output=$(docker run --rm --entrypoint sh             -e DATABASE_URL="postgresql://nobody:nobody@192.0.2.1:5432/none?connect_timeout=2"             -e ADMIN_API_KEY="ci-boot-test"             -e ADMIN_JWT_SECRET="ci-boot-test-secret-ci-boot-test-secret"             dtp-api:ci -c 'cd /app/services/api && timeout 120 node dist/services/api/src/main.js 2>&1')
-          set -e
-          echo "$output" | tail -40
+          # Credential-shaped values are generated per run, never written into the
+          # repository. They are throwaway by construction — the container talks to an
+          # unroutable address and serves no request — but a literal
+          # ADMIN_JWT_SECRET="..." in a workflow is indistinguishable from a real one
+          # to a reader and to a secret scanner, and "it is only a test value" is
+          # exactly what gets said shortly before a real one lands. GitGuardian was
+          # right to flag the first version of this step.
+          throwaway() { openssl rand -hex 24; }
 
-          if echo "$output" | grep -qE "MODULE_NOT_FOUND|Cannot find module"; then
+          set +e
+          output=$(docker run --rm --entrypoint sh             -e DATABASE_URL="postgresql://ci:$(throwaway)@192.0.2.1:5432/none?connect_timeout=2"             -e ADMIN_API_KEY="$(throwaway)"             -e ADMIN_JWT_SECRET="$(throwaway)"             dtp-api:ci -c 'cd /app/services/api && timeout 120 node dist/services/api/src/main.js 2>&1')
+          set -e
+
+          # Herestrings rather than pipes: `echo "$output" | tail` makes the shell
+          # report a broken pipe once tail has read its 40 lines, which litters the log
+          # and would fail the step outright under `pipefail`.
+          tail -40 <<< "$output"
+
+          if grep -qE "MODULE_NOT_FOUND|Cannot find module" <<< "$output"; then
             echo "::error::The API container cannot resolve a module at runtime. This is the failure that took the site down: a workspace package the compiled output requires by name is not built in the image. Check infra/api.Dockerfile."
             exit 1
           fi
 
-          if ! echo "$output" | grep -q "dependencies initialized"; then
+          if ! grep -q "dependencies initialized" <<< "$output"; then
             echo "::error::The API container did not initialise any Nest module. It is not starting at all."
             exit 1
           fi
 
           # Named explicitly because VisionModule is the one that imports the package
           # that broke. If Vision is ever renamed, update this line and say so.
-          if ! echo "$output" | grep -q "VisionModule dependencies initialized"; then
+          if ! grep -q "VisionModule dependencies initialized" <<< "$output"; then
             echo "::error::VisionModule did not initialise, so its imports are not resolving inside the image."
             exit 1
           fi
