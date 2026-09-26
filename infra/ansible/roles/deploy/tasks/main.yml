@@ -210,57 +210,56 @@
 # Run directly via shell so the working directory is the repo root,
 # which makes 'context: ..' in the Dockerfiles resolve correctly to repo root.
 
-# Free disk is checked before building, not after. A --no-cache build leaves a
-# dangling image set behind on every deploy, and a full disk does not fail the
-# build — it makes it crawl, which is indistinguishable from a slow deploy until
-# somebody notices the site has been down for two hours.
-- name: Check free disk before building
-  ansible.builtin.shell: df --output=avail -BG / | tail -1 | tr -dc '0-9'
-  register: free_gb
-  changed_when: false
-  become: true
-  become_user: root
+# ── 11. Pull the images CI built, and start the stack ────────────────────────
+#
+# Nothing is compiled on this box. It is a t3.small — two burstable vCPUs and 2GB
+# of RAM shared with Postgres — and building both images here burned its CPU
+# credits, after which it accepted TCP connections but was too throttled to answer
+# them. SSH and HTTP both timed out for hours. CI builds the same images in about
+# three minutes on a 4-vCPU runner, so that is where they are built.
 
-- name: Reclaim space from previous builds when disk is tight
-  ansible.builtin.shell: docker image prune -af --filter 'until=168h'
-  when: free_gb.stdout | int < 12
+- name: Log in to the image registry
+  ansible.builtin.shell:
+    cmd: docker login --username AWS --password-stdin {{ image_registry }}
+    stdin: "{{ registry_password }}"
   become: true
   become_user: root
   changed_when: true
+  no_log: true
 
-- name: Fail early if disk is still too tight to build
-  ansible.builtin.fail:
-    msg: >-
-      Only {{ free_gb.stdout }}GB free on / and pruning did not recover enough.
-      Building here would hang rather than fail. Clear space on the instance first.
-  when: free_gb.stdout | int < 5
-
-- name: Build and start full application stack
-  # No --no-cache. Docker already rebuilds a layer when the files it copies change,
-  # so forcing a cold build bought nothing and cost a full dependency reinstall on
-  # every deploy — twelve minutes on a good day, and the step that hung for two
-  # hours once the workspace grew.
-  #
-  # `timeout` so a build that stops making progress fails in twenty minutes instead
-  # of holding the site down indefinitely. 124 is timeout's own exit code.
+- name: Pull the images for this commit
   ansible.builtin.shell: |
-    set -e
-    timeout 1200 docker compose \
+    timeout 600 docker compose \
       --env-file infra/.env.staging \
       -f infra/docker-compose.staging.yml \
-      build
-    docker compose \
-      --env-file infra/.env.staging \
-      -f infra/docker-compose.staging.yml \
-      up -d
+      pull --quiet
   args:
     chdir: "{{ app_dir }}/repo"
   become: true
   become_user: root
   changed_when: true
-  environment:
-    DOCKER_BUILDKIT: "1"
 
+- name: Start the stack
+  ansible.builtin.shell: |
+    docker compose \
+      --env-file infra/.env.staging \
+      -f infra/docker-compose.staging.yml \
+      up -d --remove-orphans
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  changed_when: true
+
+# Pulling a new tag every deploy leaves the previous one behind, and this box only
+# has a 20GB root volume. Images still referenced by a running container are never
+# removed by this, so the current release is safe.
+- name: Drop images no longer used by any container
+  ansible.builtin.shell: docker image prune -af --filter 'until=48h'
+  become: true
+  become_user: root
+  changed_when: true
+  failed_when: false
 # ── 12. UFW — open HTTP and HTTPS ────────────────────────────────────────────
 
 - name: Allow HTTP
