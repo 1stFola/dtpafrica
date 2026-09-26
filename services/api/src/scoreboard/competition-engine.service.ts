@@ -236,6 +236,12 @@ export class CompetitionEngineService {
        groups. */
     const isKnockoutCup = competition.formatType === "KNOCKOUT_CUP";
     const GROUPED_FORMATS = new Set(["JAGABAN_CUP_STANDARD", "HYBRID_CHAMPIONS_LEAGUE"]);
+    /* Formats whose table must count group matches only, because earlier stages
+       also produce finished matches between the same teams. */
+    const GROUP_PHASE_ONLY_FORMATS = new Set([
+      "JAGABAN_CUP_STANDARD",
+      "1XCUP_MULTI_STAGE",
+    ]);
     const useGroups =
       !isKnockoutCup &&
       (GROUPED_FORMATS.has(competition.formatType ?? "") ||
@@ -247,8 +253,11 @@ export class CompetitionEngineService {
         status: "finished",
         ...(publicOnly ? { isPublished: true } : {}),
         /* Jagaban's table counts only the group phase; its knockout ties must
-           not feed the group standings. */
-        ...(useGroups && competition.formatType === "JAGABAN_CUP_STANDARD"
+           not feed the group standings. 1XCup needs the same cut for a stronger
+           reason: its group-stage teams reached it by winning zonal knockout
+           qualifiers, so without this filter every group table would silently
+           count the qualifying results that got the team there. */
+        ...(useGroups && GROUP_PHASE_ONLY_FORMATS.has(competition.formatType ?? "")
           ? { stageKey: { startsWith: "group_" } }
           : {}),
       },
@@ -262,7 +271,31 @@ export class CompetitionEngineService {
       },
     });
 
-    const normalizedTeams = competition.teams.map((t) => ({
+    /* A competition whose table counts group matches only should not also render a
+       table per earlier phase. 1XCup's seventy-six eliminated teams still carry
+       their qualifying zone, and without this they produced five all-zero zone
+       tables beside the six real group tables. Membership is taken from the group
+       fixtures themselves rather than from a naming convention, and the narrowing
+       is skipped entirely until those fixtures exist. */
+    let tableTeams = competition.teams;
+    if (useGroups && GROUP_PHASE_ONLY_FORMATS.has(competition.formatType ?? "")) {
+      const groupFixtures = await this.prisma.sbMatch.findMany({
+        where: {
+          competitionId,
+          stageKey: { startsWith: "group_" },
+          ...(publicOnly ? { isPublished: true } : {}),
+        },
+        select: { homeTeamId: true, awayTeamId: true },
+      });
+      const inGroupPhase = new Set(
+        groupFixtures.flatMap((m) => [m.homeTeamId, m.awayTeamId])
+      );
+      if (inGroupPhase.size > 0) {
+        tableTeams = competition.teams.filter((t) => inGroupPhase.has(t.id));
+      }
+    }
+
+    const normalizedTeams = tableTeams.map((t) => ({
       id: t.id,
       name: normalizeClubName(t.name),
       shortName: t.shortName,

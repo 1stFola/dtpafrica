@@ -2,10 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 
 import { backfillMissingMatchSlugs } from "../src/scoreboard/match-slug";
 import { seed1XCup2026 } from "./seed-1xcup-2026";
+import { seed1XCupGroupStage2026 } from "./seed-1xcup-group-stage-2026";
 import { seedCoalCityScoutingTournament2026 } from "./seed-coal-city-scouting-tournament-2026";
 import { seedExInternationalsCup2026 } from "./seed-ex-internationals-cup-2026";
 import { seedGoalkeeperProfiles } from "./seed-goalkeeper-profiles";
 import { seedJagabanCup2026 } from "./seed-jagaban-cup-2026";
+import { seedJoemarkOtoAworiSuperLeague2026 } from "./seed-joemark-oto-awori-super-league-2026";
 import { seedLagosQueensCup2026 } from "./seed-lagos-queens-cup-2026";
 import { seedDslLeaguePlayers } from "./seed-dsl-league-players-2026";
 import { seedRakLeague2026 } from "./seed-rak-league-2026";
@@ -13,7 +15,7 @@ import { seedTrainingCup } from "./seed-training-cup";
 import { syncScoreboardEventPlayerLinks } from "./sync-scoreboard-event-player-links";
 import { syncScoreboardTimelinePlayerProfiles } from "./sync-scoreboard-timeline-player-profiles";
 
-/** ScoreBoard seed: Jagaban Cup 2026, Ex Internationals Cup 2026, Lagos Queens Cup 2026, 1XCup 2026, RAK BDFA League, Dynasty Scouting League, Coal City Scouting Tournament 2026, DTP Training Cup. */
+/** ScoreBoard seed: Jagaban Cup 2026, Ex Internationals Cup 2026, Lagos Queens Cup 2026, 1XCup 2026 (incl. its group stage), RAK BDFA League, Dynasty Scouting League, Coal City Scouting Tournament 2026, JOEMARK Oto-Awori Super League 2026, DTP Training Cup. */
 export async function seedScoreboard(prisma: PrismaClient, _seedPlayerId?: string) {
   const preBackfill = await backfillMissingMatchSlugs(prisma);
   if (preBackfill > 0) {
@@ -24,6 +26,10 @@ export async function seedScoreboard(prisma: PrismaClient, _seedPlayerId?: strin
   await seedExInternationalsCup2026(prisma);
   await seedLagosQueensCup2026(prisma);
   await seed1XCup2026(prisma);
+  // Strictly after seed1XCup2026: the group stage attaches to that competition's
+  // existing teams and its already-seeded group_stage row, and skips itself if
+  // either is missing rather than creating a second 1XCup.
+  await seed1XCupGroupStage2026(prisma);
   await seedRakLeague2026(prisma);
   // Dynasty Scouting League teams and fixtures are live, so only its player
   // rosters are seeded. seed-dsl-league-2026.ts still holds the canonical team
@@ -32,6 +38,10 @@ export async function seedScoreboard(prisma: PrismaClient, _seedPlayerId?: strin
   // New competition: teams and fixtures are not live yet, so this one still
   // seeds them. Every write is an upsert keyed on fixed ids.
   await seedCoalCityScoutingTournament2026(prisma);
+  // New league: teams, squads and fixtures are not live yet, so this one seeds
+  // them. Every write is an upsert on a fixed id, and a match that has kicked off
+  // or had events recorded is left alone.
+  await seedJoemarkOtoAworiSuperLeague2026(prisma);
   await seedTrainingCup(prisma);
   const goalkeeperProfiles = await seedGoalkeeperProfiles(prisma);
   console.log("Seeded goalkeeper profiles:", goalkeeperProfiles);
