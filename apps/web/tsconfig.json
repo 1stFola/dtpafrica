@@ -14,6 +14,15 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    /**
+     * Browser code, so no ambient Node types.
+     *
+     * Without this every `@types/*` in the store is auto-included, and adding vitest
+     * (which depends on @types/node) silently changed what `setTimeout` returns in
+     * application code — two pre-existing files stopped compiling. Restricting it
+     * also stops browser code using a Node API and typechecking anyway.
+     */
+    "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],

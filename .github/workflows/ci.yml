@@ -55,6 +55,11 @@ jobs:
       - name: Run API tests
         run: pnpm --filter @dtp/api test
 
+      # The web app's first tests, added with the annotation workstation: its time and
+      # frame arithmetic decides whether a stored label means what it says.
+      - name: Run web tests
+        run: pnpm --filter @dtp/web test
+
       # 3.12 to match the worker image (services/vision-worker/Dockerfile), so CI
       # runs the interpreter production runs. No ffmpeg needed: the stage tests fake
       # the subprocess, and media.py has no isolated tests yet.

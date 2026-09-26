@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build && node scripts/prerender-about.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
+    "test": "vitest run --reporter=verbose",
     "lint": "echo \"lint: configure eslint\""
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^2.1.0"
   }
 }

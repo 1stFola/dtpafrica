@@ -100,6 +100,10 @@ export function AdminVisionStatusPage() {
               <Link to="/admin/vision/sources">Partner sources →</Link> Catalogue matches, attach
               rights evidence, authorize acquisition and issue partner upload links.
             </p>
+            <p className="muted vision-footnote">
+              <Link to="/admin/vision/annotation">Annotation queue →</Link> Claim a window to
+              label, review submitted work, and see what the corpus is actually made of.
+            </p>
           </Panel>
 
           <Panel title="Subsystem">

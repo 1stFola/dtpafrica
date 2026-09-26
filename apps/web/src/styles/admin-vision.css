@@ -280,3 +280,175 @@
     grid-column: span 1;
   }
 }
+
+/* ── Annotation queue and workstation ──────────────────────────────────────
+   The workstation mounts outside the admin shell, so it sets its own full-height
+   layout here rather than inheriting one. */
+
+.vision-mono {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.vision-note {
+  border-left: 3px solid rgba(251, 191, 36, 0.6);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 0.85rem 0 0;
+  padding-left: 0.7rem;
+}
+
+.vision-pill--warn {
+  background: rgba(120, 53, 15, 0.55);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.vision-stats {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 0.85rem 0 0;
+}
+
+.vision-stats dt {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.vision-stats dd {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0.2rem 0 0;
+}
+
+.vision-grid-2 {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-top: 1rem;
+}
+
+.vision-workstation {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 100vh;
+  padding: 0.85rem;
+}
+
+.vision-workstation__bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  gap: 0.85rem;
+}
+
+.vision-workstation__body {
+  display: grid;
+  gap: 1rem;
+  /* Video first and widest: everything else on this screen exists to serve it. */
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+}
+
+.vision-workstation__video video {
+  background: #000;
+  border-radius: 10px;
+  display: block;
+  max-height: 62vh;
+  width: 100%;
+}
+
+.vision-workstation__video input[type="range"] {
+  margin-top: 0.6rem;
+  width: 100%;
+}
+
+.vision-workstation__side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.vision-workstation__side textarea {
+  border-radius: 8px;
+  font: inherit;
+  padding: 0.5rem;
+  width: 100%;
+}
+
+/* Both clocks, side by side, permanently. `47:12` on the match clock is not
+   `47:12` in the file, and a layout that shows only one invites the confusion. */
+.vision-clocks {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0.6rem;
+}
+
+.vision-clocks strong {
+  display: block;
+  font-size: 1.05rem;
+}
+
+.vision-clocks em {
+  font-size: 0.68rem;
+  font-style: normal;
+  opacity: 0.75;
+}
+
+.vision-clocks__label {
+  font-size: 0.68rem;
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
+.vision-transport {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.vision-schema,
+.vision-versions {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vision-schema li,
+.vision-versions li {
+  background: rgba(2, 6, 23, 0.45);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.vision-schema strong {
+  display: block;
+}
+
+.vision-reasons {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+/* A narrow laptop is the normal case pitch-side, so the side panel drops under
+   the video rather than squeezing it. */
+@media (max-width: 1100px) {
+  .vision-workstation__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vision-workstation__side {
+    max-height: none;
+  }
+}
