@@ -654,7 +654,7 @@ const MATCHES: MatchSeed[] = [
     status: "scheduled", homeScore: 0, awayScore: 0,
     walkover: false, goals: [] },
   { id: "5ad0002b-fb11-5241-8916-f6a80bf45af6", homeSlug: "black-jaguars-fc", awaySlug: "ortega-fa",
-    kickoffAt: "2026-10-15T22:00:00+01:00", venue: "",
+    kickoffAt: "2026-10-15T10:00:00+01:00", venue: "",
     status: "scheduled", homeScore: 0, awayScore: 0,
     walkover: false, goals: [] },
   { id: "66285c96-5535-5f82-8571-b88137e5cee4", homeSlug: "jp-young-stars-fc", awaySlug: "galaxy-sport-fa",
