@@ -171,7 +171,9 @@ export async function seed1XCupGroupStage2026(prisma: PrismaClient) {
          the standings engine groups a table by this column. */
       await prisma.sbTeam.update({
         where: { id: team.id },
-        data: { groupKey: `Group ${letter}` },
+        /* Just the letter, as Jagaban and Lagos Queens store it: the standings card
+           already prefixes "Group", and "Group A" here rendered as "Group Group A". */
+        data: { groupKey: letter },
       });
     }
   }
@@ -226,7 +228,7 @@ export async function seed1XCupGroupStage2026(prisma: PrismaClient) {
     where: { competitionId: comp.id, stageKey: { startsWith: "group_" } },
   });
   const grouped = await prisma.sbTeam.count({
-    where: { competitionId: comp.id, groupKey: { startsWith: "Group " } },
+    where: { competitionId: comp.id, groupKey: { in: Object.keys(GROUPS) } },
   });
   console.log(
     `Seeded 1XCup group stage: ${groupMatches} group matches (expected 36), ` +
