@@ -1,4 +1,6 @@
 export type StandingRow = {
+  /** Finishing position, 1-based, assigned after the table is sorted. */
+  rank: number;
   teamId: string;
   teamName: string;
   shortName: string | null;
@@ -29,6 +31,7 @@ export function computeStandings(
 
   for (const t of teams) {
     table.set(t.id, {
+      rank: 0,
       teamId: t.id,
       teamName: t.name,
       shortName: t.shortName,
@@ -71,16 +74,23 @@ export function computeStandings(
     }
   }
 
-  return [...table.values()]
-    .map((r) => ({
-      ...r,
-      goalDifference: r.goalsFor - r.goalsAgainst,
-    }))
-    .sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points;
-      if (b.goalDifference !== a.goalDifference) {
-        return b.goalDifference - a.goalDifference;
-      }
-      return b.goalsFor - a.goalsFor;
-    });
+  return (
+    [...table.values()]
+      .map((r) => ({
+        ...r,
+        goalDifference: r.goalsFor - r.goalsAgainst,
+      }))
+      .sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.goalDifference !== a.goalDifference) {
+          return b.goalDifference - a.goalDifference;
+        }
+        return b.goalsFor - a.goalsFor;
+      })
+      /* Position is assigned here, after sorting, exactly as the grouped table
+         does it. Without this a flat league table came back with no rank at all
+         and the page rendered a dash in the POS column for every side — every
+         ungrouped competition, JOEMARK and the Dynasty Scouting League alike. */
+      .map((r, i) => ({ ...r, rank: i + 1 }))
+  );
 }
