@@ -346,6 +346,37 @@ docker compose --env-file infra/.env.staging \
   -f infra/docker-compose.staging.yml up -d --build
 ```
 
+### Run a maintenance script
+
+Maintenance scripts run **inside the API container**, not on the host. The host has
+no `node_modules` — the deploy stopped installing them once CI took over building
+the images — and the container additionally has the right `DATABASE_URL` already set,
+so there is nothing to configure.
+
+```bash
+cd /opt/dtp-app/repo
+sudo docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml \
+  exec api pnpm --filter @dtp/api <script-name>
+```
+
+These three report what they would do and write nothing until given `--apply`.
+It goes after a `--`, so pnpm passes it through rather than reading it itself:
+
+| | |
+|---|---|
+| `db:repair:joemark-venues` | Fixes the JOEMARK fixtures' venues and scorer names |
+| `db:sync:event-player-links` | Links goal and assist labels to player rows, and names the ones it cannot |
+| `db:purge:gate-litter` | Removes rows the Vision gates left behind |
+
+```bash
+... exec api pnpm --filter @dtp/api db:repair:joemark-venues            # dry run
+... exec api pnpm --filter @dtp/api db:repair:joemark-venues -- --apply # writes
+```
+
+`db:repair:squad-duplicates` is the exception: it has no `--apply` and writes
+straight away, because it runs unattended on every container start from the
+`api.Dockerfile` CMD. There is no dry run to reach for.
+
 ### Manual database backup
 
 ```bash

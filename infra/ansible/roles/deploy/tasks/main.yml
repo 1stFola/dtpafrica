@@ -151,31 +151,39 @@
     mode:  "0600"
   no_log: true
 
-# ── 7. Install Node dependencies ──────────────────────────────────────────────
-
-- name: pnpm install --frozen-lockfile
-  ansible.builtin.command:
-    cmd:   pnpm install --frozen-lockfile
-    chdir: "{{ app_dir }}/repo"
+# ── 7. Take back the space the old build-on-the-box deploy needed ────────────
+#
+# This used to run `pnpm install --frozen-lockfile` and `prisma:generate` here.
+# Both were necessary when the box built its own images. Since CI builds them and
+# the box only pulls, nothing after this point touches Node: every remaining task
+# is docker, compose, ufw or an HTTP check, and the API runs from the image, which
+# carries its own dependencies and its own generated client.
+#
+# So they were installing roughly 1.5 GB of libraries, on a 20 GB volume, for
+# nothing -- and that volume filling is not merely a failed deploy. Postgres on a
+# full disk stops accepting writes, which takes the site down for a reason that
+# looks nothing like its cause.
+#
+# The clean-up below is not one-off: `deploy.sh`, the manual fallback path, still
+# installs its own dependencies here because it does build on the box. If anyone
+# uses it, this puts the space back on the next deploy.
+#
+# One consequence worth knowing: `pnpm --filter @dtp/api <script>` no longer works
+# from {{ app_dir }}/repo, because there are no node_modules there to run it with.
+# Run maintenance scripts inside the API container instead, which also gives them
+# the right DATABASE_URL -- see infra/DEPLOYMENT.md, "Run a maintenance script".
+- name: Remove node_modules the deploy no longer needs
+  ansible.builtin.shell: |
+    find "{{ app_dir }}/repo" -maxdepth 4 -type d -name node_modules -prune -exec rm -rf {} +
+    pnpm store prune >/dev/null 2>&1 || true
   become: true
   become_user: ubuntu
   changed_when: true
+  failed_when: false
   environment:
     HOME: /home/ubuntu
 
-# ── 8. Generate Prisma client ─────────────────────────────────────────────────
-
-- name: Generate Prisma client
-  ansible.builtin.command:
-    cmd:   pnpm --filter @dtp/api prisma:generate
-    chdir: "{{ app_dir }}/repo"
-  become: true
-  become_user: ubuntu
-  changed_when: true
-  environment:
-    HOME: /home/ubuntu
-
-# ── 9. Start Postgres first ───────────────────────────────────────────────────
+# ── 8. Start Postgres first ───────────────────────────────────────────────────
 
 - name: Start Postgres container
   ansible.builtin.shell: |
@@ -206,11 +214,7 @@
   become: true
   become_user: root
 
-# ── 11. Start full stack (api + web) ─────────────────────────────────────────
-# Run directly via shell so the working directory is the repo root,
-# which makes 'context: ..' in the Dockerfiles resolve correctly to repo root.
-
-# ── 11. Pull the images CI built, and start the stack ────────────────────────
+# ── 9. Pull the images CI built, and start the stack ────────────────────────
 #
 # Nothing is compiled on this box. It is a t3.small — two burstable vCPUs and 2GB
 # of RAM shared with Postgres — and building both images here burned its CPU
@@ -312,7 +316,7 @@
   become_user: root
   changed_when: true
   failed_when: false
-# ── 12. UFW — open HTTP and HTTPS ────────────────────────────────────────────
+# ── 10. UFW — open HTTP and HTTPS ────────────────────────────────────────────
 
 - name: Allow HTTP
   community.general.ufw:
@@ -326,7 +330,7 @@
     port:  "443"
     proto: tcp
 
-# ── 13. Smoke test ────────────────────────────────────────────────────────────
+# ── 11. Smoke test ────────────────────────────────────────────────────────────
 
 - name: Show container status before health check
   ansible.builtin.shell: |
