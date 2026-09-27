@@ -233,14 +233,17 @@
 # never reached. That is exactly how this box filled up — a deploy failed with
 # `no space left on device` mid-extract, and every retry failed the same way.
 #
-# `docker image prune -a` never removes an image a running container is using, so
-# the release currently serving traffic survives this. It removes the ones from
-# earlier deploys, which is the whole point.
+# `docker image prune -a` never removes an image a container is using -- but that
+# includes *stopped* containers, and a deploy that died part-way leaves those
+# behind still pinning their image. So stopped containers go first, or the image
+# prune quietly reclaims nothing on exactly the box that needs it most. Running
+# containers are untouched by both, so the release serving traffic survives.
 #
 # NOTE: images and build cache only. Never `docker system prune --volumes`, which
 # would take the Postgres volume with it.
 - name: Reclaim disk before pulling (images and build cache, never volumes)
   ansible.builtin.shell: |
+    docker container prune -f
     docker image prune -af
     docker builder prune -af
   become: true
