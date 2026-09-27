@@ -13,8 +13,14 @@
  * The leak in step 5 is created deliberately, by writing splits straight into the
  * database behind the service's back — because a checker that only ever sees states
  * its own generator produced has not been tested.
+ *
+ * Sections 8 and 9 add the gold benchmark's two refusals, and 10 and 11 the export:
+ * that it will not name a file which is not there, will not ship labels nobody
+ * reviewed, and puts a label's frames in the *proxy's* clock rather than the
+ * source's. That last one is checked against arithmetic done by hand in the
+ * comments, because a conversion tested only against itself proves nothing.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import { loadVisionConfig } from "../src/vision/config/vision.config";
@@ -147,6 +153,8 @@ async function seed(): Promise<Fixture> {
     asset("ok-a"),
     asset("ok-b"),
     asset("ok-c"),
+    // Kept out of the membership sections so the export gate owns its own state.
+    asset("export"),
     // Two copies of one fixture: same cluster, so they must never split apart.
     asset("dup-1", { duplicateClusterId: cluster.id }),
     asset("dup-2", { duplicateClusterId: cluster.id }),
@@ -165,12 +173,50 @@ async function seed(): Promise<Fixture> {
   };
 }
 
-async function cleanup(fx: Fixture | null) {
+/**
+ * Put the database and the store back.
+ *
+ * Order matters, and getting it wrong is how this gate quietly littered the live
+ * database for six runs: a label schema version cannot go while an annotation task
+ * still points at it, and those tasks only die when their asset does. Reviews are
+ * `SetNull` rather than cascade — deliberately, because a record of someone's
+ * judgement should not vanish with the thing it judged — so the gate's own reviews
+ * are deleted by name instead of being left orphaned.
+ *
+ * Every object is named after the run too, so nothing here can reach real footage.
+ */
+async function cleanup(fx: Fixture | null, store: ObjectStore, wrote: string[]) {
   if (!fx) return;
   const ids = Object.values(fx.assetIds);
+
+  /* Before the versions go, while their ids can still be found. */
+  const versions = await prisma.visionDatasetVersion.findMany({
+    where: { label: { contains: RUN } },
+    select: { id: true },
+  });
+  for (const key of wrote) {
+    await store.delete("derived", key).catch(() => undefined);
+  }
+  for (const v of versions) {
+    const page = await store.list("derived", `datasets/${v.id}/`).catch(() => null);
+    for (const key of page?.keys ?? []) {
+      await store.delete("derived", key).catch(() => undefined);
+    }
+  }
+
+  await prisma.visionReviewDecision.deleteMany({ where: { reviewerId: { contains: RUN } } });
   await prisma.visionDatasetMember.deleteMany({ where: { videoAssetId: { in: ids } } });
-  await prisma.visionDatasetVersion.deleteMany({ where: { label: { startsWith: `gate-${RUN}` } } });
+  /* Every version this run created, not only the `gate-` ones: the gold and export
+     sections name theirs after what they are testing, and a filter that missed them
+     left empty versions behind on every single run. */
+  await prisma.visionDatasetVersion.deleteMany({ where: { label: { contains: RUN } } });
+  await prisma.visionAuditLog.deleteMany({
+    where: { targetId: { in: versions.map((v) => v.id) } },
+  });
+  // Cascades the variants, annotation tasks and annotation versions with it.
   await prisma.visionVideoAsset.deleteMany({ where: { id: { in: ids } } });
+  // Only now, with nothing left pointing at them.
+  await prisma.visionLabelSchemaVersion.deleteMany({ where: { version: { contains: RUN } } });
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
@@ -186,6 +232,8 @@ async function main() {
   console.log(`  object store ${store.backendId}`);
 
   let fx: Fixture | null = null;
+  /** Objects this script wrote directly, so cleanup can take them back out. */
+  const wrote: string[] = [];
   try {
     fx = await seed();
     const a = fx.assetIds;
@@ -222,9 +270,14 @@ async function main() {
     // ── 2. Eligibility ───────────────────────────────────────────────────
     section("2. Membership eligibility — the corpus firewall");
 
+    /* Everything except the export asset, which sections 10 and 11 need in a
+       version of their own. Offering it here would change every count below. */
+    const offered = Object.entries(a)
+      .filter(([slug]) => slug !== "export")
+      .map(([, id]) => id);
     const addAll = await api(`/vision/datasets/${versionId}/members`, {
       method: "POST",
-      body: JSON.stringify({ videoAssetIds: Object.values(a) }),
+      body: JSON.stringify({ videoAssetIds: offered }),
     });
     check("members accepted", addAll.status, 201);
 
@@ -535,7 +588,197 @@ async function main() {
     const hits = (contaminated.body.members ?? []) as { heldOutBy?: string }[];
     check("it names the version holding it out", hits[0]?.heldOutBy, `gold benchmark ${RUN}`);
 
-    section("10. Revoking a training right reaches the frozen dataset");
+    // ── 10. The export refuses what it cannot vouch for ─────────────────
+    section("10. The export refuses what it cannot vouch for");
+
+    const exportAsset = a.export!;
+    const draft = await api("/vision/datasets", {
+      method: "POST",
+      body: JSON.stringify({
+        label: `gate-${RUN}-export`,
+        splitPolicy: { train: 100, val: 0, test: 0, gold: 0, seed: `x-${RUN}` },
+      }),
+    });
+    const exportId = String(draft.body.id ?? "");
+    await api(`/vision/datasets/${exportId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ videoAssetIds: [exportAsset] }),
+    });
+    await api(`/vision/datasets/${exportId}/splits`, { method: "POST" });
+
+    const draftExport = await api(`/vision/datasets/${exportId}/export`, { method: "POST" });
+    check("a draft version cannot be exported", draftExport.status, 409);
+    check("and names the reason", draftExport.body.error, "DatasetNotFrozen");
+
+    /* A proxy row, but deliberately no proxy object yet. 25fps and a 9s offset:
+       a constant rate the frame arithmetic can be checked against, and an offset
+       that is not zero, because zero would hide the conversion entirely. */
+    const proxyKey = `proxies/gate-${RUN}-export/proxy.mp4`;
+    await prisma.visionVideoVariant.create({
+      data: {
+        videoAssetId: exportAsset,
+        kind: "proxy",
+        objectKey: proxyKey,
+        width: 1280,
+        height: 720,
+        fps: 25,
+        durationMs: 120_000,
+        sourceOffsetMs: 9_000,
+      },
+    });
+
+    const exportSchema = await prisma.visionLabelSchemaVersion.create({
+      data: {
+        version: `gate-export-${RUN}`,
+        definitions: { ball: {} } as Prisma.InputJsonValue,
+        effectiveFrom: new Date(),
+      },
+    });
+    const exportTask = await prisma.visionAnnotationTask.create({
+      data: {
+        videoAssetId: exportAsset,
+        labelSchemaVersionId: exportSchema.id,
+        samplingStrategy: "low_confidence",
+        startMs: 10_000,
+        endMs: 11_000,
+        state: "submitted",
+      },
+    });
+
+    /* The payload written to the real store, with the checksum the service will
+       recompute. The window is recorded in SOURCE time, as the workstation does. */
+    const payloadBody = JSON.stringify({
+      windowSourceStartMs: 10_000,
+      windowSourceEndMs: 11_000,
+      uncertain: false,
+      notes: null,
+    });
+    const payloadChecksum = createHash("sha256").update(payloadBody).digest("hex");
+    const exportVersion = await prisma.visionAnnotationVersion.create({
+      data: {
+        taskId: exportTask.id,
+        payloadKey: `annotations/${exportTask.id}/gate.json`,
+        payloadChecksum,
+        annotatorId: `gate-annotator-${RUN}`,
+      },
+    });
+    await store.putSmallObject(
+      "derived",
+      `annotations/${exportTask.id}/gate.json`,
+      payloadBody,
+      "application/json"
+    );
+    wrote.push(`annotations/${exportTask.id}/gate.json`, proxyKey);
+
+    const frozenForExport = await api(`/vision/datasets/${exportId}/freeze`, { method: "POST" });
+    check("the version freezes", frozenForExport.status, 201);
+
+    const noProxyObject = await api(`/vision/datasets/${exportId}/export`, { method: "POST" });
+    /* The row says the proxy exists. An export naming a file that is not there
+       loads as a silently smaller dataset, which is the version nobody notices. */
+    check("a proxy recorded but absent is refused", noProxyObject.status, 409);
+    check("and names the reason", noProxyObject.body.error, "ExportQaFailed");
+    const absent = (noProxyObject.body.problems ?? []) as { kind?: string }[];
+    check("it says which problem", absent[0]?.kind, "missing_proxy");
+
+    await store.putSmallObject("derived", proxyKey, "not really a video", "video/mp4");
+
+    const unreviewed = await api(`/vision/datasets/${exportId}/export`, { method: "POST" });
+    check("an unreviewed label does not block the export", unreviewed.status, 201);
+    const unreviewedQa = (unreviewed.body.qa ?? {}) as Record<string, unknown>;
+    // Excluded, not exported: nobody has signed these labels off.
+    check("but it is not exported", Number(unreviewedQa.labels), 0);
+    check("and it is counted as unreviewed", Number(unreviewedQa.excludedUnreviewed), 1);
+    check("the sample is reported as unlabelled", (unreviewedQa.unlabelledSamples as string[])?.length, 1);
+
+    await prisma.visionReviewDecision.create({
+      data: {
+        annotationVersionId: exportVersion.id,
+        targetKind: "vision_annotation_version",
+        targetId: exportVersion.id,
+        decision: "approved",
+        reviewerId: `gate-reviewer-${RUN}`,
+      },
+    });
+
+    const exported = await api(`/vision/datasets/${exportId}/export`, { method: "POST" });
+    check("a reviewed label exports", exported.status, 201);
+    const qa = (exported.body.qa ?? {}) as Record<string, unknown>;
+    check("one label made it", Number(qa.labels), 1);
+    check("one sample made it", Number(qa.samples), 1);
+    check("the QA report passes", qa.ok, true);
+    // Sampling strategy was low_confidence, so nothing came from the control group.
+    check("the hard-case mix is measured", Number(qa.hardCaseFraction), 1);
+
+    // ── 11. What a consumer actually reads ──────────────────────────────
+    section("11. What a consumer actually reads");
+
+    const samplesRaw = await store.getSmallObject(
+      "derived",
+      `datasets/${exportId}/export/samples.json`
+    );
+    check("samples.json was written", samplesRaw !== null, true);
+    const parsedSamples = JSON.parse(String(samplesRaw)) as {
+      samples: {
+        filepath: string;
+        tags: string[];
+        metadata: { frame_rate: number | null };
+        annotations: { detections: { support: [number, number]; source_start_ms: number }[] } | null;
+      }[];
+    };
+    const sample = parsedSamples.samples[0];
+    check("the filepath is the proxy's object key", sample?.filepath, proxyKey);
+    check("the split travels as a FiftyOne tag", sample?.tags?.[0], "train");
+    check("the proxy's frame rate is carried", sample?.metadata?.frame_rate, 25);
+
+    const detection = sample?.annotations?.detections[0];
+    /* The whole point of the increment. Source 10,000ms on a proxy that starts at
+       source 9,000ms is proxy 1,000ms. At 25fps that is frame 25 zero-based, which
+       FiftyOne numbers 26. The label ends at source 11,000ms — proxy 2,000ms — and
+       `support` is inclusive, so its last frame is the one holding the final
+       millisecond: 50, not 51. */
+    check("the support is in proxy frames, 1-based", detection?.support?.[0], 26);
+    check("and inclusive at the end", detection?.support?.[1], 50);
+    // Both clocks survive: the frames address the file, the milliseconds are the meaning.
+    check("the source window is kept alongside", detection?.source_start_ms, 10_000);
+
+    const metaRaw = await store.getSmallObject(
+      "derived",
+      `datasets/${exportId}/export/metadata.json`
+    );
+    const meta = JSON.parse(String(metaRaw)) as { media_type: string; info: Record<string, string> };
+    check("it declares itself a video dataset", meta.media_type, "video");
+    check("and says the paths are object keys", meta.info.filepath_note?.includes("object keys"), true);
+
+    const qaRaw = await store.getSmallObject(
+      "derived",
+      `datasets/${exportId}/export/qa-report.json`
+    );
+    const qaFile = JSON.parse(String(qaRaw)) as { ok: boolean; labels: number };
+    check("the QA report is stored beside the export", qaFile.labels, 1);
+
+    /* Drift the stored labels without touching the row. The checksum is what makes
+       this detectable at all; without it the export would ship an unknown edit as
+       ground truth. */
+    await store.putSmallObject(
+      "derived",
+      `annotations/${exportTask.id}/gate.json`,
+      JSON.stringify({ windowSourceStartMs: 10_000, windowSourceEndMs: 11_000, tampered: true }),
+      "application/json"
+    );
+    const drifted = await api(`/vision/datasets/${exportId}/export`, { method: "POST" });
+    check("labels that no longer match their checksum are refused", drifted.status, 409);
+    const driftProblems = (drifted.body.problems ?? []) as { kind?: string }[];
+    check("and named as a checksum mismatch", driftProblems[0]?.kind, "payload_checksum_mismatch");
+    // Put it back, so the revocation section starts from a version that could export.
+    await store.putSmallObject(
+      "derived",
+      `annotations/${exportTask.id}/gate.json`,
+      payloadBody,
+      "application/json"
+    );
+
+    section("12. Revoking a training right reaches the frozen dataset");
 
     const memberCountBefore = await prisma.visionDatasetMember.count({
       where: { datasetVersionId: versionId },
@@ -583,8 +826,14 @@ async function main() {
       beforeRevoke?.frozenAt?.toISOString()
     );
 
-    // ── 9. Audit ─────────────────────────────────────────────────────────
-    section("11. The audit trail");
+    /* The flag has to reach the export as well. Blocking training runs while still
+       writing the footage out for one is the same hole with a longer path. */
+    const revokedExport = await api(`/vision/datasets/${exportId}/export`, { method: "POST" });
+    check("a revoked version cannot be exported", revokedExport.status, 403);
+    check("and names the reason", revokedExport.body.error, "DatasetContainsRevokedMembers");
+
+    // ── 13. Audit ────────────────────────────────────────────────────────
+    section("13. The audit trail");
 
     const entries = await prisma.visionAuditLog.findMany({
       where: { targetKind: "vision_dataset_version", targetId: { in: [versionId, v2] } },
@@ -595,6 +844,16 @@ async function main() {
     check("membership audited", actions.has("dataset.member.added"), true);
     check("split generation audited", actions.has("dataset.split.generated"), true);
     check("freeze audited", actions.has("dataset.frozen"), true);
+
+    const exportAudit = await prisma.visionAuditLog.findMany({
+      where: { targetKind: "vision_dataset_version", targetId: exportId },
+      select: { action: true },
+    });
+    check(
+      "the export is audited",
+      exportAudit.some((e) => e.action === "dataset.exported"),
+      true
+    );
 
     const memberEntry = entries.find(
       (e) => e.action === "dataset.member.added" && (e.data as { rejected?: number })?.rejected
@@ -607,7 +866,7 @@ async function main() {
       true
     );
   } finally {
-    await cleanup(fx);
+    await cleanup(fx, store, wrote);
   }
 
   section(`Result: ${checks - failures}/${checks} checks passed`);

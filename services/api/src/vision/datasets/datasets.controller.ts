@@ -88,4 +88,18 @@ export class VisionDatasetsController {
   async freeze(@Param("id") id: string, @AdminAuth() auth: AdminAuthContext) {
     return jsonSafe(await this.datasets.freeze(id, auth));
   }
+
+  /**
+   * Write the FiftyOne export, or refuse and say why.
+   *
+   * A mutation rather than a read: it writes three objects and is audited. There
+   * is deliberately no query parameter to skip the QA check — the export is the
+   * last door footage passes through, and an override here would make every gate
+   * before it optional.
+   */
+  @Post(":id/export")
+  @RequirePermissions("vision.datasets.manage")
+  async exportDataset(@Param("id") id: string, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.datasets.exportForFiftyOne(id, auth));
+  }
 }
