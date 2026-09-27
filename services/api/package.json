@@ -14,6 +14,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
     "db:repair:squad-duplicates": "tsx scripts/repair-sb-team-squad-duplicates.ts",
+    "db:repair:joemark-venues": "tsx scripts/repair-joemark-venues.ts",
     "db:push": "prisma db push --accept-data-loss",
     "calibrate": "pnpm --filter @dtp/engines build && tsx scripts/run-calibration.ts",
     "vision:selfcheck": "tsx scripts/vision-phase0-selfcheck.ts",
