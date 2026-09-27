@@ -15,11 +15,13 @@
  * SbTeamSquad rows with playerId null and goals carry the scorer in playerLabel.
  * Nothing invents a child's date of birth.
  *
- * Where the export names a scorer by one name only, the club's own team list is
- * used to complete it — "Solomon" for Galaxy Sport is Ijeh Solomon. That happens
- * only when exactly one player in that squad carries the name: Alaska's "Daniel"
- * could be Daniel Emmanuel or Onyedigbo Daniel, and Dynamic never listed a
- * "Jackson", so both are left exactly as the league wrote them.
+ * Where the export names a scorer by one name only, the club's own team list
+ * completes it, but only when exactly one player in that squad carries the
+ * name. Two could not be resolved that way and were named by the competition
+ * owner instead: Alaska list both Onyedigbo Daniel and Daniel Emmanuel, and
+ * their "Daniel" is Onyedigbo Daniel; Dynamic's "Jackson" is Ogege John, a
+ * name their squad list does not carry at all - it has an Ogege Jordan at
+ * number 9 - so that one follows the owner rather than the sheet.
  */
 // Prisma is a value import: DbNull/JsonNull are runtime sentinels.
 import { Prisma } from "@prisma/client";
@@ -545,7 +547,7 @@ const MATCHES: MatchSeed[] = [
   { id: "3a9dd731-e795-5233-8f92-98aa22394430", homeSlug: "alaska-fa", awaySlug: "dynamic-fc",
     kickoffAt: "2026-07-17T16:00:00+01:00", venue: "IDO ELEMU SPORT PITCH, ERA",
     status: "finished", homeScore: 6, awayScore: 1,
-    walkover: false, goals: [{ minute: 8, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 5, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 76, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 42, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 51, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 90, side: "home", scorer: "Balogun Basit", ownGoal: false, minuteKnown: true }, { minute: 78, side: "away", scorer: "Jackson", ownGoal: false, minuteKnown: true }] },
+    walkover: false, goals: [{ minute: 8, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 5, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 76, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 42, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 51, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 90, side: "home", scorer: "Balogun Basit", ownGoal: false, minuteKnown: true }, { minute: 78, side: "away", scorer: "Ogege John", ownGoal: false, minuteKnown: true }] },
   { id: "d1e8d8f9-fb67-5dc5-8657-3446d44327ce", homeSlug: "future-stars-fc", awaySlug: "super-stars-fc",
     kickoffAt: "2026-07-17T16:00:00+01:00", venue: "LA PRIMARY SCHOOL, IYANA ISASHI",
     status: "finished", homeScore: 3, awayScore: 1,
@@ -597,7 +599,7 @@ const MATCHES: MatchSeed[] = [
   { id: "84ba1e99-c74d-5945-898d-da8609a4712b", homeSlug: "young-fellas-fa", awaySlug: "alaska-fa",
     kickoffAt: "2026-08-01T12:00:00+01:00", venue: "AKANJU AKA PRIMARY SCHOOL PITCH, KEMBERI OKOKOMAIKO",
     status: "finished", homeScore: 2, awayScore: 3,
-    walkover: false, goals: [{ minute: 39, side: "home", scorer: "Olaniyi Sauban", ownGoal: false, minuteKnown: true }, { minute: 54, side: "home", scorer: "Eto Precious", ownGoal: false, minuteKnown: true }, { minute: 40, side: "away", scorer: "Daniel", ownGoal: false, minuteKnown: true }, { minute: 90, side: "away", scorer: "Daniel", ownGoal: false, minuteKnown: true }, { minute: 79, side: "away", scorer: "Sulaimon Sodiq", ownGoal: false, minuteKnown: true }] },
+    walkover: false, goals: [{ minute: 39, side: "home", scorer: "Olaniyi Sauban", ownGoal: false, minuteKnown: true }, { minute: 54, side: "home", scorer: "Eto Precious", ownGoal: false, minuteKnown: true }, { minute: 40, side: "away", scorer: "Onyedigbo Daniel", ownGoal: false, minuteKnown: true }, { minute: 90, side: "away", scorer: "Onyedigbo Daniel", ownGoal: false, minuteKnown: true }, { minute: 79, side: "away", scorer: "Sulaimon Sodiq", ownGoal: false, minuteKnown: true }] },
   { id: "94117880-1dcb-544d-80b1-be86359f5e52", homeSlug: "highklass-sa", awaySlug: "dynamic-fc",
     kickoffAt: "2026-08-01T16:00:00+01:00", venue: "CELE NICA SPORT PITCH",
     status: "finished", homeScore: 4, awayScore: 2,
@@ -744,18 +746,7 @@ const MATCHES: MatchSeed[] = [
     walkover: false, goals: [] },
 ];
 
-/**
- * Match id -> venue, for scripts/repair-joemark-venues.ts.
- *
- * Exported from the same MATCHES array the seed writes, so the repair can never
- * disagree with the seed about where a fixture was played.
- */
-/**
- * Match id -> the goals as this file records them, for the repair script.
- *
- * Same MATCHES array the seed writes from, so a repair can never disagree with the
- * seed about who scored.
- */
+/** Match id -> the goals this file records, for scripts/repair-joemark-venues.ts. */
 export const JOEMARK_MATCH_GOALS: Record<
   string,
   { minute: number; side: "home" | "away"; scorer: string; ownGoal: boolean }[]
@@ -766,6 +757,7 @@ export const JOEMARK_MATCH_GOALS: Record<
   ])
 );
 
+/** Match id -> venue, for the same repair. Both read the array the seed writes. */
 export const JOEMARK_MATCH_VENUES: Record<string, string> = Object.fromEntries(
   MATCHES.filter((m) => m.venue).map((m) => [m.id, m.venue as string])
 );
