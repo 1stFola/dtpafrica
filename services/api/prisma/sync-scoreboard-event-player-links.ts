@@ -11,12 +11,32 @@ function addAlias(index: AliasIndex, rawName: string | null | undefined, playerI
   index.set(key, matches);
 }
 
-function resolveAlias(index: AliasIndex | undefined, rawName: string | null | undefined) {
+/**
+ * Why a label did not become a link.
+ *
+ * The distinction is the whole value of reporting it. "No squad row" means somebody
+ * has to add the player; "two players share this name" means the label is ambiguous
+ * and no amount of squad data will settle it. Guessing either way would attribute a
+ * goal to the wrong person, which is worse than leaving it unattributed.
+ */
+export type LinkFailure = { reason: "no_match" | "ambiguous"; candidates: number };
+type Resolution = { playerId: string } | LinkFailure;
+
+function lookupAlias(
+  index: AliasIndex | undefined,
+  rawName: string | null | undefined
+): Resolution {
   const key = playerLookupKey(rawName ?? "");
-  if (!key || !index) return null;
+  if (!key || !index) return { reason: "no_match", candidates: 0 };
   const matches = index.get(key);
-  if (!matches || matches.size !== 1) return null;
-  return Array.from(matches)[0] ?? null;
+  if (!matches || matches.size === 0) return { reason: "no_match", candidates: 0 };
+  if (matches.size > 1) return { reason: "ambiguous", candidates: matches.size };
+  return { playerId: Array.from(matches)[0]! };
+}
+
+function resolveAlias(index: AliasIndex | undefined, rawName: string | null | undefined) {
+  const found = lookupAlias(index, rawName);
+  return "playerId" in found ? found.playerId : null;
 }
 
 function addReversedTwoPartAlias(
@@ -29,7 +49,34 @@ function addReversedTwoPartAlias(
   addAlias(index, `${parts[1]} ${parts[0]}`, playerId);
 }
 
-export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
+/** A label that stayed unlinked, with enough context to act on it. */
+export type UnresolvedLink = LinkFailure & {
+  eventId: string;
+  label: string;
+  /** Which side of the event: the scorer, or the assist. */
+  field: "player" | "assist";
+  competition: string | null;
+  team: string | null;
+  minute: number | null;
+};
+
+export type EventLinkSyncResult = {
+  updated: number;
+  /**
+   * Labels no squad could resolve.
+   *
+   * Reported rather than counted, because an unlinked scorer is invisible in the
+   * product — the goal shows on the fixture and never reaches the player's profile
+   * or the stat leaders — so the only way anyone finds out is if something says so.
+   */
+  unresolved: UnresolvedLink[];
+};
+
+export async function syncScoreboardEventPlayerLinks(
+  prisma: PrismaClient,
+  options: { dryRun?: boolean } = {}
+): Promise<EventLinkSyncResult> {
+  const dryRun = options.dryRun === true;
   const teamSquadRows = await prisma.sbTeamSquad.findMany({
     where: { playerId: { not: null } },
     include: {
@@ -137,16 +184,20 @@ export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
       playerLabel2: true,
       metadata: true,
       type: true,
+      minute: true,
+      team: { select: { name: true } },
       match: {
         select: {
           homeTeamId: true,
           awayTeamId: true,
+          competition: { select: { name: true } },
         },
       },
     },
   });
 
   let updated = 0;
+  const unresolved: UnresolvedLink[] = [];
   for (const event of events) {
     const teamIndex = event.teamId ? byTeam.get(event.teamId) : undefined;
     const secondaryTeamId = inferSecondaryTeamId(event.type, event.teamId, event.match);
@@ -176,12 +227,30 @@ export async function syncScoreboardEventPlayerLinks(prisma: PrismaClient) {
       } as Prisma.InputJsonValue;
     }
 
+    /* Recorded before the early return below, so a label that resolved to nothing
+       is reported whether or not anything else about the event changed. */
+    const note = (field: "player" | "assist", label: string, teamIndex?: AliasIndex) => {
+      const failure = lookupAlias(teamIndex, label);
+      if ("playerId" in failure) return;
+      unresolved.push({
+        ...failure,
+        eventId: event.id,
+        label,
+        field,
+        competition: event.match?.competition?.name ?? null,
+        team: event.team?.name ?? null,
+        minute: event.minute,
+      });
+    };
+    if (!playerId && event.playerLabel) note("player", event.playerLabel, teamIndex);
+    if (!assistPlayerId && event.assistLabel) note("assist", event.assistLabel, teamIndex);
+
     if (Object.keys(data).length === 0) continue;
-    await prisma.sbMatchEvent.update({ where: { id: event.id }, data });
+    if (!dryRun) await prisma.sbMatchEvent.update({ where: { id: event.id }, data });
     updated += 1;
   }
 
-  return updated;
+  return { updated, unresolved };
 }
 
 const SECONDARY_OPPONENT_EVENT_TYPES = new Set([
