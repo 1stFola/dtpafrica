@@ -331,6 +331,11 @@ jobs:
       # already exist — no new secret, and same-region pulls are fast and free.
       - name: Build and push images to ECR
         id: images
+        # This job sets `working-directory: infra/ansible` for every run step, which
+        # is right for ansible-playbook and wrong for docker build: the Dockerfiles
+        # and the build context are at the repository root, and without this the
+        # build fails with "lstat infra: no such file or directory".
+        working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
