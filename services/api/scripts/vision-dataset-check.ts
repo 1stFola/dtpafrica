@@ -4,7 +4,15 @@
  *   pnpm --filter @dtp/api vision:datasetcheck
  *
  * Unit tests prove the logic; this proves the refusals survive the HTTP boundary,
- * the real database and the real object store. Two claims are on trial:
+ * the real database and the real object store.
+ *
+ * **Which database, precisely.** Whatever `DATABASE_URL` points at — a developer's
+ * own Postgres, or staging's. Never production: no gate has production credentials,
+ * and none should. The object store is the real R2, using the `dtp-staging-vision-*`
+ * buckets. Earlier notes in docs/vision called this "live Postgres", meaning a real
+ * one rather than a mock; it reads as though it meant production, and it never did.
+ *
+ * Two claims are on trial:
  *
  *   1. Footage DTP has no right to train on cannot enter a corpus.
  *   2. A dataset whose benchmark shares a match with its training set cannot be

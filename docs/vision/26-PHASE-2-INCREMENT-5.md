@@ -108,7 +108,7 @@ Not "did it write?" but "is this corpus fit to train on?":
 api tests              526 passed   (was 490)
   fiftyone export       36
 vision-contracts        24 passed   (was 22)
-vision:datasetcheck     99/99 against live Postgres and R2  (was 69)
+vision:datasetcheck     99/99 against a real Postgres and R2  (was 69)
 vision:annotationcheck  53/53      vision:catalogcheck  32/32
 typecheck               clean
 ```
@@ -119,7 +119,7 @@ the inclusive end taken at `end` rather than its final millisecond; `round` inst
 rejected-label filter dropped; the review-vocabulary filter dropped; and the grouping
 of annotation versions back to their asset.
 
-The gate exercises the whole path against live Postgres and real R2: a draft is
+The gate exercises the whole path against a real Postgres and real R2: a draft is
 refused, a proxy row without its object is refused, an unreviewed label exports as an
 empty sample, a review makes it export, the frames come back as 26–50 for a label at
 source 10–11s on a proxy offset by 9s, the stored labels are then tampered with and
