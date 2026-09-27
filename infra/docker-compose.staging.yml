@@ -21,7 +21,13 @@ services:
     # compiling on it burned its CPU credits and left it unable to answer SSH or
     # HTTP for hours. IMAGE_TAG is the commit SHA, so a deploy is reproducible and
     # a rollback is a tag change.
-    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/dtp-api:${IMAGE_TAG:?set IMAGE_TAG}
+    image: ${IMAGE_REGISTRY}/dtp-api:${IMAGE_TAG}
+    # `build` stays for deploy.sh, the manual path, which builds on the box it runs
+    # on. CI's deploy never reaches it: Ansible pulls this exact tag first and fails
+    # if the pull does not succeed, so `up` always finds the image already present.
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -39,7 +45,10 @@ services:
       - "127.0.0.1:${API_PORT:-3000}:3000"
 
   web:
-    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/dtp-web:${IMAGE_TAG:?set IMAGE_TAG}
+    image: ${IMAGE_REGISTRY}/dtp-web:${IMAGE_TAG}
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
     restart: unless-stopped
     depends_on:
       - api

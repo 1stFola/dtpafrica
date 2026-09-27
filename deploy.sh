@@ -264,6 +264,9 @@ POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=${POSTGRES_DB}
 ADMIN_API_KEY=${ADMIN_API_KEY}
+# This script builds the images here rather than pulling them, so the tag is local.
+IMAGE_REGISTRY=dtp
+IMAGE_TAG=local
 WEB_PORT=80
 API_PORT=3000
 EOF
