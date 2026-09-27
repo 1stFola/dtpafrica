@@ -15,7 +15,7 @@
  * its own generator produced has not been tested.
  */
 import { randomUUID } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
@@ -409,7 +409,133 @@ async function main() {
     check("freezing twice refused", refreeze.status, 409);
 
     // ── 8. Revocation reaches frozen history ─────────────────────────────
-    section("8. Revoking a training right reaches the frozen dataset");
+    // ── 8. The gold benchmark ────────────────────────────────────────────
+    section("8. The gold benchmark: two reviewers, and never trained on");
+
+    /* A gold-only policy, so every member of this version lands in gold. The
+       main fixture above is 5 members on the default policy, where gold rounds
+       to nothing and both gates would pass without ever being exercised. */
+    const goldVersion = await api("/vision/datasets", {
+      method: "POST",
+      body: JSON.stringify({
+        label: `gold benchmark ${RUN}`,
+        splitPolicy: { train: 0, val: 0, test: 0, gold: 100, seed: `gold-${RUN}` },
+      }),
+    });
+    check("a gold-only version was created", goldVersion.status, 201);
+    const goldId = String(goldVersion.body.id ?? "");
+
+    const goldAsset = fx.assetIds["ok-a"]!;
+    await api(`/vision/datasets/${goldId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ videoAssetIds: [goldAsset] }),
+    });
+    await api(`/vision/datasets/${goldId}/splits`, { method: "POST" });
+
+    const beforeReviews = await api(`/vision/datasets/${goldId}/gold`);
+    check("the gold member is visible", Number(beforeReviews.body.goldMembers), 1);
+    check("and is not yet double-reviewed", Number(beforeReviews.body.doubleReviewed), 0);
+    check("so the version says it cannot freeze", beforeReviews.body.canFreeze, false);
+
+    const refused = await api(`/vision/datasets/${goldId}/freeze`, { method: "POST" });
+    check("freezing a singly-reviewed gold set is refused", refused.status, 409);
+    check("and names the reason", refused.body.error, "GoldNotDoubleReviewed");
+
+    /* The reviews are created through Prisma rather than the API because an
+       api-key caller carries no user id, and two unattributed verdicts are
+       exactly what this gate has to refuse to accept as two reviewers. */
+    const schema = await prisma.visionLabelSchemaVersion.create({
+      data: {
+        version: `gate-gold-${RUN}`,
+        definitions: { ball: {} } as Prisma.InputJsonValue,
+        effectiveFrom: new Date(),
+      },
+    });
+    const task = await prisma.visionAnnotationTask.create({
+      data: {
+        videoAssetId: goldAsset,
+        labelSchemaVersionId: schema.id,
+        samplingStrategy: "business_value",
+        startMs: 0,
+        endMs: 1000,
+        state: "submitted",
+      },
+    });
+    const annotation = await prisma.visionAnnotationVersion.create({
+      data: {
+        taskId: task.id,
+        payloadKey: `annotations/${task.id}/gate.json`,
+        payloadChecksum: "0".repeat(64),
+        annotatorId: `gate-annotator-${RUN}`,
+      },
+    });
+
+    // One reviewer twice: still one opinion, recorded twice.
+    for (let i = 0; i < 2; i += 1) {
+      await prisma.visionReviewDecision.create({
+        data: {
+          annotationVersionId: annotation.id,
+          targetKind: "vision_annotation_version",
+          targetId: annotation.id,
+          decision: "approved",
+          reviewerId: `gate-reviewer-one-${RUN}`,
+        },
+      });
+    }
+    const sameTwice = await api(`/vision/datasets/${goldId}/gold`);
+    check("the same reviewer twice is still one reviewer", Number(sameTwice.body.doubleReviewed), 0);
+
+    await prisma.visionReviewDecision.create({
+      data: {
+        annotationVersionId: annotation.id,
+        targetKind: "vision_annotation_version",
+        targetId: annotation.id,
+        decision: "rejected",
+        reviewerId: `gate-reviewer-two-${RUN}`,
+      },
+    });
+
+    const ready = await api(`/vision/datasets/${goldId}/gold`);
+    check("a second person clears the bar", Number(ready.body.doubleReviewed), 1);
+    // They disagreed, and that is the number the benchmark has to carry.
+    check("their disagreement is measured", Number(ready.body.disagreementRate), 1);
+    check("the version can now freeze", ready.body.canFreeze, true);
+
+    const goldFrozen = await api(`/vision/datasets/${goldId}/freeze`, { method: "POST" });
+    check("the gold set freezes", goldFrozen.status, 201);
+    const stored = await prisma.visionDatasetVersion.findUnique({
+      where: { id: goldId },
+      select: { representationReport: true },
+    });
+    const report = (stored?.representationReport ?? {}) as { gold?: { disagreementRate?: number } };
+    check("the disagreement is recorded on the frozen version", report.gold?.disagreementRate, 1);
+
+    // ── 9. Gold is never trained on ─────────────────────────────────────
+    section("9. A later version may not train on frozen gold");
+
+    const trainOnGold = await api("/vision/datasets", {
+      method: "POST",
+      body: JSON.stringify({
+        label: `trains on gold ${RUN}`,
+        splitPolicy: { train: 100, val: 0, test: 0, gold: 0, seed: `t-${RUN}` },
+      }),
+    });
+    const trainId = String(trainOnGold.body.id ?? "");
+    await api(`/vision/datasets/${trainId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ videoAssetIds: [goldAsset] }),
+    });
+    await api(`/vision/datasets/${trainId}/splits`, { method: "POST" });
+
+    const contaminated = await api(`/vision/datasets/${trainId}/freeze`, { method: "POST" });
+    /* The failure this prevents is silent: every number taken against the frozen
+       benchmark would become a measure of the model's memory, not its ability. */
+    check("training on frozen gold is refused", contaminated.status, 409);
+    check("and names the reason", contaminated.body.error, "GoldContamination");
+    const hits = (contaminated.body.members ?? []) as { heldOutBy?: string }[];
+    check("it names the version holding it out", hits[0]?.heldOutBy, `gold benchmark ${RUN}`);
+
+    section("10. Revoking a training right reaches the frozen dataset");
 
     const memberCountBefore = await prisma.visionDatasetMember.count({
       where: { datasetVersionId: versionId },
@@ -458,7 +584,7 @@ async function main() {
     );
 
     // ── 9. Audit ─────────────────────────────────────────────────────────
-    section("9. The audit trail");
+    section("11. The audit trail");
 
     const entries = await prisma.visionAuditLog.findMany({
       where: { targetKind: "vision_dataset_version", targetId: { in: [versionId, v2] } },

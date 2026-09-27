@@ -11,6 +11,7 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
+import { goldContamination, goldReadiness } from "./gold-benchmark";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import {
   DATASET_SPLITS,
@@ -397,6 +398,31 @@ export class VisionDatasetsService {
    * This is how a corpus quietly dominated by one competition in daylight gets
    * caught before a model trained on it fails everywhere else.
    */
+  /**
+   * The gold subset's readiness, and anything a frozen version already holds out.
+   *
+   * Same two checks the freeze runs, offered before the freeze so the work can be
+   * finished rather than discovered at the door.
+   */
+  async goldStatus(datasetVersionId: string) {
+    const version = await this.prisma.visionDatasetVersion.findUnique({
+      where: { id: datasetVersionId },
+      select: { id: true, label: true, frozenAt: true },
+    });
+    if (!version) throw new NotFoundException(`Unknown dataset version ${datasetVersionId}`);
+
+    const [readiness, contamination] = await Promise.all([
+      goldReadiness(this.prisma, version.id),
+      goldContamination(this.prisma, version.id),
+    ]);
+    return {
+      datasetVersion: { id: version.id, label: version.label, frozen: Boolean(version.frozenAt) },
+      ...readiness,
+      contamination,
+      canFreeze: readiness.shortOfTwo.length === 0 && contamination.length === 0,
+    };
+  }
+
   async representation(datasetVersionId: string) {
     const members = await this.prisma.visionDatasetMember.findMany({
       where: { datasetVersionId },
@@ -515,9 +541,56 @@ export class VisionDatasetsService {
       });
     }
 
+    /* 5. The gold benchmark's own two gates.
+
+       Both run here, at freeze, because that is the moment the version stops
+       being editable. A gold set that reached this point one review short can
+       only be fixed by cutting a new version, so it has to be refused now. */
+    const gold = await goldReadiness(this.prisma, version.id);
+    if (gold.shortOfTwo.length) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "GoldNotDoubleReviewed",
+        message:
+          `${gold.shortOfTwo.length} gold member(s) have fewer than two independent reviewers.`,
+        detail:
+          "A benchmark checked by one person is one person's opinion. Two, and the " +
+          "disagreement between them, is evidence.",
+        members: gold.shortOfTwo.slice(0, 20).map((m) => ({
+          videoAssetId: m.videoAssetId,
+          reviewers: m.reviewers.length,
+          annotationVersions: m.annotationVersions,
+        })),
+        ...(gold.unattributedReviews
+          ? {
+              note:
+                `${gold.unattributedReviews} review(s) have no reviewer recorded and cannot ` +
+                "count towards two: an unattributed verdict is indistinguishable from the first one.",
+            }
+          : {}),
+        remediation: "Have a second reviewer check the affected members, then freeze.",
+      });
+    }
+
+    const contaminated = await goldContamination(this.prisma, version.id);
+    if (contaminated.length) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "GoldContamination",
+        message:
+          `${contaminated.length} member(s) would be trained on that a frozen version holds out as gold.`,
+        detail:
+          "Every benchmark number taken against that version would silently become a " +
+          "measure of the model's memory rather than its ability.",
+        members: contaminated.slice(0, 20),
+        remediation:
+          "Drop those members, or re-run split generation so they land in gold here too.",
+      });
+    }
+
     const representation = await this.representation(version.id);
 
-    // 5. The manifest: what makes the version reproducible from object storage
+    // 6. The manifest: what makes the version reproducible from object storage
     //    alone, without reading the database.
     const manifest = {
       datasetVersionId: version.id,
@@ -553,7 +626,7 @@ export class VisionDatasetsService {
         frozenBy: actor?.userId ?? null,
         manifestKey: ref.key,
         leakageReport: leakage as never,
-        representationReport: representation as never,
+        representationReport: { ...representation, gold } as never,
       },
     });
 
@@ -567,7 +640,7 @@ export class VisionDatasetsService {
       actor
     );
 
-    return { version: frozen, leakage, representation, manifestKey: ref.key };
+    return { version: frozen, leakage, representation, gold, manifestKey: ref.key };
   }
 
   /**

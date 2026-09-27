@@ -31,6 +31,7 @@ const mockPrisma = {
   },
   visionVideoAsset: { findUnique: vi.fn(), findMany: vi.fn() },
   visionLabelSchemaVersion: { findUnique: vi.fn() },
+  visionAnnotationVersion: { findMany: vi.fn() },
   $transaction: vi.fn(),
 };
 
@@ -92,6 +93,30 @@ function member(videoAssetId: string, groupKey: string, split: string) {
   };
 }
 
+
+/**
+ * Install the member rows, honouring the parts of `where` that freeze relies on.
+ *
+ * `freeze` reads the members table three times with three different filters — all
+ * of them, the gold split, and the same assets held out by *other* frozen versions.
+ * A mock answering every call with the same rows would report every member as gold
+ * and as contaminated, so the filters have to be respected rather than ignored.
+ */
+function membersAre(rows: ReturnType<typeof member>[]) {
+  mockPrisma.visionDatasetMember.findMany.mockImplementation(({ where }: never) => {
+    const w = (where ?? {}) as { split?: string | { in: string[] }; datasetVersionId?: unknown };
+    /* The cross-version lookup. No test here has a second version, so nothing is
+       held out by one. */
+    if (w.datasetVersionId && typeof w.datasetVersionId === "object") return Promise.resolve([]);
+    if (typeof w.split === "string") return Promise.resolve(rows.filter((r) => r.split === w.split));
+    if (w.split && "in" in w.split) {
+      const wanted = w.split.in;
+      return Promise.resolve(rows.filter((r) => wanted.includes(r.split)));
+    }
+    return Promise.resolve(rows);
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   store = new InMemoryObjectStore();
@@ -109,6 +134,7 @@ beforeEach(() => {
   mockPrisma.visionDatasetMember.findMany.mockResolvedValue([]);
   mockPrisma.visionDatasetMember.createMany.mockResolvedValue({ count: 0 });
   mockPrisma.visionDatasetMember.groupBy.mockResolvedValue([]);
+  mockPrisma.visionAnnotationVersion.findMany.mockResolvedValue([]);
   mockPrisma.visionVideoAsset.findUnique.mockResolvedValue(eligibleAsset());
   mockRights.canTrain.mockResolvedValue({ allowed: true, reason: "granted", remediation: "" });
   mockPrisma.$transaction.mockResolvedValue([]);
@@ -364,7 +390,7 @@ describe("freeze", () => {
   }
 
   beforeEach(() => {
-    mockPrisma.visionDatasetMember.findMany.mockResolvedValue(cleanMembers);
+    membersAre(cleanMembers);
     mockPrisma.visionDatasetVersion.findUnique.mockResolvedValue(
       unfrozenVersion({ leakageReport: splitsGenerated() })
     );
@@ -399,10 +425,7 @@ describe("freeze", () => {
   });
 
   it("refuses to freeze while any group spans two splits", async () => {
-    mockPrisma.visionDatasetMember.findMany.mockResolvedValue([
-      member("a", "match:1", "train"),
-      member("b", "match:1", "test"),
-    ]);
+    membersAre([member("a", "match:1", "train"), member("b", "match:1", "test")]);
     mockPrisma.visionDatasetVersion.findUnique.mockResolvedValue(
       unfrozenVersion({ leakageReport: splitsGenerated(2) })
     );
@@ -430,7 +453,7 @@ describe("freeze", () => {
   });
 
   it("refuses to freeze an empty version", async () => {
-    mockPrisma.visionDatasetMember.findMany.mockResolvedValue([]);
+    membersAre([]);
     await expect(service.freeze(VERSION)).rejects.toThrow(BadRequestException);
   });
 
