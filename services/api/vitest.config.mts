@@ -24,7 +24,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["src/**/*.spec.ts"],
+    /* `scripts/` too: the gate-litter patterns decide what a purge deletes from a
+       real database, so they are tested rather than trusted, and they belong beside
+       the script that uses them rather than in the shipped source tree. */
+    include: ["src/**/*.spec.ts", "scripts/**/*.spec.ts"],
     reporters: [
       "verbose",
       ["allure-vitest/reporter", {

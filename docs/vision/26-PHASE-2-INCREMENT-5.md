@@ -136,9 +136,20 @@ scoped to the run rather than to a prefix, deletes the objects it wrote to R2, a
 deletes its own review rows, which are `SetNull` rather than cascade. Verified: two
 consecutive runs leave the leftover count unchanged.
 
-The twelve and seven rows from earlier runs are still there. They are empty and
-harmless, and removing them is a live-database deletion, so it is asked for
-separately rather than done quietly.
+The rows from earlier runs are cleared by
+[`purge-vision-gate-litter`](../../services/api/scripts/purge-vision-gate-litter.ts),
+which is a dry run unless given `--apply`:
+
+```bash
+pnpm --filter @dtp/api db:purge:gate-litter
+pnpm --filter @dtp/api db:purge:gate-litter -- --apply
+```
+
+Its patterns live in a tested module of their own, because they are the only thing
+between the script and real data: a name qualifies only if it is *anchored* and ends
+in a gate's eight-hex run id, so `gold benchmark for Lagos 2027` survives while
+`gold benchmark 7c199849` does not. A dataset version with any member, or a schema
+version something still points at, is reported and skipped rather than judged.
 
 ## What is not done
 
