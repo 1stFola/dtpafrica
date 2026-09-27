@@ -135,6 +135,164 @@ chmod +x deploy.sh && ./deploy.sh
 
 ---
 
+## Database Provisioning and Migrations
+
+### Current state (read this before changing anything)
+
+Two mechanisms exist in this repo, and only one of them actually runs in staging:
+
+| | `prisma db push` | `prisma migrate deploy` |
+|---|---|---|
+| Runs today | **Yes** — `infra/api.Dockerfile` `CMD`, and `deploy.sh` | No |
+| Records history | No `_prisma_migrations` table | Yes |
+| Reviewable SQL | None — Prisma decides at runtime | Yes, committed |
+| Destructive changes | Silently allowed (`--accept-data-loss`) | Fails and stops |
+
+As of this change, `prisma/migrations/` **can** build a database from zero. It
+holds 18 migrations:
+
+- `20260528000000_init` — baseline, the schema as it stood before the first
+  incremental migration, reconstructed from git history
+- `20260528120000` … `20260703130000` — the 14 original incremental migrations
+- `20260910120000_db_push_catchup` — schema that only ever reached databases via
+  `db push` (admin RBAC, support reports, match statistics and sheet log,
+  academy change requests, and assorted columns)
+- `20260924230000_vision_phase_0` — the Vision Engine tables
+- `20260925150000_vision_grant_object_key_nullable` — a partner upload grant may
+  exist before anyone knows which object it is for
+- `20260925180000_vision_dataset_factory` — dataset versions, members, annotation
+  tasks and versions, label schema versions, review decisions, active-learning items
+
+Verified: `prisma migrate diff` reports **no difference** between
+`prisma/migrations/` and the current `schema.prisma`, in both directions — both
+runs output `-- This is an empty migration.`
+
+> Re-check this whenever a migration is added. The list above went stale once
+> already: two Vision migrations landed after it was written, and the baselining
+> loop below did not name them, which would have left a database baselined short
+> and then failed on the next `migrate deploy`.
+
+### Provisioning a brand-new database
+
+```bash
+pnpm --filter @dtp/api exec prisma migrate deploy
+```
+
+To re-verify the end-to-end equivalence claim above after adding a migration,
+against a throwaway database:
+
+```bash
+pnpm --filter @dtp/api exec prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url "postgresql://USER:PASS@HOST:5432/dtp_migrate_check" --script
+```
+
+Empty output means the migrations and `schema.prisma` agree.
+`--shadow-database-url` must point at a database you are happy to have wiped —
+Prisma creates and drops the schema inside it.
+
+### Baselining a database that already has tables but no `_prisma_migrations`
+
+This is the situation for **every existing DTP database** — the local dev
+database and the staging volume both have a full schema that `db push` built,
+and no migration history at all. Running `migrate deploy` against one of them
+fails with `P3005 The database schema is not empty`.
+
+The fix is to tell Prisma these migrations are already applied, without
+executing their SQL. Nothing is written to the tables; only `_prisma_migrations`
+rows are inserted.
+
+```bash
+cd services/api
+
+# Back up first. This is cheap, and the next step is easier to reason about
+# when you know you can undo it.
+docker compose -f ../../infra/docker-compose.staging.yml exec postgres pg_dump -U dtp dtp_africa | gzip > ~/pre-baseline-$(date +%F).sql.gz
+
+# Mark every existing migration as applied, oldest first.
+for m in \
+  20260528000000_init \
+  20260528120000_competition_templates \
+  20260528140000_scoreboard_player_pipeline \
+  20260602120000_player_slug_required \
+  20260602130000_highlight_duration \
+  20260603120000_player_position_philosophies \
+  20260603140000_academy_login_credentials \
+  20260604120000_academy_admin_fields \
+  20260609120000_highlight_media_type \
+  20260619120000_sb_match_event_player_label2 \
+  20260621120000_sb_match_comment \
+  20260627120000_sb_match_slug \
+  20260703120000_sb_match_squad_players \
+  20260703130000_sb_match_formations \
+  20260910120000_db_push_catchup \
+  20260924230000_vision_phase_0 \
+  20260925150000_vision_grant_object_key_nullable \
+  20260925180000_vision_dataset_factory
+do
+  pnpm exec prisma migrate resolve --applied "$m"
+done
+
+# Should now report: Database schema is up to date!
+pnpm exec prisma migrate status
+```
+
+Caveats:
+
+- **Only mark a migration applied if the database really contains its result.**
+  If a database is missing something — say it predates `vision_phase_0` — stop
+  before that migration, let `migrate deploy` apply the rest, then check
+  `migrate status`.
+- On Windows, run the loop in Git Bash, or use PowerShell's `foreach`.
+- If `migrate status` afterwards reports drift, diff it explicitly with
+  `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel ./prisma/schema.prisma --script`
+  and write a real migration for the difference. Do not paper over it with
+  another `resolve`.
+
+### Decision: should deployment switch from `db push` to `migrate deploy`?
+
+**Recommendation: yes, but as a separate, deliberate change — not as part of
+this one.** Nothing in the deploy path has been changed here.
+
+Why switch:
+
+- The container today runs `prisma db push --accept-data-loss` on **every
+  start** (`services/api/package.json` → `db:push`, invoked from the
+  `api.Dockerfile` `CMD`). A schema edit that drops or narrows a column drops
+  production data on the next restart, with no prompt and no diff. That is the
+  single biggest argument, and it is a live risk rather than a theoretical one.
+- `db push` produces no history, so there is no way to tell which schema a given
+  deployed image expects, and no way to review the SQL before it runs.
+- Rolling back is currently "edit the schema and push again", which for a
+  dropped column means restoring from `pg_dump`.
+
+Why it has not been switched here:
+
+- `db push` is what works in staging today. Switching provisioning mechanics is
+  a deployment-risk change and deserves its own review, its own deploy window,
+  and a fresh backup.
+- The staging database must be baselined (previous section) **before** the
+  switch, or the first deploy after it fails on `P3005` and the API container
+  restart-loops.
+- `migrate deploy` is stricter by design: it stops on a failed migration rather
+  than reconciling. That is the behaviour we want, but it turns some silent
+  recoveries into hard deploy failures, so the first few deploys need watching.
+
+If and when it is switched, the change is:
+
+1. Baseline the staging database (previous section). Confirm
+   `prisma migrate status` reports up to date.
+2. Add `"db:migrate:deploy": "prisma migrate deploy"` to
+   `services/api/package.json`.
+3. In `infra/api.Dockerfile`, replace `db:push` with `db:migrate:deploy` in the
+   `CMD`. Do the same in `deploy.sh`.
+4. Deploy with a fresh `pg_dump` in hand, and watch the API container logs
+   through the first restart.
+
+Until then, `db push` remains the provisioning mechanism in staging, and
+`prisma/migrations/` is kept correct and verified so that the switch is a
+configuration change rather than a migration-writing exercise.
+
+---
+
 ## Day-2 Operations
 
 ### SSH into the server
