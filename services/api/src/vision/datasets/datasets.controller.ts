@@ -42,6 +42,18 @@ export class VisionDatasetsController {
     return jsonSafe(await this.datasets.checkLeakage(id));
   }
 
+  /**
+   * Whether the gold subset could be frozen, and what is missing if not.
+   *
+   * Read-only on purpose: the answer is what a reviewer needs before starting,
+   * not something to discover at the moment the freeze is refused.
+   */
+  @Get(":id/gold")
+  @RequirePermissions("vision.read")
+  async gold(@Param("id") id: string) {
+    return jsonSafe(await this.datasets.goldStatus(id));
+  }
+
   @Get(":id/representation")
   @RequirePermissions("vision.read")
   async representation(@Param("id") id: string) {
