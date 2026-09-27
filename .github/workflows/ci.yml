@@ -92,6 +92,17 @@ jobs:
 
       - name: Validate staging compose
         run: docker compose --env-file infra/.env.staging.example -f infra/docker-compose.staging.yml config
+
+      # The deploy playbook was the one thing here nothing checked, and it is the
+      # thing whose failures cost the most: a typo in it is found by a deploy going
+      # red after the images are already built and pushed, against the live server.
+      # A syntax check catches an unresolvable module, a malformed task and a broken
+      # Jinja expression in about thirty seconds.
+      - name: Validate the deploy playbook
+        run: |
+          pip install --quiet ansible-core
+          ansible-galaxy collection install community.general
+          ansible-playbook infra/ansible/playbook.yml --syntax-check -i 'localhost,'
   # ── API image ─────────────────────────────────────────────────────────────
   #
   # **This job exists because of an outage.** The API's compiled output requires

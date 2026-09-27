@@ -227,6 +227,51 @@
   changed_when: true
   no_log: true
 
+# Reclaim space BEFORE pulling. There is a prune at the end of this role as well,
+# but a prune that runs after the pull cannot help the pull: the disk fills while
+# containerd is extracting a layer, the playbook dies there, and the cleanup step is
+# never reached. That is exactly how this box filled up — a deploy failed with
+# `no space left on device` mid-extract, and every retry failed the same way.
+#
+# `docker image prune -a` never removes an image a container is using -- but that
+# includes *stopped* containers, and a deploy that died part-way leaves those
+# behind still pinning their image. So stopped containers go first, or the image
+# prune quietly reclaims nothing on exactly the box that needs it most. Running
+# containers are untouched by both, so the release serving traffic survives.
+#
+# NOTE: images and build cache only. Never `docker system prune --volumes`, which
+# would take the Postgres volume with it.
+- name: Reclaim disk before pulling (images and build cache, never volumes)
+  ansible.builtin.shell: |
+    docker container prune -f
+    docker image prune -af
+    docker builder prune -af
+  become: true
+  become_user: root
+  changed_when: true
+  failed_when: false
+
+- name: Measure free space on the root volume
+  ansible.builtin.shell: df --output=avail -BM / | tail -1 | tr -dc '0-9'
+  register: free_mb
+  changed_when: false
+
+- name: Report free space
+  ansible.builtin.debug:
+    msg: "{{ (free_mb.stdout | int / 1024) | round(1) }} GB free on / before pulling"
+
+# Fail here, with a sentence saying what is wrong, rather than eight minutes later
+# inside a layer extraction whose error names a containerd snapshot path.
+- name: Refuse to pull without room for the images
+  ansible.builtin.assert:
+    that: free_mb.stdout | int > 4096
+    fail_msg: >-
+      Only {{ (free_mb.stdout | int / 1024) | round(1) }} GB free on / after pruning,
+      and the API and web images need roughly 4 GB extracted. Pulling would fail
+      part-way and leave the stack on the previous release. Free space on the box
+      (`docker system df` shows what is using it) and re-run.
+    success_msg: "{{ (free_mb.stdout | int / 1024) | round(1) }} GB free — enough for the pull"
+
 - name: Pull the images for this commit
   ansible.builtin.shell: |
     timeout 600 docker compose \
@@ -253,9 +298,16 @@
 
 # Pulling a new tag every deploy leaves the previous one behind, and this box only
 # has a 20GB root volume. Images still referenced by a running container are never
-# removed by this, so the current release is safe.
+# removed by this, so the release that just started is safe.
+#
+# The `until=48h` filter this used to carry is gone. It sounded cautious and was the
+# reason the disk filled: the image it most needed to remove — the release this deploy
+# just replaced — was by definition pulled recently, so the filter always spared it,
+# and two images a deploy accumulated until a pull ran out of room. Rollback is
+# unaffected in any way that matters: the tags are still in ECR, and rolling back is
+# a tag change that pulls again.
 - name: Drop images no longer used by any container
-  ansible.builtin.shell: docker image prune -af --filter 'until=48h'
+  ansible.builtin.shell: docker image prune -af
   become: true
   become_user: root
   changed_when: true
