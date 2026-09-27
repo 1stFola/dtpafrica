@@ -19,9 +19,10 @@
  * completes it, but only when exactly one player in that squad carries the
  * name. Two could not be resolved that way and were named by the competition
  * owner instead: Alaska list both Onyedigbo Daniel and Daniel Emmanuel, and
- * their "Daniel" is Onyedigbo Daniel; Dynamic's "Jackson" is Ogege John, a
- * name their squad list does not carry at all - it has an Ogege Jordan at
- * number 9 - so that one follows the owner rather than the sheet.
+ * their "Daniel" is Onyedigbo Daniel; Dynamic's "Jackson" is Ogege Jordan, who
+ * their squad list carries at number 9. Neither could be resolved automatically:
+ * Alaska list two players called Daniel, and nothing in Dynamic's list resembles
+ * "Jackson" closely enough for a name match to be safe.
  */
 // Prisma is a value import: DbNull/JsonNull are runtime sentinels.
 import { Prisma } from "@prisma/client";
@@ -547,7 +548,7 @@ const MATCHES: MatchSeed[] = [
   { id: "3a9dd731-e795-5233-8f92-98aa22394430", homeSlug: "alaska-fa", awaySlug: "dynamic-fc",
     kickoffAt: "2026-07-17T16:00:00+01:00", venue: "IDO ELEMU SPORT PITCH, ERA",
     status: "finished", homeScore: 6, awayScore: 1,
-    walkover: false, goals: [{ minute: 8, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 5, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 76, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 42, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 51, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 90, side: "home", scorer: "Balogun Basit", ownGoal: false, minuteKnown: true }, { minute: 78, side: "away", scorer: "Ogege John", ownGoal: false, minuteKnown: true }] },
+    walkover: false, goals: [{ minute: 8, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 5, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 76, side: "home", scorer: "Qudus Ganiu", ownGoal: false, minuteKnown: true }, { minute: 42, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 51, side: "home", scorer: "Numan Sharani", ownGoal: false, minuteKnown: true }, { minute: 90, side: "home", scorer: "Balogun Basit", ownGoal: false, minuteKnown: true }, { minute: 78, side: "away", scorer: "Ogege Jordan", ownGoal: false, minuteKnown: true }] },
   { id: "d1e8d8f9-fb67-5dc5-8657-3446d44327ce", homeSlug: "future-stars-fc", awaySlug: "super-stars-fc",
     kickoffAt: "2026-07-17T16:00:00+01:00", venue: "LA PRIMARY SCHOOL, IYANA ISASHI",
     status: "finished", homeScore: 3, awayScore: 1,
