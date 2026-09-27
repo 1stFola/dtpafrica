@@ -72,8 +72,17 @@ export async function seedScoreboard(prisma: PrismaClient, _seedPlayerId?: strin
   console.log("Seeded goalkeeper profiles:", goalkeeperProfiles);
   const timelineProfiles = await syncScoreboardTimelinePlayerProfiles(prisma);
   console.log("Synced ScoreBoard timeline player profiles:", timelineProfiles);
-  const linkedEvents = await syncScoreboardEventPlayerLinks(prisma);
-  console.log("Synced ScoreBoard event player links:", linkedEvents);
+  const eventLinks = await syncScoreboardEventPlayerLinks(prisma);
+  console.log("Synced ScoreBoard event player links:", eventLinks.updated);
+  /* Said out loud rather than returned and dropped: an unlinked scorer never reaches
+     the player's profile or the stat leaders, so nothing else would mention it.
+     `db:sync:event-player-links` lists them in full. */
+  if (eventLinks.unresolved.length) {
+    console.log(
+      `  ${eventLinks.unresolved.length} label(s) could not be matched to a player ` +
+        "— run db:sync:event-player-links to see which"
+    );
+  }
 
   if (failures.length) {
     console.error(`ScoreBoard seed: ${failures.length} competition(s) failed:`);
