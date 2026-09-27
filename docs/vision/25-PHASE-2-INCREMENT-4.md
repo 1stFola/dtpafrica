@@ -84,7 +84,7 @@ there is footage whose slices would be read.
 ```
 api tests            490 passed   (was 480)
   gold benchmark      10
-vision:datasetcheck   69/69 against live Postgres  (was 54)
+vision:datasetcheck   69/69 against a real Postgres and R2  (was 54)
 typecheck            clean
 ```
 
