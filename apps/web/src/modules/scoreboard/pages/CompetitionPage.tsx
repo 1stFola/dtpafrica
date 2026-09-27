@@ -128,7 +128,7 @@ function groupFixtures(matches: SbMatchListItem[]) {
         ? new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime()
         : 0)
   );
-  return sorted.reduce<Array<{ label: string; matches: SbMatchListItem[] }>>(
+  const sections = sorted.reduce<Array<{ label: string; matches: SbMatchListItem[] }>>(
     (groups, match) => {
       const label = fixtureSectionLabel(match);
       const group = groups.find((item) => item.label === label);
@@ -138,6 +138,31 @@ function groupFixtures(matches: SbMatchListItem[]) {
     },
     []
   );
+
+  /* Recent results lead, upcoming fixtures follow.
+     A season runs for months, and ordering purely by stage buried the matchday
+     people came to read under every matchday that preceded it. Ordering everything
+     by date instead would be worse: the furthest-off fixture would sit at the very
+     top. So the sections split in two — what has been played, newest first, then
+     what is coming, soonest first. */
+  type Section = { label: string; matches: SbMatchListItem[] };
+  const times = (s: Section) =>
+    s.matches
+      .map((m) => (m.kickoffAt ? new Date(m.kickoffAt).getTime() : null))
+      .filter((t): t is number => t !== null);
+  const played = (s: Section) => s.matches.some((m) => m.status === "finished");
+  /* A section with no kickoff date cannot be placed in time, so it keeps its stage
+     order at the end rather than being sorted into the middle. */
+  const by = (pick: (t: number[]) => number, dir: 1 | -1) => (a: Section, b: Section) => {
+    const [x, y] = [times(a), times(b)];
+    if (!x.length || !y.length) return x.length === y.length ? 0 : x.length ? -1 : 1;
+    return (pick(x) - pick(y)) * dir;
+  };
+
+  return [
+    ...sections.filter(played).sort(by((t) => Math.max(...t), -1)),
+    ...sections.filter((s) => !played(s)).sort(by((t) => Math.min(...t), 1)),
+  ];
 }
 
 type ExIntlFixtureTab = "first_leg" | "second_leg" | "r16" | "qf" | "sf" | "final";
@@ -365,6 +390,107 @@ function deriveTopScorers(matches: SbMatchListItem[]): Scorer[] {
   return [...byKey.values()]
     .sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name))
     .slice(0, 10);
+}
+
+/* ── 1XCup round tabs ──────────────────────────────────────────────────────
+   1XCup runs five zonal qualifiers, then six groups of four, then a knockout
+   bracket. All of it hangs off one competition, so without a round selector the
+   Overview is a single table of whichever phase happens to be current and no way
+   to look at the others.
+
+   Rounds are matched on stageKey first, because that is what the seed writes, and
+   on roundLabel as a fallback for fixtures entered by hand in the admin. */
+type RoundId =
+  | "qualifying"
+  | "group_stage"
+  | "knockout"
+  | "quarterfinals"
+  | "semifinals"
+  | "third_place"
+  | "grand_final";
+
+const ONE_XCUP_ROUNDS: { id: RoundId; label: string; bracket: boolean }[] = [
+  { id: "qualifying", label: "Qualifying", bracket: false },
+  { id: "group_stage", label: "Group Stage", bracket: false },
+  { id: "knockout", label: "Knockout", bracket: true },
+  { id: "quarterfinals", label: "Quarterfinals", bracket: true },
+  { id: "semifinals", label: "Semifinals", bracket: true },
+  { id: "third_place", label: "Third Place", bracket: true },
+  { id: "grand_final", label: "Grand Finale", bracket: true },
+];
+
+function roundOfMatch(match: SbMatchListItem): RoundId | null {
+  const stage = (match.stageKey ?? "").toLowerCase();
+  const label = (match.roundLabel ?? "").toLowerCase();
+  if (stage.startsWith("qualifying")) return "qualifying";
+  if (stage.startsWith("group_")) return "group_stage";
+  if (stage === "grand_final" || /grand fina|^final$/.test(label)) return "grand_final";
+  if (stage === "third_place" || /third[- ]?place/.test(label)) return "third_place";
+  if (stage === "sf" || stage.includes("semi") || /semi/.test(label)) return "semifinals";
+  if (stage === "qf" || stage.includes("quarter") || /quarter/.test(label)) return "quarterfinals";
+  if (stage.includes("knockout") || stage === "r16" || stage === "r32" || /round of/.test(label))
+    return "knockout";
+  return null;
+}
+
+/** The round a visitor should land on: the last one with any fixture at all. */
+function currentRound(matches: SbMatchListItem[]): RoundId {
+  const present = new Set(matches.map(roundOfMatch).filter(Boolean) as RoundId[]);
+  const withFixtures = ONE_XCUP_ROUNDS.filter((r) => present.has(r.id));
+  if (!withFixtures.length) return "group_stage";
+  /* The furthest round that has started, else the furthest that exists — so the
+     page follows the tournament forward without being told. */
+  const started = withFixtures.filter((r) =>
+    matches.some((m) => roundOfMatch(m) === r.id && m.status === "finished")
+  );
+  return (started.at(-1) ?? withFixtures.at(-1))!.id;
+}
+
+function RoundTie({ match }: { match: SbMatchListItem }) {
+  const done = match.status === "finished";
+  const winner = done ? matchWinner(match) : null;
+  return (
+    <div className={`sbc-tie${done ? " sbc-tie--done" : ""}`}>
+      <div className={`sbc-tie__side${winner === "home" ? " sbc-tie__side--won" : ""}`}>
+        <span className="sbc-tie__name">{match.homeTeam.name}</span>
+        <span className="sbc-tie__score">{done ? match.homeScore : "–"}</span>
+      </div>
+      <div className={`sbc-tie__side${winner === "away" ? " sbc-tie__side--won" : ""}`}>
+        <span className="sbc-tie__name">{match.awayTeam.name}</span>
+        <span className="sbc-tie__score">{done ? match.awayScore : "–"}</span>
+      </div>
+      {match.kickoffAt && !done && (
+        <p className="sbc-tie__when">{new Date(match.kickoffAt).toLocaleDateString()}</p>
+      )}
+    </div>
+  );
+}
+
+/** The bracket, drawn from the fixtures that exist rather than from a fixed shape. */
+function RoundBracket({
+  matches,
+  rounds,
+}: {
+  matches: SbMatchListItem[];
+  rounds: { id: RoundId; label: string }[];
+}) {
+  const columns = rounds
+    .map((r) => ({ ...r, ties: matches.filter((m) => roundOfMatch(m) === r.id) }))
+    .filter((c) => c.ties.length > 0);
+
+  if (!columns.length) return null;
+  return (
+    <div className="sbc-bracket">
+      {columns.map((c) => (
+        <div className="sbc-bracket__col" key={c.id}>
+          <h4 className="sbc-bracket__round">{c.label}</h4>
+          {c.ties.map((m) => (
+            <RoundTie key={m.id} match={m} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function StateBadge({ matches, loading }: { matches: SbMatchListItem[]; loading: boolean }) {
@@ -902,6 +1028,107 @@ export function CompetitionPage() {
 
   const groups = standingsGroups.length ? standingsGroups : isGroupFormat ? [] : [""];
 
+  /* 1XCup only: the other competitions are a single phase, and a round selector
+     on them would be a tab strip with one tab. */
+  const isOneXCup = slug === "1xcup-2026" || formatType === "1XCUP_MULTI_STAGE";
+  const [round, setRound] = useState<RoundId | null>(null);
+  const activeRound: RoundId = round ?? currentRound(matches);
+
+  const renderRoundTabs = () => {
+    if (!isOneXCup) return null;
+    const counts = new Map<RoundId, number>();
+    for (const m of matches) {
+      const r = roundOfMatch(m);
+      if (r) counts.set(r, (counts.get(r) ?? 0) + 1);
+    }
+    return (
+      <div className="sbc-rounds" role="tablist" aria-label="Tournament round">
+        {ONE_XCUP_ROUNDS.map((r) => {
+          const n = counts.get(r.id) ?? 0;
+          return (
+            <button
+              key={r.id}
+              type="button"
+              role="tab"
+              aria-selected={activeRound === r.id}
+              className={`sbc-rounds__tab${activeRound === r.id ? " sbc-rounds__tab--on" : ""}${
+                n === 0 ? " sbc-rounds__tab--empty" : ""
+              }`}
+              onClick={() => setRound(r.id)}
+            >
+              {r.label}
+              {/* The count doubles as the signal that a round has not been drawn
+                  yet, so an empty tab is never a dead end with no explanation. */}
+              <span className="sbc-rounds__count">{n || "—"}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderRoundContent = () => {
+    if (!isOneXCup) return null;
+    const meta = ONE_XCUP_ROUNDS.find((r) => r.id === activeRound)!;
+    const inRound = matches.filter((m) => roundOfMatch(m) === activeRound);
+
+    if (!inRound.length) {
+      return (
+        <p className="sbc-empty">
+          The {meta.label.toLowerCase()} has not been drawn yet. It appears here once the
+          fixtures are published.
+        </p>
+      );
+    }
+
+    /* The group stage keeps the six tables the standings engine already builds.
+       Every later round is a bracket, where a league table would say nothing. */
+    if (activeRound === "group_stage") return renderStandings();
+    if (activeRound === "qualifying") {
+      /* Five separate zonal knockouts, not one bracket. Rendering them as a single
+         column put seventy-four unrelated ties under one heading; each zone gets its
+         own column, in the order the competition seeded them. */
+      const zones: { key: string; label: string; ties: SbMatchListItem[] }[] = [];
+      for (const m of inRound) {
+        const key = m.stageKey ?? "qualifying";
+        const zone = zones.find((z) => z.key === key);
+        if (zone) zone.ties.push(m);
+        else
+          zones.push({
+            key,
+            /* From the stage key, not roundLabel: the labels carry a match
+               number ("Ikeja Zone - Qualifying Round (Match 71)") that reads as
+               nonsense once it heads a column of eighteen ties. */
+            label: key
+              .replace(/^qualifying_/, "")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase()),
+            ties: [m],
+          });
+      }
+      return (
+        <div className="sbc-bracket">
+          {zones.map((z) => (
+            <div className="sbc-bracket__col" key={z.key}>
+              <h4 className="sbc-bracket__round">{z.label}</h4>
+              {z.ties.map((m) => (
+                <RoundTie key={m.id} match={m} />
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    /* From the knockout on, the whole bracket is drawn, not just the selected
+       round: a bracket read one column at a time is not a bracket. */
+    return (
+      <RoundBracket
+        matches={matches}
+        rounds={ONE_XCUP_ROUNDS.filter((r) => r.bracket).map((r) => ({ id: r.id, label: r.label }))}
+      />
+    );
+  };
+
   const renderStandings = () => {
     if (loading) {
       return (
@@ -991,8 +1218,9 @@ export function CompetitionPage() {
 
       {!isKnockoutFormat && (
         <section className="sbc-block">
-          <h2 className="sbc-block__title">Standings</h2>
-          {renderStandings()}
+          <h2 className="sbc-block__title">{isOneXCup ? "Rounds" : "Standings"}</h2>
+          {renderRoundTabs()}
+          {isOneXCup ? renderRoundContent() : renderStandings()}
         </section>
       )}
 
