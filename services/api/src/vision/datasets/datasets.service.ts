@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -11,6 +12,11 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
+import {
+  buildFiftyOneExport,
+  type ExportLabel,
+  type ExportMember,
+} from "./fiftyone-export";
 import { goldContamination, goldReadiness } from "./gold-benchmark";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import {
@@ -420,6 +426,288 @@ export class VisionDatasetsService {
       ...readiness,
       contamination,
       canFreeze: readiness.shortOfTwo.length === 0 && contamination.length === 0,
+    };
+  }
+
+  /**
+   * A frozen version, written out in the shape FiftyOne loads.
+   *
+   * Three refusals before anything is written, and then one more from the report:
+   *
+   *   1. **Only a frozen version.** A draft's membership changes underneath, so an
+   *      export of one cannot be tied to a manifest or reproduced later.
+   *   2. **Not one holding revoked footage.** Revocation already blocks new
+   *      training runs; the export is the door that footage would actually leave
+   *      through, so it is closed here too.
+   *   3. **Gold contamination, re-checked.** The freeze gate catches this, but a
+   *      version frozen before that gate existed was never asked.
+   *
+   * Then the QA report decides. A fatal problem means nothing is written: an
+   * export that loads and is wrong gets trained on, while one that was refused
+   * gets fixed.
+   */
+  async exportForFiftyOne(datasetVersionId: string, actor?: AdminAuthContext) {
+    const version = await this.prisma.visionDatasetVersion.findUnique({
+      where: { id: datasetVersionId },
+      select: {
+        id: true,
+        label: true,
+        frozenAt: true,
+        labelSchemaVersionId: true,
+        containsRevokedMembers: true,
+      },
+    });
+    if (!version) throw new NotFoundException(`Unknown dataset version ${datasetVersionId}`);
+
+    if (!version.frozenAt) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "DatasetNotFrozen",
+        message: "Only a frozen version can be exported.",
+        detail:
+          "A draft's membership and splits still change. An export taken from one cannot be " +
+          "reproduced, and any benchmark measured against it means nothing later.",
+        remediation: "Freeze the version first.",
+      });
+    }
+
+    if (version.containsRevokedMembers) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "DatasetContainsRevokedMembers",
+        message: "This version holds footage whose training right was withdrawn.",
+        detail:
+          "The frozen version is deliberately left intact so history is not rewritten, but an " +
+          "export is how that footage would reach a training run.",
+        remediation: "Build a new version without the revoked members.",
+      });
+    }
+
+    /* Asked again here because a version frozen before the gold gate existed was
+       never asked at all. */
+    const contaminated = await goldContamination(this.prisma, version.id);
+    if (contaminated.length) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "GoldContamination",
+        message: `${contaminated.length} member(s) of this version are held out as gold by a frozen version.`,
+        detail:
+          "Exporting them for training would silently invalidate every benchmark number " +
+          "already taken against that version.",
+        members: contaminated.slice(0, 20),
+        remediation: "Build a version that does not train on that footage.",
+      });
+    }
+
+    const rows = await this.prisma.visionDatasetMember.findMany({
+      where: { datasetVersionId: version.id },
+      orderBy: { videoAssetId: "asc" },
+      select: {
+        videoAssetId: true,
+        split: true,
+        groupKey: true,
+        checksumSha256: true,
+        sbMatchId: true,
+        videoAsset: {
+          select: {
+            durationMs: true,
+            isVariableFrameRate: true,
+            sbMatch: { select: { competition: { select: { name: true } } } },
+            sourceVideoRecord: { select: { sourceQualityRank: true, partnerId: true } },
+            variants: {
+              where: { kind: "proxy" },
+              select: {
+                objectKey: true,
+                fps: true,
+                sourceOffsetMs: true,
+                durationMs: true,
+                width: true,
+                height: true,
+              },
+              take: 1,
+            },
+            annotationTasks: {
+              select: {
+                id: true,
+                samplingStrategy: true,
+                startMs: true,
+                endMs: true,
+                preLabelled: true,
+                labelSchemaVersion: { select: { version: true } },
+                /* The tip of the chain only. Superseded submissions are kept
+                   because the corrections are the signal, but the corpus trains on
+                   the latest one. */
+                versions: {
+                  orderBy: { createdAt: "desc" },
+                  take: 1,
+                  select: {
+                    id: true,
+                    payloadKey: true,
+                    payloadChecksum: true,
+                    annotatorId: true,
+                    effortMinutes: true,
+                    reviews: {
+                      orderBy: { createdAt: "desc" },
+                      take: 1,
+                      select: { decision: true, reviewerId: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const members: ExportMember[] = [];
+    const presentProxies = new Set<string>();
+
+    for (const row of rows) {
+      const proxy = row.videoAsset.variants[0] ?? null;
+      /* Confirmed against the store rather than trusted from the row: an export
+         naming a file that is not there loads as a silently smaller dataset. */
+      if (proxy && (await this.store.head("derived", proxy.objectKey))) {
+        presentProxies.add(proxy.objectKey);
+      }
+
+      const labels: ExportLabel[] = [];
+      for (const task of row.videoAsset.annotationTasks) {
+        const tip = task.versions[0];
+        if (!tip) continue;
+        const review = tip.reviews[0] ?? null;
+        const payload = await this.readPayload(tip.payloadKey, tip.payloadChecksum);
+        labels.push({
+          annotationVersionId: tip.id,
+          taskId: task.id,
+          samplingStrategy: task.samplingStrategy,
+          labelSchemaVersion: task.labelSchemaVersion?.version ?? null,
+          annotatorId: tip.annotatorId,
+          sourceStartMs: task.startMs,
+          sourceEndMs: task.endMs,
+          decision: review?.decision ?? null,
+          reviewerId: review?.reviewerId ?? null,
+          preLabelled: task.preLabelled,
+          effortMinutes: tip.effortMinutes,
+          uncertain: payload.uncertain,
+          notes: payload.notes,
+          payloadSourceStartMs: payload.windowStartMs,
+          payloadSourceEndMs: payload.windowEndMs,
+          payloadIntegrity: payload.integrity,
+        });
+      }
+
+      members.push({
+        videoAssetId: row.videoAssetId,
+        split: row.split,
+        groupKey: row.groupKey,
+        checksumSha256: row.checksumSha256,
+        sbMatchId: row.sbMatchId,
+        durationMs: row.videoAsset.durationMs,
+        isVariableFrameRate: row.videoAsset.isVariableFrameRate,
+        competitionName: row.videoAsset.sbMatch?.competition?.name ?? null,
+        partnerId: row.videoAsset.sourceVideoRecord?.partnerId ?? null,
+        sourceQualityRank: row.videoAsset.sourceVideoRecord?.sourceQualityRank ?? null,
+        proxy,
+        labels,
+      });
+    }
+
+    const built = buildFiftyOneExport({
+      datasetVersionId: version.id,
+      label: version.label,
+      frozenAt: version.frozenAt,
+      labelSchemaVersionId: version.labelSchemaVersionId,
+      members,
+      presentProxies,
+    });
+
+    if (!built.qa.ok) {
+      const fatal = built.qa.problems.filter((p) => p.fatal);
+      throw new ConflictException({
+        statusCode: 409,
+        error: "ExportQaFailed",
+        message: `${fatal.length} problem(s) would make this export wrong rather than merely incomplete.`,
+        detail:
+          "Nothing was written. Each of these produces a dataset that loads, trains and " +
+          "benchmarks, and is wrong in a way no downstream check can see.",
+        problems: fatal.slice(0, 20),
+        remediation: "Fix the listed members, or build a version without them.",
+      });
+    }
+
+    /* Three files: FiftyOne's own on-disk layout, plus the QA report beside them so
+       the export describes its own fitness rather than relying on a database row. */
+    const written: string[] = [];
+    for (const [filename, body] of [
+      ["metadata.json", built.metadata],
+      ["samples.json", { samples: built.samples }],
+      ["qa-report.json", built.qa],
+    ] as const) {
+      const ref = visionKeys.datasetExport(version.id, filename);
+      await this.store.putSmallObject(
+        ref.bucket,
+        ref.key,
+        JSON.stringify(body, null, 2),
+        "application/json"
+      );
+      written.push(ref.key);
+    }
+
+    await this.audit.record(
+      {
+        action: "dataset.exported",
+        targetKind: "vision_dataset_version",
+        targetId: version.id,
+        data: {
+          samples: built.qa.samples,
+          labels: built.qa.labels,
+          splits: built.qa.bySplit,
+          keys: written,
+        },
+      },
+      actor
+    );
+
+    return {
+      datasetVersion: { id: version.id, label: version.label },
+      keys: written,
+      qa: built.qa,
+    };
+  }
+
+  /**
+   * One annotation payload, and whether it can still be trusted.
+   *
+   * Returns the verdict rather than throwing, so a batch export reports every
+   * drifted payload instead of stopping at the first one.
+   */
+  private async readPayload(payloadKey: string, expectedChecksum: string) {
+    const empty = { uncertain: false, notes: null, windowStartMs: null, windowEndMs: null };
+    const raw = await this.store.getSmallObject("derived", payloadKey);
+    if (!raw) return { ...empty, integrity: "missing" as const };
+    if (createHash("sha256").update(raw).digest("hex") !== expectedChecksum) {
+      return { ...empty, integrity: "checksum_mismatch" as const };
+    }
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      const value: unknown = JSON.parse(raw.toString("utf8"));
+      if (value && typeof value === "object") parsed = value as Record<string, unknown>;
+    } catch {
+      /* The checksum matched, so these are the bytes that were submitted — they
+         simply are not JSON. Treated as a payload with nothing to read rather than
+         a corruption, because the integrity claim is about storage, not shape. */
+      return { ...empty, integrity: "ok" as const };
+    }
+
+    const num = (key: string) => (typeof parsed[key] === "number" ? (parsed[key] as number) : null);
+    return {
+      uncertain: parsed.uncertain === true,
+      notes: typeof parsed.notes === "string" ? parsed.notes : null,
+      windowStartMs: num("windowSourceStartMs"),
+      windowEndMs: num("windowSourceEndMs"),
+      integrity: "ok" as const,
     };
   }
 

@@ -64,6 +64,21 @@ describe("visionKeys", () => {
     expect(() => visionKeys.thumbnail(ASSET, -1)).toThrow(InvalidObjectKeySegmentError);
   });
 
+  it("puts a version's export beside its manifest, not under a job id", () => {
+    // A consumer holding the version id can find the export from it alone.
+    expect(visionKeys.datasetExport("dsv-1", "samples.json")).toEqual({
+      bucket: "derived",
+      key: "datasets/dsv-1/export/samples.json",
+    });
+    expect(visionKeys.datasetManifest("dsv-1").key).toBe("datasets/dsv-1/manifest.json");
+  });
+
+  it("refuses a traversing export filename", () => {
+    expect(() => visionKeys.datasetExport("dsv-1", "../../etc/passwd")).toThrow(
+      InvalidObjectKeySegmentError
+    );
+  });
+
   it("separates derived, models and clips by bucket", () => {
     expect(visionKeys.proxy(ASSET).bucket).toBe("derived");
     expect(visionKeys.modelWeights("mv-1").bucket).toBe("models");

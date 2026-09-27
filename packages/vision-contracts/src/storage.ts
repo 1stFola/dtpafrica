@@ -163,6 +163,20 @@ export const visionKeys = {
     };
   },
 
+  /**
+   * One file of a frozen version's FiftyOne export.
+   *
+   * Beside the manifest rather than under `exports/`, which is keyed by job: an
+   * export of a frozen version is a property *of that version*, reproducible from
+   * it, and a consumer who has the version id should not need a job id to find it.
+   */
+  datasetExport(datasetVersionId: string, filename: string): ObjectRef {
+    return {
+      bucket: "derived",
+      key: `datasets/${assertSafeKeySegment(datasetVersionId)}/export/${assertSafeKeySegment(filename)}`,
+    };
+  },
+
   exportPrefix(exportJobId: string): string {
     return `exports/${assertSafeKeySegment(exportJobId)}/`;
   },
