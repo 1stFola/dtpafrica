@@ -34,6 +34,8 @@
  * match, and guessing at them from event rows would produce confident nonsense.
  */
 
+import { careerShortfall } from "../src/players/career-shortfall";
+
 export type StatPair = { goals: number; assists: number };
 
 export type DriftRow = {
@@ -178,16 +180,24 @@ export function planCorrection(rows: DriftRow[]): CorrectionPlan {
  * The career total against the competition rows beneath it.
  *
  * A second, different comparison from the one above, and it exists because merging
- * two duplicate records creates a gap the first one cannot see.
+ * two duplicate records used to create a gap the first one cannot see.
  *
  * `mergePlayerRecords` adds the folded record's competition stats to the survivor
- * and deliberately leaves career totals alone — they mix what a player entered at
- * registration with the platform's increments, and adding one record's to
- * another's would double the self-reported part. Then the source row is deleted,
- * and its career goals go with it. Afterwards the events and the competition rows
- * agree perfectly, so `compareStats` reports nothing, while the survivor's profile
- * is short. On live, `Nwosu Henry` came out of the merge with five goals in the RAK
- * BDFA League chart and zero on his profile.
+ * and cannot add its career total — those figures mix what each player entered at
+ * registration with the platform's increments, and adding one record's to another's
+ * would double the self-reported part. It then deleted the source row, and the
+ * platform's share of its career goals went with it. Afterwards the events and the
+ * competition rows agreed perfectly, so `compareStats` reported nothing, while the
+ * survivor's profile was short. On live this had happened to 20 players, 36 goals in
+ * total: `NWOSU HENRY` had five goals in the RAK BDFA League chart and zero on his
+ * profile.
+ *
+ * **The merge now closes that gap itself**, by the same rule, at the point the rows
+ * move — see `careerShortfall`, which both call. So this pass is no longer the only
+ * thing standing between a merge and a wrong profile. It stays for the merges made
+ * before that fix, and as the check that the invariant actually holds: run it and
+ * expect zero. A number here now means either a merge path that does not go through
+ * `mergePlayerRecords`, or something else entirely, and either is worth knowing.
  *
  * `career` must be the figure *after* `planCorrection` has been applied — see
  * `projectCareerAfter`. Pass the figure as read from the database and every
@@ -236,9 +246,14 @@ export function planCareerTopUp(
 ): { topUps: CareerTopUp[]; totals: { goals: number; assists: number } } {
   const topUps: CareerTopUp[] = [];
   for (const [playerId, competitions] of fromCompetitions) {
-    const held = career.get(playerId) ?? { goals: 0, assists: 0 };
-    const goals = Math.max(0, competitions.goals - held.goals);
-    const assists = Math.max(0, competitions.assists - held.assists);
+    /* The same rule `mergePlayerRecords` applies to one survivor inside its own
+       transaction. Shared rather than restated, because a merge that repaired the
+       gap by one rule and a script that measured it by another would disagree about
+       whether live was clean, and both would be able to point at passing tests. */
+    const { goals, assists } = careerShortfall(
+      career.get(playerId) ?? { goals: 0, assists: 0 },
+      competitions
+    );
     if (goals || assists) topUps.push({ playerId, goals, assists });
   }
   return {

@@ -21,16 +21,30 @@
  *   - **Tactical scores, position fit, philosophy fit and valuations** move, with
  *     the same rule for the one-per-player tables.
  *
- * What it deliberately does not touch is `careerGoals` and the other career
- * totals. They mix what a player entered about themselves at registration with the
- * platform's own increments, and adding one record's to another's would double the
- * self-reported part. `db:repair:player-stats` reconciles the platform's share
- * against the events afterwards, which is the honest way to settle it.
+ * **Career totals** are the subtle one, and this used to get it wrong. The source's
+ * `careerGoals` is still never added to the target's: those figures mix what each
+ * player entered about themselves at registration with the platform's own
+ * increments, and adding one to the other would double the self-reported part.
+ *
+ * But leaving them alone entirely loses goals. The competition rows move here and
+ * the career total does not follow, then the source record is deleted and the
+ * platform's share of its total goes with it. Afterwards the events and the
+ * competition rows agree exactly, so every check we have reads clean while the
+ * survivor's profile under-reports. On live this had happened to 20 players, 36
+ * goals in total, before anything noticed: `NWOSU HENRY` had five goals in the RAK
+ * BDFA League chart and zero on his profile.
+ *
+ * So the survivor's career total is raised to its own competition rows, and only
+ * ever raised — see `careerShortfall`. That keeps the invariant a merge should
+ * always have left behind: **no survivor's career total is below the competition
+ * rows beneath it.** `db:repair:player-stats` applies the same rule in bulk, and
+ * exists to clean up the merges that happened before this did.
  *
  * The caller supplies the transaction. Everything here is one unit of work: a
  * half-merged player is worse than either of the two it came from.
  */
 import type { Prisma } from "@prisma/client";
+import { careerShortfall } from "./career-shortfall";
 
 export type MergeTx = Prisma.TransactionClient;
 
@@ -39,6 +53,13 @@ export type MergeOutcome = {
   source: { id: string; displayName: string; slug: string };
   target: { id: string; displayName: string; slug: string };
   moved: Record<string, number>;
+  /**
+   * What the survivor's career total had to be raised by so it was not left below
+   * its own competition rows. Reported rather than silent: it is the one number
+   * here that is not simply a row moving, and an operator watching a merge should
+   * see it.
+   */
+  careerCredited: { goals: number; assists: number };
 };
 
 export class MergePlayerNotFoundError extends Error {
@@ -138,6 +159,34 @@ export async function mergePlayerRecords(
       });
     }
     competitionStatsMerged++;
+  }
+
+  /* Straight after the rows moved, because that is what opens the gap. The
+     survivor's competition rows now include the folded record's, while its career
+     total still does not — and in a moment the record holding that total is
+     deleted. Reading the sum back from the database rather than accumulating it
+     above keeps this correct whichever branch each row took, and correct too when
+     the survivor was already short before this merge began. */
+  const targetRowTotals = await tx.sbPlayerCompetitionStats.aggregate({
+    where: { playerId: target.id },
+    _sum: { goals: true, assists: true },
+  });
+  const targetCareer = await tx.player.findUnique({
+    where: { id: target.id },
+    select: { careerGoals: true, careerAssists: true },
+  });
+  const careerCredited = careerShortfall(
+    { goals: targetCareer?.careerGoals ?? 0, assists: targetCareer?.careerAssists ?? 0 },
+    { goals: targetRowTotals._sum.goals ?? 0, assists: targetRowTotals._sum.assists ?? 0 }
+  );
+  if (careerCredited.goals || careerCredited.assists) {
+    await tx.player.update({
+      where: { id: target.id },
+      data: {
+        careerGoals: careerCredited.goals ? { increment: careerCredited.goals } : undefined,
+        careerAssists: careerCredited.assists ? { increment: careerCredited.assists } : undefined,
+      },
+    });
   }
 
   const sourceMatchMetrics = await tx.playerMatchMetrics.findMany({
@@ -244,6 +293,7 @@ export async function mergePlayerRecords(
     ok: true,
     source: { id: source.id, displayName: source.displayName, slug: source.slug },
     target: { id: target.id, displayName: target.displayName, slug: target.slug },
+    careerCredited,
     moved: {
       eventPlayer: eventPlayer.count,
       eventAssist: eventAssist.count,

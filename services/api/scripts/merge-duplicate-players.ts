@@ -134,7 +134,7 @@ async function main() {
   let keysFixed = 0;
   for (const plan of plans) {
     for (const source of plan.sources) {
-      await prisma.$transaction(
+      const outcome = await prisma.$transaction(
         async (tx) =>
           mergePlayerRecords(tx, {
             sourcePlayerId: source.id,
@@ -145,6 +145,18 @@ async function main() {
       );
       merged += 1;
       console.log(`  merged ${source.displayName} (/${source.slug}) into /${plan.target.slug}`);
+      /* The one number a merge changes that is not simply a row moving. Printed so
+         nobody has to run the drift report to find out whether it happened. */
+      const credited = [
+        outcome.careerCredited.goals ? `${outcome.careerCredited.goals} goal(s)` : null,
+        outcome.careerCredited.assists ? `${outcome.careerCredited.assists} assist(s)` : null,
+      ].filter(Boolean);
+      if (credited.length) {
+        console.log(
+          `    raised /${plan.target.slug}'s career total by ${credited.join(" and ")}, ` +
+            `so the folded record's goals were not lost with it`
+        );
+      }
     }
 
     /* The key the blocked list was waiting for. Nothing else holds it now. */

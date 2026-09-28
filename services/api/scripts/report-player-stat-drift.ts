@@ -165,11 +165,15 @@ async function main() {
     }
   }
 
-  /* Second pass, and a different comparison. Merging two duplicate records moves
-     the competition rows to the survivor and deliberately not the career totals,
-     then deletes the record holding them -- so afterwards the events and the
-     competition rows agree while the profile is short. The pass above cannot see
-     that, because it only ever compares those two. */
+  /* Second pass, and a different comparison. A merge moves the competition rows to
+     the survivor and cannot move the career total, then deletes the record holding
+     it -- so afterwards the events and the competition rows agree while the profile
+     is short. The pass above cannot see that, because it only ever compares those
+     two.
+
+     `mergePlayerRecords` now closes this as the rows move, so a non-zero figure
+     here means a merge that predates that fix -- or a path that does not go through
+     it, which would be worth finding. */
   const careerRows = await prisma.player.findMany({
     select: { id: true, careerGoals: true, careerAssists: true },
   });
