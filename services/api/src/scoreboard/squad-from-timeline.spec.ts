@@ -1,0 +1,229 @@
+import { describe, expect, it, vi } from "vitest";
+import { PlaceholderPlayerNameError } from "../players/placeholder-names";
+import {
+  addSquadMembersFromTimeline,
+  missingFromSquad,
+  squadCandidatesFrom,
+  type SquadFromTimelineDeps,
+  type TimelineEventLabels,
+} from "./squad-from-timeline";
+
+const HOME = "team-home";
+const AWAY = "team-away";
+
+function event(over: Partial<TimelineEventLabels> = {}): TimelineEventLabels {
+  return { teamId: HOME, playerLabel: null, playerLabel2: null, assistLabel: null, ...over };
+}
+
+describe("finding the people a timeline names", () => {
+  it("takes a scorer from the label", () => {
+    const { candidates } = squadCandidatesFrom([event({ playerLabel: "Ogundeji Elijah" })]);
+    expect(candidates).toMatchObject([{ teamId: HOME, name: "Ogundeji Elijah" }]);
+  });
+
+  it("takes the assister and the second player too", () => {
+    /* A substitution names the incoming player in `playerLabel2`, and a goal names the
+       assister. Both are people who played and neither was being harvested. */
+    const { candidates } = squadCandidatesFrom([
+      event({ playerLabel: "Scorer One", playerLabel2: "Sub In", assistLabel: "Assister Two" }),
+    ]);
+    expect(candidates.map((c) => c.name).sort()).toEqual(["Assister Two", "Scorer One", "Sub In"]);
+  });
+
+  it("names one person once, however many events they appear in", () => {
+    const { candidates } = squadCandidatesFrom([
+      event({ playerLabel: "Wasiu Yayah" }),
+      event({ playerLabel: "Wasiu Yayah" }),
+      event({ playerLabel: "WASIU YAYAH" }),
+    ]);
+    expect(candidates).toHaveLength(1);
+  });
+
+  it("keeps the same name on two teams apart", () => {
+    // Two clubs can each have a Daniel, and they are not the same squad row.
+    const { candidates } = squadCandidatesFrom([
+      event({ teamId: HOME, playerLabel: "Daniel" }),
+      event({ teamId: AWAY, playerLabel: "Daniel" }),
+    ]);
+    expect(candidates).toHaveLength(2);
+  });
+
+  it("takes the name from behind a shirt number", () => {
+    const { candidates } = squadCandidatesFrom([event({ playerLabel: "No. 7 Ogundeji Elijah" })]);
+    expect(candidates[0]?.name).toBe("Ogundeji Elijah");
+  });
+
+  it("ignores an event with no team, having nowhere to put the person", () => {
+    const { candidates } = squadCandidatesFrom([event({ teamId: null, playerLabel: "Nobody" })]);
+    expect(candidates).toEqual([]);
+  });
+
+  it("refuses everything the gate refuses, and says why once per name", () => {
+    const { candidates, rejected } = squadCandidatesFrom([
+      event({ playerLabel: "No. 7" }),
+      event({ playerLabel: "Unknown" }),
+      event({ playerLabel: "VIDO 99 FC" }),
+      event({ playerLabel: "Jersey No. 35" }),
+      event({ playerLabel: "Jersey No. 35" }),
+      event({ playerLabel: "Abdullah Shaubu (7) & Adebayo David (17)" }),
+    ]);
+    expect(candidates).toEqual([]);
+    expect(rejected).toHaveLength(5);
+    expect(rejected.map((r) => r.reason)).toContain("team");
+    expect(rejected.map((r) => r.reason)).toContain("several-people");
+  });
+});
+
+describe("skipping the people already in the squad", () => {
+  it("leaves a name the squad already holds", () => {
+    const candidates = squadCandidatesFrom([event({ playerLabel: "Nwosu Henry" })]).candidates;
+    const missing = missingFromSquad(candidates, [
+      { teamId: HOME, displayName: "Nwosu Henry", playerId: "p1" },
+    ]);
+    expect(missing).toEqual([]);
+  });
+
+  it("matches across spellings, so no second row is created", () => {
+    /* The squad says `NWOSU HENRY` and the timeline says `Nwosu Henry`. Comparing the
+       stored text would create a duplicate for a person already there. */
+    const candidates = squadCandidatesFrom([event({ playerLabel: "Nwosu Henry" })]).candidates;
+    const missing = missingFromSquad(candidates, [
+      { teamId: HOME, displayName: "NWOSU HENRY", playerId: "p1" },
+    ]);
+    expect(missing).toEqual([]);
+  });
+
+  it("does not treat the other team's squad as this team's", () => {
+    const candidates = squadCandidatesFrom([event({ teamId: HOME, playerLabel: "Daniel" })]).candidates;
+    const missing = missingFromSquad(candidates, [
+      { teamId: AWAY, displayName: "Daniel", playerId: "p2" },
+    ]);
+    expect(missing).toHaveLength(1);
+  });
+
+  it("returns the ones genuinely missing", () => {
+    const candidates = squadCandidatesFrom([
+      event({ playerLabel: "In Squad" }),
+      event({ playerLabel: "Not In Squad" }),
+    ]).candidates;
+    const missing = missingFromSquad(candidates, [
+      { teamId: HOME, displayName: "In Squad", playerId: "p1" },
+    ]);
+    expect(missing.map((m) => m.name)).toEqual(["Not In Squad"]);
+  });
+});
+
+function fakeDeps(over: {
+  squad?: { teamId: string; displayName: string; playerId: string | null }[];
+  existingByKey?: Record<string, string>;
+  resolve?: (name: string) => Promise<{ id: string }>;
+} = {}) {
+  const created: { teamId: string; displayName: string; shirtNumber: number | null }[] = [];
+  const deps: SquadFromTimelineDeps = {
+    db: {
+      sbTeamSquad: {
+        findMany: async () => over.squad ?? [],
+        create: async (args: unknown) => {
+          const data = (args as { data: { teamId: string; displayName: string; shirtNumber: number | null } }).data;
+          created.push(data);
+          return { id: `squad-${created.length}` };
+        },
+      },
+      player: {
+        findUnique: async (args: unknown) => {
+          const key = (args as { where: { normalizedName: string } }).where.normalizedName;
+          const id = over.existingByKey?.[key];
+          return id ? { id } : null;
+        },
+      },
+    },
+    resolvePlayer: over.resolve ?? (async (name) => ({ id: `new-${name}` })),
+  };
+  return { deps, created };
+}
+
+describe("adding the rows", () => {
+  it("creates a squad row with no shirt number", async () => {
+    /* The number is the one thing a label cannot supply, and inventing one would resolve
+       future events to the wrong person. Staff assign it later. */
+    const { deps, created } = fakeDeps();
+    const result = await addSquadMembersFromTimeline(deps, [
+      event({ playerLabel: "Adekunle Jamiu" }),
+    ]);
+    expect(created).toEqual([
+      { teamId: HOME, playerId: "new-Adekunle Jamiu", displayName: "Adekunle Jamiu", shirtNumber: null },
+    ]);
+    expect(result.added).toMatchObject([{ name: "Adekunle Jamiu", player: "new" }]);
+  });
+
+  it("links an existing player instead of creating a second one", async () => {
+    const { deps, created } = fakeDeps({ existingByKey: { "ismaila philip": "already" } });
+    const result = await addSquadMembersFromTimeline(deps, [
+      event({ playerLabel: "Ismaila Philip" }),
+    ]);
+    expect(result.added).toMatchObject([{ player: "existing", playerId: "already" }]);
+    expect(created[0]).toMatchObject({ playerId: "already" });
+  });
+
+  it("writes nothing on a dry run but still reports what it would do", async () => {
+    const { deps, created } = fakeDeps();
+    const result = await addSquadMembersFromTimeline(
+      deps,
+      [event({ playerLabel: "Onyedigbo Daniel" })],
+      { dryRun: true }
+    );
+    expect(created).toEqual([]);
+    expect(result.added).toMatchObject([{ name: "Onyedigbo Daniel", player: "new" }]);
+  });
+
+  it("counts the ones the squad already has", async () => {
+    const { deps } = fakeDeps({
+      squad: [{ teamId: HOME, displayName: "Already There", playerId: "p" }],
+    });
+    const result = await addSquadMembersFromTimeline(deps, [
+      event({ playerLabel: "Already There" }),
+    ]);
+    expect(result.alreadyInSquad).toBe(1);
+    expect(result.added).toEqual([]);
+  });
+
+  it("keeps going when the directory refuses one name, and never throws", async () => {
+    /* This runs on the tail of a recorder publishing a sheet. A bad label must not be
+       able to fail that publish -- the recorder would not know why, and ninety minutes
+       of captured events are worth more than a squad row. */
+    const { deps, created } = fakeDeps({
+      resolve: async (name) => {
+        if (name === "Bad One") throw new PlaceholderPlayerNameError(name);
+        return { id: `new-${name}` };
+      },
+    });
+    const result = await addSquadMembersFromTimeline(deps, [
+      event({ playerLabel: "Bad One" }),
+      event({ playerLabel: "Good One" }),
+    ]);
+    expect(result.added).toMatchObject([{ name: "Good One" }]);
+    expect(result.rejected).toMatchObject([{ name: "Bad One", reason: "directory-refused" }]);
+    expect(created).toHaveLength(1);
+  });
+
+  it("tells a directory refusal apart from a failed write", async () => {
+    const { deps } = fakeDeps({
+      resolve: async () => {
+        throw new Error("connection lost");
+      },
+    });
+    const result = await addSquadMembersFromTimeline(deps, [event({ playerLabel: "Someone" })]);
+    expect(result.rejected).toMatchObject([{ reason: "write-failed" }]);
+  });
+
+  it("does nothing at all when the timeline names nobody admissible", async () => {
+    const { deps, created } = fakeDeps();
+    const findMany = vi.fn();
+    deps.db.sbTeamSquad.findMany = findMany;
+    const result = await addSquadMembersFromTimeline(deps, [event({ playerLabel: "No. 9" })]);
+    expect(created).toEqual([]);
+    /* Not even a read: a publish whose labels are all numbers should cost nothing. */
+    expect(findMany).not.toHaveBeenCalled();
+    expect(result.rejected).toHaveLength(1);
+  });
+});

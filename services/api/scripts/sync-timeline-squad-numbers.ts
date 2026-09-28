@@ -43,10 +43,10 @@
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import {
-  buildNumberLookup,
-  squadNumberLabel,
-  type SquadRow,
-} from "../src/scoreboard/squad-number-lookup";
+  applyTimelineNumberFixes,
+  planTimelineNumberFixes,
+  type TimelineFix,
+} from "../src/scoreboard/resolve-timeline-numbers";
 import {
   compareStats,
   planCareerTopUp,
@@ -66,26 +66,7 @@ const SHOWN = 25;
 const GOAL_TYPES = ["goal", "goal_penalty"];
 const ASSIST_TYPES = ["goal"];
 
-type Planned = {
-  eventId: string;
-  matchLabel: string;
-  minute: number;
-  type: string;
-  number: number | null;
-  secondaryNumber: number | null;
-  /** Only the fields that actually change. */
-  data: Record<string, string | null>;
-  was: { playerId: string | null; playerLabel: string | null };
-  now: { playerId: string | null; playerLabel: string | null };
-  reattribution: boolean;
-};
 
-function numberFrom(metadata: unknown, key: string): number | null {
-  const value = (metadata as Record<string, unknown> | null)?.[key];
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : null;
-}
 
 async function main() {
   console.log(
@@ -105,153 +86,25 @@ async function main() {
     orderBy: { kickoffAt: "asc" },
   });
 
-  const teamIds = [...new Set(matches.flatMap((m) => [m.homeTeamId, m.awayTeamId]))];
-  const teamSquadRows = await prisma.sbTeamSquad.findMany({
-    where: { teamId: { in: teamIds }, shirtNumber: { not: null } },
-    select: { teamId: true, shirtNumber: true, displayName: true, playerId: true },
-  });
-  const teamSquadByTeam = new Map<string, SquadRow[]>();
-  for (const row of teamSquadRows) {
-    const list = teamSquadByTeam.get(row.teamId) ?? [];
-    list.push({
-      teamId: row.teamId,
-      number: row.shirtNumber,
-      playerName: row.displayName,
-      playerId: row.playerId,
-    });
-    teamSquadByTeam.set(row.teamId, list);
-  }
 
-  const planned: Planned[] = [];
-  const unresolved: { matchLabel: string; number: number; minute: number }[] = [];
-  const conflicts: { matchLabel: string; number: number; team: string; matchday: string }[] = [];
-  const ambiguous: { matchLabel: string; number: number; source: string; names: string[] }[] = [];
-  /* Events with a shirt number and no team on them. Reported rather than skipped in
-     silence: a number cannot be resolved without a side, because both teams have a
-     number 7, and an event recorded without a team is a fault worth seeing. */
-  const noTeam: { matchLabel: string; number: number; minute: number }[] = [];
-  let eventsSeen = 0;
-  let matchesWithNumbers = 0;
+  /* The planning and the writing both live in src/scoreboard/resolve-timeline-numbers.ts
+     so the squad CSV import runs the same pass the moment a team's numbers arrive. Two
+     implementations of this would drift, and the cost of drift is a goal on the wrong
+     profile. This script chooses the matches -- every finished fixture -- and the
+     import chooses its own. */
+  const plan = await planTimelineNumberFixes(prisma as never, matches.map((m) => ({
+    id: m.id,
+    homeTeamId: m.homeTeamId,
+    awayTeamId: m.awayTeamId,
+    label: `${m.homeTeam.name} v ${m.awayTeam.name}`,
+  })));
+  const planned = plan.fixes;
+  const { conflicts, ambiguous, unresolved, noTeam } = plan;
+  const eventsSeen = plan.eventsSeen;
+  const matchesWithNumbers = plan.matchesWithNumbers;
 
-  for (const match of matches) {
-    const matchLabel = `${match.homeTeam.name} v ${match.awayTeam.name}`;
-    const events = await prisma.sbMatchEvent.findMany({
-      where: { matchId: match.id },
-      select: {
-        id: true,
-        teamId: true,
-        type: true,
-        minute: true,
-        playerId: true,
-        playerLabel: true,
-        playerLabel2: true,
-        assistPlayerId: true,
-        assistLabel: true,
-        metadata: true,
-      },
-      orderBy: { minute: "asc" },
-    });
-    const numbered = events.filter(
-      (e) => numberFrom(e.metadata, "playerNumber") || numberFrom(e.metadata, "secondaryPlayerNumber")
-    );
-    if (!numbered.length) continue;
-    matchesWithNumbers += 1;
-
-    const matchSquadRows = await prisma.sbMatchSquadPlayer.findMany({
-      where: { matchId: match.id, jerseyNumber: { not: null } },
-      select: { teamId: true, jerseyNumber: true, playerName: true, playerId: true },
-    });
-    const lookup = buildNumberLookup({
-      teamSquad: [
-        ...(teamSquadByTeam.get(match.homeTeamId) ?? []),
-        ...(teamSquadByTeam.get(match.awayTeamId) ?? []),
-      ],
-      matchSquad: matchSquadRows.map((row) => ({
-        teamId: row.teamId,
-        number: row.jerseyNumber,
-        playerName: row.playerName,
-        playerId: row.playerId,
-      })),
-    });
-    for (const c of lookup.conflicts) {
-      conflicts.push({
-        matchLabel,
-        number: c.number,
-        team: c.fromTeamSquad,
-        matchday: c.fromMatchSquad,
-      });
-    }
-    for (const a of lookup.ambiguous) {
-      ambiguous.push({ matchLabel, number: a.number, source: a.source, names: a.names });
-    }
-
-    for (const event of numbered) {
-      eventsSeen += 1;
-      const number = numberFrom(event.metadata, "playerNumber");
-      const secondaryNumber = numberFrom(event.metadata, "secondaryPlayerNumber");
-      /* A shirt number means nothing without a side: both teams have a number 7, and
-         resolving without knowing which would put an away goal on a home player.
-         `teamId` is nullable on the event, so this is a real case, not a type
-         formality. */
-      if (!event.teamId) {
-        if (number) noTeam.push({ matchLabel, number, minute: event.minute });
-        continue;
-      }
-      const primary = lookup.find(event.teamId, number);
-      const secondary = lookup.find(event.teamId, secondaryNumber);
-
-      /* Counted apart from the ambiguous ones, which have their own section. A number
-         two players wear is unresolved for a reason somebody can act on; this list is
-         for numbers nobody wears at all, which is usually a squad never loaded. */
-      const isAmbiguous = lookup.ambiguous.some(
-        (a) => a.number === number && a.teamId === event.teamId
-      );
-      if (number && !primary && !isAmbiguous) {
-        unresolved.push({ matchLabel, number, minute: event.minute });
-      }
-
-      /* Only ever an improvement: a field is written when there is something better to
-         put in it, never to clear one. */
-      const data: Record<string, string | null> = {};
-      const wantLabel = squadNumberLabel(primary, number);
-      if (wantLabel && wantLabel !== event.playerLabel) data.playerLabel = wantLabel;
-      if (primary?.playerId && primary.playerId !== event.playerId) {
-        data.playerId = primary.playerId;
-      }
-      const wantLabel2 = squadNumberLabel(secondary, secondaryNumber);
-      if (wantLabel2 && wantLabel2 !== event.playerLabel2) data.playerLabel2 = wantLabel2;
-      if (ASSIST_TYPES.includes(event.type)) {
-        if (wantLabel2 && wantLabel2 !== event.assistLabel) data.assistLabel = wantLabel2;
-        if (secondary?.playerId && secondary.playerId !== event.assistPlayerId) {
-          data.assistPlayerId = secondary.playerId;
-        }
-      }
-      if (!Object.keys(data).length) continue;
-
-      planned.push({
-        eventId: event.id,
-        matchLabel,
-        minute: event.minute,
-        type: event.type,
-        number,
-        secondaryNumber,
-        data,
-        was: { playerId: event.playerId, playerLabel: event.playerLabel },
-        now: {
-          playerId: primary?.playerId ?? event.playerId,
-          playerLabel: wantLabel ?? event.playerLabel,
-        },
-        /* The link moves from one real player to another. Not a fill-in: somebody's
-           goal becomes somebody else's. */
-        reattribution: Boolean(
-          event.playerId && primary?.playerId && event.playerId !== primary.playerId
-        ),
-      });
-    }
-  }
-
-  const reattributions = planned.filter((p) => p.reattribution);
-  const fills = planned.filter((p) => !p.reattribution);
+  const reattributions = planned.filter((p: TimelineFix) => p.reattribution);
+  const fills = planned.filter((p: TimelineFix) => !p.reattribution);
 
   console.log(`  ${matches.length} finished match(es), ${matchesWithNumbers} with numbered events`);
   console.log(`  ${eventsSeen} event(s) carrying a shirt number`);
@@ -276,7 +129,7 @@ async function main() {
       console.log(
         `  ${p.matchLabel.slice(0, 40).padEnd(42)} ${String(p.minute).padStart(3)}' ${p.type}`
       );
-      console.log(`      No. ${p.number} → ${p.now.playerLabel}`);
+      console.log(`      No. ${p.number} → ${p.nowLabel}`);
     }
     if (fills.length > SHOWN) console.log(`  … and ${fills.length - SHOWN} more`);
   }
@@ -291,15 +144,15 @@ async function main() {
         "  usually wins — but it changes who scored, and that is worth a look.\n"
     );
     const names = await namesFor([
-      ...reattributions.flatMap((p) => [p.was.playerId, p.now.playerId]),
+      ...reattributions.flatMap((p: TimelineFix) => [p.wasPlayerId, p.nowPlayerId]),
     ]);
     for (const p of reattributions.slice(0, SHOWN)) {
       console.log(
         `  ${p.matchLabel.slice(0, 40).padEnd(42)} ${String(p.minute).padStart(3)}' ${p.type}`
       );
       console.log(
-        `      No. ${p.number}: ${names.get(p.was.playerId ?? "") ?? p.was.playerLabel ?? "?"}` +
-          ` → ${names.get(p.now.playerId ?? "") ?? p.now.playerLabel}`
+        `      No. ${p.number}: ${names.get(p.wasPlayerId ?? "") ?? p.wasLabel ?? "?"}` +
+          ` → ${names.get(p.nowPlayerId ?? "") ?? p.nowLabel}`
       );
     }
     if (reattributions.length > SHOWN) {
@@ -319,22 +172,15 @@ async function main() {
     return;
   }
 
-  /* One transaction per event: the label and the link move together, or neither does.
-     An event whose label names one player and whose link points at another is worse
-     than one that names nobody, because nothing on the page shows the disagreement. */
-  const touched = new Set<string>();
-  let written = 0;
-  for (const p of planned) {
-    await prisma.sbMatchEvent.update({ where: { id: p.eventId }, data: p.data });
-    written += 1;
-    if (p.was.playerId) touched.add(p.was.playerId);
-    if (p.now.playerId) touched.add(p.now.playerId);
-    if (p.data.assistPlayerId) touched.add(p.data.assistPlayerId);
-  }
+  /* The write is the module's too, so the CSV import and this script cannot diverge
+     on what a fix means. Each event's label and link move in one update: an event
+     whose label names one player and whose link points at another is worse than one
+     naming nobody, because nothing on the page shows the disagreement. */
+  const { written, touched } = await applyTimelineNumberFixes(prisma as never, planned);
   console.log("\n" + "-".repeat(78));
-  console.log(`Wrote ${written} event(s), touching ${touched.size} player(s).`);
+  console.log(`Wrote ${written} event(s), touching ${touched.length} player(s).`);
 
-  const corrected = await correctStatsFor([...touched]);
+  const corrected = await correctStatsFor(touched);
   console.log(
     `Set ${corrected.rowsSet} competition row(s) and topped up ${corrected.careerToppedUp} ` +
       `career total(s) (+${corrected.careerGoals} goal(s), +${corrected.careerAssists} assist(s)).`
@@ -343,10 +189,10 @@ async function main() {
   /* Re-read rather than trust the writes. A number still unresolved after a run means
      the lookup does not do what its tests say. */
   const after = await prisma.sbMatchEvent.count({
-    where: { id: { in: planned.map((p) => p.eventId) }, playerLabel: { startsWith: "No. " } },
+    where: { id: { in: planned.map((p: TimelineFix) => p.eventId) }, playerLabel: { startsWith: "No. " } },
   });
   const stillBare = await prisma.sbMatchEvent.findMany({
-    where: { id: { in: planned.map((p) => p.eventId) } },
+    where: { id: { in: planned.map((p: TimelineFix) => p.eventId) } },
     select: { playerLabel: true },
   });
   const bare = stillBare.filter((e) => /^No\.\s*\d+$/.test(e.playerLabel ?? "")).length;

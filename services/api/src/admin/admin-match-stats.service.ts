@@ -8,6 +8,8 @@ import {
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
+import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
 import {
   buildNumberLookup,
   squadNumberLabel,
@@ -701,7 +703,9 @@ export class AdminMatchStatsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ScoreboardLifecycleService)
-    private readonly lifecycle: ScoreboardLifecycleService
+    private readonly lifecycle: ScoreboardLifecycleService,
+    @Inject(PlayerDirectoryService)
+    private readonly playerDirectory: PlayerDirectoryService
   ) {}
 
   private assertCanRecord(ctx: AdminAuthContext) {
@@ -1348,6 +1352,31 @@ export class AdminMatchStatsService {
     await this.log(sheet, WHOLE_SHEET, "approved", ctx, {
       summary: this.summarise(sheet) as Prisma.InputJsonValue,
     });
+
+    /* Anybody the timeline named who is not in their team's squad gets a row, with no
+       shirt number for staff to fill in later. Outside the transaction and inside a
+       try, because this must never be able to fail a publish: the recorder would have
+       no idea why, and ninety minutes of captured events are worth more than a squad
+       row. `admitSquadName` is what stops a label like `No. 7` or `VIDO 99 FC`
+       becoming a person -- see `squad-from-timeline.ts`. */
+    try {
+      await addSquadMembersFromTimeline(
+        {
+          db: this.prisma as never,
+          resolvePlayer: (displayName) =>
+            this.playerDirectory.resolveOrCreatePlayer(displayName),
+        },
+        eventRows.map((row) => ({
+          teamId: row.teamId,
+          playerLabel: row.playerLabel,
+          playerLabel2: row.playerLabel2,
+          assistLabel: row.assistLabel,
+        }))
+      );
+    } catch {
+      /* Swallowed on purpose. The sheet is published and correct; a squad row that did
+         not get created is picked up by db:sync:squad-from-timeline later. */
+    }
     if (finished && !isTrainingCompetition(match.competition)) {
       if (match.status !== "finished") {
         await this.lifecycle.onMatchFinished(matchId);
