@@ -17,6 +17,7 @@
     "db:repair:joemark-venues": "tsx scripts/repair-joemark-venues.ts",
     "db:repair:player-lookup-keys": "tsx scripts/repair-player-lookup-keys.ts",
     "db:repair:player-stats": "tsx scripts/repair-player-stats.ts",
+    "db:repair:player-display-names": "tsx scripts/repair-player-display-names.ts",
     "db:purge:gate-litter": "tsx scripts/purge-vision-gate-litter.ts",
     "db:purge:placeholder-players": "tsx scripts/purge-placeholder-players.ts",
     "db:push": "prisma db push --accept-data-loss",
