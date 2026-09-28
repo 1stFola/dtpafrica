@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PlaceholderPlayerNameError } from "../players/placeholder-names";
 import {
   addSquadMembersFromTimeline,
+  withoutTeamNames,
   missingFromSquad,
   squadCandidatesFrom,
   type SquadFromTimelineDeps,
@@ -117,6 +118,7 @@ function fakeDeps(over: {
   squad?: { teamId: string; displayName: string; playerId: string | null }[];
   existingByKey?: Record<string, string>;
   resolve?: (name: string) => Promise<{ id: string }>;
+  teamNames?: string[];
 } = {}) {
   const created: { teamId: string; displayName: string; shirtNumber: number | null }[] = [];
   const deps: SquadFromTimelineDeps = {
@@ -128,6 +130,9 @@ function fakeDeps(over: {
           created.push(data);
           return { id: `squad-${created.length}` };
         },
+      },
+      sbTeam: {
+        findMany: async () => (over.teamNames ?? []).map((name) => ({ name })),
       },
       player: {
         findUnique: async (args: unknown) => {
@@ -225,5 +230,73 @@ describe("adding the rows", () => {
     /* Not even a read: a publish whose labels are all numbers should cost nothing. */
     expect(findMany).not.toHaveBeenCalled();
     expect(result.rejected).toHaveLength(1);
+  });
+});
+
+describe("labels that are the club itself", () => {
+  /* All three were queued to join a squad as a player by the live dry run. The token
+     rules caught neither `Franceex United`, which has no abbreviation at all, nor
+     `Star To Be FA` before `FA` was added to them. Asking the database what its teams
+     are called is the rule that does not depend on guessing a suffix. */
+
+  it("refuses `Franceex United` by its UNITED token", () => {
+    /* The live case. It has no FC, FA or SC, which is why `UNITED` had to join the
+       markers -- read off the team list rather than guessed at. */
+    const { candidates, rejected } = squadCandidatesFrom([
+      event({ playerLabel: "Franceex United" }),
+    ]);
+    expect(candidates).toEqual([]);
+    expect(rejected).toMatchObject([{ reason: "team" }]);
+  });
+
+  it("refuses a team whose name carries no marker at all", () => {
+    /* What the token rules can never do. A club can be named anything, so the only
+       rule that does not depend on guessing a suffix is asking the database what its
+       teams are called. */
+    const candidates = squadCandidatesFrom([event({ playerLabel: "Rikay" })]).candidates;
+    expect(candidates).toHaveLength(1);
+    const split = withoutTeamNames(candidates, ["RIKAY", "Some Other FC"]);
+    expect(split.kept).toEqual([]);
+    expect(split.teams).toHaveLength(1);
+  });
+
+  it("matches a team name across casing and punctuation", () => {
+    const candidates = squadCandidatesFrom([event({ playerLabel: "wasola ven fc" })]).candidates;
+    /* The label went through the token rules first, so an `FC` name never reaches here
+       -- this asserts the key matching itself on a name that does. */
+    const split = withoutTeamNames(
+      [{ teamId: HOME, label: "Star To Be", name: "Star To Be", key: "star to be" }],
+      ["STAR TO BE!"]
+    );
+    expect(split.teams).toHaveLength(1);
+    void candidates;
+  });
+
+  it("keeps a player whose name merely resembles a team", () => {
+    const split = withoutTeamNames(
+      [{ teamId: HOME, label: "Henry Nwosu", name: "Henry Nwosu", key: "henry nwosu" }],
+      ["FRANCEEX UNITED"]
+    );
+    expect(split.kept).toHaveLength(1);
+    expect(split.teams).toEqual([]);
+  });
+
+  it("reports a marker-free team rather than adding it, through the whole path", async () => {
+    const { deps, created } = fakeDeps({ teamNames: ["Rikay"] });
+    const result = await addSquadMembersFromTimeline(deps, [
+      event({ playerLabel: "Rikay" }),
+      event({ playerLabel: "Real Person" }),
+    ]);
+    expect(created).toHaveLength(1);
+    expect(result.added).toMatchObject([{ name: "Real Person" }]);
+    expect(result.rejected).toMatchObject([{ name: "Rikay", reason: "is-a-team" }]);
+  });
+
+  it("refuses the FA academies the live list is full of", () => {
+    /* `FA` was left out of the markers on the reasoning that it was as likely somebody's
+       initials. Half these clubs are named Football Academy. */
+    for (const label of ["Star To Be FA", "ADHOC FA", "GALAXY SPORT FA"]) {
+      expect(squadCandidatesFrom([event({ playerLabel: label })]).candidates).toEqual([]);
+    }
   });
 });

@@ -98,8 +98,40 @@ export function hasDigit(name: string): boolean {
  */
 const CLUB_MARKERS = new Set(["FC", "AFC", "SC", "CF"]);
 
+/**
+ * Everything that marks a name as a club rather than a person.
+ *
+ * Wider than `CLUB_MARKERS`, and separate from it on purpose: these decide whether a
+ * name *is* a team, while `CLUB_MARKERS` decides which tokens must be written in
+ * capitals. `UNITED` belongs here and not there -- `Leads UNITED FC` would be a new
+ * mistake in place of the old one.
+ *
+ * **Read off the live team list, not guessed.** An earlier version of this left `FA`
+ * out on the reasoning that it was as likely somebody's initials. The directory is
+ * full of `ADHOC FA`, `AJUWA FA`, `BILDA FA`, `IGHALO FA`, `PANTHERS FA`,
+ * `GALAXY SPORT FA` -- Football Academy is how half these clubs are named -- and the
+ * consequence was `Star To Be FA` queued to join two squads as a player. The list was
+ * available to check and was not checked.
+ *
+ * `AC` is still out: no live team uses it, and it is a plausible pair of initials.
+ */
+const TEAM_MARKERS = new Set([
+  ...CLUB_MARKERS,
+  "FA",
+  "SA",
+  "LFC",
+  "UNITED",
+  "ACADEMY",
+  "ACADEMICAL",
+  "LADIES",
+  "QUEENS",
+  "SPORTS",
+  "ATHLETIC",
+  "ATHLETICS",
+]);
+
 export function looksLikeATeam(name: string): boolean {
-  return name.split(/\s+/).some((token) => CLUB_MARKERS.has(token.toUpperCase()));
+  return name.split(/\s+/).some((token) => TEAM_MARKERS.has(token.toUpperCase()));
 }
 
 /**
