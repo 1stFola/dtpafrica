@@ -20,6 +20,7 @@ import {
   videoEmbedUrl,
 } from "../../../utils/media-url";
 import { matchCenterPath } from "../../scoreboard/utils/matchPath";
+import { playerDisplayName } from "../../../lib/player-display-name";
 import {
   buildAttributeMap as buildProfileAttributeMap,
   buildPerformanceRadarScores,
@@ -1265,7 +1266,7 @@ function ScoreboardHistoryDashboard({
                 <span>{event.minute}&apos;</span>
                 <strong>{scoreboardHistoryEventLabel(event)}</strong>
                 <em>
-                  {event.playerLabel ? `${event.playerLabel} · ` : ""}
+                  {event.playerLabel ? `${playerDisplayName(event.playerLabel)} · ` : ""}
                   {event.match.homeTeam} vs {event.match.awayTeam} ·{" "}
                   {event.match.competitionName}
                   {event.matchedBy === "label" ? " · matched from timeline name" : ""}

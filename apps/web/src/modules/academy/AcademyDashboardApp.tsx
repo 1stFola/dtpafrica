@@ -14,6 +14,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { InfoTip } from "../../components/InfoTip";
 import { useAcademyAuth } from "./AcademyAuthContext";
 import { matchCenterPath } from "../scoreboard/utils/matchPath";
+import { playerDisplayName } from "../../lib/player-display-name";
 
 const navItems = [
   { id: "overview", label: "Dashboard" },
@@ -700,7 +701,7 @@ function MatchesSection({ fixtures }: { fixtures: AcademyFixture[] }) {
               {fixture.events.slice(0, 3).map((event) => (
                 <li key={event.id}>
                   {event.minute}' {titleCase(event.type)}
-                  {event.playerLabel ? ` · ${event.playerLabel}` : ""}
+                  {event.playerLabel ? ` · ${playerDisplayName(event.playerLabel)}` : ""}
                 </li>
               ))}
             </ul>

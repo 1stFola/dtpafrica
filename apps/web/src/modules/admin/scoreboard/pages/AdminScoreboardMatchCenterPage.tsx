@@ -18,6 +18,7 @@ import { FixtureFormModal } from "../components/FixtureFormModal";
 import { FriendlyFormModal } from "../components/FriendlyFormModal";
 import { QuickScoreUpdatePanel } from "../components/QuickScoreUpdatePanel";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
+import { playerDisplayName } from "../../../../lib/player-display-name";
 
 type TimelineEvent = Awaited<
   ReturnType<typeof adminScoreboardApi.listMatchEvents>
@@ -478,7 +479,7 @@ export function AdminScoreboardMatchCenterPage() {
                         {EVENT_LABELS[ev.type] ?? ev.type}
                       </span>
                       <span className="admin-sb-timeline-player muted">
-                        {ev.player?.displayName ?? ev.playerLabel ?? "—"}
+                        {ev.player?.displayName ?? playerDisplayName(ev.playerLabel) ?? "—"}
                         {ev.team ? ` · ${ev.team.name}` : ""}
                       </span>
                       <button
