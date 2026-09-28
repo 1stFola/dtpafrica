@@ -129,7 +129,13 @@ async function main() {
       console.log(
         `  ${p.matchLabel.slice(0, 40).padEnd(42)} ${String(p.minute).padStart(3)}' ${p.type}`
       );
-      console.log(`      No. ${p.number} → ${p.nowLabel}`);
+      /* Every column that changes, named. Printing only the scorer's label produced
+         lines like `No. 12 → No. 12` on live: the scorer's number resolved to nobody
+         and the real change was the assist on the same event. A review list that shows
+         a no-op where a write is planned is worse than no list.  */
+      for (const [column, value] of Object.entries(p.data)) {
+        console.log(`      ${column.padEnd(15)} → ${value}`);
+      }
     }
     if (fills.length > SHOWN) console.log(`  … and ${fills.length - SHOWN} more`);
   }
