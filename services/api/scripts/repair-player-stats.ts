@@ -104,13 +104,16 @@ async function main() {
   const plan = planCorrection(drift.rows);
 
   /* A second shortfall, of a different shape, and the reason it is computed here
-     rather than further down. Merging two records for one person moves the
-     competition rows to the survivor and deliberately not the career totals, then
-     deletes the record holding them. Afterwards the events and the competition
-     rows agree exactly -- so `plan` above is empty -- while the survivor's profile
-     is short. `Nwosu Henry` came out of the live merge with five goals in the RAK
-     BDFA League chart and zero on his profile. Computed after the early return
-     below, this would never run in the one case that needs it. */
+     rather than further down. A merge moves the competition rows to the survivor
+     and cannot move the career total, then deletes the record holding it.
+     Afterwards the events and the competition rows agree exactly -- so `plan`
+     above is empty -- while the survivor's profile is short. On live this had
+     happened to 20 players, 36 goals in total. Computed after the early return
+     below, this would never run in the one case that needs it.
+
+     `mergePlayerRecords` now closes the gap itself, by the same rule, as the rows
+     move. This pass remains for the merges made before it did, and as the standing
+     check that the invariant holds. */
   const careerRows = await prisma.player.findMany({
     select: { id: true, careerGoals: true, careerAssists: true },
   });
