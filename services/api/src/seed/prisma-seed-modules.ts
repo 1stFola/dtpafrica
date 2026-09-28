@@ -14,6 +14,8 @@ type LegacyPlayerSeedResult = {
   playerCount: number;
   academyLinkCount: number;
   sampleSlugs: string[];
+  /** Rows whose canonical dedupe key another record already holds. */
+  nameClashes: { slug: string; displayName: string; key: string; heldBy: string }[];
 };
 type SeedLegacyPlayersFn = (
   prisma: PrismaClient
