@@ -43,6 +43,7 @@ import { loadApiEnv } from "../src/shared/load-dotenv";
 import { isPlaceholderName } from "../src/players/placeholder-names";
 import {
   hasDigit,
+  looksLikeATeam,
   tidyPlayerName,
   tokenCorrections,
 } from "../src/players/tidy-player-name";
@@ -138,7 +139,14 @@ async function main() {
   console.log(`  ${blocked.length} blocked by another record holding the corrected key`);
 
   const withDigits = players.filter((p) => hasDigit(p.displayName));
-  console.log(`  ${withDigits.length} name(s) containing a digit\n`);
+  /* Teams in the player directory, counted apart from the digit names because they
+     are a different fault: a record that should not be a player at all, rather than
+     a player whose name was typed badly. */
+  const teams = players.filter(
+    (p) => looksLikeATeam(p.displayName) && !hasDigit(p.displayName)
+  );
+  console.log(`  ${withDigits.length} name(s) carrying a digit, left as found`);
+  console.log(`  ${teams.length} name(s) that look like a team, left as found\n`);
 
   /* Computed before the early return below, not after it. The copies can be stale
      while every Player row is already tidy -- which is the commonest shape this run
@@ -155,6 +163,7 @@ async function main() {
   if (!actionable.length && !blocked.length && !staleTotal) {
     console.log("Every display name is already tidy. Nothing to do.");
     if (withDigits.length) reportDigits(withDigits);
+    if (teams.length) reportTeams(teams);
     return;
   }
 
@@ -204,6 +213,7 @@ async function main() {
   }
 
   if (withDigits.length) reportDigits(withDigits);
+  if (teams.length) reportTeams(teams);
 
 
   console.log(
@@ -429,18 +439,40 @@ async function copies(playerId: string, name: string) {
   return { squad, matchSquad, labels: primary + secondary + assist };
 }
 
-function reportDigits(players: { displayName: string }[]) {
-  console.log(`\nNames containing a digit (${players.length})`);
+function reportTeams(teams: { displayName: string }[]) {
+  console.log(`\nNames that look like a team — left as they are (${teams.length})`);
   console.log("-".repeat(72));
   console.log(
-    "  A digit in a person's name is nearly always a typo, and no rule can guess the\n" +
-      "  letter it replaced. Any of these not already corrected needs a line in\n" +
-      "  REVIEWED_CORRECTIONS, added by somebody who can tell what the name should be.\n"
+    "  `FC`, `AFC`, `SC` or `CF` in a name means a club, not a person. `VIDO 99 FC`\n" +
+      "  is in the live directory, and title-casing it gave `Vido 99 Fc` — a rule\n" +
+      "  written for shouting names damaging one it had no business touching. A team\n" +
+      "  holding a player record collects goals like a player, so these want looking\n" +
+      "  at rather than tidying." + "\n"
+  );
+  for (const p of teams.slice(0, SHOWN)) console.log(`  ${p.displayName}`);
+  if (teams.length > SHOWN) console.log(`  … and ${teams.length - SHOWN} more`);
+}
+
+function reportDigits(players: { displayName: string }[]) {
+  console.log(`\nNames carrying a digit — left as they are (${players.length})`);
+  console.log("-".repeat(72));
+  console.log(
+    "  A digit means this record is not understood, so its casing is left exactly as\n" +
+      "  found. On live these are jersey numbers (`Jersey No. 35`), shirt numbers in\n" +
+      "  brackets (`Ademola James (19)`), teams (`Team360 FC`), and fields holding\n" +
+      "  several people at once. None is a person whose name wants tidying, and\n" +
+      "  prettifying one would make a broken record look deliberate." + "\n" +
+      "  A genuine typo — a letter replaced by a digit — needs a line in\n" +
+      "  REVIEWED_CORRECTIONS, written by somebody who can tell what the name should\n" +
+      "  be. That is the only thing that overrides this." + "\n"
   );
   for (const p of players.slice(0, 25)) {
     const to = tidyPlayerName(p.displayName);
+    /* Truncated, because one of these is five players in one field and ran off the
+       side of the terminal. The full string is in the database if it is needed. */
+    const shown = p.displayName.length > 46 ? `${p.displayName.slice(0, 45)}…` : p.displayName;
     console.log(
-      `  ${p.displayName.padEnd(30)} ${to !== p.displayName ? `-> ${to}` : "no correction written yet"}`
+      `  ${shown.padEnd(48)} ${to !== p.displayName ? `-> ${to}` : "left as found"}`
     );
   }
   if (players.length > 25) console.log(`  … and ${players.length - 25} more`);
