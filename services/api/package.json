@@ -33,6 +33,7 @@
     "vision:catalogcheck": "tsx scripts/vision-catalog-check.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
+    "db:sync:timeline-squad-numbers": "tsx scripts/sync-timeline-squad-numbers.ts",
     "db:dedupe:squad-members": "tsx scripts/dedupe-squad-members.ts",
     "db:report:duplicate-players": "tsx scripts/report-duplicate-players.ts",
     "db:merge:duplicate-players": "tsx scripts/merge-duplicate-players.ts",

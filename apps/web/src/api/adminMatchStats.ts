@@ -189,7 +189,21 @@ export type MatchStatsSheet = {
       updatedAt: string | null;
       audioUpdatedAt: string | null;
     };
+    /** The matchday squad, when one was entered for this fixture. */
     squadPlayers?: Array<{
+      teamId: string;
+      playerId: string | null;
+      playerName: string;
+      jerseyNumber: number | null;
+    }>;
+    /**
+     * Each team's standing squad, which is where the names actually are.
+     *
+     * Most fixtures have no matchday squad, and the console used to resolve a shirt
+     * number against that alone -- so a recorder typed 7 and the timeline read
+     * `No. 7` while the squad knew the name all along.
+     */
+    teamSquad?: Array<{
       teamId: string;
       playerId: string | null;
       playerName: string;

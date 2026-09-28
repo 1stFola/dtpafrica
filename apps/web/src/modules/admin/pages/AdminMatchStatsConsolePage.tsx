@@ -206,12 +206,29 @@ function playerLookupKey(teamId: string, jerseyNumber: number | null): string | 
   return jerseyNumber ? `${teamId}:${jerseyNumber}` : null;
 }
 
+/**
+ * Shirt number -> player, team squad first and matchday squad second.
+ *
+ * The same precedence the server applies in `squad-number-lookup.ts`, so the
+ * recorder sees while typing exactly the name that will be written on publish.
+ * This read `squadPlayers` alone -- the matchday squad -- and most fixtures have
+ * none, so every number showed as `No. 7`.
+ *
+ * The matchday entries are laid down first and the team squad written over them,
+ * which is what gives the team squad precedence in one pass.
+ */
 function matchSquadLookup(match: MatchStatsSheet["match"]) {
-  return new Map(
-    (match.squadPlayers ?? [])
-      .filter((player) => player.jerseyNumber != null)
-      .map((player) => [`${player.teamId}:${player.jerseyNumber}`, player])
-  );
+  const byNumber = new Map<
+    string,
+    { teamId: string; playerId: string | null; playerName: string; jerseyNumber: number | null }
+  >();
+  for (const source of [match.squadPlayers ?? [], match.teamSquad ?? []]) {
+    for (const player of source) {
+      if (player.jerseyNumber == null) continue;
+      byNumber.set(`${player.teamId}:${player.jerseyNumber}`, player);
+    }
+  }
+  return byNumber;
 }
 
 function playerLabelForNumber(
@@ -1212,13 +1229,13 @@ export function AdminMatchStatsConsolePage() {
   );
   const playerLabelsByKey = useMemo(() => {
     if (!sheet) return new Map<string, string>();
+    /* Built from the same lookup as everything else, so this list and the event
+       rows can never disagree about who wears a number. */
     return new Map(
-      (sheet.match.squadPlayers ?? [])
-        .filter((player) => player.jerseyNumber != null)
-        .map((player) => [
-          `${player.teamId}:${player.jerseyNumber}`,
-          `No. ${player.jerseyNumber} ${player.playerName}`,
-        ])
+      [...matchSquadLookup(sheet.match)].map(([key, player]) => [
+        key,
+        `No. ${player.jerseyNumber} ${player.playerName}`,
+      ])
     );
   }, [sheet]);
 
