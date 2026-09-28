@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import type { SbMatchGoal, SbMatchListItem } from "../../../api/scoreboard";
 import { matchCenterPath } from "../utils/matchPath";
 import { TeamCrest } from "./TeamCrest";
+import { playerDisplayName } from "../../../lib/player-display-name";
 
 type StatusKind = "live" | "ht" | "ft" | "scheduled" | "other";
 
@@ -37,7 +38,9 @@ function statusLabel(match: SbMatchListItem): string {
 }
 
 function scorerName(goal: SbMatchGoal): string {
-  return goal.player?.displayName ?? goal.playerLabel ?? "Unknown";
+  /* The stored label carries the shirt number the recorder typed; a scorer's name
+     is not `No. 11 EBULU EMMANUEL`. */
+  return goal.player?.displayName ?? playerDisplayName(goal.playerLabel) ?? "Unknown";
 }
 
 function normalizeLabel(value: string | null | undefined): string {

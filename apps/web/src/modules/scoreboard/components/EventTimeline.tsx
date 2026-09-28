@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { EVENT_LABELS, type SbMatchEvent, type SbTeamRef } from "../../../api/scoreboard";
+import { playerDisplayName } from "../../../lib/player-display-name";
 
 const EVENT_ICONS: Record<string, string> = {
   goal: "⚽",
@@ -127,11 +128,9 @@ function visiblePlayerLabel(name: string | null | undefined): string | null {
   return name.trim();
 }
 
+/** The shared rule, applied after this file's own check for a non-person. */
 function stripJerseyPrefix(label: string | null | undefined): string | null {
-  const value = visiblePlayerLabel(label);
-  if (!value) return null;
-  const match = value.match(/^No\.\s*\d+\s+(.+)$/i);
-  return match?.[1]?.trim() || value;
+  return playerDisplayName(visiblePlayerLabel(label));
 }
 
 function escapeRegExp(value: string): string {
