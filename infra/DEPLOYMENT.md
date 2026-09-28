@@ -19,6 +19,38 @@ Internet
   └── Postgres container   :5432 (Docker-internal only — never public)
 ```
 
+Postgres is a container **on the same box**, not a managed instance and not a
+separate host.
+
+### Which files are actually live
+
+There is more under `infra/` than the deployment uses, and reading the wrong file
+leads to commands that fail on the server. What runs:
+
+| | |
+|---|---|
+| `infra/ansible/playbook.yml` | the entry point — runs the `common`, `docker` and `deploy` roles, in that order |
+| `infra/ansible/roles/deploy/` | everything that matters: repo clone, env files, image pull, stack start, health checks |
+| `infra/docker-compose.staging.yml` | the live stack. Images come from ECR, tagged with the commit SHA |
+| `infra/api.Dockerfile`, `infra/web.Dockerfile` | what CI builds and pushes to ECR; also what `deploy.sh` (repo root) builds on the box for the manual path |
+| `infra/nginx.staging.conf` | baked into the web image; serves the React build and proxies `/api/` |
+| `infra/docker-compose.yml` | Postgres on its own, for local development. `deploy.sh` also starts it, which the CD path does not |
+
+**There is one deployed stack, and this is it.** Those three roles are all the
+playbook runs, and `docker-compose.staging.yml` is the file it deploys. Take the live
+invocations from the `deploy` role or from **Day-2 Operations** below.
+
+Two further Ansible roles, `app` and `db`, used to sit here unreferenced, describing
+a different shape: images built on the box, an `infra/.env.prod`, and Postgres on its
+own host. Nothing ran them, and one could not have run -- its env-file task templated
+a `.env.prod.j2` that was not in the role. They have been deleted, because reading
+them cost real time: commands built out of them point at
+`infra/docker-compose.prod.yml` and `infra/.env.prod`, neither of which exists on the
+server, and they fail with `couldn't find env file`.
+
+If a separate database host is ever wanted, that is new work rather than a dormant
+role to switch on. Nothing is waiting here to be enabled.
+
 ---
 
 ## One-Time Setup Checklist
@@ -359,23 +391,59 @@ sudo docker compose --env-file infra/.env.staging -f infra/docker-compose.stagin
   exec api pnpm --filter @dtp/api <script-name>
 ```
 
-These three report what they would do and write nothing until given `--apply`.
-It goes after a `--`, so pnpm passes it through rather than reading it itself:
+Or, shorter, straight at the container — no compose file, no env file, same result:
+
+```bash
+sudo docker exec dtp-staging-api-1 pnpm --filter @dtp/api <script-name>
+```
+
+Confirm the name first with `sudo docker ps --format '{{.Names}}\t{{.Image}}'`. That
+listing is also the quickest way to answer *"is my merge actually running?"* — the
+image tag is the commit SHA, so compare it against `git log --oneline -1`.
+
+**Read-only. No `--apply` exists, and running them changes nothing:**
+
+| | |
+|---|---|
+| `db:report:player-stat-drift` | Goals the events record that no profile shows, and career totals that fell behind their competition rows |
+| `db:report:duplicate-players` | Player records that are probably one person, with the evidence for each |
+
+**Dry run by default. Write only when given `--apply`,** which goes after a `--` so
+pnpm passes it through rather than reading it itself:
 
 | | |
 |---|---|
 | `db:repair:joemark-venues` | Fixes the JOEMARK fixtures' venues and scorer names |
+| `db:repair:player-lookup-keys` | Rebuilds the normalised name keys duplicate detection depends on |
+| `db:repair:player-stats` | Sets competition rows to what the events say, and credits the career totals that are short |
 | `db:sync:event-player-links` | Links goal and assist labels to player rows, and names the ones it cannot |
+| `db:dedupe:squad-members` | Removes one of two squad rows for the same person so their name resolves to one player again, and goals stop reaching nobody. Not a merge — split history stays split |
+| `db:merge:duplicate-players` | Merges duplicate player records, folding history onto the survivor |
 | `db:purge:gate-litter` | Removes rows the Vision gates left behind |
+| `db:purge:placeholder-players` | Removes records created from placeholder names like `Unknown` |
 
 ```bash
 ... exec api pnpm --filter @dtp/api db:repair:joemark-venues            # dry run
 ... exec api pnpm --filter @dtp/api db:repair:joemark-venues -- --apply # writes
 ```
 
-`db:repair:squad-duplicates` is the exception: it has no `--apply` and writes
-straight away, because it runs unattended on every container start from the
-`api.Dockerfile` CMD. There is no dry run to reach for.
+Check the header before trusting it. Every one of these prints either `APPLYING` or
+`dry run, pass --apply to …` at the top of its output. If the `--` is swallowed
+somewhere between your shell, docker and pnpm, the flag never reaches the script: it
+does a dry run instead and says so at the end, which is easy to skim past when you
+were expecting a write. The direct form avoids the question entirely:
+
+```bash
+... exec api pnpm --filter @dtp/api exec tsx scripts/repair-player-stats.ts --apply
+```
+
+**Run the report before the repair**, every time. The repairs list what they are
+about to touch and name the players; that list is the last chance to notice the tool
+has understood the data differently from you.
+
+`db:repair:squad-duplicates` is the exception to all of the above: it has no
+`--apply` and writes straight away, because it runs unattended on every container
+start from the `api.Dockerfile` CMD. There is no dry run to reach for.
 
 ### Manual database backup
 

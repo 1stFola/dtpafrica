@@ -145,6 +145,11 @@ pnpm --filter @dtp/api db:purge:gate-litter
 pnpm --filter @dtp/api db:purge:gate-litter -- --apply
 ```
 
+That form is for a local database. The rows this clears are on the live one, and
+there the host has no `node_modules` to run it with — it goes through the API
+container instead. See *Run a maintenance script* in
+[`infra/DEPLOYMENT.md`](../../infra/DEPLOYMENT.md).
+
 Its patterns live in a tested module of their own, because they are the only thing
 between the script and real data: a name qualifies only if it is *anchored* and ends
 in a gate's eight-hex run id, so `gold benchmark for Lagos 2027` survives while
