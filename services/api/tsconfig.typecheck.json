@@ -1,9 +1,15 @@
 {
   // Typechecking covers more than the deployed artifact does.
   //
-  // The Vision gate scripts are the evidence behind every increment gate, and they
-  // were never typechecked — a duplicate `const` in one got as far as running before
-  // esbuild complained. They belong in the typecheck.
+  // The scripts are the evidence behind every increment gate, and the tools that
+  // repair the production database. None of them were typechecked — a duplicate
+  // `const` in a gate script got as far as running before esbuild complained.
+  //
+  // This covered `scripts/vision-*.ts` only, which left the database tools out:
+  // the JOEMARK repair, the squad dedupe, the gate-litter purge, the event-player
+  // link sync and the duplicate-player report. Those are the ones that run against
+  // production, and an unterminated string in one of them reached the point of
+  // running before anything complained. `scripts/**/*` covers the lot.
   //
   // They deliberately do NOT go in tsconfig.build.json: that config emits the
   // production bundle, and putting test tooling in it would both ship the scripts
@@ -26,7 +32,7 @@
     "prisma/seed-scout-to-pro-international-tournament-2026.ts",
     "prisma/seed-scout-to-pro-international-tournament-2026-teams-fixtures.ts",
     "prisma/seed-dsl-league-2026.ts",
-    "scripts/vision-*.ts"
+    "scripts/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "prisma/seed.ts"]
 }
