@@ -55,7 +55,7 @@ export type SquadRejectionRow = {
   teamId: string;
   label: string;
   name: string;
-  reason: SquadNameRejection | "directory-refused" | "write-failed";
+  reason: SquadNameRejection | "is-a-team" | "directory-refused" | "write-failed";
 };
 
 /**
@@ -124,6 +124,32 @@ export function missingFromSquad(
   return candidates.filter((c) => !held.has(`${c.teamId}|${c.key}`));
 }
 
+/**
+ * Drop any candidate whose name is one of the competition's own team names.
+ *
+ * The token rules in `admitSquadName` catch `VIDO 99 FC` and `Star To Be FA`, but they
+ * cannot catch `Franceex United` -- which is a team in this database and was queued to
+ * join its own squad as a player. No list of suffixes was ever going to be enough,
+ * because a club can be named anything.
+ *
+ * The database already knows every team's name, so this asks it rather than guessing.
+ * Matched on the dedupe key, so casing and punctuation cannot slip a name past.
+ */
+export function withoutTeamNames(
+  candidates: SquadCandidate[],
+  teamNames: string[]
+) {
+  const keys = new Set(
+    teamNames.map((name) => playerLookupKey(name)).filter((key): key is string => Boolean(key))
+  );
+  const kept: SquadCandidate[] = [];
+  const teams: SquadCandidate[] = [];
+  for (const candidate of candidates) {
+    if (keys.has(candidate.key)) teams.push(candidate);
+    else kept.push(candidate);
+  }
+  return { kept, teams };
+}
 export type SquadFromTimelineDeps = {
   /** Only the calls this needs, so a test can supply a fake without a schema. */
   db: {
@@ -135,6 +161,9 @@ export type SquadFromTimelineDeps = {
     };
     player: {
       findUnique: (args: unknown) => Promise<{ id: string } | null>;
+    };
+    sbTeam: {
+      findMany: (args: unknown) => Promise<{ name: string }[]>;
     };
   };
   /** `PlayerDirectoryService.resolveOrCreatePlayer`, passed in rather than imported. */
@@ -160,11 +189,26 @@ export async function addSquadMembersFromTimeline(
   if (!candidates.length) return { added: [], rejected, alreadyInSquad: 0 };
 
   const teamIds = [...new Set(candidates.map((c) => c.teamId))];
+
+  /* Before anything else: a label that is one of this competition's team names is not
+     a person, whatever it looks like. `Franceex United` was queued to join its own
+     squad and no suffix rule would have stopped it. */
+  const allTeams = await deps.db.sbTeam.findMany({ select: { name: true } });
+  const split = withoutTeamNames(candidates, allTeams.map((t) => t.name));
+  for (const team of split.teams) {
+    rejected.push({
+      teamId: team.teamId,
+      label: team.label,
+      name: team.name,
+      reason: "is-a-team",
+    });
+  }
+
   const squad = await deps.db.sbTeamSquad.findMany({
     where: { teamId: { in: teamIds } },
     select: { teamId: true, displayName: true, playerId: true },
   });
-  const missing = missingFromSquad(candidates, squad);
+  const missing = missingFromSquad(split.kept, squad);
 
   const added: SquadAddition[] = [];
   for (const candidate of missing) {
@@ -214,5 +258,5 @@ export async function addSquadMembersFromTimeline(
     }
   }
 
-  return { added, rejected, alreadyInSquad: candidates.length - missing.length };
+  return { added, rejected, alreadyInSquad: split.kept.length - missing.length };
 }
