@@ -100,3 +100,76 @@ export function compareStats(
 }
 
 export const statKey = key;
+
+/**
+ * What a correction may and may not write.
+ *
+ * The two totals need opposite treatment, and the asymmetry is not fussiness.
+ *
+ * `SbPlayerCompetitionStats` is derived, so it is simply **set** to what the
+ * events say, in both directions. That corrects a surplus as readily as a
+ * shortfall, and needs no flag to be safe, because the events are the authority.
+ *
+ * `Player.careerGoals` is not derived, and the admin's player-merge writes the
+ * competition stats without touching it — so the two can legitimately disagree.
+ * A **positive** delta is safe to add: those goals were never credited anywhere,
+ * to anyone. A **negative** delta is refused: a competition stat above the events
+ * does not prove the career total is inflated too, and reducing it could erase the
+ * record a player entered about themselves at registration. Those are reported
+ * instead, which is also how the cause gets found.
+ *
+ * Appearances, minutes and clean sheets are never touched. They live on the same
+ * row and come from match rosters rather than events, so the row is updated field
+ * by field rather than replaced.
+ */
+export type StatCorrection = {
+  playerId: string;
+  competitionId: string;
+  /** What the derived row becomes. Goals and assists only. */
+  setGoals: number;
+  setAssists: number;
+  /** Added to the career total. Never negative. */
+  careerGoals: number;
+  careerAssists: number;
+};
+
+export type CorrectionPlan = {
+  corrections: StatCorrection[];
+  /** Career credit not applied because the delta was negative. */
+  declined: { playerId: string; competitionId: string; goals: number; assists: number }[];
+  totals: { rowsSet: number; careerGoalsAdded: number; careerAssistsAdded: number };
+};
+
+export function planCorrection(rows: DriftRow[]): CorrectionPlan {
+  const corrections: StatCorrection[] = [];
+  const declined: CorrectionPlan["declined"] = [];
+
+  for (const row of rows) {
+    corrections.push({
+      playerId: row.playerId,
+      competitionId: row.competitionId,
+      setGoals: row.fromEvents.goals,
+      setAssists: row.fromEvents.assists,
+      careerGoals: Math.max(0, row.missing.goals),
+      careerAssists: Math.max(0, row.missing.assists),
+    });
+    if (row.missing.goals < 0 || row.missing.assists < 0) {
+      declined.push({
+        playerId: row.playerId,
+        competitionId: row.competitionId,
+        goals: Math.min(0, row.missing.goals),
+        assists: Math.min(0, row.missing.assists),
+      });
+    }
+  }
+
+  return {
+    corrections,
+    declined,
+    totals: {
+      rowsSet: corrections.length,
+      careerGoalsAdded: corrections.reduce((n, c) => n + c.careerGoals, 0),
+      careerAssistsAdded: corrections.reduce((n, c) => n + c.careerAssists, 0),
+    },
+  };
+}
