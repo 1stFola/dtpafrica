@@ -192,22 +192,31 @@ async function main() {
       `career total(s) (+${corrected.careerGoals} goal(s), +${corrected.careerAssists} assist(s)).`
   );
 
-  /* Re-read rather than trust the writes. A number still unresolved after a run means
-     the lookup does not do what its tests say. */
-  const after = await prisma.sbMatchEvent.count({
-    where: { id: { in: planned.map((p: TimelineFix) => p.eventId) }, playerLabel: { startsWith: "No. " } },
-  });
-  const stillBare = await prisma.sbMatchEvent.findMany({
-    where: { id: { in: planned.map((p: TimelineFix) => p.eventId) } },
-    select: { playerLabel: true },
-  });
-  const bare = stillBare.filter((e) => /^No\.\s*\d+$/.test(e.playerLabel ?? "")).length;
-  console.log(`  events written that still read as a bare number: ${bare}`);
-  if (bare > 0) {
+  /* Re-read rather than trust the writes: a scorer's label still reading as a bare
+     number after this ran would mean the lookup does not do what its tests say.
+
+     Only the events whose fix set `playerLabel`, which is the correction this can
+     check. A fix that touched the assist alone leaves the scorer's label exactly as it
+     was -- deliberately, because that number resolved to nobody -- and an earlier
+     version of this check counted those as failures. It warned on 53 correct writes on
+     live and exited 1. A verification that cries wolf is worse than none: the next
+     real warning gets read as noise. */
+  const meantToSetLabel = planned.filter((p: TimelineFix) => p.data.playerLabel);
+  const stillBare = meantToSetLabel.length
+    ? await prisma.sbMatchEvent.findMany({
+        where: { id: { in: meantToSetLabel.map((p: TimelineFix) => p.eventId) } },
+        select: { id: true, playerLabel: true },
+      })
+    : [];
+  const bare = stillBare.filter((e) => /^No\.\s*\d+$/.test(e.playerLabel ?? ""));
+  console.log(
+    `  scorer label(s) this set that still read as a bare number: ${bare.length}` +
+      ` (of ${meantToSetLabel.length} set)`
+  );
+  if (bare.length) {
     console.log("  WARNING: expected zero. Re-run the dry run and look before doing more.");
     process.exitCode = 1;
   }
-  void after;
 }
 
 async function namesFor(ids: (string | null)[]) {
