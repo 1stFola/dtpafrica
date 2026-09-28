@@ -85,6 +85,90 @@ export class ScoreboardLifecycleService {
     });
   }
 
+  /**
+   * Take the credit back for events that are about to be deleted.
+   *
+   * `applyMatchEventToPlayerStats` only ever increments, and nothing used to
+   * decrement -- so deleting a goal left its credit behind for good. Re-importing
+   * one match timeline gave every scorer in it a phantom goal, twice gave them two,
+   * and on live that is the whole of the 1XCup surplus that
+   * `db:repair:player-stats` has to correct.
+   *
+   * Only an event whose credit was actually written can have it taken back, which
+   * is what `statsApplied` records. An event that never counted -- because it was
+   * recorded with no player on it, the commonest case here -- is skipped, or the
+   * deletion would invent a debt.
+   *
+   * Totals are floored at zero rather than decremented blindly. `careerGoals` also
+   * holds what a player entered about themselves at registration, and while taking
+   * back a credit this service granted is right, driving the number negative on the
+   * way is not.
+   */
+  async reverseMatchEventStats(
+    events: Pick<SbMatchEvent, "type" | "playerId" | "assistPlayerId" | "metadata">[],
+    competitionId: string
+  ) {
+    const deltas = new Map<string, PlayerStatDeltas>();
+    for (const event of events) {
+      const meta = (event.metadata ?? {}) as EventMetadata;
+      if (!meta.statsApplied) continue;
+      if ((event.type === "goal" || event.type === "goal_penalty") && event.playerId) {
+        this.mergeDeltas(deltas, event.playerId, { goals: 1, careerGoals: 1 });
+      }
+      if (event.type === "goal" && event.assistPlayerId) {
+        this.mergeDeltas(deltas, event.assistPlayerId, { assists: 1, careerAssists: 1 });
+      }
+    }
+    if (deltas.size === 0) return 0;
+
+    for (const [playerId, d] of deltas) {
+      const row = await this.prisma.sbPlayerCompetitionStats.findUnique({
+        where: { competitionId_playerId: { competitionId, playerId } },
+        select: { id: true, goals: true, assists: true },
+      });
+      if (row) {
+        await this.prisma.sbPlayerCompetitionStats.update({
+          where: { id: row.id },
+          data: {
+            goals: Math.max(0, row.goals - (d.goals ?? 0)),
+            assists: Math.max(0, row.assists - (d.assists ?? 0)),
+          },
+        });
+      }
+      const player = await this.prisma.player.findUnique({
+        where: { id: playerId },
+        select: { careerGoals: true, careerAssists: true },
+      });
+      if (player) {
+        await this.prisma.player.update({
+          where: { id: playerId },
+          data: {
+            careerGoals: Math.max(0, player.careerGoals - (d.careerGoals ?? 0)),
+            careerAssists: Math.max(0, player.careerAssists - (d.careerAssists ?? 0)),
+          },
+        });
+      }
+    }
+    return deltas.size;
+  }
+
+  /**
+   * Reverse every event on a match, by id, before they are deleted.
+   *
+   * The deleting call sites use `deleteMany`, which does not hand back the rows it
+   * removed, so the credit has to be taken back while they can still be read.
+   */
+  async reverseMatchEventStatsByFilter(
+    where: { matchId: string; metadata?: unknown },
+    competitionId: string
+  ) {
+    const events = await this.prisma.sbMatchEvent.findMany({
+      where: where as never,
+      select: { type: true, playerId: true, assistPlayerId: true, metadata: true },
+    });
+    return this.reverseMatchEventStats(events, competitionId);
+  }
+
   async onMatchFinished(matchId: string) {
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },

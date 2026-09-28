@@ -2942,8 +2942,12 @@ export class AdminScoreboardService {
   async deleteMatchEvent(matchId: string, eventId: string) {
     const event = await this.prisma.sbMatchEvent.findFirst({
       where: { id: eventId, matchId },
+      include: { match: { select: { competitionId: true } } },
     });
     if (!event) throw new NotFoundException("Event not found");
+    /* Before the row goes, or the goal it credited stays counted for good.
+       Nothing used to do this, and a deleted goal left a phantom behind. */
+    await this.lifecycle.reverseMatchEventStats([event], event.match.competitionId);
     await this.prisma.sbMatchEvent.delete({ where: { id: eventId } });
     return { ok: true };
   }

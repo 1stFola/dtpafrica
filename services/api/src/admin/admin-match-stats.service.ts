@@ -1270,6 +1270,15 @@ export class AdminMatchStatsService {
       delete nextMeta.penaltyShootout;
       delete nextMeta.regulationScore;
     }
+    /* Those cleared events keep their credit unless it is taken back first, and
+       `deleteMany` does not hand back what it removed -- so the reversal runs
+       before the writes, while the rows can still be read. Re-approving a sheet
+       used to leave every scorer on it a goal richer. */
+    await this.lifecycle.reverseMatchEventStatsByFilter(
+      { matchId, metadata: { path: ["source"], equals: "match_recorder" } },
+      match.competitionId
+    );
+
     const writes: Prisma.PrismaPromise<unknown>[] = [
       /* Re-approval must not duplicate the timeline, so this sheet's previously
          published events are cleared first. */
@@ -1404,6 +1413,11 @@ export class AdminMatchStatsService {
        sheet's state. The statistics merged into SbMatch.stats cannot be unwound
        the same way — they stay until a corrected sheet is approved over them. */
     if (wasApproved) {
+      // Same reason as above: withdraw the credit with the log.
+      await this.lifecycle.reverseMatchEventStatsByFilter(
+        { matchId, metadata: { path: ["source"], equals: "match_recorder" } },
+        match.competitionId
+      );
       await this.prisma.sbMatchEvent.deleteMany({
         where: { matchId, metadata: { path: ["source"], equals: "match_recorder" } },
       });
