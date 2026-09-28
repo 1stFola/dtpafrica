@@ -2228,6 +2228,13 @@ export class ScoreboardService {
       match.awayTeamId,
     ]);
 
+    /* This is the one that caused the live surplus. Re-importing a timeline wipes
+       every event on the match and writes fresh ones; the deleted goals kept their
+       credit and the new ones were credited again, so each re-import gave every
+       scorer in the match another phantom goal. Taken back here, outside the
+       transaction, because the reversal reads and writes through `this.prisma`. */
+    await this.lifecycle.reverseMatchEventStatsByFilter({ matchId }, match.competitionId);
+
     const createdEvents = await this.prisma.$transaction(async (tx) => {
       await tx.sbMatchEvent.deleteMany({ where: { matchId } });
 
