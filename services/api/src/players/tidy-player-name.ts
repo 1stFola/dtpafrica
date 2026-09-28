@@ -103,6 +103,28 @@ export function looksLikeATeam(name: string): boolean {
 }
 
 /**
+ * Put a club marker back into capitals after something lowercased it.
+ *
+ * This repairs damage already in the directory. An earlier version of this module
+ * title-cased `VIDO 99 FC` into `Vido 99 Fc`, and that ran on live before the guard
+ * above existed. Neither rule here would find it again — the digit rule skips it, and
+ * the casing rule ignores a name that already has lowercase in it — so without this
+ * the mangled spelling would simply stay.
+ *
+ * It repairs the marker and **not** the original form. `Vido 99 Fc` becomes
+ * `Vido 99 FC`, not `VIDO 99 FC`: nothing recorded that the name used to be in
+ * capitals, and the denormalised copies were realigned to the mangled spelling in the
+ * same run, so there is nowhere left to read it from. `FC` in capitals is the part
+ * that was actually wrong, and it is the part that can be put right.
+ */
+export function restoreClubMarkers(name: string): string {
+  return name
+    .split(" ")
+    .map((token) => (CLUB_MARKERS.has(token.toUpperCase()) ? token.toUpperCase() : token))
+    .join(" ");
+}
+
+/**
  * The per-token difference between a name and its corrected form.
  *
  * `firstName` and `lastName` hold the same words as `displayName` split in two, and a
@@ -153,8 +175,12 @@ export function tidyPlayerName(name: string): string {
 
      A **club marker** means it is a team. `VIDO 99 FC` is in the directory, and
      title-casing gave `Vido 99 Fc`. */
-  if (hasDigit(spaced)) return spaced;
-  if (looksLikeATeam(spaced)) return spaced;
+  /* Before either check, because a marker already lowercased by an earlier run is
+     damage to repair, and both checks below would otherwise walk straight past it. */
+  const marked = restoreClubMarkers(spaced);
 
-  return titleCaseShoutedName(spaced);
+  if (hasDigit(marked)) return marked;
+  if (looksLikeATeam(marked)) return marked;
+
+  return titleCaseShoutedName(marked);
 }
