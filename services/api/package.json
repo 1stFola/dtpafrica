@@ -15,6 +15,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "db:repair:squad-duplicates": "tsx scripts/repair-sb-team-squad-duplicates.ts",
     "db:repair:joemark-venues": "tsx scripts/repair-joemark-venues.ts",
+    "db:repair:player-lookup-keys": "tsx scripts/repair-player-lookup-keys.ts",
     "db:purge:gate-litter": "tsx scripts/purge-vision-gate-litter.ts",
     "db:push": "prisma db push --accept-data-loss",
     "calibrate": "pnpm --filter @dtp/engines build && tsx scripts/run-calibration.ts",
