@@ -24,6 +24,26 @@
  * is not the rewriting — it is deciding which rewrite would land on a key another
  * row already owns.
  *
+ * **Where the bad keys came from.** Three shapes, three causes, all now closed:
+ *
+ *   - **A hyphenated slug** (`yusuf-ajibola`) — the Scout To Pro seed wrote the
+ *     slug into this column.
+ *   - **Casing preserved** (`ADEBISI SEGUN`) — `seed-legacy-players` derived the
+ *     key with `normalizePlayerName`, which keeps the casing for display, instead
+ *     of `playerLookupKey`, which exists for exactly this comparison.
+ *   - **Null** — public registration, the players API, the admin calibration
+ *     import and the seed row each created players without setting the key at all.
+ *
+ * The first two are fixed in those files; the last is fixed by
+ * `src/players/player-identity.ts`, and `player-identity.spec.ts` fails the build
+ * if any of the three is reintroduced. This module exists to clean up what they
+ * left behind.
+ *
+ * This replaces `scripts/backfill-player-normalized-name.ts`, which did the same
+ * job one row at a time with a per-row `try/catch`. That has the ordering hazard
+ * `parkingKey` below describes: when two rows hold each other's keys, whichever is
+ * written first fails, and the script logs it and moves on with the job half done.
+ *
  * **What this does not do.** Two records for one person written in different word
  * orders — `Segun Adebisi` and `ADEBISI SEGUN` — have *different* canonical keys,
  * so both are repaired and both survive. Fixing the keys stops new duplicates being

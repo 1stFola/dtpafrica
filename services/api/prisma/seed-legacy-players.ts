@@ -159,7 +159,10 @@ function rowToPlayerData(
     firstName,
     lastName,
     displayName: row.full_name.trim(),
-    normalizedName: normalizePlayerName(row.full_name),
+    // `playerLookupKey`, not `normalizePlayerName`: the latter preserves casing
+    // for display, and using it here wrote keys like `ADEBISI SEGUN` that no
+    // lookup matches and the unique index cannot tell from `adebisi segun`.
+    normalizedName: playerLookupKey(row.full_name) || null,
     slug,
     dateOfBirth: new Date(row.date_of_birth),
     age: row.age ?? null,
