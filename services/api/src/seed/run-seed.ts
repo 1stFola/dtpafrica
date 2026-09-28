@@ -15,6 +15,7 @@ import { normalizePlayerAgeCategory } from "../players/age-category";
 import { syncPlayerAgeCategories } from "../../prisma/sync-player-age-categories";
 import { matchAcademyByClubName } from "../academy/academy-linking.util";
 import { syncTeamsToClubs } from "../academy/club-sync";
+import { playerIdentityFields } from "../players/player-identity";
 
 /**
  * Production use only by trusted admins via POST /api/v1/admin/database/seed.
@@ -299,7 +300,7 @@ export async function runDatabaseSeed(prisma: PrismaClient): Promise<SeedResult>
             id: SEED_PLAYER_ID,
             firstName: "ALLI",
             lastName: "SANNI",
-            displayName: "ALLI O. SANNI",
+            ...playerIdentityFields("ALLI O. SANNI"),
             slug: "alli-o-sanni",
             positionPrimary: "AM",
             positionFull: "ATTACKING MIDFIELDER",

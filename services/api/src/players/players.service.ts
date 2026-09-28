@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveUniquePlayerSlug } from "./player-slug";
 import { CreatePlayerDto } from "./dto/create-player.dto";
+import { playerIdentityFields } from "./player-identity";
 
 @Injectable()
 export class PlayersService {
@@ -36,7 +37,7 @@ export class PlayersService {
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
-        displayName,
+        ...playerIdentityFields(displayName),
         slug,
         positionPrimary: dto.positionPrimary,
         positionSecondary: dto.positionSecondary,

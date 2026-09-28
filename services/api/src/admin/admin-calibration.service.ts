@@ -28,6 +28,7 @@ import {
   CalibrationPlayerInfoDto,
   LegacyMatchMetricsDto,
 } from "./dto/calibration-player-info.dto";
+import { playerIdentityFields } from "../players/player-identity";
 
 type MetricsRecord = {
   minutesPlayed: number;
@@ -547,7 +548,7 @@ export class AdminCalibrationService {
       data: {
         firstName,
         lastName,
-        displayName: playerInfo.fullName.trim(),
+        ...playerIdentityFields(playerInfo.fullName),
         positionPrimary: playerInfo.position,
         positionFull: positionFullFromAbbreviation(playerInfo.position),
         dominantFoot: playerInfo.preferredFoot?.trim() || undefined,

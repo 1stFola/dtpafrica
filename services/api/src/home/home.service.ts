@@ -36,6 +36,7 @@ import {
   buildSeedByTeamSlug,
   presentAcademyListing,
 } from "../academy/academy-directory.util";
+import { playerIdentityFields } from "../players/player-identity";
 
 /** How many matched events the profile payload renders. */
 const SCOREBOARD_HISTORY_EVENT_LIMIT = 50;
@@ -327,7 +328,7 @@ export class HomeService {
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
-        displayName,
+        ...playerIdentityFields(displayName),
         positionPrimary: dto.positionPrimary,
         positionSecondary: dto.positionSecondary,
         nationality: dto.nationality,
