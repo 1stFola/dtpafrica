@@ -49,6 +49,7 @@ import {
   type RecordedEvent,
 } from "../admin/admin-match-stats.service";
 import { generateEventComments, type RecordedEventInput } from "../admin/match-event-comments";
+import { isPlaceholderName } from "../players/placeholder-names";
 
 const MATCH_INCLUDE = {
   homeTeam: {
@@ -1099,7 +1100,7 @@ export class ScoreboardService {
 
       for (const event of events) {
         const name = event.assistPlayer?.displayName ?? event.assistLabel?.trim();
-        if (!name) continue;
+        if (!name || isPlaceholderName(name)) continue;
         const playerId = event.assistPlayerId;
         const playerSlug = event.assistPlayer?.slug ?? slugifyPlayerName(name);
         const key = `${playerId ?? playerSlug}::${event.teamId ?? "free"}`;
@@ -1125,8 +1126,14 @@ export class ScoreboardService {
       });
 
       for (const event of events) {
+        /* A leader is a person. When an event has no player attached this falls
+           back to the label on it, which is right for a real name nobody has
+           linked yet -- and wrong for `Unknown`, `Player` or `No. 9`, which are
+           what somebody wrote when the scorer was not known. Those were ranking:
+           `Player` sat second in the Ex Internationals Cup with five goals and
+           `Unknown` fourth with four. */
         const name = event.player?.displayName ?? event.playerLabel?.trim();
-        if (!name) continue;
+        if (!name || isPlaceholderName(name)) continue;
         const playerId = event.playerId;
         const playerSlug = event.player?.slug ?? slugifyPlayerName(name);
         const key = `${playerId ?? playerSlug}::${event.teamId ?? "free"}`;
@@ -1180,6 +1187,8 @@ export class ScoreboardService {
           }
           const scorers = parseManualGoalScorersForMatch(match, meta.goalScorers);
           for (const scorer of scorers) {
+            // Same rule as the event path above: a leader is a person.
+            if (isPlaceholderName(scorer.name)) continue;
             const team = scorer.teamSide === "home" ? match.homeTeam : match.awayTeam;
             const teamId = scorer.teamSide === "home" ? match.homeTeamId : match.awayTeamId;
             const playerSlug = slugifyPlayerName(scorer.name);
