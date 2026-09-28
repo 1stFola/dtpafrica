@@ -10,6 +10,10 @@ import { isAllowedImageMediaUrl, normalizeVideoMediaUrl } from "../shared/media-
 import type { CreateAdminHighlightDto } from "./dto/create-admin-highlight.dto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  applyTimelineNumberFixes,
+  planTimelineNumberFixes,
+} from "../scoreboard/resolve-timeline-numbers";
 import { getRosterReadiness } from "../scoreboard/roster-guard";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { CompetitionEngineService } from "../scoreboard/competition-engine.service";
@@ -3039,6 +3043,53 @@ export class AdminScoreboardService {
     });
 
     this.statsCache = null;
+
+    /* The numbers this upload just brought in are what the timeline has been waiting
+       for. Events recorded as `No. 7` with nobody attached can now name a person, so
+       they are resolved here rather than leaving it to somebody to remember a script.
+
+       Scoped to this team's own season: `SbTeam` is per-competition, so a team row
+       already implies one season, and a shirt number uploaded today does not describe
+       who wore it two seasons ago.
+
+       Inside a try, because a CSV import must not fail over this. The squad rows are
+       already written and correct; an unresolved timeline is what
+       `db:sync:timeline-squad-numbers` is for. */
+    let timelineEventsResolved = 0;
+    try {
+      const matches = await this.prisma.sbMatch.findMany({
+        where: {
+          status: "finished",
+          OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
+          competition: { season: team.competition.season },
+        },
+        select: {
+          id: true,
+          homeTeamId: true,
+          awayTeamId: true,
+          homeTeam: { select: { name: true } },
+          awayTeam: { select: { name: true } },
+        },
+      });
+      const plan = await planTimelineNumberFixes(
+        this.prisma as never,
+        matches.map((m) => ({
+          id: m.id,
+          homeTeamId: m.homeTeamId,
+          awayTeamId: m.awayTeamId,
+          label: `${m.homeTeam.name} v ${m.awayTeam.name}`,
+        }))
+      );
+      /* Only the fill-ins. A re-attribution moves somebody's goal to somebody else and
+         is not something a CSV upload should do quietly -- those stay for
+         `db:sync:timeline-squad-numbers`, where they are listed and read first. */
+      const fills = plan.fixes.filter((fix) => !fix.reattribution);
+      const applied = await applyTimelineNumberFixes(this.prisma as never, fills);
+      timelineEventsResolved = applied.written;
+    } catch {
+      /* Left at zero. The import itself stands. */
+    }
+
     return {
       imported: created + updated,
       created,
@@ -3046,6 +3097,14 @@ export class AdminScoreboardService {
       warnings,
       teamId,
       competitionId: team.competitionId,
+      /**
+       * Timeline events whose shirt number now names a player.
+       *
+       * Reported so an operator can see the upload did more than add squad rows. The
+       * goals behind these still need crediting: `db:repair:player-stats` does that,
+       * and it is deliberately not done inside an HTTP upload.
+       */
+      timelineEventsResolved,
     };
   }
 
