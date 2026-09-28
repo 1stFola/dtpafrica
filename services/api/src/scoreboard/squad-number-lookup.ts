@@ -26,6 +26,8 @@
  * and if that cannot resolve it either the number is reported and left alone.
  */
 
+import { playerLookupKey } from "@dtp/engines";
+
 export type SquadRow = {
   teamId: string;
   number: number | null;
@@ -82,8 +84,18 @@ function indexOne(rows: SquadRow[], source: "team" | "matchday") {
     const first = held[0]!;
     /* Two rows for the same person are not an ambiguity. The squad can legitimately
        hold a player twice — that is what `db:dedupe:squad-members` exists for — and
-       refusing to resolve the number would punish the recorder for it. */
-    const distinct = new Set(held.map((r) => r.playerId ?? r.playerName.toLowerCase()));
+       refusing to resolve the number would punish the recorder for it.
+
+       Compared on the **name key** and not on `playerId ?? name`. That earlier
+       expression mixed two key spaces: a linked row keyed by uuid and an unlinked row
+       for the same person keyed by name could never match, so every number held by
+       one linked and one unlinked row read as two different people. On live that was
+       nine numbers in one fixture -- `SAMUEL OSBERT / Samuel Osbert`,
+       `Adeyemo Samson / ADEYEMO SAMSON` -- each a single player in two spellings, and
+       the comment above already said they should not count. */
+    const distinct = new Set(
+      held.map((r) => playerLookupKey(r.playerName) || r.playerName.toLowerCase())
+    );
     if (distinct.size > 1) {
       ambiguous.push({
         teamId: first.teamId,
@@ -93,7 +105,11 @@ function indexOne(rows: SquadRow[], source: "team" | "matchday") {
       });
       continue;
     }
-    resolved.set(k, first);
+    /* Among rows for one person, the linked one wins. Both names are equally correct,
+       but only a row with a `playerId` gets the goal onto a profile -- and the linked
+       row is also the one whose name the display-name tools have been tidying, so
+       `Samuel Osbert` beats `SAMUEL OSBERT` for free. */
+    resolved.set(k, held.find((r) => r.playerId) ?? first);
   }
 
   return { resolved, ambiguous };

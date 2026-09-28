@@ -218,3 +218,81 @@ describe("the timeline label", () => {
     expect(squadNumberLabel(undefined, null)).toBeNull();
   });
 });
+
+describe("one person in two spellings, one linked and one not", () => {
+  /* The live regression. After squad rows were added from timeline labels, nine numbers
+     in one fixture read as "worn by two different players" -- `SAMUEL OSBERT` beside
+     `Samuel Osbert`, `Adeyemo Samson` beside `ADEYEMO SAMSON`. Each is one player in two
+     spellings, and refusing to resolve their number then queued fifteen events to lose
+     the name they already had.
+
+     The cause was comparing `playerId ?? name`: a linked row keyed by uuid and an
+     unlinked row keyed by name can never match, whatever the name says. */
+
+  it("resolves a number held by a linked and an unlinked row for one person", () => {
+    const lookup = buildNumberLookup({
+      teamSquad: [
+        row({ number: 11, playerName: "SAMUEL OSBERT", playerId: null }),
+        row({ number: 11, playerName: "Samuel Osbert", playerId: "p-osbert" }),
+      ],
+      matchSquad: [],
+    });
+    expect(lookup.ambiguous).toEqual([]);
+    expect(lookup.find(HOME, 11)?.playerName).toBeTruthy();
+  });
+
+  it("prefers the linked row, so the goal reaches a profile", () => {
+    /* Both names are equally correct, but only a row with a `playerId` gets the goal
+       onto somebody's profile. Taking the first row instead left the event with a
+       shouting name and no link -- verified on a real database before this. The linked
+       row is also the one the display-name tools tidy, so `Samson Godwin` over
+       `SAMSON GODWIN` comes free. */
+    const lookup = buildNumberLookup({
+      teamSquad: [
+        row({ number: 3, playerName: "SAMSON GODWIN", playerId: null }),
+        row({ number: 3, playerName: "Samson Godwin", playerId: "p-godwin" }),
+      ],
+      matchSquad: [],
+    });
+    expect(lookup.find(HOME, 3)).toMatchObject({
+      playerName: "Samson Godwin",
+      playerId: "p-godwin",
+    });
+  });
+
+  it("takes the only row there is when none of them is linked", () => {
+    const lookup = buildNumberLookup({
+      teamSquad: [
+        row({ number: 6, playerName: "ADEYEMO SAMSON", playerId: null }),
+        row({ number: 6, playerName: "Adeyemo Samson", playerId: null }),
+      ],
+      matchSquad: [],
+    });
+    expect(lookup.find(HOME, 6)?.playerName).toBe("ADEYEMO SAMSON");
+    expect(lookup.ambiguous).toEqual([]);
+  });
+
+  it("still refuses a number two genuinely different people wear", () => {
+    // The protection that matters must survive the fix.
+    const lookup = buildNumberLookup({
+      teamSquad: [
+        row({ number: 7, playerName: "First Seven", playerId: "a" }),
+        row({ number: 7, playerName: "Second Seven", playerId: "b" }),
+      ],
+      matchSquad: [],
+    });
+    expect(lookup.find(HOME, 7)).toBeUndefined();
+    expect(lookup.ambiguous).toHaveLength(1);
+  });
+
+  it("ignores punctuation and accents when deciding they are one person", () => {
+    const lookup = buildNumberLookup({
+      teamSquad: [
+        row({ number: 9, playerName: "O'Brien Michael", playerId: null }),
+        row({ number: 9, playerName: "OBrien  Michael", playerId: "p-ob" }),
+      ],
+      matchSquad: [],
+    });
+    expect(lookup.ambiguous).toEqual([]);
+  });
+});

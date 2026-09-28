@@ -194,16 +194,21 @@ export async function planTimelineNumberFixes(
         plan.unresolved.push({ matchLabel: match.label, number, minute: event.minute });
       }
 
-      /* Only ever an improvement: a column is written when there is something better to
-         put in it, never to clear one. A number that resolves to nobody leaves the label
-         and the link exactly as they were, rather than blanking work done by hand. */
+      /* Only ever an improvement, and `squadNumberLabel` alone does not guarantee that:
+         handed nobody it returns a bare `No. 11`, which is non-null and therefore passed
+         the old check -- so an event already reading `No. 11 Samuel Osbert` was queued to
+         be overwritten with `No. 11`, deleting the name. Fifteen events on live were
+         about to lose one.
+
+         So a label is written only when a player actually resolved. A number that
+         resolves to nobody leaves the label and the link exactly as they were. */
       const data: Record<string, string | null> = {};
-      const wantLabel = squadNumberLabel(primary, number);
+      const wantLabel = primary ? squadNumberLabel(primary, number) : null;
       if (wantLabel && wantLabel !== event.playerLabel) data.playerLabel = wantLabel;
       if (primary?.playerId && primary.playerId !== event.playerId) {
         data.playerId = primary.playerId;
       }
-      const wantLabel2 = squadNumberLabel(secondary, secondaryNumber);
+      const wantLabel2 = secondary ? squadNumberLabel(secondary, secondaryNumber) : null;
       if (wantLabel2 && wantLabel2 !== event.playerLabel2) data.playerLabel2 = wantLabel2;
       if (ASSIST_TYPES.includes(event.type)) {
         if (wantLabel2 && wantLabel2 !== event.assistLabel) data.assistLabel = wantLabel2;
