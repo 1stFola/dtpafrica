@@ -173,3 +173,79 @@ export function planCorrection(rows: DriftRow[]): CorrectionPlan {
     },
   };
 }
+
+/**
+ * The career total against the competition rows beneath it.
+ *
+ * A second, different comparison from the one above, and it exists because merging
+ * two duplicate records creates a gap the first one cannot see.
+ *
+ * `mergePlayerRecords` adds the folded record's competition stats to the survivor
+ * and deliberately leaves career totals alone — they mix what a player entered at
+ * registration with the platform's increments, and adding one record's to
+ * another's would double the self-reported part. Then the source row is deleted,
+ * and its career goals go with it. Afterwards the events and the competition rows
+ * agree perfectly, so `compareStats` reports nothing, while the survivor's profile
+ * is short. On live, `Nwosu Henry` came out of the merge with five goals in the RAK
+ * BDFA League chart and zero on his profile.
+ *
+ * `career` must be the figure *after* `planCorrection` has been applied — see
+ * `projectCareerAfter`. Pass the figure as read from the database and every
+ * shortfall the competition pass is already fixing is found again here, and
+ * credited twice.
+ *
+ * Only a **shortfall** is actionable. A career total *above* the competition rows
+ * is the normal, expected case — it is the career a player typed in before they
+ * ever played a match here — so it is left alone and not even reported as a
+ * problem.
+ */
+/**
+ * The career total as it will stand once `planCorrection` has been applied.
+ *
+ * Both passes credit the career total, and without this they credit the same goal
+ * twice. `planCorrection` adds the competition shortfall to the career figure as it
+ * sets the derived row; comparing the career figure *as read* against the events
+ * would then find the very same shortfall a second time. `Wasiu Yayah` had nine
+ * goals in the events and a career total of zero: the competition pass takes him to
+ * nine, and a top-up measured against the pre-correction zero would take him to
+ * eighteen.
+ *
+ * So the top-up is measured against the projection, and what it finds is only what
+ * the competition pass cannot reach — which is the merge gap, and nothing else.
+ */
+export function projectCareerAfter(
+  career: Map<string, StatPair>,
+  corrections: StatCorrection[]
+): Map<string, StatPair> {
+  const projected = new Map<string, StatPair>();
+  for (const [playerId, held] of career) projected.set(playerId, { ...held });
+  for (const c of corrections) {
+    const held = projected.get(c.playerId) ?? { goals: 0, assists: 0 };
+    projected.set(c.playerId, {
+      goals: held.goals + c.careerGoals,
+      assists: held.assists + c.careerAssists,
+    });
+  }
+  return projected;
+}
+export type CareerTopUp = { playerId: string; goals: number; assists: number };
+
+export function planCareerTopUp(
+  career: Map<string, StatPair>,
+  fromCompetitions: Map<string, StatPair>
+): { topUps: CareerTopUp[]; totals: { goals: number; assists: number } } {
+  const topUps: CareerTopUp[] = [];
+  for (const [playerId, competitions] of fromCompetitions) {
+    const held = career.get(playerId) ?? { goals: 0, assists: 0 };
+    const goals = Math.max(0, competitions.goals - held.goals);
+    const assists = Math.max(0, competitions.assists - held.assists);
+    if (goals || assists) topUps.push({ playerId, goals, assists });
+  }
+  return {
+    topUps,
+    totals: {
+      goals: topUps.reduce((n, t) => n + t.goals, 0),
+      assists: topUps.reduce((n, t) => n + t.assists, 0),
+    },
+  };
+}

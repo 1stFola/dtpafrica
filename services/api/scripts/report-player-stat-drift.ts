@@ -23,7 +23,14 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
-import { compareStats, statKey, type StatPair } from "./player-stat-drift";
+import {
+  compareStats,
+  planCareerTopUp,
+  planCorrection,
+  projectCareerAfter,
+  statKey,
+  type StatPair,
+} from "./player-stat-drift";
 
 loadApiEnv();
 
@@ -59,6 +66,7 @@ async function main() {
     },
   });
 
+  const SEP = statKey("", "").slice(0, 1);
   const fromEvents = new Map<string, StatPair>();
   let applied = 0;
   let unapplied = 0;
@@ -153,6 +161,62 @@ async function main() {
       console.log(
         `    ${(p?.displayName ?? row.playerId).padEnd(26)} stored ${row.stored.goals}g/${row.stored.assists}a` +
           `  events ${row.fromEvents.goals}g/${row.fromEvents.assists}a  ${comps.get(row.competitionId) ?? ""}`
+      );
+    }
+  }
+
+  /* Second pass, and a different comparison. Merging two duplicate records moves
+     the competition rows to the survivor and deliberately not the career totals,
+     then deletes the record holding them -- so afterwards the events and the
+     competition rows agree while the profile is short. The pass above cannot see
+     that, because it only ever compares those two. */
+  const careerRows = await prisma.player.findMany({
+    select: { id: true, careerGoals: true, careerAssists: true },
+  });
+  const career = new Map(
+    careerRows.map((p) => [p.id, { goals: p.careerGoals ?? 0, assists: p.careerAssists ?? 0 }])
+  );
+  /* Folded from the events rather than the stored rows, so a row that is ahead of
+     the events does not raise a career total to match a surplus nobody has
+     explained. See the section above for why those are reported, not corrected. */
+  const perPlayer = new Map<string, StatPair>();
+  for (const [k, v] of fromEvents) {
+    const pid = k.split(SEP)[0]!;
+    const row = perPlayer.get(pid) ?? { goals: 0, assists: 0 };
+    row.goals += v.goals;
+    row.assists += v.assists;
+    perPlayer.set(pid, row);
+  }
+  /* Against the career total as it would stand after the correction above, not as
+     it reads now. The competition pass credits the career total as it sets each
+     row, so measuring against the figure as read would report the same shortfall
+     in both sections and make the repair look like it owed twice. */
+  const topUp = planCareerTopUp(
+    projectCareerAfter(career, planCorrection(drift.rows).corrections),
+    perPlayer
+  );
+
+  console.log("\nCareer totals behind their own competition rows");
+  console.log("-".repeat(64));
+  console.log(
+    `  ${topUp.topUps.length} player(s) short by ${topUp.totals.goals} goal(s) and ` +
+      `${topUp.totals.assists} assist(s)`
+  );
+  if (topUp.topUps.length) {
+    console.log(
+      "\n  A merge moves the competition rows and leaves the career total behind, so\n" +
+        "  the profile under-reports while every other check reads clean.\n"
+    );
+    const named = await prisma.player.findMany({
+      where: { id: { in: topUp.topUps.slice(0, 20).map((t) => t.playerId) } },
+      select: { id: true, displayName: true, careerGoals: true },
+    });
+    const byId = new Map(named.map((n) => [n.id, n]));
+    for (const t of topUp.topUps.slice(0, 20)) {
+      const pl = byId.get(t.playerId);
+      console.log(
+        `    ${(pl?.displayName ?? t.playerId).padEnd(26)} profile shows ${pl?.careerGoals ?? "?"}, ` +
+          `competition rows total ${(pl?.careerGoals ?? 0) + t.goals}`
       );
     }
   }
