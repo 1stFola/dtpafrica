@@ -196,6 +196,8 @@ export type LegacyPlayerSeedResult = {
   playerCount: number;
   academyLinkCount: number;
   sampleSlugs: string[];
+  /** Rows whose canonical dedupe key another record already holds. */
+  nameClashes: { slug: string; displayName: string; key: string; heldBy: string }[];
 };
 
 function incrementalPlayerUpdate(
@@ -223,6 +225,9 @@ export async function seedLegacyPlayers(prisma: PrismaClient): Promise<LegacyPla
   let academyLinkCount = 0;
   const sampleSlugs: string[] = [];
 
+  /** Rows whose canonical key another record already owns. Reported, not resolved. */
+  const nameClashes: { slug: string; displayName: string; key: string; heldBy: string }[] = [];
+
   for (const row of LEGACY_PLAYER_ROWS) {
     const slug = resolveSlug(row);
     const academySlug = resolveAcademySlug(row.current_club);
@@ -231,10 +236,44 @@ export async function seedLegacyPlayers(prisma: PrismaClient): Promise<LegacyPla
 
     const data = rowToPlayerData(row, academyId);
 
+    /* The dedupe key is unique, and a *different* record may already hold the
+       one this row normalises to. That happens when this player was seeded
+       under a casing-preserving key, something later failed to match it, and a
+       second record was created with a `-1` slug — the duplicate pairs
+       `db:report:duplicate-players` lists.
+
+       Writing the key anyway fails the unique index and takes the whole seed
+       down with it, which is what happened when this file started deriving the
+       key correctly. Resolving it would mean deciding which record is the real
+       person, and a seed is the wrong place to decide that. So the row is
+       seeded without touching the key, and the clash is reported. */
+    const keyHolder = data.normalizedName
+      ? await prisma.player.findUnique({
+          where: { normalizedName: data.normalizedName },
+          select: { slug: true, displayName: true },
+        })
+      : null;
+    const keyTaken = Boolean(keyHolder && keyHolder.slug !== slug);
+
+    if (keyTaken) {
+      nameClashes.push({
+        slug,
+        displayName: data.displayName,
+        key: data.normalizedName!,
+        heldBy: keyHolder!.slug,
+      });
+    }
+
+    const { normalizedName: _key, ...withoutKey } = data;
+    const createData = keyTaken ? withoutKey : data;
+    const updateData = keyTaken
+      ? (({ normalizedName: _drop, ...rest }) => rest)(incrementalPlayerUpdate(data))
+      : incrementalPlayerUpdate(data);
+
     await prisma.player.upsert({
       where: { slug },
-      create: data,
-      update: incrementalPlayerUpdate(data),
+      create: createData as typeof data,
+      update: updateData,
     });
 
     if (sampleSlugs.length < 8) sampleSlugs.push(slug);
@@ -243,9 +282,21 @@ export async function seedLegacyPlayers(prisma: PrismaClient): Promise<LegacyPla
     );
   }
 
+  if (nameClashes.length) {
+    console.log(
+      `  ${nameClashes.length} legacy player(s) left with their existing dedupe key: ` +
+        "another record already holds the canonical one"
+    );
+    for (const c of nameClashes.slice(0, 10)) {
+      console.log(`    ${c.displayName} (/${c.slug}) — "${c.key}" is held by /${c.heldBy}`);
+    }
+    console.log("    Run db:report:duplicate-players to see which records these are.");
+  }
+
   return {
     playerCount: LEGACY_PLAYER_ROWS.length,
     academyLinkCount,
     sampleSlugs,
+    nameClashes,
   };
 }
