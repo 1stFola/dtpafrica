@@ -5,6 +5,7 @@ import {
   REVIEWED_CORRECTIONS,
   hasDigit,
   tidyPlayerName,
+  looksLikeATeam,
   titleCaseShoutedName,
   tokenCorrections,
 } from "./tidy-player-name";
@@ -207,5 +208,60 @@ describe("carrying a correction into firstName and lastName", () => {
     for (const [from, to] of Object.entries(REVIEWED_CORRECTIONS)) {
       expect(tokenCorrections(from, to).size).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("records that are not a person, taken from the live directory", () => {
+  /* Every string here is one the live dry run printed. The first version of this
+     module title-cased `VIDO 99 FC` into `Vido 99 Fc` -- a rule written for
+     `NWOSU HENRY` damaging a name it had no business touching. Guessed examples
+     would not have caught that; the report did. */
+
+  it("does not lowercase FC into a word", () => {
+    expect(tidyPlayerName("VIDO 99 FC")).toBe("VIDO 99 FC");
+    expect(tidyPlayerName("VIDO 99 FC")).not.toBe("Vido 99 Fc");
+  });
+
+  it("recognises a club marker wherever it sits", () => {
+    expect(looksLikeATeam("VIDO 99 FC")).toBe(true);
+    expect(looksLikeATeam("FC Ogunlade")).toBe(true);
+    expect(looksLikeATeam("WIKKI TOURISTS AFC")).toBe(true);
+    expect(looksLikeATeam("Nwosu Henry")).toBe(false);
+  });
+
+  it("leaves a shouting team name alone rather than prettifying it", () => {
+    /* No digit to catch it, so the club marker is what does. A team in the player
+       directory is a record to look at, not to tidy. */
+    expect(tidyPlayerName("WIKKI TOURISTS FC")).toBe("WIKKI TOURISTS FC");
+  });
+
+  it("leaves a jersey number alone", () => {
+    for (const name of ["Jersey No. 35", "Jersey No. 6", "Ayila No.7", "FC Ogunlade No. 15"]) {
+      expect(tidyPlayerName(name)).toBe(name);
+    }
+  });
+
+  it("leaves a name carrying a shirt number in brackets alone", () => {
+    expect(tidyPlayerName("Ademola James (19)")).toBe("Ademola James (19)");
+  });
+
+  it("leaves a field holding several people alone", () => {
+    /* One live record's entire name. Five players in one field is a data-entry
+       fault, and re-casing it would make it look deliberate. */
+    const many = "Papi Emeka (10), Benjamin Aga (14), Paul Otto (13)";
+    expect(tidyPlayerName(many)).toBe(many);
+    expect(tidyPlayerName("Abdullah Shaubu (7) & Adebayo David (17)")).toBe(
+      "Abdullah Shaubu (7) & Adebayo David (17)"
+    );
+  });
+
+  it("still applies a reviewed correction to a name with a digit in it", () => {
+    /* Otherwise the digit rule would block the one typo we actually know how to fix. */
+    expect(tidyPlayerName("Emmanuel Jac9b")).toBe("Emmanuel Jacob");
+  });
+
+  it("still collapses whitespace in a name it declines to re-case", () => {
+    // Safe whatever the record turns out to be, and it costs nothing to leave tidy.
+    expect(tidyPlayerName("Jersey  No. 35")).toBe("Jersey No. 35");
   });
 });
