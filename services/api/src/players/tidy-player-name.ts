@@ -79,9 +79,27 @@ export const REVIEWED_CORRECTIONS: Readonly<Record<string, string>> = {
   "Emmanuel Jac9b": "Emmanuel Jacob",
 };
 
-/** Whether a name carries a digit, which in a person's name is nearly always a typo. */
+/** Whether a name carries a digit. */
 export function hasDigit(name: string): boolean {
   return /\p{N}/u.test(name);
+}
+
+/**
+ * Club markers, which mean the record is a team rather than a person.
+ *
+ * `VIDO 99 FC` is in the live player directory, and title-casing it produced
+ * `Vido 99 Fc` — a rule meant for `NWOSU HENRY` quietly damaging a name it had no
+ * business touching. `FC` is not a word and must not be lowercased into one.
+ *
+ * Kept to the tokens that are unambiguously club suffixes. `AC` and `FA` are left out
+ * because they are as likely to be somebody's initials, and the cost of a false
+ * positive here is only that a shouting name stays shouting and gets reported, which
+ * is the failure worth having.
+ */
+const CLUB_MARKERS = new Set(["FC", "AFC", "SC", "CF"]);
+
+export function looksLikeATeam(name: string): boolean {
+  return name.split(/\s+/).some((token) => CLUB_MARKERS.has(token.toUpperCase()));
 }
 
 /**
@@ -121,5 +139,22 @@ export function tidyPlayerName(name: string): string {
   const spaced = normalizePlayerName(name);
   const corrected = REVIEWED_CORRECTIONS[spaced];
   if (corrected) return corrected;
+
+  /* Two kinds of name this declines to re-case, both learned from the live directory
+     rather than imagined. Whitespace is still collapsed — that is safe whatever the
+     record turns out to be — but the casing is left exactly as found.
+
+     A **digit** means the record is not understood. Live holds `Jersey No. 35`,
+     `Ademola James (19)`, `Ayila No.7`, `Team360 FC`, and one whose whole name is
+     `Papi Emeka (10), Benjamin Aga (14), Paul Otto (13), …` — five people in one
+     field. None of those is a person whose name wants tidying, and prettifying them
+     would make a broken record look deliberate. A reviewed correction above still
+     applies, which is how `Emmanuel Jac9b` is fixed despite its 9.
+
+     A **club marker** means it is a team. `VIDO 99 FC` is in the directory, and
+     title-casing gave `Vido 99 Fc`. */
+  if (hasDigit(spaced)) return spaced;
+  if (looksLikeATeam(spaced)) return spaced;
+
   return titleCaseShoutedName(spaced);
 }
