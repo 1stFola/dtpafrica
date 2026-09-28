@@ -6,6 +6,7 @@ import {
   hasDigit,
   tidyPlayerName,
   looksLikeATeam,
+  restoreClubMarkers,
   titleCaseShoutedName,
   tokenCorrections,
 } from "./tidy-player-name";
@@ -263,5 +264,53 @@ describe("records that are not a person, taken from the live directory", () => {
   it("still collapses whitespace in a name it declines to re-case", () => {
     // Safe whatever the record turns out to be, and it costs nothing to leave tidy.
     expect(tidyPlayerName("Jersey  No. 35")).toBe("Jersey No. 35");
+  });
+});
+
+describe("repairing a club marker an earlier run lowercased", () => {
+  /* This is damage in the live directory, not a hypothetical. An earlier version of
+     this module title-cased `VIDO 99 FC` into `Vido 99 Fc` and that ran on live
+     before the guard existed. Neither rule finds it again -- the digit rule skips it,
+     the casing rule ignores a name with lowercase in it -- so it needed its own
+     repair or it would simply have stayed. */
+
+  it("puts the marker back into capitals", () => {
+    expect(restoreClubMarkers("Vido 99 Fc")).toBe("Vido 99 FC");
+    expect(restoreClubMarkers("Wikki Tourists Afc")).toBe("Wikki Tourists AFC");
+    expect(restoreClubMarkers("Remo Stars Sc")).toBe("Remo Stars SC");
+  });
+
+  it("repairs the live record through tidyPlayerName", () => {
+    expect(tidyPlayerName("Vido 99 Fc")).toBe("Vido 99 FC");
+  });
+
+  it("repairs a mangled team name that has no digit to catch it", () => {
+    /* The ones I cannot see in the live report: an all-capitals team name without a
+       digit was tidied into `... Fc` and sits among the 543 renames indistinguishable
+       from a person. This is what finds them. */
+    expect(tidyPlayerName("Wikki Tourists Fc")).toBe("Wikki Tourists FC");
+  });
+
+  it("does not pretend to restore the original capitals", () => {
+    /* Nothing recorded that it used to be `VIDO 99 FC`, and the denormalised copies
+       were realigned to the mangled spelling in the same run, so there is nowhere to
+       read it from. The marker is the part that was wrong and the part that is fixed. */
+    expect(tidyPlayerName("Vido 99 Fc")).not.toBe("VIDO 99 FC");
+  });
+
+  it("leaves an untouched team name exactly as it is", () => {
+    expect(tidyPlayerName("VIDO 99 FC")).toBe("VIDO 99 FC");
+    expect(tidyPlayerName("WIKKI TOURISTS FC")).toBe("WIKKI TOURISTS FC");
+  });
+
+  it("leaves a person's name alone, having no marker in it", () => {
+    for (const name of ["Nwosu Henry", "Emmanuel Jacob", "Al-Hassan Isaiku"]) {
+      expect(restoreClubMarkers(name)).toBe(name);
+    }
+  });
+
+  it("is idempotent, so a second run finds nothing", () => {
+    const once = tidyPlayerName("Vido 99 Fc");
+    expect(tidyPlayerName(once)).toBe(once);
   });
 });
