@@ -3,6 +3,7 @@ import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
+import { PlaceholderPlayerNameError, isPlaceholderName } from "../players/placeholder-names";
 
 function splitDisplayName(displayName: string) {
   const parts = displayName.trim().split(/\s+/);
@@ -25,6 +26,14 @@ export class PlayerDirectoryService {
     const key = playerLookupKey(normalized);
     if (!key) {
       throw new Error("Player name is required");
+    }
+    /* `Unknown`, `Player`, `No. 9` describe what was known when the sheet was
+       filled in, not who was on the pitch. Made into player records they collect
+       goals and climb the scoring charts -- on live, `Player` is second in the Ex
+       Internationals Cup. The timeline sync has always refused them; this path
+       never did, which is where those records came from. */
+    if (isPlaceholderName(normalized)) {
+      throw new PlaceholderPlayerNameError(displayName);
     }
 
     const byKey = await this.prisma.player.findUnique({

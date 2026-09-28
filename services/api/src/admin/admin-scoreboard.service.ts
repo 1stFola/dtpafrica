@@ -53,6 +53,7 @@ import {
   readLiveFeature,
   scoreFromEvents,
 } from "./admin-match-stats.service";
+import { PlaceholderPlayerNameError } from "../players/placeholder-names";
 
 const SCOREBOARD_TIMEZONE = "Africa/Lagos";
 const DEFAULT_FORMATION = "4-3-3";
@@ -2495,10 +2496,19 @@ export class AdminScoreboardService {
       if (squad?.playerId) {
         return { ...slot, playerId: squad.playerId };
       }
-      const player = await this.playerDirectory.resolveOrCreatePlayer(
-        slot.displayName,
-        slot.position ?? squad?.position
-      );
+      let player;
+      try {
+        player = await this.playerDirectory.resolveOrCreatePlayer(
+          slot.displayName,
+          slot.position ?? squad?.position
+        );
+      } catch (error) {
+        /* An unnamed slot stays unnamed. Refusing the whole roster over one would
+           be worse than the slot carrying a label and no player -- which is the
+           same state every `Unknown` on a timeline is already in. */
+        if (error instanceof PlaceholderPlayerNameError) return slot;
+        throw error;
+      }
       await this.prisma.sbTeamSquad.update({
         where: { id: slot.squadId },
         data: { playerId: player.id },
@@ -3142,10 +3152,26 @@ export class AdminScoreboardService {
     // Resolve (or create draft) players. Idempotent, so safe outside the
     // transaction: a later failure leaves at most reusable draft players.
     const resolved: Array<SquadCsvRow & { playerId: string }> = [];
+    const placeholderRows: string[] = [];
     for (const row of rows) {
-      const player = await this.playerDirectory.resolveOrCreatePlayer(row.displayName, row.position);
-      resolved.push({ ...row, playerId: player.id });
+      try {
+        const player = await this.playerDirectory.resolveOrCreatePlayer(
+          row.displayName,
+          row.position
+        );
+        resolved.push({ ...row, playerId: player.id });
+      } catch (error) {
+        /* A squad list naming somebody `Unknown` is bad data, and the import
+           already knows how to report a bad row. Better here than a phantom in
+           the scoring charts a season later. */
+        if (error instanceof PlaceholderPlayerNameError) {
+          placeholderRows.push(`line ${row.line}: ${error.message}`);
+          continue;
+        }
+        throw error;
+      }
     }
+    if (placeholderRows.length) throw squadImportRejected(placeholderRows);
 
     // Re-check now that every player has an id: resolveOrCreatePlayer also
     // matches legacy rows by display name, which the key lookup above cannot.
