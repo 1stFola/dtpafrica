@@ -8,6 +8,10 @@ import {
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  buildNumberLookup,
+  squadNumberLabel,
+} from "../scoreboard/squad-number-lookup";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
 import {
   canAccessCompetition,
@@ -691,14 +695,6 @@ function actorName(ctx: AdminAuthContext): string {
   return ctx.displayName || ctx.email || ctx.roleName || "Admin";
 }
 
-function playerDisplayLabel(
-  player: { playerName: string; jerseyNumber: number | null } | undefined,
-  jerseyNumber: number | null
-): string | null {
-  if (player?.playerName && jerseyNumber) return `No. ${jerseyNumber} ${player.playerName}`;
-  if (player?.playerName) return player.playerName;
-  return jerseyNumber ? `No. ${jerseyNumber}` : null;
-}
 
 @Injectable()
 export class AdminMatchStatsService {
@@ -724,8 +720,6 @@ export class AdminMatchStatsService {
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },
       include: {
-        homeTeam: true,
-        awayTeam: true,
         competition: true,
         squadPlayers: {
           where: { jerseyNumber: { not: null } },
@@ -736,6 +730,12 @@ export class AdminMatchStatsService {
             jerseyNumber: true,
           },
         },
+        /* The standing squads as well, because the console resolves a shirt number
+           client-side and the matchday squad is empty for most fixtures. Without
+           these the recorder types 7 and sees `No. 7` rather than the name that is
+           sitting in the squad. */
+        homeTeam: { include: { squad: { where: { shirtNumber: { not: null } } } } },
+        awayTeam: { include: { squad: { where: { shirtNumber: { not: null } } } } },
       },
     });
     if (!match) throw new NotFoundException("Match not found");
@@ -1171,29 +1171,48 @@ export class AdminMatchStatsService {
     const tallies = normaliseTallies(sheet.tallies);
     const recorded = readEvents(sheet.events);
 
-    /* Shirt number -> player, from the matchday squad when one exists. Most
-       RAK fixtures have no squad loaded, so comments fall back to "No. 6",
-       which still reads correctly. */
-    const squad = recorded.length
-      ? await this.prisma.sbMatchSquadPlayer.findMany({
-          where: { matchId, jerseyNumber: { not: null } },
-          select: { teamId: true, jerseyNumber: true, playerName: true, playerId: true },
-        })
-      : [];
-    const squadByKey = new Map(
-      squad.map((row) => [`${row.teamId}:${row.jerseyNumber}`, row])
-    );
+    /* Shirt number -> player, from the team squad first and the matchday squad
+       second. It used to read the matchday squad alone, and most fixtures have none,
+       so every number fell back to `No. 6` with a null playerId -- the goal reached
+       no profile and the timeline showed a number where a person should be, while
+       the names sat in `SbTeamSquad` untouched. See `squad-number-lookup.ts` for why
+       the team squad wins and why an ambiguous number resolves to nobody. */
+    const [matchSquad, teamSquad] = recorded.length
+      ? await Promise.all([
+          this.prisma.sbMatchSquadPlayer.findMany({
+            where: { matchId, jerseyNumber: { not: null } },
+            select: { teamId: true, jerseyNumber: true, playerName: true, playerId: true },
+          }),
+          this.prisma.sbTeamSquad.findMany({
+            where: {
+              teamId: { in: [match.homeTeamId, match.awayTeamId] },
+              shirtNumber: { not: null },
+            },
+            select: { teamId: true, shirtNumber: true, displayName: true, playerId: true },
+          }),
+        ])
+      : [[], []];
+    const lookup = buildNumberLookup({
+      teamSquad: teamSquad.map((row) => ({
+        teamId: row.teamId,
+        number: row.shirtNumber,
+        playerName: row.displayName,
+        playerId: row.playerId,
+      })),
+      matchSquad: matchSquad.map((row) => ({
+        teamId: row.teamId,
+        number: row.jerseyNumber,
+        playerName: row.playerName,
+        playerId: row.playerId,
+      })),
+    });
     const teamIdFor = (side: "home" | "away") =>
       side === "home" ? match.homeTeamId : match.awayTeamId;
     const squadFor = (event: RecordedEvent) =>
-      event.playerNumber
-        ? squadByKey.get(`${teamIdFor(event.side)}:${event.playerNumber}`)
-        : undefined;
+      lookup.find(teamIdFor(event.side), event.playerNumber);
     /* The assist provider or incoming substitute, resolved the same way. */
     const secondaryFor = (event: RecordedEvent) =>
-      event.secondaryPlayerNumber
-        ? squadByKey.get(`${teamIdFor(event.side)}:${event.secondaryPlayerNumber}`)
-        : undefined;
+      lookup.find(teamIdFor(event.side), event.secondaryPlayerNumber);
 
     const comments = generateEventComments(
       recorded as RecordedEventInput[],
@@ -1224,14 +1243,14 @@ export class AdminMatchStatsService {
       matchId,
       teamId: teamIdFor(event.side),
       playerId: squadFor(event)?.playerId ?? null,
-      playerLabel: playerDisplayLabel(squadFor(event), event.playerNumber),
+      playerLabel: squadNumberLabel(squadFor(event), event.playerNumber),
       /* The timeline already has fields for a second player: an assist on a
          goal, the incoming player on a substitution. */
-      playerLabel2: playerDisplayLabel(secondaryFor(event), event.secondaryPlayerNumber),
+      playerLabel2: squadNumberLabel(secondaryFor(event), event.secondaryPlayerNumber),
       assistPlayerId: event.type === "goal" ? secondaryFor(event)?.playerId ?? null : null,
       assistLabel:
         event.type === "goal"
-          ? playerDisplayLabel(secondaryFor(event), event.secondaryPlayerNumber)
+          ? squadNumberLabel(secondaryFor(event), event.secondaryPlayerNumber)
           : null,
       type: event.type,
       minute: event.minute,
@@ -1743,6 +1762,15 @@ export class AdminMatchStatsService {
           playerId: player.playerId,
           playerName: player.playerName,
           jerseyNumber: player.jerseyNumber,
+        })),
+        /* Sent separately rather than merged into `squadPlayers`, so the console can
+           apply the same precedence the server does and show which source a name came
+           from. Merging them would hide a disagreement between the two. */
+        teamSquad: [...match.homeTeam.squad, ...match.awayTeam.squad].map((row) => ({
+          teamId: row.teamId,
+          playerId: row.playerId,
+          playerName: row.displayName,
+          jerseyNumber: row.shirtNumber,
         })),
         homeTeam: {
           id: match.homeTeam.id,

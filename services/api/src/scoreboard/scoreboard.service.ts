@@ -9,6 +9,7 @@ import { Prisma, type PlayerMatchMetrics, type SbMatchEvent } from "@prisma/clie
 import { PrismaService } from "../prisma/prisma.service";
 import { SipRecalculationService } from "../sip/sip-recalculation.service";
 import { CreateMatchEventDto } from "./dto/create-event.dto";
+import { buildNumberLookup, squadNumberLabel } from "./squad-number-lookup";
 import { UpdateMatchDto } from "./dto/update-match.dto";
 import type { PatchMatchScoreDto } from "../admin/dto/patch-match-score.dto";
 import {
@@ -1603,33 +1604,45 @@ export class ScoreboardService {
     const score = scoreFromEvents(events);
     const clock = readClock(sheet.clock);
 
-    const squad = events.length
-      ? await this.prisma.sbMatchSquadPlayer.findMany({
-          where: { matchId: match.id, jerseyNumber: { not: null } },
-          select: { teamId: true, jerseyNumber: true, playerName: true, playerId: true },
-        })
-      : [];
-    const squadByKey = new Map(
-      squad.map((row) => [`${row.teamId}:${row.jerseyNumber}`, row])
-    );
+    /* Team squad first, matchday squad second, through the same resolver the publish
+       path uses -- this read the matchday squad alone, and a live timeline for a
+       fixture with no matchday squad showed `No. 6` for every event. */
+    const [matchSquad, teamSquad] = events.length
+      ? await Promise.all([
+          this.prisma.sbMatchSquadPlayer.findMany({
+            where: { matchId: match.id, jerseyNumber: { not: null } },
+            select: { teamId: true, jerseyNumber: true, playerName: true, playerId: true },
+          }),
+          this.prisma.sbTeamSquad.findMany({
+            where: {
+              teamId: { in: [match.homeTeamId, match.awayTeamId] },
+              shirtNumber: { not: null },
+            },
+            select: { teamId: true, shirtNumber: true, displayName: true, playerId: true },
+          }),
+        ])
+      : [[], []];
+    const lookup = buildNumberLookup({
+      teamSquad: teamSquad.map((row) => ({
+        teamId: row.teamId,
+        number: row.shirtNumber,
+        playerName: row.displayName,
+        playerId: row.playerId,
+      })),
+      matchSquad: matchSquad.map((row) => ({
+        teamId: row.teamId,
+        number: row.jerseyNumber,
+        playerName: row.playerName,
+        playerId: row.playerId,
+      })),
+    });
     const teamIdFor = (side: "home" | "away") =>
       side === "home" ? match.homeTeamId : match.awayTeamId;
     const squadFor = (event: RecordedEvent) =>
-      event.playerNumber
-        ? squadByKey.get(`${teamIdFor(event.side)}:${event.playerNumber}`)
-        : undefined;
+      lookup.find(teamIdFor(event.side), event.playerNumber);
     const secondaryFor = (event: RecordedEvent) =>
-      event.secondaryPlayerNumber
-        ? squadByKey.get(`${teamIdFor(event.side)}:${event.secondaryPlayerNumber}`)
-        : undefined;
-    const playerLabel = (
-      player: { playerName: string; jerseyNumber: number | null } | undefined,
-      number: number | null
-    ) => {
-      if (player?.playerName && number) return `No. ${number} ${player.playerName}`;
-      if (player?.playerName) return player.playerName;
-      return number ? `No. ${number}` : null;
-    };
+      lookup.find(teamIdFor(event.side), event.secondaryPlayerNumber);
+    const playerLabel = squadNumberLabel;
 
     const comments = generateEventComments(events as RecordedEventInput[], (event) => {
       const isHome = event.side === "home";
