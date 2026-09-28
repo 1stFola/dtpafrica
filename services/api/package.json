@@ -28,7 +28,8 @@
     "vision:datasetcheck": "tsx scripts/vision-dataset-check.ts",
     "vision:catalogcheck": "tsx scripts/vision-catalog-check.ts",
     "dev:tsx": "tsx watch src/main.ts",
-    "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts"
+    "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
+    "db:report:duplicate-players": "tsx scripts/report-duplicate-players.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1140.0",
