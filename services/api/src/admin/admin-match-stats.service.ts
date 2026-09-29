@@ -8,7 +8,12 @@ import {
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { idleLockMessage, quietMinutes } from "./recorder-idle";
+import {
+  SUBMIT_TOO_EARLY,
+  canSubmitYet,
+  idleLockMessage,
+  quietMinutes,
+} from "./recorder-idle";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
 import {
@@ -1100,7 +1105,15 @@ export class AdminMatchStatsService {
             }
           : {}),
         ...(extras?.clock !== undefined
-          ? { clock: (readClock(extras.clock) ?? undefined) as Prisma.InputJsonValue }
+          ? {
+              clock: (readClock(extras.clock) ?? undefined) as Prisma.InputJsonValue,
+              /* Stamped on the transition into full time and only then. Inferring it
+                 from `updatedAt` works only for as long as nothing else writes to the
+                 row, which is not a property to depend on. */
+              ...(isFullTime(readClock(extras.clock)) && !isFullTime(readClock(sheet.clock))
+                ? { fullTimeAt: new Date() }
+                : {}),
+            }
           : {}),
         ...(extras?.kits !== undefined
           ? { kits: (readKits(extras.kits) ?? undefined) as Prisma.InputJsonValue }
@@ -1127,6 +1140,13 @@ export class AdminMatchStatsService {
       throw new BadRequestException("This sheet has already been approved");
     }
     this.assertOwnsSheet(sheet, ctx, match);
+
+    /* Not before the second half. Enforced here and not only on the button, because a
+       disabled button is a suggestion -- this is the sheet refusing to be half a match.
+       Practice matches are exempt: the sandbox exists to be driven through quickly. */
+    if (!canSubmitYet(readClock(sheet.clock)) && !isTrainingCompetition(match.competition)) {
+      throw new BadRequestException(SUBMIT_TOO_EARLY);
+    }
 
     const stamp: Record<string, unknown> = {};
     for (const section of SHEET_SECTIONS) {

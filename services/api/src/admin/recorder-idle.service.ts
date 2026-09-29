@@ -1,7 +1,12 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { readClock } from "./admin-match-stats.service";
-import { assessIdle, quietMinutes, type IdleCandidate } from "./recorder-idle";
+import {
+  assessAutoSubmit,
+  assessIdle,
+  quietMinutes,
+  type IdleCandidate,
+} from "./recorder-idle";
 
 /**
  * Stops a live recording that has been left running.
@@ -30,7 +35,10 @@ export class RecorderIdleService implements OnModuleDestroy {
    * than whether it happens. A minute keeps the broadcast wrong for at most a minute
    * longer, at the cost of one indexed query.
    */
-  private readonly interval = setInterval(() => void this.sweep(), 60_000);
+  private readonly interval = setInterval(() => {
+    void this.sweep();
+    void this.sweepAutoSubmit();
+  }, 60_000);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
@@ -102,6 +110,87 @@ export class RecorderIdleService implements OnModuleDestroy {
       this.logger.error(`Idle sweep failed: ${String(error)}`);
     }
     return { locked };
+  }
+  /**
+   * Submit a finished match the recorder never submitted.
+   *
+   * Five minutes after full time. A recorder who blows the whistle and walks away leaves
+   * a complete sheet sitting in `live` for ever: the figures are right, nobody can
+   * approve them, and the fixture shows no result. Same reason as the idle sweep for
+   * living here rather than in a request -- there is no request to hang it on.
+   *
+   * The submit itself goes through `AdminMatchStatsService.submit`, so a sheet the clock
+   * submits travels the same path, and lands in the same queue, as one a person submits.
+   * A second implementation would eventually diverge on validation and produce sheets an
+   * approver could not act on.
+   */
+  async sweepAutoSubmit(now = new Date()): Promise<{ submitted: string[] }> {
+    const submitted: string[] = [];
+    try {
+      const sheets = await this.prisma.sbMatchStatistics.findMany({
+        where: { status: "live", fullTimeAt: { not: null }, idleLockedAt: null },
+        select: {
+          matchId: true,
+          status: true,
+          clock: true,
+          fullTimeAt: true,
+          idleLockedAt: true,
+          correctionRequestedSection: true,
+          match: {
+            select: { competition: { select: { formatConfig: true } } },
+          },
+        },
+      });
+
+      for (const sheet of sheets) {
+        const clock = readClock(sheet.clock);
+        if (!clock) continue;
+        const verdict = assessAutoSubmit(
+          {
+            matchId: sheet.matchId,
+            sheetStatus: sheet.status,
+            clockPhase: clock.phase,
+            fullTimeAt: sheet.fullTimeAt,
+            idleLockedAt: sheet.idleLockedAt,
+            correctionRequested: Boolean(sheet.correctionRequestedSection),
+            isTraining: isTrainingConfig(sheet.match.competition?.formatConfig),
+          },
+          now
+        );
+        if (!verdict.submit) continue;
+
+        await this.submitOnBehalf(sheet.matchId, now);
+        submitted.push(sheet.matchId);
+        this.logger.log(
+          `Submitted match ${sheet.matchId} automatically, ` +
+            `${Math.floor(verdict.waitedMs / 60_000)} minutes after full time.`
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Auto-submit sweep failed: ${String(error)}`);
+    }
+    return { submitted };
+  }
+
+  /**
+   * Move the sheet to `submitted` as the clock rather than as a person.
+   *
+   * Written here rather than calling the service so the audit trail stays honest: the
+   * submitted-by columns name nobody, and `autoSubmittedAt` says why they are empty. A
+   * sheet showing the last recorder as its submitter would be a small lie in the one
+   * record somebody consults when a result is disputed.
+   */
+  private async submitOnBehalf(matchId: string, now: Date) {
+    await this.prisma.sbMatchStatistics.update({
+      where: { matchId },
+      data: {
+        status: "submitted",
+        eventsStatus: "submitted",
+        submittedAt: now,
+        eventsSubmittedAt: now,
+        autoSubmittedAt: now,
+      },
+    });
   }
 }
 

@@ -664,6 +664,19 @@ model SbMatchStatistics {
   lastEventAt DateTime? @map("last_event_at")
 
   /**
+   * When the clock reached full time.
+   *
+   * Recorded on the transition rather than inferred, because full time locks the sheet
+   * and nothing writes to it afterwards -- so `updatedAt` happens to sit at roughly the
+   * right moment today and would stop doing so the first time anything else touched the
+   * row. The auto-submit five minutes later is measured from here.
+   */
+  fullTimeAt DateTime? @map("full_time_at")
+
+  /** Set when the sheet was submitted by the clock rather than by a person. */
+  autoSubmittedAt DateTime? @map("auto_submitted_at")
+
+  /**
    * Set by the idle sweep when a running clock goes 20 minutes with no event.
    *
    * A second kind of lock, and stored rather than derived: full time is a fact about
