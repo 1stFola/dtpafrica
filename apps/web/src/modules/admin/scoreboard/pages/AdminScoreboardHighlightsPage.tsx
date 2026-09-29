@@ -358,7 +358,7 @@ export function AdminScoreboardHighlightsPage() {
                     </td>
                     <td className="muted">{matchLabel(row)}</td>
                     <td>
-                      <StatusBadge status={row.isPublished ? "active" : "draft"} />
+                      <StatusBadge status={row.isPublished ? "ongoing" : "draft"} />
                     </td>
                     <td>
                       <MediaUrlPreview url={row.youtubeUrl} kind="video" />
@@ -416,7 +416,7 @@ export function AdminScoreboardHighlightsPage() {
                     </td>
                     <td className="muted">{matchLabel(row)}</td>
                     <td>
-                      <StatusBadge status={row.isPublished ? "active" : "draft"} />
+                      <StatusBadge status={row.isPublished ? "ongoing" : "draft"} />
                     </td>
                     <td>
                       <MediaUrlPreview url={row.youtubeUrl} kind="image" />

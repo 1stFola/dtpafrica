@@ -1,6 +1,6 @@
 /** ScoreBoard admin domain types (legacy admin-entities / admin-roster aligned). */
 
-export type SbCompetitionStatus = "active" | "upcoming" | "draft" | "archived";
+export type SbCompetitionStatus = "scheduled" | "ongoing" | "draft" | "archived";
 export type SbCompetitionType = "league" | "tournament" | "cup";
 
 export type CompetitionFormat =
@@ -150,9 +150,15 @@ export type AdminSbStats = {
   liveMatches: number;
 };
 
+/**
+ * Ordered as a competition moves through them, which is also how the picker reads.
+ *
+ * Only Scheduled and Ongoing appear on the public ScoreBoard. Draft is not ready and
+ * Archived is finished with, and choosing either takes the competition off the site.
+ */
 export const COMPETITION_STATUSES: SbCompetitionStatus[] = [
-  "active",
-  "upcoming",
+  "scheduled",
+  "ongoing",
   "draft",
   "archived",
 ];

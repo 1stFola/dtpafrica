@@ -82,7 +82,49 @@ function deriveRoundLabel(
   return leg === "second_leg" ? `${base} — Leg 2` : base;
 }
 
-export type SbCompetitionStatus = "active" | "upcoming" | "draft" | "archived";
+/**
+ * What a competition's status says, and what the public ScoreBoard does with it.
+ *
+ * `scheduled` and `ongoing` replace `upcoming` and `active`. The vocabulary was already
+ * half-changed: `normalizeCompetitionStatus` accepted `ongoing` and mapped it onto
+ * `active`, and the admin badge *labelled* `active` as "Ongoing" — so the words on the
+ * screen and the words in the column had already diverged, which is how a status setting
+ * ends up meaning nothing.
+ *
+ * **Only `scheduled` and `ongoing` appear on the ScoreBoard.** `archived` is finished
+ * with and `draft` is not ready, and neither is something the public should browse.
+ * Before this, the public listing filtered on `isPublished` alone and ignored the status
+ * column entirely — setting a competition to Archived changed a badge in the admin and
+ * nothing else.
+ */
+export type SbCompetitionStatus = "scheduled" | "ongoing" | "draft" | "archived";
+
+/** Statuses a competition is browsable under. Everything else is hidden from the public. */
+export const PUBLIC_COMPETITION_STATUSES = ["scheduled", "ongoing"] as const;
+
+/** Hidden from the ScoreBoard. Queried as a `notIn`, so a legacy value still shows. */
+export const HIDDEN_COMPETITION_STATUSES = ["archived", "draft"] as const;
+
+/**
+ * The words this column held before, kept readable rather than migrated away from.
+ *
+ * A row written by an older build, or by a CSV somebody exported last month, still says
+ * `upcoming`. Mapping on read means nothing breaks while `db:repair:competition-status`
+ * rewrites them, and an import carrying the old word keeps working afterwards.
+ */
+const LEGACY_STATUS: Record<string, SbCompetitionStatus> = {
+  upcoming: "scheduled",
+  active: "ongoing",
+};
+
+/** A stored value read back as one of the four current words. */
+export function readCompetitionStatus(value: string | null | undefined): SbCompetitionStatus {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, "_") ?? "";
+  if (normalized in LEGACY_STATUS) return LEGACY_STATUS[normalized]!;
+  if (normalized === "scheduled" || normalized === "ongoing") return normalized;
+  if (normalized === "draft" || normalized === "archived") return normalized;
+  return "scheduled";
+}
 
 export type MatchdayRosterSlot = {
   squadId: string;
@@ -238,23 +280,31 @@ function deriveCompetitionStatus(
   matchStatuses: string[]
 ): SbCompetitionStatus {
   if (!isPublished) return "draft";
-  if (matchStatuses.some((s) => s === "live" || s === "halftime")) return "active";
+  if (matchStatuses.some((s) => s === "live" || s === "halftime")) return "ongoing";
   if (
     matchStatuses.length > 0 &&
     matchStatuses.every((s) => s === "finished" || s === "cancelled")
   ) {
     return "archived";
   }
-  return "upcoming";
+  return "scheduled";
 }
 
+/** A status arriving from the admin or a CSV. Legacy words are accepted and translated. */
 function normalizeCompetitionStatus(value: string | undefined | null): SbCompetitionStatus {
-  const normalized = value?.trim().toLowerCase().replace(/\s+/g, "_");
-  if (normalized === "ongoing") return "active";
-  if (normalized === "active" || normalized === "upcoming" || normalized === "draft" || normalized === "archived") {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, "_") ?? "";
+  if (normalized in LEGACY_STATUS) return LEGACY_STATUS[normalized]!;
+  if (
+    normalized === "scheduled" ||
+    normalized === "ongoing" ||
+    normalized === "draft" ||
+    normalized === "archived"
+  ) {
     return normalized;
   }
-  throw new BadRequestException("Competition status must be active, upcoming, draft, archived, or ongoing");
+  throw new BadRequestException(
+    "Competition status must be scheduled, ongoing, draft or archived"
+  );
 }
 
 function parseCsv(input: string): string[][] {
@@ -485,7 +535,7 @@ export class AdminScoreboardService {
           season: c.season,
           teamsCount: c._count.teams,
           matchesCount: c._count.matches,
-          status: (c as { status?: SbCompetitionStatus }).status ?? status,
+          status: readCompetitionStatus((c as { status?: string }).status) ?? status,
           isPublished: c.isPublished,
           isFeatured: (c.description ?? "").includes("[featured]"),
           formatType: c.formatType,
@@ -540,7 +590,9 @@ export class AdminScoreboardService {
         season: row.season,
         teamsCount: row._count.teams,
         matchesCount: row._count.matches,
-        status: (row as { status?: SbCompetitionStatus }).status ?? deriveCompetitionStatus(row.isPublished, []),
+        status: (row as { status?: string }).status
+          ? readCompetitionStatus((row as { status?: string }).status)
+          : deriveCompetitionStatus(row.isPublished, []),
         isPublished: row.isPublished,
         isFeatured: (row.description ?? "").includes("[featured]"),
         formatType: row.formatType,
