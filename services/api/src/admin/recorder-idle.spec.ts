@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_SUBMIT_DELAY_MS,
   IDLE_LIMIT_MS,
+  SUBMIT_TOO_EARLY,
+  assessAutoSubmit,
   assessIdle,
+  canSubmitYet,
   idleLockMessage,
   quietMinutes,
+  type AutoSubmitCandidate,
   type IdleCandidate,
 } from "./recorder-idle";
 
@@ -140,5 +145,105 @@ describe("the message a locked recorder sees", () => {
 
   it("says the broadcast ended, because that is the part nobody else can see", () => {
     expect(idleLockMessage(IDLE_LIMIT_MS)).toContain("broadcast");
+  });
+});
+
+describe("submitting a finished match nobody submitted", () => {
+  /* A recorder who blows full time and walks away leaves a complete sheet in `live` for
+     ever: the figures are right, nobody can approve them, and the fixture shows no
+     result. */
+
+  function finished(over: Partial<AutoSubmitCandidate> = {}): AutoSubmitCandidate {
+    return {
+      matchId: "match-1",
+      sheetStatus: "live",
+      clockPhase: "finished",
+      fullTimeAt: minutesAgo(6),
+      idleLockedAt: null,
+      correctionRequested: false,
+      isTraining: false,
+      ...over,
+    };
+  }
+
+  it("submits five minutes after full time", () => {
+    const verdict = assessAutoSubmit(finished(), NOW);
+    expect(verdict.submit).toBe(true);
+  });
+
+  it("does not submit a second early", () => {
+    const justInside = new Date(NOW.getTime() - AUTO_SUBMIT_DELAY_MS + 1000);
+    expect(assessAutoSubmit(finished({ fullTimeAt: justInside }), NOW).submit).toBe(false);
+    const justOutside = new Date(NOW.getTime() - AUTO_SUBMIT_DELAY_MS);
+    expect(assessAutoSubmit(finished({ fullTimeAt: justOutside }), NOW).submit).toBe(true);
+  });
+
+  it("never submits a recording the idle sweep stopped", () => {
+    /* The sweep stopped it because nobody was there, so its figures are the ones nobody
+       vouches for. Submitting them would push an unwatched sheet into the approval queue
+       looking exactly like a recorder's own work. */
+    const verdict = assessAutoSubmit(finished({ idleLockedAt: minutesAgo(30) }), NOW);
+    expect(verdict.submit).toBe(false);
+    if (!verdict.submit) expect(verdict.reason).toBe("locked");
+  });
+
+  it("waits while a correction request is pending", () => {
+    /* The recorder has asked for the sheet back. Submitting it under them would be rude
+       and would make the request unanswerable. */
+    expect(assessAutoSubmit(finished({ correctionRequested: true }), NOW).submit).toBe(false);
+  });
+
+  it("does nothing before full time", () => {
+    for (const phase of ["running", "awaiting_full_time", "penalty_shootout", "awaiting_second_half"]) {
+      expect(assessAutoSubmit(finished({ clockPhase: phase }), NOW).submit).toBe(false);
+    }
+  });
+
+  it("does nothing when full time was never recorded", () => {
+    /* A finished phase with no timestamp is an older sheet from before the column
+       existed. Guessing a moment for it could submit somebody's match instantly. */
+    expect(assessAutoSubmit(finished({ fullTimeAt: null }), NOW).submit).toBe(false);
+  });
+
+  it("leaves a sheet somebody already submitted", () => {
+    for (const status of ["submitted", "approved"]) {
+      expect(assessAutoSubmit(finished({ sheetStatus: status }), NOW).submit).toBe(false);
+    }
+  });
+
+  it("leaves a practice match alone", () => {
+    expect(assessAutoSubmit(finished({ isTraining: true }), NOW).submit).toBe(false);
+  });
+});
+
+describe("when a sheet may be sent for approval", () => {
+  it("allows it once the second half is under way", () => {
+    expect(canSubmitYet({ half: 2, phase: "running" })).toBe(true);
+  });
+
+  it("allows it for the rest of the match, not only at full time", () => {
+    /* A recorder whose phone dies in the eighty-eighth minute should still be able to
+       send up what they have. Gating on full time would lose that. */
+    for (const phase of ["running", "added_running", "awaiting_full_time", "finished", "penalty_shootout"]) {
+      expect(canSubmitYet({ half: 2, phase })).toBe(true);
+    }
+  });
+
+  it("refuses during the first half, however far in", () => {
+    /* A sheet submitted at half-time is half a match: the approver sees a plausible
+       record with forty-five minutes missing, and the recorder has to ask for it back
+       to finish the job they were in the middle of. */
+    for (const phase of ["pre_kickoff", "running", "awaiting_added", "added_running", "awaiting_second_half"]) {
+      expect(canSubmitYet({ half: 1, phase })).toBe(false);
+    }
+  });
+
+  it("refuses when there is no clock at all", () => {
+    // A sheet that never kicked off has nothing to send.
+    expect(canSubmitYet(null)).toBe(false);
+  });
+
+  it("explains itself in the recorder's terms", () => {
+    expect(SUBMIT_TOO_EARLY).toContain("second half");
   });
 });
