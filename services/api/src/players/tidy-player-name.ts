@@ -32,6 +32,7 @@
  * constraint violation.
  */
 import { normalizePlayerName } from "@dtp/engines";
+import { stripNumberPrefix } from "./admissible-squad-name";
 
 /**
  * Suffixes that are not words and must not be title-cased into one.
@@ -210,6 +211,19 @@ export function tidyPlayerName(name: string): string {
   /* Before either check, because a marker already lowercased by an earlier run is
      damage to repair, and both checks below would otherwise walk straight past it. */
   const marked = restoreClubMarkers(spaced);
+
+  /* A shirt number in front of a name is the one digit that *is* understood, and it
+     has to come off before the rule below sees one and gives up. `No. 8 OLAIYA FARUK`
+     is a player record in the live directory -- created from a timeline label by a
+     path that only refused a bare number -- and the number followed him into
+     `/player/no-8-olaiya-faruk`. The digit rule was skipping exactly the records that
+     needed fixing.
+
+     Only a *leading* prefix, so the shapes the digit rule is there for are untouched:
+     `Jersey No. 35` and `FC Ogunlade No. 15` begin with a word, `Ayila No.7` carries
+     its number at the end, and a bare `No. 12` has no name behind it to keep. */
+  const unnumbered = stripNumberPrefix(marked).trim();
+  if (unnumbered && unnumbered !== marked) return tidyPlayerName(unnumbered);
 
   if (hasDigit(marked)) return marked;
   if (looksLikeATeam(marked)) return marked;
