@@ -314,3 +314,49 @@ describe("repairing a club marker an earlier run lowercased", () => {
     expect(tidyPlayerName(once)).toBe(once);
   });
 });
+
+describe("a shirt number in front of a player record's name", () => {
+  /* These are Player records in the live directory, not event labels. A path that only
+     refused a bare number let `No. 8 OLAIYA FARUK` become a person, and the number
+     followed him into `/player/no-8-olaiya-faruk`. Every name here is from the
+     DYNAMIC FC v HIGHKLASS SA fixture. */
+
+  it("takes the number off and tidies what is left", () => {
+    expect(tidyPlayerName("No. 11 EBULU EMMANUEL")).toBe("Ebulu Emmanuel");
+    expect(tidyPlayerName("No. 8 OLAIYA FARUK")).toBe("Olaiya Faruk");
+    expect(tidyPlayerName("No. 1 ASUQUO GIDEON")).toBe("Asuquo Gideon");
+    expect(tidyPlayerName("No. 16 NNANA SAMSON")).toBe("Nnana Samson");
+  });
+
+  it("handles the other spellings and leaves good casing alone", () => {
+    expect(tidyPlayerName("#10 Wasiu Yayah")).toBe("Wasiu Yayah");
+    expect(tidyPlayerName("no 7 Ogundeji Elijah")).toBe("Ogundeji Elijah");
+  });
+
+  it("still leaves the shapes the digit rule exists for", () => {
+    /* The number is only stripped when it *leads*. These begin with a word, carry the
+       number at the end, or have no name behind it at all. */
+    for (const name of ["Jersey No. 35", "FC Ogunlade No. 15", "Ayila No.7", "No. 12", "Team360 FC"]) {
+      expect(tidyPlayerName(name)).toBe(name);
+    }
+  });
+
+  it("does not strip from a name that merely starts with No", () => {
+    expect(tidyPlayerName("Noah Idris")).toBe("Noah Idris");
+  });
+
+  it("leaves a club alone even behind a number", () => {
+    /* `No. 15 FC OGUNLADE` would strip to a team name, and a team is still not a
+       person -- the club check must run on what is left, not on the original. */
+    expect(tidyPlayerName("No. 15 FC OGUNLADE")).toBe("FC OGUNLADE");
+  });
+
+  it("moves the dedupe key, which is why the caller must check for a clash", () => {
+    /* `no. 11 ebulu emmanuel` becomes `ebulu emmanuel`, and if a real record already
+       holds that key these are two records for one person. */
+    expect(playerLookupKey(tidyPlayerName("No. 11 EBULU EMMANUEL"))).toBe("ebulu emmanuel");
+    expect(playerLookupKey(tidyPlayerName("No. 11 EBULU EMMANUEL"))).not.toBe(
+      playerLookupKey("No. 11 EBULU EMMANUEL")
+    );
+  });
+});

@@ -187,3 +187,72 @@ describe("scoreboard history — aggregates", () => {
     expect(history.aggregates.appearances).toBe(1);
   });
 });
+
+describe("scoreboard history — a label carrying a shirt number", () => {
+  /* The recorder captures a number, so the API stores `No. 8 OLAIYA FARUK`. Its dedupe
+     key was `no 8 olaiya faruk` while the squad's was `olaiya faruk`, so they could
+     never match -- and any event nothing later linked by foreign key was invisible on
+     that player's profile. The goal showed on the fixture and the player had no idea
+     the product knew about it. The whole DYNAMIC FC v HIGHKLASS SA timeline was in that
+     state. */
+
+  const runWith = async (rows: any[], player = { id: "other", displayName: "Olaiya Faruk" }) => {
+    const prisma: any = {
+      sbMatchEvent: {
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce(rows),
+      },
+    };
+    return (makeService(prisma) as any).findScoreboardHistoryEvents(player, [
+      { teamId: "team-1", displayName: "Olaiya Faruk" },
+    ]);
+  };
+
+  it("matches a scorer label that leads with the shirt number", async () => {
+    const matched = await runWith([
+      eventRow({ id: "e1", playerId: null, playerLabel: "No. 8 OLAIYA FARUK" }),
+    ]);
+    expect(matched).toHaveLength(1);
+    expect(matched[0]).toMatchObject({ historyRole: "primary", historyMatchedBy: "label" });
+  });
+
+  it("matches an assist label the same way", async () => {
+    const matched = await runWith([
+      eventRow({ id: "e2", playerId: null, assistPlayerId: null, assistLabel: "No. 8 Olaiya Faruk" }),
+    ]);
+    expect(matched).toHaveLength(1);
+    expect(matched[0]).toMatchObject({ historyRole: "assist" });
+  });
+
+  it("matches the second player on an event", async () => {
+    const matched = await runWith([
+      eventRow({ id: "e3", playerId: null, playerLabel2: "#8 OLAIYA FARUK" }),
+    ]);
+    expect(matched).toHaveLength(1);
+    expect(matched[0]).toMatchObject({ historyRole: "secondary" });
+  });
+
+  it("still matches a label with no number on it", async () => {
+    const matched = await runWith([
+      eventRow({ id: "e4", playerId: null, playerLabel: "Olaiya Faruk" }),
+    ]);
+    expect(matched).toHaveLength(1);
+  });
+
+  it("does not match somebody else who happens to wear a number", async () => {
+    /* Stripping the number must not make every numbered label match every player. */
+    const matched = await runWith([
+      eventRow({ id: "e5", playerId: null, playerLabel: "No. 8 SOMEBODY ELSE" }),
+    ]);
+    expect(matched).toEqual([]);
+  });
+
+  it("does not match a bare number, which names nobody", async () => {
+    const matched = await runWith([
+      eventRow({ id: "e6", playerId: null, playerLabel: "No. 8" }),
+    ]);
+    expect(matched).toEqual([]);
+  });
+});

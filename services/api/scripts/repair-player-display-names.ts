@@ -26,9 +26,17 @@
  * folded record's labels. A label that reads something else entirely is left alone:
  * it is not this player's name and guessing otherwise would detach a goal.
  *
- * **The slug is never touched.** `/nwosu-henry` is already lowercase, so casing makes
+ * **The slug is never touched, with one exception.** `/nwosu-henry` is already lowercase, so casing makes
  * no difference to it — and it is the URL anybody has ever shared. A correction that
  * moved slugs would break links to gain nothing.
+ *
+ * The exception is a slug that carries a shirt number: `/player/no-8-olaiya-faruk`,
+ * built from a record named `No. 8 OLAIYA FARUK`. Renaming that record without
+ * re-slugging fixes what the page says and leaves the number in the address bar, which
+ * is where it was reported from in the first place. Those slugs were derived from a
+ * match label by a path that should not have created the record at all, so nobody has
+ * meaningfully shared one, and `no-8-olaiya-faruk` is a narrow enough shape to
+ * recognise without guessing at slugs somebody chose.
  *
  * **What can go wrong, and is checked first.** `playerLookupKey` lowercases and
  * collapses whitespace, so tidying casing or spacing cannot move a player's dedupe
@@ -40,6 +48,7 @@
 import { PrismaClient } from "@prisma/client";
 import { playerLookupKey } from "@dtp/engines";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { resolveUniquePlayerSlug } from "../src/players/player-slug";
 import { isPlaceholderName } from "../src/players/placeholder-names";
 import {
   hasDigit,
@@ -63,12 +72,24 @@ type Candidate = {
   firstName: string;
   lastName: string;
   newFirstName: string;
+  /** Set only when the current slug carries a shirt number. */
+  newSlug: string | null;
+  oldSlug: string;
   newLastName: string;
   keyMoves: boolean;
   newKey: string | null;
   blockedBy: { id: string; displayName: string } | null;
 };
 
+/** A slug built from a name that led with a shirt number: `no-8-olaiya-faruk`. */
+function numberedSlug(slug: string): boolean {
+  return /^no-\d+-/.test(slug);
+}
+
+/** The stored slug, for the report line. */
+function p_slug(c: { oldSlug: string }): string {
+  return c.oldSlug;
+}
 async function main() {
   console.log(
     `Player display names — ${APPLY ? "APPLYING" : "dry run, pass --apply to write"}\n`
@@ -123,6 +144,8 @@ async function main() {
       to,
       firstName: p.firstName,
       lastName: p.lastName,
+      newSlug: numberedSlug(p.slug) ? await resolveUniquePlayerSlug(prisma, to) : null,
+      oldSlug: p.slug,
       newFirstName: carry(p.firstName),
       newLastName: carry(p.lastName),
       keyMoves,
@@ -180,6 +203,9 @@ async function main() {
         console.log(
           `       also ${c.firstName}/${c.lastName} -> ${c.newFirstName}/${c.newLastName}`
         );
+      }
+      if (c.newSlug) {
+        console.log(`       slug /${p_slug(c)} -> /${c.newSlug}, the number leaving the URL`);
       }
       if (c.keyMoves) {
         console.log(`       dedupe key moves to "${c.newKey}" — nothing else holds it`);
@@ -261,6 +287,7 @@ async function main() {
           firstName: c.newFirstName,
           lastName: c.newLastName,
           ...(c.keyMoves ? { normalizedName: c.newKey } : {}),
+          ...(c.newSlug ? { slug: c.newSlug } : {}),
         },
       });
 
