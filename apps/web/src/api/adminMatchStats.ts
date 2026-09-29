@@ -260,6 +260,28 @@ export type MatchStatsQueueItem = {
 
 const base = "/admin/scoreboard/match-stats";
 
+/**
+ * A live recording the idle sweep stopped.
+ *
+ * Carries enough for a super admin to judge it without opening the console: which match,
+ * who was recording, and how long it had been quiet -- twenty minutes of silence in a cup
+ * final reads very differently from twenty minutes in a friendly nobody was watching.
+ */
+export type IdleLockedRecording = {
+  matchId: string;
+  matchSlug: string | null;
+  competitionName: string;
+  homeTeam: string;
+  awayTeam: string;
+  kickoffAt: string | null;
+  recorderName: string | null;
+  lockedAt: string;
+  quietSinceAt: string;
+  quietMinutes: number;
+  /** Null means nothing was ever filed, so it was left from kick-off. */
+  lastEventAt: string | null;
+  clockPhase: string | null;
+};
 export const matchStatsApi = {
   open: (matchId: string) => adminFetch<MatchStatsSheet>(`${base}/${matchId}`),
 
@@ -291,6 +313,16 @@ export const matchStatsApi = {
 
   sendBack: (matchId: string, note?: string) =>
     adminFetch<MatchStatsSheet>(`${base}/${matchId}/send-back`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+
+  /** Every recording the idle sweep stopped, newest first. */
+  idleLocked: () => adminFetch<IdleLockedRecording[]>(`${base}/idle-locked`),
+
+  /** Release a stopped recording. The note is required — it is the only record of why. */
+  releaseIdleLock: (matchId: string, note: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/release-idle-lock`, {
       method: "POST",
       body: JSON.stringify({ note }),
     }),
