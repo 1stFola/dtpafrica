@@ -1606,11 +1606,18 @@ export class ScoreboardService {
       kits: Prisma.JsonValue | null;
       recorderName: string | null;
       updatedAt: Date;
+      idleLockedAt?: Date | null;
     } | null;
   }) {
     const sheet = match.statisticsSheet;
     if (!sheet) return null;
     if (!readLiveFeature(match.stats).enabled) return null;
+
+    /* A recording the idle sweep stopped. The broadcast ends here rather than going on
+       showing a match as live with its minutes ticking and its score frozen, which is
+       the whole reason the sweep exists. It comes back when a ScoreBoard admin releases
+       the lock, with whatever the recorder files afterwards. */
+    if (sheet.idleLockedAt) return null;
 
     const status = sheetStatus(sheet as Record<string, unknown>);
     if (status === "approved") return null;

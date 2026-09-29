@@ -650,6 +650,37 @@ model SbMatchStatistics {
   correctionRequestedAt      DateTime? @map("correction_requested_at")
   correctionRequestNote      String?   @map("correction_request_note") @db.Text
 
+  /**
+   * When an event was last filed on this sheet.
+   *
+   * Only an event moves it. A tally bump or a clock action does not, because a
+   * recorder tapping shot counts while filing nothing is the case the idle guard is
+   * meant to catch. `updatedAt` cannot serve: it moves on every save.
+   *
+   * Null means nothing has been filed yet, and the guard measures from kick-off
+   * instead -- a match that starts and records nothing is precisely the walked-away
+   * case, and would otherwise never trip.
+   */
+  lastEventAt DateTime? @map("last_event_at")
+
+  /**
+   * Set by the idle sweep when a running clock goes 20 minutes with no event.
+   *
+   * A second kind of lock, and stored rather than derived: full time is a fact about
+   * the clock that any reader can work out, while idleness is a fact about elapsed
+   * wall time that nothing would notice if the recorder has closed their laptop --
+   * which is the situation it exists for. While set, the sheet refuses edits and the
+   * public broadcast stops; a ScoreBoard admin releases it with a note.
+   */
+  idleLockedAt      DateTime? @map("idle_locked_at")
+  /** What the sweep measured from, so an alert can say how long it had been quiet. */
+  idleLockedSinceAt DateTime? @map("idle_locked_since_at")
+
+  idleReleasedById   String?   @map("idle_released_by")
+  idleReleasedByName String?   @map("idle_released_by_name")
+  idleReleasedAt     DateTime? @map("idle_released_at")
+  idleReleaseNote    String?   @map("idle_release_note") @db.Text
+
   recorderId   String? @map("recorder_id")
   recorderName String? @map("recorder_name")
 
@@ -675,6 +706,7 @@ model SbMatchStatistics {
   @@index([status])
   @@index([eventsStatus])
   @@index([correctionRequestedAt])
+  @@index([idleLockedAt])
   @@map("sb_match_statistics")
 }
 

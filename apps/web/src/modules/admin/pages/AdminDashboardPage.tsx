@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { adminApi, type AdminStats } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdminPageHeader } from "../components/AdminPageHeader";
+import { StoppedRecordingsPanel } from "../components/StoppedRecordingsPanel";
 
 const cards: Array<{ to: string; title: string; desc: string; tag: string }> = [
   {
@@ -81,6 +82,12 @@ export function AdminDashboardPage() {
         description="Publish players, manage homepage content, and triage contact messages."
         crumbs={[{ label: "Overview" }]}
       />
+
+      {/* Above the counts, because a stopped recording is the one thing on this page
+          that is losing something while it sits there: the match is off the public
+          ScoreBoard and its recorder is locked out. It renders nothing when there is
+          nothing stopped. */}
+      <StoppedRecordingsPanel />
 
       {loading ? (
         <div className="admin-sb-hub-stats" aria-busy="true">
