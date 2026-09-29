@@ -8,6 +8,7 @@ import {
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { idleLockMessage, quietMinutes } from "./recorder-idle";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
 import {
@@ -680,7 +681,12 @@ export type SheetLogAction =
   | "sent_back"
   | "correction_requested"
   | "correction_approved"
-  | "correction_declined";
+  | "correction_declined"
+  /* The sweep stopping a recording left running, and a ScoreBoard admin releasing it.
+     Logged like every other change of state so the sheet history tells the whole story
+     rather than showing an unexplained gap in the middle of a match. */
+  | "idle_locked"
+  | "idle_released";
 
 /**
  * A sheet locks itself at full time.
@@ -1059,6 +1065,16 @@ export class AdminMatchStatsService {
       );
     }
 
+    /* A third lock, and the only one that happened *to* the recorder rather than
+       because of something they did. The sweep stops a recording left running with
+       nobody at it; releasing it is a ScoreBoard admin's job, so the message says so
+       rather than suggesting a correction request the recorder cannot resolve. */
+    if (sheet.idleLockedAt && !isTrainingCompetition(match.competition)) {
+      const quietMs =
+        sheet.idleLockedAt.getTime() - (sheet.idleLockedSinceAt ?? sheet.idleLockedAt).getTime();
+      throw new BadRequestException(idleLockMessage(quietMs));
+    }
+
     /* The sheet locks as one. Statistics and events are approved together, so
        there is no longer a state where half of it accepts edits. */
     if (sheetStatus(sheet) === "approved") {
@@ -1072,7 +1088,16 @@ export class AdminMatchStatsService {
       data: {
         tallies: normaliseTallies(talliesInput) as Prisma.InputJsonValue,
         ...(extras?.events !== undefined
-          ? { events: readEvents(extras.events) as unknown as Prisma.InputJsonValue }
+          ? {
+              events: readEvents(extras.events) as unknown as Prisma.InputJsonValue,
+              /* Only when the log actually grew. Saving the same events again -- which
+                 the console does on any change, including a tally -- must not look like
+                 somebody filing one, or the idle guard would never trip for a recorder
+                 tapping counts. */
+              ...(readEvents(extras.events).length > readEvents(sheet.events).length
+                ? { lastEventAt: new Date() }
+                : {}),
+            }
           : {}),
         ...(extras?.clock !== undefined
           ? { clock: (readClock(extras.clock) ?? undefined) as Prisma.InputJsonValue }
@@ -1387,6 +1412,97 @@ export class AdminMatchStatsService {
     return this.present({ ...match }, updated, ctx);
   }
 
+  /**
+   * Every recording the idle sweep has stopped, newest first.
+   *
+   * Feeds the dashboard panel. Carries what a super admin needs to judge it without
+   * opening the console: which match, who was recording, and how long it had been
+   * quiet -- twenty minutes of silence in a cup final reads very differently from
+   * twenty minutes in a friendly nobody was watching.
+   */
+  async listIdleLocked(ctx: AdminAuthContext) {
+    this.assertCanApprove(ctx);
+    const rows = await this.prisma.sbMatchStatistics.findMany({
+      where: { idleLockedAt: { not: null } },
+      orderBy: { idleLockedAt: "desc" },
+      select: {
+        matchId: true,
+        idleLockedAt: true,
+        idleLockedSinceAt: true,
+        lastEventAt: true,
+        recorderName: true,
+        clock: true,
+        match: {
+          select: {
+            slug: true,
+            kickoffAt: true,
+            homeTeam: { select: { name: true } },
+            awayTeam: { select: { name: true } },
+            competition: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    return rows.map((row) => {
+      const lockedAt = row.idleLockedAt!;
+      const since = row.idleLockedSinceAt ?? lockedAt;
+      return {
+        matchId: row.matchId,
+        matchSlug: row.match.slug,
+        competitionName: row.match.competition.name,
+        homeTeam: row.match.homeTeam.name,
+        awayTeam: row.match.awayTeam.name,
+        kickoffAt: row.match.kickoffAt,
+        recorderName: row.recorderName,
+        lockedAt,
+        quietSinceAt: since,
+        quietMinutes: quietMinutes(lockedAt.getTime() - since.getTime()),
+        /* Null means nothing was ever filed, so the recording was left from kick-off --
+           a different story from one that stopped mid-match. */
+        lastEventAt: row.lastEventAt,
+        clockPhase: readClock(row.clock)?.phase ?? null,
+      };
+    });
+  }
+
+  /**
+   * Release a stopped recording, with a note saying why.
+   *
+   * The note is required rather than optional: releasing a lock leaves no other trace
+   * of the judgement somebody made, and "the recorder was there all along, only tapping
+   * tallies" is exactly the sentence the next person needs.
+   *
+   * `lastEventAt` moves to now on the way out, so the sweep does not lock it again a
+   * minute later on the strength of the same silence it was just released for.
+   */
+  async releaseIdleLock(matchId: string, note: string | undefined, ctx: AdminAuthContext) {
+    this.assertCanApprove(ctx);
+    const sheet = await this.requireSheet(matchId);
+    if (!sheet.idleLockedAt) {
+      throw new BadRequestException("This recording is not stopped.");
+    }
+    const trimmed = note?.trim();
+    if (!trimmed) {
+      throw new BadRequestException("Say why you are releasing this recording.");
+    }
+
+    const updated = await this.prisma.sbMatchStatistics.update({
+      where: { matchId },
+      data: {
+        idleLockedAt: null,
+        idleLockedSinceAt: null,
+        idleReleasedById: ctx.userId ?? null,
+        idleReleasedByName: ctx.displayName ?? null,
+        idleReleasedAt: new Date(),
+        idleReleaseNote: trimmed,
+        lastEventAt: new Date(),
+      },
+    });
+    await this.log(sheet, WHOLE_SHEET, "idle_released", ctx, { note: trimmed });
+    const match = await this.loadMatch(matchId, ctx);
+    return this.present(match, updated, ctx);
+  }
   /**
    * Send back for edits, returning the sheet to `live`. Only a submitted sheet
    * can be sent back, so nothing already published to the public site is

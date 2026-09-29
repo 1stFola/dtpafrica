@@ -195,6 +195,24 @@ export class AdminMatchStatsController {
     return this.stats.declineCorrection(matchId, dto.note, req.adminAuth);
   }
 
+  /** Every recording the idle sweep has stopped. Feeds the dashboard panel. */
+  @Get("idle-locked")
+  @RequirePermissions("scoreboard.stats.approve")
+  listIdleLocked(@Req() req: AdminRequest) {
+    return this.stats.listIdleLocked(req.adminAuth);
+  }
+
+  /** Release a stopped recording. The note is required: it is the only record of why. */
+  @Post(":matchId/release-idle-lock")
+  @RequirePermissions("scoreboard.stats.approve")
+  releaseIdleLock(
+    @Param("matchId") matchId: string,
+    @Body() dto: SendBackMatchStatsDto,
+    @Req() req: AdminRequest
+  ) {
+    return this.stats.releaseIdleLock(matchId, dto.note, req.adminAuth);
+  }
+
   @Post(":matchId/approve")
   @RequirePermissions("scoreboard.stats.approve")
   approve(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
