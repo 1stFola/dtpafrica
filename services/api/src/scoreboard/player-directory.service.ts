@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
 import { PlaceholderPlayerNameError, isPlaceholderName } from "../players/placeholder-names";
+import { stripNumberPrefix } from "../players/admissible-squad-name";
 
 function splitDisplayName(displayName: string) {
   const parts = displayName.trim().split(/\s+/);
@@ -22,7 +23,18 @@ export class PlayerDirectoryService {
 
   /** Resolve master Player by normalized name; create draft shell if missing. */
   async resolveOrCreatePlayer(displayName: string, position?: string | null) {
-    const normalized = normalizePlayerName(displayName);
+    /* The shirt number comes off first. A timeline event stores its player as
+       `No. 11 EBULU EMMANUEL`, and any path handing that label straight to this method
+       created a player *named* `No. 11 EBULU EMMANUEL`, slug `no-11-ebulu-emmanuel`.
+       The guard below refuses a bare `No. 11` and always has, but the pattern only
+       matches a number on its own -- a number with a name after it sailed through, and
+       the number then followed that person into their profile URL.
+
+       Stripping rather than refusing, because the name behind the number is the
+       person: `No. 11 EBULU EMMANUEL` is Ebulu Emmanuel and should resolve to him. A
+       bare `No. 11` still reaches the guard untouched, since there is no name behind
+       it to take. */
+    const normalized = normalizePlayerName(stripNumberPrefix(displayName));
     const key = playerLookupKey(normalized);
     if (!key) {
       throw new Error("Player name is required");
