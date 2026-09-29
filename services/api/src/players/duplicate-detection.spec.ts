@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupProbableDuplicates, reorderKey } from "./duplicate-player-detection";
+import { groupProbableDuplicates, reorderKey } from "./duplicate-detection";
 
 /**
  * What counts as the same person.
