@@ -911,9 +911,7 @@ export function AdminScoreboardEntitiesPage() {
                 >
                   {COMPETITION_STATUSES.map((status) => (
                     <option key={status} value={status}>
-                      {status === "active"
-                        ? "Ongoing"
-                        : status.charAt(0).toUpperCase() + status.slice(1)}
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
                     </option>
                   ))}
                 </select>

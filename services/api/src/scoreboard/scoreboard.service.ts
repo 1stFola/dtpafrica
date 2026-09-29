@@ -366,6 +366,23 @@ function parseManualGoalScorersForMatch(
   return scorers;
 }
 
+/**
+ * Which competitions the public ScoreBoard lists.
+ *
+ * `isPublished` alone was the whole filter, so the status column decided nothing:
+ * setting a competition to Archived changed a badge in the admin and left it on the
+ * public site. Archived is finished with and Draft is not ready, and neither is
+ * something to browse.
+ *
+ * Written as a `notIn` rather than an allow-list on purpose. A row still holding the
+ * old `upcoming` or `active` keeps showing while `db:repair:competition-status`
+ * rewrites them -- an allow-list would have hidden every competition on the site the
+ * moment this deployed.
+ */
+const PUBLIC_COMPETITIONS: Prisma.SbCompetitionWhereInput = {
+  isPublished: true,
+  status: { notIn: ["archived", "draft"] },
+};
 @Injectable()
 export class ScoreboardService {
   constructor(
@@ -748,7 +765,7 @@ export class ScoreboardService {
   async competitions() {
     const [rows, goals] = await Promise.all([
       this.prisma.sbCompetition.findMany({
-        where: { isPublished: true },
+        where: PUBLIC_COMPETITIONS,
         orderBy: { name: "asc" },
         include: {
           _count: { select: { teams: true, matches: true } },
@@ -768,7 +785,7 @@ export class ScoreboardService {
   async competitionTallies() {
     const [rows, goals] = await Promise.all([
       this.prisma.sbCompetition.findMany({
-        where: { isPublished: true },
+        where: PUBLIC_COMPETITIONS,
         select: { id: true, _count: { select: { teams: true } } },
       }),
       this.goalsByCompetition(),
@@ -848,7 +865,7 @@ export class ScoreboardService {
        competition whose fixtures sit further out would otherwise push every
        older competition out of the window entirely. */
     const competitions = await this.prisma.sbCompetition.findMany({
-      where: { isPublished: true },
+      where: PUBLIC_COMPETITIONS,
       select: { id: true },
     });
     const excluded = live.map((m) => m.id);

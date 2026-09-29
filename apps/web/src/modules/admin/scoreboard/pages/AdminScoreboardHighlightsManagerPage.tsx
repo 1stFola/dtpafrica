@@ -254,7 +254,7 @@ export function AdminScoreboardHighlightsManagerPage() {
                 </td>
                 <td>{row.competition?.name ?? "—"}</td>
                 <td>
-                  <StatusBadge status={row.isPublished ? "active" : "draft"} />
+                  <StatusBadge status={row.isPublished ? "ongoing" : "draft"} />
                 </td>
                 <td className="muted">
                   {row.publishedAt
