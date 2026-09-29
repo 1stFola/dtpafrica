@@ -11,6 +11,7 @@ import {
 } from "../players/player-home-profile";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { stripNumberPrefix } from "../players/admissible-squad-name";
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
 import { resolveUniquePlayerSlug } from "../players/player-slug";
 import { normalizePlayerAgeCategory } from "../players/age-category";
@@ -606,18 +607,30 @@ export class HomeService {
     squadRows: ScoreboardSquadRow[]
   ): Promise<ScoreboardHistoryEventRow[]> {
     const teamIds = Array.from(new Set(squadRows.map((row) => row.teamId)));
+    /*
+     * The shirt number comes off before the key is taken, on both sides.
+     *
+     * A timeline event stores its player as `No. 8 OLAIYA FARUK`, so its key was
+     * `no 8 olaiya faruk` while the squad's key was `olaiya faruk`. They could never
+     * match. Any event the recorder captured by number and that nothing later linked by
+     * foreign key was therefore invisible on that player's profile -- the goal showed on
+     * the fixture and the player had no idea the product knew about it. The whole
+     * DYNAMIC FC v HIGHKLASS SA timeline was in that state.
+     */
+    const historyKey = (name: string) => playerLookupKey(stripNumberPrefix(name));
+
     const lookupKeys = new Set(
       [
         player.displayName,
         ...squadRows.map((row) => row.displayName),
       ]
         .filter((name): name is string => Boolean(name?.trim()))
-        .map((name) => playerLookupKey(name))
+        .map((name) => historyKey(name))
         .filter(Boolean)
     );
 
     const hasLabelMatch = (value: string | null | undefined) =>
-      Boolean(value?.trim() && lookupKeys.has(playerLookupKey(value)));
+      Boolean(value?.trim() && lookupKeys.has(historyKey(value)));
 
     const labelFields: Prisma.SbMatchEventWhereInput = {
       OR: [

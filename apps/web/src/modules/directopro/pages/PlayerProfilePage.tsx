@@ -21,6 +21,7 @@ import {
 } from "../../../utils/media-url";
 import { matchCenterPath } from "../../scoreboard/utils/matchPath";
 import { playerDisplayName } from "../../../lib/player-display-name";
+import { showsOnProfileTimeline } from "../../../lib/profile-timeline";
 import {
   buildAttributeMap as buildProfileAttributeMap,
   buildPerformanceRadarScores,
@@ -86,6 +87,7 @@ const GOALKEEPER_SCOREBOARD_EVENT_TYPES = new Set([
 ]);
 
 const GOALKEEPER_NEGATIVE_EVENT_TYPES = new Set(["goalkeeper_error", "red_card"]);
+
 
 function humanizeScoreboardEventType(type: string): string {
   return (
@@ -1257,11 +1259,14 @@ function ScoreboardHistoryDashboard({
 
       <article className="profile-panel profile-benchmark scoreboard-history-panel">
         <h3>Event timeline</h3>
-        {history.events.length === 0 ? (
+        {history.events.filter(showsOnProfileTimeline).length === 0 ? (
           <p className="muted">No player events are linked yet.</p>
         ) : (
           <ul className="profile-event-list scoreboard-history-event-list">
-            {history.events.slice(0, 10).map((event) => (
+            {history.events
+              .filter(showsOnProfileTimeline)
+              .slice(0, 10)
+              .map((event) => (
               <li key={event.id}>
                 <span>{event.minute}&apos;</span>
                 <strong>{scoreboardHistoryEventLabel(event)}</strong>
@@ -1292,7 +1297,7 @@ function ScoreboardHistoryEventDashboard({
     latestAppearance?.competitionName ?? history.teams[0]?.competition.name ?? "ScoreBoard";
   const eventsByMatch = new Map<string, typeof history.events>();
 
-  for (const event of history.events) {
+  for (const event of history.events.filter(showsOnProfileTimeline)) {
     const current = eventsByMatch.get(event.match.id) ?? [];
     current.push(event);
     eventsByMatch.set(event.match.id, current);
