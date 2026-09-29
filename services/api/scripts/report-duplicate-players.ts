@@ -29,7 +29,7 @@ import {
   groupProbableDuplicates,
   reorderKey,
   type DuplicateGroup,
-} from "./duplicate-player-detection";
+} from "../src/players/duplicate-detection";
 
 loadApiEnv();
 

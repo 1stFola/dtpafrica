@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planSquadDedupe, type SquadMember } from "./squad-duplicate-plan";
-import { reorderKey } from "./duplicate-player-detection";
+import { reorderKey } from "../src/players/duplicate-detection";
 
 /** The same rule `db:report:duplicate-players` uses, so the two cannot disagree. */
 const samePerson = (a: string, b: string) => reorderKey(a) === reorderKey(b);

@@ -31,7 +31,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
-import { reorderKey } from "./duplicate-player-detection";
+import { reorderKey } from "../src/players/duplicate-detection";
 import { planSquadDedupe, type SquadMember } from "./squad-duplicate-plan";
 
 loadApiEnv();
