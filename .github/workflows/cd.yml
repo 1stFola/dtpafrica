@@ -238,6 +238,10 @@ jobs:
 
     steps:
       - name: Say what authorised this deploy
+        # This job sets `working-directory: infra/ansible` for every run step, and this one
+        # runs *before* the checkout, so that directory does not exist yet and bash cannot
+        # start. The image-build step below carries the same override for the same reason.
+        working-directory: ${{ github.workspace }}
         run: |
           echo "Trigger:  ${{ github.event_name }}"
           echo "CI run:   ${{ github.event.workflow_run.html_url || 'n/a (manual run)' }}"
