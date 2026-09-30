@@ -205,7 +205,7 @@ Two mechanisms exist in this repo, and only one of them actually runs in staging
 | Destructive changes | Silently allowed (`--accept-data-loss`) | Fails and stops |
 
 As of this change, `prisma/migrations/` **can** build a database from zero. It
-holds 19 migrations:
+holds 20 migrations:
 
 - `20260528000000_init` — baseline, the schema as it stood before the first
   incremental migration, reconstructed from git history
@@ -220,22 +220,23 @@ holds 19 migrations:
   tasks and versions, label schema versions, review decisions, active-learning items
 - `20260930030000_vision_variant_encoder` — which encoder build produced a variant, because
   the CPU and GPU worker images ship different ones
+- `20260930040000_recorder_idle_and_competition_status` — catch-up: the recorder idle-lock
+  columns and index, and the `sb_competitions.status` default, all of which had reached
+  `schema.prisma` without one
 
-**This is currently false, and the note below predicted exactly how.** Re-run on 30 Sep 2026
-against a throwaway Postgres, `prisma migrate diff` reports a difference: `prisma/migrations/`
-would build a database missing seven `sb_match_statistics` columns and an index (the recorder
-idle-lock work), and with the wrong default on `sb_competitions.status`. Those reached the schema
-without a migration.
+Verified on **30 Sep 2026**, against a throwaway Postgres in Docker:
 
-```sql
-ALTER TABLE "sb_competitions" ALTER COLUMN "status" SET DEFAULT 'scheduled';
-ALTER TABLE "sb_match_statistics" ADD COLUMN "idle_locked_at" TIMESTAMP(3), ... (7 columns);
-CREATE INDEX "sb_match_statistics_idle_locked_at_idx" ON "sb_match_statistics"("idle_locked_at");
-```
+- `prisma migrate diff` reports `-- This is an empty migration.` in **both** directions,
+- and `prisma migrate deploy` applies all 20 to an empty database with no error.
 
-Staging is unaffected: the API image's `CMD` runs `db:push`, so those columns exist there. What is
-broken is provisioning a **new** database from `prisma/migrations`, which is the one thing that
-directory is for. A catch-up migration is needed; the SQL above is Prisma's own output.
+It was false when checked an hour earlier, exactly as the note below predicted: seven
+`sb_match_statistics` columns, an index, and the `sb_competitions.status` default had reached
+`schema.prisma` without a migration. Staging never noticed, because the API image's `CMD` runs
+`db:push`; what was broken was provisioning a **new** database, which is the one thing
+`prisma/migrations/` is for. The catch-up migration uses `IF NOT EXISTS` throughout — unlike a
+generated one — because every database that exists today was built by `db push` and already has
+those columns, so it has to be safe on both a fresh database and an existing one. That was tested
+by applying it twice.
 
 > Re-check this whenever a migration is added. The list above went stale once
 > already: two Vision migrations landed after it was written, and the baselining
