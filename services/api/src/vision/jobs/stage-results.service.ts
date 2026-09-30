@@ -211,6 +211,13 @@ export class VisionStageResultsService {
     const fps = num(proxy?.fps);
     const height = int(proxy?.height);
     const settingsHash = str(proxy?.settingsHash);
+    // Which encoder build the worker used, as it reported it. The settings hash covers the
+    // recipe and not the build that runs it, and the CPU and GPU worker images ship
+    // different builds -- so without this, two proxies that are not byte-identical are
+    // indistinguishable here. Named no more precisely than that on purpose: this file is
+    // control plane, and an architecture test forbids it so much as mentioning a media
+    // tool. docs/vision/27-SPIKE-S0-SURPRISES.md, S0-12, has the versions.
+    const encoder = str(proxy?.encoder);
 
     const variants: {
       kind: string;
@@ -220,6 +227,7 @@ export class VisionStageResultsService {
       height: number | null;
       durationMs: number | null;
       settingsHash: string | null;
+      encoder: string | null;
     }[] = [
       {
         kind: "proxy",
@@ -229,6 +237,7 @@ export class VisionStageResultsService {
         height,
         durationMs,
         settingsHash,
+        encoder,
       },
       ...completion.artifacts
         .filter((a) => a.role === "thumbnail")
@@ -240,6 +249,9 @@ export class VisionStageResultsService {
           height: null,
           durationMs: null,
           settingsHash: null,
+          // A thumbnail is a frame grab, not an encode; there is no encoder build worth
+          // recording against it.
+          encoder: null,
         })),
     ];
 
@@ -263,6 +275,7 @@ export class VisionStageResultsService {
             height: v.height,
             durationMs: v.durationMs,
             settingsHash: v.settingsHash,
+            encoder: v.encoder,
           },
         })
       )

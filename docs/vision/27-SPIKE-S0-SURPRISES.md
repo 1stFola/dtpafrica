@@ -16,7 +16,7 @@ pod and must not be quoted until it is filled in. That distinction is the whole 
 
 | Deliverable | State |
 |---|---|
-| `dtp-vision-engine:0.1` GPU image | [`services/vision-worker/Dockerfile.gpu`](../../services/vision-worker/Dockerfile.gpu) — written, **not yet built** (no Docker daemon or CUDA host here) |
+| `dtp-vision-engine:0.1` GPU image | [`services/vision-worker/Dockerfile.gpu`](../../services/vision-worker/Dockerfile.gpu) — **built green**, 30 Sep 2026, in the manual `gpu-image` CI job |
 | `detect` stage | [`stages/detect.py`](../../services/vision-worker/dtp_vision_worker/stages/detect.py) — torchvision Faster R-CNN, 12 tests |
 | Benchmark harness | [`bench.py`](../../services/vision-worker/dtp_vision_worker/bench.py) → `dtp-vision-bench`, 20 tests |
 | Cost-per-match number | **missing** — needs one pod run |
@@ -67,6 +67,12 @@ have built and the worker would have started with no torch.
 Fixed with an explicit venv (`python3.11 -m venv /opt/venv`) so one interpreter is unambiguous for
 pip, the entry point and the smoke test. The image also now fails its own build if `torch`,
 `torchvision`, `cv2`, `boto3` or the stage registry will not import.
+
+**Settled by the first build, 30 Sep 2026.** The in-image check printed
+`torch 2.5.1+cu124 gpu stages ['detect']`, and the apt log shows `python3.10` pulled in as a
+dependency alongside 3.11 — which is exactly the interpreter apt's pip would have installed 2.5 GB
+of torch into. The venv was not belt and braces; it was the difference between a working image and
+one that starts and fails every job.
 
 **What it changes:** the build-time smoke test is not ceremony. It converts "the pod started and
 every job failed" into "the image did not build."
@@ -200,6 +206,42 @@ which is what makes `12-COST-MODEL.md` verifiable against reality instead of aga
 
 ---
 
+### S0-12 — Two images, two FFmpeg builds, one settings hash *(measured)*
+
+The GPU image had to start from `nvidia/cuda:...-ubuntu22.04` rather than the CPU image's
+`python:3.12-slim-bookworm` (S0-2). A consequence nobody chose, and only visible once both images
+existed and printed their versions in CI:
+
+| Image | Base | FFmpeg |
+|---|---|---|
+| `dtp-vision-worker` (CPU) | Debian bookworm | **5.1.9-0+deb12u1** |
+| `dtp-vision-engine` (GPU) | Ubuntu jammy | **4.4.2-0ubuntu0.22.04.1** |
+
+Meanwhile `media.settings_hash()` hashes `h264:crf=23:fps=25:height=720:pix=yuv420p` — the recipe,
+and nothing about the build that runs it. Its own comment says it exists so *"a re-run can be
+skipped rather than producing a subtly different proxy that invalidates annotations."* Two libx264
+builds produce byte-different proxies under an identical hash, which is the precise failure it was
+written to prevent.
+
+**Bounded today, not tomorrow.** `transcode` is in `CPU_STAGES` and routes to `cpu_small`, so every
+production proxy so far came from the CPU image. Two ways it still bites: S0's own transcode timing
+(U3) is measured on 4.4.2 while production encodes on 5.1.9, so those numbers are not comparing like
+with like; and annotations are frame-indexed against the proxy, so the day anyone routes transcode
+differently, or a base image moves, proxies diverge silently.
+
+**Fixed as provenance, not as identity.** Folding the build string into the hash is the obvious
+move and the wrong one: every FFmpeg upgrade would invalidate every proxy and force a re-transcode
+of the whole corpus. Instead `transcode` reports the FFmpeg build, and it is stored on the variant
+row — so what made a proxy is answerable, without claiming any two proxies are identical. The
+benchmark harness already recorded the same string in its environment block, which is how the
+difference surfaced at all.
+
+**What it changes:** "same settings" and "same bytes" are different claims, and a pipeline that
+re-encodes needs to be able to tell them apart. Worth revisiting whether the two images should share
+an FFmpeg version at all — a question for Phase 3, when the proxy recipe stops moving.
+
+---
+
 ## Deviation from D5 — raised, and settled
 
 [02-DECISIONS.md D5](./02-DECISIONS.md#d5--phase-0-sequencing) originally said S0 runs on throwaway
@@ -234,7 +276,7 @@ Nothing in this section may be quoted anywhere until it has a number beside it.
 | U7 | **Ball visibility % on real Nigerian grassroots footage** | `detection.ballVisibilityPct` |
 | U8 | How badly platform compression destroys ball pixels | narrative, here |
 | U9 | Upload behaviour on a Nigerian link (the plan calls this out specifically) | narrative, here |
-| U10 | Whether `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` and `python3.11` on jammy both resolve | the `gpu-image` CI job |
+| ~~U10~~ | ~~Whether the CUDA tag and jammy's `python3.11` both resolve~~ | **Answered 30 Sep 2026: both do.** Cold build 6m18s, ~20 min for the job, 3.1 GB torch layer. Non-root (uid 1000), `dtp-vision-bench` runnable, FFmpeg 4.4.2 present. |
 
 U7 is the one that can change the roadmap: if the ball is visible in a small fraction of frames,
 every downstream plan that assumes ball position needs rewriting, and Phase 6's possession engine is

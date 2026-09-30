@@ -10,9 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import subprocess
 from dataclasses import dataclass
 from fractions import Fraction
+from functools import lru_cache
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -155,6 +157,9 @@ def transcode_proxy(source: Path, target: Path, timeout: float = 14_400.0) -> di
         # A settings hash lets a re-run be skipped rather than producing a subtly
         # different proxy that invalidates existing annotations.
         "settingsHash": settings_hash(),
+        # Provenance, not identity: see settings_hash() for why this is recorded rather
+        # than hashed.
+        "encoder": encoder_version(),
     }
 
 
@@ -214,9 +219,59 @@ def frame_timestamp_ms(index: int, fps: float = DETECT_SAMPLE_FPS) -> int:
     """
     return int(round(((index - 1) / fps) * 1000))
 
+
 def settings_hash() -> str:
+    """The recipe, and deliberately only the recipe.
+
+    It does **not** cover the encoder that runs the recipe, which matters more than it
+    reads: the CPU image ships FFmpeg 5.1.9 (bookworm) and the GPU image 4.4.2 (jammy), so
+    two workers can produce byte-different proxies under an identical hash -- the exact
+    thing this hash exists to prevent. Folding the build string in here would be the
+    obvious fix and the wrong one: every FFmpeg upgrade would invalidate every proxy and
+    force a re-transcode of the whole corpus.
+
+    So the encoder is recorded as provenance instead, by `encoder_version()`, and travels
+    with the variant. What made a proxy is then answerable without asserting that any two
+    proxies are identical.
+    """
     recipe = f"h264:crf={PROXY_CRF}:fps={PROXY_FPS}:height={PROXY_HEIGHT}:pix=yuv420p"
     return hashlib.sha256(recipe.encode()).hexdigest()[:16]
+
+
+def _parse_encoder_version(banner: str) -> str | None:
+    """Pull the version out of `ffmpeg -version`, dropping the copyright tail.
+
+    Separated from the subprocess call so it can be tested against the banners the two
+    images actually print, neither of which this machine can produce.
+    """
+    first = banner.strip().splitlines()[0] if banner.strip() else ""
+    match = re.match(r"^ffmpeg version (\S+)", first)
+    if not match:
+        return None
+    return f"ffmpeg {match.group(1)}"
+
+
+@lru_cache(maxsize=1)
+def encoder_version() -> str | None:
+    """Which FFmpeg build is in this image, e.g. `ffmpeg 5.1.9-0+deb12u1`.
+
+    Cached: it cannot change while the process lives, and a transcode job should not pay
+    for a subprocess to ask twice.
+
+    libx264 has no separately reported build here -- `ffmpeg -version` names the library
+    but not its version -- so the FFmpeg build string is the practical stand-in, and it is
+    what changes when the base image changes.
+    """
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-version"], capture_output=True, timeout=30, check=True
+        ).stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.SubprocessError):
+        # Not fatal. A proxy with no recorded encoder is worse than one with it, and far
+        # better than a transcode that refused to run over a provenance detail.
+        log.warning("could not read the ffmpeg version; the proxy will not record one")
+        return None
+    return _parse_encoder_version(out)
 
 
 def thumbnail(source: Path, target: Path, at_ms: int, timeout: float = 120.0) -> None:

@@ -51,6 +51,7 @@ from .media import (
     PROXY_FPS,
     PROXY_HEIGHT,
     MediaError,
+    encoder_version,
     probe,
     sample_frames,
     transcode_proxy,
@@ -402,16 +403,10 @@ def environment() -> dict[str, Any]:
     except Exception as exc:  # torch is absent on a CPU box, which is not an error here
         info["torch"] = None
         info["torchImportError"] = str(exc)
-    if shutil.which("ffmpeg"):
-        try:
-            out = subprocess.run(
-                ["ffmpeg", "-version"], capture_output=True, timeout=30, check=True
-            ).stdout.decode()
-            info["ffmpeg"] = out.splitlines()[0] if out else None
-        except (OSError, subprocess.SubprocessError):
-            info["ffmpeg"] = "present, version unreadable"
-    else:
-        info["ffmpeg"] = None
+    # The same string the transcode stage records against the variant it produces, so a
+    # benchmark run and a stored proxy can be compared without parsing two formats. The
+    # two images ship different FFmpeg builds (S0-12), which is exactly why this is here.
+    info["ffmpeg"] = encoder_version()
     return info
 
 
