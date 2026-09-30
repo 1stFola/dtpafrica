@@ -48,10 +48,8 @@ const GOAL_TYPES = ["goal", "goal_penalty", "own_goal"];
 
 const REASONS: Record<UnlinkedGoal["reason"], string> = {
   "not-a-name": "the label names nobody — Unknown, Player, or a bare shirt number",
-  "no-team-on-the-event": "the event carries no team, so there is nothing to check a name against",
   "nobody-by-that-name": "no directory player holds that name",
-  "several-of-that-name": "two players of that name are tied to this team — a human decides",
-  "not-tied-to-that-team": "that name is in the directory, but not at this club",
+  "several-of-that-name": "two records hold that name — merge them first, then re-run",
 };
 
 async function main() {
@@ -131,9 +129,12 @@ async function main() {
     console.log(`To link (${plan.links.length} goal(s), ${byPlayer.size} player(s))`);
     console.log("-".repeat(76));
     console.log(
-      "  The label names this player, and this player has played for the team the goal was\n" +
-        "  scored for — by a squad row, or by their own events. Both are checked because a\n" +
-        "  boy missing from a team sheet is exactly how a goal came to be unlinked.\n"
+      "  The label names exactly one player in the directory, and the directory holds one\n" +
+        "  record per name — normalizedName is unique, so there is no second Farouk Salami\n" +
+        "  to confuse him with.\n\n" +
+        "  Where that record is also tied to the club that scored, it says so. A link marked\n" +
+        "  name-only rests on the directory being a directory and nothing more, which is the\n" +
+        "  same basis db:sync:squad-from-timeline already resolves labels on.\n"
     );
     for (const row of [...byPlayer.values()].sort((a, b) => b.count - a.count)) {
       console.log(
@@ -158,7 +159,7 @@ async function main() {
       console.log(`  ${rows.length.toString().padStart(3)}  ${REASONS[reason]}`);
       /* The labels are worth seeing for the reasons a human can act on, and noise for the
          ones nobody can: nothing is gained by printing `Unknown` twenty-one times. */
-      if (reason === "not-tied-to-that-team" || reason === "several-of-that-name") {
+      if (reason === "several-of-that-name" || reason === "nobody-by-that-name") {
         for (const row of rows.slice(0, 15)) {
           const where = teamName.get(row.goal.teamId ?? "") ?? row.goal.teamId ?? "no team";
           console.log(`         ${row.goal.label.slice(0, 30).padEnd(32)} scored for ${where}`);

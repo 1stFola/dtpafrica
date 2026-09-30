@@ -14,14 +14,29 @@
  * squad of the team it belongs to. A boy who was never added to that team sheet -- the
  * commonest gap in this data -- resolves to nothing, and the goal stays a string.
  *
- * **The evidence rule is the one that worked for numbered duplicates.** A name match alone
- * is not enough: names repeat, and attaching a goal to the wrong `Musa Abdul` is worse than
- * leaving it unattached, because a wrong goal on a profile is invisible while a missing one
- * is merely absent. So the named player must also have played for the team the goal belongs
- * to -- by a squad row, or by their own events.
+ * **A club tie was required at first, and the live data showed that to be wrong.** Of the 88,
+ * only one goal could be linked: `Farouk Salami` has six goals for FC BABINGTON, no squad row
+ * there, and no linked events anywhere -- because the only evidence he plays anywhere is the
+ * goals being refused. The rule could not link precisely the players who needed it.
  *
- * **One candidate only.** Two directory players sharing a name and both tied to that team is
- * exactly the case a machine must not decide.
+ * **What settles it is the directory's own model.** `Player.normalizedName` is `@unique`, so
+ * the directory holds exactly one `Farouk Salami` and can never hold a second. Requiring a
+ * club tie was therefore stricter than the database being written to: it refused to attach a
+ * goal to the only record that could ever hold it. `db:sync:squad-from-timeline` already
+ * resolves labels the same way, by `findUnique({ normalizedName })` with no club check.
+ *
+ * **And the domain says the same.** From the people who run these competitions: two players
+ * sharing a first or last name -- or one being the other reversed -- have never played in the
+ * same team in the same competition. Where names come close, a third name distinguishes them.
+ * That is the fact underneath the squad-scoped merges too, and it is written here because
+ * nobody reading this code could know it otherwise.
+ *
+ * **One candidate only, still.** `normalizedName` is nullable, and Postgres lets nulls
+ * duplicate freely, so two records can hold one name when neither has a key. That is the case
+ * a machine must not decide, and it is refused.
+ *
+ * Whether the record is tied to the goal's club is still reported -- `squad`, `events` or
+ * `name-only` -- because a reader should see which links rest on the identity model alone.
  */
 import { playerLookupKey } from "@dtp/engines";
 
@@ -47,8 +62,14 @@ export type DirectoryPlayer = {
 export type GoalLink = {
   goal: UnattributedGoal;
   player: DirectoryPlayer;
-  /** Which evidence tied the player to the goal's team. */
-  evidence: "squad" | "events";
+  /**
+   * How this player relates to the team the goal was scored for.
+   *
+   * `name-only` is not a weaker link, it is a link resting on the directory being a
+   * directory: one record per name, so the name IS the identity. It is reported apart so a
+   * reader can see which links carry corroborating evidence and which do not.
+   */
+  evidence: "squad" | "events" | "name-only";
 };
 
 export type UnlinkedGoal = {
@@ -56,10 +77,8 @@ export type UnlinkedGoal = {
   /** Why it stays unlinked, in the words the report prints. */
   reason:
     | "not-a-name"
-    | "no-team-on-the-event"
     | "nobody-by-that-name"
-    | "several-of-that-name"
-    | "not-tied-to-that-team";
+    | "several-of-that-name";
   /** Directory players holding the name, when that is the interesting part. */
   candidates: DirectoryPlayer[];
 };
@@ -129,12 +148,6 @@ export function planGoalLinks(
       refuse(goal, "not-a-name");
       continue;
     }
-    if (!goal.teamId) {
-      /* Without a team there is nothing to check a name against, and a name on its own is
-         how a goal ends up on the wrong profile. */
-      refuse(goal, "no-team-on-the-event");
-      continue;
-    }
 
     const key = playerLookupKey(nameFromLabel(goal.label));
     const holders = byKey.get(key) ?? [];
@@ -142,24 +155,20 @@ export function planGoalLinks(
       refuse(goal, "nobody-by-that-name");
       continue;
     }
-
-    const tied = holders.filter(
-      (p) => p.teamIds.includes(goal.teamId!) || p.eventTeamIds.includes(goal.teamId!)
-    );
-    if (!tied.length) {
-      refuse(goal, "not-tied-to-that-team", holders);
-      continue;
-    }
-    if (tied.length > 1) {
-      refuse(goal, "several-of-that-name", tied);
+    if (holders.length > 1) {
+      /* Two records for one name, which `normalizedName` being nullable allows. Nothing here
+         can choose between them and the domain says they should not both exist. */
+      refuse(goal, "several-of-that-name", holders);
       continue;
     }
 
-    const player = tied[0]!;
+    const player = holders[0]!;
+    const tiedBySquad = goal.teamId ? player.teamIds.includes(goal.teamId) : false;
+    const tiedByEvents = goal.teamId ? player.eventTeamIds.includes(goal.teamId) : false;
     links.push({
       goal,
       player,
-      evidence: player.teamIds.includes(goal.teamId) ? "squad" : "events",
+      evidence: tiedBySquad ? "squad" : tiedByEvents ? "events" : "name-only",
     });
   }
 

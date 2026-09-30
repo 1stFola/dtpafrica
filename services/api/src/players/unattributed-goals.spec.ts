@@ -101,46 +101,47 @@ describe("planGoalLinks", () => {
     expect(plan.unlinked[0]!.reason).toBe("nobody-by-that-name");
   });
 
-  it("refuses when the named player has nothing to do with that team", () => {
-    /* The whole safety argument: a wrong goal on a profile is invisible, while a missing one
-       is merely absent. Names repeat, so a name match alone is not evidence. */
+  it("links a player whose club has nothing to do with the goal, and says so", () => {
+    /* This asserted the opposite until the live run: a club tie was required, and only one
+       goal of 88 could be linked. `Farouk Salami` has six for FC BABINGTON, no squad row
+       there and no linked events anywhere -- the only evidence he plays anywhere being the
+       goals themselves.
+
+       `Player.normalizedName` is unique, so the directory holds exactly one record per name
+       and there is no second Farouk Salami to confuse him with. Requiring more than the name
+       was stricter than the database being written to. The domain agrees: two players sharing
+       a first or last name have never played in the same team in the same competition, and
+       where names come close a third name distinguishes them. */
     const plan = planGoalLinks(
-      [goal("e1", "Musa Abdul", "jp")],
-      [player("p1", "Musa Abdul", ["super"], ["super"])]
+      [goal("e1", "Farouk Salami", "jp")],
+      [player("p1", "Farouk Salami", ["ikorodu"], ["ikorodu"])]
     );
-    expect(plan.links).toHaveLength(0);
-    expect(plan.unlinked[0]!.reason).toBe("not-tied-to-that-team");
-    expect(plan.unlinked[0]!.candidates).toHaveLength(1);
+    expect(plan.links).toHaveLength(1);
+    expect(plan.links[0]!.evidence).toBe("name-only");
   });
 
-  it("refuses when two players of that name are both tied to the team", () => {
+  it("refuses when two records hold that name", () => {
+    /* `normalizedName` is nullable and Postgres lets nulls duplicate, so this is possible
+       even though the directory is meant to hold one record per name. Nothing here can
+       choose between them, and the domain says they should not both exist. */
     const plan = planGoalLinks(
       [goal("e1", "Alfred Isaac")],
-      [player("p1", "Alfred Isaac", ["jp"]), player("p2", "ALFRED ISAAC", ["jp"])]
+      [player("p1", "Alfred Isaac", ["jp"]), player("p2", "ALFRED ISAAC", ["royal"])]
     );
     expect(plan.links).toHaveLength(0);
     expect(plan.unlinked[0]!.reason).toBe("several-of-that-name");
     expect(plan.unlinked[0]!.candidates).toHaveLength(2);
   });
 
-  it("picks the tied player when a namesake elsewhere is not tied", () => {
-    /* Two boys called Alfred Isaac at different clubs is the ordinary case, and the goal
-       belongs to the one who plays where it was scored. */
-    const plan = planGoalLinks(
-      [goal("e1", "Alfred Isaac", "jp")],
-      [player("p1", "Alfred Isaac", ["jp"]), player("p2", "Alfred Isaac", ["royal"])]
-    );
-    expect(plan.links).toHaveLength(1);
-    expect(plan.links[0]!.player.id).toBe("p1");
-  });
-
-  it("refuses a goal with no team, whatever the label says", () => {
+  it("still links a goal that carries no team", () => {
+    /* The team was the thing being checked against, and it no longer is. A label naming one
+       directory player is that player, whatever the event does or does not record. */
     const plan = planGoalLinks(
       [goal("e1", "Farouk Salami", null)],
       [player("p1", "Farouk Salami", ["jp"])]
     );
-    expect(plan.links).toHaveLength(0);
-    expect(plan.unlinked[0]!.reason).toBe("no-team-on-the-event");
+    expect(plan.links).toHaveLength(1);
+    expect(plan.links[0]!.evidence).toBe("name-only");
   });
 
   it("refuses every label that is not a name, without looking anybody up", () => {
