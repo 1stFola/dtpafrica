@@ -43,6 +43,47 @@ loadApiEnv();
 const prisma = new PrismaClient();
 const APPLY = process.argv.includes("--apply");
 
+/**
+ * Which team each record has played for, from the `teamId` on its own events.
+ *
+ * Read fresh each time it is called, because a merge moves the folded record's events onto
+ * the survivor -- the check after the merges has to see the database as it is then, not as
+ * it was when the plan was made.
+ */
+async function readEventTeams(client: PrismaClient): Promise<Map<string, string[]>> {
+  const rows: EventTeamRow[] = await client.sbMatchEvent.findMany({
+    where: {
+      teamId: { not: null },
+      OR: [{ playerId: { not: null } }, { assistPlayerId: { not: null } }],
+    },
+    select: { teamId: true, playerId: true, assistPlayerId: true },
+  });
+
+  const teams = new Map<string, string[]>();
+  const note = (playerId: string | null, teamId: string | null) => {
+    if (!playerId || !teamId) return;
+    const held = teams.get(playerId);
+    if (held) {
+      if (!held.includes(teamId)) held.push(teamId);
+    } else {
+      teams.set(playerId, [teamId]);
+    }
+  };
+  for (const row of rows) {
+    note(row.playerId, row.teamId);
+    /* An assist is a goal for that team as much as the goal is, and a record can hold only
+       assists -- the live list has one with a single assist and nothing else. */
+    note(row.assistPlayerId, row.teamId);
+  }
+  return teams;
+}
+
+type EventTeamRow = {
+  teamId: string | null;
+  playerId: string | null;
+  assistPlayerId: string | null;
+};
+
 async function main() {
   console.log(
     `Records whose name carries a shirt number — ${
@@ -69,10 +110,15 @@ async function main() {
     }
   }
 
+  /* Squad membership alone cannot tell "plays for another club" from "was never written on
+     a team sheet", and those are opposite readings. What the events say settles it. */
+  const eventTeams = await readEventTeams(prisma);
+
   const candidates: NumberedCandidate[] = players.map((p) => ({
     id: p.id,
     displayName: p.displayName,
     teamIds: teamsByPlayer.get(p.id) ?? [],
+    eventTeamIds: eventTeams.get(p.id) ?? [],
   }));
 
   const plan = planNumberedDuplicates(candidates);
@@ -109,7 +155,13 @@ async function main() {
   const teamName = new Map(teamNames.map((t) => [t.id, t.name]));
 
   const describe = (pair: NumberedPair) => {
-    const where = pair.sharedTeamIds.map((id) => teamName.get(id) ?? id).join(", ");
+    const named = (ids: string[]) => ids.map((id) => teamName.get(id) ?? id).join(", ");
+    const where =
+      pair.evidence === "squad"
+        ? `${named(pair.sharedTeamIds)}  (both on the team sheet)`
+        : pair.evidence === "events"
+          ? `${named(pair.sharedEventTeamIds)}  (played for, no shared team sheet)`
+          : "no team in common";
     const numberedEvents = events.get(pair.numbered.id) ?? 0;
     const plainEvents = events.get(pair.plain.id) ?? 0;
     console.log(`  ${where || "no team in common"}`);
@@ -125,16 +177,23 @@ async function main() {
   };
 
   console.log(`  ${candidates.length} player record(s) read`);
+  const bySquad = plan.mergeable.filter((p) => p.evidence === "squad").length;
+  const byEvents = plan.mergeable.length - bySquad;
   console.log(`  ${plan.mergeable.length} to fold into the record holding the name`);
-  console.log(`  ${plan.needsAHuman.length} sharing no team, left for a human\n`);
+  console.log(`      ${bySquad} on a shared team sheet, ${byEvents} on shared match events`);
+  console.log(`  ${plan.needsAHuman.length} with neither, left for a human\n`);
 
   if (plan.mergeable.length) {
     console.log(`To fold (${plan.mergeable.length})`);
     console.log("-".repeat(76));
     console.log(
-      "  Every one of them, never a page: a merge cannot be undone by re-running.\n" +
-        "  The shirt number is not part of the name, and both records are on the team\n" +
-        "  named beside them — which is the evidence that they are one person.\n"
+      "  Every one of them, never a page: a merge cannot be undone by re-running.\n\n" +
+        "  The shirt number is not part of the name, and the team beside each pair is what\n" +
+        "  ties the two records to one person:\n" +
+        "    both on the team sheet          — each record has a squad row at that club\n" +
+        "    played for, no shared team sheet — the numbered record has no squad row at all,\n" +
+        "                                       but its goals were scored for that club, and\n" +
+        "                                       the record being kept plays there\n"
     );
     for (const pair of plan.mergeable) describe(pair);
   }
@@ -178,6 +237,9 @@ async function main() {
          remove. Rows on teams the survivor is not in are kept: those are real squad
          memberships, and db:repair:player-display-names realigns their spelling. */
       const removed = await tx.sbTeamSquad.deleteMany({
+        /* Only the squad-shared teams. On an events-only pair the survivor has no row there
+           to be duplicated, and deleting the numbered record's row would throw away a real
+           squad membership instead of a redundant one. */
         where: { playerId: pair.numbered.id, teamId: { in: pair.sharedTeamIds } },
       });
       rowsRemoved += removed.count;
@@ -208,11 +270,15 @@ async function main() {
       afterTeams.set(row.playerId, [row.teamId]);
     }
   }
+  /* Read again: the merges moved events onto the survivors, so this check must see the
+     database as it is now rather than the plan it started from. */
+  const afterEventTeams = await readEventTeams(prisma);
   const remaining = planNumberedDuplicates(
     after.map((p) => ({
       id: p.id,
       displayName: p.displayName,
       teamIds: afterTeams.get(p.id) ?? [],
+      eventTeamIds: afterEventTeams.get(p.id) ?? [],
     }))
   );
 

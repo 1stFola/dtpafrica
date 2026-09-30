@@ -22,8 +22,14 @@
  * in front of a name is bookkeeping, not identity — the same reasoning that lets
  * `db:merge:squad-duplicates` act where the directory-wide tool refuses.
  *
- * Pairs with no team in common are reported as `needs-a-human` rather than merged. That
- * list is short and somebody who knows the competitions can settle it.
+ * **Squad membership is not the only evidence, and on live it was the weaker half.** Of the
+ * nine pairs the first version refused, seven had the numbered record carrying *more*
+ * events than the record being kept -- the signature of a record created from a timeline
+ * label that nobody ever put on a team sheet. So a shared team is taken from squad rows or
+ * from the `teamId` on the events themselves, and the report says which it found.
+ *
+ * Pairs with neither are reported as `needs-a-human` rather than merged. That list is short
+ * and somebody who knows the competitions can settle it.
  */
 import { playerLookupKey } from "@dtp/engines";
 import { stripNumberPrefix } from "./admissible-squad-name";
@@ -34,6 +40,19 @@ export type NumberedCandidate = {
   displayName: string;
   /** Team ids this record appears in, from `SbTeamSquad`. */
   teamIds: string[];
+  /**
+   * Team ids this record has played for, from the `teamId` on its own events.
+   *
+   * A record created from a timeline label often has no squad row at all -- somebody filed
+   * a goal for `No. 4 ALFRED ISAAC` and nobody ever added him to a team sheet. Squad
+   * membership alone therefore cannot tell "plays for another club" from "was never
+   * written on a team sheet", and those are opposite readings: the first is evidence of a
+   * different person, the second is no evidence at all.
+   *
+   * What the events say is stronger anyway. A squad row is somebody typing a name into a
+   * list; an event is a goal scored for that team in a match that happened.
+   */
+  eventTeamIds: string[];
 };
 
 export type NumberedPair = {
@@ -43,8 +62,12 @@ export type NumberedPair = {
   plain: NumberedCandidate;
   /** The name they agree on once the number is off the front. */
   name: string;
-  /** Team ids both records appear in. Empty means no shared evidence. */
+  /** Team ids both records appear in, from squad rows. */
   sharedTeamIds: string[];
+  /** Team ids both records have played for, from their events. */
+  sharedEventTeamIds: string[];
+  /** Which evidence put this pair together. `none` means it is for a human. */
+  evidence: "squad" | "events" | "none";
 };
 
 export type NumberedPlan = {
@@ -97,9 +120,28 @@ export function planNumberedDuplicates(candidates: NumberedCandidate[]): Numbere
     if (plain.id === numbered.id) continue;
 
     const shared = numbered.teamIds.filter((id) => plain.teamIds.includes(id));
-    const pair: NumberedPair = { numbered, plain, name, sharedTeamIds: shared };
-    if (shared.length) mergeable.push(pair);
-    else needsAHuman.push(pair);
+    /* Either side of the comparison may be the one with no squad row, so a numbered
+       record's events are checked against the plain record's squad and events alike. */
+    const plainTeams = new Set([...plain.teamIds, ...plain.eventTeamIds]);
+    const sharedEvents = [...new Set(numbered.eventTeamIds)].filter((id) =>
+      plainTeams.has(id)
+    );
+
+    const evidence: NumberedPair["evidence"] = shared.length
+      ? "squad"
+      : sharedEvents.length
+        ? "events"
+        : "none";
+    const pair: NumberedPair = {
+      numbered,
+      plain,
+      name,
+      sharedTeamIds: shared,
+      sharedEventTeamIds: sharedEvents,
+      evidence,
+    };
+    if (evidence === "none") needsAHuman.push(pair);
+    else mergeable.push(pair);
   }
 
   return { mergeable, needsAHuman };

@@ -15,8 +15,9 @@ import {
 const player = (
   id: string,
   displayName: string,
-  teamIds: string[] = ["t1"]
-): NumberedCandidate => ({ id, displayName, teamIds });
+  teamIds: string[] = ["t1"],
+  eventTeamIds: string[] = []
+): NumberedCandidate => ({ id, displayName, teamIds, eventTeamIds });
 
 describe("carriesNumberPrefix", () => {
   it("recognises the forms the live data actually holds", () => {
@@ -71,17 +72,60 @@ describe("planNumberedDuplicates", () => {
     expect(plan.mergeable[0]!.plain.displayName).toBe("Bakare O Ahmed");
   });
 
-  it("refuses to merge two records that share no team", () => {
+  it("refuses to merge two records that share no team, by squad or by events", () => {
     /* The whole reason this is not a blind fold: names repeat, and `No. 4 Alfred Isaac` at
        one club need not be the `Alfred Isaac` at another. */
     const plan = planNumberedDuplicates([
-      player("a", "No. 4 Alfred Isaac", ["lions"]),
-      player("b", "Alfred Isaac", ["royal"]),
+      player("a", "No. 4 Alfred Isaac", ["lions"], ["lions"]),
+      player("b", "Alfred Isaac", ["royal"], ["royal"]),
     ]);
 
     expect(plan.mergeable).toHaveLength(0);
     expect(plan.needsAHuman).toHaveLength(1);
-    expect(plan.needsAHuman[0]!.sharedTeamIds).toEqual([]);
+    expect(plan.needsAHuman[0]!.evidence).toBe("none");
+  });
+
+  it("accepts events as evidence when the numbered record has no squad row", () => {
+    /* The live shape: seven of the nine pairs refused by the first version had the numbered
+       record carrying MORE events than the one being kept — a record created from a timeline
+       label that nobody put on a team sheet. Having no squad row is not evidence of being a
+       different person. */
+    const plan = planNumberedDuplicates([
+      player("a", "No. 8 CHIBUEZE NZUBE", [], ["dynamic"]),
+      player("b", "Chibueze Nzube", ["dynamic"], ["dynamic"]),
+    ]);
+
+    expect(plan.mergeable).toHaveLength(1);
+    expect(plan.mergeable[0]!.evidence).toBe("events");
+    expect(plan.mergeable[0]!.sharedEventTeamIds).toEqual(["dynamic"]);
+  });
+
+  it("prefers squad evidence when both kinds are present", () => {
+    const plan = planNumberedDuplicates([
+      player("a", "No. 16 Musa Abdul", ["super"], ["super"]),
+      player("b", "Musa Abdul", ["super"], ["super"]),
+    ]);
+    expect(plan.mergeable[0]!.evidence).toBe("squad");
+  });
+
+  it("matches a numbered record's events against the plain record's squad", () => {
+    /* The plain record may be the one with no events: a boy on the team sheet whose goals
+       were all filed against the numbered spelling. */
+    const plan = planNumberedDuplicates([
+      player("a", "No. 1 ANDREW FELIX", [], ["highklass"]),
+      player("b", "Andrew Felix", ["highklass"], []),
+    ]);
+    expect(plan.mergeable).toHaveLength(1);
+    expect(plan.mergeable[0]!.evidence).toBe("events");
+  });
+
+  it("does not invent evidence from a record that has played nowhere", () => {
+    const plan = planNumberedDuplicates([
+      player("a", "No. 12 Somebody Known", [], []),
+      player("b", "Somebody Known", [], []),
+    ]);
+    expect(plan.mergeable).toHaveLength(0);
+    expect(plan.needsAHuman).toHaveLength(1);
   });
 
   it("merges on one shared team even when each record has others", () => {
