@@ -174,10 +174,11 @@ which is what makes `12-COST-MODEL.md` verifiable against reality instead of aga
 
 ---
 
-## Deviation from D5 to confirm
+## Deviation from D5 — raised, and settled
 
-[02-DECISIONS.md D5](./02-DECISIONS.md#d5--phase-0-sequencing) says S0 runs on throwaway code and
-**"No S0 code is merged into `services/`."** Two files here sit inside `services/vision-worker`:
+[02-DECISIONS.md D5](./02-DECISIONS.md#d5--phase-0-sequencing) originally said S0 runs on throwaway
+code and **"No S0 code is merged into `services/`."** Two files here sit inside
+`services/vision-worker`:
 
 - **`stages/detect.py`** — not throwaway. The contract has declared this stage for five increments
   (S0-1); it is Phase 3's baseline and the fix for a live inconsistency. Writing a second throwaway
@@ -185,13 +186,13 @@ which is what makes `12-COST-MODEL.md` verifiable against reality instead of aga
 - **`bench.py`** — must run inside the image being measured, and the image contains this package and
   nothing else.
 
-D5's intent — *"conflating them produces demo code wearing an architecture's clothes"* — is served
-by keeping the **measurements** throwaway, not the stage. Recommend amending D5 to permit the stage
-and the harness explicitly, rather than leaving a documented rule quietly broken. **This is a call
-for the owner, not for me.**
+**Settled 29 September 2026:** D5 is amended to permit exactly those two, and the phase plan now says
+the same thing in all three places it stated the old rule. The measurements — clips, pod launch
+configs, report JSON, scratch analysis — stay throwaway, which is what D5's concern (*"demo code
+wearing an architecture's clothes"*) was actually protecting. Anything else a spike wants to add to
+`services/` needs a further amendment there, not a precedent from this one.
 
 ---
-
 ## Unmeasured — what the pod run must fill in
 
 Nothing in this section may be quoted anywhere until it has a number beside it.
