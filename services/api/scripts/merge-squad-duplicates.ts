@@ -43,6 +43,21 @@ loadApiEnv();
 
 const prisma = new PrismaClient();
 const APPLY = process.argv.includes("--apply");
+/** Print the redundant-row list in full as well. The fold list is always complete. */
+const ALL = process.argv.includes("--all");
+/**
+ * How many of the safe, reversible groups to print before summarising.
+ *
+ * The irreversible list is **never** truncated, whatever this says. On live the dry run
+ * found 48 groups to fold and printed 40, so eight merges that delete player records were
+ * about to be approved by somebody who had not been shown them — while this file's own
+ * docstring promised that "the dry run lists every group with every spelling, because that
+ * list is where a human catches the case nothing here can detect".
+ *
+ * A cap is still right for the redundant rows: 180 of them, none of which destroys a
+ * record, and a wall of them is what stops the dangerous list being read at all. `--all`
+ * prints them.
+ */
 const SHOWN = 40;
 
 async function main() {
@@ -152,7 +167,9 @@ async function main() {
         "  would look exactly like one person written twice, and nothing here can tell them\n" +
         "  apart. Brothers are the plausible case. A merge cannot be undone by re-running.\n"
     );
-    for (const group of toMerge.slice(0, SHOWN)) {
+    /* Every one of them, never a slice: this is the list the paragraph above tells a human
+       to read, and the records it describes cannot be brought back. */
+    for (const group of toMerge) {
       const choice = chooseMergeTarget(group.playerIds.map(candidateFor));
       console.log(`  ${(teamNames.get(group.teamId) ?? group.teamId).slice(0, 34).padEnd(36)}`);
       console.log(`      keep   ${choice.target.displayName}  (${choice.why})`);
@@ -162,7 +179,6 @@ async function main() {
         );
       }
     }
-    if (toMerge.length > SHOWN) console.log(`  … and ${toMerge.length - SHOWN} more`);
   }
 
   if (rowsOnly.length) {
@@ -173,12 +189,14 @@ async function main() {
         "  linked. Nothing to merge; the extra row is deleted so the name resolves to one\n" +
         "  player again and goals stop reaching nobody.\n"
     );
-    for (const group of rowsOnly.slice(0, SHOWN)) {
+    for (const group of ALL ? rowsOnly : rowsOnly.slice(0, SHOWN)) {
       console.log(
         `  ${(teamNames.get(group.teamId) ?? group.teamId).slice(0, 34).padEnd(36)} ${group.names.join(" / ")}`
       );
     }
-    if (rowsOnly.length > SHOWN) console.log(`  … and ${rowsOnly.length - SHOWN} more`);
+    if (!ALL && rowsOnly.length > SHOWN) {
+      console.log(`  … and ${rowsOnly.length - SHOWN} more — pass --all to list them`);
+    }
   }
 
   if (!APPLY) {
