@@ -182,7 +182,14 @@ describe("transcode results become variant rows", () => {
     { key: "inference/j/1/t-200.jpg", bucket: "derived", bytes: 11, contentType: "image/jpeg", role: "thumbnail" },
   ];
   const summary = {
-    proxy: { key: "inference/j/1/proxy.mp4", fps: 25, height: 720, settingsHash: "abc123", durationMs: 4000 },
+    proxy: {
+      key: "inference/j/1/proxy.mp4",
+      fps: 25,
+      height: 720,
+      settingsHash: "abc123",
+      durationMs: 4000,
+      encoder: "ffmpeg 5.1.9-0+deb12u1",
+    },
     sourceIsVariableFrameRate: true,
   };
 
@@ -199,6 +206,43 @@ describe("transcode results become variant rows", () => {
     await service().apply("transcode", ASSET, { artifacts, summary });
     const proxyCreate = mockPrisma.visionVideoVariant.upsert.mock.calls[0]![0].create;
     expect(proxyCreate).toMatchObject({ fps: 25, height: 720, settingsHash: "abc123", durationMs: 4000 });
+  });
+
+  // The settings hash covers the recipe, not the build that ran it, and the CPU and GPU
+  // worker images ship different FFmpeg versions (5.1.9 against 4.4.2 -- measured during
+  // Spike S0). Without this column two proxies that are not byte-identical look identical
+  // in the database.
+  it("records which FFmpeg build produced the proxy", async () => {
+    await service().apply("transcode", ASSET, { artifacts, summary });
+    const proxyCreate = mockPrisma.visionVideoVariant.upsert.mock.calls[0]![0].create;
+    expect(proxyCreate.encoder).toBe("ffmpeg 5.1.9-0+deb12u1");
+  });
+
+  // The create branch was covered above; this is the update branch of the same upsert.
+  // Mutation testing found it untested: dropping `encoder` from the update payload broke
+  // nothing, which would mean a re-transcode on a different worker image left the old
+  // build recorded against the new file.
+  it("updates the encoder on a re-run, not just on first write", async () => {
+    await service().apply("transcode", ASSET, { artifacts, summary });
+    const proxyUpdate = mockPrisma.visionVideoVariant.upsert.mock.calls[0]![0].update;
+    expect(proxyUpdate.encoder).toBe("ffmpeg 5.1.9-0+deb12u1");
+  });
+
+  it("leaves the encoder null for a thumbnail, which is a frame grab and not an encode", async () => {
+    await service().apply("transcode", ASSET, { artifacts, summary });
+    const thumbCreate = mockPrisma.visionVideoVariant.upsert.mock.calls[1]![0].create;
+    expect(thumbCreate.encoder).toBeNull();
+  });
+
+  // A worker too old to report it, or an image where `ffmpeg -version` could not be read.
+  // The proxy is still a usable proxy; it just cannot say what made it.
+  it("accepts a proxy from a worker that reports no encoder", async () => {
+    const older = { proxy: { ...summary.proxy, encoder: undefined }, sourceIsVariableFrameRate: true };
+    const outcome = await service().apply("transcode", ASSET, { artifacts, summary: older });
+
+    expect(outcome.applied).toBe(true);
+    const proxyCreate = mockPrisma.visionVideoVariant.upsert.mock.calls[0]![0].create;
+    expect(proxyCreate.encoder).toBeNull();
   });
 
   // Upsert on (asset, kind, key) is what makes a re-run safe.

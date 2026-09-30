@@ -91,6 +91,9 @@ def run_transcode(ctx: StageContext) -> StageResult:
                 "height": proxy_info["height"],
                 "bytes": proxy_info["bytes"],
                 "settingsHash": proxy_info["settingsHash"],
+                # Which FFmpeg build made this file. The settings hash covers the recipe
+                # only, and two images run it with different encoders.
+                "encoder": proxy_info["encoder"],
                 "durationMs": duration_ms,
             },
             "source": meta.as_summary(),

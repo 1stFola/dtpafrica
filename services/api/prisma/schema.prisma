@@ -1273,8 +1273,14 @@ model VisionVideoVariant {
   /// diverge on variable-frame-rate sources and trimmed proxies.
   sourceOffsetMs Int      @default(0) @map("source_offset_ms")
   /// Hash of the encoder settings, so a re-run can be skipped rather than
-  /// producing a subtly different proxy that invalidates annotations.
+  /// producing a subtly different proxy that invalidates annotations. It covers the
+  /// recipe only -- crf, fps, height, pixel format -- and not the build that ran it.
   settingsHash   String?  @map("settings_hash")
+  /// The FFmpeg build that produced this file, e.g. `ffmpeg 5.1.9-0+deb12u1`. Recorded
+  /// because the CPU and GPU worker images ship different FFmpeg versions, so an
+  /// identical settings hash does not promise two proxies are byte-identical. Null for
+  /// variants written before this was recorded, and for thumbnails.
+  encoder        String?
   bytes          BigInt?
   createdAt      DateTime @default(now()) @map("created_at")
 
