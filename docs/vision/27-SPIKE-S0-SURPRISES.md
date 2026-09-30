@@ -152,22 +152,32 @@ clip costs a few hundred-thousandths of a dollar, which ceiled to a **zero-cent*
 failure `budget_cents` was written to prevent, at the bottom of the scale instead of the top. A run
 that cost anything now gets a budget of at least one cent.
 
-**And the first fix was in the wrong function**, which CI proved and three local runs did not.
-`budget_cents` was guarded, but `cost_usd` rounded to six decimal places, so below about 2.3ms of
-billed time a positive cost became exactly `0.0` before the budget ever saw it. A hosted runner
-completes the stubbed pipeline fast enough to cross that threshold; a Windows laptop does not, so
-the bug was invisible here and deterministic there.
+**It took three attempts, and the first two were in the wrong place.** Worth recording in full,
+because the pattern belongs to measurement code specifically:
 
-Two lessons, both about measurement code specifically:
+1. `budget_cents` was guarded so a positive cost could not ceil to zero. CI still failed.
+2. `cost_usd` rounded to six decimal places *before* the budget ever saw the number, so below about
+   2.3ms of billed time a positive cost became exactly `0.0`. Guarded too. CI failed again,
+   identically.
+3. The actual source was `Timer`, which rounded each span to a millisecond **as it recorded it**. A
+   step finishing in 400 microseconds was stored as `0.0`, so a hosted runner measured the whole
+   stubbed pipeline as zero seconds — and zero seconds costs zero dollars however carefully every
+   calculation downstream is guarded.
 
-- **A rounding rule that can turn a positive quantity into zero is a bug, not a formatting choice.**
-  `cost_usd` now falls back to three significant figures, so only a genuinely free run is free.
-- **Timing-dependent assertions are coin tosses.** Two tests here compared wall clock against a
-  constant and passed or failed on machine speed. Both now assert the arithmetic directly, and the
-  one that genuinely needs a duration injects one large enough to clear both scheduling noise and
-  the report's own rounding. A test that fails on a busy runner and passes on a quiet one teaches
-  nobody anything.
+The rule that would have prevented all three: **round at the edge, never in the ledger.** Spans and
+totals are now kept at full precision and rounded once, on the way into the report. The one display
+rounding that still mattered — `projectedMatchSeconds` to a tenth — was widened to three places for
+the same reason: a report printing 0.0 seconds beside a positive cost is the same mistake in
+friendlier clothes.
 
+**The second lesson cost as much as the first: a timing-dependent assertion is a coin toss.** Three
+tests here compared wall clock against a constant. The amortisation test was the worst — `per_clip`
+is multiplied by the 96-minute scale factor, so three milliseconds of file-system jitter between two
+runs becomes 0.14 seconds of difference and swamps the thing being measured. Injecting a slower load
+only narrowed it to one failure in six. All three now **pin the clock**: every reading is a fixed
+tick apart, both runs measure identically, and the assertions are exact rather than tolerant. The
+suite got faster in the process, and a runner quicker than this machine is now simulated
+deliberately instead of hoped against.
 ### S0-11 — The cost ledger hardcoded `gpuSeconds: 0` *(measured)*
 
 Found while checking that a `detect` job could actually be dispatched, claimed and billed.
