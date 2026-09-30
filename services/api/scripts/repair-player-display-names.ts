@@ -229,8 +229,14 @@ async function main() {
     console.log(
       "  Correcting the spelling would move the dedupe key onto one another record\n" +
         "  already holds, and the unique index would refuse the write. These are two\n" +
-        "  records for one person: merge them first with db:merge:duplicate-players,\n" +
-        "  then run this again.\n"
+        "  records for one person. Fold them first, then run this again:\n\n" +
+        "    db:merge:numbered-duplicates   when the blocked name starts with a shirt\n" +
+        "                                   number, which on live is all 47 of them\n" +
+        "    db:merge:duplicate-players     when two records already normalise to the\n" +
+        "                                   same key — casing alone, say\n\n" +
+        "  The second cannot help with the first: it groups on playerLookupKey, and\n" +
+        "  \"no 16 musa abdul\" is not \"musa abdul\". That the keys differ is exactly why\n" +
+        "  the index tolerates both records and why this is blocked rather than failing.\n"
     );
     for (const c of blocked) {
       console.log(`  ${c.from} -> ${c.to}`);
