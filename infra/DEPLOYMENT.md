@@ -238,10 +238,15 @@ generated one — because every database that exists today was built by `db push
 those columns, so it has to be safe on both a fresh database and an existing one. That was tested
 by applying it twice.
 
-> Re-check this whenever a migration is added. The list above went stale once
-> already: two Vision migrations landed after it was written, and the baselining
-> loop below did not name them, which would have left a database baselined short
-> and then failed on the next `migrate deploy`.
+> **CI now re-checks this on every pull request** — the `schema-migrations` job in
+> `.github/workflows/ci.yml` runs both diffs and a from-zero `migrate deploy` against a
+> throwaway Postgres. It exists because this instruction, aimed at a human, went stale
+> twice: first when two Vision migrations landed after the list was written, and again when
+> the recorder idle-lock columns, the competition status default and the submit-guard
+> timestamps all reached `schema.prisma` with no migration at all.
+>
+> The list above is still worth keeping current by hand, since CI checks the schema and not
+> the prose.
 
 ### Provisioning a brand-new database
 
