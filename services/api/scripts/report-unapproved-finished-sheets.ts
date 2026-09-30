@@ -91,14 +91,32 @@ async function main() {
     return;
   }
 
-  // One query rather than one per sheet: the published timeline is the other half of what
-  // approval writes, and a match with event rows already has one from somewhere else.
-  const publishedCounts = await prisma.sbMatchEvent.groupBy({
-    by: ["matchId"],
-    where: { matchId: { in: sheets.map((s) => s.matchId) } },
-    _count: { _all: true },
-  });
-  const published = new Map(publishedCounts.map((row) => [row.matchId, row._count._all]));
+  /* Two counts rather than one, because where a published event came from decides whether
+     approving is an update or a collision.
+
+     Approval deletes only the events this console published -- its `deleteMany` is scoped to
+     `metadata.source = "match_recorder"` -- and recreates them from the sheet. Events entered
+     through the match-event editor survive it. But the score is set from the sheet's goal
+     events alone, so approving a thin sheet over a match recorded elsewhere leaves the
+     scoreline and the timeline contradicting each other. */
+  const matchIds = sheets.map((s) => s.matchId);
+  const [allCounts, recorderCounts] = await Promise.all([
+    prisma.sbMatchEvent.groupBy({
+      by: ["matchId"],
+      where: { matchId: { in: matchIds } },
+      _count: { _all: true },
+    }),
+    prisma.sbMatchEvent.groupBy({
+      by: ["matchId"],
+      where: {
+        matchId: { in: matchIds },
+        metadata: { path: ["source"], equals: "match_recorder" },
+      },
+      _count: { _all: true },
+    }),
+  ]);
+  const published = new Map(allCounts.map((row) => [row.matchId, row._count._all]));
+  const fromRecorder = new Map(recorderCounts.map((row) => [row.matchId, row._count._all]));
 
   const rows = sheets.map((sheet) => {
     const events = readEvents(sheet.events);
@@ -114,10 +132,16 @@ async function main() {
       events: events.length,
       statLines: filledStatLines(sheet.tallies, events),
       publishedEvents: published.get(sheet.matchId) ?? 0,
+      publishedFromRecorder: fromRecorder.get(sheet.matchId) ?? 0,
+      publishedElsewhere:
+        (published.get(sheet.matchId) ?? 0) - (fromRecorder.get(sheet.matchId) ?? 0),
       publishedStats: hasPublishedStats(sheet.match.stats),
       /* A sheet whose events disagree with the stored score is the one case where
          approving would change what the public already sees. */
       scoreAgrees: score.home === stored.home && score.away === stored.away,
+      /* Goals the public would lose. Negative means approving would raise the score, which
+         is still a change worth reading but is not a loss. */
+      goalsRemoved: stored.home + stored.away - (score.home + score.away),
       score: `${score.home}-${score.away}`,
       stored: `${stored.home}-${stored.away}`,
       touched: sheet.updatedAt,
@@ -149,12 +173,40 @@ async function main() {
       ]
         .filter(Boolean)
         .join(", ");
+
+      /* The warnings, spelled out rather than left to be inferred from two columns. On live,
+         three of the four rows carried one, and the read is not obvious: "published 6" beside
+         "events 2" looks like a detail until you know approving takes the score down with it. */
+      const warnings: string[] = [];
+      if (r.publishedElsewhere > 0 && !r.scoreAgrees) {
+        warnings.push(
+          `APPROVING WOULD CONTRADICT THE TIMELINE: ${r.publishedElsewhere} event(s) here came ` +
+            "from the match-event editor, not this console, and approval leaves them in place " +
+            `— but it sets the score from this sheet alone (${r.stored} to ${r.score}).`
+        );
+      }
+      if (r.goalsRemoved > 0) {
+        warnings.push(
+          `APPROVING WOULD REMOVE ${r.goalsRemoved} GOAL(S) the public can see today ` +
+            `(${r.stored} to ${r.score}).`
+        );
+      }
+      if (r.publishedFromRecorder > r.events) {
+        warnings.push(
+          `This console published ${r.publishedFromRecorder} event(s) before and the sheet now ` +
+            `holds ${r.events} — it looks sent back for correction and left unfinished.`
+        );
+      }
       console.log(
         `  ${when}  ${r.label.slice(0, 38).padEnd(40)}` +
           `  events ${String(r.events).padStart(3)}  stats ${String(r.statLines).padStart(2)}` +
           `  published ${String(r.publishedEvents).padStart(3)}`
       );
       console.log(`      ${r.status}/${r.eventsStatus}  recorder ${r.recorder}${flags ? `  — ${flags}` : ""}`);
+      for (const warning of warnings) console.log(`      !! ${warning}`);
+      if (!warnings.length && r.publishedEvents === 0) {
+        console.log("      OK to approve: nothing published yet and the score agrees.");
+      }
     }
     console.log("");
   }
@@ -173,11 +225,14 @@ async function main() {
   console.log("What to do with this");
   console.log("-".repeat(100));
   console.log(
-    "  Sheets under 'Worth a look' were recorded and never sent. Approving one publishes\n" +
-      "  its timeline and Statistics tab, through the console at\n" +
+    "  A row marked OK was recorded and never sent: approving publishes its timeline and\n" +
+      "  Statistics tab and changes no score. Do those through the console at\n" +
       "  /admin/match-stats/<matchId>, with the usual approve permission.\n\n" +
-      "  Anything flagged 'score differs' should be read before approving: approval makes\n" +
-      "  the match score follow the sheet's goal events, so the public score would change.\n\n" +
+      "  A row marked !! needs reading first, and is not a cleanup. Approval makes the match\n" +
+      "  score follow this sheet's goal events, so a sheet thinner than what is already\n" +
+      "  published takes the public score down with it. And where the timeline came from the\n" +
+      "  match-event editor rather than this console, approval leaves those events in place\n" +
+      "  while moving the score — so the scoreline and the timeline would then disagree.\n\n" +
       "  Empty sheets are litter and can be left alone; nothing reads them."
   );
 }
