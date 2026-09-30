@@ -96,6 +96,17 @@ describe("whether a label names a person", () => {
     expect(namesAPerson("Player 2")).toBe(false);
   });
 
+  it("refuses the words this list did not know and the server's did", () => {
+    /* `Own Goal` linked, and there is a player record by that name to link to. The two
+       lists disagreeing about who is a person is what this now shares one list to prevent. */
+    expect(namesAPerson("Own Goal")).toBe(false);
+    expect(namesAPerson("own goal")).toBe(false);
+    expect(namesAPerson("Goalkeeper")).toBe(false);
+    expect(namesAPerson("Opponent")).toBe(false);
+    expect(namesAPerson("Substitute")).toBe(false);
+    expect(namesAPerson("Trialist")).toBe(false);
+  });
+
   it("refuses a jersey placeholder, whose number is not at the front", () => {
     expect(namesAPerson("Jersey No. 35")).toBe(false);
     expect(namesAPerson("Jersey No. 6")).toBe(false);

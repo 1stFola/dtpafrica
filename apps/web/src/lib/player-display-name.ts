@@ -1,3 +1,10 @@
+/* The subpath matters. `@dtp/engines` is aliased in vite.config.ts to media-url.ts alone,
+   so the browser bundle never pulls in the SIP engines or the fixture generator -- importing
+   anything else from the bare specifier typechecks, passes vitest, and fails `vite build`,
+   because those three resolve the package three different ways. Each new entry needs the
+   alias, the tsconfig path, and the package export, which is what this one has. */
+import { isPlaceholderName } from "@dtp/engines/placeholder-names";
+
 /**
  * The name to show for a stored player label.
  *
@@ -57,17 +64,17 @@ export function shirtNumberFromLabel(label: string | null | undefined): number |
  * what remains must contain a letter and not be one of the words recorders use when they
  * did not catch who it was.
  */
-const PLACEHOLDER_LABELS = new Set([
-  "unknown",
-  "unknown player",
-  "player",
-  "n/a",
-  "na",
-  "tbc",
-  "tbd",
-  "jersey",
-]);
-
+/**
+ * The list lives in `@dtp/engines`, shared with the API.
+ *
+ * There was a list here and a longer one on the server, and they disagreed: this one did
+ * not know about `Own Goal`, so a timeline entry reading `Own Goal` linked to a profile —
+ * and there is a player record by that name for it to link to. The server's list had known
+ * since it was written, alongside `goalkeeper`, `opponent`, `substitute` and `trialist`.
+ *
+ * Two lists meant the browser and the server disagreed about who is a person. One list is
+ * what stops that, and it is in the package both already depend on.
+ */
 /**
  * A label that is only a shirt number.
  *
@@ -88,12 +95,10 @@ export function namesAPerson(label: string | null | undefined): boolean {
      was known, and what was known was not a name. */
   if (!/\p{L}/u.test(withoutNumber)) return false;
 
-  const key = withoutNumber.toLowerCase().replace(/\s+/g, " ");
-  if (PLACEHOLDER_LABELS.has(key)) return false;
-  /* `Player 1`, `Player 2` — numbered placeholders from an import that had no names. */
-  if (/^player\s*\d+$/.test(key)) return false;
-  /* `Jersey No. 35` survives the prefix strip because the number is not at the front. */
-  if (/^jersey\s*(?:no\.?)?\s*\d+$/.test(key)) return false;
+  if (isPlaceholderName(withoutNumber)) return false;
+  /* `Jersey No. 35` survives the prefix strip because its number is not at the front, and
+     the shared list reads it as a shirt number only once the word is gone. */
+  if (/^jersey\s*(?:no\.?)?\s*\d+$/i.test(withoutNumber.trim())) return false;
 
   return true;
 }

@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./placeholder-names": {
+      "types": "./dist/scoreboard/placeholder-names.d.ts",
+      "import": "./dist/scoreboard/placeholder-names.js",
+      "default": "./dist/scoreboard/placeholder-names.js"
     }
   },
   "scripts": {

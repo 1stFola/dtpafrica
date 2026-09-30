@@ -43,6 +43,24 @@ describe("labelNamesAPerson", () => {
     expect(labelNamesAPerson("Jersey No. 35")).toBe(false);
   });
 
+  it("refuses Own Goal, which the first live run would have credited to a record", () => {
+    /* There is a player record called `Own Goal`, and the dry run offered to give it a goal.
+       Two words with letters in both, so every shape-based rule waves it through -- while
+       `isPlaceholderName` had known about it all along. That is what asking the same question
+       in two places costs. */
+    expect(labelNamesAPerson("Own Goal")).toBe(false);
+    expect(labelNamesAPerson("own goal")).toBe(false);
+    expect(labelNamesAPerson("Goalkeeper")).toBe(false);
+    expect(labelNamesAPerson("Opponent")).toBe(false);
+    expect(labelNamesAPerson("Substitute")).toBe(false);
+    expect(labelNamesAPerson("Trialist")).toBe(false);
+  });
+
+  it("refuses a team, which holds a player record on live and collects goals like one", () => {
+    expect(labelNamesAPerson("FC Enegwea")).toBe(false);
+    expect(labelNamesAPerson("Vido 99 FC")).toBe(false);
+  });
+
   it("refuses a label holding several people", () => {
     /* One goal credited to a list. Picking one of them would be inventing the answer. */
     expect(labelNamesAPerson("Papi Emeka (10), Benjamin Aga (14)")).toBe(false);
@@ -150,6 +168,32 @@ describe("planGoalLinks", () => {
       [player("p1", "Unknown", ["jp"])]
     );
     expect(plan.links).toHaveLength(0);
-    expect(plan.unlinked.map((u) => u.reason)).toEqual(["not-a-name", "not-a-name", "not-a-name"]);
+    expect(plan.unlinked.map((u) => u.reason)).toEqual([
+      "placeholder",
+      "placeholder",
+      "placeholder",
+    ]);
+  });
+
+  it("reports each refusal in its own words rather than as one kind", () => {
+    /* The report files these under one heading otherwise, and telling a reader that
+       `FC Enegwea` is "Unknown, Player, or a bare shirt number" is telling them something
+       untrue about their data. A team holding a player record is a different problem from a
+       goal nobody put a name to, and it is fixed differently. */
+    const plan = planGoalLinks(
+      [
+        goal("e1", "Unknown"),
+        goal("e2", "FC Enegwea"),
+        goal("e3", "Jersey No. 35"),
+        goal("e4", "Abdullah Shaubu (7) & Adebayo David (17)"),
+      ],
+      []
+    );
+    expect(plan.unlinked.map((u) => u.reason)).toEqual([
+      "placeholder",
+      "team",
+      "carries-a-digit",
+      "several-people",
+    ]);
   });
 });

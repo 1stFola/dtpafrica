@@ -28,6 +28,9 @@
       "@/*": ["./src/*"],
       "@dtp/engines/benchmark-selection": [
         "../../packages/engines/src/calibration/benchmark-selection.ts"
+      ],
+      "@dtp/engines/placeholder-names": [
+        "../../packages/engines/src/scoreboard/placeholder-names.ts"
       ]
     }
   },

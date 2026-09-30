@@ -47,7 +47,11 @@ const APPLY = process.argv.includes("--apply");
 const GOAL_TYPES = ["goal", "goal_penalty", "own_goal"];
 
 const REASONS: Record<UnlinkedGoal["reason"], string> = {
-  "not-a-name": "the label names nobody — Unknown, Player, or a bare shirt number",
+  placeholder: "the label names nobody — Unknown, Player, Own Goal, or a bare shirt number",
+  team: "the label is a club, not a person — a team record collects goals like a player",
+  "carries-a-digit": "the label carries a digit, so what it means is not understood",
+  "several-people": "the label holds more than one person",
+  "no-letters": "the label has no letters in it",
   "nobody-by-that-name": "no directory player holds that name",
   "several-of-that-name": "two records hold that name — merge them first, then re-run",
 };
@@ -159,7 +163,9 @@ async function main() {
       console.log(`  ${rows.length.toString().padStart(3)}  ${REASONS[reason]}`);
       /* The labels are worth seeing for the reasons a human can act on, and noise for the
          ones nobody can: nothing is gained by printing `Unknown` twenty-one times. */
-      if (reason === "several-of-that-name" || reason === "nobody-by-that-name") {
+      /* Labels are worth printing where a human can act on them: a team or a name nobody
+         holds is a record to fix, while printing `Unknown` twenty-one times is noise. */
+      if (reason !== "placeholder") {
         for (const row of rows.slice(0, 15)) {
           const where = teamName.get(row.goal.teamId ?? "") ?? row.goal.teamId ?? "no team";
           console.log(`         ${row.goal.label.slice(0, 30).padEnd(32)} scored for ${where}`);

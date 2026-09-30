@@ -39,6 +39,7 @@
  * `name-only` -- because a reader should see which links rest on the identity model alone.
  */
 import { playerLookupKey } from "@dtp/engines";
+import { admitSquadName, type SquadNameRejection } from "./admissible-squad-name";
 
 /** A goal with a label and no player. */
 export type UnattributedGoal = {
@@ -75,8 +76,16 @@ export type GoalLink = {
 export type UnlinkedGoal = {
   goal: UnattributedGoal;
   /** Why it stays unlinked, in the words the report prints. */
+  /**
+   * Why it stays unlinked.
+   *
+   * The first five are `admitSquadName`'s own verdicts, passed through rather than
+   * flattened into one. A report that files `FC Enegwea` under "Unknown, Player, or a bare
+   * shirt number" is telling the reader something untrue about their data, and a team
+   * holding a player record is a different problem from a goal nobody put a name to.
+   */
   reason:
-    | "not-a-name"
+    | SquadNameRejection
     | "nobody-by-that-name"
     | "several-of-that-name";
   /** Directory players holding the name, when that is the interesting part. */
@@ -88,38 +97,27 @@ export type GoalLinkPlan = {
   unlinked: UnlinkedGoal[];
 };
 
-/** `No. 20`, `#7`, `20` — a shirt number standing alone. */
-const ONLY_A_NUMBER = /^\s*(?:no\.?\s*|#\s*)?\d{1,3}\s*$/i;
-/** The words a recorder writes when nobody was caught. */
-const PLACEHOLDERS = new Set(["unknown", "unknown player", "player", "n/a", "na", "tbc", "tbd"]);
-
 /**
  * Whether this label is worth looking up.
  *
- * Deliberately the same judgement the web app makes before turning a label into a link
- * (`apps/web/src/lib/player-display-name.ts`). A label the site refuses to link is a label
- * this refuses to resolve, and the two agreeing is what stops a goal being attached to a
- * player the timeline will not show as a link anyway.
+ * `admitSquadName` is the gate that already decides whether a label may become a player
+ * record, and the question here is the same one: may this label reach a person? Asking it
+ * twice, in two rules, is how `Own Goal` got through -- two words, letters in both, so the
+ * parallel rule written here waved it past while `isPlaceholderName` had known about it all
+ * along, next to `goalkeeper`, `opponent`, `substitute` and `trialist`.
+ *
+ * On the first live run that would have credited a real own goal to a player record called
+ * `Own Goal`. The gate also refuses team names, labels holding several people, and anything
+ * carrying a digit -- each of which is in the live directory for the same reason.
  */
 export function labelNamesAPerson(label: string): boolean {
-  const value = label.trim();
-  if (!value) return false;
-  if (ONLY_A_NUMBER.test(value)) return false;
-
-  const withoutNumber = value.replace(/^\s*(?:no\.?\s*|#\s*)\d{1,3}\s+/i, "").trim();
-  if (!/\p{L}/u.test(withoutNumber)) return false;
-
-  const key = withoutNumber.toLowerCase().replace(/\s+/g, " ");
-  if (PLACEHOLDERS.has(key)) return false;
-  if (/^player\s*\d+$/.test(key)) return false;
-  if (/^jersey\s*(?:no\.?)?\s*\d+$/.test(key)) return false;
-  /* A label holding several people -- `Papi Emeka (10), Benjamin Aga (14)` -- is one goal
-     credited to a list, and picking one of them would be inventing the answer. */
-  if (/[,&/]| and /i.test(key)) return false;
-
-  return true;
+  return admitSquadName(label).ok;
 }
 
+/** The gate's verdict, so a refusal can be reported in its own words. */
+export function labelVerdict(label: string) {
+  return admitSquadName(label);
+}
 /** The name to look up: the label without its shirt number. */
 export function nameFromLabel(label: string): string {
   return label.trim().replace(/^\s*(?:no\.?\s*|#\s*)\d{1,3}\s+/i, "").trim();
@@ -144,8 +142,9 @@ export function planGoalLinks(
     unlinked.push({ goal, reason, candidates });
 
   for (const goal of goals) {
-    if (!labelNamesAPerson(goal.label)) {
-      refuse(goal, "not-a-name");
+    const verdict = labelVerdict(goal.label);
+    if (!verdict.ok) {
+      refuse(goal, verdict.reason);
       continue;
     }
 
