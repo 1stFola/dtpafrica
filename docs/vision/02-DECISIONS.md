@@ -101,6 +101,26 @@ surprises. **No S0 code is merged into `services/`.** The spike answers "does th
 what does it cost"; Phase 0 answers "what is the system". Conflating them produces demo code
 wearing an architecture's clothes.
 
+**Amended 29 September 2026 — two S0 artifacts do live in `services/`.** The original ruling is
+left above rather than rewritten, because this document's own rule is that a ruling states its
+reason so a later reader can overturn it with better information. The better information was that
+S0 could not be built without touching `services/`:
+
+| Artifact | Why it is not spike code |
+|---|---|
+| `services/vision-worker/dtp_vision_worker/stages/detect.py` | `packages/vision-contracts` has declared `detect` a job type and routed it to `gpu_24gb` since Phase 1 increment 2, with no worker able to run it — the control plane would dispatch a job nobody could claim. This stage is the fix for a live inconsistency and Phase 3's detection baseline. A throwaway detector outside `services/` would have left the contract still lying. |
+| `services/vision-worker/dtp_vision_worker/bench.py` | The measurement has to run **in the image being measured**, and the image contains that package and nothing else. A benchmark harness outside it would measure a laptop. It also calls the same sampling and detection code the stage runs, so the number describes production rather than a paraphrase of it. |
+
+The permitted-deliverables list above therefore gains a fourth: **the `detect` stage itself**, which is
+a Phase 3 artifact S0 happened to force.
+
+**What stays throwaway, and the rule that still has teeth:** the *measurements* — clips, pod launch
+configs, report JSON, scratch analysis — are not merged, and this exception covers only a stage the
+contract already declares plus the harness that measures it. A spike may not add anything else to
+`services/` without a further amendment here. The original concern is unchanged and still correct:
+conflating the two produces demo code wearing an architecture's clothes. What the spike found is
+recorded in [27-SPIKE-S0-SURPRISES.md](./27-SPIKE-S0-SURPRISES.md).
+
 See [11-PHASE-PLAN.md](./11-PHASE-PLAN.md).
 
 ---

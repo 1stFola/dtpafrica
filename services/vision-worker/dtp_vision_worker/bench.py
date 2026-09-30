@@ -104,9 +104,16 @@ def cost_usd(seconds: float, usd_per_hour: float) -> float:
     """
     if usd_per_hour < 0:
         raise ValueError("a negative hourly rate is not a rate")
-    # Six places, not four. A short clip on a cheap card costs a few ten-thousandths of a
-    # dollar, and rounding that to 0.0 turns a real measurement into "free".
-    return round(seconds / 3600 * usd_per_hour, 6)
+    raw = seconds / 3600 * usd_per_hour
+    if raw <= 0:
+        return 0.0
+    # Rounding to a fixed number of places is what turns a real measurement into "free":
+    # below about 2.3ms of billed time at a dollar an hour, `round(raw, 6)` is exactly 0.0,
+    # and a zero cost then produces a zero budget that refuses the very job that measured
+    # it. Six places is plenty for anything a match actually costs; the fallback to three
+    # significant figures keeps a genuinely tiny cost positive instead of erasing it.
+    rounded = round(raw, 6)
+    return rounded if rounded > 0 else float(f"{raw:.3g}")
 
 
 def budget_cents(usd: float) -> int:

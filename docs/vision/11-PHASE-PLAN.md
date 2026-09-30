@@ -4,7 +4,8 @@
 
 ```
 SPIKE S0  One match end-to-end, throwaway code, measured cost
-    ║  (runs alongside Phase 0; nothing merges into services/)
+    ║  (runs alongside Phase 0; only the detect stage and the
+    ║   benchmark harness merge into services/ -- D5, amended)
     ║
 PHASE 0  Foundation, rights, storage + compute abstractions
     │  gate: rights + provenance + R2 + portable compute contracts exist
@@ -47,7 +48,10 @@ phase is not complete because code exists — its gate must demonstrably pass. G
 
 ## Spike S0 — one match, end to end
 
-**Runs in parallel with Phase 0. Timeboxed. Nothing it produces is merged into `services/`.**
+**Runs in parallel with Phase 0. Timeboxed. Its measurements are not merged into `services/`** —
+two artifacts are: the `detect` stage, which the contract had already declared, and the benchmark
+harness, which has to run inside the image it measures. See
+[02-DECISIONS.md, D5](./02-DECISIONS.md#d5--phase-0-sequencing), amended 29 September 2026.
 
 The HANDOFF asks for an infrastructure proof before module work; the PROMPT asks for the skeleton
 first. Both are right about different risks, so both happen — separately. See
