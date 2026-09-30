@@ -12,6 +12,7 @@ injectable.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,26 @@ def test_a_run_that_cost_something_never_gets_a_zero_budget() -> None:
     hundred-thousandths of a dollar, and a budget of 0 cents refuses the very job that
     produced the measurement. Only a genuinely free run is free."""
     assert bench.budget_cents(0.000004) == 1
+    assert bench.budget_cents(0.0) == 0
+
+
+@pytest.mark.parametrize("seconds", [3600.0, 1.0, 0.01, 0.002, 0.0005, 1e-9])
+def test_a_positive_runtime_never_costs_nothing(seconds: float) -> None:
+    """The half of that bug the first fix missed, and the reason CI failed where three
+    local runs passed.
+
+    `budget_cents` was guarded, but `cost_usd` rounded to six places, so below about 2.3ms
+    of billed time a positive cost became exactly 0.0 before the budget ever saw it. A
+    hosted runner does the stubbed pipeline fast enough to cross that line; a Windows
+    laptop does not. Asserting it on the arithmetic rather than through wall clock is what
+    makes it a test instead of a coin toss."""
+    usd = bench.cost_usd(seconds, 0.79)
+    assert usd > 0, "a run that took time did not cost anything"
+    assert bench.budget_cents(usd) >= 1
+
+
+def test_only_a_zero_runtime_is_free() -> None:
+    assert bench.cost_usd(0, 0.79) == 0.0
     assert bench.budget_cents(0.0) == 0
 
 
@@ -163,6 +184,9 @@ def test_reports_every_stage_and_the_exit_sentence(tmp_path: Path) -> None:
     assert report["sampling"]["frames"] == 4
     assert "RTX A6000" in report["exit"]
     assert report["cost"]["usdPerMatch"] is not None
+    # The same invariant as `test_a_positive_runtime_never_costs_nothing`, end to end. This
+    # is the assertion CI failed on: the stubbed pipeline is fast enough on a hosted runner
+    # that the projected match cost rounded to zero.
     assert report["cost"]["budgetCents"] >= 1
     # Serialisable, because it is written to a file and pasted into a spreadsheet.
     json.loads(json.dumps(report, default=str))
@@ -220,16 +244,48 @@ def test_model_load_is_not_scaled_with_the_clip(tmp_path: Path) -> None:
 
 
 def test_more_matches_per_pod_lowers_the_per_match_number(tmp_path: Path) -> None:
+    """A pod that processes twenty matches pays for its weights once.
+
+    The detector load is made deliberately slow here, and this took two goes to get right.
+    With the stubbed pipeline the load costs microseconds, so the amortised difference sat
+    inside the scheduling noise of two runs and the comparison decided itself on a coin
+    toss. At 50ms it then sat below the report's own resolution -- `projectedMatchSeconds`
+    is rounded to a tenth, which is ample for a 96-minute match and useless here. Half a
+    second clears both, so what is compared is the arithmetic rather than the machine.
+
+    The cost is a second of suite time. Worth it: a test that fails on a busy runner and
+    passes on a quiet one teaches nobody anything."""
+    load = 0.5
+
+    def slow(work: Path) -> bench.Pipeline:
+        plan = pipeline(work)
+
+        def load_detector():
+            time.sleep(load)
+            return lambda batch: [[] for _ in batch]
+
+        return bench.Pipeline(
+            obtain=plan.obtain,
+            probe=plan.probe,
+            transcode=plan.transcode,
+            sample=plan.sample,
+            load_detector=load_detector,
+        )
+
     once = bench.benchmark(
-        pipeline(tmp_path), tmp_path / "a", matches_per_pod=1, sampler=NoGpu()
+        slow(tmp_path / "a"), tmp_path / "a", matches_per_pod=1, sampler=NoGpu()
     )
     shared = bench.benchmark(
-        pipeline(tmp_path), tmp_path / "b", matches_per_pod=20, sampler=NoGpu()
+        slow(tmp_path / "b"), tmp_path / "b", matches_per_pod=20, sampler=NoGpu()
     )
-    assert (
-        shared["totals"]["projectedMatchSeconds"]
-        <= once["totals"]["projectedMatchSeconds"]
+
+    saved = (
+        once["totals"]["projectedMatchSeconds"]
+        - shared["totals"]["projectedMatchSeconds"]
     )
+    # 19/20ths of the one-off. The tolerance covers the report rounding to a tenth at both
+    # ends plus whatever the sleep overshoots by.
+    assert saved == pytest.approx(load * 19 / 20, abs=0.12)
 
 
 def test_a_synthetic_run_says_its_detection_counts_mean_nothing(tmp_path: Path) -> None:

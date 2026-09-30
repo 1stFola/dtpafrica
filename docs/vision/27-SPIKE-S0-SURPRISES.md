@@ -152,6 +152,22 @@ clip costs a few hundred-thousandths of a dollar, which ceiled to a **zero-cent*
 failure `budget_cents` was written to prevent, at the bottom of the scale instead of the top. A run
 that cost anything now gets a budget of at least one cent.
 
+**And the first fix was in the wrong function**, which CI proved and three local runs did not.
+`budget_cents` was guarded, but `cost_usd` rounded to six decimal places, so below about 2.3ms of
+billed time a positive cost became exactly `0.0` before the budget ever saw it. A hosted runner
+completes the stubbed pipeline fast enough to cross that threshold; a Windows laptop does not, so
+the bug was invisible here and deterministic there.
+
+Two lessons, both about measurement code specifically:
+
+- **A rounding rule that can turn a positive quantity into zero is a bug, not a formatting choice.**
+  `cost_usd` now falls back to three significant figures, so only a genuinely free run is free.
+- **Timing-dependent assertions are coin tosses.** Two tests here compared wall clock against a
+  constant and passed or failed on machine speed. Both now assert the arithmetic directly, and the
+  one that genuinely needs a duration injects one large enough to clear both scheduling noise and
+  the report's own rounding. A test that fails on a busy runner and passes on a quiet one teaches
+  nobody anything.
+
 ### S0-11 — The cost ledger hardcoded `gpuSeconds: 0` *(measured)*
 
 Found while checking that a `detect` job could actually be dispatched, claimed and billed.
