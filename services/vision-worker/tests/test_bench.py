@@ -11,6 +11,7 @@ injectable.
 
 from __future__ import annotations
 
+import itertools
 import json
 import time
 from pathlib import Path
@@ -77,6 +78,63 @@ def test_a_positive_runtime_never_costs_nothing(seconds: float) -> None:
 def test_only_a_zero_runtime_is_free() -> None:
     assert bench.cost_usd(0, 0.79) == 0.0
     assert bench.budget_cents(0.0) == 0
+
+
+def test_the_timer_keeps_a_step_too_fast_to_print() -> None:
+    """Where the zero-cost bug actually lived, and the one place it can be caught without
+    a fast machine.
+
+    `Timer` rounded each span to a millisecond as it recorded it. A step finishing in 400
+    microseconds was stored as exactly 0.0, so on a hosted runner the whole stubbed
+    pipeline measured zero seconds -- and zero seconds costs zero dollars and gets a zero
+    budget, however carefully the arithmetic downstream is guarded. Rounding a measurement
+    is a thing to do on the way out, not on the way in.
+
+    This reproduces on any machine, which the two assertions it replaces did not."""
+    timer = bench.Timer()
+    timer.time("instant", lambda: None)
+
+    assert timer.spans["instant"] > 0, "a step that ran was recorded as taking no time"
+    # And the report still prints something a human can read.
+    assert timer.rounded()["instant"] == 0.0
+
+
+def test_a_runner_faster_than_this_machine_still_bills(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hosted runner, simulated deterministically instead of hoped for.
+
+    This bug reached CI twice because the only thing that reproduced it was a machine
+    quick enough to finish the stubbed pipeline inside a millisecond, and the machine it
+    was written on is not. Pinning the clock removes the hardware from the question: every
+    step here takes ten microseconds, which is faster than anything real and exactly the
+    regime where rounding used to eat the measurement."""
+    ticks = itertools.count(0.0, 1e-5)
+    monkeypatch.setattr(bench.time, "perf_counter", lambda: next(ticks))
+
+    report = bench.benchmark(
+        pipeline(tmp_path), tmp_path / "work", usd_per_hour=0.79, sampler=NoGpu()
+    )
+
+    # `wallClockSeconds` legitimately rounds to 0.0 for display at this speed. What must
+    # not be zero is anything the arithmetic or the invoice is built from.
+    assert report["totals"]["projectedMatchSeconds"] > 0
+    assert report["cost"]["usdPerMatch"] > 0
+    assert report["cost"]["budgetCents"] >= 1
+
+
+def test_an_instant_pipeline_still_costs_something(tmp_path: Path) -> None:
+    """The end of the same chain: every step below a millisecond, and the run still bills.
+
+    This is the CI failure in one assertion. It passed locally and failed on a hosted
+    runner twice, because the stubbed pipeline there completes in under half a
+    millisecond."""
+    report = bench.benchmark(
+        pipeline(tmp_path), tmp_path / "work", usd_per_hour=0.79, sampler=NoGpu()
+    )
+    assert report["totals"]["projectedMatchSeconds"] > 0
+    assert report["cost"]["usdPerMatch"] > 0
+    assert report["cost"]["budgetCents"] >= 1
 
 
 def test_one_off_cost_is_amortised_not_charged_to_every_match() -> None:
@@ -222,71 +280,70 @@ def test_clip_length_falls_back_to_the_frames_that_exist(tmp_path: Path) -> None
     assert report["clip"]["seconds"] == 5.0
 
 
-def test_model_load_is_not_scaled_with_the_clip(tmp_path: Path) -> None:
-    """The bug this guards: a 60s weight download on a 120s clip, scaled linearly, adds
-    48 minutes of imaginary work to every match and roughly quadruples the quoted cost.
-    """
-    plan = pipeline(tmp_path, duration_ms=120_000)
-    slow = bench.Pipeline(
-        obtain=plan.obtain,
-        probe=plan.probe,
-        transcode=plan.transcode,
-        sample=plan.sample,
-        load_detector=plan.load_detector,
+def test_model_load_is_not_scaled_with_the_clip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bug this guards: a 60s weight download on a 120s clip, scaled linearly, adds 48
+    minutes of imaginary work to every match and roughly quadruples the quoted cost.
+
+    On a pinned clock the whole thing is exact arithmetic. Every reading is a second apart,
+    so the run measures 13 seconds of wall clock, of which the detector load is 1 and the
+    remaining 12 are per-clip work. A 120s clip scales by 48, so the right answer is
+    12*48 + 1 = 577 seconds. Scaling the load along with everything else would give
+    13*48 = 624, and no tolerance can hide that."""
+    ticks = itertools.count(0.0, 1.0)
+    monkeypatch.setattr(bench.time, "perf_counter", lambda: next(ticks))
+
+    report = bench.benchmark(
+        pipeline(tmp_path, duration_ms=120_000),
+        tmp_path / "work",
+        matches_per_pod=1,
+        sampler=NoGpu(),
     )
-    report = bench.benchmark(slow, tmp_path / "work", matches_per_pod=1, sampler=NoGpu())
 
     totals = report["totals"]
     one_off = report["secondsByStage"]["loadDetector"]
     per_clip = totals["perClipSeconds"]
+    assert one_off == pytest.approx(1.0)
+
     expected = bench.scale_to_match(per_clip, 120.0) + one_off
-    assert totals["projectedMatchSeconds"] == pytest.approx(round(expected, 1), abs=0.2)
+    assert totals["projectedMatchSeconds"] == pytest.approx(expected, abs=1e-6)
+    # Spelled out, so a future reader sees the arithmetic without re-deriving it.
+    assert per_clip == pytest.approx(12.0)
+    assert totals["projectedMatchSeconds"] == pytest.approx(577.0, abs=1e-6)
 
-
-def test_more_matches_per_pod_lowers_the_per_match_number(tmp_path: Path) -> None:
+def test_more_matches_per_pod_lowers_the_per_match_number(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A pod that processes twenty matches pays for its weights once.
 
-    The detector load is made deliberately slow here, and this took two goes to get right.
-    With the stubbed pipeline the load costs microseconds, so the amortised difference sat
-    inside the scheduling noise of two runs and the comparison decided itself on a coin
-    toss. At 50ms it then sat below the report's own resolution -- `projectedMatchSeconds`
-    is rounded to a tenth, which is ample for a 96-minute match and useless here. Half a
-    second clears both, so what is compared is the arithmetic rather than the machine.
+    Third attempt, and the first that is a test rather than a race. Comparing two
+    wall-clock runs cannot work here however slow the injected work is made: `per_clip` is
+    multiplied by the 96-minute scale factor, so three milliseconds of file-system jitter
+    between the runs becomes 0.14 seconds of difference and swamps the amortisation being
+    measured. Injecting a 500ms load narrowed it to about one failure in six.
 
-    The cost is a second of suite time. Worth it: a test that fails on a busy runner and
-    passes on a quiet one teaches nobody anything."""
-    load = 0.5
-
-    def slow(work: Path) -> bench.Pipeline:
-        plan = pipeline(work)
-
-        def load_detector():
-            time.sleep(load)
-            return lambda batch: [[] for _ in batch]
-
-        return bench.Pipeline(
-            obtain=plan.obtain,
-            probe=plan.probe,
-            transcode=plan.transcode,
-            sample=plan.sample,
-            load_detector=load_detector,
-        )
+    Pinning the clock removes wall clock from the question entirely: every reading is one
+    second apart, both runs measure identically, and the only difference left between them
+    is the arithmetic under test. It is also a second faster than the sleep it replaces."""
+    step = 1.0
+    ticks = itertools.count(0.0, step)
+    monkeypatch.setattr(bench.time, "perf_counter", lambda: next(ticks))
 
     once = bench.benchmark(
-        slow(tmp_path / "a"), tmp_path / "a", matches_per_pod=1, sampler=NoGpu()
+        pipeline(tmp_path), tmp_path / "a", matches_per_pod=1, sampler=NoGpu()
     )
     shared = bench.benchmark(
-        slow(tmp_path / "b"), tmp_path / "b", matches_per_pod=20, sampler=NoGpu()
+        pipeline(tmp_path), tmp_path / "b", matches_per_pod=20, sampler=NoGpu()
     )
 
     saved = (
         once["totals"]["projectedMatchSeconds"]
         - shared["totals"]["projectedMatchSeconds"]
     )
-    # 19/20ths of the one-off. The tolerance covers the report rounding to a tenth at both
-    # ends plus whatever the sleep overshoots by.
-    assert saved == pytest.approx(load * 19 / 20, abs=0.12)
-
+    # The one-off costs one tick, and nineteen twentieths of it stop being charged.
+    assert saved == pytest.approx(step * 19 / 20, abs=1e-6)
+    assert once["totals"]["oncePerPodSeconds"] == pytest.approx(step)
 
 def test_a_synthetic_run_says_its_detection_counts_mean_nothing(tmp_path: Path) -> None:
     """The whole reason a synthetic clip is safe to use: the report refuses to let its

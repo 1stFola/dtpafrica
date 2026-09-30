@@ -174,7 +174,14 @@ def exit_statement(
 
 @dataclass
 class Timer:
-    """Wall-clock spans, in the order they happened."""
+    """Wall-clock spans, in the order they happened.
+
+    Spans are stored **unrounded**. They used to be rounded to a millisecond here, which
+    is a sensible thing to print and a destructive thing to compute with: a step finishing
+    in 400 microseconds recorded as exactly 0.0, and a pipeline of such steps produced a
+    zero-second run, a zero cost and a zero budget. Rounding happens once, on the way into
+    the report.
+    """
 
     spans: dict[str, float] = field(default_factory=dict)
 
@@ -183,7 +190,11 @@ class Timer:
         try:
             return fn()
         finally:
-            self.spans[name] = round(time.perf_counter() - start, 3)
+            self.spans[name] = time.perf_counter() - start
+
+    def rounded(self, places: int = 3) -> dict[str, float]:
+        """For the report. Never fed back into the arithmetic."""
+        return {name: round(seconds, places) for name, seconds in self.spans.items()}
 
 
 class GpuSampler:
@@ -443,7 +454,7 @@ def benchmark(
     detector = timer.time("loadDetector", pipeline.load_detector)
     outcome = timer.time("detect", lambda: detect_frames(frames, detector, fps=fps))
 
-    total = round(time.perf_counter() - started, 3)
+    total = time.perf_counter() - started
     gpu = watcher.stop()
 
     duration_ms = getattr(probed, "duration_ms", None)
@@ -476,14 +487,18 @@ def benchmark(
         },
         "sampling": {"fps": fps, "frames": len(frames)},
         "detection": dict(outcome.summary),
-        "secondsByStage": timer.spans,
+        "secondsByStage": timer.rounded(),
         "totals": {
-            "wallClockSeconds": total,
-            "oncePerPodSeconds": one_off,
+            "wallClockSeconds": round(total, 3),
+            "oncePerPodSeconds": round(one_off, 3),
             "perClipSeconds": round(per_clip, 3),
             "matchesPerPod": matches_per_pod,
-            "projectedMatchSeconds": round(per_match, 1),
-            "projectedMatchMinutes": round(per_match / 60, 2),
+            # Three places, not one. A tenth of a second is ample resolution for a
+            # 96-minute match and it is also enough to report 0.0 seconds beside a positive
+            # cost, which is the same "rounding erased the measurement" mistake in a
+            # friendlier disguise. The exit sentence still prints a tenth of a minute.
+            "projectedMatchSeconds": round(per_match, 3),
+            "projectedMatchMinutes": round(per_match / 60, 3),
             "measuredEndToEnd": measured,
         },
         "cost": {
