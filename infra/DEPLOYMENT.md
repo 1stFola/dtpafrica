@@ -205,7 +205,7 @@ Two mechanisms exist in this repo, and only one of them actually runs in staging
 | Destructive changes | Silently allowed (`--accept-data-loss`) | Fails and stops |
 
 As of this change, `prisma/migrations/` **can** build a database from zero. It
-holds 18 migrations:
+holds 19 migrations:
 
 - `20260528000000_init` — baseline, the schema as it stood before the first
   incremental migration, reconstructed from git history
@@ -218,10 +218,24 @@ holds 18 migrations:
   exist before anyone knows which object it is for
 - `20260925180000_vision_dataset_factory` — dataset versions, members, annotation
   tasks and versions, label schema versions, review decisions, active-learning items
+- `20260930030000_vision_variant_encoder` — which encoder build produced a variant, because
+  the CPU and GPU worker images ship different ones
 
-Verified: `prisma migrate diff` reports **no difference** between
-`prisma/migrations/` and the current `schema.prisma`, in both directions — both
-runs output `-- This is an empty migration.`
+**This is currently false, and the note below predicted exactly how.** Re-run on 30 Sep 2026
+against a throwaway Postgres, `prisma migrate diff` reports a difference: `prisma/migrations/`
+would build a database missing seven `sb_match_statistics` columns and an index (the recorder
+idle-lock work), and with the wrong default on `sb_competitions.status`. Those reached the schema
+without a migration.
+
+```sql
+ALTER TABLE "sb_competitions" ALTER COLUMN "status" SET DEFAULT 'scheduled';
+ALTER TABLE "sb_match_statistics" ADD COLUMN "idle_locked_at" TIMESTAMP(3), ... (7 columns);
+CREATE INDEX "sb_match_statistics_idle_locked_at_idx" ON "sb_match_statistics"("idle_locked_at");
+```
+
+Staging is unaffected: the API image's `CMD` runs `db:push`, so those columns exist there. What is
+broken is provisioning a **new** database from `prisma/migrations`, which is the one thing that
+directory is for. A catch-up migration is needed; the SQL above is Prisma's own output.
 
 > Re-check this whenever a migration is added. The list above went stale once
 > already: two Vision migrations landed after it was written, and the baselining

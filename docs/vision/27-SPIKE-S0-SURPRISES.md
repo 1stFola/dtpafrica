@@ -90,7 +90,7 @@ number is now a number for a model DTP can actually ship.
 **What it changes:** nothing about Phase 3's plan. It does mean "we'll just use YOLO for the spike"
 was never free, and `docs/licenses/OSS_REGISTER.md` should carry the comparison.
 
-### S0-5 — The development machine has neither FFmpeg nor torch *(measured)*
+### S0-5 — The development machine has neither FFmpeg, torch, nor a GPU *(measured)*
 
 Not a footnote: it means **no part of this pipeline can be run end to end outside a pod**, and the
 first real numbers must come from the pod itself. Two consequences, both deliberate:
@@ -100,6 +100,14 @@ first real numbers must come from the pod itself. Two consequences, both deliber
   without FFmpeg or CUDA. 55 tests run in under a second.
 - The harness ships **inside** the image (`dtp-vision-bench`). A harness on a laptop measures a
   laptop.
+
+**A correction, and the reason it is written down.** An earlier version of this file said there was
+no Docker daemon here either, and two pull request descriptions repeated it. That was asserted
+without ever running `docker`: there is one, 29.8.0, and the GPU image could have been built locally
+all along — a build needs no GPU. What is genuinely absent is `ffmpeg`, `ffprobe`, `torch` and
+`nvidia-smi`, all four now checked rather than assumed. Three bugs earlier in this work came from
+reasoning about the environment instead of querying it; this was a fourth, in a document whose whole
+job is to be accurate about what was measured.
 
 ### S0-6 — S0 was never blocked on RunPod authorization *(measured)*
 
@@ -292,8 +300,9 @@ Build, on a machine with Docker:
 docker build -f services/vision-worker/Dockerfile.gpu -t dtp-vision-engine:0.1 services/vision-worker
 ```
 
-There is no Docker daemon and no CUDA host on the development machine (S0-5), so the image in this
-repository has **never been built**. Before spending pod time, run the `gpu-image` job in
+The development machine has no NVIDIA driver (`nvidia-smi` is absent), so the image can be **built**
+here but not **run** here — `--gpus all` has nothing to attach. Before spending pod time, run the
+`gpu-image` job in
 `.github/workflows/ci.yml` — it is `workflow_dispatch`-only, deliberately off the push path because
 the CUDA base plus cu124 torch is several GB, and it settles U10 and S0-3 for free. A hosted runner
 has no GPU, so it proves the stack installs and `dtp-vision-bench` runs; it cannot prove CUDA
