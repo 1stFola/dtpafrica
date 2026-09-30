@@ -115,6 +115,108 @@ jobs:
   # So this runs on **pull requests**, unlike the worker image: a change that stops the
   # API starting must be caught before it reaches main, not after. `needs: verify`
   # because building an image for code that fails its tests proves nothing.
+  # Three times in one evening a schema change reached main without a migration, and each
+  # time it was invisible until somebody went looking: the recorder idle-lock columns, the
+  # competition status default, and the submit-guard timestamps. Staging never noticed --
+  # the API image runs `db:push` on start -- so the only thing that breaks is provisioning
+  # a database from `prisma/migrations`, which is the one thing that directory is for.
+  #
+  # DEPLOYMENT.md asked a human to re-run this check whenever a migration was added. That
+  # instruction went stale twice. This is the same check, run by a machine.
+  #
+  # It asserts the invariant rather than the paperwork: **the migrations must build the
+  # current schema**. A comment-only edit to schema.prisma therefore passes, and drift is
+  # caught whichever pull request introduced it -- neither of which a "did this diff touch
+  # both files?" rule could manage.
+  #
+  # Because CD now deploys only after the whole CI workflow succeeds, a failure here also
+  # blocks the deploy. That is intended: a database that cannot be rebuilt is a release
+  # problem, not a paperwork problem.
+  schema-migrations:
+    name: Migrations build the schema
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: shadow
+          POSTGRES_PASSWORD: shadow
+          POSTGRES_DB: shadow
+        ports:
+          - 5432:5432
+        # Prisma connects immediately; without a healthcheck the first step races the
+        # database and fails on a cold runner.
+        options: >-
+          --health-cmd "pg_isready -U shadow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `migrate diff` replays every migration into the shadow database, so a migration
+      # with broken SQL fails here too, not only a missing one.
+      - name: The migrations must build the current schema
+        working-directory: services/api
+        env:
+          SHADOW_URL: postgresql://shadow:shadow@localhost:5432/shadow
+        run: |
+          set -euo pipefail
+          EMPTY="-- This is an empty migration."
+
+          forward=$(pnpm exec prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url "$SHADOW_URL" --script | grep -v "^$" || true)
+
+          if [ "$forward" != "$EMPTY" ]; then
+            echo "::error::prisma/migrations does not build schema.prisma. A new database would be missing this:"
+            echo "$forward"
+            echo ""
+            echo "Add a migration under services/api/prisma/migrations/ containing that SQL."
+            echo "Use IF NOT EXISTS: every database that exists today was built by db push."
+            exit 1
+          fi
+
+          # The other direction catches a migration that adds something the schema does not
+          # describe -- a hand-written migration that overshot, or a schema change reverted
+          # without reverting its migration.
+          reverse=$(pnpm exec prisma migrate diff --from-schema-datamodel ./prisma/schema.prisma --to-migrations ./prisma/migrations --shadow-database-url "$SHADOW_URL" --script | grep -v "^$" || true)
+
+          if [ "$reverse" != "$EMPTY" ]; then
+            echo "::error::prisma/migrations describes something schema.prisma does not:"
+            echo "$reverse"
+            exit 1
+          fi
+
+          echo "Migrations and schema agree in both directions."
+
+      # The command a person runs to provision a new database. Diffing proves the end state
+      # matches; this proves the sequence applies, including the bookkeeping in
+      # _prisma_migrations that diffing skips.
+      - name: A new database can be built from them
+        working-directory: services/api
+        env:
+          PGPASSWORD: shadow
+        run: |
+          set -euo pipefail
+          psql -h localhost -U shadow -d shadow -c "CREATE DATABASE fromzero;"
+          DATABASE_URL="postgresql://shadow:shadow@localhost:5432/fromzero" pnpm exec prisma migrate deploy
+
   api-image:
     name: Build and boot the API image
     runs-on: ubuntu-latest
