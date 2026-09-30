@@ -1,4 +1,9 @@
-import { isPlaceholderName } from "@dtp/engines";
+/* The subpath matters. `@dtp/engines` is aliased in vite.config.ts to media-url.ts alone,
+   so the browser bundle never pulls in the SIP engines or the fixture generator -- importing
+   anything else from the bare specifier typechecks, passes vitest, and fails `vite build`,
+   because those three resolve the package three different ways. Each new entry needs the
+   alias, the tsconfig path, and the package export, which is what this one has. */
+import { isPlaceholderName } from "@dtp/engines/placeholder-names";
 
 /**
  * The name to show for a stored player label.
