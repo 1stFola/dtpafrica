@@ -40,3 +40,60 @@ export function shirtNumberFromLabel(label: string | null | undefined): number |
   const match = label?.trim().match(/^(?:no\.?\s*|#\s*)(\d{1,3})\s+/i);
   return match ? Number(match[1]) : null;
 }
+
+/**
+ * Whether a label names a person at all, and may therefore link to a profile.
+ *
+ * A timeline event's label is whatever the recorder wrote, and plenty of it is not a name.
+ * On live, 88 goals carry a label with no player behind it: `Unknown` twenty-one times,
+ * `Player` ten, and bare shirt numbers — `No. 20`, `No 36`, `No. 4` — about thirty more.
+ *
+ * `Unknown` was already safe by accident: the timeline only links a label of two or more
+ * words. `No. 20` is two words by that rule, so it linked, to `/player/no-20` — a profile
+ * page for a shirt number, invented from a label that names nobody. Anyone arriving there
+ * sees a "Verifying" placeholder as though a real player were awaiting review.
+ *
+ * So the rule is asked of the label rather than of its shape: strip the shirt number, and
+ * what remains must contain a letter and not be one of the words recorders use when they
+ * did not catch who it was.
+ */
+const PLACEHOLDER_LABELS = new Set([
+  "unknown",
+  "unknown player",
+  "player",
+  "n/a",
+  "na",
+  "tbc",
+  "tbd",
+  "jersey",
+]);
+
+/**
+ * A label that is only a shirt number.
+ *
+ * `NUMBER_PREFIX` cannot answer this: it requires whitespace after the digits, because it
+ * exists to strip a number from in *front of a name*. `No. 20` has no name after it, so the
+ * prefix never matches, the label keeps its letters — the `No` — and every letter-based
+ * check waves it through. That is precisely how `/player/no-20` came to exist.
+ */
+const ONLY_A_NUMBER = /^\s*(?:no\.?\s*|#\s*)?\d{1,3}\s*$/i;
+
+export function namesAPerson(label: string | null | undefined): boolean {
+  const value = label?.trim();
+  if (!value) return false;
+  if (ONLY_A_NUMBER.test(value)) return false;
+
+  const withoutNumber = value.replace(NUMBER_PREFIX, "").trim();
+  /* `No. 20` and `20` leave nothing, or nothing with a letter in it. A shirt number is what
+     was known, and what was known was not a name. */
+  if (!/\p{L}/u.test(withoutNumber)) return false;
+
+  const key = withoutNumber.toLowerCase().replace(/\s+/g, " ");
+  if (PLACEHOLDER_LABELS.has(key)) return false;
+  /* `Player 1`, `Player 2` — numbered placeholders from an import that had no names. */
+  if (/^player\s*\d+$/.test(key)) return false;
+  /* `Jersey No. 35` survives the prefix strip because the number is not at the front. */
+  if (/^jersey\s*(?:no\.?)?\s*\d+$/.test(key)) return false;
+
+  return true;
+}

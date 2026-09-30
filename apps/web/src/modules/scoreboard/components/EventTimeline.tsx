@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { EVENT_LABELS, type SbMatchEvent, type SbTeamRef } from "../../../api/scoreboard";
-import { playerDisplayName } from "../../../lib/player-display-name";
+import { namesAPerson, playerDisplayName } from "../../../lib/player-display-name";
 
 const EVENT_ICONS: Record<string, string> = {
   goal: "⚽",
@@ -222,7 +222,12 @@ function PlayerLink({
   club?: string;
   competition?: string;
 }) {
-  if (!hasCompletePlayerName(label)) {
+  /* Two questions, and they are not the same one. `hasCompletePlayerName` asks whether
+     enough of a name was written down to be worth a profile; `namesAPerson` asks whether it
+     is a name at all. `No. 20` passed the first -- two words by that rule -- and linked to
+     /player/no-20, a profile page invented for a shirt number, where a visitor was told a
+     player was "Verifying". */
+  if (!namesAPerson(label) || !hasCompletePlayerName(label)) {
     return <span className="sbm-event__player sbm-event__player--plain">{label}</span>;
   }
 
