@@ -110,30 +110,54 @@ Settings → Secrets and variables → Actions:
 push / merge to main
         │
         ▼
-  CI workflow — typecheck, build, compose-validate
-        │ passes
+  CI workflow — typecheck, tests (API, web, vision worker), builds, image smoke tests
+        │
+        ├── any job fails ──▶ nothing deploys. The box keeps serving what it has.
+        │
+        │ every job passes
         ▼
-  CD workflow
-  ├── Job 1: terraform apply
-  │     Provisions VPC, subnet, security group, EC2, Elastic IP
-  │     Outputs: server_public_ip → passed to Job 2
-  │
-  └── Job 2: ansible-playbook playbook.yml
-        ├── common role    — apt upgrade, UFW, fail2ban
-        ├── docker role    — Docker CE + Compose v2
-        └── deploy role
-              ├── Fetch secrets from Secrets Manager
-              ├── Install Node.js 20 + pnpm 9.15.0
-              ├── Clone repo at latest main
-              ├── Write env files (0600)
-              ├── pnpm install --frozen-lockfile
-              ├── prisma generate
-              ├── Start Postgres, wait for pg_isready
-              ├── prisma db push
-              ├── docker compose up --build (postgres + api + web)
-              └── Smoke test: GET /api/v1/health → HTTP 200
+  CD workflow, triggered by CI *finishing successfully* (`workflow_run`), not by the push
+  └── Ansible deploy
+        ├── Resolve the Elastic IP from AWS (never a stored value)
+        ├── Fetch secrets from Secrets Manager
+        ├── Build dtp-api and dtp-web on the runner, push to ECR tagged with the commit
+        ├── Record the image currently serving traffic  ← the rollback target
+        ├── ansible-playbook playbook.yml
+        │     ├── common role — apt upgrade, UFW, fail2ban
+        │     ├── docker role — Docker CE + Compose v2
+        │     └── deploy role
+        │           ├── Clone the repo at this commit, write env files (0600)
+        │           ├── Start Postgres, wait for its healthcheck
+        │           ├── Pull the images for this commit from ECR (never builds on the box)
+        │           ├── docker compose up -d, prune unused images
+        │           └── Wait for GET /api/v1/health to return 200
+        ├── Health check from the runner: GET /api/v1/health
+        └── if the playbook died or the health check failed
+              └── redeploy the recorded previous image, re-check, and fail loudly
 ```
 
+**The deploy is gated on CI, and the gate is the trigger.** CD used to run `on: push`
+alongside CI, so a merge with a failing check still reached the box — the two ran in
+parallel and neither waited for the other. It now starts only from a CI run whose
+conclusion is `success`, and it deploys `workflow_run.head_sha`: the commit CI actually
+verified, not whatever the branch tip has become since.
+
+Two things follow from how `workflow_run` works:
+
+- GitHub runs only the copy of `cd.yml` that is **on the default branch**. Changes to the
+  deploy workflow do nothing until they are merged, and a pull request cannot exercise them.
+- A failing test now blocks a deploy, which is the point — and a *flaky* test blocks one
+  too. Fix or quarantine the test; do not remove the gate.
+
+**Rollback is automatic, and it covers the application only.** The tag serving traffic is
+read off the box before the playbook runs, and put back if the deploy dies or fails its
+health check. ECR keeps the last ten images, so the previous tag is nearly always pullable.
+Migrations are not part of a deploy — they are applied by hand through `docker exec` — so
+there is normally nothing to unwind; if you ran one for a release that then rolled back,
+the schema stays migrated and that is a human decision.
+
+A manual `workflow_dispatch` run skips the gate by design: it is the operator saying they
+know what they are deploying.
 ### Manual trigger (no new commit needed)
 
 GitHub Actions UI → CD workflow → Run workflow → select `main`.
