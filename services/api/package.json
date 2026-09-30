@@ -41,6 +41,7 @@
     "db:merge:duplicate-players": "tsx scripts/merge-duplicate-players.ts",
     "db:merge:squad-duplicates": "tsx scripts/merge-squad-duplicates.ts",
     "db:merge:numbered-duplicates": "tsx scripts/merge-numbered-duplicates.ts",
+    "db:link:unattributed-goals": "tsx scripts/link-unattributed-goals.ts",
     "db:report:idle-recordings": "tsx scripts/report-idle-recordings.ts",
     "db:report:unapproved-finished-sheets": "tsx scripts/report-unapproved-finished-sheets.ts",
     "db:report:player-stat-drift": "tsx scripts/report-player-stat-drift.ts"
