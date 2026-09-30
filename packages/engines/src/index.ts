@@ -35,4 +35,5 @@ export {
   normalizePlayerName,
   playerLookupKey,
 } from "./scoreboard/normalize-player-name";
+export * from "./scoreboard/placeholder-names";
 export * from "./media-url";

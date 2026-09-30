@@ -43,6 +43,24 @@ describe("labelNamesAPerson", () => {
     expect(labelNamesAPerson("Jersey No. 35")).toBe(false);
   });
 
+  it("refuses Own Goal, which the first live run would have credited to a record", () => {
+    /* There is a player record called `Own Goal`, and the dry run offered to give it a goal.
+       Two words with letters in both, so every shape-based rule waves it through -- while
+       `isPlaceholderName` had known about it all along. That is what asking the same question
+       in two places costs. */
+    expect(labelNamesAPerson("Own Goal")).toBe(false);
+    expect(labelNamesAPerson("own goal")).toBe(false);
+    expect(labelNamesAPerson("Goalkeeper")).toBe(false);
+    expect(labelNamesAPerson("Opponent")).toBe(false);
+    expect(labelNamesAPerson("Substitute")).toBe(false);
+    expect(labelNamesAPerson("Trialist")).toBe(false);
+  });
+
+  it("refuses a team, which holds a player record on live and collects goals like one", () => {
+    expect(labelNamesAPerson("FC Enegwea")).toBe(false);
+    expect(labelNamesAPerson("Vido 99 FC")).toBe(false);
+  });
+
   it("refuses a label holding several people", () => {
     /* One goal credited to a list. Picking one of them would be inventing the answer. */
     expect(labelNamesAPerson("Papi Emeka (10), Benjamin Aga (14)")).toBe(false);
