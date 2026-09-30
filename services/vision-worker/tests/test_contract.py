@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from dtp_vision_worker.config import CONTRACT_VERSION
-from dtp_vision_worker.stages import STAGES
+from dtp_vision_worker.stages import CPU_STAGES, GPU_STAGES, STAGES
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages" / "vision-contracts" / "src"
 
@@ -64,16 +64,37 @@ def test_every_stage_is_a_declared_job_type() -> None:
     assert not unknown, f"This image implements job types the contract does not declare: {unknown}"
 
 
-def test_cpu_stages_are_routed_to_a_cpu_class() -> None:
-    """Routing FFmpeg to a GPU pod means paying GPU rates for work that never
-    touches the GPU. The contract's default must agree with what this image is."""
+def _routing() -> dict[str, str]:
     source = _read("jobs.ts")
     block = re.search(r"DEFAULT_RESOURCE_CLASS[^=]*=\s*\{(.*?)\n\};", source, re.S)
     assert block, "DEFAULT_RESOURCE_CLASS not found in jobs.ts"
-    routing = dict(re.findall(r"(\w+):\s*\"([a-z0-9_]+)\"", block.group(1)))
+    return dict(re.findall(r"(\w+):\s*\"([a-z0-9_]+)\"", block.group(1)))
 
-    for stage in STAGES:
+
+def test_cpu_stages_are_routed_to_a_cpu_class() -> None:
+    """Routing FFmpeg to a GPU pod means paying GPU rates for work that never touches
+    the GPU. That is a cost rather than an error: it would run perfectly and bill wrongly.
+
+    This asserted that *every* implemented stage was CPU, which held while the package
+    had only CPU stages. One package now serves both images — `detect` imports torch
+    lazily so the CPU image can still load the registry — so the invariant is stated per
+    class instead of assumed for all."""
+    routing = _routing()
+    for stage in CPU_STAGES:
         assert routing.get(stage) == "cpu_small", (
-            f"{stage} is implemented in the CPU image but the contract routes it to "
+            f"{stage} never touches a GPU but the contract routes it to "
             f"{routing.get(stage)!r}"
+        )
+
+
+def test_gpu_stages_are_not_routed_to_a_cpu_class() -> None:
+    """The other direction, which the old assertion could not catch.
+
+    A GPU stage routed to `cpu_small` would be scheduled onto a pod with no CUDA, fall
+    back to CPU inference and take hours — and the only symptom would be a job that
+    looked slow."""
+    routing = _routing()
+    for stage in GPU_STAGES:
+        assert routing.get(stage, "").startswith("gpu_"), (
+            f"{stage} needs CUDA but the contract routes it to {routing.get(stage)!r}"
         )

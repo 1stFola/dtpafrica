@@ -44,6 +44,12 @@ class StageResult:
     bytes_written: int = 0
     class_a_operations: int = 0
     class_b_operations: int = 0
+    #: Seconds this stage actually spent on a GPU, when it used one. `None` means the
+    #: stage did not touch a GPU -- which was every stage until `detect` -- and is
+    #: reported as zero. A stage that ran inference on CUDA and left this unset would
+    #: bill the cost ledger for no GPU time at all, and the cost model would then
+    #: understate the expensive half of the pipeline forever.
+    gpu_seconds: float | None = None
 
 
 class ProgressReporter:
@@ -166,7 +172,11 @@ class Worker:
                 summary=result.summary,
                 cost={
                     "cpuSeconds": round(elapsed, 3),
-                    "gpuSeconds": 0,
+                    "gpuSeconds": (
+                        round(result.gpu_seconds, 3)
+                        if result.gpu_seconds is not None
+                        else 0
+                    ),
                     "wallClockSeconds": round(elapsed, 3),
                     "bytesRead": result.bytes_read,
                     "bytesWritten": result.bytes_written,

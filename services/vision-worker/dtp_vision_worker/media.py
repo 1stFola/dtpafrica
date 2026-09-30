@@ -158,6 +158,62 @@ def transcode_proxy(source: Path, target: Path, timeout: float = 14_400.0) -> di
     }
 
 
+#: Frames per second sampled for detection.
+#:
+#: Two, not twenty-five. A detector does not need every frame to establish where
+#: players are: at 2 fps a 96-minute match is about 11,500 frames rather than 144,000,
+#: which is the difference between a spike that costs cents and one that costs dollars.
+#: Tracking needs denser sampling and gets its own job type; S0 is measuring the floor.
+DETECT_SAMPLE_FPS = 2
+
+
+def sample_frames(
+    source: Path,
+    out_dir: Path,
+    fps: float = DETECT_SAMPLE_FPS,
+    timeout: float = 7_200.0,
+) -> list[Path]:
+    """Decode the proxy to still frames at a fixed rate.
+
+    Written to disk rather than piped, because the detector reads them in batches and a
+    failed run should leave the frames behind: re-sampling a 96-minute proxy to retry a
+    model is the expensive half done twice.
+
+    Names are zero-padded and ordered, and the index maps back to a proxy timestamp by
+    `index / fps` -- which is only true because the proxy is constant-frame-rate by
+    construction. On variable-frame-rate source this arithmetic silently drifts, which
+    is why `probe` flags VFR and `transcode` forces CFR.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-i", str(source),
+            "-vf", f"fps={fps}",
+            # JPEG rather than PNG: a detector does not care about the last few percent
+            # of fidelity, and PNG frames for a full match are gigabytes of disk.
+            "-q:v", "2",
+            str(out_dir / "frame_%06d.jpg"),
+        ],
+        timeout,
+    )
+    frames = sorted(out_dir.glob("frame_*.jpg"))
+    if not frames:
+        raise MediaError("ffmpeg reported success but sampled no frames")
+    return frames
+
+
+def frame_timestamp_ms(index: int, fps: float = DETECT_SAMPLE_FPS) -> int:
+    """The proxy timestamp of a sampled frame, from its 1-based index.
+
+    `frame_000001.jpg` is the frame at t=0, so the index is 1-based and the first frame
+    sits at zero rather than at one interval in. Off by one here would put every
+    detection half a second late for the whole match.
+    """
+    return int(round(((index - 1) / fps) * 1000))
+
 def settings_hash() -> str:
     recipe = f"h264:crf={PROXY_CRF}:fps={PROXY_FPS}:height={PROXY_HEIGHT}:pix=yuv420p"
     return hashlib.sha256(recipe.encode()).hexdigest()[:16]

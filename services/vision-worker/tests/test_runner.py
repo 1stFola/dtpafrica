@@ -189,3 +189,17 @@ def test_job_spec_rejects_a_foreign_contract_version() -> None:
                 "outputPrefix": "inference/j/1/",
             }
         )
+
+
+def test_a_gpu_stage_bills_the_gpu_seconds_it_reports(tmp_path: Path) -> None:
+    """`gpuSeconds` used to be the literal 0 for every job, which was true while every
+    stage was CPU. A GPU stage reporting real inference time would have had it thrown away
+    on the way to the cost ledger -- and GPU seconds are the expensive half of the unit
+    economics Spike S0 exists to measure."""
+    plane = FakeControlPlane()
+    worker = make_worker(
+        tmp_path, plane, {"probe": lambda ctx: StageResult(gpu_seconds=12.3456)}
+    )
+
+    assert worker.run_one(spec()) is True
+    assert plane.completions[0]["cost"]["gpuSeconds"] == 12.346
