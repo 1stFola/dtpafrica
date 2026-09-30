@@ -26,6 +26,7 @@
 import { PrismaClient } from "@prisma/client";
 import { playerLookupKey } from "@dtp/engines";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { reorderKey } from "../src/players/squad-duplicates";
 import { resolveUniquePlayerSlug, slugifyPlayerName } from "../src/players/player-slug";
 import {
   addSquadMembersFromTimeline,
@@ -119,6 +120,23 @@ async function main() {
   );
 
   const created = result.added.filter((a) => a.player === "new");
+
+  /* Every directory name that shares its words with one of the new ones. Built only when
+     there is something to check, because it reads the whole directory. */
+  const sameWordsInDirectory = new Map<string, string[]>();
+  if (created.length) {
+    const wanted = new Set(created.map((row) => reorderKey(row.name)));
+    const everyone = await prisma.player.findMany({ select: { displayName: true } });
+    for (const person of everyone) {
+      const key = reorderKey(person.displayName);
+      if (!wanted.has(key)) continue;
+      /* The name being created is not a near miss of itself. */
+      if (created.some((row) => row.name === person.displayName)) continue;
+      const held = sameWordsInDirectory.get(key) ?? [];
+      held.push(person.displayName);
+      sameWordsInDirectory.set(key, held);
+    }
+  }
   const linked = result.added.filter((a) => a.player === "existing");
 
   console.log(`  ${result.alreadyInSquad} name(s) already in their squad`);
@@ -147,7 +165,33 @@ async function main() {
         "  is not a footballer's name should be fixed at the event label first, because\n" +
         "  once created it collects goals and somebody has to find and merge it.\n"
     );
-    report(created, teamNames);
+    report(created, teamNames, sameWordsInDirectory);
+  }
+
+  if (result.sameWordsDifferentOrder.length) {
+    console.log(
+      `
+Already there under the other name order (${result.sameWordsDifferentOrder.length})`
+    );
+    console.log("-".repeat(72));
+    console.log(
+      "  The timeline writes the name one way round and the squad holds it the other. No\n" +
+        "  row is created: within one squad those are the same boy, which is the rule\n" +
+        "  db:merge:squad-duplicates already folds on.\n\n" +
+        "  It matters because a merge repoints an already-linked event and leaves its label\n" +
+        "  as the recorder wrote it, so the timeline keeps the old spelling after the\n" +
+        "  record is gone. Without this each would be created again, undoing that merge.\n"
+    );
+    for (const row of result.sameWordsDifferentOrder.slice(0, 30)) {
+      const team = teamNames.get(row.candidate.teamId) ?? row.candidate.teamId;
+      console.log(
+        `  ${team.slice(0, 26).padEnd(28)} ${row.candidate.name.slice(0, 24).padEnd(26)}` +
+          `squad has ${row.squadSpelling}`
+      );
+    }
+    if (result.sameWordsDifferentOrder.length > 30) {
+      console.log(`  … and ${result.sameWordsDifferentOrder.length - 30} more`);
+    }
   }
 
   if (result.rejected.length) {
@@ -202,12 +246,34 @@ async function main() {
   }
 }
 
-function report(rows: SquadAddition[], teamNames: Map<string, string>) {
+function report(
+  rows: SquadAddition[],
+  teamNames: Map<string, string>,
+  /**
+   * Directory names sharing this one's words, keyed by reorder key.
+   *
+   * Only consulted for the new-record list. A squad-mate written the other way round is
+   * handled before this point; what is left is somebody at *another* club whose name is
+   * this one reversed, which is genuinely ambiguous -- names repeat, and the directory-wide
+   * merge refuses reversed pairs for that reason. So it is shown, not decided.
+   */
+  sameWordsInDirectory?: Map<string, string[]>
+) {
   for (const [team, list] of groupByTeam(rows, teamNames)) {
     console.log(`  ${team}  (${list.length})`);
     for (const row of list.slice(0, SHOWN)) {
       const via = row.label === row.name ? "" : `   (from "${row.label.slice(0, 30)}")`;
       console.log(`      ${row.name.padEnd(28)}${via}`);
+      const near = sameWordsInDirectory?.get(reorderKey(row.name)) ?? [];
+      if (near.length) {
+        console.log(
+          `        !! the directory already holds ${near.join(", ")} — the same words in`
+        );
+        console.log(
+          "           another order, at another club. One boy who moved, or two who share a"
+        );
+        console.log("           name. Fix the label first if it is the former.");
+      }
     }
     if (list.length > SHOWN) console.log(`      … and ${list.length - SHOWN} more`);
   }

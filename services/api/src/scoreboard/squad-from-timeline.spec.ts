@@ -81,7 +81,7 @@ describe("skipping the people already in the squad", () => {
     const missing = missingFromSquad(candidates, [
       { teamId: HOME, displayName: "Nwosu Henry", playerId: "p1" },
     ]);
-    expect(missing).toEqual([]);
+    expect(missing.missing).toEqual([]);
   });
 
   it("matches across spellings, so no second row is created", () => {
@@ -91,7 +91,7 @@ describe("skipping the people already in the squad", () => {
     const missing = missingFromSquad(candidates, [
       { teamId: HOME, displayName: "NWOSU HENRY", playerId: "p1" },
     ]);
-    expect(missing).toEqual([]);
+    expect(missing.missing).toEqual([]);
   });
 
   it("does not treat the other team's squad as this team's", () => {
@@ -99,7 +99,7 @@ describe("skipping the people already in the squad", () => {
     const missing = missingFromSquad(candidates, [
       { teamId: AWAY, displayName: "Daniel", playerId: "p2" },
     ]);
-    expect(missing).toHaveLength(1);
+    expect(missing.missing).toHaveLength(1);
   });
 
   it("returns the ones genuinely missing", () => {
@@ -110,7 +110,57 @@ describe("skipping the people already in the squad", () => {
     const missing = missingFromSquad(candidates, [
       { teamId: HOME, displayName: "In Squad", playerId: "p1" },
     ]);
-    expect(missing.map((m) => m.name)).toEqual(["Not In Squad"]);
+    expect(missing.missing.map((m) => m.name)).toEqual(["Not In Squad"]);
+  });
+
+  it("treats a reversed spelling as already in the squad", () => {
+    /* The live shape. `db:merge:squad-duplicates` folded `Onyebuchi Nwabueze` into
+       `Nwabueze Onyebuchi` and deleted it, but a merge leaves an already-linked event's
+       label as the recorder wrote it -- so the timeline still says the old spelling. On a
+       key-only match this run proposed 69 new records, ~35 of them reversals of records
+       deleted hours earlier: it would have undone that merge in one pass. */
+    const candidates = squadCandidatesFrom([
+      event({ playerLabel: "Onyebuchi Nwabueze" }),
+    ]).candidates;
+    const result = missingFromSquad(candidates, [
+      { teamId: HOME, displayName: "Nwabueze Onyebuchi", playerId: "p1" },
+    ]);
+
+    expect(result.missing).toHaveLength(0);
+    expect(result.sameWordsDifferentOrder).toHaveLength(1);
+    expect(result.sameWordsDifferentOrder[0]!.squadSpelling).toBe("Nwabueze Onyebuchi");
+  });
+
+  it("matches a reversal through casing and punctuation", () => {
+    const candidates = squadCandidatesFrom([event({ playerLabel: "HENRY NWOSU" })]).candidates;
+    const result = missingFromSquad(candidates, [
+      { teamId: HOME, displayName: "Nwosu. Henry", playerId: "p1" },
+    ]);
+    expect(result.missing).toHaveLength(0);
+    expect(result.sameWordsDifferentOrder).toHaveLength(1);
+  });
+
+  it("does not treat a different name as a reversal", () => {
+    /* Two words in common is not the test — the words must be the same words. */
+    const candidates = squadCandidatesFrom([event({ playerLabel: "Henry Adeyemi" })]).candidates;
+    const result = missingFromSquad(candidates, [
+      { teamId: HOME, displayName: "Nwosu Henry", playerId: "p1" },
+    ]);
+    expect(result.missing).toHaveLength(1);
+    expect(result.sameWordsDifferentOrder).toHaveLength(0);
+  });
+
+  it("keeps the rule inside one squad", () => {
+    /* A reversal at another club is not evidence of anything: the domain rule is about two
+       players in the same team, and across clubs names repeat freely. */
+    const candidates = squadCandidatesFrom([
+      event({ playerLabel: "Onyebuchi Nwabueze" }),
+    ]).candidates;
+    const result = missingFromSquad(candidates, [
+      { teamId: AWAY, displayName: "Nwabueze Onyebuchi", playerId: "p1" },
+    ]);
+    expect(result.missing).toHaveLength(1);
+    expect(result.sameWordsDifferentOrder).toHaveLength(0);
   });
 });
 

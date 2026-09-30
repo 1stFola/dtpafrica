@@ -27,6 +27,7 @@
  * directory ended up with 165 names held by more than one record.
  */
 import { playerLookupKey } from "@dtp/engines";
+import { reorderKey } from "../players/squad-duplicates";
 import { PlaceholderPlayerNameError } from "../players/placeholder-names";
 import {
   admitSquadName,
@@ -111,17 +112,51 @@ export function squadCandidatesFrom(events: TimelineEventLabels[]) {
  * match, and a second row gets created for the same person. `db:dedupe:squad-members`
  * is what folds those together, and a duplicate squad row is recoverable in a way an
  * invented shirt number is not.
+ *
+ * **Reversed spellings are matched too, and that is not a nicety.** A merge repoints an
+ * already-linked event but leaves its label as the recorder wrote it, so the timeline keeps
+ * saying `Onyebuchi Nwabueze` after that record was folded into `Nwabueze Onyebuchi`. On a
+ * key-only match this run proposed 69 new records, and roughly 35 of them were reversals of
+ * records `db:merge:squad-duplicates` had deleted hours earlier — it would have undone that
+ * merge in one pass, quietly, and the report would have read like ordinary new players.
+ *
+ * The rule is the one that merge already rests on: within a single squad, no two players
+ * share a first or last name even swapped, so the same words in any order are one person.
+ * They are returned separately rather than silently dropped, because a reader should see
+ * how many rows were not created and why.
  */
 export function missingFromSquad(
   candidates: SquadCandidate[],
   squad: { teamId: string; displayName: string; playerId: string | null }[]
 ) {
   const held = new Set<string>();
+  const heldByWords = new Map<string, string>();
   for (const row of squad) {
     const key = playerLookupKey(row.displayName);
-    if (key) held.add(`${row.teamId}|${key}`);
+    if (!key) continue;
+    held.add(`${row.teamId}|${key}`);
+    /* Same words, any order. `db:merge:squad-duplicates` folds these together within one
+       squad on the rule that no two players in a team share a first or last name, even
+       swapped -- so a squad already holding `Nwabueze Onyebuchi` holds the boy the label
+       `Onyebuchi Nwabueze` names. */
+    const words = reorderKey(row.displayName);
+    if (words && !heldByWords.has(`${row.teamId}|${words}`)) {
+      heldByWords.set(`${row.teamId}|${words}`, row.displayName);
+    }
   }
-  return candidates.filter((c) => !held.has(`${c.teamId}|${c.key}`));
+
+  const missing: SquadCandidate[] = [];
+  const sameWordsDifferentOrder: { candidate: SquadCandidate; squadSpelling: string }[] = [];
+  for (const candidate of candidates) {
+    if (held.has(`${candidate.teamId}|${candidate.key}`)) continue;
+    const spelling = heldByWords.get(`${candidate.teamId}|${reorderKey(candidate.name)}`);
+    if (spelling) {
+      sameWordsDifferentOrder.push({ candidate, squadSpelling: spelling });
+      continue;
+    }
+    missing.push(candidate);
+  }
+  return { missing, sameWordsDifferentOrder };
 }
 
 /**
@@ -186,7 +221,8 @@ export async function addSquadMembersFromTimeline(
   options: { dryRun?: boolean } = {}
 ) {
   const { candidates, rejected } = squadCandidatesFrom(events);
-  if (!candidates.length) return { added: [], rejected, alreadyInSquad: 0 };
+  if (!candidates.length)
+    return { added: [], rejected, alreadyInSquad: 0, sameWordsDifferentOrder: [] };
 
   const teamIds = [...new Set(candidates.map((c) => c.teamId))];
 
@@ -208,7 +244,7 @@ export async function addSquadMembersFromTimeline(
     where: { teamId: { in: teamIds } },
     select: { teamId: true, displayName: true, playerId: true },
   });
-  const missing = missingFromSquad(split.kept, squad);
+  const { missing, sameWordsDifferentOrder } = missingFromSquad(split.kept, squad);
 
   const added: SquadAddition[] = [];
   for (const candidate of missing) {
@@ -258,5 +294,13 @@ export async function addSquadMembersFromTimeline(
     }
   }
 
-  return { added, rejected, alreadyInSquad: split.kept.length - missing.length };
+  return {
+    added,
+    rejected,
+    /* Names already present count the reversed spellings too: a row was not created
+       because the boy is there under the other order, which is a kind of "already in the
+       squad" and not a kind of refusal. */
+    alreadyInSquad: split.kept.length - missing.length,
+    sameWordsDifferentOrder,
+  };
 }
