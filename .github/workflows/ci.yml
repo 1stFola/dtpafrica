@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -261,11 +262,78 @@ jobs:
           [ "$uid" != "0" ] || { echo "::error::The worker image runs as root"; exit 1; }
 
       # CUDA-free on purpose: probe, fingerprint and transcode are CPU-bound, and a
-      # GPU image would mean paying GPU rates for FFmpeg. The GPU image builds FROM
-      # this one, so the split has to stay real.
+      # GPU image would mean paying GPU rates for FFmpeg. The GPU image does NOT build
+      # FROM this one (Dockerfile.gpu explains why), but both images now install the same
+      # package -- including the `detect` stage -- so this check matters more than it did:
+      # `detect` must keep importing torch lazily, or the CPU image grows a 2.5 GB
+      # dependency it can never use.
       - name: The CPU image carries no GPU stack
         run: |
           packages=$(docker run --rm --entrypoint pip dtp-vision-worker:ci list)
           found=$(echo "$packages" | grep -ciE "^(torch|nvidia|tensorrt)" || true)
           echo "GPU packages found: $found"
           [ "$found" = "0" ] || { echo "::error::GPU packages leaked into the CPU image"; exit 1; }
+
+      # The other half of that split, and the reason the lazy import exists. The stage
+      # registry names `detect`; importing it must not need torch, or this image cannot
+      # start at all.
+      - name: The CPU image loads a registry that names a GPU stage
+        run: |
+          docker run --rm --entrypoint python dtp-vision-worker:ci -c \
+            "from dtp_vision_worker.stages import CPU_STAGES, GPU_STAGES, STAGES; \
+             assert set(STAGES) == CPU_STAGES | GPU_STAGES; \
+             print('registry loaded without torch:', sorted(STAGES))"
+
+  # Not on the default path: the CUDA base plus cu124 torch is several GB to pull and
+  # build, which is minutes and disk on every push for an image only a GPU pod runs. It is
+  # manual **and** it exists because two things in Dockerfile.gpu cannot be verified on a
+  # machine with no Docker daemon: that the CUDA tag and jammy's python3.11 both resolve,
+  # and that the venv puts torch where the entry point looks (see docs/vision/
+  # 27-SPIKE-S0-SURPRISES.md, S0-3). Run it before spending pod time.
+  gpu-image:
+    name: Build the GPU image (manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ~14 GB free on a hosted runner, and the CUDA base with torch does not comfortably
+      # fit beside a preinstalled Android SDK and .NET.
+      - name: Reclaim runner disk
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The Dockerfile's own last layer imports torch, torchvision, cv2, boto3 and the
+      # stage registry, so a build that succeeds has already proved the stack resolves.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/vision-worker
+          file: services/vision-worker/Dockerfile.gpu
+          tags: dtp-vision-engine:ci
+          load: true
+          cache-from: type=gha,scope=gpu
+          cache-to: type=gha,mode=max,scope=gpu
+
+      # No GPU on a hosted runner, so CUDA itself is untested here -- `torch.cuda.is_available()`
+      # is false and the stage logs a warning and falls back. What this proves is that the
+      # benchmark harness Spike S0 depends on is installed and runnable in the image.
+      - name: The benchmark harness is installed
+        run: docker run --rm --entrypoint dtp-vision-bench dtp-vision-engine:ci --help
+
+      - name: The GPU image does not run as root
+        run: |
+          uid=$(docker run --rm --entrypoint id dtp-vision-engine:ci -u)
+          echo "runs as uid $uid"
+          [ "$uid" != "0" ] || { echo "::error::The GPU worker image runs as root"; exit 1; }
+
+      - name: ffmpeg is present in the GPU image too
+        run: docker run --rm --entrypoint ffmpeg dtp-vision-engine:ci -version

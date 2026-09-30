@@ -2,7 +2,12 @@
 #
 # Deliberately CUDA-free: probe, fingerprint, transcode and clip are all
 # CPU-bound, and running them on a GPU pod would mean paying GPU rates for
-# FFmpeg. The GPU image builds FROM this one and adds CUDA plus the model stack.
+# FFmpeg. The GPU image (Dockerfile.gpu) does NOT build FROM this one -- a slim
+# Debian Python has no route to a CUDA runtime -- so it starts from NVIDIA's
+# runtime image and installs this same worker package. Both images therefore
+# contain every stage; which ones a pod is given is decided by the CPU_STAGES /
+# GPU_STAGES split in dtp_vision_worker/stages, and `detect` imports torch lazily
+# so this image can still load the registry without it.
 #
 # Portability is a requirement, not a nicety: the same image must run on any
 # provider or a local machine. Nothing here knows whose hardware it is on.

@@ -1,0 +1,95 @@
+# DTP Vision Engine worker — GPU stages. `dtp-vision-engine:0.1`.
+#
+# The image Spike S0 measures. The CPU image's comment promised this one since
+# increment 2, and `detect` has been a declared job type routed to `gpu_24gb`
+# since then with no worker able to run it.
+#
+# It is NOT built FROM the CPU image, despite what that comment used to say, and
+# the reason is worth stating: the CPU image is `python:3.12-slim-bookworm`, which
+# has no CUDA runtime and no route to one short of reinstalling the base. Layering
+# CUDA onto a slim Debian Python is how you get an image that builds and then
+# cannot see the card. This starts from NVIDIA's runtime image and installs the
+# same worker package, so the two images share the package and the contract rather
+# than a base layer.
+#
+# Portability is still a requirement: nothing here knows whose hardware it is on.
+# It needs a CUDA-capable device and outbound HTTPS, and that is the whole
+# contract with the host.
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# ffmpeg for the proxy and the sampling step, python for the worker. The licence
+# position of the ffmpeg build is recorded in docs/licenses/OSS_REGISTER.md,
+# because the build flags ARE the licence.
+#
+# python3.11, not the 22.04 default: pyproject sets `requires-python = ">=3.11"`.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3.11 python3.11-venv \
+      ffmpeg ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# A venv rather than update-alternatives. Pointing `python3` at 3.11 while apt's
+# pip still belongs to the 3.10 it was built for installs every wheel into an
+# interpreter nothing then runs — the image builds and the worker starts with no
+# torch. The venv makes one interpreter unambiguous for pip, the entry point and
+# the smoke test below.
+RUN python3.11 -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+
+# Torch first, from the CUDA 12.4 index, in its own layer. Pinned because an
+# unpinned torch is a different image every build, and a spike that measures
+# throughput has to be able to say which version produced the number. The wheels
+# are ~2.5 GB; keeping them above the source copy means editing the worker does
+# not re-download them.
+RUN pip install --upgrade pip \
+ && pip install \
+      --index-url https://download.pytorch.org/whl/cu124 \
+      torch==2.5.1 torchvision==0.20.1
+
+# opencv-python-headless, not opencv-python: the headless build drops the GUI
+# dependencies, which a worker has no display for and which pull in a large slice
+# of X11. boto3 is the S3 client for R2.
+RUN pip install \
+      "opencv-python-headless>=4.10,<5" \
+      "boto3>=1.34,<2"
+
+COPY pyproject.toml ./
+COPY dtp_vision_worker ./dtp_vision_worker
+RUN pip install .
+
+# Model weights are NOT baked in — same rule as the CPU image. They are pulled by
+# modelVersionId and checksum-verified, so the image is not a deployment unit for
+# models; the model registry is.
+#
+# The one exception during S0 is torchvision's COCO-pretrained Faster R-CNN, which
+# it downloads to a cache on first use. Pre-warming it here would add ~160 MB to
+# the image to save one download per pod; left out deliberately, because how long
+# that download takes on a fresh pod is itself an S0 measurement.
+ENV TORCH_HOME=/tmp/dtp-vision/torch
+
+RUN useradd --create-home --shell /usr/sbin/nologin worker \
+ && mkdir -p /tmp/dtp-vision/torch && chown -R worker:worker /tmp/dtp-vision
+USER worker
+
+ENV VISION_WORK_DIR=/tmp/dtp-vision
+
+# Fails the build if the image cannot import what the GPU stages need, or if the
+# stage registry does not load. Cheap, and it turns "the pod started and every job
+# failed" into "the image did not build".
+#
+# It deliberately does not check `torch.cuda.is_available()`: that is false at
+# build time on a builder with no GPU, and asserting it here would make the image
+# unbuildable anywhere except on the hardware it targets. The runtime check lives
+# in `_torchvision_detector`, which logs loudly before falling back to CPU.
+RUN python -c "import torch, torchvision, cv2, boto3; \
+from dtp_vision_worker.stages import GPU_STAGES, STAGES; \
+assert GPU_STAGES <= set(STAGES); \
+print('torch', torch.__version__, 'gpu stages', sorted(GPU_STAGES))"
+
+ENTRYPOINT ["dtp-vision-worker"]

@@ -15,6 +15,8 @@ dev = [
 
 [project.scripts]
 dtp-vision-worker = "dtp_vision_worker.__main__:main"
+# Spike S0 measures itself from inside the image; see dtp_vision_worker/bench.py.
+dtp-vision-bench = "dtp_vision_worker.bench:main"
 
 [build-system]
 requires = ["setuptools>=68"]
