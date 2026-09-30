@@ -39,7 +39,7 @@
  * `name-only` -- because a reader should see which links rest on the identity model alone.
  */
 import { playerLookupKey } from "@dtp/engines";
-import { admitSquadName } from "./admissible-squad-name";
+import { admitSquadName, type SquadNameRejection } from "./admissible-squad-name";
 
 /** A goal with a label and no player. */
 export type UnattributedGoal = {
@@ -76,8 +76,16 @@ export type GoalLink = {
 export type UnlinkedGoal = {
   goal: UnattributedGoal;
   /** Why it stays unlinked, in the words the report prints. */
+  /**
+   * Why it stays unlinked.
+   *
+   * The first five are `admitSquadName`'s own verdicts, passed through rather than
+   * flattened into one. A report that files `FC Enegwea` under "Unknown, Player, or a bare
+   * shirt number" is telling the reader something untrue about their data, and a team
+   * holding a player record is a different problem from a goal nobody put a name to.
+   */
   reason:
-    | "not-a-name"
+    | SquadNameRejection
     | "nobody-by-that-name"
     | "several-of-that-name";
   /** Directory players holding the name, when that is the interesting part. */
@@ -105,6 +113,11 @@ export type GoalLinkPlan = {
 export function labelNamesAPerson(label: string): boolean {
   return admitSquadName(label).ok;
 }
+
+/** The gate's verdict, so a refusal can be reported in its own words. */
+export function labelVerdict(label: string) {
+  return admitSquadName(label);
+}
 /** The name to look up: the label without its shirt number. */
 export function nameFromLabel(label: string): string {
   return label.trim().replace(/^\s*(?:no\.?\s*|#\s*)\d{1,3}\s+/i, "").trim();
@@ -129,8 +142,9 @@ export function planGoalLinks(
     unlinked.push({ goal, reason, candidates });
 
   for (const goal of goals) {
-    if (!labelNamesAPerson(goal.label)) {
-      refuse(goal, "not-a-name");
+    const verdict = labelVerdict(goal.label);
+    if (!verdict.ok) {
+      refuse(goal, verdict.reason);
       continue;
     }
 

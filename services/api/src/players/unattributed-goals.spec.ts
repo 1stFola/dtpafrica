@@ -168,6 +168,32 @@ describe("planGoalLinks", () => {
       [player("p1", "Unknown", ["jp"])]
     );
     expect(plan.links).toHaveLength(0);
-    expect(plan.unlinked.map((u) => u.reason)).toEqual(["not-a-name", "not-a-name", "not-a-name"]);
+    expect(plan.unlinked.map((u) => u.reason)).toEqual([
+      "placeholder",
+      "placeholder",
+      "placeholder",
+    ]);
+  });
+
+  it("reports each refusal in its own words rather than as one kind", () => {
+    /* The report files these under one heading otherwise, and telling a reader that
+       `FC Enegwea` is "Unknown, Player, or a bare shirt number" is telling them something
+       untrue about their data. A team holding a player record is a different problem from a
+       goal nobody put a name to, and it is fixed differently. */
+    const plan = planGoalLinks(
+      [
+        goal("e1", "Unknown"),
+        goal("e2", "FC Enegwea"),
+        goal("e3", "Jersey No. 35"),
+        goal("e4", "Abdullah Shaubu (7) & Adebayo David (17)"),
+      ],
+      []
+    );
+    expect(plan.unlinked.map((u) => u.reason)).toEqual([
+      "placeholder",
+      "team",
+      "carries-a-digit",
+      "several-people",
+    ]);
   });
 });
