@@ -88,3 +88,73 @@ export function idleLockMessage(quietMs: number): string {
     `and the live broadcast was ended. A ScoreBoard admin can release it from the dashboard.`
   );
 }
+
+/** Five minutes, in milliseconds. */
+export const AUTO_SUBMIT_DELAY_MS = 5 * 60 * 1000;
+
+export type AutoSubmitCandidate = {
+  matchId: string;
+  sheetStatus: string;
+  clockPhase: string;
+  /** When the clock reached full time, or null if it has not. */
+  fullTimeAt: Date | null;
+  /** A recording the idle sweep stopped. Those wait for a person. */
+  idleLockedAt: Date | null;
+  /** A recorder has asked for the sheet back; submitting it under them would be rude. */
+  correctionRequested: boolean;
+  isTraining: boolean;
+};
+
+export type AutoSubmitVerdict =
+  | { submit: false; reason: "not_full_time" | "not_live" | "locked" | "correction_pending" | "training" | "too_soon" }
+  | { submit: true; waitedMs: number };
+
+/**
+ * Whether a finished match should be submitted without the recorder pressing the button.
+ *
+ * A recorder who blows full time and walks away leaves a complete sheet sitting in
+ * `live` for ever: the figures are right, nobody can approve them, and the fixture shows
+ * no result. Five minutes is long enough for somebody putting their phone away and short
+ * enough that the result is not stuck overnight.
+ *
+ * **A stopped recording is never auto-submitted.** The idle sweep stopped it precisely
+ * because nobody was there, so its figures are the ones nobody vouches for -- submitting
+ * them would push an unwatched sheet into the approval queue looking exactly like a
+ * recorder's own work. Those wait in the dashboard panel for a person.
+ */
+export function assessAutoSubmit(
+  candidate: AutoSubmitCandidate,
+  now: Date
+): AutoSubmitVerdict {
+  if (candidate.isTraining) return { submit: false, reason: "training" };
+  if (candidate.idleLockedAt) return { submit: false, reason: "locked" };
+  if (candidate.correctionRequested) return { submit: false, reason: "correction_pending" };
+  if (candidate.sheetStatus !== "live") return { submit: false, reason: "not_live" };
+  if (candidate.clockPhase !== "finished" || !candidate.fullTimeAt) {
+    return { submit: false, reason: "not_full_time" };
+  }
+
+  const waitedMs = now.getTime() - candidate.fullTimeAt.getTime();
+  if (waitedMs < AUTO_SUBMIT_DELAY_MS) return { submit: false, reason: "too_soon" };
+  return { submit: true, waitedMs };
+}
+
+/**
+ * Whether a sheet has reached the point where submitting it makes sense.
+ *
+ * Not before the second half. A sheet submitted at half-time is half a match: the
+ * approver sees a plausible-looking record with forty-five minutes missing, and the
+ * recorder has to ask for it back to finish the job they were in the middle of.
+ *
+ * The second half *starting* is the gate rather than full time, because a recorder
+ * whose phone dies in the eighty-eighth minute should still be able to send up what
+ * they have. Blocking until full time would lose that.
+ */
+export function canSubmitYet(clock: { half: 1 | 2; phase: string } | null): boolean {
+  if (!clock) return false;
+  return clock.half === 2;
+}
+
+/** Why the button is off, said the way the recorder would ask it. */
+export const SUBMIT_TOO_EARLY =
+  "The sheet can be sent for approval once the second half is under way.";

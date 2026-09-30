@@ -799,6 +799,7 @@ function SheetActions({
   permissions,
   audit,
   busy,
+  clock,
   onSubmit,
   onApprove,
   onSendBack,
@@ -807,6 +808,8 @@ function SheetActions({
   permissions: SectionPermissions;
   audit: SectionAudit;
   busy: boolean;
+  /** The clock, so the submit button knows whether the second half is under way. */
+  clock: ClockState | null;
   onSubmit: () => void;
   onApprove: () => void;
   onSendBack: (note: string) => void;
@@ -814,12 +817,36 @@ function SheetActions({
   const [note, setNote] = useState("");
   const [showNote, setShowNote] = useState(false);
 
+  /* Not before the second half: a sheet submitted at half-time is half a match, and the
+     approver sees a plausible record with forty-five minutes missing. The server refuses
+     it too -- a disabled button is a suggestion, not a rule -- so this is here to explain
+     rather than to enforce. */
+  const secondHalfStarted = clock?.half === 2;
+
   return (
     <footer className="mcx-actions">
       {permissions.canSubmit && status === "live" && (
-        <button type="button" className="mcx-btn mcx-btn--primary" disabled={busy} onClick={onSubmit}>
-          Submit statistics &amp; events for approval
-        </button>
+        <>
+          <button
+            type="button"
+            className="mcx-btn mcx-btn--primary"
+            disabled={busy || !secondHalfStarted}
+            onClick={onSubmit}
+            title={
+              secondHalfStarted
+                ? undefined
+                : "Available once the second half is under way"
+            }
+          >
+            Submit statistics &amp; events for approval
+          </button>
+          {!secondHalfStarted && (
+            <p className="mcx-hint muted">
+              This can be sent for approval once the second half is under way. At full time
+              it is submitted for you after five minutes if you have not.
+            </p>
+          )}
+        </>
       )}
 
       {status === "submitted" && (
@@ -1762,6 +1789,7 @@ export function AdminMatchStatsConsolePage() {
           status={status}
           permissions={perms}
           audit={audit}
+          clock={clock}
           busy={busy}
           onSubmit={() => act(() => matchStatsApi.submit(matchId))}
           onApprove={() => act(() => matchStatsApi.approve(matchId))}
