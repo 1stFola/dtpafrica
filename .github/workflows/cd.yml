@@ -1,11 +1,26 @@
 name: CD — Deploy to Staging
 
+# Deliberately NOT `on: push`. A push-triggered deploy shipped whatever landed on main
+# whether or not it passed: CI and CD started together and CD had no dependency on the
+# result, so a merge with a red tick still reached the staging box -- and that box serves
+# the live site.
+#
+# `workflow_run` inverts it. This runs only after the CI workflow has *finished*, and the
+# job below refuses anything but a success. The commit deployed is the commit CI verified,
+# `workflow_run.head_sha`, rather than whatever the branch tip happens to be by then.
+#
+# Two consequences worth knowing:
+#  * GitHub only ever runs the copy of this file that is on the default branch, so changes
+#    here do nothing until they are merged, and a pull request cannot exercise them.
+#  * A failing test now blocks a deploy. That is the point, and it means a flaky test
+#    blocks one too -- fix or quarantine the test, never remove the gate.
 on:
-  push:
-    branches:
-      - main
-     
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
 
+  # The escape hatch, unchanged: a human can still deploy deliberately.
   workflow_dispatch:
     inputs:
       skip_terraform:
@@ -202,15 +217,39 @@ jobs:
   deploy:
     name: Ansible deploy
     # needs: terraform
-    if: github.event.inputs.skip_deploy != 'true'
+    # A manual run deploys on the operator's judgement; an automatic one deploys only a
+    # commit whose CI run concluded `success`. Testing `conclusion` rather than the event
+    # covers cancelled and timed-out runs too, neither of which is a pass.
+    if: >-
+      github.event.inputs.skip_deploy != 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: infra/ansible
 
+    env:
+      # The commit CI verified. Under `workflow_run`, GITHUB_SHA points at the default
+      # branch rather than at the run being reacted to, so it is not safe to build from:
+      # deploying a different commit than the one that passed is the bug being fixed here.
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_REF: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+
     steps:
+      - name: Say what authorised this deploy
+        run: |
+          echo "Trigger:  ${{ github.event_name }}"
+          echo "CI run:   ${{ github.event.workflow_run.html_url || 'n/a (manual run)' }}"
+          echo "CI says:  ${{ github.event.workflow_run.conclusion || 'n/a (manual run)' }}"
+          echo "Deploying ${DEPLOY_SHA} from ${DEPLOY_REF}"
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # The verified commit, not the branch tip. They differ whenever something merged
+          # while CI was still running -- which is exactly when a deploy is riskiest.
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -341,7 +380,8 @@ jobs:
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
           REGION="${{ secrets.AWS_REGION }}"
           REGISTRY="$ACCOUNT.dkr.ecr.$REGION.amazonaws.com"
-          TAG="${GITHUB_SHA}"
+          # The verified commit, for the same reason the checkout uses it.
+          TAG="${DEPLOY_SHA}"
 
           # Idempotent: the repositories are created on first deploy and left alone
           # afterwards, so this needs no terraform run.
@@ -376,7 +416,37 @@ jobs:
         run: |
           echo "::add-mask::$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})"
           echo "password=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})" >> "$GITHUB_OUTPUT"
+
+      # Rollback needs a known-good tag, and the only trustworthy record of what is
+      # serving traffic is the box itself. Captured before the playbook runs, because the
+      # playbook rewrites this file with the new tag on its way past.
+      - name: Record the image currently serving traffic
+        id: previous
+        run: |
+          IP="${{ steps.resolve_ip.outputs.server_ip }}"
+          SSH="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/dtp-staging.pem ubuntu@$IP"
+
+          TAG=$($SSH "sudo grep -hE '^IMAGE_TAG=' /opt/dtp-app/repo/infra/.env.staging | tail -1 | cut -d= -f2" 2>/dev/null || true)
+          if [ -z "$TAG" ]; then
+            # A fresh box, or the file moved. Ask docker what it is actually running.
+            TAG=$($SSH "sudo docker ps --format '{{.Image}}' | grep -m1 'dtp-api:' | sed 's/.*://'" 2>/dev/null || true)
+          fi
+          TAG=$(echo "$TAG" | tr -d "[:space:]")
+
+          if [ "$TAG" = "$DEPLOY_SHA" ]; then
+            # Re-running a deploy on the same commit. Putting that tag back would reinstall
+            # exactly what just failed, so there is no rollback target worth the name.
+            echo "::warning::The box is already serving $DEPLOY_SHA, so a rollback would redeploy the same commit. None will be attempted."
+            TAG=""
+          elif [ -n "$TAG" ]; then
+            echo "Currently serving: $TAG"
+          else
+            echo "::warning::Could not read what is serving now, so this deploy cannot be rolled back automatically."
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Run Ansible playbook
+        id: deploy_stack
         run: |
           REPO_URL="${{ secrets.GIT_REPO_URL }}"
           if [ -z "$REPO_URL" ] || [[ "$REPO_URL" != https://github.com/* ]]; then
@@ -387,7 +457,7 @@ jobs:
             -e "aws_region=${{ secrets.AWS_REGION }}" \
             -e "git_repo_url=$REPO_URL" \
             -e "git_repo_token=${{ github.token }}" \
-            -e "git_branch=${{ github.ref_name }}" \
+            -e "git_branch=${{ env.DEPLOY_REF }}" \
             -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
             -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
             -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
@@ -402,6 +472,7 @@ jobs:
           ANSIBLE_FORCE_COLOR:   "1"
 
       - name: Verify deployment
+        id: verify
         run: |
           IP="${{ steps.resolve_ip.outputs.server_ip }}"
           HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
@@ -412,6 +483,72 @@ jobs:
             echo "Health check failed — got HTTP $HTTP"
             exit 1
           fi
+
+      # ── If it did not come up, put back what was there ──────────────────────
+      #
+      # The gate above decides how often a bad deploy happens; this decides how long one
+      # lasts. The images from the last ten deploys are still in ECR under the lifecycle
+      # policy set earlier in this job, so the previous tag is nearly always pullable.
+      #
+      # It restores the **application, not the database**. Migrations are not run by this
+      # deploy -- they are applied by hand through `docker exec` -- so there is normally
+      # nothing to unwind. If a migration was run by hand for this release, the schema
+      # stays migrated and a person has to decide what that means.
+      - name: Roll back to the previous image
+        id: rollback
+        # Both ways a deploy goes wrong: the playbook died partway through, or it finished
+        # and what came up does not answer. A half-applied deploy is not a safer state to
+        # leave the box in than a broken one.
+        if: >-
+          always() &&
+          steps.previous.outputs.tag != '' &&
+          (steps.verify.outcome == 'failure' || steps.deploy_stack.outcome == 'failure')
+        run: |
+          echo "Deploy failed (playbook error or health check). Rolling back to ${{ steps.previous.outputs.tag }}"
+          REPO_URL="${{ secrets.GIT_REPO_URL }}"
+          if [ -z "$REPO_URL" ] || [[ "$REPO_URL" != https://github.com/* ]]; then
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+          fi
+
+          ansible-playbook playbook.yml \
+            -e "aws_region=${{ secrets.AWS_REGION }}" \
+            -e "git_repo_url=$REPO_URL" \
+            -e "git_repo_token=${{ github.token }}" \
+            -e "git_branch=${{ env.DEPLOY_REF }}" \
+            -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
+            -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
+            -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
+            -e "admin_api_key=${{ steps.secrets.outputs.ADMIN_API_KEY }}" \
+            -e "image_registry=${{ steps.images.outputs.registry }}" \
+            -e "image_tag=${{ steps.previous.outputs.tag }}" \
+            -e "registry_password=${{ steps.registry_token.outputs.password }}"
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+          ANSIBLE_FORCE_COLOR:   "1"
+
+      - name: Verify the rollback
+        if: always() && steps.rollback.outcome == 'success'
+        run: |
+          IP="${{ steps.resolve_ip.outputs.server_ip }}"
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
+            "http://$IP/api/v1/health" || echo "000")
+          if [ "$HTTP" = "200" ]; then
+            echo "Rolled back to ${{ steps.previous.outputs.tag }} and the site is answering."
+            echo "::warning::Deploy of ${DEPLOY_SHA} failed and was rolled back to ${{ steps.previous.outputs.tag }}."
+          else
+            echo "::error::Rollback did not restore service either (HTTP $HTTP). The box needs a person."
+            exit 1
+          fi
+
+      - name: Nothing to roll back to
+        if: >-
+          always() &&
+          steps.previous.outputs.tag == '' &&
+          (steps.verify.outcome == 'failure' || steps.deploy_stack.outcome == 'failure')
+        run: |
+          echo "::error::The deploy failed and there was no previous image to put back, so nothing was rolled back. The box needs a person."
 
       - name: Deployment summary
         run: |
