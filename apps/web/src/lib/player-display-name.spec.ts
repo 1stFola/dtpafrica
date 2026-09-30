@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { playerDisplayName, shirtNumberFromLabel } from "./player-display-name";
+import { namesAPerson, playerDisplayName, shirtNumberFromLabel } from "./player-display-name";
 
 /**
  * Every label here is one the API actually stores, taken from the live timeline sync
@@ -63,5 +63,47 @@ describe("reading the shirt number back out", () => {
     expect(shirtNumberFromLabel("Nwosu Henry")).toBeNull();
     expect(shirtNumberFromLabel("No. 12")).toBeNull();
     expect(shirtNumberFromLabel(null)).toBeNull();
+  });
+});
+
+/**
+ * Which labels may become a link. Every string here is one the live database holds, from
+ * the breakdown of the 88 goals whose label resolved to no player.
+ */
+describe("whether a label names a person", () => {
+  it("accepts the names of people", () => {
+    expect(namesAPerson("Farouk Salami")).toBe(true);
+    expect(namesAPerson("No. 11 EBULU EMMANUEL")).toBe(true);
+    expect(namesAPerson("Idowu Babatunde Morakinyo")).toBe(true);
+    /* One word, and a real person — this rule says it is a name. Whether a single name is
+       linked is the timeline's own two-word rule, which is a different question. */
+    expect(namesAPerson("Christopher")).toBe(true);
+  });
+
+  it("refuses a bare shirt number, which used to link to /player/no-20", () => {
+    expect(namesAPerson("No. 20")).toBe(false);
+    expect(namesAPerson("No. 4")).toBe(false);
+    expect(namesAPerson("No 36")).toBe(false);
+    expect(namesAPerson("#7")).toBe(false);
+    expect(namesAPerson("20")).toBe(false);
+  });
+
+  it("refuses the words a recorder writes when nobody was caught", () => {
+    expect(namesAPerson("Unknown")).toBe(false);
+    expect(namesAPerson("unknown")).toBe(false);
+    expect(namesAPerson("Player")).toBe(false);
+    expect(namesAPerson("Player 1")).toBe(false);
+    expect(namesAPerson("Player 2")).toBe(false);
+  });
+
+  it("refuses a jersey placeholder, whose number is not at the front", () => {
+    expect(namesAPerson("Jersey No. 35")).toBe(false);
+    expect(namesAPerson("Jersey No. 6")).toBe(false);
+  });
+
+  it("refuses nothing at all", () => {
+    expect(namesAPerson(null)).toBe(false);
+    expect(namesAPerson(undefined)).toBe(false);
+    expect(namesAPerson("   ")).toBe(false);
   });
 });
