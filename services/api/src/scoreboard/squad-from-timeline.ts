@@ -226,11 +226,31 @@ export type SquadFromTimelineDeps = {
 export async function addSquadMembersFromTimeline(
   deps: SquadFromTimelineDeps,
   events: TimelineEventLabels[],
-  options: { dryRun?: boolean } = {}
+  options: {
+    dryRun?: boolean;
+    /**
+     * Add a squad row only where the directory already holds the person.
+     *
+     * The two halves of this run carry very different risk. A row for somebody already in
+     * the directory is a join, reversible by deleting the row. A row that creates a player
+     * is a person everywhere in the product, and on the live data most of those are not
+     * names anybody wants -- nineteen initials, one semicolon-joined pair. Being able to
+     * take the safe half and leave the rest is what stops the whole run waiting on them.
+     *
+     * Held candidates are returned in `heldForNewRecord`, never dropped quietly.
+     */
+    existingPlayersOnly?: boolean;
+  } = {}
 ) {
   const { candidates, rejected } = squadCandidatesFrom(events);
   if (!candidates.length)
-    return { added: [], rejected, alreadyInSquad: 0, sameWordsDifferentOrder: [] };
+    return {
+      added: [],
+      rejected,
+      alreadyInSquad: 0,
+      sameWordsDifferentOrder: [],
+      heldForNewRecord: [],
+    };
 
   const teamIds = [...new Set(candidates.map((c) => c.teamId))];
 
@@ -255,12 +275,20 @@ export async function addSquadMembersFromTimeline(
   const { missing, sameWordsDifferentOrder } = missingFromSquad(split.kept, squad);
 
   const added: SquadAddition[] = [];
+  const heldForNewRecord: typeof missing = [];
   for (const candidate of missing) {
     try {
       const existing = await deps.db.player.findUnique({
         where: { normalizedName: candidate.key },
         select: { id: true, displayName: true },
       });
+
+      /* Before the dry-run branch, so a dry run and an apply with the same flags report
+         the same split. */
+      if (!existing && options.existingPlayersOnly) {
+        heldForNewRecord.push(candidate);
+        continue;
+      }
 
       if (options.dryRun) {
         added.push({
@@ -308,6 +336,7 @@ export async function addSquadMembersFromTimeline(
   return {
     added,
     rejected,
+    heldForNewRecord,
     /* Names already present count the reversed spellings too: a row was not created
        because the boy is there under the other order, which is a kind of "already in the
        squad" and not a kind of refusal. */

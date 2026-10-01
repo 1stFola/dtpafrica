@@ -355,3 +355,82 @@ describe("labels that are the club itself", () => {
     }
   });
 });
+
+describe("--existing-only: the half of the run that creates nobody", () => {
+  const timeline = [
+    event({ playerLabel: "Ogundeji Elijah" }),
+    event({ playerLabel: "Nobody Known" }),
+  ];
+  const directoryHas = { "ogundeji elijah": "p1" };
+
+  it("adds the row for somebody the directory already holds", async () => {
+    const { deps, created } = fakeDeps({ existingByKey: directoryHas });
+    const result = await addSquadMembersFromTimeline(deps, timeline, {
+      existingPlayersOnly: true,
+    });
+
+    expect(created).toEqual([
+      { teamId: HOME, playerId: "p1", displayName: "ogundeji elijah", shirtNumber: null },
+    ]);
+    expect(result.added.map((a) => a.player)).toEqual(["existing"]);
+  });
+
+  it("creates nobody, and never calls the directory's create path", async () => {
+    /* The whole point of the flag. `resolvePlayer` is what makes a person, so it must not
+       be reached at all -- not reached and then rolled back. */
+    const resolve = vi.fn(async (name: string) => ({ id: `new-${name}`, displayName: name }));
+    const { deps, created } = fakeDeps({ existingByKey: directoryHas, resolve });
+
+    await addSquadMembersFromTimeline(deps, timeline, { existingPlayersOnly: true });
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(created.some((row) => row.displayName === "Nobody Known")).toBe(false);
+  });
+
+  it("hands back the ones it held, rather than dropping them", async () => {
+    /* A name that vanishes from both the written rows and the report is a name nobody will
+       ever look at again. */
+    const { deps } = fakeDeps({ existingByKey: directoryHas });
+    const result = await addSquadMembersFromTimeline(deps, timeline, {
+      existingPlayersOnly: true,
+    });
+
+    expect(result.heldForNewRecord.map((c) => c.name)).toEqual(["Nobody Known"]);
+    expect(result.rejected).toEqual([]);
+  });
+
+  it("splits a dry run the same way it would split the apply", async () => {
+    /* The dry run is what somebody reads before deciding. If it reported 2 rows and the
+       apply wrote 1, the report would be worthless for this flag. */
+    const { deps, created } = fakeDeps({ existingByKey: directoryHas });
+    const result = await addSquadMembersFromTimeline(deps, timeline, {
+      dryRun: true,
+      existingPlayersOnly: true,
+    });
+
+    expect(created).toEqual([]);
+    expect(result.added.map((a) => a.name)).toEqual(["Ogundeji Elijah"]);
+    expect(result.heldForNewRecord.map((c) => c.name)).toEqual(["Nobody Known"]);
+  });
+
+  it("creates the new record as usual without the flag", async () => {
+    const { deps, created } = fakeDeps({ existingByKey: directoryHas });
+    const result = await addSquadMembersFromTimeline(deps, timeline, {});
+
+    expect(created).toHaveLength(2);
+    expect(result.added.map((a) => a.player).sort()).toEqual(["existing", "new"]);
+    expect(result.heldForNewRecord).toEqual([]);
+  });
+
+  it("holds nothing back when the directory already has everybody", async () => {
+    const { deps } = fakeDeps({
+      existingByKey: { "ogundeji elijah": "p1", "nobody known": "p2" },
+    });
+    const result = await addSquadMembersFromTimeline(deps, timeline, {
+      existingPlayersOnly: true,
+    });
+
+    expect(result.heldForNewRecord).toEqual([]);
+    expect(result.added).toHaveLength(2);
+  });
+});
