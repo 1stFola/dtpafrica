@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
@@ -16,6 +17,7 @@ import {
 } from "./recorder-idle";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
+import { planFinalScoreSync } from "./final-score-sync";
 import { linkMatchGoals } from "../scoreboard/link-match-goals";
 import {
   buildNumberLookup,
@@ -734,6 +736,8 @@ function actorName(ctx: AdminAuthContext): string {
 
 @Injectable()
 export class AdminMatchStatsService {
+  private readonly logger = new Logger(AdminMatchStatsService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ScoreboardLifecycleService)
@@ -800,6 +804,13 @@ export class AdminMatchStatsService {
     return match;
   }
 
+  /**
+   * Carry the sheet's score onto the match at full time.
+   *
+   * Reached on every save, and it writes only once the clock reads full time. The rule for
+   * whether the sheet may set the score is in `planFinalScoreSync`: it may, unless it
+   * disagrees with a timeline this console did not publish.
+   */
   private async syncFinalScoreFromSheet(
     match: Awaited<ReturnType<AdminMatchStatsService["loadMatch"]>>,
     sheet: { events: unknown; clock: unknown }
@@ -809,7 +820,45 @@ export class AdminMatchStatsService {
     if (!isFullTime(readClock(sheet.clock))) return;
 
     const score = scoreFromEvents(readEvents(sheet.events));
+    const published = { home: match.homeScore, away: match.awayScore };
+    /* Counted rather than assumed, and only here -- full time is reached once per match,
+       so this is not on the path of a recorder tapping events. */
+    const [allEvents, ourEvents] = await Promise.all([
+      this.prisma.sbMatchEvent.count({ where: { matchId: match.id } }),
+      this.prisma.sbMatchEvent.count({
+        where: {
+          matchId: match.id,
+          metadata: { path: ["source"], equals: "match_recorder" },
+        },
+      }),
+    ]);
+    const plan = planFinalScoreSync({
+      sheet: score,
+      published,
+      eventsFromElsewhere: allEvents - ourEvents,
+    });
+
     const wasFinished = match.status === "finished";
+    if (!plan.follow) {
+      /* Finished, but at the score that is published. Logged because a held score is a
+         match waiting on a human, and nothing else would say so until somebody ran the
+         report. */
+      this.logger.warn(
+        `Match ${match.id}: kept the published score ${published.home}-${published.away} at ` +
+          `full time. The sheet says ${score.home}-${score.away}, and ${allEvents - ourEvents} ` +
+          "timeline event(s) here were not published by this console, so the two cannot both " +
+          "be right. Approve the sheet or correct the timeline to settle it."
+      );
+      if (!wasFinished) {
+        await this.prisma.sbMatch.update({
+          where: { id: match.id },
+          data: { status: "finished", minute: match.minute ?? 90 },
+        });
+        await this.lifecycle.onMatchFinished(match.id);
+      }
+      return;
+    }
+
     await this.prisma.sbMatch.update({
       where: { id: match.id },
       data: {
@@ -822,7 +871,7 @@ export class AdminMatchStatsService {
 
     if (!wasFinished) {
       await this.lifecycle.onMatchFinished(match.id);
-    } else if (match.homeScore !== score.home || match.awayScore !== score.away) {
+    } else if (published.home !== score.home || published.away !== score.away) {
       await this.lifecycle.refreshStandingsForFinishedMatch(match.id);
     }
   }

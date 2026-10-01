@@ -8,7 +8,12 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ClockState } from "../admin/admin-match-stats.service";
-import { hasKickedOff, publicLiveState, type PublicLiveInput } from "./public-live-state";
+import {
+  hasKickedOff,
+  publicLiveState,
+  readsAsLive,
+  type PublicLiveInput,
+} from "./public-live-state";
 
 const KICKOFF_AT = Date.parse("2026-09-30T15:00:00.000Z");
 const clock = (over: Partial<ClockState> = {}): ClockState => ({
@@ -29,6 +34,7 @@ const state = (over: Partial<PublicLiveInput> = {}) =>
     sheetStatus: "live",
     matchStatus: "scheduled",
     clock: clock(),
+    idleLocked: false,
     minute: null,
     now: KICKOFF_AT,
     ...over,
@@ -153,5 +159,59 @@ describe("publicLiveState and the admin's switch", () => {
     });
     expect(state({ sheetStatus: "approved", clock: running })).toBeNull();
     expect(state({ matchStatus: "finished", clock: running })).toBeNull();
+  });
+});
+
+describe("publicLiveState and a recording the idle sweep stopped", () => {
+  const running = () =>
+    clock({
+      phase: "running",
+      firstHalfStartedAt: new Date(KICKOFF_AT - 25 * 60_000).toISOString(),
+    });
+
+  it("stops calling a locked recording live", () => {
+    /* The sweep locks a running clock that has gone twenty minutes without an event, which is
+       a recorder who has walked away. The feed already closed there; the card went on ticking
+       the minutes of a game nobody was watching over a score that could not change. */
+    expect(state({ idleLocked: true, clock: running() })).toBeNull();
+  });
+
+  it("stops calling it halftime, too", () => {
+    expect(state({ idleLocked: true, clock: clock({ phase: "awaiting_second_half" }) })).toBeNull();
+  });
+
+  it("still reports a locked recording that reached full time as finished", () => {
+    /* The lock does not unsay full time. A game that ended, ended -- and its score is on the
+       sheet, so saying "scheduled" would be worse than saying nothing. */
+    expect(state({ idleLocked: true, clock: clock({ phase: "finished" }), minute: 90 })).toEqual({
+      status: "finished",
+      minute: 90,
+    });
+  });
+
+  it("still reports a locked sheet somebody submitted as finished", () => {
+    expect(
+      state({ idleLocked: true, sheetStatus: "submitted", clock: running(), minute: 90 })
+    ).toEqual({ status: "finished", minute: 90 });
+  });
+});
+
+describe("readsAsLive", () => {
+  it("puts a game the sheet calls live on the list", () => {
+    expect(readsAsLive({ status: "live", minute: 12 }, "scheduled")).toBe(true);
+    expect(readsAsLive({ status: "halftime", minute: 45 }, "scheduled")).toBe(true);
+  });
+
+  it("keeps a finished one off it, whatever the row still says", () => {
+    /* A submitted sheet on a row an admin left at `live`: the sheet is the later word. */
+    expect(readsAsLive({ status: "finished", minute: 90 }, "live")).toBe(false);
+  });
+
+  it("falls back to the row when the sheet has nothing to say", () => {
+    /* How an admin goes on marking a fixture live by hand for a game nobody is recording. */
+    expect(readsAsLive(null, "live")).toBe(true);
+    expect(readsAsLive(null, "halftime")).toBe(true);
+    expect(readsAsLive(null, "scheduled")).toBe(false);
+    expect(readsAsLive(null, "finished")).toBe(false);
   });
 });

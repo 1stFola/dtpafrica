@@ -21,16 +21,30 @@
  * console opened and abandoned with no events and no tallies is not a backlog item; it is
  * litter. One with forty events and a full set of tallies is a match that was recorded
  * properly and never sent for approval, and those are worth somebody's time.
+ *
+ * **And now a second question: what happens on the next save.** Public live approval used
+ * to default off, and the full-time score sync sits behind it, so for these sheets nothing
+ * was ever carried across. It defaults on, so the next time one of them is saved at full
+ * time the sheet's goals become the match score. `planFinalScoreSync` holds that where the
+ * published timeline holds events this console did not write -- three of the live sixteen --
+ * and this report says which, so a held match is visible before somebody wonders why its
+ * score never moved.
+ *
+ * The second section is the set the old query could not see: a sheet whose clock reads full
+ * time while its match is still down as scheduled or live. That combination exists only
+ * because the sync was switched off, and the next save is what ends it.
  */
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import {
   effectiveTallies,
   normaliseTallies,
+  readClock,
   readEvents,
   scoreFromEvents,
   totalsFor,
 } from "../src/admin/admin-match-stats.service";
+import { planFinalScoreSync } from "../src/admin/final-score-sync";
 
 loadApiEnv();
 
@@ -62,31 +76,51 @@ async function main() {
   console.log("Finished matches whose sheet was never approved\n");
   console.log("  Read-only. Approval is a human decision and stays one.\n");
 
-  const sheets = await prisma.sbMatchStatistics.findMany({
-    where: { status: { not: "approved" }, match: { status: "finished" } },
-    select: {
-      matchId: true,
-      status: true,
-      eventsStatus: true,
-      tallies: true,
-      events: true,
-      recorderName: true,
-      updatedAt: true,
-      match: {
-        select: {
-          kickoffAt: true,
-          homeScore: true,
-          awayScore: true,
-          stats: true,
-          homeTeam: { select: { name: true } },
-          awayTeam: { select: { name: true } },
-          competition: { select: { name: true } },
-        },
+  /* `sheetStatus` is approved only when both tracks are, so a sheet with one track short of
+     it is unapproved -- the old test read the statistics column alone and would have passed
+     over a sheet whose event log was still open. */
+  const unapproved = {
+    OR: [{ status: { not: "approved" } }, { eventsStatus: { not: "approved" } }],
+  };
+  const select = {
+    matchId: true,
+    status: true,
+    eventsStatus: true,
+    tallies: true,
+    events: true,
+    clock: true,
+    recorderName: true,
+    updatedAt: true,
+    match: {
+      select: {
+        status: true,
+        kickoffAt: true,
+        homeScore: true,
+        awayScore: true,
+        stats: true,
+        homeTeam: { select: { name: true } },
+        awayTeam: { select: { name: true } },
+        competition: { select: { name: true } },
       },
     },
-  });
+  } as const;
 
-  if (!sheets.length) {
+  const [sheets, others] = await Promise.all([
+    prisma.sbMatchStatistics.findMany({
+      where: { ...unapproved, match: { status: "finished" } },
+      select,
+    }),
+    /* Everything else unapproved, filtered to full time below. The clock is JSON, so the
+       phase cannot be a query -- and `fullTimeAt` cannot stand in for it, because it only
+       started being written recently and these sheets are older than that. */
+    prisma.sbMatchStatistics.findMany({
+      where: { ...unapproved, match: { status: { not: "finished" } } },
+      select,
+    }),
+  ]);
+  const atFullTime = others.filter((sheet) => readClock(sheet.clock)?.phase === "finished");
+
+  if (!sheets.length && !atFullTime.length) {
     console.log("None. Every finished match has an approved sheet.");
     return;
   }
@@ -99,7 +133,7 @@ async function main() {
      through the match-event editor survive it. But the score is set from the sheet's goal
      events alone, so approving a thin sheet over a match recorded elsewhere leaves the
      scoreline and the timeline contradicting each other. */
-  const matchIds = sheets.map((s) => s.matchId);
+  const matchIds = [...sheets, ...atFullTime].map((s) => s.matchId);
   const [allCounts, recorderCounts] = await Promise.all([
     prisma.sbMatchEvent.groupBy({
       by: ["matchId"],
@@ -118,10 +152,12 @@ async function main() {
   const published = new Map(allCounts.map((row) => [row.matchId, row._count._all]));
   const fromRecorder = new Map(recorderCounts.map((row) => [row.matchId, row._count._all]));
 
-  const rows = sheets.map((sheet) => {
+  const describe = (sheet: (typeof sheets)[number]) => {
     const events = readEvents(sheet.events);
     const score = scoreFromEvents(events);
     const stored = { home: sheet.match.homeScore, away: sheet.match.awayScore };
+    const fromElsewhere =
+      (published.get(sheet.matchId) ?? 0) - (fromRecorder.get(sheet.matchId) ?? 0);
     return {
       label: `${sheet.match.homeTeam.name} v ${sheet.match.awayTeam.name}`,
       competition: sheet.match.competition?.name ?? "—",
@@ -133,9 +169,16 @@ async function main() {
       statLines: filledStatLines(sheet.tallies, events),
       publishedEvents: published.get(sheet.matchId) ?? 0,
       publishedFromRecorder: fromRecorder.get(sheet.matchId) ?? 0,
-      publishedElsewhere:
-        (published.get(sheet.matchId) ?? 0) - (fromRecorder.get(sheet.matchId) ?? 0),
+      matchStatus: sheet.match.status,
+      publishedElsewhere: fromElsewhere,
       publishedStats: hasPublishedStats(sheet.match.stats),
+      /* What the next save of this sheet would do to the published score, decided by the
+         same function the server decides with. */
+      syncPlan: planFinalScoreSync({
+        sheet: score,
+        published: stored,
+        eventsFromElsewhere: fromElsewhere,
+      }),
       /* A sheet whose events disagree with the stored score is the one case where
          approving would change what the public already sees. */
       scoreAgrees: score.home === stored.home && score.away === stored.away,
@@ -146,7 +189,9 @@ async function main() {
       stored: `${stored.home}-${stored.away}`,
       touched: sheet.updatedAt,
     };
-  });
+  };
+
+  const rows = sheets.map(describe);
 
   const worthPublishing = rows.filter((r) => r.events > 0 || r.statLines > 0);
   const empty = rows.filter((r) => r.events === 0 && r.statLines === 0);
@@ -197,6 +242,19 @@ async function main() {
             `holds ${r.events} — it looks sent back for correction and left unfinished.`
         );
       }
+      if (!r.scoreAgrees) {
+        warnings.push(
+          r.syncPlan.follow
+            ? `THE NEXT SAVE OF THIS SHEET MOVES THE SCORE to ${r.score} on its own, without ` +
+              "approval — the full-time sync follows the sheet where the whole timeline " +
+              "came from this console. Approve it, or correct the sheet, before anybody " +
+              "reopens it."
+            : `THE FULL-TIME SYNC IS HELD on this one: the sheet says ${r.score}, the match ` +
+              `publishes ${r.stored}, and ${r.publishedElsewhere} timeline event(s) here were ` +
+              "not published by this console. Nothing will move the score until a human " +
+              "settles it."
+        );
+      }
       console.log(
         `  ${when}  ${r.label.slice(0, 38).padEnd(40)}` +
           `  events ${String(r.events).padStart(3)}  stats ${String(r.statLines).padStart(2)}` +
@@ -222,6 +280,36 @@ async function main() {
     console.log("");
   }
 
+  if (atFullTime.length) {
+    const pending = atFullTime.map(describe);
+    console.log("Sheets at full time whose match is not finished yet");
+    console.log("-".repeat(100));
+    console.log(
+      "  The clock on these reads full time and the match is still down as scheduled or\n" +
+        "  live. That pairing exists only because the full-time sync sat behind public live\n" +
+        "  approval and approval defaulted off. It defaults on now, so the next save of each\n" +
+        "  sheet marks its match finished — and takes the score with it, unless held.\n"
+    );
+    for (const r of pending) {
+      const when = r.kickoff ? r.kickoff.toISOString().slice(0, 10) : "no kickoff";
+      console.log(
+        `  ${when}  ${r.label.slice(0, 38).padEnd(40)}  match ${r.matchStatus.padEnd(10)}` +
+          `  sheet ${r.score}  match ${r.stored}  events ${String(r.events).padStart(3)}`
+      );
+      if (r.scoreAgrees) {
+        console.log("      The scores already agree. The next save only marks it finished.");
+      } else if (r.syncPlan.follow) {
+        console.log(`      The next save publishes ${r.score} in place of ${r.stored}.`);
+      } else {
+        console.log(
+          `      !! HELD: ${r.publishedElsewhere} timeline event(s) here were not published by ` +
+            `this console, so ${r.stored} stays until a human settles it.`
+        );
+      }
+    }
+    console.log("");
+  }
+
   console.log("What to do with this");
   console.log("-".repeat(100));
   console.log(
@@ -233,7 +321,12 @@ async function main() {
       "  published takes the public score down with it. And where the timeline came from the\n" +
       "  match-event editor rather than this console, approval leaves those events in place\n" +
       "  while moving the score — so the scoreline and the timeline would then disagree.\n\n" +
-      "  Empty sheets are litter and can be left alone; nothing reads them."
+      "  Empty sheets are litter and can be left alone; nothing reads them.\n\n" +
+      "  A row marked HELD needs no hurry — the score it publishes today is the one it keeps,\n" +
+      "  and the sync will not touch it. It is still a disagreement on the record: the sheet\n" +
+      "  and the timeline say different things about the same game, and only somebody who was\n" +
+      "  there can say which is right. Settle it by approving the sheet (the timeline and the\n" +
+      "  score then both come from it) or by correcting the sheet to match what was published."
   );
 }
 

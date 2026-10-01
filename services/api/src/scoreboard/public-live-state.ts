@@ -54,6 +54,15 @@ export type PublicLiveInput = {
    * match live by hand goes on working.
    */
   clock: ClockState | null;
+  /**
+   * Whether the idle sweep has locked this recording.
+   *
+   * It locks a running clock that has gone twenty minutes with no event, which is what a
+   * recorder closing their laptop mid-match looks like. The live feed already stopped there;
+   * the card did not, so it went on counting the minutes of a game nobody was watching over a
+   * score that could no longer change. That is the exact thing the sweep exists to prevent.
+   */
+  idleLocked: boolean;
   /** The match row's minute, used where the clock cannot say. */
   minute: number | null;
   /** Injected so the minute is testable. */
@@ -79,9 +88,13 @@ export function publicLiveState(input: PublicLiveInput): PublicLiveState | null 
      before the whistle is not a game in progress. */
   if (!hasKickedOff(clock)) return null;
 
+  /* Full time and a submitted sheet are read before the idle lock, because they are facts
+     about a game that has ended and a lock does not unsay them. The lock only suppresses the
+     states that claim a game is still being played. */
   if (input.sheetStatus === "submitted" || clock.phase === "finished") {
     return { status: "finished", minute: input.minute };
   }
+  if (input.idleLocked) return null;
   if (clock.phase === "awaiting_second_half") {
     return { status: "halftime", minute: input.minute };
   }
@@ -101,4 +114,24 @@ export function publicLiveState(input: PublicLiveInput): PublicLiveState | null 
   const played = Math.max(0, Math.floor(((input.now ?? Date.now()) - anchor) / 60000)) + 1;
   const minute = clock.half === 2 ? halfLength + played : played;
   return { status: "live", minute };
+}
+
+/** The statuses the public reads as a game in progress. */
+export const PUBLIC_LIVE_STATUSES = ["live", "halftime"] as const;
+
+/**
+ * Whether a match belongs on a public live list.
+ *
+ * The list used to be a query on the match row alone -- `status IN (live, halftime)` -- a
+ * column only the match editor writes. So a game its recorder had kicked off showed LIVE on
+ * its own card and was missing from Live Games, because nothing had told the row. Asking the
+ * same question the card answers is what keeps the two from disagreeing: a match is on the
+ * list when the list would show it as live, and for no other reason.
+ *
+ * The sheet speaks first and the row speaks when the sheet has nothing to say, which leaves
+ * an admin free to mark a fixture live by hand for a game nobody is recording.
+ */
+export function readsAsLive(state: PublicLiveState | null, matchStatus: string): boolean {
+  const status = state?.status ?? matchStatus;
+  return (PUBLIC_LIVE_STATUSES as readonly string[]).includes(status);
 }
