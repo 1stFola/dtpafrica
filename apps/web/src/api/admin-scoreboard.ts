@@ -18,6 +18,19 @@ import type { SbMatchListItem } from "./scoreboard";
 
 export type HighlightMediaType = "video" | "photo";
 
+/**
+ * What a bulk records action did.
+ *
+ * `done + failures.length === requested`. Partial success is expected rather than
+ * exceptional: the server runs each row through the same guard the single-row delete uses, so
+ * a competition that still has fixtures stays and says so.
+ */
+export type AdminSbBulkResult = {
+  requested: number;
+  done: number;
+  failures: { id: string; reason: string }[];
+};
+
 type AdminSbSquadRowUpdateResponse = {
   squadId: string;
   playerId: string | null;
@@ -628,5 +641,32 @@ export const adminScoreboardApi = {
     sbFetch<{ deleted: number }>("/admin/scoreboard/squads", {
       method: "DELETE",
       body: JSON.stringify(body),
+    }),
+
+  /* Bulk actions for the Master records page. Each one goes through the same single-row
+     guards on the server, so partial success is the normal outcome and the result says
+     which rows refused. */
+  deleteCompetitions: (competitionIds: string[]) =>
+    sbFetch<AdminSbBulkResult>("/admin/scoreboard/competitions", {
+      method: "DELETE",
+      body: JSON.stringify({ competitionIds }),
+    }),
+
+  setCompetitionsPublished: (competitionIds: string[], isPublished: boolean) =>
+    sbFetch<AdminSbBulkResult>("/admin/scoreboard/competitions", {
+      method: "PATCH",
+      body: JSON.stringify({ competitionIds, isPublished }),
+    }),
+
+  deleteTeams: (teamIds: string[]) =>
+    sbFetch<AdminSbBulkResult>("/admin/scoreboard/teams", {
+      method: "DELETE",
+      body: JSON.stringify({ teamIds }),
+    }),
+
+  deleteMatches: (matchIds: string[]) =>
+    sbFetch<AdminSbBulkResult>("/admin/scoreboard/matches", {
+      method: "DELETE",
+      body: JSON.stringify({ matchIds }),
     }),
 };

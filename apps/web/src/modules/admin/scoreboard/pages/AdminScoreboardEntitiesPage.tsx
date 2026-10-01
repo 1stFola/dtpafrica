@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { adminApi, type AdminPlayerRow } from "../../../../api/admin";
-import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
+import {
+  adminScoreboardApi,
+  type AdminSbBulkResult,
+} from "../../../../api/admin-scoreboard";
 import { useDebouncedValue } from "../../../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
@@ -19,6 +22,38 @@ import { FixtureFormModal } from "../components/FixtureFormModal";
 import { TeamFormModal } from "../components/TeamFormModal";
 import { CsvDropzone } from "../components/CsvDropzone";
 import { StatusBadge } from "../components/StatusBadge";
+import { RecordsBulkBar, type BulkAction } from "../components/RecordsBulkBar";
+import { confirmBulk, reportBulk, runInBatches, type Noun } from "../bulk-actions";
+import {
+  competitionSearchText,
+  filterIndexed,
+  fixtureSearchText,
+  indexForSearch,
+  keepCompetition,
+  keepFixture,
+  keepNameQaRow,
+  keepPlayer,
+  keepTeam,
+  nameQaFlagOptionsFor,
+  nameQaRowsFor,
+  nameQaSearchText,
+  normalizeNameKey,
+  playerSearchText,
+  searchNeedle,
+  squadIdOf,
+  teamGroupOptionsFor,
+  teamSearchText,
+} from "../records-filtering";
+import {
+  EMPTY_SELECTION,
+  allVisibleSelected as allOfSelected,
+  pruneToVisible,
+  selectedInOrder,
+  someVisibleSelected,
+  toggle as toggleSelection,
+  toggleAllVisible,
+  type Selection,
+} from "../row-selection";
 import type { AdminScoreboardOutletContext } from "../AdminScoreboardLayout";
 import {
   COMPETITION_STATUSES,
@@ -29,7 +64,6 @@ import {
   type AdminSbPlayerDirectoryRow,
   type AdminSbSquadRowInput,
   type AdminSbTeam,
-  positionTag,
 } from "../types";
 
 type Tab = "competitions" | "teams" | "fixtures" | "players" | "nameQa" | "seeders";
@@ -139,19 +173,26 @@ export function AdminScoreboardEntitiesPage() {
     seeders: false,
   });
 
-  const debouncedQ = useDebouncedValue(q);
-  const debouncedTeamQ = useDebouncedValue(teamQ);
-  const debouncedPlayerQ = useDebouncedValue(playerQ);
   const debouncedMergeTargetQ = useDebouncedValue(mergeTargetQ);
 
+  /*
+   * One fetch per tab, and every filter answered from what came back.
+   *
+   * These loaders used to take the filters as arguments, so each had the filter state in its
+   * `useCallback` deps and the effect below re-ran on every change: a status dropdown, a
+   * competition picker or a pause in typing was a round trip. None of these endpoints
+   * paginate -- they return every competition, team, fixture and squad row there is -- so the
+   * browser was asking the server to filter a list it already held in full.
+   *
+   * The directory search was worse than slow. `GET players?q=` caps a search at 500 rows and
+   * returns everything when asked for nothing, so searching a common surname could show fewer
+   * players than scrolling the unfiltered list. Filtering in the browser searches all of them,
+   * and searches the club and competition names too, which the server query never did.
+   */
   const loadCompetitions = useCallback(async () => {
     setLoading((s) => ({ ...s, competitions: true }));
     try {
-      const rows = await adminScoreboardApi.competitions({
-        status: statusFilter || undefined,
-        type: typeFilter || undefined,
-        q: debouncedQ || undefined,
-      });
+      const rows = await adminScoreboardApi.competitions();
       setCompetitions(rows);
       loadedRef.current.competitions = true;
     } catch {
@@ -159,15 +200,12 @@ export function AdminScoreboardEntitiesPage() {
     } finally {
       setLoading((s) => ({ ...s, competitions: false }));
     }
-  }, [statusFilter, typeFilter, debouncedQ]);
+  }, []);
 
   const loadTeams = useCallback(async () => {
     setLoading((s) => ({ ...s, teams: true }));
     try {
-      const rows = await adminScoreboardApi.teams({
-        q: debouncedTeamQ || undefined,
-        competitionId: teamCompId || undefined,
-      });
+      const rows = await adminScoreboardApi.teams();
       setTeams(rows);
       loadedRef.current.teams = true;
     } catch {
@@ -175,12 +213,12 @@ export function AdminScoreboardEntitiesPage() {
     } finally {
       setLoading((s) => ({ ...s, teams: false }));
     }
-  }, [debouncedTeamQ, teamCompId]);
+  }, []);
 
   const loadFixtures = useCallback(async () => {
     setLoading((s) => ({ ...s, fixtures: true }));
     try {
-      const rows = await adminScoreboardApi.matches(fixtureCompId || undefined);
+      const rows = await adminScoreboardApi.matches();
       setFixtures(sortRosterMatches(rows));
       loadedRef.current.fixtures = true;
     } catch {
@@ -188,12 +226,12 @@ export function AdminScoreboardEntitiesPage() {
     } finally {
       setLoading((s) => ({ ...s, fixtures: false }));
     }
-  }, [fixtureCompId]);
+  }, []);
 
   const loadPlayers = useCallback(async () => {
     setLoading((s) => ({ ...s, players: true }));
     try {
-      const rows = await adminScoreboardApi.players(debouncedPlayerQ || undefined);
+      const rows = await adminScoreboardApi.players();
       setPlayers(rows);
       loadedRef.current.players = true;
       loadedRef.current.nameQa = true;
@@ -202,7 +240,7 @@ export function AdminScoreboardEntitiesPage() {
     } finally {
       setLoading((s) => ({ ...s, players: false }));
     }
-  }, [debouncedPlayerQ]);
+  }, []);
 
   const openFixtureEditor = (match: SbMatchListItem) => {
     const parts = kickoffAtToWatParts(match.kickoffAt);
@@ -295,6 +333,8 @@ export function AdminScoreboardEntitiesPage() {
       setEditingCompetition(null);
       loadedRef.current.competitions = false;
       void loadCompetitions();
+      /* The picker lists competitions by name, so a rename has to reach it too. */
+      void loadCompetitionOptions();
       void refreshStats();
     } catch (e) {
       toast.error(formatAdminScoreboardError(e));
@@ -433,11 +473,36 @@ export function AdminScoreboardEntitiesPage() {
     if (tab === "competitions") void loadCompetitions();
   }, [tab, loadCompetitions]);
 
-  useEffect(() => {
-    if (tab === "teams" || teamModal || tab === "fixtures" || fixtureOpen) {
-      adminScoreboardApi.competitionPicker().then(setCompetitionOptions).catch(() => {});
+  /* The competition picker and the team list fill filter dropdowns and modal selects. Both
+     were refetched on every tab switch and every time a modal opened -- four requests to
+     open and close one dialog. They change when somebody creates a competition or a team,
+     which the handlers that do that already reload, so once is enough. */
+  const optionsLoadedRef = useRef({ competitions: false, teams: false });
+
+  const loadCompetitionOptions = useCallback(async () => {
+    optionsLoadedRef.current.competitions = true;
+    try {
+      setCompetitionOptions(await adminScoreboardApi.competitionPicker());
+    } catch {
+      /* Left unloaded so entering the tab again tries once more. */
+      optionsLoadedRef.current.competitions = false;
     }
-  }, [tab, teamModal, fixtureOpen]);
+  }, []);
+
+  const loadTeamOptions = useCallback(async () => {
+    optionsLoadedRef.current.teams = true;
+    try {
+      setPlayerTeamOptions(await adminScoreboardApi.teams());
+    } catch {
+      optionsLoadedRef.current.teams = false;
+      setPlayerTeamOptions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    const wanted = tab === "teams" || tab === "fixtures" || teamModal !== null || fixtureOpen;
+    if (wanted && !optionsLoadedRef.current.competitions) void loadCompetitionOptions();
+  }, [tab, teamModal, fixtureOpen, loadCompetitionOptions]);
 
   useEffect(() => {
     if (tab === "teams") void loadTeams();
@@ -486,11 +551,8 @@ export function AdminScoreboardEntitiesPage() {
 
   useEffect(() => {
     if (tab !== "players" && tab !== "nameQa") return;
-    adminScoreboardApi
-      .teams()
-      .then(setPlayerTeamOptions)
-      .catch(() => setPlayerTeamOptions([]));
-  }, [tab]);
+    if (!optionsLoadedRef.current.teams) void loadTeamOptions();
+  }, [tab, loadTeamOptions]);
 
   useEffect(() => {
     if (tab === "seeders" && !loadedRef.current.seeders) void loadPicker();
@@ -499,152 +561,381 @@ export function AdminScoreboardEntitiesPage() {
   const playerPath = (slug: string | null, displayName: string) =>
     slug ? `/player/${slug}` : `/player/${encodeURIComponent(displayName.toLowerCase().replace(/\s+/g, "-"))}`;
 
-  const normalizeNameKey = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+  /*
+   * Searchable text is built once per dataset and the filters run over that.
+   *
+   * It used to be assembled inside the filter callback -- seven fields joined and lowercased per
+   * fixture per render -- so the cost of a keystroke was the whole table rebuilt as strings. The
+   * rules themselves live in `records-filtering.ts`, where they are tested.
+   */
+  const competitionIndex = useMemo(
+    () => indexForSearch(competitions, competitionSearchText),
+    [competitions]
+  );
+  const teamIndex = useMemo(() => indexForSearch(teams, teamSearchText), [teams]);
+  const fixtureIndex = useMemo(() => indexForSearch(fixtures, fixtureSearchText), [fixtures]);
+  const playerIndex = useMemo(() => indexForSearch(players, playerSearchText), [players]);
 
-  const nameQaRows = useMemo(() => {
-    const byName = new Map<string, AdminSbPlayerDirectoryRow[]>();
-    const byFirstLast = new Map<string, AdminSbPlayerDirectoryRow[]>();
-    const bySurname = new Map<string, AdminSbPlayerDirectoryRow[]>();
-    const byReversed = new Map<string, AdminSbPlayerDirectoryRow[]>();
-
-    for (const player of players) {
-      const key = normalizeNameKey(player.displayName);
-      if (!key) continue;
-      byName.set(key, [...(byName.get(key) ?? []), player]);
-      const parts = key.split(" ").filter(Boolean);
-      const first = parts[0];
-      const surname = parts.at(-1);
-      if (first && surname) {
-        const firstLast = `${first} ${surname}`;
-        byFirstLast.set(firstLast, [...(byFirstLast.get(firstLast) ?? []), player]);
-        bySurname.set(surname, [...(bySurname.get(surname) ?? []), player]);
-        if (parts.length === 2 && first !== surname) {
-          const reversed = `${surname} ${first}`;
-          byReversed.set(reversed, [...(byReversed.get(reversed) ?? []), player]);
-        }
-      }
-    }
-
-    return players
-      .map((player) => {
-        const key = normalizeNameKey(player.displayName);
-        const parts = key.split(" ").filter(Boolean);
-        const first = parts[0];
-        const surname = parts.at(-1);
-        const firstLastKey = first && surname ? `${first} ${surname}` : "";
-        const flags: string[] = [];
-        if (parts.length < 2) flags.push("Name completion needed");
-        if ((byName.get(key)?.length ?? 0) > 1) flags.push("Possible duplicate normalized name");
-        if (firstLastKey && (byFirstLast.get(firstLastKey)?.length ?? 0) > 1) {
-          flags.push("Same First Name and Last name");
-        }
-        if (surname && (bySurname.get(surname)?.length ?? 0) > 1) {
-          flags.push("Same Surname");
-        }
-        if ((byReversed.get(key)?.length ?? 0) > 0) {
-          flags.push("Swapped First name and last name");
-        }
-        if (/[^a-zA-Z\s.'-]/.test(player.displayName)) flags.push("Unusual name appearance");
-        if (player.displayName.length <= 3 || parts.some((part) => part.length <= 1)) {
-          flags.push("Unusual short name");
-        }
-        return { player, flags };
-      })
-      .filter((row) => row.flags.length > 0);
-  }, [players]);
+  const nameQaRows = useMemo(() => nameQaRowsFor(players), [players]);
+  const nameQaIndex = useMemo(() => indexForSearch(nameQaRows, nameQaSearchText), [nameQaRows]);
+  const nameQaFlagOptions = useMemo(() => nameQaFlagOptionsFor(nameQaRows), [nameQaRows]);
+  const teamGroupOptions = useMemo(() => teamGroupOptionsFor(teams), [teams]);
 
   const filteredCompetitions = useMemo(
     () =>
-      competitions.filter((competition) => {
-        if (publishedFilter === "published" && !competition.isPublished) return false;
-        if (publishedFilter === "unpublished" && competition.isPublished) return false;
-        if (featuredFilter === "featured" && !competition.isFeatured) return false;
-        if (featuredFilter === "notFeatured" && competition.isFeatured) return false;
-        return true;
-      }),
-    [competitions, featuredFilter, publishedFilter]
-  );
-
-  const teamGroupOptions = useMemo(
-    () =>
-      Array.from(new Set(teams.map((team) => team.groupKey).filter(Boolean) as string[])).sort(),
-    [teams]
+      filterIndexed(
+        competitionIndex,
+        searchNeedle(q),
+        keepCompetition({
+          status: statusFilter,
+          type: typeFilter,
+          published: publishedFilter,
+          featured: featuredFilter,
+        })
+      ),
+    [competitionIndex, featuredFilter, publishedFilter, q, statusFilter, typeFilter]
   );
 
   const filteredTeams = useMemo(
     () =>
-      teams.filter((team) => {
-        if (teamGroupFilter && team.groupKey !== teamGroupFilter) return false;
-        return true;
-      }),
-    [teamGroupFilter, teams]
+      filterIndexed(
+        teamIndex,
+        searchNeedle(teamQ),
+        keepTeam({ competitionId: teamCompId, groupKey: teamGroupFilter })
+      ),
+    [teamCompId, teamGroupFilter, teamIndex, teamQ]
   );
 
-  const fixtureSearch = fixtureQ.trim().toLowerCase();
   const filteredFixtures = useMemo(
     () =>
-      fixtures.filter((match) => {
-        if (fixtureStatusFilter && match.status !== fixtureStatusFilter) return false;
-        if (!fixtureSearch) return true;
-        const haystack = [
-          match.homeTeam.name,
-          match.awayTeam.name,
-          match.competition.name,
-          match.slug,
-          match.venue,
-          match.roundLabel,
-          match.stageKey,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(fixtureSearch);
-      }),
-    [fixtureSearch, fixtureStatusFilter, fixtures]
+      filterIndexed(
+        fixtureIndex,
+        searchNeedle(fixtureQ),
+        keepFixture({ competitionId: fixtureCompId, status: fixtureStatusFilter })
+      ),
+    [fixtureCompId, fixtureIndex, fixtureQ, fixtureStatusFilter]
   );
 
   const filteredPlayers = useMemo(
     () =>
-      players.filter((player) => {
-        if (playerTeamFilter && !player.teams.some((team) => team.teamId === playerTeamFilter)) {
-          return false;
-        }
-        if (
-          playerPositionFilter &&
-          !player.teams.some(
-            (team) => positionTag(team.position ?? player.positionPrimary) === playerPositionFilter
-          )
-        ) {
-          return false;
-        }
-        if (playerLinkFilter === "linked" && !player.playerId) return false;
-        if (playerLinkFilter === "unlinked" && player.playerId) return false;
-        return true;
-      }),
-    [playerLinkFilter, playerPositionFilter, playerTeamFilter, players]
+      filterIndexed(
+        playerIndex,
+        searchNeedle(playerQ),
+        keepPlayer({
+          teamId: playerTeamFilter,
+          position: playerPositionFilter,
+          link: playerLinkFilter,
+        })
+      ),
+    [playerIndex, playerLinkFilter, playerPositionFilter, playerQ, playerTeamFilter]
   );
 
   const filteredNameQaRows = useMemo(
     () =>
-      nameQaRows.filter(({ flags, player }) => {
-        if (nameQaFlagFilter && !flags.includes(nameQaFlagFilter)) return false;
-        if (playerTeamFilter && !player.teams.some((team) => team.teamId === playerTeamFilter)) {
-          return false;
-        }
-        return true;
-      }),
-    [nameQaFlagFilter, nameQaRows, playerTeamFilter]
+      filterIndexed(
+        nameQaIndex,
+        searchNeedle(playerQ),
+        keepNameQaRow({ flag: nameQaFlagFilter, teamId: playerTeamFilter })
+      ),
+    [nameQaFlagFilter, nameQaIndex, playerQ, playerTeamFilter]
+  );
+  /*
+   * Rows picked for a bulk action, one selection per tab.
+   *
+   * Selection is by the id the row is acted on by, which for the directory is the squad row
+   * rather than the player: a profile can sit in several clubs, and this page edits and deletes
+   * the club entry. A row with no squad row behind it cannot be selected at all.
+   *
+   * Each selection is pruned to what the filter shows, which is the guarantee that makes
+   * "Select all" safe to press -- see `row-selection.ts`. Players and Name QA keep separate
+   * selections even though both act on squad rows, because carrying a selection between two
+   * differently filtered lists is how somebody deletes rows they never looked at.
+   */
+  const [competitionSel, setCompetitionSel] = useState<Selection>(EMPTY_SELECTION);
+  const [teamSel, setTeamSel] = useState<Selection>(EMPTY_SELECTION);
+  const [fixtureSel, setFixtureSel] = useState<Selection>(EMPTY_SELECTION);
+  const [playerSel, setPlayerSel] = useState<Selection>(EMPTY_SELECTION);
+  const [nameQaSel, setNameQaSel] = useState<Selection>(EMPTY_SELECTION);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const competitionIds = useMemo(
+    () => filteredCompetitions.map((c) => c.id),
+    [filteredCompetitions]
+  );
+  const teamIds = useMemo(() => filteredTeams.map((t) => t.id), [filteredTeams]);
+  const fixtureIds = useMemo(() => filteredFixtures.map((m) => m.id), [filteredFixtures]);
+  const playerSquadIds = useMemo(
+    () => filteredPlayers.map(squadIdOf).filter((id): id is string => id !== null),
+    [filteredPlayers]
+  );
+  const nameQaSquadIds = useMemo(
+    () =>
+      filteredNameQaRows
+        .map((row) => squadIdOf(row.player))
+        .filter((id): id is string => id !== null),
+    [filteredNameQaRows]
   );
 
-  const nameQaFlagOptions = useMemo(
-    () => Array.from(new Set(nameQaRows.flatMap((row) => row.flags))).sort(),
-    [nameQaRows]
+  /* `pruneToVisible` hands back the same Set when it dropped nothing, so these do not render
+     for a filter change that touched no selected row. */
+  useEffect(
+    () => setCompetitionSel((sel) => pruneToVisible(sel, competitionIds)),
+    [competitionIds]
   );
+  useEffect(() => setTeamSel((sel) => pruneToVisible(sel, teamIds)), [teamIds]);
+  useEffect(() => setFixtureSel((sel) => pruneToVisible(sel, fixtureIds)), [fixtureIds]);
+  useEffect(() => setPlayerSel((sel) => pruneToVisible(sel, playerSquadIds)), [playerSquadIds]);
+  useEffect(() => setNameQaSel((sel) => pruneToVisible(sel, nameQaSquadIds)), [nameQaSquadIds]);
+
+  /**
+   * Confirm, run, report, and leave the rows that refused still selected.
+   *
+   * Every one of these actions partially succeeds -- the server puts each row through the same
+   * guard the single-row delete uses -- so the selection afterwards is the rows that did not go
+   * through. That way "try the rest" is a glance at the table rather than a hunt through it.
+   */
+  const runBulk = useCallback(
+    async (args: {
+      noun: Noun;
+      verb: string;
+      pastTense: string;
+      ids: string[];
+      names: string[];
+      caveat?: string;
+      act: (batch: string[]) => Promise<AdminSbBulkResult>;
+      setSelection: (next: Selection) => void;
+      reload: () => void;
+    }) => {
+      if (!args.ids.length) return;
+      const asked = confirmBulk({
+        verb: args.verb,
+        noun: args.noun,
+        names: args.names,
+        caveat: args.caveat,
+      });
+      if (!window.confirm(asked)) return;
+
+      setBulkBusy(true);
+      try {
+        /* Split into requests the server will accept. The directory tab lists every squad
+           row there is, so "Select all shown" is thousands of ids and one request would be
+           refused outright. */
+        const result = await runInBatches(args.ids, args.act);
+        const report = reportBulk(result, args.noun, args.pastTense);
+        if (report.ok) toast.success(report.ok);
+        if (report.problem) toast.error(report.problem);
+        args.setSelection(new Set(result.failures.map((failure) => failure.id)));
+        args.reload();
+        void refreshStats();
+      } catch (err) {
+        toast.error(formatAdminScoreboardError(err));
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [refreshStats, toast]
+  );
+
+  /** A checkbox column header, shared by every tab that has one. */
+  const selectAllCell = (args: {
+    label: string;
+    selection: Selection;
+    visibleIds: string[];
+    onToggle: () => void;
+  }) => (
+    <th className="admin-sb-select-cell">
+      <input
+        type="checkbox"
+        aria-label={args.label}
+        checked={allOfSelected(args.selection, args.visibleIds)}
+        /* The dash state, for a partial selection. React has no prop for it. */
+        ref={(node) => {
+          if (node) node.indeterminate = someVisibleSelected(args.selection, args.visibleIds);
+        }}
+        disabled={args.visibleIds.length === 0}
+        onChange={args.onToggle}
+      />
+    </th>
+  );
+
+  /** A row checkbox. `id` is null for a row with nothing to act on, and then it is disabled. */
+  const selectRowCell = (args: {
+    id: string | null;
+    label: string;
+    selection: Selection;
+    onToggle: (id: string) => void;
+  }) => (
+    <td className="admin-sb-select-cell">
+      <input
+        type="checkbox"
+        aria-label={args.label}
+        checked={args.id !== null && args.selection.has(args.id)}
+        disabled={args.id === null}
+        title={args.id === null ? "This row has no squad entry to act on" : undefined}
+        onChange={() => args.id && args.onToggle(args.id)}
+      />
+    </td>
+  );
+
+  /* Names for the confirmation dialogs, by the id the row is selected under. Built from the
+     whole dataset rather than the filtered rows, so a selection made under an earlier filter
+     still has a name to show. */
+  const competitionNameById = useMemo(
+    () => new Map(competitions.map((c) => [c.id, c.name])),
+    [competitions]
+  );
+  const teamNameById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
+  const fixtureNameById = useMemo(
+    () => new Map(fixtures.map((m) => [m.id, `${m.homeTeam.name} vs ${m.awayTeam.name}`])),
+    [fixtures]
+  );
+  const playerNameBySquadId = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const player of players) {
+      for (const team of player.teams) names.set(team.squadId, player.displayName);
+    }
+    return names;
+  }, [players]);
+
+  const namesFor = (ids: string[], lookup: Map<string, string>) =>
+    ids.map((id) => lookup.get(id) ?? id);
+
+  const COMPETITION_NOUN: Noun = { one: "competition", many: "competitions" };
+  const TEAM_NOUN: Noun = { one: "team", many: "teams" };
+  const FIXTURE_NOUN: Noun = { one: "fixture", many: "fixtures" };
+  const SQUAD_NOUN: Noun = { one: "squad row", many: "squad rows" };
+
+  const selectedCompetitionIds = selectedInOrder(competitionSel, competitionIds);
+  const selectedTeamIds = selectedInOrder(teamSel, teamIds);
+  const selectedFixtureIds = selectedInOrder(fixtureSel, fixtureIds);
+  const selectedPlayerSquadIds = selectedInOrder(playerSel, playerSquadIds);
+  const selectedNameQaSquadIds = selectedInOrder(nameQaSel, nameQaSquadIds);
+
+  /* The directory's bulk delete is the one that already had a server endpoint, from the squad
+     management page. It returns a count rather than per-row outcomes, so it is adapted to the
+     shape the rest report in: a squad row has no guard to refuse it, and `deleted` short of
+     what was asked means some rows were gone before the request arrived. */
+  const deleteSquadRows = async (squadIds: string[]): Promise<AdminSbBulkResult> => {
+    const { deleted } = await adminScoreboardApi.deleteSquads({ squadIds });
+    return { requested: squadIds.length, done: deleted, failures: [] };
+  };
+
+  const competitionBulkActions: BulkAction[] = [
+    {
+      label: "Publish",
+      onRun: () =>
+        runBulk({
+          noun: COMPETITION_NOUN,
+          verb: "Publish",
+          pastTense: "published",
+          ids: selectedCompetitionIds,
+          names: namesFor(selectedCompetitionIds, competitionNameById),
+          caveat: "Published competitions are visible on the public ScoreBoard.",
+          act: (ids) => adminScoreboardApi.setCompetitionsPublished(ids, true),
+          setSelection: setCompetitionSel,
+          reload: () => void loadCompetitions(),
+        }),
+    },
+    {
+      label: "Unpublish",
+      onRun: () =>
+        runBulk({
+          noun: COMPETITION_NOUN,
+          verb: "Unpublish",
+          pastTense: "unpublished",
+          ids: selectedCompetitionIds,
+          names: namesFor(selectedCompetitionIds, competitionNameById),
+          caveat: "These competitions and their fixtures leave the public ScoreBoard.",
+          act: (ids) => adminScoreboardApi.setCompetitionsPublished(ids, false),
+          setSelection: setCompetitionSel,
+          reload: () => void loadCompetitions(),
+        }),
+    },
+    {
+      label: "Delete",
+      danger: true,
+      onRun: () =>
+        runBulk({
+          noun: COMPETITION_NOUN,
+          verb: "Delete",
+          pastTense: "deleted",
+          ids: selectedCompetitionIds,
+          names: namesFor(selectedCompetitionIds, competitionNameById),
+          caveat:
+            "A competition that still has teams, fixtures, highlights or player stats is left alone — remove those first.",
+          act: (ids) => adminScoreboardApi.deleteCompetitions(ids),
+          setSelection: setCompetitionSel,
+          reload: () => {
+            void loadCompetitions();
+            void loadCompetitionOptions();
+          },
+        }),
+    },
+  ];
+
+  const teamBulkActions: BulkAction[] = [
+    {
+      label: "Delete",
+      danger: true,
+      onRun: () =>
+        runBulk({
+          noun: TEAM_NOUN,
+          verb: "Delete",
+          pastTense: "deleted",
+          ids: selectedTeamIds,
+          names: namesFor(selectedTeamIds, teamNameById),
+          caveat: "A team linked to any fixture is left alone — delete its fixtures first.",
+          act: (ids) => adminScoreboardApi.deleteTeams(ids),
+          setSelection: setTeamSel,
+          reload: () => {
+            void loadTeams();
+            if (optionsLoadedRef.current.teams) void loadTeamOptions();
+          },
+        }),
+    },
+  ];
+
+  const fixtureBulkActions: BulkAction[] = [
+    {
+      label: "Delete",
+      danger: true,
+      onRun: () =>
+        runBulk({
+          noun: FIXTURE_NOUN,
+          verb: "Delete",
+          pastTense: "deleted",
+          ids: selectedFixtureIds,
+          names: namesFor(selectedFixtureIds, fixtureNameById),
+          caveat: "A fixture that is live or at halftime is left alone.",
+          act: (ids) => adminScoreboardApi.deleteMatches(ids),
+          setSelection: setFixtureSel,
+          reload: () => void loadFixtures(),
+        }),
+    },
+  ];
+
+  const squadBulkActions = (
+    ids: string[],
+    setSelection: (next: Selection) => void
+  ): BulkAction[] => [
+    {
+      label: "Delete",
+      danger: true,
+      onRun: () =>
+        runBulk({
+          noun: SQUAD_NOUN,
+          verb: "Remove",
+          pastTense: "removed",
+          ids,
+          names: namesFor(ids, playerNameBySquadId),
+          caveat:
+            "This removes the club entry, not the player profile. Goals already credited to the player stay with them.",
+          act: deleteSquadRows,
+          setSelection,
+          reload: () => void loadPlayers(),
+        }),
+    },
+  ];
 
   const mergeTargetOptions = useMemo(() => {
     const sourcePlayerId = mergingPlayers?.source.playerId;
@@ -750,6 +1041,7 @@ export function AdminScoreboardEntitiesPage() {
           toast.success("Competition created");
           loadedRef.current.competitions = false;
           void loadCompetitions();
+          void loadCompetitionOptions();
           void refreshStats();
         }}
       />
@@ -767,6 +1059,8 @@ export function AdminScoreboardEntitiesPage() {
           toast.success(teamModal === "edit" ? "Team updated" : "Team created");
           loadedRef.current.teams = false;
           void loadTeams();
+          /* The player filters list teams by name. */
+          if (optionsLoadedRef.current.teams) void loadTeamOptions();
           void refreshStats();
         }}
       />
@@ -1331,7 +1625,7 @@ export function AdminScoreboardEntitiesPage() {
             <div className="admin-filters admin-filters--with-action">
               <input
                 type="search"
-                placeholder="Search name, slug, region…"
+                placeholder="Search name, slug, region, season, format…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 aria-label="Search competitions"
@@ -1380,17 +1674,34 @@ export function AdminScoreboardEntitiesPage() {
               </select>
             </div>
           </div>
+          <RecordsBulkBar
+            noun={COMPETITION_NOUN}
+            selectedCount={selectedCompetitionIds.length}
+            visibleCount={competitionIds.length}
+            allVisibleSelected={allOfSelected(competitionSel, competitionIds)}
+            onSelectAllVisible={() => setCompetitionSel(new Set(competitionIds))}
+            onClear={() => setCompetitionSel(EMPTY_SELECTION)}
+            busy={bulkBusy}
+            actions={competitionBulkActions}
+          />
           <div className="admin-sb-content-panel">
           <AdminSbTableShell
             loading={loading.competitions}
             empty={!loading.competitions && filteredCompetitions.length === 0}
             emptyTitle="No competitions match your filters"
             emptyHint="Create a competition or adjust search filters."
-            columns={7}
+            columns={8}
           >
             <table className="admin-table admin-sb-table">
               <thead>
                 <tr>
+                  {selectAllCell({
+                    label: "Select all shown competitions",
+                    selection: competitionSel,
+                    visibleIds: competitionIds,
+                    onToggle: () =>
+                      setCompetitionSel((sel) => toggleAllVisible(sel, competitionIds)),
+                  })}
                   <th>Name</th>
                   <th>Type</th>
                   <th>Format</th>
@@ -1403,6 +1714,12 @@ export function AdminScoreboardEntitiesPage() {
               <tbody>
                 {filteredCompetitions.map((c) => (
                   <tr key={c.id}>
+                    {selectRowCell({
+                      id: c.id,
+                      label: `Select ${c.name}`,
+                      selection: competitionSel,
+                      onToggle: (id) => setCompetitionSel((sel) => toggleSelection(sel, id)),
+                    })}
                     <td>{c.name}</td>
                     <td>{c.type}</td>
                     <td>
@@ -1430,6 +1747,7 @@ export function AdminScoreboardEntitiesPage() {
                             await adminScoreboardApi.deleteCompetition(c.id);
                             toast.success("Competition deleted");
                             void loadCompetitions();
+                            void loadCompetitionOptions();
                             void refreshStats();
                           } catch (err) {
                             toast.error(formatAdminScoreboardError(err));
@@ -1454,7 +1772,7 @@ export function AdminScoreboardEntitiesPage() {
             <div className="admin-filters">
               <input
                 type="search"
-                placeholder="Search clubs…"
+                placeholder="Search club, slug, region, competition…"
                 value={teamQ}
                 onChange={(e) => setTeamQ(e.target.value)}
                 aria-label="Search teams"
@@ -1485,16 +1803,32 @@ export function AdminScoreboardEntitiesPage() {
               </select>
             </div>
           </div>
+          <RecordsBulkBar
+            noun={TEAM_NOUN}
+            selectedCount={selectedTeamIds.length}
+            visibleCount={teamIds.length}
+            allVisibleSelected={allOfSelected(teamSel, teamIds)}
+            onSelectAllVisible={() => setTeamSel(new Set(teamIds))}
+            onClear={() => setTeamSel(EMPTY_SELECTION)}
+            busy={bulkBusy}
+            actions={teamBulkActions}
+          />
           <div className="admin-sb-content-panel">
           <AdminSbTableShell
             loading={loading.teams}
             empty={!loading.teams && filteredTeams.length === 0}
             emptyTitle="No teams found"
-            columns={5}
+            columns={6}
           >
             <table className="admin-table admin-sb-table">
               <thead>
                 <tr>
+                  {selectAllCell({
+                    label: "Select all shown teams",
+                    selection: teamSel,
+                    visibleIds: teamIds,
+                    onToggle: () => setTeamSel((sel) => toggleAllVisible(sel, teamIds)),
+                  })}
                   <th>Club</th>
                   <th>Competition</th>
                   <th>Region</th>
@@ -1505,6 +1839,12 @@ export function AdminScoreboardEntitiesPage() {
               <tbody>
                 {filteredTeams.map((t) => (
                   <tr key={t.id}>
+                    {selectRowCell({
+                      id: t.id,
+                      label: `Select ${t.name}`,
+                      selection: teamSel,
+                      onToggle: (id) => setTeamSel((sel) => toggleSelection(sel, id)),
+                    })}
                     <td>
                       <div className="admin-sb-team-cell">
                         {t.logoUrl ? (
@@ -1543,6 +1883,7 @@ export function AdminScoreboardEntitiesPage() {
                             await adminScoreboardApi.deleteTeam(t.id);
                             toast.success("Team deleted");
                             void loadTeams();
+                            if (optionsLoadedRef.current.teams) void loadTeamOptions();
                             void refreshStats();
                           } catch (err) {
                             toast.error(formatAdminScoreboardError(err));
@@ -1598,17 +1939,33 @@ export function AdminScoreboardEntitiesPage() {
               </select>
             </div>
           </div>
+          <RecordsBulkBar
+            noun={FIXTURE_NOUN}
+            selectedCount={selectedFixtureIds.length}
+            visibleCount={fixtureIds.length}
+            allVisibleSelected={allOfSelected(fixtureSel, fixtureIds)}
+            onSelectAllVisible={() => setFixtureSel(new Set(fixtureIds))}
+            onClear={() => setFixtureSel(EMPTY_SELECTION)}
+            busy={bulkBusy}
+            actions={fixtureBulkActions}
+          />
           <div className="admin-sb-content-panel">
             <AdminSbTableShell
               loading={loading.fixtures}
               empty={!loading.fixtures && filteredFixtures.length === 0}
               emptyTitle="No fixtures yet"
               emptyHint="Create a fixture for teams in an existing competition."
-              columns={7}
+              columns={8}
             >
               <table className="admin-table admin-sb-table">
                 <thead>
                   <tr>
+                    {selectAllCell({
+                      label: "Select all shown fixtures",
+                      selection: fixtureSel,
+                      visibleIds: fixtureIds,
+                      onToggle: () => setFixtureSel((sel) => toggleAllVisible(sel, fixtureIds)),
+                    })}
                     <th>Fixture</th>
                     <th>Competition</th>
                     <th>Kickoff (WAT)</th>
@@ -1621,6 +1978,12 @@ export function AdminScoreboardEntitiesPage() {
                 <tbody>
                   {filteredFixtures.map((m) => (
                     <tr key={m.id}>
+                      {selectRowCell({
+                        id: m.id,
+                        label: `Select ${m.homeTeam.name} vs ${m.awayTeam.name}`,
+                        selection: fixtureSel,
+                        onToggle: (id) => setFixtureSel((sel) => toggleSelection(sel, id)),
+                      })}
                       <td>
                         {m.homeTeam.name} vs {m.awayTeam.name}
                         <small className="muted admin-sb-code">{m.slug}</small>
@@ -1677,7 +2040,7 @@ export function AdminScoreboardEntitiesPage() {
             <div className="admin-filters">
               <input
                 type="search"
-                placeholder="Search players in scoreboard squads…"
+                placeholder="Search player, club or competition…"
                 value={playerQ}
                 onChange={(e) => setPlayerQ(e.target.value)}
                 aria-label="Search players"
@@ -1717,17 +2080,33 @@ export function AdminScoreboardEntitiesPage() {
               </select>
             </div>
           </div>
+          <RecordsBulkBar
+            noun={SQUAD_NOUN}
+            selectedCount={selectedPlayerSquadIds.length}
+            visibleCount={playerSquadIds.length}
+            allVisibleSelected={allOfSelected(playerSel, playerSquadIds)}
+            onSelectAllVisible={() => setPlayerSel(new Set(playerSquadIds))}
+            onClear={() => setPlayerSel(EMPTY_SELECTION)}
+            busy={bulkBusy}
+            actions={squadBulkActions(selectedPlayerSquadIds, setPlayerSel)}
+          />
           <div className="admin-sb-content-panel">
           <AdminSbTableShell
             loading={loading.players}
             empty={!loading.players && filteredPlayers.length === 0}
             emptyTitle="No players in directory"
             emptyHint="Import squad CSV per team or link players when saving rosters."
-            columns={5}
+            columns={6}
           >
             <table className="admin-table admin-sb-table">
               <thead>
                 <tr>
+                  {selectAllCell({
+                    label: "Select all shown squad rows",
+                    selection: playerSel,
+                    visibleIds: playerSquadIds,
+                    onToggle: () => setPlayerSel((sel) => toggleAllVisible(sel, playerSquadIds)),
+                  })}
                   <th>Player</th>
                   <th>#</th>
                   <th>Position</th>
@@ -1738,6 +2117,12 @@ export function AdminScoreboardEntitiesPage() {
               <tbody>
                 {filteredPlayers.map((p) => (
                   <tr key={p.teams[0]?.squadId ?? p.playerId ?? p.slug ?? p.displayName}>
+                    {selectRowCell({
+                      id: squadIdOf(p),
+                      label: `Select ${p.displayName}`,
+                      selection: playerSel,
+                      onToggle: (id) => setPlayerSel((sel) => toggleSelection(sel, id)),
+                    })}
                     <td>{p.displayName}</td>
                     <td>{p.teams[0]?.shirtNumber ?? "-"}</td>
                     <td>{p.teams[0]?.position ?? p.positionPrimary ?? "-"}</td>
@@ -1844,17 +2229,33 @@ export function AdminScoreboardEntitiesPage() {
               </select>
             </div>
           </div>
+          <RecordsBulkBar
+            noun={SQUAD_NOUN}
+            selectedCount={selectedNameQaSquadIds.length}
+            visibleCount={nameQaSquadIds.length}
+            allVisibleSelected={allOfSelected(nameQaSel, nameQaSquadIds)}
+            onSelectAllVisible={() => setNameQaSel(new Set(nameQaSquadIds))}
+            onClear={() => setNameQaSel(EMPTY_SELECTION)}
+            busy={bulkBusy}
+            actions={squadBulkActions(selectedNameQaSquadIds, setNameQaSel)}
+          />
           <div className="admin-sb-content-panel">
             <AdminSbTableShell
               loading={loading.players}
               empty={!loading.players && filteredNameQaRows.length === 0}
               emptyTitle="No name issues found"
               emptyHint="Single names, duplicate normalized names, reversed names, close spelling concerns, and unusual entries appear here."
-              columns={5}
+              columns={6}
             >
               <table className="admin-table admin-sb-table">
                 <thead>
                   <tr>
+                    {selectAllCell({
+                      label: "Select all shown name reviews",
+                      selection: nameQaSel,
+                      visibleIds: nameQaSquadIds,
+                      onToggle: () => setNameQaSel((sel) => toggleAllVisible(sel, nameQaSquadIds)),
+                    })}
                     <th>Player name</th>
                     <th>Review flags</th>
                     <th>Club context</th>
@@ -1865,6 +2266,12 @@ export function AdminScoreboardEntitiesPage() {
                 <tbody>
                   {filteredNameQaRows.map(({ player, flags }) => (
                     <tr key={`name-qa-${player.teams[0]?.squadId ?? player.playerId ?? player.displayName}`}>
+                      {selectRowCell({
+                        id: squadIdOf(player),
+                        label: `Select ${player.displayName}`,
+                        selection: nameQaSel,
+                        onToggle: (id) => setNameQaSel((sel) => toggleSelection(sel, id)),
+                      })}
                       <td>{player.displayName}</td>
                       <td>
                         <div className="admin-sb-name-flags">

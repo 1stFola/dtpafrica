@@ -25,6 +25,7 @@ import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
 import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
 import type { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
 import { linkTeamsToClubsQuietly } from "../academy/club-sync";
+import { runBulk } from "./bulk-records";
 import {
   academyFieldsForTeamSync,
   scoreboardTeamSlugForAcademy,
@@ -1345,6 +1346,33 @@ export class AdminScoreboardService {
         },
       },
     }));
+  }
+
+  /**
+   * Delete several competitions, each through the single-row guard.
+   *
+   * `deleteCompetition` refuses one that still has teams, fixtures, highlights or player
+   * stats, and that refusal is the whole protection -- so this calls it rather than running a
+   * `deleteMany` that would not know about it. Expect partial success: the result says which
+   * rows stayed and why.
+   */
+  bulkDeleteCompetitions(competitionIds: readonly string[]) {
+    return runBulk(competitionIds, (id) => this.deleteCompetition(id));
+  }
+
+  /** Publish or unpublish several competitions. Touches the one flag and nothing else. */
+  bulkSetCompetitionsPublished(competitionIds: readonly string[], isPublished: boolean) {
+    return runBulk(competitionIds, (id) => this.updateCompetition(id, { isPublished }));
+  }
+
+  /** Delete several teams, each through the guard that refuses one tied to matches. */
+  bulkDeleteTeams(teamIds: readonly string[]) {
+    return runBulk(teamIds, (id) => this.deleteTeam(id));
+  }
+
+  /** Delete several fixtures, each through the guard that refuses a live one. */
+  bulkDeleteMatches(matchIds: readonly string[]) {
+    return runBulk(matchIds, (id) => this.deleteMatch(id));
   }
 
   async bulkDeleteSquads(squadIds: string[]) {

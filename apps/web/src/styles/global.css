@@ -12161,6 +12161,53 @@ a {
   color: #f87171;
 }
 
+/* Bulk actions on the Master records tabs. Sits between the filter row and the table, and
+   is only in the document while rows are selected. */
+.admin-sb-bulk-bar {
+  align-items: center;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.85rem;
+}
+
+.admin-sb-bulk-bar__count {
+  font-size: 0.9rem;
+}
+
+.admin-sb-bulk-bar__picks,
+.admin-sb-bulk-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* The actions sit at the far end on a wide screen and wrap underneath on a narrow one. */
+.admin-sb-bulk-bar__actions {
+  align-items: center;
+  margin-left: auto;
+}
+
+/* The checkbox column. Narrow, and never the thing that makes a table scroll sideways. */
+.admin-sb-select-cell {
+  padding-right: 0;
+  width: 2.25rem;
+}
+
+.admin-sb-select-cell input {
+  cursor: pointer;
+  margin: 0;
+}
+
+.admin-sb-select-cell input:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 .admin-inline-button--danger:hover {
   color: #fca5a5;
 }

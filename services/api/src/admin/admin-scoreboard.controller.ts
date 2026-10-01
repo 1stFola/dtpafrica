@@ -19,6 +19,7 @@ import {
   AdminScoreboardService,
   type MatchdayRosterPayload,
 } from "./admin-scoreboard.service";
+import { readBulkIds } from "./bulk-records";
 import { CreateAdminHighlightDto } from "./dto/create-admin-highlight.dto";
 import { CreateLandingHighlightDto } from "./dto/create-landing-highlight.dto";
 import { PublishHighlightDto } from "./dto/publish-highlight.dto";
@@ -127,6 +128,35 @@ export class AdminScoreboardController {
     return this.sb.deleteCompetition(competitionId);
   }
 
+  /**
+   * Delete the competitions the Master records page has selected.
+   *
+   * One path segment, like the existing `DELETE squads`, so it cannot be confused with
+   * `competitions/:competitionId` -- a two-segment bulk route such as `competitions/bulk`
+   * would match the id route as well, and which one won would depend on declaration order.
+   *
+   * Partial success is normal: a competition with teams or fixtures behind it refuses, and
+   * the result names it.
+   */
+  @Delete("competitions")
+  @RequirePermissions("scoreboard.records.manage")
+  deleteCompetitions(@Body() body: { competitionIds?: unknown }) {
+    return this.sb.bulkDeleteCompetitions(readBulkIds(body?.competitionIds, "competitionIds"));
+  }
+
+  /** Publish or unpublish the selected competitions. */
+  @Patch("competitions")
+  @RequirePermissions("scoreboard.records.manage")
+  publishCompetitions(@Body() body: { competitionIds?: unknown; isPublished?: unknown }) {
+    if (typeof body?.isPublished !== "boolean") {
+      throw new BadRequestException("isPublished must be true or false");
+    }
+    return this.sb.bulkSetCompetitionsPublished(
+      readBulkIds(body.competitionIds, "competitionIds"),
+      body.isPublished
+    );
+  }
+
   @Get("teams")
   @RequirePermissions("scoreboard.read")
   teams(@Query("q") q?: string, @Query("competitionId") competitionId?: string) {
@@ -161,6 +191,13 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.records.manage")
   deleteTeam(@Param("teamId") teamId: string) {
     return this.sb.deleteTeam(teamId);
+  }
+
+  /** Delete the selected teams. A team tied to matches refuses, and the result names it. */
+  @Delete("teams")
+  @RequirePermissions("scoreboard.records.manage")
+  deleteTeams(@Body() body: { teamIds?: unknown }) {
+    return this.sb.bulkDeleteTeams(readBulkIds(body?.teamIds, "teamIds"));
   }
 
   @Get("players")
@@ -382,6 +419,19 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.matches.write")
   deleteMatch(@Param("matchId") matchId: string) {
     return this.sb.deleteMatch(matchId);
+  }
+
+  /**
+   * Delete the selected fixtures.
+   *
+   * `scoreboard.matches.write`, like the single-row delete beside it, rather than the
+   * records permission the other bulk routes use: deleting a fixture is a fixtures job and
+   * the Records page is only one of the places it is done from.
+   */
+  @Delete("matches")
+  @RequirePermissions("scoreboard.matches.write")
+  deleteMatches(@Body() body: { matchIds?: unknown }) {
+    return this.sb.bulkDeleteMatches(readBulkIds(body?.matchIds, "matchIds"));
   }
 
   @Post("matches/:matchId/ingest-sip")
