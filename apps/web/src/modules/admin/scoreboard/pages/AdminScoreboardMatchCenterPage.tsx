@@ -19,6 +19,7 @@ import { FriendlyFormModal } from "../components/FriendlyFormModal";
 import { QuickScoreUpdatePanel } from "../components/QuickScoreUpdatePanel";
 import { RosterReadinessBar } from "../components/RosterReadinessBar";
 import { playerDisplayName } from "../../../../lib/player-display-name";
+import { liveCommentaryApproved, publicLiveApproved } from "../../../../lib/live-feature";
 
 type TimelineEvent = Awaited<
   ReturnType<typeof adminScoreboardApi.listMatchEvents>
@@ -391,8 +392,8 @@ export function AdminScoreboardMatchCenterPage() {
                 CSV upload
               </button>
               {(() => {
-                const publicLiveEnabled = Boolean(selected.stats?.liveFeature?.enabled);
-                const liveAudioEnabled = Boolean(selected.stats?.liveFeature?.audioEnabled);
+                const publicLiveEnabled = publicLiveApproved(selected.stats);
+                const liveAudioEnabled = liveCommentaryApproved(selected.stats);
                 return (
                   <>
                     <button

@@ -49,6 +49,11 @@ import {
   totalsFor,
   type RecordedEvent,
 } from "../admin/admin-match-stats.service";
+import {
+  hasKickedOff,
+  publicLiveState,
+  type PublicLiveState,
+} from "./public-live-state";
 import { generateEventComments, type RecordedEventInput } from "../admin/match-event-comments";
 import { isPlaceholderName } from "../players/placeholder-names";
 
@@ -440,52 +445,41 @@ export class ScoreboardService {
     return null;
   }
 
+  /**
+   * The score to show: the sheet's, once the game is being played, else the row's.
+   *
+   * The kickoff test used to be waived by a single recorded event, so a sheet holding one
+   * note before the whistle published a live scoreline for a match nobody had started.
+   * Kickoff is now the whole of it, which is the same line `publicLiveState` draws.
+   */
   private publicScoreFor(match: PublicScoreMatch) {
     const sheet = match.statisticsSheet;
-    const events = sheet ? readEvents(sheet.events) : [];
-    const clock = sheet ? readClock(sheet.clock) : null;
     if (
       !sheet ||
       !readLiveFeature(match.stats).enabled ||
       sheetStatus(sheet) === "approved" ||
       match.status === "finished" ||
-      (events.length === 0 && (!clock || clock.phase === "pre_kickoff"))
+      !hasKickedOff(readClock(sheet.clock))
     ) {
       return { home: match.homeScore, away: match.awayScore };
     }
-    return scoreFromEvents(events);
+    return scoreFromEvents(readEvents(sheet.events));
   }
 
-  private publicLiveStateFor(match: PublicScoreMatch): { status: string; minute: number | null } | null {
+  /**
+   * What the public is told about a match with a sheet behind it -- or nothing, leaving the
+   * match row to speak for itself. The rule lives in `public-live-state.ts`.
+   */
+  private publicLiveStateFor(match: PublicScoreMatch): PublicLiveState | null {
     const sheet = match.statisticsSheet;
-    if (!sheet || !readLiveFeature(match.stats).enabled) return null;
-    const status = sheetStatus(sheet);
-    if (status === "approved" || match.status === "finished") return null;
-    const events = readEvents(sheet.events);
-    const clock = readClock(sheet.clock);
-    if (events.length === 0 && (!clock || clock.phase === "pre_kickoff")) return null;
-
-    if (status === "submitted" || clock?.phase === "finished") {
-      return { status: "finished", minute: match.minute ?? null };
-    }
-    if (clock?.phase === "awaiting_second_half") {
-      return { status: "halftime", minute: match.minute ?? null };
-    }
-    if (!clock || clock.phase === "pre_kickoff") {
-      return { status: "live", minute: match.minute ?? null };
-    }
-
-    const halfLength = Math.max(1, clock.halfLength || 45);
-    const anchor =
-      clock.half === 2 && clock.secondHalfStartedAt
-        ? new Date(clock.secondHalfStartedAt).getTime()
-        : clock.firstHalfStartedAt
-          ? new Date(clock.firstHalfStartedAt).getTime()
-          : NaN;
-    if (!Number.isFinite(anchor)) return { status: "live", minute: match.minute ?? null };
-    const played = Math.max(0, Math.floor((Date.now() - anchor) / 60000)) + 1;
-    const minute = clock.half === 2 ? halfLength + played : played;
-    return { status: "live", minute };
+    if (!sheet) return null;
+    return publicLiveState({
+      liveEnabled: readLiveFeature(match.stats).enabled,
+      sheetStatus: sheetStatus(sheet),
+      matchStatus: match.status,
+      clock: readClock(sheet.clock),
+      minute: match.minute ?? null,
+    });
   }
 
   private withPublicScore<T extends PublicScoreMatch>(match: T): Omit<T, "statisticsSheet"> {
@@ -1622,11 +1616,18 @@ export class ScoreboardService {
     const status = sheetStatus(sheet as Record<string, unknown>);
     if (status === "approved") return null;
 
+    /* No feed before the recorder presses Kick off. The match centre reads the presence of
+       this snapshot as "live" -- `const live = ... || Boolean(liveSheet)` -- so an approved
+       fixture opened its feed hours early, showing a 0-0 and an empty timeline for a game
+       that had not started. Approving a match says it MAY be shown live; the recorder says
+       when. */
+    const clock = readClock(sheet.clock);
+    if (!hasKickedOff(clock)) return null;
+
     const events = readEvents(sheet.events);
     const tallies = normaliseTallies(sheet.tallies);
     const totals = totalsFor(effectiveTallies(tallies, events));
     const score = scoreFromEvents(events);
-    const clock = readClock(sheet.clock);
 
     /* Team squad first, matchday squad second, through the same resolver the publish
        path uses -- this read the matchday squad alone, and a live timeline for a

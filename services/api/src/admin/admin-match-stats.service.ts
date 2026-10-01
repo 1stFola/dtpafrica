@@ -290,19 +290,41 @@ export type LiveFeatureState = {
   audioUpdatedAt: string | null;
 };
 
+/**
+ * The live-feed switches on a match, with the defaults the competitions are run on.
+ *
+ * **Approved by default.** Every fixture is meant to be on the feed; the switch exists so an
+ * admin can take a particular game off it. It defaulted off, which made approving each match
+ * a step somebody had to remember, and a forgotten one meant a recorded game that the public
+ * never saw -- no feed, no live score, and no final score either, because the full-time sync
+ * is behind the same switch.
+ *
+ * Only an explicit `false` turns it off. Anything else -- no stats at all, no `liveFeature`
+ * key, a key with nothing in it -- means nobody has decided, and the default stands. An
+ * admin who switches it off writes `enabled: false`, which is read back as off for good.
+ *
+ * **Audio is not.** Commentary stays off until somebody turns it on for that game, and it
+ * cannot be on while the feed is off.
+ *
+ * Being approved is not the same as being live: that needs the recorder to kick off. See
+ * `hasKickedOff` in `../scoreboard/public-live-state`.
+ */
 export function readLiveFeature(input: unknown): LiveFeatureState {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { enabled: false, audioEnabled: false, updatedAt: null, audioUpdatedAt: null };
-  }
+  const NOBODY_HAS_DECIDED: LiveFeatureState = {
+    enabled: true,
+    audioEnabled: false,
+    updatedAt: null,
+    audioUpdatedAt: null,
+  };
+  if (!input || typeof input !== "object" || Array.isArray(input)) return NOBODY_HAS_DECIDED;
   const stats = input as Record<string, unknown>;
   const raw = stats.liveFeature;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { enabled: false, audioEnabled: false, updatedAt: null, audioUpdatedAt: null };
-  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return NOBODY_HAS_DECIDED;
   const live = raw as Record<string, unknown>;
   const timestamp = live.updatedAt ?? live.enabledAt;
   const audioTimestamp = live.audioUpdatedAt ?? live.audioEnabledAt;
-  const enabled = live.enabled === true;
+  /* An explicit boolean is the admin speaking. Anything else is nobody having spoken. */
+  const enabled = typeof live.enabled === "boolean" ? live.enabled : true;
   return {
     enabled,
     audioEnabled: enabled && live.audioEnabled === true,
