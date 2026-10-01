@@ -111,7 +111,15 @@ async function main() {
       await prisma.sbTeam.findMany({
         where: {
           id: {
-            in: [...new Set([...result.added, ...result.rejected].map((r) => r.teamId))],
+            /* The reversal list too. It was left out when that section was added, so a team
+             appearing only there printed as a raw id -- which is unreadable, and in a report
+             whose whole job is to be read before an irreversible write. */
+          in: [
+            ...new Set([
+              ...[...result.added, ...result.rejected].map((r) => r.teamId),
+              ...result.sameWordsDifferentOrder.map((r) => r.candidate.teamId),
+            ]),
+          ],
           },
         },
         select: { id: true, name: true },
