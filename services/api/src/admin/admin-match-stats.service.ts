@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
@@ -16,6 +17,7 @@ import {
 } from "./recorder-idle";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
+import { planFinalScoreSync } from "./final-score-sync";
 import { linkMatchGoals } from "../scoreboard/link-match-goals";
 import {
   buildNumberLookup,
@@ -290,19 +292,41 @@ export type LiveFeatureState = {
   audioUpdatedAt: string | null;
 };
 
+/**
+ * The live-feed switches on a match, with the defaults the competitions are run on.
+ *
+ * **Approved by default.** Every fixture is meant to be on the feed; the switch exists so an
+ * admin can take a particular game off it. It defaulted off, which made approving each match
+ * a step somebody had to remember, and a forgotten one meant a recorded game that the public
+ * never saw -- no feed, no live score, and no final score either, because the full-time sync
+ * is behind the same switch.
+ *
+ * Only an explicit `false` turns it off. Anything else -- no stats at all, no `liveFeature`
+ * key, a key with nothing in it -- means nobody has decided, and the default stands. An
+ * admin who switches it off writes `enabled: false`, which is read back as off for good.
+ *
+ * **Audio is not.** Commentary stays off until somebody turns it on for that game, and it
+ * cannot be on while the feed is off.
+ *
+ * Being approved is not the same as being live: that needs the recorder to kick off. See
+ * `hasKickedOff` in `../scoreboard/public-live-state`.
+ */
 export function readLiveFeature(input: unknown): LiveFeatureState {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { enabled: false, audioEnabled: false, updatedAt: null, audioUpdatedAt: null };
-  }
+  const NOBODY_HAS_DECIDED: LiveFeatureState = {
+    enabled: true,
+    audioEnabled: false,
+    updatedAt: null,
+    audioUpdatedAt: null,
+  };
+  if (!input || typeof input !== "object" || Array.isArray(input)) return NOBODY_HAS_DECIDED;
   const stats = input as Record<string, unknown>;
   const raw = stats.liveFeature;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { enabled: false, audioEnabled: false, updatedAt: null, audioUpdatedAt: null };
-  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return NOBODY_HAS_DECIDED;
   const live = raw as Record<string, unknown>;
   const timestamp = live.updatedAt ?? live.enabledAt;
   const audioTimestamp = live.audioUpdatedAt ?? live.audioEnabledAt;
-  const enabled = live.enabled === true;
+  /* An explicit boolean is the admin speaking. Anything else is nobody having spoken. */
+  const enabled = typeof live.enabled === "boolean" ? live.enabled : true;
   return {
     enabled,
     audioEnabled: enabled && live.audioEnabled === true,
@@ -712,6 +736,8 @@ function actorName(ctx: AdminAuthContext): string {
 
 @Injectable()
 export class AdminMatchStatsService {
+  private readonly logger = new Logger(AdminMatchStatsService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ScoreboardLifecycleService)
@@ -778,6 +804,13 @@ export class AdminMatchStatsService {
     return match;
   }
 
+  /**
+   * Carry the sheet's score onto the match at full time.
+   *
+   * Reached on every save, and it writes only once the clock reads full time. The rule for
+   * whether the sheet may set the score is in `planFinalScoreSync`: it may, unless it
+   * disagrees with a timeline this console did not publish.
+   */
   private async syncFinalScoreFromSheet(
     match: Awaited<ReturnType<AdminMatchStatsService["loadMatch"]>>,
     sheet: { events: unknown; clock: unknown }
@@ -787,7 +820,45 @@ export class AdminMatchStatsService {
     if (!isFullTime(readClock(sheet.clock))) return;
 
     const score = scoreFromEvents(readEvents(sheet.events));
+    const published = { home: match.homeScore, away: match.awayScore };
+    /* Counted rather than assumed, and only here -- full time is reached once per match,
+       so this is not on the path of a recorder tapping events. */
+    const [allEvents, ourEvents] = await Promise.all([
+      this.prisma.sbMatchEvent.count({ where: { matchId: match.id } }),
+      this.prisma.sbMatchEvent.count({
+        where: {
+          matchId: match.id,
+          metadata: { path: ["source"], equals: "match_recorder" },
+        },
+      }),
+    ]);
+    const plan = planFinalScoreSync({
+      sheet: score,
+      published,
+      eventsFromElsewhere: allEvents - ourEvents,
+    });
+
     const wasFinished = match.status === "finished";
+    if (!plan.follow) {
+      /* Finished, but at the score that is published. Logged because a held score is a
+         match waiting on a human, and nothing else would say so until somebody ran the
+         report. */
+      this.logger.warn(
+        `Match ${match.id}: kept the published score ${published.home}-${published.away} at ` +
+          `full time. The sheet says ${score.home}-${score.away}, and ${allEvents - ourEvents} ` +
+          "timeline event(s) here were not published by this console, so the two cannot both " +
+          "be right. Approve the sheet or correct the timeline to settle it."
+      );
+      if (!wasFinished) {
+        await this.prisma.sbMatch.update({
+          where: { id: match.id },
+          data: { status: "finished", minute: match.minute ?? 90 },
+        });
+        await this.lifecycle.onMatchFinished(match.id);
+      }
+      return;
+    }
+
     await this.prisma.sbMatch.update({
       where: { id: match.id },
       data: {
@@ -800,7 +871,7 @@ export class AdminMatchStatsService {
 
     if (!wasFinished) {
       await this.lifecycle.onMatchFinished(match.id);
-    } else if (match.homeScore !== score.home || match.awayScore !== score.away) {
+    } else if (published.home !== score.home || published.away !== score.away) {
       await this.lifecycle.refreshStandingsForFinishedMatch(match.id);
     }
   }

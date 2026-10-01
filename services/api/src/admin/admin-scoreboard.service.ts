@@ -1863,8 +1863,14 @@ export class AdminScoreboardService {
         ? (existingStats.liveFeature as Record<string, unknown>)
         : {};
     const updatedAt = new Date().toISOString();
-    const liveEnabled = patch.enabled ?? existingLive.enabled === true;
-    const audioEnabled = liveEnabled && (patch.audioEnabled ?? existingLive.audioEnabled === true);
+    /* Read the current state through `readLiveFeature` rather than off the raw JSON, so what
+       is left untouched here is what the rest of the server already believes. Reading it raw
+       meant a match nobody had switched counted as off: approving commentary on it would
+       write `enabled: false` alongside, taking the game off the feed by way of turning its
+       audio on. */
+    const current = readLiveFeature(match.stats);
+    const liveEnabled = patch.enabled ?? current.enabled;
+    const audioEnabled = liveEnabled && (patch.audioEnabled ?? current.audioEnabled);
     const stats = {
       ...existingStats,
       liveFeature: {

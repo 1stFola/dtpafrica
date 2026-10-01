@@ -49,6 +49,12 @@ import {
   totalsFor,
   type RecordedEvent,
 } from "../admin/admin-match-stats.service";
+import {
+  PUBLIC_LIVE_STATUSES,
+  hasKickedOff,
+  publicLiveState,
+  readsAsLive,
+} from "./public-live-state";
 import { generateEventComments, type RecordedEventInput } from "../admin/match-event-comments";
 import { isPlaceholderName } from "../players/placeholder-names";
 
@@ -151,7 +157,19 @@ const TEAM_MATCH_LIST_INCLUDE = {
   },
 } satisfies Prisma.SbMatchInclude;
 
-const LIVE_STATUSES = ["live", "halftime"];
+/* The match row's own live statuses, for the queries that read the column directly.
+   Shared with the rule the cards use so the two can never drift apart. */
+const LIVE_STATUSES = [...PUBLIC_LIVE_STATUSES];
+
+/**
+ * How far back a recording counts as possibly still in progress.
+ *
+ * A live list cannot ask Postgres whether a clock has kicked off -- the clock is JSON --
+ * so the query casts a wide net and the rule decides. This is the net: a recording being
+ * made is saved constantly, so one untouched for half a day is not one in progress, and
+ * the window keeps the list from reading every unapproved sheet ever opened.
+ */
+const RECORDING_WINDOW_MS = 12 * 60 * 60 * 1000;
 const SCOREBOARD_EXTERNAL_REF_PREFIX = "scoreboard:";
 const SECONDARY_OPPONENT_EVENT_TYPES = new Set([
   "save",
@@ -217,6 +235,8 @@ type MatchWithCompetition = Prisma.SbMatchGetPayload<{
 type PublicScoreSheet = {
   status: string;
   eventsStatus: string | null;
+  /** Set by the idle sweep. Optional only because not every query selects it. */
+  idleLockedAt?: Date | null;
   tallies: Prisma.JsonValue;
   events: Prisma.JsonValue | null;
   clock: Prisma.JsonValue | null;
@@ -440,63 +460,81 @@ export class ScoreboardService {
     return null;
   }
 
-  private publicScoreFor(match: PublicScoreMatch) {
+  /**
+   * What the public is told about a match: its status, its minute, and the score that goes
+   * with them. One decision, because they have to agree.
+   *
+   * The status and the score were worked out separately from the same four conditions, and
+   * keeping two copies of a rule in one file is how a card comes to read "Scheduled 2-0" --
+   * which is what the idle lock would have produced, since the feed honoured it and the score
+   * did not. The sheet speaks or it does not; the score follows whichever answer that was.
+   */
+  private publicPresentationFor(match: PublicScoreMatch) {
     const sheet = match.statisticsSheet;
-    const events = sheet ? readEvents(sheet.events) : [];
-    const clock = sheet ? readClock(sheet.clock) : null;
-    if (
-      !sheet ||
-      !readLiveFeature(match.stats).enabled ||
-      sheetStatus(sheet) === "approved" ||
-      match.status === "finished" ||
-      (events.length === 0 && (!clock || clock.phase === "pre_kickoff"))
-    ) {
-      return { home: match.homeScore, away: match.awayScore };
-    }
-    return scoreFromEvents(events);
+    const live = sheet
+      ? publicLiveState({
+          liveEnabled: readLiveFeature(match.stats).enabled,
+          sheetStatus: sheetStatus(sheet),
+          matchStatus: match.status,
+          clock: readClock(sheet.clock),
+          idleLocked: !!sheet.idleLockedAt,
+          minute: match.minute ?? null,
+        })
+      : null;
+    return {
+      live,
+      score:
+        live && sheet
+          ? scoreFromEvents(readEvents(sheet.events))
+          : { home: match.homeScore, away: match.awayScore },
+    };
   }
 
-  private publicLiveStateFor(match: PublicScoreMatch): { status: string; minute: number | null } | null {
-    const sheet = match.statisticsSheet;
-    if (!sheet || !readLiveFeature(match.stats).enabled) return null;
-    const status = sheetStatus(sheet);
-    if (status === "approved" || match.status === "finished") return null;
-    const events = readEvents(sheet.events);
-    const clock = readClock(sheet.clock);
-    if (events.length === 0 && (!clock || clock.phase === "pre_kickoff")) return null;
+  private publicScoreFor(match: PublicScoreMatch) {
+    return this.publicPresentationFor(match).score;
+  }
 
-    if (status === "submitted" || clock?.phase === "finished") {
-      return { status: "finished", minute: match.minute ?? null };
-    }
-    if (clock?.phase === "awaiting_second_half") {
-      return { status: "halftime", minute: match.minute ?? null };
-    }
-    if (!clock || clock.phase === "pre_kickoff") {
-      return { status: "live", minute: match.minute ?? null };
-    }
-
-    const halfLength = Math.max(1, clock.halfLength || 45);
-    const anchor =
-      clock.half === 2 && clock.secondHalfStartedAt
-        ? new Date(clock.secondHalfStartedAt).getTime()
-        : clock.firstHalfStartedAt
-          ? new Date(clock.firstHalfStartedAt).getTime()
-          : NaN;
-    if (!Number.isFinite(anchor)) return { status: "live", minute: match.minute ?? null };
-    const played = Math.max(0, Math.floor((Date.now() - anchor) / 60000)) + 1;
-    const minute = clock.half === 2 ? halfLength + played : played;
-    return { status: "live", minute };
+  /** Whether the public reads this match as a game in progress. */
+  private readsAsLive(match: PublicScoreMatch): boolean {
+    return readsAsLive(this.publicPresentationFor(match).live, match.status);
   }
 
   private withPublicScore<T extends PublicScoreMatch>(match: T): Omit<T, "statisticsSheet"> {
     const { statisticsSheet: _sheet, ...payload } = match;
-    const score = this.publicScoreFor(match);
-    const liveState = this.publicLiveStateFor(match);
+    const { live, score } = this.publicPresentationFor(match);
     return {
       ...payload,
-      ...(liveState ? liveState : {}),
+      ...(live ? live : {}),
       homeScore: score.home,
       awayScore: score.away,
+    };
+  }
+
+  /**
+   * The matches a public live list has to look at.
+   *
+   * Two kinds, and the rule sorts them out afterwards: fixtures an admin marked live by hand,
+   * and fixtures with a recording that might be under way. The second cannot be asked for
+   * precisely, because kickoff lives in the sheet's JSON clock, so this asks for the sheets
+   * that could qualify -- not approved, not idle-locked, saved recently -- and `readsAsLive`
+   * decides. An approved sheet is a published match and a locked one is an abandoned
+   * recording; neither can be in progress, so both are excluded here rather than fetched and
+   * thrown away.
+   */
+  private liveCandidateWhere(): Prisma.SbMatchWhereInput {
+    return {
+      OR: [
+        { status: { in: LIVE_STATUSES } },
+        {
+          statisticsSheet: {
+            idleLockedAt: null,
+            updatedAt: { gte: new Date(Date.now() - RECORDING_WINDOW_MS) },
+            /* `sheetStatus` is approved only when both tracks are, so either one short of it
+               leaves the sheet unapproved. */
+            OR: [{ status: { not: "approved" } }, { eventsStatus: { not: "approved" } }],
+          },
+        },
+      ],
     };
   }
 
@@ -854,12 +892,19 @@ export class ScoreboardService {
     const stats = await this.stats();
     const published = { isPublished: true, competition: { isPublished: true } };
 
-    const live = await this.prisma.sbMatch.findMany({
-      where: { ...published, status: { in: LIVE_STATUSES } },
-      orderBy: [{ kickoffAt: "desc" }],
-      take: OVERVIEW_TAKE,
-      include: TEAM_MATCH_LIST_INCLUDE,
-    });
+    /* No `take` on the query: the live leg is filtered by the same rule the cards use, so
+       a database-side limit would be a limit on candidates rather than on live matches and
+       could return an empty panel while a game was being played. The candidate set is the
+       matches marked live plus the sheets saved in the last half day, which is small. */
+    const live = (
+      await this.prisma.sbMatch.findMany({
+        where: { ...published, ...this.liveCandidateWhere() },
+        orderBy: [{ kickoffAt: "desc" }],
+        include: TEAM_MATCH_LIST_INCLUDE,
+      })
+    )
+      .filter((match) => this.readsAsLive(match))
+      .slice(0, OVERVIEW_TAKE);
 
     /* Pull per competition rather than one global "most recent" slice: a
        competition whose fixtures sit further out would otherwise push every
@@ -1542,8 +1587,13 @@ export class ScoreboardService {
     if (query.competitionId) {
       where.competitionId = query.competitionId;
     }
-    if (query.status === "live") {
-      where.status = { in: LIVE_STATUSES };
+    /* Asking for live matches is the one status that is not a column read. A game is live
+       when its recorder has kicked off, which the match row knows nothing about, so the
+       candidates are fetched and `readsAsLive` picks them -- the same rule that decides
+       what each card then says. */
+    const liveWanted = query.status === "live";
+    if (liveWanted) {
+      Object.assign(where, this.liveCandidateWhere());
     } else if (query.status) {
       where.status = query.status;
     }
@@ -1557,7 +1607,9 @@ export class ScoreboardService {
     const rows = await this.prisma.sbMatch.findMany({
       where,
       orderBy: [{ kickoffAt: query.order ?? "desc" }],
-      ...(query.limit ? { take: query.limit } : {}),
+      /* The limit is applied after the live filter below, for the same reason the overview
+         has no `take`: it is a limit on live matches, not on candidates. */
+      ...(query.limit && !liveWanted ? { take: query.limit } : {}),
       include: {
         homeTeam: true,
         awayTeam: true,
@@ -1579,7 +1631,9 @@ export class ScoreboardService {
         },
       },
     });
-    return this.presentPublicMatches(rows);
+    if (!liveWanted) return this.presentPublicMatches(rows);
+    const live = rows.filter((match) => this.readsAsLive(match));
+    return this.presentPublicMatches(query.limit ? live.slice(0, query.limit) : live);
   }
 
   async matchBySlugOrId(slugOrId: string, publicOnly = true) {
@@ -1622,11 +1676,18 @@ export class ScoreboardService {
     const status = sheetStatus(sheet as Record<string, unknown>);
     if (status === "approved") return null;
 
+    /* No feed before the recorder presses Kick off. The match centre reads the presence of
+       this snapshot as "live" -- `const live = ... || Boolean(liveSheet)` -- so an approved
+       fixture opened its feed hours early, showing a 0-0 and an empty timeline for a game
+       that had not started. Approving a match says it MAY be shown live; the recorder says
+       when. */
+    const clock = readClock(sheet.clock);
+    if (!hasKickedOff(clock)) return null;
+
     const events = readEvents(sheet.events);
     const tallies = normaliseTallies(sheet.tallies);
     const totals = totalsFor(effectiveTallies(tallies, events));
     const score = scoreFromEvents(events);
-    const clock = readClock(sheet.clock);
 
     /* Team squad first, matchday squad second, through the same resolver the publish
        path uses -- this read the matchday squad alone, and a live timeline for a
