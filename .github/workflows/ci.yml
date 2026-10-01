@@ -9,6 +9,48 @@ on:
       - dev
 
 jobs:
+  # Every other check in this workflow asks whether the code is correct. None of them asks
+  # where the merge goes, and that is a different question with its own failure.
+  #
+  # PR #157 -- the recorder submit guards -- was merged into `feat/recorder-idle-lock`, the
+  # head branch of #156, six minutes after #156 had already merged to main. Its commit went
+  # into a branch main had finished with. GitHub reported it as "Merged", every check was
+  # green, and two features the product owner had asked for sat invisible for a day. Nothing
+  # was broken: the code was fine, the tests passed, and nobody was looking at the
+  # destination.
+  #
+  # Branch protection would not have caught it either. Protection on `main` governs merges
+  # *into* main; it never sees a pull request whose base is a feature branch.
+  pr-targets-a-branch-that-ships:
+    name: PR targets a branch that ships
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: The base branch must be one that deploys
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$BASE" = "main" ] || [ "$BASE" = "dev" ]; then
+            echo "Targets $BASE. Merging this reaches the deploy pipeline."
+            exit 0
+          fi
+
+          echo "::error::This pull request targets '$BASE', which is not a branch that ships."
+          echo ""
+          echo "  $HEAD  ->  $BASE"
+          echo ""
+          echo "Merging it moves the commits into $BASE and nowhere else. If $BASE has"
+          echo "already merged to main, they reach nothing at all -- GitHub will still say"
+          echo "Merged and every other check here will still be green."
+          echo ""
+          echo "Retarget the base to main (Edit, beside the title). For stacked work, keep"
+          echo "the base as main: the diff collapses on its own once the branch below it"
+          echo "merges, which is how every stacked pull request in this repo has been done."
+          exit 1
+
   verify:
     runs-on: ubuntu-latest
     env:
