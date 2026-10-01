@@ -195,14 +195,22 @@ export type SquadFromTimelineDeps = {
       create: (args: unknown) => Promise<{ id: string }>;
     };
     player: {
-      findUnique: (args: unknown) => Promise<{ id: string } | null>;
+      findUnique: (args: unknown) => Promise<{ id: string; displayName: string } | null>;
     };
     sbTeam: {
       findMany: (args: unknown) => Promise<{ name: string }[]>;
     };
   };
   /** `PlayerDirectoryService.resolveOrCreatePlayer`, passed in rather than imported. */
-  resolvePlayer: (displayName: string) => Promise<{ id: string }>;
+  /**
+   * The directory's create-or-find, which also tidies the name it stores.
+   *
+   * Its `displayName` comes back because the row is written with it rather than with the
+   * raw label: the directory turns `NWOSU HENRY` into `Nwosu Henry`, and a squad row still
+   * holding the shouted spelling is the "copies that disagree with the player holding them"
+   * category `db:repair:player-display-names` has to realign -- 445 of them on the last run.
+   */
+  resolvePlayer: (displayName: string) => Promise<{ id: string; displayName: string }>;
 };
 
 /**
@@ -251,7 +259,7 @@ export async function addSquadMembersFromTimeline(
     try {
       const existing = await deps.db.player.findUnique({
         where: { normalizedName: candidate.key },
-        select: { id: true },
+        select: { id: true, displayName: true },
       });
 
       if (options.dryRun) {
@@ -268,7 +276,10 @@ export async function addSquadMembersFromTimeline(
         data: {
           teamId: candidate.teamId,
           playerId: player.id,
-          displayName: candidate.name,
+          /* The player's name, not the label. They differ whenever the directory tidied it,
+             and a row holding the other spelling is a copy that disagrees with its own
+             player from the moment it is written. */
+          displayName: player.displayName,
           /* Left blank on purpose. A number invented here would resolve future events
              to the wrong person, which is worse than a row waiting for one. */
           shirtNumber: null,

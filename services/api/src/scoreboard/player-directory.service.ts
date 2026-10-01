@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
 import { PlaceholderPlayerNameError, isPlaceholderName } from "../players/placeholder-names";
-import { stripNumberPrefix } from "../players/admissible-squad-name";
+import { tidyPlayerName } from "../players/tidy-player-name";
 
 function splitDisplayName(displayName: string) {
   const parts = displayName.trim().split(/\s+/);
@@ -34,7 +34,17 @@ export class PlayerDirectoryService {
        person: `No. 11 EBULU EMMANUEL` is Ebulu Emmanuel and should resolve to him. A
        bare `No. 11` still reaches the guard untouched, since there is no name behind
        it to take. */
-    const normalized = normalizePlayerName(stripNumberPrefix(displayName));
+    /* `tidyPlayerName` rather than normalise-and-strip, which is what this did. It collapses
+       whitespace and takes the shirt number off exactly as before, and then fixes the casing
+       -- which nothing did on write, so `NWOSU HENRY` became a record that shouts, and only
+       `db:repair:player-display-names` ever put it right. A repair that has to be re-run
+       after every match is a gap, not a tool.
+
+       It cannot change who this resolves to by accident: the dedupe key is lowercased, so
+       casing is invisible to it. The one case that does move the key is a reviewed
+       correction -- `Emmanuel Jac9b` to `Emmanuel Jacob` -- which is the point of having
+       them, and the lookup below then finds the right record rather than making a second. */
+    const normalized = tidyPlayerName(displayName);
     const key = playerLookupKey(normalized);
     if (!key) {
       throw new Error("Player name is required");

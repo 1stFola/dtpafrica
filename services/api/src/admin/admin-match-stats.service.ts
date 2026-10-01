@@ -16,6 +16,7 @@ import {
 } from "./recorder-idle";
 import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
+import { linkMatchGoals } from "../scoreboard/link-match-goals";
 import {
   buildNumberLookup,
   squadNumberLabel,
@@ -1421,6 +1422,21 @@ export class AdminMatchStatsService {
     } catch {
       /* Swallowed on purpose. The sheet is published and correct; a squad row that did
          not get created is picked up by db:sync:squad-from-timeline later. */
+    }
+
+    try {
+      /* After the squad sync, not before: the people these labels name may have been
+         created by the call above, and a goal cannot be linked to a record that does not
+         exist yet.
+
+         A published event takes its player from the squad row the recorder picked, so a row
+         that is not itself linked to a player record leaves the goal with a name and nobody
+         behind it. That was 88 goals on live, seven of them one boy's. Swallowed for the
+         same reason as the sync: an unlinked goal is recoverable by script, and failing a
+         recorder's publish over it is not. */
+      await linkMatchGoals(this.prisma as never, matchId);
+    } catch {
+      /* db:link:unattributed-goals is the backstop. */
     }
     if (finished && !isTrainingCompetition(match.competition)) {
       if (match.status !== "finished") {
