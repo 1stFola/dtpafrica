@@ -1,8 +1,16 @@
 /**
  * Put the people the timeline named into the squads they played for.
  *
- *   pnpm --filter @dtp/api db:sync:squad-from-timeline          # report only
- *   pnpm --filter @dtp/api db:sync:squad-from-timeline --apply  # write
+ *   pnpm --filter @dtp/api db:sync:squad-from-timeline                        # report only
+ *   pnpm --filter @dtp/api db:sync:squad-from-timeline --apply                # write
+ *   pnpm --filter @dtp/api db:sync:squad-from-timeline --apply --existing-only
+ *
+ * **`--existing-only` takes the half that creates nobody.** The two halves carry very
+ * different risk: a row for somebody already in the directory is a join, undone by deleting
+ * the row, while a row that creates a player is a person everywhere in the product. On the
+ * live backlog that split is 208 joins against 24 new records, and of those 24 only three
+ * are names anybody wants -- nineteen are initials and one is two people joined by a
+ * semicolon. Without the flag the 208 wait on somebody fixing the labels behind the 24.
  *
  * The publish path now does this as a sheet is approved. This is the backlog: every
  * match already recorded, whose scorers were never added to a squad.
@@ -38,6 +46,7 @@ loadApiEnv();
 
 const prisma = new PrismaClient();
 const APPLY = process.argv.includes("--apply");
+const EXISTING_ONLY = process.argv.includes("--existing-only");
 const SHOWN = 30;
 
 /**
@@ -103,7 +112,7 @@ async function main() {
       resolvePlayer,
     },
     events,
-    { dryRun: !APPLY }
+    { dryRun: !APPLY, existingPlayersOnly: EXISTING_ONLY }
   );
 
   const teamNames = new Map(
@@ -153,6 +162,24 @@ async function main() {
     `  ${created.length} squad row(s) ${APPLY ? "added" : "to add"} with a new player record`
   );
   console.log(`  ${result.rejected.length} label(s) refused\n`);
+
+  if (result.heldForNewRecord.length) {
+    console.log(`Held back by --existing-only (${result.heldForNewRecord.length})`);
+    console.log("-".repeat(72));
+    console.log(
+      "  Nobody in the directory answers to these, so each would have become a new player\n" +
+        "  record. Nothing was written for them and nothing was lost: drop the flag once the\n" +
+        "  labels behind them are worth creating people from.\n"
+    );
+    report(
+      result.heldForNewRecord.map((candidate) => ({
+        ...candidate,
+        player: "new" as const,
+        playerId: null,
+      })),
+      teamNames
+    );
+  }
 
   if (linked.length) {
     console.log(`Existing players joining a squad (${linked.length})`);
@@ -229,7 +256,14 @@ Already there under the other name order (${result.sameWordsDifferentOrder.lengt
     console.log(
       "Nothing was written. Re-run with --apply.\n" +
         "Every row is created without a shirt number, for staff to assign. Running\n" +
-        "db:sync:timeline-squad-numbers afterwards resolves the No. 7 labels to them."
+        "db:sync:timeline-squad-numbers afterwards resolves the No. 7 labels to them." +
+        (created.length
+          ? `\n\n` +
+            `Add --existing-only to write the ${linked.length} join(s) and leave the ` +
+            `${created.length} new record(s) for later.\n` +
+            "A join is undone by deleting a row; a player record is a person" + 
+            "\neverywhere in the product, so the two are worth deciding separately."
+          : "")
     );
     return;
   }
@@ -245,12 +279,20 @@ Already there under the other name order (${result.sameWordsDifferentOrder.lengt
   const again = await addSquadMembersFromTimeline(
     { db: prisma as never, resolvePlayer },
     events,
-    { dryRun: true }
+    { dryRun: true, existingPlayersOnly: EXISTING_ONLY }
   );
   console.log(`  names still missing from their squad: ${again.added.length}`);
   if (again.added.length) {
     console.log("  WARNING: expected zero. Re-run the dry run and look before doing more.");
     process.exitCode = 1;
+  }
+  /* Under --existing-only the held names are still missing, on purpose, so the check
+     above is run with the same flag and this reports them rather than calling them a
+     fault. Without it a successful run ends on a warning and a non-zero exit. */
+  if (again.heldForNewRecord.length) {
+    console.log(
+      `  ${again.heldForNewRecord.length} left for later by --existing-only, as asked.`
+    );
   }
 }
 

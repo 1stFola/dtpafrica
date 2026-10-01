@@ -51,6 +51,7 @@ const REASONS: Record<UnlinkedGoal["reason"], string> = {
   team: "the label is a club, not a person — a team record collects goals like a player",
   "carries-a-digit": "the label carries a digit, so what it means is not understood",
   "several-people": "the label holds more than one person",
+  "initials-only": "the name is reduced to an initial — no second record could be told from it",
   "no-letters": "the label has no letters in it",
   "nobody-by-that-name": "no directory player holds that name",
   "several-of-that-name": "two records hold that name — merge them first, then re-run",

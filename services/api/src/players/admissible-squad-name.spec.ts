@@ -129,3 +129,96 @@ describe("stripping the number prefix", () => {
     expect(stripNumberPrefix("No. 7")).toBe("No. 7");
   });
 });
+
+describe("a label holding several people, by any separator", () => {
+  /* The separator list was written from the ones I had seen, which is how a semicolon got
+     through. Every string here is a list of people in one box. */
+  it("refuses the separators the live labels use", () => {
+    for (const label of [
+      "Sodiq Adebowale, Sangotoki Enoch",
+      "Abdullah Shaubu (7) & Adebayo David (17)",
+      "Clement Ogwu / Inya Kelechi",
+      "Albert Felix and Abdul Nasir",
+    ]) {
+      expect(admitSquadName(label).ok).toBe(false);
+    }
+  });
+
+  it("refuses a semicolon, which the live timeline actually holds", () => {
+    /* `Labi Akinola; Adesanya David` at FC OMORUYI was queued to become one player record
+       holding two people — both of whom the directory already had, so it would have split
+       their goals a third way. */
+    const verdict = admitSquadName("Labi Akinola; Adesanya David");
+    expect(verdict.ok).toBe(false);
+    expect(verdict.ok === false && verdict.reason).toBe("several-people");
+  });
+
+  it("refuses a plus and a pipe, which cannot be inside anybody's name", () => {
+    expect(admitSquadName("Labi Akinola + Adesanya David").ok).toBe(false);
+    expect(admitSquadName("Labi Akinola | Adesanya David").ok).toBe(false);
+  });
+
+  it("does not read a hyphenated or apostrophed name as a list", () => {
+    /* `Alli-Balogun Abdullateef` and `Taiwo Oshunubi-Taofeek` are single people, and both
+       are in the live data. */
+    expect(admitSquadName("Alli-Balogun Abdullateef").ok).toBe(true);
+    expect(admitSquadName("Nnamdi O'Brien").ok).toBe(true);
+  });
+});
+
+describe("a name reduced to initials", () => {
+  it("refuses a first name that is only an initial", () => {
+    /* Nineteen of these are queued on live: `I. Attah`, `A. Great`, `S. David`. A record
+       made from one cannot be told apart from the next `A. Great` at the same club, and it
+       collects goals under an identity nobody can confirm. */
+    for (const label of ["I. Attah", "A. Great", "S. David", "O. Bethel", "C. Udoye"]) {
+      const verdict = admitSquadName(label);
+      expect(verdict.ok).toBe(false);
+      expect(verdict.ok === false && verdict.reason).toBe("initials-only");
+    }
+  });
+
+  it("refuses an initial with no dot after it", () => {
+    expect(admitSquadName("I Attah").ok).toBe(false);
+  });
+
+  it("refuses a surname reduced to an initial", () => {
+    /* The mirror image, and the same loss: the platform matches people on the first word
+       and the last. */
+    expect(admitSquadName("Samuel A.").ok).toBe(false);
+  });
+
+  it("accepts a middle initial, which leaves both ends known", () => {
+    /* `Chidi O Nwosu` is a whole name. Refusing every name with an initial anywhere in it
+       would turn a naming convention into a rejection. */
+    expect(admitSquadName("Chidi O Nwosu").ok).toBe(true);
+    expect(admitSquadName("Idowu Babatunde Morakinyo").ok).toBe(true);
+  });
+
+  it("accepts a full given name that happens to carry a dot", () => {
+    /* `Lekan. James` is in the live directory. A trailing dot is a typo, not an initial,
+       which is why the test is the length of the word rather than the dot. */
+    expect(admitSquadName("Lekan. James").ok).toBe(true);
+  });
+
+  it("refuses a label that is one letter and nothing else", () => {
+    /* `A` was accepted before this rule existed. One word or two, a bare initial names
+       nobody -- and the same test answers both, so there is no second rule to disagree
+       with the first. */
+    expect(admitSquadName("A").ok).toBe(false);
+    expect(admitSquadName("A.").ok).toBe(false);
+  });
+
+  it("leaves a single-word name to the rest of the gate", () => {
+    /* `Feranmi` is a one-word label, which Name QA flags for completion. It is not this
+       rule's business, and reading it as an initial would refuse half the timeline. */
+    expect(admitSquadName("Feranmi").ok).toBe(true);
+  });
+
+  it("reports the digit first when a label has both problems", () => {
+    /* `A. Great (7)` — the number is the part a recorder can fix at the console, so that is
+       the reason worth printing. */
+    const verdict = admitSquadName("A. Great (7)");
+    expect(verdict.ok === false && verdict.reason).toBe("carries-a-digit");
+  });
+});

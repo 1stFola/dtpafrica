@@ -38,6 +38,7 @@ export type SquadNameRejection =
   | "team"
   | "carries-a-digit"
   | "several-people"
+  | "initials-only"
   | "no-letters";
 
 export type SquadNameVerdict =
@@ -51,8 +52,44 @@ export type SquadNameVerdict =
  * a list. Splitting it and creating each would be a guess about where one name ends —
  * `Abdullah Shaubu (7) & Adebayo David (17)` is clear, a stray comma in a single name is
  * not — so the whole label is refused and reported.
+ *
+ * **The semicolon was missing and the live data had one.** This list was written from the
+ * separators that happened to be in the labels I looked at, which is a bad way to write a
+ * list of separators: `Labi Akinola; Adesanya David` at FC OMORUYI passed the gate and was
+ * queued to become one player record holding two people -- both of whom the directory
+ * already had, so it would have split their goals a third way.
+ *
+ * So the rule is now the general one rather than the observed one: a character that cannot
+ * occur inside a Nigerian name but is used to join a list. A semicolon, a plus and a pipe
+ * all qualify and none of them can be part of anybody's name.
  */
-const SEVERAL_PEOPLE = /[,&/]| and /i;
+const SEVERAL_PEOPLE = /[,&/;+|]| and /i;
+
+/**
+ * A name whose first or last part is a bare initial.
+ *
+ * The live timeline has nineteen of these queued to become people -- `I. Attah`, `A. Great`,
+ * `S. David`, `O. Bethel` -- and a record made from one cannot be told apart from the next
+ * `A. Great` at the same club. It then collects goals under an identity nobody can confirm,
+ * which is the exact failure the rest of this gate exists to prevent; a bare shirt number is
+ * refused for the same reason.
+ *
+ * **First or last part, not any part.** The platform identifies people by those two: the
+ * lookup key, the reversal matching, and the Name QA grouping all read the first word and
+ * the last. A middle initial -- `Chidi O Nwosu` -- leaves both of those known and is a whole
+ * name, so it is accepted.
+ *
+ * `Lekan. James` is accepted too: a trailing dot on a full given name is a typo, not an
+ * initial, and the test for it is the length of the word rather than the presence of a dot.
+ */
+function isInitialsOnly(name: string): boolean {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return false;
+  const bareInitial = (part: string) => /^\p{L}\.?$/u.test(part);
+  /* First and last, which for a one-word label are the same word -- so a lone `A` is
+     refused by the same rule, without a second one that could disagree with it. */
+  return bareInitial(parts[0]!) || bareInitial(parts.at(-1)!);
+}
 
 /** `No. 7 Ogundeji Elijah` carries the number the recorder typed; the name is the rest. */
 export function stripNumberPrefix(label: string): string {
@@ -70,6 +107,9 @@ export function admitSquadName(label: string | null | undefined): SquadNameVerdi
   if (looksLikeATeam(name)) return { ok: false, reason: "team", name };
   if (SEVERAL_PEOPLE.test(name)) return { ok: false, reason: "several-people", name };
   if (hasDigit(name)) return { ok: false, reason: "carries-a-digit", name };
+  /* After the digit check, so `A. Great (7)` reports the number rather than the initial --
+     the number is the part a recorder can fix at the console. */
+  if (isInitialsOnly(name)) return { ok: false, reason: "initials-only", name };
 
   return { ok: true, name };
 }
