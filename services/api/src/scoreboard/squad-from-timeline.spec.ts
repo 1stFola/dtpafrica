@@ -167,7 +167,9 @@ describe("skipping the people already in the squad", () => {
 function fakeDeps(over: {
   squad?: { teamId: string; displayName: string; playerId: string | null }[];
   existingByKey?: Record<string, string>;
-  resolve?: (name: string) => Promise<{ id: string }>;
+  /** The display name that directory record holds, when it differs from its key. */
+  existingNames?: Record<string, string>;
+  resolve?: (name: string) => Promise<{ id: string; displayName: string }>;
   teamNames?: string[];
 } = {}) {
   const created: { teamId: string; displayName: string; shirtNumber: number | null }[] = [];
@@ -188,11 +190,14 @@ function fakeDeps(over: {
         findUnique: async (args: unknown) => {
           const key = (args as { where: { normalizedName: string } }).where.normalizedName;
           const id = over.existingByKey?.[key];
-          return id ? { id } : null;
+          /* The real directory returns the tidied name, and the squad row is written with
+             it rather than with the label. */
+          return id ? { id, displayName: over.existingNames?.[key] ?? key } : null;
         },
       },
     },
-    resolvePlayer: over.resolve ?? (async (name) => ({ id: `new-${name}` })),
+    resolvePlayer:
+      over.resolve ?? (async (name) => ({ id: `new-${name}`, displayName: name })),
   };
   return { deps, created };
 }
@@ -249,7 +254,7 @@ describe("adding the rows", () => {
     const { deps, created } = fakeDeps({
       resolve: async (name) => {
         if (name === "Bad One") throw new PlaceholderPlayerNameError(name);
-        return { id: `new-${name}` };
+        return { id: `new-${name}`, displayName: name };
       },
     });
     const result = await addSquadMembersFromTimeline(deps, [

@@ -38,14 +38,36 @@ function service(over: { existingByKey?: Record<string, { id: string }> } = {}) 
 }
 
 describe("creating a player from a timeline label", () => {
-  it("takes the shirt number off the name", async () => {
+  it("leaves a name that is not shouting alone", async () => {
+    const { svc, created } = service();
+    await svc.resolveOrCreatePlayer("Chidera Isaiah");
+    expect(created[0]).toMatchObject({ displayName: "Chidera Isaiah" });
+  });
+
+  it("does not re-case a record it cannot read", async () => {
+    /* A digit means the record is not understood, and `VIDO 99 FC` title-cased to
+       `Vido 99 Fc` once already. The tidy rules decline both; this is here so a change to
+       them cannot quietly start damaging names on the write path. */
+    const { svc, created } = service();
+    await svc.resolveOrCreatePlayer("Ademola James (19)");
+    expect(created[0]).toMatchObject({ displayName: "Ademola James (19)" });
+  });
+
+  it("takes the shirt number off the name and stops it shouting", async () => {
     /* The live record. `/player/no-11-ebulu-emmanuel` was a real profile URL, reached by
-       clicking the scorer on a match timeline. */
+       clicking the scorer on a match timeline.
+
+       This asserted `EBULU EMMANUEL` until the casing was fixed on write. Nothing tidied a
+       name as it was created, so every shouted label became a record that shouts, and only
+       `db:repair:player-display-names` ever put it right -- 241 of them on the last run. A
+       repair that has to be re-run after every match is a gap, not a tool. */
     const { svc, created } = service();
     await svc.resolveOrCreatePlayer("No. 11 EBULU EMMANUEL");
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({
-      displayName: "EBULU EMMANUEL",
+      displayName: "Ebulu Emmanuel",
+      /* Unchanged, and that is the point: the dedupe key is lowercased, so tidying the
+         casing cannot move a name onto a different record. */
       normalizedName: "ebulu emmanuel",
     });
     expect(created[0]?.slug).not.toContain("no-11");
