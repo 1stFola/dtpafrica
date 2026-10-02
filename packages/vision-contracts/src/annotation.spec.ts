@@ -167,3 +167,47 @@ describe("the whole list", () => {
     expect(validateAnnotationBoxes(many, WINDOW, NOBODY).problems[0]?.kind).toBe("too_many_boxes");
   });
 });
+
+describe("a box may belong to a track", () => {
+  it("keeps a track id, as a trimmed string, whatever it was typed as", () => {
+    const result = validateAnnotationBoxes([box({ trackId: 7 }), box({ sourceTimeMs: 10_540, trackId: " 7 " })], WINDOW, NOBODY);
+    expect(result.problems).toEqual([]);
+    expect(result.boxes.map((b) => b.trackId)).toEqual(["7", "7"]);
+  });
+
+  it("leaves a box without one unlinked", () => {
+    const result = validateAnnotationBoxes([box(), box({ trackId: null })], WINDOW, NOBODY);
+    expect(result.boxes.every((b) => !("trackId" in b))).toBe(true);
+  });
+
+  it("refuses a track id that is not a short string or number", () => {
+    for (const trackId of ["", "   ", {}, [], true, "x".repeat(65)]) {
+      const result = validateAnnotationBoxes([box({ trackId })], WINDOW, NOBODY);
+      expect(result.problems[0]?.kind, JSON.stringify(trackId)).toBe("box_bad_track_id");
+    }
+  });
+
+  it("refuses one track with two classes: a player cannot become the ball", () => {
+    const result = validateAnnotationBoxes(
+      [box({ trackId: "A" }), box({ sourceTimeMs: 10_540, trackId: "A", class: "ball", x: 0.5 })],
+      WINDOW,
+      NOBODY
+    );
+    expect(result.problems).toEqual([expect.objectContaining({ kind: "track_class_conflict", index: 1 })]);
+    expect(result.boxes).toEqual([]);
+  });
+
+  it("refuses one track twice on one frame: a thing is in one place at a time", () => {
+    const result = validateAnnotationBoxes([box({ trackId: "A" }), box({ trackId: "A", x: 0.5 })], WINDOW, NOBODY);
+    expect(result.problems).toEqual([expect.objectContaining({ kind: "track_frame_conflict", index: 1 })]);
+  });
+
+  it("allows two different tracks on one frame and one track across frames", () => {
+    const result = validateAnnotationBoxes(
+      [box({ trackId: "A" }), box({ trackId: "B", x: 0.5 }), box({ sourceTimeMs: 10_540, trackId: "A" })],
+      WINDOW,
+      NOBODY
+    );
+    expect(result.problems).toEqual([]);
+  });
+});

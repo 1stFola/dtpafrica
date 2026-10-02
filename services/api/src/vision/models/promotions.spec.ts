@@ -41,7 +41,7 @@ const thresholds: BenchmarkThresholds = {
   iou: 0.5,
   minimums: {},
   criticalSlices: ["quality:platform_copy"],
-  regressionMetrics: ["ap:all", "recall:ball"],
+  regressionMetrics: { detect: ["ap:all", "recall:ball"], track: ["idf1:all", "mota:all"] },
   regressionTolerance: 0.02,
 };
 
@@ -277,7 +277,17 @@ describe("the promotion gate", () => {
       expect(f[0]!.detail).toMatch(/has no benchmark run on gold v1/);
     });
 
-    it("passes within the tolerance and records what it compared with", async () => {
+    it("compares a tracker on tracking metrics, not detection ones", async () => {
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(version({ model: { key: "tracker/x", task: "track" } }));
+    mockPrisma.visionMetricResult.findMany.mockResolvedValue([
+      metric(RUN, "idf1:all", "all", 0.6), metric(THEIR_RUN, "idf1:all", "all", 0.7),
+    ]);
+    const f = await failures();
+    expect(f[0]!.detail).toContain("idf1:all@all 0.600 vs production 0.700");
+    expect(mockPrisma.visionMetricResult.findMany.mock.calls[0]![0].where.metric).toEqual({ in: ["idf1:all", "mota:all"] });
+  });
+
+  it("passes within the tolerance and records what it compared with", async () => {
       mockPrisma.visionMetricResult.findMany.mockResolvedValue([
         metric(RUN, "ap:all", "all", 0.49), metric(THEIR_RUN, "ap:all", "all", 0.5),
         metric(RUN, "recall:ball", "all", 0.3), metric(THEIR_RUN, "recall:ball", "all", 0.3),

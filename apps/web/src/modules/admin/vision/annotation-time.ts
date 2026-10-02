@@ -59,7 +59,10 @@ export function toSourceMs(proxyMs: number, offsetMs: number): number {
  */
 export function frameIndexAt(proxyMs: number, fps: number | null): number | null {
   if (!fps || fps <= 0 || !Number.isFinite(fps)) return null;
-  return Math.max(0, Math.floor((proxyMs / 1000) * fps));
+  // Multiply first and absorb float noise: (1160 / 1000) * 25 is 28.999999999999996,
+  // which would floor a box drawn on frame 29 onto frame 28. The export and the
+  // worker guard the same way; the three copies must agree.
+  return Math.max(0, Math.floor((proxyMs * fps) / 1000 + 1e-9));
 }
 
 /**

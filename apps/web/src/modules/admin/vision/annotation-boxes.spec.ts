@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  boxIou,
   boxesOnFrame,
   countByClass,
+  countTracks,
+  inheritTrackId,
+  nextTrackId,
   frameOfBox,
   framesWithBoxes,
   parseStoredBoxes,
@@ -170,5 +174,44 @@ describe("reading a previous attempt back", () => {
         fromModelVersionId: "mv-1",
       },
     ]);
+  });
+});
+
+describe("linking a new box to a track", () => {
+  const prev = [box({ id: "p1", trackId: "3" }), box({ id: "p2", trackId: "4", x: 0.6 }), box({ id: "p3", class: "ball", trackId: "9" })];
+
+  it("inherits the track of the overlapping same-class box on the previous frame", () => {
+    expect(inheritTrackId({ x: 0.105, y: 0.2, width: 0.05, height: 0.1 }, "player", prev)).toBe("3");
+  });
+
+  it("does not link across classes, or below the overlap threshold, or to an unlinked box", () => {
+    // No referee on the previous frame, however well the player there overlaps.
+    expect(inheritTrackId({ x: 0.1, y: 0.2, width: 0.05, height: 0.1 }, "referee", prev)).toBeNull();
+    expect(inheritTrackId({ x: 0.3, y: 0.2, width: 0.05, height: 0.1 }, "player", prev)).toBeNull();
+    expect(inheritTrackId({ x: 0.1, y: 0.2, width: 0.05, height: 0.1 }, "player", [box({ id: "u" })])).toBeNull();
+  });
+
+  it("picks the best overlap when two candidates qualify", () => {
+    const two = [box({ id: "a", trackId: "1", x: 0.1 }), box({ id: "b", trackId: "2", x: 0.11 })];
+    expect(inheritTrackId({ x: 0.112, y: 0.2, width: 0.05, height: 0.1 }, "player", two)).toBe("2");
+  });
+
+  it("hands out the next numeric id, past any the annotator typed", () => {
+    expect(nextTrackId([])).toBe("1");
+    expect(nextTrackId([box({ trackId: "3" }), box({ trackId: "7" }), box({ trackId: "A" })])).toBe("8");
+  });
+
+  it("counts distinct tracks per class", () => {
+    expect(countTracks([box({ trackId: "1" }), box({ trackId: "1" }), box({ trackId: "2" }), box({ class: "ball", trackId: "1" }), box()])).toBe(3);
+  });
+
+  it("computes overlap by hand", () => {
+    expect(boxIou({ x: 0, y: 0, width: 2, height: 2 }, { x: 1, y: 1, width: 2, height: 2 })).toBeCloseTo(1 / 7);
+  });
+
+  it("keeps a track id through a stored payload and out again", () => {
+    const parsed = parseStoredBoxes({ boxes: [{ sourceTimeMs: 10_500, class: "player", x: 0.1, y: 0.1, width: 0.1, height: 0.2, trackId: 4 }] });
+    expect(parsed[0]!.trackId).toBe("4");
+    expect(toPayloadBoxes(parsed)[0]).toMatchObject({ trackId: "4" });
   });
 });

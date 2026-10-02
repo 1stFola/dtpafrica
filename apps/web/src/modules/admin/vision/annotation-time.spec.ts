@@ -206,3 +206,12 @@ describe("describePosition", () => {
     expect(describePosition(55_000, SOURCE, empty).progress).toBe(0);
   });
 });
+
+describe("frame arithmetic at exact boundaries", () => {
+  it("does not floor a frame early on floating-point noise", () => {
+    // (1160 / 1000) * 25 is 28.999999999999996; the frame is 29. The export and the
+    // worker guard the same way, and the three copies must agree.
+    expect(frameIndexAt(1160, 25)).toBe(29);
+    for (let i = 0; i < 10; i += 1) expect(frameIndexAt(1000 + 40 * i, 25)).toBe(25 + i);
+  });
+});

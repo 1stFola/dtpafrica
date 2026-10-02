@@ -30,7 +30,8 @@ def params(**over: Any) -> dict[str, Any]:
     return {
         "benchmarkRunId": RUN,
         "goldLabelsKey": GOLD_KEY,
-        "detections": [{"videoAssetId": "a1", "key": DET_KEY}],
+        "task": "detect",
+        "predictions": [{"videoAssetId": "a1", "key": DET_KEY}],
         "readKeys": [{"bucket": "derived", "key": GOLD_KEY}, {"bucket": "derived", "key": DET_KEY}],
         "iou": 0.5,
         "classes": ["player", "goalkeeper", "referee", "ball"],
@@ -154,7 +155,7 @@ def test_the_report_goes_to_the_models_bucket_and_names_its_inputs(ctx) -> None:
     assert result.artifacts[0]["role"] == "benchmark"
     payload = ctx.uploaded["payload"]
     assert payload["goldLabelsKey"] == GOLD_KEY
-    assert payload["detections"] == [{"videoAssetId": "a1", "key": DET_KEY}]
+    assert payload["predictions"] == [{"videoAssetId": "a1", "key": DET_KEY}]
     assert payload["contractVersion"] == CONTRACT_VERSION
 
 
@@ -170,7 +171,7 @@ def test_refuses_an_artifact_from_another_model(ctx) -> None:
 
 
 def test_refuses_a_gold_member_with_no_artifact_listed(ctx) -> None:
-    ctx.job = spec(detections=[])
+    ctx.job = spec(predictions=[])
     with pytest.raises(StageRefusal, match="no detect artifact listed"):
         bench_stage.run_benchmark(ctx)
 
@@ -199,3 +200,43 @@ def test_refuses_a_misdispatched_job_before_reading_anything(ctx, inputs) -> Non
     with pytest.raises(StageRefusal):
         bench_stage.run_benchmark(ctx)
     assert ctx.client.asked == []
+
+
+TRK_KEY = "inference/job-t/1/tracks.json"
+TRACKER = "6a1b2c3d-0000-4000-8000-00000000000a"
+
+
+def test_scores_a_tracker_against_gold_tracks(ctx) -> None:
+    """Gold: one player track A on frames 26 and 27. Prediction: track 5 on both, exactly. MOTA 1, IDF1 1."""
+    ctx.objects[GOLD_KEY] = {"samples": [{
+        **GOLD["samples"][0],
+        "frames": {
+            "26": {"detections": {"detections": [{"label": "player", "bounding_box": [0.1, 0.1, 0.1, 0.2], "track_id": "A"}]}},
+            "27": {"detections": {"detections": [{"label": "player", "bounding_box": [0.1, 0.1, 0.1, 0.2], "track_id": "A"}]}},
+        },
+    }]}
+    ctx.objects[TRK_KEY] = {"trackerVersionId": TRACKER, "tracks": [{"localTrackId": 5, "class": "player", "positions": [
+        {"frameIndex": 25, "box": {"x": 128, "y": 72, "width": 128, "height": 144}},
+        {"frameIndex": 26, "box": {"x": 128, "y": 72, "width": 128, "height": 144}},
+    ]}]}
+    ctx.job = spec({"datasetVersionId": DATASET, "modelVersionIds": [TRACKER], "params": params(task="track", predictions=[{"videoAssetId": "a1", "key": TRK_KEY}])})
+    result = bench_stage.run_benchmark(ctx)
+    by = {(m["metric"], m["slice"]): m["value"] for m in result.summary["metrics"]}
+    assert by[("mota:player", "all")] == 1.0
+    assert by[("idf1:player", "all")] == 1.0
+    assert by[("idsw:player", "all")] == 0
+    assert result.summary["task"] == "track"
+    assert ctx.uploaded["payload"]["task"] == "track"
+
+
+def test_refuses_a_track_artifact_from_another_tracker(ctx) -> None:
+    ctx.objects[TRK_KEY] = {"trackerVersionId": "someone-else", "tracks": []}
+    ctx.job = spec({"datasetVersionId": DATASET, "modelVersionIds": [TRACKER], "params": params(task="track", predictions=[{"videoAssetId": "a1", "key": TRK_KEY}])})
+    with pytest.raises(StageRefusal, match="track artifact .* produced by model version 'someone-else'"):
+        bench_stage.run_benchmark(ctx)
+
+
+def test_refuses_an_unknown_task(ctx) -> None:
+    ctx.job = spec({"datasetVersionId": DATASET, "modelVersionIds": [MODEL], "params": params(task="calibrate")})
+    with pytest.raises(StageRefusal, match="cannot score task"):
+        bench_stage.run_benchmark(ctx)

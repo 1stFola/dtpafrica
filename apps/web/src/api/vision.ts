@@ -384,6 +384,8 @@ export type VisionAnnotationBox = {
   height: number;
   uncertain?: boolean;
   fromModelVersionId?: string | null;
+  /** The same id on boxes across frames says "the same player". */
+  trackId?: string;
 };
 
 export function submitVisionAnnotation(
