@@ -77,6 +77,7 @@ session, and nothing else.
 | `PATCH` | `/vision/assets/:id/match-link` | `vision.sources.write` |
 | `GET` | `/vision/assets/:id/playback` | `vision.read` + rights `canAnalyze` |
 | `GET` | `/vision/assets/:id/duplicates` | `vision.read` |
+| `GET` | `/vision/assets/:id/tracks` | `vision.read` |
 | `POST` | `/vision/assets/:id/segments` | `vision.annotate` |
 | `POST` | `/vision/assets/:id/jobs` | `vision.jobs.run` |
 
@@ -185,6 +186,13 @@ list every object the worker may read; the worker fetches each with `input-url`
 becomes `VisionMetricResult` rows per `(metric, slice)` and a verdict under the configured
 thresholds version, and moves the version `candidate → benchmarked`. See
 [30-PHASE-3-INCREMENT-3.md](./30-PHASE-3-INCREMENT-3.md).
+
+`POST /vision/jobs` with `type: "track"` resolves a tracker version like any model-bound job,
+and declares the detect artifact the worker will link: the latest succeeded `detect` for the asset,
+or the one in `params.detectJobId`. It refuses `DetectionsMissing` when none carries an artifact and
+`DetectionsTooSparse` when the detections were sampled below `MIN_TRACK_SAMPLE_FPS`. The completion
+becomes one `VisionTrack` row per confirmed track, naming both the tracker and the detector;
+`GET /vision/assets/:id/tracks` lists them. See [32-PHASE-4-INCREMENT-1.md](./32-PHASE-4-INCREMENT-1.md).
 
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the

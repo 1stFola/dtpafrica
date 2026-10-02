@@ -16,6 +16,7 @@ import { VISION_CONFIG } from "./config/vision.config";
 import { VisionJobDispatcher } from "./jobs/job-dispatcher.service";
 import { JOB_QUEUE } from "./jobs/job-queue";
 import { VisionJobsController } from "./jobs/jobs.controller";
+import { VisionTracksController } from "./jobs/tracks.controller";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { VisionBenchmarksService } from "./models/benchmarks.service";
@@ -79,6 +80,7 @@ const CONTROLLERS = [
   VisionDatasetsController,
   VisionAnnotationController,
   VisionModelsController,
+  VisionTracksController,
 ] as const;
 
 const SERVICES = [

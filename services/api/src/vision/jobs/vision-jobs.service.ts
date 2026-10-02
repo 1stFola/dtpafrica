@@ -8,8 +8,11 @@ import {
 } from "@nestjs/common";
 import {
   DEFAULT_RESOURCE_CLASS,
+  DETECTION_ARTIFACT_ROLE,
   JOB_TYPE_PREREQUISITES,
+  MIN_TRACK_SAMPLE_FPS,
   visionKeys,
+  type TrackJobParams,
   type VisionJobType,
   type VisionResourceClass,
 } from "@dtp/vision-contracts";
@@ -98,9 +101,9 @@ export class VisionJobsService {
     await this.assertPrerequisitesMet(params.type, asset.id);
 
     const model = await this.models.resolveForJob(params.type, params.modelVersionId);
-    const proxy = JOB_TYPE_PREREQUISITES[params.type].includes("transcode")
-      ? await this.proxyClock(asset.id)
-      : null;
+    // Any stage that, however indirectly, follows transcode reads the proxy.
+    const proxy = dependsOn(params.type, "transcode") ? await this.proxyClock(asset.id) : null;
+    const track = params.type === "track" ? await this.trackInputs(asset.id, params.params) : null;
 
     const resourceClass = params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type];
 
@@ -115,8 +118,13 @@ export class VisionJobsService {
       priority: params.priority,
       videoAssetId: asset.id,
       modelVersionId: model?.id ?? null,
-      // The clock is spread last so a caller's `params.proxy` cannot forge it.
-      inputSpec: { videoAssetId: asset.id, ...(params.params ?? {}), ...(proxy ? { proxy } : {}) },
+      // The clock and the declared inputs are spread last so a caller cannot forge them.
+      inputSpec: {
+        videoAssetId: asset.id,
+        ...(params.params ?? {}),
+        ...(proxy ? { proxy } : {}),
+        ...(track ?? {}),
+      },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
       outputPrefix: visionKeys.inferencePrefix(id, 1),
       budgetSeconds: params.budgetSeconds ?? this.config.jobs.defaultBudgetSeconds,
@@ -140,6 +148,54 @@ export class VisionJobsService {
     );
 
     return created;
+  }
+
+  /**
+   * The detect artifact a track job links, declared on the job so the worker may
+   * read it and nothing else.
+   *
+   * The latest succeeded detect job for the asset, or the one named in
+   * `params.detectJobId`. Refused when none exists, or when its boxes were sampled
+   * too sparsely to link: a player moves too far between frames at 2fps, and the
+   * worker would refuse the job anyway -- better at the door than after a pod spun up.
+   */
+  private async trackInputs(
+    videoAssetId: string,
+    requested: Record<string, unknown> | undefined
+  ): Promise<TrackJobParams> {
+    const wanted = typeof requested?.detectJobId === "string" ? requested.detectJobId : null;
+    const job = await this.prisma.visionJob.findFirst({
+      where: { type: "detect", state: "succeeded", videoAssetId, ...(wanted ? { id: wanted } : {}) },
+      orderBy: { finishedAt: "desc" },
+      select: { id: true, modelVersionId: true, progress: true },
+    });
+    const progress = (job?.progress ?? null) as
+      | { artifacts?: { key: string; bucket: string; role: string }[]; summary?: { sampleFps?: unknown } }
+      | null;
+    const artifact = progress?.artifacts?.find((a) => a.role === DETECTION_ARTIFACT_ROLE && a.bucket === "derived");
+    if (!job || !artifact || !job.modelVersionId) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "DetectionsMissing",
+        message: wanted
+          ? `Detect job ${wanted} did not succeed for this asset, or reported no detections artifact.`
+          : "No succeeded detect job with a detections artifact exists for this asset.",
+        remediation: "Queue detect for the asset, then track.",
+      });
+    }
+    const sampleFps = typeof progress?.summary?.sampleFps === "number" ? progress.summary.sampleFps : 0;
+    if (sampleFps < MIN_TRACK_SAMPLE_FPS) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "DetectionsTooSparse",
+        message: `The detections were sampled at ${sampleFps}fps; tracking needs at least ${MIN_TRACK_SAMPLE_FPS}.`,
+        remediation: "Queue detect with params.sampleFps at the proxy's rate, then track.",
+      });
+    }
+    return {
+      detections: { jobId: job.id, key: artifact.key, modelVersionId: job.modelVersionId, sampleFps },
+      readKeys: [{ bucket: "derived", key: artifact.key }],
+    };
   }
 
   /**
@@ -293,4 +349,18 @@ export class VisionJobsService {
       );
     }
   }
+}
+
+/** Whether `type` has `ancestor` anywhere in its prerequisite chain. */
+function dependsOn(type: VisionJobType, ancestor: VisionJobType): boolean {
+  const seen = new Set<VisionJobType>();
+  const stack: VisionJobType[] = [...JOB_TYPE_PREREQUISITES[type]];
+  while (stack.length) {
+    const next = stack.pop()!;
+    if (next === ancestor) return true;
+    if (seen.has(next)) continue;
+    seen.add(next);
+    stack.push(...JOB_TYPE_PREREQUISITES[next]);
+  }
+  return false;
 }

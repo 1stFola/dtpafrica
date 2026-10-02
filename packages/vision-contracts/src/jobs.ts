@@ -8,7 +8,7 @@
  * nothing that tells it whose hardware it is running on.
  */
 
-import type { DetectionClass } from "./prediction";
+import type { BoundingBox, DetectionClass } from "./prediction";
 
 /** Bumped on any change to VisionJobSpec or the prediction envelope. */
 /**
@@ -21,8 +21,12 @@ import type { DetectionClass } from "./prediction";
  * artifacts against a frozen gold version's boxes. It reads objects by declared key
  * (`inputs.readKeys`, input role `declared`) rather than by asset role, and it routes
  * to `cpu_small` -- comparing predictions to truth needs no card.
+ *
+ * 1.3.0 -- `track` exists: a CPU stage that links a detect artifact's boxes across
+ * frames (declared key, like `benchmark`), bound to a tracker model version and
+ * naming the detector version it consumed. Routes to `cpu_small`.
  */
-export const VISION_CONTRACT_VERSION = "1.2.0";
+export const VISION_CONTRACT_VERSION = "1.3.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -62,7 +66,8 @@ export const DEFAULT_RESOURCE_CLASS: Record<VisionJobType, VisionResourceClass> 
   transcode: "cpu_small",
   clip: "cpu_small",
   detect: "gpu_24gb",
-  track: "gpu_24gb",
+  // Association over stored detections is arithmetic; see `benchmark`.
+  track: "cpu_small",
   identify: "gpu_24gb",
   calibrate: "gpu_24gb",
   gamestate: "cpu_small",
@@ -128,6 +133,10 @@ export const JOB_TYPE_PREREQUISITES: Record<VisionJobType, readonly VisionJobTyp
  */
 export const MODEL_TASK_BY_JOB_TYPE: Partial<Record<VisionJobType, VisionModelTask>> = {
   detect: "detect",
+  // A tracker is an algorithm with parameters rather than trained weights, and it is
+  // registered as a model version all the same: every track names the tracker that
+  // made it, or it cannot be reproduced or rolled back.
+  track: "track",
 };
 
 /** What a `VisionModel` is for. One task per model; a version inherits it. */
@@ -372,3 +381,42 @@ export type BenchmarkSummary = {
   framesScored: number;
   metrics: BenchmarkMetric[];
 };
+
+// ── Tracks ──────────────────────────────────────────────────────────────────
+
+/** Role of the artifact a `track` job writes. */
+export const TRACK_ARTIFACT_ROLE = "tracks";
+
+/** Detections sampled below this rate cannot be linked frame to frame; a player moves too far. */
+export const MIN_TRACK_SAMPLE_FPS = 10;
+
+/** What a `track` job is given under `inputs.params`, beside the proxy clock. */
+export type TrackJobParams = {
+  detections: { jobId: string; key: string; modelVersionId: string; sampleFps: number };
+  readKeys: { bucket: "derived" | "models"; key: string }[];
+};
+
+/** One observed position of a track. Never interpolated: a gap is a gap. */
+export type TrackPosition = {
+  frameIndex: number;
+  proxyTimeMs: number;
+  sourceTimeMs: number;
+  box: BoundingBox;
+  confidence: number;
+};
+
+export type TrackRecord = {
+  localTrackId: number;
+  class: DetectionClass;
+  startFrame: number;
+  endFrame: number;
+  startMs: number;
+  endMs: number;
+  detectionCount: number;
+  /** Reached the minimum hits. Tentative tracks that never did are not written. */
+  confirmed: boolean;
+  positions: TrackPosition[];
+};
+
+/** The compact per-track index a `track` completion carries; the positions stay in the artifact. */
+export type TrackSummaryRow = Omit<TrackRecord, "positions">;
