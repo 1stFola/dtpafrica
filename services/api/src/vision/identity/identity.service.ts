@@ -9,6 +9,8 @@ import type { Prisma } from "@prisma/client";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
+import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
+import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 
 /**
  * Who a track is: roster-assisted, time-aware, and never a machine's word.
@@ -55,6 +57,12 @@ export type AssignIdentityInput = {
   acceptSideMismatch?: boolean;
 };
 
+/** A 90-minute match at 25fps is far more than this; see `positions`. */
+const MAX_ARTIFACT_BYTES = 32 * 1_048_576;
+const ARTIFACT_CACHE_ENTRIES = 4;
+
+type ParsedArtifact = { trackerVersionId?: string; tracks: { localTrackId: number; positions: unknown[] }[] };
+
 const CLOCK_NOTE =
   "The match clock is not anchored to the footage, so substitutions are not applied; the whole match squad is listed, starters marked.";
 
@@ -62,7 +70,9 @@ const CLOCK_NOTE =
 export class VisionIdentityService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(VisionAuditService) private readonly audit: VisionAuditService
+    @Inject(VisionAuditService) private readonly audit: VisionAuditService,
+    @Inject(OBJECT_STORE) private readonly store: ObjectStore,
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig
   ) {}
 
   // ── Sides ────────────────────────────────────────────────────────────────
@@ -126,13 +136,16 @@ export class VisionIdentityService {
   /**
    * Who a track could be: the match squad, narrowed to the track's side when a
    * person has said which team that side is and the kit clustering named one.
+   * `wholeMatch` lifts the narrowing, for a reviewer who is about to say the kit
+   * was read wrongly and needs the other squad in front of them.
    */
-  async candidates(trackId: string) {
+  async candidates(trackId: string, wholeMatch = false) {
     const track = await this.loadTrack(trackId);
     const side = await this.sideOf(track);
     const match = await this.matchOf(track.videoAsset.sbMatchId);
+    const narrowTo = wholeMatch ? null : side.sbTeamId;
     const slots = await this.prisma.sbMatchSquadPlayer.findMany({
-      where: { matchId: match.id, ...(side.sbTeamId ? { teamId: side.sbTeamId } : {}) },
+      where: { matchId: match.id, ...(narrowTo ? { teamId: narrowTo } : {}) },
       orderBy: [{ teamId: "asc" }, { isStarter: "desc" }, { jerseyNumber: "asc" }],
       select: { id: true, playerId: true, playerName: true, jerseyNumber: true, position: true, isStarter: true, teamId: true, squadId: true },
     });
@@ -151,7 +164,7 @@ export class VisionIdentityService {
       matchId: match.id,
       side: side.team,
       sbTeamId: side.sbTeamId,
-      narrowedBy: side.sbTeamId ? ("side" as const) : ("match" as const),
+      narrowedBy: narrowTo ? ("side" as const) : ("match" as const),
       candidates,
       clock: CLOCK_NOTE,
     };
@@ -320,7 +333,15 @@ export class VisionIdentityService {
    * second person, naming a player, not superseded.
    */
   async forAsset(videoAssetId: string, publicOnly = false) {
-    const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, sbMatchId: true } });
+    const asset = await this.prisma.visionVideoAsset.findUnique({
+      where: { id: videoAssetId },
+      select: {
+        id: true,
+        sbMatchId: true,
+        sbMatch: { select: { id: true, homeTeam: { select: { id: true, name: true } }, awayTeam: { select: { id: true, name: true } } } },
+        variants: { where: { kind: "proxy" }, orderBy: { createdAt: "desc" }, take: 1, select: { fps: true, sourceOffsetMs: true, durationMs: true, width: true, height: true } },
+      },
+    });
     if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
     const tracks = await this.prisma.visionTrack.findMany({
       where: { videoAssetId },
@@ -337,6 +358,11 @@ export class VisionIdentityService {
     const jobIds = [...new Set(tracks.map((t) => t.teamAssignments[0]?.inferenceJobId).filter((x): x is string => !!x))];
     const sides = jobIds.length ? await this.prisma.visionTeamSide.findMany({ where: { inferenceJobId: { in: jobIds } } }) : [];
     const sideOf = new Map(sides.map((s) => [`${s.inferenceJobId}:${s.team}`, s.sbTeamId]));
+    const slotIds = [...new Set(tracks.flatMap((t) => t.identities.map((a) => a.matchSquadPlayerId)).filter((x): x is string => !!x))];
+    const slots = slotIds.length
+      ? await this.prisma.sbMatchSquadPlayer.findMany({ where: { id: { in: slotIds } }, select: { id: true, playerName: true, jerseyNumber: true } })
+      : [];
+    const slotOf = new Map(slots.map((s) => [s.id, { name: s.playerName, jerseyNumber: s.jerseyNumber }]));
     const rows = tracks
       .map((t) => {
         const team = t.teamAssignments[0] ?? null;
@@ -344,16 +370,122 @@ export class VisionIdentityService {
         return {
           id: t.id,
           localTrackId: t.localTrackId,
+          inferenceJobId: t.inferenceJobId,
+          artifactKey: t.artifactKey,
           class: t.class,
           startMs: t.startMs,
           endMs: t.endMs,
           team: team ? { team: team.team, confidence: team.confidence, method: team.method, kitDescription: team.kitDescription, reviewState: team.reviewState, inferenceJobId: team.inferenceJobId } : null,
           sbTeamId,
-          identities: t.identities,
+          identities: t.identities.map((a) => ({ ...a, slot: a.matchSquadPlayerId ? (slotOf.get(a.matchSquadPlayerId) ?? null) : null })),
         };
       })
       .filter((t) => !publicOnly || t.identities.length);
-    return { videoAssetId, matchId: asset.sbMatchId, publicOnly, sidesDecided: sides.map((s) => ({ inferenceJobId: s.inferenceJobId, team: s.team, sbTeamId: s.sbTeamId })), tracks: rows, count: rows.length };
+    const match = asset.sbMatch
+      ? { id: asset.sbMatch.id, homeTeam: asset.sbMatch.homeTeam, awayTeam: asset.sbMatch.awayTeam }
+      : null;
+    const proxy = asset.variants[0] ?? null;
+    return {
+      videoAssetId,
+      matchId: asset.sbMatchId,
+      match,
+      proxy,
+      publicOnly,
+      sidesDecided: sides.map((s) => ({ inferenceJobId: s.inferenceJobId, team: s.team, sbTeamId: s.sbTeamId })),
+      tracks: rows,
+      count: rows.length,
+    };
+  }
+
+  /**
+   * A presigned URL for the asset's proxy -- always the proxy, never the master --
+   * so the review screen can show a track on the frame it was tracked on. Same
+   * shape and TTL as the annotation workstation's media.
+   */
+  async media(videoAssetId: string) {
+    const asset = await this.prisma.visionVideoAsset.findUnique({
+      where: { id: videoAssetId },
+      select: { id: true, variants: { where: { kind: "proxy" }, orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    const proxy = asset.variants[0];
+    if (!proxy) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "ProxyMissing",
+        message: "This asset has no proxy to review on.",
+        remediation: "Run transcode; the master is not an option.",
+      });
+    }
+    return {
+      url: await this.store.presignGet("derived", proxy.objectKey, this.config.playback.urlTtlSeconds),
+      fps: proxy.fps,
+      sourceOffsetMs: proxy.sourceOffsetMs,
+      durationMs: proxy.durationMs,
+      width: proxy.width,
+      height: proxy.height,
+      expiresInSeconds: this.config.playback.urlTtlSeconds,
+    };
+  }
+
+  /**
+   * One track's positions, read out of the artifact in object storage.
+   *
+   * The positions stay in the bucket (docs/vision/04 § CV outputs) and a browser
+   * cannot read the bucket -- a presigned GET of JSON is refused by its CORS policy,
+   * where a `<video>` source is not -- so the control plane reads the artifact and
+   * hands back the one track asked for. The artifact is cached by key for the few
+   * tracks a reviewer clicks through in a row, and refused above a size this box
+   * should not be asked to parse; a match-length artifact needs splitting per
+   * track at the worker, which is noted in docs/vision/36.
+   */
+  async positions(trackId: string) {
+    const track = await this.prisma.visionTrack.findUnique({ where: { id: trackId }, select: { id: true, artifactKey: true, localTrackId: true } });
+    if (!track) throw new NotFoundException(`Unknown track ${trackId}`);
+    const artifact = await this.loadArtifact(track.artifactKey);
+    const found = artifact.tracks.find((t) => t.localTrackId === track.localTrackId);
+    return {
+      trackId: track.id,
+      localTrackId: track.localTrackId,
+      key: track.artifactKey,
+      trackerVersionId: artifact.trackerVersionId ?? null,
+      positions: found?.positions ?? [],
+    };
+  }
+
+  private readonly artifactCache = new Map<string, ParsedArtifact>();
+
+  private async loadArtifact(key: string): Promise<ParsedArtifact> {
+    const cached = this.artifactCache.get(key);
+    if (cached) return cached;
+    const body = await this.store.getSmallObject("derived", key);
+    if (!body) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "ArtifactMissing",
+        message: `The track artifact ${key} is not in object storage.`,
+        remediation: "Re-run track for the asset; the rows name an artifact that no longer exists.",
+      });
+    }
+    if (body.byteLength > MAX_ARTIFACT_BYTES) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "ArtifactTooLarge",
+        message: `The track artifact is ${(body.byteLength / 1_048_576).toFixed(1)} MB; this box reads at most ${MAX_ARTIFACT_BYTES / 1_048_576} MB per track artifact.`,
+        remediation: "A match-length artifact needs splitting per track at the worker.",
+      });
+    }
+    const raw = JSON.parse(body.toString("utf8")) as { trackerVersionId?: string; tracks?: { localTrackId: number; positions?: unknown[] }[] };
+    const parsed: ParsedArtifact = {
+      trackerVersionId: typeof raw.trackerVersionId === "string" ? raw.trackerVersionId : undefined,
+      tracks: (raw.tracks ?? []).map((t) => ({ localTrackId: Number(t.localTrackId), positions: Array.isArray(t.positions) ? t.positions : [] })),
+    };
+    if (this.artifactCache.size >= ARTIFACT_CACHE_ENTRIES) {
+      const oldest = this.artifactCache.keys().next().value;
+      if (oldest !== undefined) this.artifactCache.delete(oldest);
+    }
+    this.artifactCache.set(key, parsed);
+    return parsed;
   }
 
   // ── Internals ────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
+import { InMemoryObjectStore } from "../storage/in-memory-object-store";
 import { VisionIdentityService } from "./identity.service";
 
 /**
@@ -40,6 +41,8 @@ const apiKey: AdminAuthContext = { method: "api_key", roleSlug: null, roleName: 
 
 let service: VisionIdentityService;
 let created: Record<string, unknown>[];
+let store: InMemoryObjectStore;
+const config = { playback: { urlTtlSeconds: 600 } };
 
 function track(over: Record<string, unknown> = {}) {
   return { id: TRACK, videoAssetId: ASSET, startMs: 9000, endMs: 19000, class: "player", videoAsset: { sbMatchId: MATCH }, ...over };
@@ -52,7 +55,8 @@ const sideA = (over: Record<string, unknown> = {}) => ({ id: "ta-1", trackId: TR
 beforeEach(() => {
   vi.clearAllMocks();
   created = [];
-  service = new VisionIdentityService(mockPrisma as never, mockAudit as never);
+  store = new InMemoryObjectStore();
+  service = new VisionIdentityService(mockPrisma as never, mockAudit as never, store, config as never);
   mockAudit.record.mockResolvedValue(undefined);
   mockPrisma.sbMatch.findUnique.mockResolvedValue({ id: MATCH, homeTeamId: HOME, awayTeamId: AWAY });
   mockPrisma.visionTrack.findUnique.mockResolvedValue(track());
@@ -114,6 +118,13 @@ describe("who a track could be", () => {
     expect(mockPrisma.sbMatchSquadPlayer.findMany.mock.calls[0]![0].where).toEqual({ matchId: MATCH, teamId: HOME });
     expect(out.candidates[0]).toMatchObject({ matchSquadPlayerId: SLOT_HOME, playerId: PLAYER, jerseyNumber: 7, isStarter: true });
     expect(out.clock).toContain("not anchored");
+  });
+
+  it("is the whole match squad on request, for a reviewer about to overrule the kit", async () => {
+    const out = await service.candidates(TRACK, true);
+    expect(out.narrowedBy).toBe("match");
+    expect(out.sbTeamId).toBe(HOME);
+    expect(mockPrisma.sbMatchSquadPlayer.findMany.mock.calls[0]![0].where).toEqual({ matchId: MATCH });
   });
 
   it("is the whole match squad when the kit said nothing, or nobody said which team the side is", async () => {
@@ -230,16 +241,30 @@ describe("a second person", () => {
 
 describe("what the public may read", () => {
   beforeEach(() => {
-    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: MATCH });
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({
+      id: ASSET,
+      sbMatchId: MATCH,
+      sbMatch: { id: MATCH, homeTeam: { id: HOME, name: "Home FC" }, awayTeam: { id: AWAY, name: "Away FC" } },
+      variants: [{ fps: 25, sourceOffsetMs: 5000, durationMs: 5000, width: 1280, height: 720 }],
+    });
     mockPrisma.visionTeamSide.findMany.mockResolvedValue([{ inferenceJobId: JOB, team: "A", sbTeamId: HOME }]);
+  });
+
+  it("names the match's teams and the proxy clock beside the tracks, for the screen", async () => {
+    mockPrisma.visionTrack.findMany.mockResolvedValue([]);
+    const out = await service.forAsset(ASSET, false);
+    expect(out.match).toEqual({ id: MATCH, homeTeam: { id: HOME, name: "Home FC" }, awayTeam: { id: AWAY, name: "Away FC" } });
+    expect(out.proxy).toMatchObject({ fps: 25, sourceOffsetMs: 5000, width: 1280 });
   });
 
   it("is only an accepted, named, current assignment; tracks with none are not listed", async () => {
     mockPrisma.visionTrack.findMany.mockResolvedValue([
-      { id: TRACK, localTrackId: 1, class: "player", startMs: 9000, endMs: 19000, teamAssignments: [sideA()], identities: [{ id: "ia-1", playerId: PLAYER, reviewState: "accepted" }] },
+      { id: TRACK, localTrackId: 1, class: "player", startMs: 9000, endMs: 19000, teamAssignments: [sideA()], identities: [{ id: "ia-1", playerId: PLAYER, matchSquadPlayerId: SLOT_HOME, reviewState: "accepted" }] },
       { id: OTHER, localTrackId: 2, class: "player", startMs: 9000, endMs: 19000, teamAssignments: [], identities: [] },
     ]);
+    mockPrisma.sbMatchSquadPlayer.findMany.mockResolvedValue([{ id: SLOT_HOME, playerName: "A. Player", jerseyNumber: 7 }]);
     const out = await service.forAsset(ASSET, true);
+    expect(out.tracks[0]!.identities[0]).toMatchObject({ id: "ia-1", slot: { name: "A. Player", jerseyNumber: 7 } });
     const where = mockPrisma.visionTrack.findMany.mock.calls[0]![0].include.identities.where;
     expect(where).toEqual({ supersededBy: null, reviewState: "accepted", playerId: { not: null } });
     expect(out.count).toBe(1);
@@ -254,5 +279,45 @@ describe("what the public may read", () => {
     expect(mockPrisma.visionTrack.findMany.mock.calls[0]![0].include.identities.where).toEqual({ supersededBy: null });
     expect(out.count).toBe(1);
     expect(out.tracks[0]).toMatchObject({ team: null, sbTeamId: null });
+  });
+});
+
+describe("what the screen plays and draws", () => {
+  it("presigns the proxy, never the master, with the playback TTL", async () => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({
+      id: ASSET,
+      variants: [{ objectKey: "proxies/x/proxy.mp4", fps: 25, sourceOffsetMs: 5000, durationMs: 5000, width: 1280, height: 720 }],
+    });
+    const out = await service.media(ASSET);
+    expect(out.url).toContain("proxies/x/proxy.mp4");
+    expect(out).toMatchObject({ fps: 25, sourceOffsetMs: 5000, width: 1280, expiresInSeconds: 600 });
+    expect(mockPrisma.visionVideoAsset.findUnique.mock.calls[0]![0].select.variants.where).toEqual({ kind: "proxy" });
+  });
+
+  it("refuses an asset with no proxy rather than offering the master", async () => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, variants: [] });
+    await expect(service.media(ASSET)).rejects.toMatchObject({ response: { error: "ProxyMissing" } });
+  });
+
+  it("reads one track's positions out of the artifact, through the control plane", async () => {
+    mockPrisma.visionTrack.findUnique.mockResolvedValue({ id: TRACK, artifactKey: "inference/j/1/tracks.json", localTrackId: 3 });
+    await store.putSmallObject("derived", "inference/j/1/tracks.json", JSON.stringify({
+      trackerVersionId: "trk", tracks: [
+        { localTrackId: 1, positions: [{ frameIndex: 0 }] },
+        { localTrackId: 3, positions: [{ frameIndex: 0, box: { x: 1, y: 2, width: 3, height: 4 } }, { frameIndex: 1 }] },
+      ],
+    }), "application/json");
+    const out = await service.positions(TRACK);
+    expect(out).toMatchObject({ trackId: TRACK, localTrackId: 3, key: "inference/j/1/tracks.json", trackerVersionId: "trk" });
+    expect(out.positions).toHaveLength(2);
+    expect(out.positions[0]).toEqual({ frameIndex: 0, box: { x: 1, y: 2, width: 3, height: 4 } });
+    // A track the artifact never reported has no positions, not an error.
+    mockPrisma.visionTrack.findUnique.mockResolvedValue({ id: TRACK, artifactKey: "inference/j/1/tracks.json", localTrackId: 9 });
+    expect((await service.positions(TRACK)).positions).toEqual([]);
+  });
+
+  it("refuses a missing artifact by name rather than returning nothing", async () => {
+    mockPrisma.visionTrack.findUnique.mockResolvedValue({ id: TRACK, artifactKey: "inference/gone/1/tracks.json", localTrackId: 3 });
+    await expect(service.positions(TRACK)).rejects.toMatchObject({ response: { error: "ArtifactMissing" } });
   });
 });

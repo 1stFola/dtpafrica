@@ -433,3 +433,157 @@ export function convertVisionQueueItem(
 export function fetchVisionMixReport() {
   return adminFetch<VisionMixReport>("/vision/annotation/mix");
 }
+
+// ── Identity review (Phase 4 Increment 4-5) ────────────────────────────────
+
+export type VisionReviewTeam = {
+  team: "A" | "B" | null;
+  confidence: number | null;
+  method: string;
+  kitDescription: string | null;
+  reviewState: string;
+  inferenceJobId: string;
+};
+
+export type VisionIdentityAssignment = {
+  id: string;
+  trackId: string;
+  playerId: string | null;
+  matchSquadPlayerId: string | null;
+  sbTeamId: string | null;
+  confidence: number;
+  method: "manual" | "propagated" | string;
+  validFromMs: number;
+  validToMs: number;
+  reviewState: "unreviewed" | "accepted" | "rejected" | string;
+  decidedBy: string;
+  reviewedBy: string | null;
+  note: string | null;
+  supersededBy: string | null;
+  createdAt: string;
+  /** The roster slot named, as the review view attaches it; absent on a bare row. */
+  slot?: { name: string; jerseyNumber: number | null } | null;
+};
+
+export type VisionReviewTrack = {
+  id: string;
+  localTrackId: number;
+  inferenceJobId: string;
+  artifactKey: string;
+  class: string;
+  startMs: number;
+  endMs: number;
+  team: VisionReviewTeam | null;
+  sbTeamId: string | null;
+  identities: VisionIdentityAssignment[];
+};
+
+export type VisionReviewMatch = {
+  id: string;
+  homeTeam: { id: string; name: string };
+  awayTeam: { id: string; name: string };
+};
+
+export type VisionIdentityReview = {
+  videoAssetId: string;
+  matchId: string | null;
+  match: VisionReviewMatch | null;
+  proxy: { fps: number | null; sourceOffsetMs: number; durationMs: number | null; width: number | null; height: number | null } | null;
+  publicOnly: boolean;
+  sidesDecided: { inferenceJobId: string; team: "A" | "B"; sbTeamId: string }[];
+  tracks: VisionReviewTrack[];
+  count: number;
+};
+
+export type VisionReviewMedia = {
+  url: string;
+  fps: number | null;
+  sourceOffsetMs: number;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  expiresInSeconds: number;
+};
+
+export type VisionRosterCandidate = {
+  matchSquadPlayerId: string;
+  playerId: string | null;
+  name: string;
+  jerseyNumber: number | null;
+  position: string | null;
+  isStarter: boolean;
+  sbTeamId: string;
+  sbTeamSquadId: string | null;
+};
+
+export type VisionTrackCandidates = {
+  trackId: string;
+  matchId: string;
+  side: "A" | "B" | null;
+  sbTeamId: string | null;
+  narrowedBy: "side" | "match";
+  candidates: VisionRosterCandidate[];
+  clock: string;
+};
+
+export function fetchVisionIdentityReview(assetId: string, publicOnly = false) {
+  return adminFetch<VisionIdentityReview>(
+    publicOnly ? `/vision/assets/${assetId}/identity?public=1` : `/vision/review/${assetId}/tracks`
+  );
+}
+
+export function fetchVisionReviewMedia(assetId: string) {
+  return adminFetch<VisionReviewMedia>(`/vision/review/${assetId}/media`);
+}
+
+export type VisionTrackPosition = {
+  frameIndex: number;
+  proxyTimeMs: number;
+  sourceTimeMs: number;
+  box: { x: number; y: number; width: number; height: number };
+  confidence?: number;
+};
+
+export function fetchVisionTrackPositions(trackId: string) {
+  return adminFetch<{ trackId: string; localTrackId: number; key: string; trackerVersionId: string | null; positions: VisionTrackPosition[] }>(
+    `/vision/review/tracks/${trackId}/positions`
+  );
+}
+
+export function fetchVisionTrackCandidates(trackId: string, wholeMatch = false) {
+  return adminFetch<VisionTrackCandidates>(`/vision/review/tracks/${trackId}/candidates${wholeMatch ? "?all=1" : ""}`);
+}
+
+export function setVisionTeamSides(jobId: string, sides: { A: string; B: string }) {
+  return adminFetch<{ inferenceJobId: string; sides: Record<string, string>; decidedBy: string }>(
+    `/vision/review/jobs/${jobId}/sides`,
+    { method: "POST", body: JSON.stringify(sides) }
+  );
+}
+
+export type AssignIdentityBody = {
+  matchSquadPlayerId: string | null;
+  validFromMs?: number;
+  validToMs?: number;
+  note?: string;
+  propagateTo?: string[];
+  acceptSideMismatch?: boolean;
+};
+
+export function assignVisionIdentity(trackId: string, body: AssignIdentityBody) {
+  return adminFetch<{ assignment: VisionIdentityAssignment; propagated: VisionIdentityAssignment[]; sideCorrected: boolean }>(
+    `/vision/review/tracks/${trackId}/identity`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+export function acceptVisionIdentity(id: string) {
+  return adminFetch<VisionIdentityAssignment>(`/vision/review/identity/${id}/accept`, { method: "POST", body: "{}" });
+}
+
+export function rejectVisionIdentity(id: string, reason: string) {
+  return adminFetch<VisionIdentityAssignment>(`/vision/review/identity/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}

@@ -25,6 +25,7 @@ Reuse, do not rebuild: `AdminAuthContext`, `AdminRequirePermission`, `AdminLayou
 | `/admin/vision/ingest` | Match ingestion wizard | `vision.assets.upload` | `AdminLayout` |
 | `/admin/vision/assets/:id` | Asset processing workspace | `vision.read` | `AdminLayout` |
 | `/admin/vision/review/:assetId/*` | **Analysis & review workstation** | `vision.review` | **Full viewport, outside `AdminLayout`** |
+| `/admin/vision/workstation/identity/:assetId` | Identity review (the roster panel of the above, as built — [36](./36-PHASE-4-INCREMENT-5.md)) | `vision.review` | Full viewport, `VisionWorkstationApp` |
 | `/admin/vision/annotation` | Annotation queue | `vision.annotate` | `AdminLayout` |
 | `/admin/vision/datasets` | Dataset registry | `vision.read` | `AdminLayout` |
 | `/admin/vision/datasets/:id` | Dataset detail, leakage, representation | `vision.read` | `AdminLayout` |
@@ -115,6 +116,13 @@ correction time is operationally worse — so correction time is a tracked metri
 | calibration quality      | source links, reviewer decision    |
 +--------------------------+------------------------------------+
 ```
+
+**As built so far** ([36](./36-PHASE-4-INCREMENT-5.md)): the video player with every
+track's box on the frame, and the roster/identity panel — sides, candidates, split, merge,
+reassign and mark-unknown as one assignment over a window, a second person's accept and
+reject, and the public view. It lives at `/admin/vision/workstation/identity/:assetId`
+beside the annotation workstation. The timeline, minimap and inspector wait on events and
+calibration.
 
 ### Non-negotiable behaviours
 
