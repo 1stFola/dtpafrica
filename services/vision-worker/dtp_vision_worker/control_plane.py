@@ -126,11 +126,17 @@ class ControlPlaneClient:
         )
         self._raise_for_status(res, "heartbeat")
 
-    def input_url(self, job_id: str, role: str) -> str:
-        """Ask for an input by role. The control plane resolves the key."""
-        res = self._client.post(
-            f"/jobs/{job_id}/input-url", headers=self._auth(), json={"role": role}
-        )
+    def input_url(self, job_id: str, role: str, key: str | None = None) -> str:
+        """Ask for an input by role. The control plane resolves the key.
+
+        The `declared` role names a key the job listed in `readKeys`; the control
+        plane refuses any other. A worker still cannot choose what it reads -- it
+        can only ask for what it was told it may.
+        """
+        body: dict[str, str] = {"role": role}
+        if key is not None:
+            body["key"] = key
+        res = self._client.post(f"/jobs/{job_id}/input-url", headers=self._auth(), json=body)
         self._raise_for_status(res, "input-url")
         return res.json()["url"]
 

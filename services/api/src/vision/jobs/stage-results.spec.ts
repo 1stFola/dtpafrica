@@ -10,8 +10,11 @@ const mockPrisma = {
   $transaction: vi.fn(),
 };
 
+/** The ledger is tested in models/benchmarks.spec.ts; here it only has to be reached. */
+const mockBenchmarks = { complete: vi.fn(), fail: vi.fn() };
+
 function service() {
-  return new VisionStageResultsService(mockPrisma as never);
+  return new VisionStageResultsService(mockPrisma as never, mockBenchmarks as never);
 }
 
 function lastAssetUpdate() {
@@ -407,5 +410,61 @@ describe("detect results are checked, not stored", () => {
     );
     expect(outcome.applied).toBe(true);
     expect(outcome.detail).toContain("weights unreported");
+  });
+});
+
+/**
+ * A benchmark belongs to a dataset and a model, not an asset. Its projection is
+ * the ledger's, reached with the run id the job was queued with.
+ */
+describe("benchmark results reach the ledger", () => {
+  const RUN = "44444444-4444-4444-8444-444444444444";
+  const completion = {
+    artifacts: [{ key: "inference/j/1/benchmark.json", bucket: "models", role: "benchmark" }],
+    summary: { benchmarkRunId: RUN, metrics: [] },
+  };
+
+  beforeEach(() => {
+    mockBenchmarks.complete.mockResolvedValue({ applied: true, detail: "3 metric(s)" });
+    mockBenchmarks.fail.mockResolvedValue(undefined);
+  });
+
+  it("completes the run the job was queued for, with no asset involved", async () => {
+    const outcome = await service().apply("benchmark", null, completion, {
+      modelVersionId: "mv",
+      datasetVersionId: "dv",
+      inputSpec: { benchmarkRunId: RUN },
+    });
+    expect(outcome).toEqual({ applied: true, detail: "3 metric(s)" });
+    expect(mockBenchmarks.complete).toHaveBeenCalledWith(RUN, completion.summary, completion.artifacts);
+  });
+
+  it("refuses a benchmark job that carries no run id", async () => {
+    const outcome = await service().apply("benchmark", null, completion, { modelVersionId: "mv", inputSpec: {} });
+    expect(outcome.applied).toBe(false);
+    expect(mockBenchmarks.complete).not.toHaveBeenCalled();
+  });
+
+  it("marks the run failed rather than un-succeeding the job when the ledger throws", async () => {
+    mockBenchmarks.complete.mockRejectedValue(new Error("db down"));
+    const outcome = await service().apply("benchmark", null, completion, {
+      modelVersionId: "mv",
+      inputSpec: { benchmarkRunId: RUN },
+    });
+    expect(outcome.applied).toBe(false);
+    expect(mockBenchmarks.fail).toHaveBeenCalledWith(RUN, expect.stringContaining("db down"));
+  });
+
+  it("marks a terminally failed benchmark job's run failed", async () => {
+    await service().markBenchmarkFailed({ benchmarkRunId: RUN }, "benchmark failed: pod died");
+    expect(mockBenchmarks.fail).toHaveBeenCalledWith(RUN, "benchmark failed: pod died");
+    await service().markBenchmarkFailed({}, "x");
+    expect(mockBenchmarks.fail).toHaveBeenCalledTimes(1);
+  });
+
+  it("still says so for an asset-less job of another type", async () => {
+    const outcome = await service().apply("train", null, { artifacts: [], summary: {} });
+    expect(outcome.applied).toBe(false);
+    expect(outcome.detail).toMatch(/no video asset/);
   });
 });

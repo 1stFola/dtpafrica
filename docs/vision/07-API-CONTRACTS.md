@@ -140,6 +140,8 @@ accepted review decision and a valid `canPublishHighlight`/publication rights ch
 | `GET` | `/vision/models/versions/:id` | `vision.read` |
 | `POST` | `/vision/models/:id/versions` | `vision.models.train` |
 | `POST` | `/vision/models/versions/:id/benchmark` | `vision.models.train` |
+| `GET` | `/vision/models/versions/:id/benchmarks` | `vision.read` |
+| `GET` | `/vision/models/benchmarks/:id` | `vision.read` |
 | `POST` | `/vision/models/versions/:id/promotion-request` | `vision.models.train` |
 | `POST` | `/vision/models/versions/:id/promote` | `vision.models.promote` |
 | `POST` | `/vision/models/versions/:id/rollback` | `vision.models.promote` |
@@ -164,6 +166,16 @@ four, and the geometry normalised to the proxy frame. A bad box set is `400 Inva
 with every problem and its index; nothing is written. The same rule
 (`validateAnnotationBoxes` in the contracts) runs again at export, where a failure is
 `boxes_invalid`. See [29-PHASE-3-INCREMENT-2.md](./29-PHASE-3-INCREMENT-2.md).
+
+`POST /vision/models/versions/:id/benchmark` takes `{ datasetVersionId }` and refuses a draft
+or revoked version, one with no gold split, gold one reviewer short, a version never exported,
+or a gold member with no succeeded `detect` job by this exact model version
+(`DetectionsMissing`, naming them). It queues a `benchmark` job on `cpu_small` whose inputs
+list every object the worker may read; the worker fetches each with `input-url`
+`{ role: "declared", key }`, and any key not on the job's list is refused. The completion
+becomes `VisionMetricResult` rows per `(metric, slice)` and a verdict under the configured
+thresholds version, and moves the version `candidate → benchmarked`. See
+[30-PHASE-3-INCREMENT-3.md](./30-PHASE-3-INCREMENT-3.md).
 
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the

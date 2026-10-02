@@ -115,6 +115,7 @@ export class VisionWorkerController {
         videoAssetId: job.videoAssetId ?? undefined,
         datasetVersionId: job.datasetVersionId ?? undefined,
         modelVersionIds: job.modelVersionId ? [job.modelVersionId] : undefined,
+        readKeys: declaredKeys(job.inputSpec),
         params: job.inputSpec,
       },
       outputPrefix: job.outputPrefix,
@@ -200,7 +201,7 @@ export class VisionWorkerController {
 
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
-      select: { state: true, workerId: true, videoAssetId: true },
+      select: { state: true, workerId: true, videoAssetId: true, inputSpec: true },
     });
     if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
     if (job.workerId !== auth.workerId) {
@@ -209,6 +210,28 @@ export class VisionWorkerController {
     if (!["claimed", "running"].includes(job.state)) {
       throw new ForbiddenException(`Job is ${job.state}; it may no longer read inputs`);
     }
+
+    // A declared key: one the job listed when it was queued, and nothing else. The
+    // list is on the job row, written by the control plane, never by the request.
+    if (dto.role === "declared") {
+      if (!dto.key) throw new BadRequestException("The declared role needs a key");
+      const allowed = declaredKeys(job.inputSpec as Record<string, unknown>) ?? [];
+      const match = allowed.find((k) => k.key === dto.key);
+      if (!match) {
+        throw new ForbiddenException(
+          `Key ${dto.key} is not among the ${allowed.length} object(s) this job declared it may read`
+        );
+      }
+      const url = await this.objectStore.presignGet(match.bucket, match.key, this.config.playback.urlTtlSeconds);
+      return {
+        url,
+        bucket: match.bucket,
+        key: match.key,
+        role: dto.role,
+        expiresInSeconds: this.config.playback.urlTtlSeconds,
+      };
+    }
+
     if (!job.videoAssetId) {
       throw new BadRequestException("This job has no video asset to read");
     }
@@ -251,7 +274,14 @@ export class VisionWorkerController {
 
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
-      select: { outputPrefix: true, type: true, videoAssetId: true, modelVersionId: true },
+      select: {
+        outputPrefix: true,
+        type: true,
+        videoAssetId: true,
+        modelVersionId: true,
+        datasetVersionId: true,
+        inputSpec: true,
+      },
     });
     if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
 
@@ -328,7 +358,11 @@ export class VisionWorkerController {
           })),
           summary: dto.summary ?? {},
         },
-        { modelVersionId: job.modelVersionId }
+        {
+          modelVersionId: job.modelVersionId,
+          datasetVersionId: job.datasetVersionId,
+          inputSpec: (job.inputSpec ?? {}) as Record<string, unknown>,
+        }
       );
     }
 
@@ -341,7 +375,7 @@ export class VisionWorkerController {
     const auth = this.auth(req);
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
-      select: { type: true, videoAssetId: true },
+      select: { type: true, videoAssetId: true, inputSpec: true },
     });
 
     const outcome = await this.queue.fail(
@@ -357,6 +391,12 @@ export class VisionWorkerController {
       await this.stageResults.markIngestFailed(
         job.videoAssetId,
         `${job.type} failed: ${dto.reason}`
+      );
+    }
+    if (!outcome.requeued && job?.type === "benchmark") {
+      await this.stageResults.markBenchmarkFailed(
+        (job.inputSpec ?? null) as Record<string, unknown> | null,
+        `benchmark failed: ${dto.reason}${dto.detail ? ` -- ${dto.detail.slice(0, 500)}` : ""}`
       );
     }
 
@@ -390,4 +430,21 @@ export class VisionWorkerController {
       update: {},
     });
   }
+}
+
+/** The objects a job declared it may read, as the control plane wrote them. */
+function declaredKeys(
+  inputSpec: Record<string, unknown> | null | undefined
+): { bucket: "derived" | "models"; key: string }[] | undefined {
+  const raw = inputSpec?.readKeys;
+  if (!Array.isArray(raw)) return undefined;
+  const keys: { bucket: "derived" | "models"; key: string }[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const { bucket, key } = entry as { bucket?: unknown; key?: unknown };
+    if ((bucket === "derived" || bucket === "models") && typeof key === "string" && key) {
+      keys.push({ bucket, key });
+    }
+  }
+  return keys;
 }

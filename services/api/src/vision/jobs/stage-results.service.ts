@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { DETECTION_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
+import { VisionBenchmarksService } from "../models/benchmarks.service";
 
 /**
  * Applies a completed stage's findings to the domain.
@@ -40,13 +41,21 @@ export type ApplyOutcome = {
 /** What the job row knows that the completion payload does not. */
 export type ApplyContext = {
   modelVersionId: string | null;
+  datasetVersionId?: string | null;
+  inputSpec?: Record<string, unknown>;
 };
+
+/** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "detect"];
 
 @Injectable()
 export class VisionStageResultsService {
   private readonly log = new Logger(VisionStageResultsService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(VisionBenchmarksService) private readonly benchmarks: VisionBenchmarksService
+  ) {}
 
   async apply(
     jobType: VisionJobType,
@@ -54,7 +63,10 @@ export class VisionStageResultsService {
     completion: StageCompletion,
     context: ApplyContext = { modelVersionId: null }
   ): Promise<ApplyOutcome> {
-    if (!videoAssetId) return { applied: false, detail: "job has no video asset" };
+    if (jobType === "benchmark") return this.applyBenchmark(completion, context);
+    if (!videoAssetId || !ASSET_STAGES.includes(jobType)) {
+      return { applied: false, detail: videoAssetId ? `no domain effect for ${jobType}` : "job has no video asset" };
+    }
 
     try {
       switch (jobType) {
@@ -350,6 +362,33 @@ export class VisionStageResultsService {
         weights ? ` (weights ${weights.slice(0, 12)}...)` : " (weights unreported)"
       }; boxes in ${artifact.key}`,
     };
+  }
+
+  /**
+   * benchmark → metric rows, a verdict, and `candidate → benchmarked`.
+   *
+   * Owned by the benchmarks service; this only finds the run the job was queued
+   * for. A failure here is logged on the run rather than thrown at the worker, for
+   * the same reason as every other projection: the artifact is written and the
+   * worker is gone.
+   */
+  private async applyBenchmark(completion: StageCompletion, context: ApplyContext): Promise<ApplyOutcome> {
+    const runId = str(context.inputSpec?.benchmarkRunId);
+    if (!runId) return { applied: false, detail: "benchmark job carries no benchmarkRunId" };
+    try {
+      return await this.benchmarks.complete(runId, completion.summary, completion.artifacts);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log.error(`applying benchmark run ${runId} failed: ${message}`);
+      await this.benchmarks.fail(runId, `applying the completion failed: ${message}`);
+      return { applied: false, detail: message };
+    }
+  }
+
+  /** A benchmark job that will not run again: the run says so, with the reason. */
+  async markBenchmarkFailed(inputSpec: Record<string, unknown> | null, reason: string): Promise<void> {
+    const runId = str(inputSpec?.benchmarkRunId);
+    if (runId) await this.benchmarks.fail(runId, reason);
   }
 
   /** Records that ingestion failed, so an operator sees why without reading logs. */

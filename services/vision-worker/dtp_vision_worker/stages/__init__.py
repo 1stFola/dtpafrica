@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from .benchmark import run_benchmark
 from .detect import run_detect
 from .fingerprint import run_fingerprint
 from .probe import run_probe
@@ -28,6 +29,9 @@ STAGES: dict[str, StageHandler] = {
     "probe": run_probe,
     "fingerprint": run_fingerprint,
     "transcode": run_transcode,
+    # CPU: compares stored predictions with stored truth. The predictions needed a
+    # card; the comparison does not.
+    "benchmark": run_benchmark,
     # GPU. Imports torch lazily inside the handler, so the CPU image can load this
     # registry without the model stack installed.
     "detect": run_detect,
@@ -38,7 +42,7 @@ STAGES: dict[str, StageHandler] = {
 #: Named rather than inferred, because the consequence of getting it wrong is a cost
 #: rather than an error: FFmpeg on a GPU pod works perfectly and bills at GPU rates.
 #: `tests/test_contract.py` checks both of these against the contract's routing table.
-CPU_STAGES = frozenset({"probe", "fingerprint", "transcode"})
+CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark"})
 
 #: Stages that need CUDA and the model stack, and so only run on the GPU image.
 GPU_STAGES = frozenset({"detect"})
@@ -52,6 +56,7 @@ __all__ = [
     "GPU_STAGES",
     "STAGES",
     "StageHandler",
+    "run_benchmark",
     "run_detect",
     "run_fingerprint",
     "run_probe",
