@@ -174,6 +174,64 @@ export class VisionJobsService {
     return { fps: proxy.fps, sourceOffsetMs: proxy.sourceOffsetMs };
   }
 
+  /**
+   * Queue a job that has no asset: a benchmark, later a training run.
+   *
+   * No rights check here, deliberately. Rights are per asset, and the asset-level
+   * decisions were taken when the detect jobs this consumes were queued and when
+   * the dataset was frozen; the caller (`VisionBenchmarksService`) re-checks the
+   * dataset's revocation flag. What this does guard is the contract: the type must
+   * be one that exists, and the model version, when given, must be real.
+   */
+  async enqueueDetached(
+    params: {
+      type: VisionJobType;
+      datasetVersionId: string;
+      modelVersionId?: string | null;
+      params: Record<string, unknown>;
+      priority?: number;
+      budgetSeconds?: number;
+      budgetUsdCents?: number;
+    },
+    actor?: AdminAuthContext
+  ): Promise<{ id: string }> {
+    if (JOB_TYPE_PREREQUISITES[params.type].length) {
+      throw new BadRequestException(
+        `${params.type} depends on other stages for an asset; queue it with POST /vision/jobs instead.`
+      );
+    }
+    const id = randomUUID();
+    const created = await this.queue.enqueue({
+      id,
+      type: params.type,
+      resourceClass: DEFAULT_RESOURCE_CLASS[params.type],
+      priority: params.priority,
+      videoAssetId: null,
+      datasetVersionId: params.datasetVersionId,
+      modelVersionId: params.modelVersionId ?? null,
+      inputSpec: params.params,
+      outputPrefix: visionKeys.inferencePrefix(id, 1),
+      budgetSeconds: params.budgetSeconds ?? this.config.jobs.defaultBudgetSeconds,
+      budgetUsdCents: params.budgetUsdCents ?? this.config.jobs.defaultBudgetUsdCents,
+      createdBy: actor?.userId ?? null,
+    });
+    await this.audit.record(
+      {
+        action: "job.queued",
+        targetKind: "vision_job",
+        targetId: created.id,
+        data: {
+          type: params.type,
+          resourceClass: DEFAULT_RESOURCE_CLASS[params.type],
+          datasetVersionId: params.datasetVersionId,
+          modelVersionId: params.modelVersionId ?? null,
+        },
+      },
+      actor
+    );
+    return created;
+  }
+
   async retry(jobId: string, actor?: AdminAuthContext) {
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },

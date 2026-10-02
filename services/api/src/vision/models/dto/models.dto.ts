@@ -89,3 +89,9 @@ export class RegisterModelVersionDto {
   @Matches(/^[0-9a-f]{64}$/i, { message: "weightsChecksum must be a SHA-256 hex digest" })
   weightsChecksum?: string;
 }
+
+export class RequestBenchmarkDto {
+  /** The frozen version whose gold split the model is scored against. */
+  @IsUUID()
+  datasetVersionId!: string;
+}

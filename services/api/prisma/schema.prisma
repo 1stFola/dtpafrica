@@ -1505,6 +1505,7 @@ model VisionDatasetVersion {
   members            VisionDatasetMember[]
   jobs               VisionJob[]
   modelVersions      VisionModelVersion[]
+  benchmarkRuns      VisionBenchmarkRun[]
   labelSchemaVersion VisionLabelSchemaVersion? @relation(fields: [labelSchemaVersionId], references: [id])
 
   @@map("vision_dataset_versions")
@@ -1568,10 +1569,68 @@ model VisionModelVersion {
   model          VisionModel           @relation(fields: [modelId], references: [id], onDelete: Cascade)
   datasetVersion VisionDatasetVersion? @relation(fields: [datasetVersionId], references: [id], onDelete: SetNull)
   jobs           VisionJob[]
+  benchmarkRuns  VisionBenchmarkRun[]
 
   @@unique([modelId, version])
   @@index([stage])
   @@map("vision_model_versions")
+}
+
+/// One scoring of a model version against a frozen gold dataset version.
+///
+/// The run is the unit of evidence a promotion rests on: which version, which
+/// gold, which thresholds it was judged under, and the verdict. Metrics hang off
+/// it per slice, never only as a headline, because that is exactly how a regression
+/// on night footage hides behind an improved average.
+model VisionBenchmarkRun {
+  id               String  @id @default(uuid())
+  modelVersionId   String  @map("model_version_id")
+  datasetVersionId String  @map("dataset_version_id")
+  jobId            String? @map("job_id")
+  /// queued | running | completed | failed
+  state            String  @default("queued")
+  /// Which thresholds configuration judged this run. Changing a threshold is a
+  /// reviewed change with a new version, never an edit during a release.
+  thresholdsVersion String @map("thresholds_version")
+  iouThreshold      Float  @map("iou_threshold")
+  /// pass | fail | unthresholded. Null until the run completes.
+  verdict          String?
+  verdictDetail    Json?     @map("verdict_detail")
+  summary          Json?
+  reportKey        String?   @map("report_key")
+  requestedBy      String?   @map("requested_by")
+  failureReason    String?   @map("failure_reason") @db.Text
+  completedAt      DateTime? @map("completed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  modelVersion   VisionModelVersion   @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  datasetVersion VisionDatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Restrict)
+  metrics        VisionMetricResult[]
+
+  @@index([modelVersionId, createdAt])
+  @@index([datasetVersionId])
+  @@map("vision_benchmark_runs")
+}
+
+/// One measured number: a metric for a class (or all), on a slice (or all).
+model VisionMetricResult {
+  id             String @id @default(uuid())
+  benchmarkRunId String @map("benchmark_run_id")
+  /// `"<name>:<class|all>"`, e.g. `recall:ball`, `ap:all`.
+  metric         String
+  /// `all`, or `"<axis>:<value>"` such as `quality:platform_copy`.
+  slice          String
+  /// Null when the slice has nothing to measure for this metric (no boxes of that class).
+  value          Float?
+  /// Ground-truth boxes the number rests on. A recall of 1.0 over three boxes is not a finding.
+  support        Int    @default(0)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  benchmarkRun VisionBenchmarkRun @relation(fields: [benchmarkRunId], references: [id], onDelete: Cascade)
+
+  @@unique([benchmarkRunId, metric, slice])
+  @@map("vision_metric_results")
 }
 
 // ── Audit ─────────────────────────────────────────────────────────────────

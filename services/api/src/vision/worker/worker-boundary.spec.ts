@@ -40,6 +40,7 @@ const mockTokens = { register: vi.fn(), verify: vi.fn(), retire: vi.fn(), mintBo
 const mockStageResults = {
   apply: vi.fn().mockResolvedValue({ applied: true, detail: "" }),
   markIngestFailed: vi.fn(),
+  markBenchmarkFailed: vi.fn(),
 };
 
 /**
@@ -401,7 +402,7 @@ describe("completion is refused when its provenance does not hold", () => {
       "detect",
       "asset-1",
       expect.anything(),
-      { modelVersionId: MODEL_VERSION }
+      expect.objectContaining({ modelVersionId: MODEL_VERSION })
     );
   });
 
@@ -452,5 +453,112 @@ describe("completion is refused when its provenance does not hold", () => {
     expect(mockPrisma.visionJobEvent.create.mock.calls[0]![0].data.kind).toBe(
       "weights_checksum_already_pinned"
     );
+  });
+});
+
+/**
+ * A declared key is the one way a job without an asset reads anything: the
+ * control plane listed the objects when it queued the job, and the worker may ask
+ * for exactly those. The request names a key, but the list on the job row decides.
+ */
+describe("input-url by declared key", () => {
+  const GOLD = "datasets/dv/export/samples.json";
+  const DET = "inference/j1/1/detections.json";
+
+  function benchmarkJob() {
+    return heldJob({
+      type: "benchmark",
+      videoAssetId: null,
+      inputSpec: {
+        benchmarkRunId: "run-1",
+        readKeys: [
+          { bucket: "derived", key: GOLD },
+          { bucket: "derived", key: DET },
+        ],
+      },
+    });
+  }
+
+  it("issues a read URL for a key the job declared", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(benchmarkJob());
+    const res = await controller.inputUrl(request(), JOB, { role: "declared", key: DET });
+    expect(res).toMatchObject({ bucket: "derived", key: DET, role: "declared" });
+    expect(store.issuedUrls.at(-1)).toMatchObject({ method: "GET", bucket: "derived", key: DET });
+  });
+
+  it("refuses a key the job did not declare, however plausible", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(benchmarkJob());
+    await expect(
+      controller.inputUrl(request(), JOB, { role: "declared", key: "inference/other/1/detections.json" })
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      controller.inputUrl(request(), JOB, { role: "declared", key: "originals/victim/source.mp4" })
+    ).rejects.toThrow(ForbiddenException);
+    expect(store.issuedUrls).toHaveLength(0);
+  });
+
+  it("needs a key with the declared role", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(benchmarkJob());
+    await expect(controller.inputUrl(request(), JOB, { role: "declared" })).rejects.toThrow(/needs a key/);
+  });
+
+  it("still refuses an asset role for a job with no asset", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(benchmarkJob());
+    await expect(controller.inputUrl(request(), JOB, { role: "proxy" })).rejects.toThrow(/no video asset/);
+  });
+
+  it("ignores a readKeys list a worker could not have written anyway: only well-formed entries count", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(
+      heldJob({ type: "benchmark", videoAssetId: null, inputSpec: { readKeys: [{ bucket: "master", key: "originals/x" }, "junk", { key: DET }] } })
+    );
+    await expect(controller.inputUrl(request(), JOB, { role: "declared", key: "originals/x" })).rejects.toThrow(
+      ForbiddenException
+    );
+    await expect(controller.inputUrl(request(), JOB, { role: "declared", key: DET })).rejects.toThrow(ForbiddenException);
+  });
+
+  it("surfaces the declared keys on the claimed spec", async () => {
+    mockQueue.claim.mockResolvedValue({
+      id: JOB,
+      type: "benchmark",
+      resourceClass: "cpu_small",
+      attemptNumber: 1,
+      inputSpec: { benchmarkRunId: "run-1", readKeys: [{ bucket: "derived", key: GOLD }] },
+      outputPrefix: PREFIX,
+      budgetSeconds: 600,
+      budgetUsdCents: 50,
+      videoAssetId: null,
+      datasetVersionId: "dv",
+      modelVersionId: "mv",
+    });
+    mockQueue.markRunning.mockResolvedValue(undefined);
+    const { job } = await controller.claim(request(), { resourceClasses: ["cpu_small"] });
+    expect(job?.inputs.readKeys).toEqual([{ bucket: "derived", key: GOLD }]);
+    expect(job?.inputs.datasetVersionId).toBe("dv");
+    expect(job?.inputs.modelVersionIds).toEqual(["mv"]);
+  });
+});
+
+describe("a benchmark job that fails for good tells its run", () => {
+  it("marks the run failed with the worker's reason", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue({
+      type: "benchmark",
+      videoAssetId: null,
+      inputSpec: { benchmarkRunId: "run-1" },
+    });
+    mockQueue.fail.mockResolvedValue({ requeued: false });
+    await controller.fail(request(), JOB, { reason: "StageRefusal", detail: "no frame size", retryable: false });
+    expect(mockStageResults.markBenchmarkFailed).toHaveBeenCalledWith(
+      { benchmarkRunId: "run-1" },
+      expect.stringContaining("no frame size")
+    );
+    expect(mockStageResults.markIngestFailed).not.toHaveBeenCalled();
+  });
+
+  it("leaves the run alone while the job will be retried", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue({ type: "benchmark", videoAssetId: null, inputSpec: { benchmarkRunId: "run-1" } });
+    mockQueue.fail.mockResolvedValue({ requeued: true });
+    await controller.fail(request(), JOB, { reason: "network", retryable: true });
+    expect(mockStageResults.markBenchmarkFailed).not.toHaveBeenCalled();
   });
 });

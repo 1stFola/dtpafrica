@@ -8,14 +8,21 @@
  * nothing that tells it whose hardware it is running on.
  */
 
+import type { DetectionClass } from "./prediction";
+
 /** Bumped on any change to VisionJobSpec or the prediction envelope. */
 /**
  * 1.1.0 — a `detect` job now carries the model version it must run, and the proxy's
  * clock (`params.proxy`), so every prediction can name its model and its source time.
  * A worker on 1.0.0 would run `detect` and produce predictions nobody can attribute,
  * which is why the handshake refuses it rather than warning.
+ *
+ * 1.2.0 — `benchmark` exists: a CPU stage that scores a model version's detect
+ * artifacts against a frozen gold version's boxes. It reads objects by declared key
+ * (`inputs.readKeys`, input role `declared`) rather than by asset role, and it routes
+ * to `cpu_small` -- comparing predictions to truth needs no card.
  */
-export const VISION_CONTRACT_VERSION = "1.1.0";
+export const VISION_CONTRACT_VERSION = "1.2.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -62,7 +69,10 @@ export const DEFAULT_RESOURCE_CLASS: Record<VisionJobType, VisionResourceClass> 
   events: "cpu_small",
   vlm: "cpu_small",
   train: "gpu_48gb",
-  benchmark: "gpu_24gb",
+  // A benchmark compares stored predictions with stored truth. The predictions
+  // needed a GPU; the comparison does not, and routing it to one would bill GPU
+  // rates for arithmetic. See docs/vision/30-PHASE-3-INCREMENT-3.md.
+  benchmark: "cpu_small",
 };
 
 export const VISION_JOB_STATES = [
@@ -307,3 +317,58 @@ export const JOB_FAILURE_KINDS = [
   "prerequisite_failed",
 ] as const;
 export type JobFailureKind = (typeof JOB_FAILURE_KINDS)[number];
+
+// ── Benchmarks ──────────────────────────────────────────────────────────────
+
+/**
+ * What a `benchmark` job is given, under `inputs.params`.
+ *
+ * The gold labels are the dataset's FiftyOne export (`samples.json`), and the
+ * predictions are the `detect` artifacts the control plane found for every gold
+ * member, each produced by the model version under test. The worker reads all of
+ * them by declared key: it may fetch exactly these objects and no others.
+ */
+export type BenchmarkJobParams = {
+  benchmarkRunId: string;
+  goldLabelsKey: string;
+  detections: { videoAssetId: string; key: string }[];
+  /** Every key the worker may read, bucket by bucket. The control plane checks each input-url against it. */
+  readKeys: { bucket: "derived" | "models"; key: string }[];
+  /** IoU at which a prediction counts as matching a box. */
+  iou: number;
+  classes: readonly DetectionClass[];
+};
+
+/** `"<metric>:<class>"`, with `all` for every class together. */
+export const BENCHMARK_METRIC_NAMES = ["precision", "recall", "f1", "ap", "boxes"] as const;
+export type BenchmarkMetricName = (typeof BENCHMARK_METRIC_NAMES)[number];
+
+/** The slice every metric is also reported under. Never only this one. */
+export const ALL_SLICE = "all";
+
+/**
+ * One number the worker measured. `metric` is `"<name>:<class|all>"`; `slice` is
+ * `all` or `"<axis>:<value>"` from the gold sample's provenance (quality, competition,
+ * vfr). `support` is how many ground-truth boxes the number rests on, because a
+ * recall of 1.0 over three boxes is not a finding.
+ */
+export type BenchmarkMetric = {
+  metric: string;
+  slice: string;
+  value: number | null;
+  support: number;
+};
+
+/** The summary a `benchmark` completion carries. The full report is the artifact. */
+export type BenchmarkSummary = {
+  benchmarkRunId: string;
+  modelVersionId: string;
+  datasetVersionId: string;
+  iou: number;
+  classes: readonly string[];
+  assets: number;
+  /** Labelled frames in the gold set, and how many of them the detect artifacts sampled. */
+  framesLabelled: number;
+  framesScored: number;
+  metrics: BenchmarkMetric[];
+};

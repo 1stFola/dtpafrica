@@ -45,3 +45,4 @@ handshake works from day one.
 |---|---|
 | `1.0.0` | Phase 0 through Spike S0. |
 | `1.1.0` | A model-bound job (`MODEL_TASK_BY_JOB_TYPE`) is dispatched with exactly one `modelVersionIds` entry, and any stage downstream of `transcode` receives the proxy's clock under `params.proxy`. The `detect` artifact is `DetectionArtifact`: contract classes, both clocks, `ball_unknown`, the model version and the weights checksum. A worker reports `modelVersionIds` on completion. A 1.0.0 worker is refused at the handshake: it would run `detect` and write predictions nobody can attribute. |
+| `1.2.0` | `benchmark` exists as a CPU stage (`cpu_small`) with `BenchmarkJobParams` under `params`, reads objects by declared key (`inputs.readKeys`, input role `declared`), and reports a `BenchmarkSummary` of `BenchmarkMetric` rows. |

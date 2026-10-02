@@ -39,6 +39,8 @@ export const VISION_AUDIT_ACTIONS = [
   "dataset.exported",
   "model.registered",
   "model.version.registered",
+  "model.benchmark.requested",
+  "model.benchmarked",
   "model.promoted",
   "model.rolled_back",
   "evidence.published",
