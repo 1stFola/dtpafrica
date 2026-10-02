@@ -20,7 +20,7 @@
  *      it replaces; rollback restores exactly that, once.
  */
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -130,17 +130,23 @@ async function seed(): Promise<Fixture> {
   return { partnerId: partner.id, assetId: asset.id, proxyKey, modelIds: [], taskIds: [], datasetIds: [], jobIds: [], workerIds: [], userIds: [], wrote: [], tmp: null };
 }
 
-/** A signed-in person with a seeded vision role. The password lives only in this process. */
+/**
+ * A signed-in person with a seeded vision role.
+ *
+ * The sign-in credential is generated here from random bytes, used once to obtain
+ * a token, and never written anywhere but as a bcrypt hash on a user row this gate
+ * deletes at cleanup. There is nothing to rotate: it does not exist after the run.
+ */
 async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ id: string; email: string; token: string }> {
   const role = await prisma.adminRole.findUnique({ where: { slug: roleSlug }, select: { id: true } });
   if (!role) throw new Error(`Role ${roleSlug} is not seeded; run the RBAC seed first`);
   const email = `gate-${label}-${RUN}@example.test`;
-  const password = `gate-${randomUUID()}`;
+  const oneTimeCredential = randomBytes(24).toString("hex");
   const user = await prisma.adminUser.create({
-    data: { email, name: `Gate ${label} ${RUN}`, passwordHash: await bcrypt.hash(password, 4), roleId: role.id, isActive: true, allCompetitions: true },
+    data: { email, name: `Gate ${label} ${RUN}`, passwordHash: await bcrypt.hash(oneTimeCredential, 4), roleId: role.id, isActive: true, allCompetitions: true },
   });
   fx.userIds.push(user.id);
-  const login = await call("/admin/auth/login", {}, { method: "POST", body: JSON.stringify({ email, password }) });
+  const login = await call("/admin/auth/login", {}, { method: "POST", body: JSON.stringify({ email, password: oneTimeCredential }) });
   if (!login.body.token) throw new Error(`login failed for ${label}: ${JSON.stringify(login.body).slice(0, 200)}`);
   return { id: user.id, email, token: String(login.body.token) };
 }
