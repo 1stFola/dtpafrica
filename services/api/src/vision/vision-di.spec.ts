@@ -21,6 +21,7 @@ import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { VisionBenchmarksService } from "./models/benchmarks.service";
 import { VisionModelsController } from "./models/models.controller";
 import { VisionModelsService } from "./models/models.service";
+import { VisionPromotionsService } from "./models/promotions.service";
 import { RightsPolicyService } from "./rights/rights-policy.service";
 import { OBJECT_STORE } from "./storage/object-store";
 import { VisionModule } from "./vision.module";
@@ -64,6 +65,7 @@ const PROVIDERS = [
   VisionAnnotationService,
   VisionModelsService,
   VisionBenchmarksService,
+  VisionPromotionsService,
   WorkerTokenService,
 ] as const;
 
@@ -91,6 +93,7 @@ const SERVICES = [
   VisionAnnotationService,
   VisionModelsService,
   VisionBenchmarksService,
+  VisionPromotionsService,
   WorkerTokenService,
 ] as const;
 

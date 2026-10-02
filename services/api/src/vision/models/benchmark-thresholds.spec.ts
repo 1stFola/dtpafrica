@@ -20,6 +20,8 @@ const strict: BenchmarkThresholds = {
   iou: 0.5,
   minimums: { "ap:all": 0.5, "recall:ball": 0.3 },
   criticalSlices: ["quality:platform_copy"],
+  regressionMetrics: ["ap:all", "recall:ball"],
+  regressionTolerance: 0.02,
 };
 
 describe("with no minimums configured", () => {

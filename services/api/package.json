@@ -35,6 +35,7 @@
     "vision:modelcheck": "tsx scripts/vision-model-registry-check.ts",
     "vision:boxcheck": "tsx scripts/vision-boxes-check.ts",
     "vision:benchcheck": "tsx scripts/vision-benchmark-check.ts",
+    "vision:promotioncheck": "tsx scripts/vision-promotion-check.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
     "db:sync:timeline-squad-numbers": "tsx scripts/sync-timeline-squad-numbers.ts",
