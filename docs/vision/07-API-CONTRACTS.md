@@ -144,7 +144,10 @@ accepted review decision and a valid `canPublishHighlight`/publication rights ch
 | `GET` | `/vision/models/benchmarks/:id` | `vision.read` |
 | `POST` | `/vision/models/versions/:id/promotion-request` | `vision.models.train` |
 | `POST` | `/vision/models/versions/:id/promote` | `vision.models.promote` |
+| `POST` | `/vision/models/promotions/:id/reject` | `vision.models.promote` |
 | `POST` | `/vision/models/versions/:id/rollback` | `vision.models.promote` |
+| `GET` | `/vision/models/versions/:id/promotions` | `vision.read` |
+| `GET` | `/vision/models/promotions/:id` | `vision.read` |
 
 `POST /vision/datasets/:id/freeze` runs the full gate before freezing: rights re-check on every
 member, leakage validation, representation report. It fails loudly with the list of offending
@@ -152,6 +155,12 @@ members rather than freezing a dirty dataset.
 
 The split between `promotion-request` (`models.train`) and `promote` (`models.promote`) is the
 two-person rule from [04-DATA-MODEL.md](./04-DATA-MODEL.md#rbac-extends-the-existing-catalogue).
+Both need a signed-in person: the shared operator key is refused (`403 PromotionNeedsAPerson`)
+at both ends, and the approver may not be the requester (`403 SelfPromotionRefused`). A request
+runs the seven checkable gate conditions and is refused by name (`409 PromotionGateFailed`, with
+`failures`, `warnings` and `passed`); approval runs them again. Promotion to production demotes the
+incumbent to `staging` and records it on the request; `rollback` restores exactly that. See
+[31-PHASE-3-INCREMENT-4.md](./31-PHASE-3-INCREMENT-4.md).
 
 `POST /vision/models/:id/versions` refuses a version whose `licenceNote` is blank, or whose
 `datasetVersionId` names a draft, a version holding revoked footage, or one that trains on another

@@ -1568,8 +1568,9 @@ model VisionModelVersion {
 
   model          VisionModel           @relation(fields: [modelId], references: [id], onDelete: Cascade)
   datasetVersion VisionDatasetVersion? @relation(fields: [datasetVersionId], references: [id], onDelete: SetNull)
-  jobs           VisionJob[]
-  benchmarkRuns  VisionBenchmarkRun[]
+  jobs              VisionJob[]
+  benchmarkRuns     VisionBenchmarkRun[]
+  promotionRequests VisionPromotionRequest[]
 
   @@unique([modelId, version])
   @@index([stage])
@@ -1604,13 +1605,50 @@ model VisionBenchmarkRun {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  modelVersion   VisionModelVersion   @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
-  datasetVersion VisionDatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Restrict)
-  metrics        VisionMetricResult[]
+  modelVersion      VisionModelVersion   @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  datasetVersion    VisionDatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Restrict)
+  metrics           VisionMetricResult[]
+  promotionRequests VisionPromotionRequest[]
 
   @@index([modelVersionId, createdAt])
   @@index([datasetVersionId])
   @@map("vision_benchmark_runs")
+}
+
+/// A request to move a model version one stage up, and what became of it.
+///
+/// The two-person rule lives here: `requestedBy` holds `vision.models.train`,
+/// `decidedBy` holds `vision.models.promote`, and they are never the same person.
+/// The checks the gate ran are stored as they were at request time, so "why was
+/// this allowed?" is answerable from the row and not from a re-run.
+model VisionPromotionRequest {
+  id             String  @id @default(uuid())
+  modelVersionId String  @map("model_version_id")
+  benchmarkRunId String? @map("benchmark_run_id")
+  fromStage      String  @map("from_stage")
+  toStage        String  @map("to_stage")
+  /// pending | approved | rejected
+  state          String  @default("pending")
+  /// The promotion gate's findings at request time: passed, warnings, failures.
+  checks         Json
+  requestedBy      String  @map("requested_by")
+  requestedByEmail String? @map("requested_by_email")
+  decidedBy        String?   @map("decided_by")
+  decidedByEmail   String?   @map("decided_by_email")
+  decidedAt        DateTime? @map("decided_at")
+  decisionReason   String?   @map("decision_reason") @db.Text
+  /// Versions that were in production when this one took over, so rollback is one operation.
+  replacedVersionIds Json?     @map("replaced_version_ids")
+  rolledBackAt       DateTime? @map("rolled_back_at")
+  rolledBackBy       String?   @map("rolled_back_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  modelVersion VisionModelVersion  @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  benchmarkRun VisionBenchmarkRun? @relation(fields: [benchmarkRunId], references: [id], onDelete: SetNull)
+
+  @@index([modelVersionId, state])
+  @@map("vision_promotion_requests")
 }
 
 /// One measured number: a metric for a class (or all), on a slice (or all).

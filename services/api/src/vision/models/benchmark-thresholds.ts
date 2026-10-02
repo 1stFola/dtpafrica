@@ -22,6 +22,10 @@ export type BenchmarkThresholds = {
   minimums: Record<string, number>;
   /** Slices a regression on which blocks promotion regardless of the headline. */
   criticalSlices: readonly string[];
+  /** Metrics compared candidate-against-production at promotion, on `all` and every critical slice. */
+  regressionMetrics: readonly string[];
+  /** How far below production a candidate may fall on those before it is a regression. */
+  regressionTolerance: number;
 };
 
 export const BENCHMARK_THRESHOLDS: BenchmarkThresholds = {
@@ -31,6 +35,10 @@ export const BENCHMARK_THRESHOLDS: BenchmarkThresholds = {
   // Platform compression destroys exactly the small-object detail the engine depends
   // on, so model quality on platform copies is judged apart from originals.
   criticalSlices: ["quality:platform_copy"],
+  // mAP and ball recall: the headline, and the one metric docs/vision/10 names on
+  // its own. Two hundredths absorbs benchmark noise without hiding a real drop.
+  regressionMetrics: ["ap:all", "recall:ball"],
+  regressionTolerance: 0.02,
 };
 
 export type ThresholdFailure = {

@@ -95,3 +95,19 @@ export class RequestBenchmarkDto {
   @IsUUID()
   datasetVersionId!: string;
 }
+
+export class ApprovePromotionDto {
+  /** Optional: what the approver looked at. Stored as the decision reason. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  note?: string;
+}
+
+export class RejectPromotionDto {
+  /** Required: a rejection without a reason teaches the next request nothing. */
+  @IsString()
+  @MinLength(3)
+  @MaxLength(2000)
+  reason!: string;
+}

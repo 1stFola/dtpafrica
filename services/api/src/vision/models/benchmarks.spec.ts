@@ -39,6 +39,8 @@ const thresholds: BenchmarkThresholds = {
   iou: 0.5,
   minimums: {},
   criticalSlices: ["quality:platform_copy"],
+  regressionMetrics: ["ap:all", "recall:ball"],
+  regressionTolerance: 0.02,
 };
 
 function detector(over: Record<string, unknown> = {}) {
