@@ -1261,6 +1261,7 @@ model VisionVideoAsset {
   deletionRequests  VisionDeletionRequest[]
   annotationTasks   VisionAnnotationTask[]
   activeLearning    VisionActiveLearningItem[]
+  tracks            VisionTrack[]
 
   @@index([checksumSha256])
   @@index([perceptualFingerprint])
@@ -1410,6 +1411,7 @@ model VisionJob {
   modelVersion   VisionModelVersion?   @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
   events         VisionJobEvent[]
   cost           VisionJobCost?
+  tracks         VisionTrack[]
 
   /// The claim index: state, class and priority are exactly what the
   /// SKIP LOCKED claim query filters and orders by.
@@ -1417,6 +1419,39 @@ model VisionJob {
   @@index([videoAssetId, type])
   @@index([heartbeatAt])
   @@map("vision_jobs")
+}
+
+/// One track: a run of linked detections of one class, from one `track` job.
+///
+/// A row per track and not per position: the positions live in the job's
+/// artifact (docs/vision/04-DATA-MODEL.md § CV outputs), and this row is what a
+/// reviewer selects, an identity attaches to, and a query filters on. Both
+/// provenance ids are kept because a track is the product of two models.
+model VisionTrack {
+  id                String  @id @default(uuid())
+  videoAssetId      String  @map("video_asset_id")
+  inferenceJobId    String  @map("inference_job_id")
+  localTrackId      Int     @map("local_track_id")
+  class             String
+  /// Source time, like every other label.
+  startMs           Int     @map("start_ms")
+  endMs             Int     @map("end_ms")
+  startFrame        Int     @map("start_frame")
+  endFrame          Int     @map("end_frame")
+  detectionCount    Int     @map("detection_count")
+  confirmed         Boolean @default(true)
+  trackerVersionId  String? @map("tracker_version_id")
+  detectorVersionId String? @map("detector_version_id")
+  /// The artifact holding this track's positions.
+  artifactKey       String  @map("artifact_key")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  videoAsset   VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  inferenceJob VisionJob        @relation(fields: [inferenceJobId], references: [id], onDelete: Cascade)
+
+  @@unique([inferenceJobId, localTrackId])
+  @@index([videoAssetId, class])
+  @@map("vision_tracks")
 }
 
 /// Append-only job log. Never updated, so a failure can be reconstructed.

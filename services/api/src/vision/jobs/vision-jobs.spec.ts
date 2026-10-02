@@ -16,7 +16,7 @@ const MODEL_VERSION = "55556666-7777-4888-9999-aaaabbbbcccc";
 
 const mockPrisma = {
   visionVideoAsset: { findUnique: vi.fn() },
-  visionJob: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+  visionJob: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   visionJobEvent: { create: vi.fn() },
   visionVideoVariant: { findFirst: vi.fn() },
 };
@@ -159,5 +159,72 @@ describe("the gates that were already there still come first", () => {
       response: { error: "RightsDenied" },
     });
     expect(mockModels.resolveForJob).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A track job links one detect artifact. Which one is decided here, declared on the
+ * job, and refused at the door when it cannot be linked -- a pod should not spin up
+ * to discover that 2fps detections are too sparse.
+ */
+describe("a track job is given the detect artifact it will link", () => {
+  const TRACKER = "55556666-7777-4888-9999-aaaabbbbcccc";
+  const DETECTOR = "55556666-7777-4888-9999-aaaabbbbdddd";
+  const succeededDetect = (over: Record<string, unknown> = {}) => ({
+    id: "job-d",
+    modelVersionId: DETECTOR,
+    progress: { artifacts: [{ key: "inference/job-d/1/detections.json", bucket: "derived", role: "detections" }], summary: { sampleFps: 25 } },
+    ...over,
+  });
+
+  beforeEach(() => {
+    mockPrisma.visionJob.findMany.mockResolvedValue([{ type: "probe" }, { type: "fingerprint" }, { type: "transcode" }, { type: "detect" }]);
+    mockModels.resolveForJob.mockResolvedValue({ id: TRACKER, task: "track" });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(succeededDetect());
+  });
+
+  it("declares the latest succeeded detect artifact and the proxy clock", async () => {
+    await service.enqueueForAsset({ type: "track", videoAssetId: ASSET });
+    const spec = enqueued().inputSpec;
+    expect(spec.detections).toEqual({ jobId: "job-d", key: "inference/job-d/1/detections.json", modelVersionId: DETECTOR, sampleFps: 25 });
+    expect(spec.readKeys).toEqual([{ bucket: "derived", key: "inference/job-d/1/detections.json" }]);
+    // track follows detect follows transcode: it reads the proxy, so it gets the clock.
+    expect(spec.proxy).toEqual({ fps: 25, sourceOffsetMs: 9000 });
+    expect(enqueued().modelVersionId).toBe(TRACKER);
+    expect(mockPrisma.visionJob.findFirst.mock.calls[0]![0].where).toMatchObject({ type: "detect", state: "succeeded", videoAssetId: ASSET });
+  });
+
+  it("uses the detect job the caller names", async () => {
+    await service.enqueueForAsset({ type: "track", videoAssetId: ASSET, params: { detectJobId: "job-x" } });
+    expect(mockPrisma.visionJob.findFirst.mock.calls[0]![0].where).toMatchObject({ id: "job-x" });
+  });
+
+  it("refuses when no succeeded detect job carries an artifact", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue(null);
+    await expect(service.enqueueForAsset({ type: "track", videoAssetId: ASSET })).rejects.toMatchObject({
+      response: { error: "DetectionsMissing" },
+    });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(succeededDetect({ progress: { artifacts: [] } }));
+    await expect(service.enqueueForAsset({ type: "track", videoAssetId: ASSET })).rejects.toMatchObject({
+      response: { error: "DetectionsMissing" },
+    });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses detections sampled too sparsely to link", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue(succeededDetect({ progress: { artifacts: [{ key: "k", bucket: "derived", role: "detections" }], summary: { sampleFps: 2 } } }));
+    await expect(service.enqueueForAsset({ type: "track", videoAssetId: ASSET })).rejects.toMatchObject({
+      response: { error: "DetectionsTooSparse" },
+    });
+  });
+
+  it("does not let a caller forge the declared inputs", async () => {
+    await service.enqueueForAsset({
+      type: "track",
+      videoAssetId: ASSET,
+      params: { readKeys: [{ bucket: "master", key: "originals/x" }], detections: { key: "forged" } },
+    });
+    expect(enqueued().inputSpec.readKeys).toEqual([{ bucket: "derived", key: "inference/job-d/1/detections.json" }]);
+    expect(enqueued().inputSpec.detections.key).toBe("inference/job-d/1/detections.json");
   });
 });

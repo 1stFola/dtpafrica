@@ -359,6 +359,7 @@ export class VisionWorkerController {
           summary: dto.summary ?? {},
         },
         {
+          jobId,
           modelVersionId: job.modelVersionId,
           datasetVersionId: job.datasetVersionId,
           inputSpec: (job.inputSpec ?? {}) as Record<string, unknown>,

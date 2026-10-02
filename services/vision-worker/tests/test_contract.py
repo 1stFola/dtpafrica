@@ -132,13 +132,14 @@ def test_the_artifact_role_matches_the_contract() -> None:
     assert ARTIFACT_ROLE == match.group(1)
 
 
-def test_every_model_bound_job_type_the_contract_names_is_a_gpu_stage_here() -> None:
-    """`MODEL_TASK_BY_JOB_TYPE` must only name stages this image implements on a GPU.
-    Naming one that does not exist would be S0-1 again: a job the control plane
-    dispatches with a model version and no worker can claim."""
+def test_every_model_bound_job_type_the_contract_names_is_a_stage_here() -> None:
+    """`MODEL_TASK_BY_JOB_TYPE` must only name stages this image implements. Naming
+    one that does not exist would be S0-1 again: a job the control plane dispatches
+    with a model version and no worker can claim. GPU or CPU is the stage's business:
+    a detector needs a card, a tracker links stored boxes and does not."""
     source = _read("jobs.ts")
     block = re.search(r"MODEL_TASK_BY_JOB_TYPE[^=]*=\s*\{(.*?)\n\};", source, re.S)
     assert block, "MODEL_TASK_BY_JOB_TYPE not found in jobs.ts"
     bound = set(re.findall(r'(\w+):\s*"[a-z]+"', block.group(1)))
     assert bound, "the contract binds no job type to a model"
-    assert bound <= GPU_STAGES, f"bound to a model but not a GPU stage here: {bound - GPU_STAGES}"
+    assert bound <= set(STAGES), f"bound to a model but not implemented here: {bound - set(STAGES)}"

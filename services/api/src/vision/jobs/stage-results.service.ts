@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { DETECTION_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
+import { DETECTION_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionBenchmarksService } from "../models/benchmarks.service";
 
@@ -43,10 +43,11 @@ export type ApplyContext = {
   modelVersionId: string | null;
   datasetVersionId?: string | null;
   inputSpec?: Record<string, unknown>;
+  jobId?: string;
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "detect"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "detect", "track"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -78,6 +79,8 @@ export class VisionStageResultsService {
           return await this.applyTranscode(videoAssetId, completion);
         case "detect":
           return this.applyDetect(completion, context);
+        case "track":
+          return await this.applyTrack(videoAssetId, completion, context);
         default:
           return { applied: false, detail: `no domain effect for ${jobType}` };
       }
@@ -318,6 +321,88 @@ export class VisionStageResultsService {
     return {
       applied: true,
       detail: `proxy at ${fps ?? "?"}fps/${height ?? "?"}p plus ${thumbnails} thumbnail(s); asset is ready`,
+    };
+  }
+
+  /**
+   * track → one `VisionTrack` row per confirmed track.
+   *
+   * The positions stay in the artifact; the row is what a reviewer selects and an
+   * identity will attach to. Idempotent on `(job, localTrackId)`, so a retried
+   * completion adds nothing. Both provenance ids are written: the tracker is the
+   * job's model version, the detector is whatever the artifact says it consumed.
+   */
+  private async applyTrack(
+    videoAssetId: string,
+    completion: StageCompletion,
+    context: ApplyContext
+  ): Promise<ApplyOutcome> {
+    const artifact = completion.artifacts.find((a) => a.role === TRACK_ARTIFACT_ROLE);
+    if (!artifact) return { applied: false, detail: "track reported no tracks artifact" };
+    if (!context.jobId) return { applied: false, detail: "no job id to attach tracks to" };
+
+    const tracker = str(completion.summary.trackerVersionId);
+    if (!tracker || tracker !== context.modelVersionId) {
+      return {
+        applied: false,
+        detail: `track summary names tracker ${tracker ?? "none"}; the job carries ${context.modelVersionId ?? "none"}`,
+      };
+    }
+    const detector = str(completion.summary.detectorVersionId);
+    const rows = Array.isArray(completion.summary.trackRows) ? completion.summary.trackRows : null;
+    if (!rows) return { applied: false, detail: "track summary carried no trackRows" };
+
+    const data: {
+      videoAssetId: string;
+      inferenceJobId: string;
+      localTrackId: number;
+      class: string;
+      startMs: number;
+      endMs: number;
+      startFrame: number;
+      endFrame: number;
+      detectionCount: number;
+      confirmed: boolean;
+      trackerVersionId: string;
+      detectorVersionId: string | null;
+      artifactKey: string;
+    }[] = [];
+    for (const row of rows) {
+      const r = obj(row);
+      const localTrackId = int(r?.localTrackId);
+      const cls = str(r?.class);
+      const startMs = int(r?.startMs);
+      const endMs = int(r?.endMs);
+      const startFrame = int(r?.startFrame);
+      const endFrame = int(r?.endFrame);
+      const count = int(r?.detectionCount);
+      if (localTrackId === null || !cls || startMs === null || endMs === null || startFrame === null || endFrame === null || count === null) {
+        return { applied: false, detail: `track row ${JSON.stringify(row).slice(0, 80)} is malformed; nothing written` };
+      }
+      data.push({
+        videoAssetId,
+        inferenceJobId: context.jobId,
+        localTrackId,
+        class: cls,
+        startMs,
+        endMs,
+        startFrame,
+        endFrame,
+        detectionCount: count,
+        confirmed: bool(r?.confirmed) ?? true,
+        trackerVersionId: tracker,
+        detectorVersionId: detector,
+        artifactKey: artifact.key,
+      });
+    }
+
+    const written = await this.prisma.visionTrack.createMany({ data, skipDuplicates: true });
+    const byClass = obj(completion.summary.tracksByClass) ?? {};
+    return {
+      applied: true,
+      detail: `${data.length} track(s) (${Object.entries(byClass)
+        .map(([k, v]) => `${v} ${k}`)
+        .join(", ") || "none"}), ${written.count} new; tracker ${tracker}, detector ${detector ?? "unknown"}; positions in ${artifact.key}`,
     };
   }
 

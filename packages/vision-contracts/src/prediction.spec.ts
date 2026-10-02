@@ -33,13 +33,17 @@ describe("model-bound job types", () => {
     }
   });
 
-  it("are routed to a GPU class, because they run a model", () => {
+  it("each have a resource class, and the class follows the work rather than the word 'model'", () => {
     for (const jobType of Object.keys(MODEL_TASK_BY_JOB_TYPE) as (keyof typeof DEFAULT_RESOURCE_CLASS)[]) {
-      expect(DEFAULT_RESOURCE_CLASS[jobType]).toMatch(/^gpu_/);
+      expect(DEFAULT_RESOURCE_CLASS[jobType]).toBeDefined();
     }
+    // A detector runs inference and needs a card; a tracker links stored boxes and does not.
+    expect(DEFAULT_RESOURCE_CLASS.detect).toMatch(/^gpu_/);
+    expect(DEFAULT_RESOURCE_CLASS.track).toBe("cpu_small");
   });
 
-  it("includes detect, the one stage that exists", () => {
+  it("bind detect to a detector and track to a tracker", () => {
     expect(MODEL_TASK_BY_JOB_TYPE.detect).toBe("detect");
+    expect(MODEL_TASK_BY_JOB_TYPE.track).toBe("track");
   });
 });

@@ -21,6 +21,7 @@ import { VisionSourcesController } from "./sources/sources.controller";
 import { VisionSourcesService } from "./sources/sources.service";
 import { VisionJobDispatcher } from "./jobs/job-dispatcher.service";
 import { VisionJobsController } from "./jobs/jobs.controller";
+import { VisionTracksController } from "./jobs/tracks.controller";
 import { JOB_QUEUE } from "./jobs/job-queue";
 import { PostgresJobQueue } from "./jobs/postgres-job-queue";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
@@ -101,6 +102,7 @@ const computeRegistryProvider: Provider = {
     VisionDatasetsController,
     VisionAnnotationController,
     VisionModelsController,
+    VisionTracksController,
   ],
   providers: [
     configProvider,

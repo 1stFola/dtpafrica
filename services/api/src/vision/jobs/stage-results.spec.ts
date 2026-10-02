@@ -7,6 +7,7 @@ const mockPrisma = {
   visionVideoAsset: { update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
   visionVideoVariant: { upsert: vi.fn() },
   visionDuplicateCluster: { create: vi.fn() },
+  visionTrack: { createMany: vi.fn() },
   $transaction: vi.fn(),
 };
 
@@ -295,8 +296,8 @@ describe("failure handling", () => {
   });
 
   it("has no domain effect for a stage that does not produce one", async () => {
-    // `track` has no projection yet; `detect` gained one in Phase 3 Increment 1.
-    const outcome = await service().apply("track", ASSET, { artifacts: [], summary: {} });
+    // `calibrate` has no projection yet; detect and track gained theirs in Phases 3 and 4.
+    const outcome = await service().apply("calibrate", ASSET, { artifacts: [], summary: {} });
     expect(outcome.applied).toBe(false);
     expect(outcome.detail).toMatch(/no domain effect/);
   });
@@ -466,5 +467,60 @@ describe("benchmark results reach the ledger", () => {
     const outcome = await service().apply("train", null, { artifacts: [], summary: {} });
     expect(outcome.applied).toBe(false);
     expect(outcome.detail).toMatch(/no video asset/);
+  });
+});
+
+/**
+ * track -> one row per confirmed track. The positions stay in the artifact; the row
+ * is what a reviewer selects and names both models that made it.
+ */
+describe("track results become rows", () => {
+  const TRACKER = "55556666-7777-4888-9999-aaaabbbbcccc";
+  const DETECTOR = "55556666-7777-4888-9999-aaaabbbbdddd";
+  const JOB = "66667777-8888-4999-a000-bbbbccccdddd";
+  const artifacts = [{ key: "inference/j/1/tracks.json", bucket: "derived", role: "tracks" }];
+  const row = (over: Record<string, unknown> = {}) => ({
+    localTrackId: 1, class: "player", startFrame: 0, endFrame: 59, startMs: 9000, endMs: 11360, detectionCount: 60, confirmed: true, ...over,
+  });
+  const summary = (over: Record<string, unknown> = {}) => ({
+    trackerVersionId: TRACKER, detectorVersionId: DETECTOR, tracks: 2, tracksByClass: { player: 1, ball: 1 },
+    trackRows: [row(), row({ localTrackId: 2, class: "ball", detectionCount: 50 })], ...over,
+  });
+  const context = { jobId: JOB, modelVersionId: TRACKER };
+
+  beforeEach(() => {
+    mockPrisma.visionTrack.createMany.mockResolvedValue({ count: 2 });
+  });
+
+  it("writes one row per track, naming both models and the artifact", async () => {
+    const outcome = await service().apply("track", ASSET, { artifacts, summary: summary() }, context);
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("2 track(s) (1 player, 1 ball), 2 new");
+    const call = mockPrisma.visionTrack.createMany.mock.calls[0]![0];
+    expect(call.skipDuplicates).toBe(true);
+    expect(call.data[1]).toEqual({
+      videoAssetId: ASSET, inferenceJobId: JOB, localTrackId: 2, class: "ball", startMs: 9000, endMs: 11360, startFrame: 0, endFrame: 59,
+      detectionCount: 50, confirmed: true, trackerVersionId: TRACKER, detectorVersionId: DETECTOR, artifactKey: "inference/j/1/tracks.json",
+    });
+  });
+
+  it("refuses a summary whose tracker is not the job's model version", async () => {
+    const outcome = await service().apply("track", ASSET, { artifacts, summary: summary({ trackerVersionId: "other" }) }, context);
+    expect(outcome.applied).toBe(false);
+    expect(mockPrisma.visionTrack.createMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses a completion with no tracks artifact, or no rows, or a malformed row", async () => {
+    expect((await service().apply("track", ASSET, { artifacts: [], summary: summary() }, context)).applied).toBe(false);
+    expect((await service().apply("track", ASSET, { artifacts, summary: summary({ trackRows: undefined }) }, context)).applied).toBe(false);
+    const bad = await service().apply("track", ASSET, { artifacts, summary: summary({ trackRows: [row({ startMs: "soon" })] }) }, context);
+    expect(bad.applied).toBe(false);
+    expect(bad.detail).toMatch(/malformed; nothing written/);
+    expect(mockPrisma.visionTrack.createMany).not.toHaveBeenCalled();
+  });
+
+  it("needs the job id, which only the controller knows", async () => {
+    const outcome = await service().apply("track", ASSET, { artifacts, summary: summary() }, { modelVersionId: TRACKER });
+    expect(outcome.applied).toBe(false);
   });
 });

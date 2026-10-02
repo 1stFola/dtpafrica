@@ -18,6 +18,7 @@ from .benchmark import run_benchmark
 from .detect import run_detect
 from .fingerprint import run_fingerprint
 from .probe import run_probe
+from .track import run_track
 from .transcode import run_transcode
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -32,6 +33,9 @@ STAGES: dict[str, StageHandler] = {
     # CPU: compares stored predictions with stored truth. The predictions needed a
     # card; the comparison does not.
     "benchmark": run_benchmark,
+    # CPU: links stored detections frame to frame. No model stack; an algorithm
+    # registered as one, so every track names its tracker.
+    "track": run_track,
     # GPU. Imports torch lazily inside the handler, so the CPU image can load this
     # registry without the model stack installed.
     "detect": run_detect,
@@ -42,7 +46,7 @@ STAGES: dict[str, StageHandler] = {
 #: Named rather than inferred, because the consequence of getting it wrong is a cost
 #: rather than an error: FFmpeg on a GPU pod works perfectly and bills at GPU rates.
 #: `tests/test_contract.py` checks both of these against the contract's routing table.
-CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark"})
+CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track"})
 
 #: Stages that need CUDA and the model stack, and so only run on the GPU image.
 GPU_STAGES = frozenset({"detect"})
@@ -60,5 +64,6 @@ __all__ = [
     "run_detect",
     "run_fingerprint",
     "run_probe",
+    "run_track",
     "run_transcode",
 ]
