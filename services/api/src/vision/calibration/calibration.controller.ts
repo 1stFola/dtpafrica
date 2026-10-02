@@ -57,6 +57,12 @@ export class VisionCalibrationController {
     return jsonSafe(await this.calibration.calibrate(id, { points: dto.points, pitch: dto.pitch }, auth));
   }
 
+  @Get("review/:assetId/game-state")
+  @RequirePermissions("vision.read")
+  async gameState(@Param("assetId") assetId: string) {
+    return jsonSafe(await this.calibration.gameState(assetId));
+  }
+
   @Get("review/tracks/:trackId/pitch-positions")
   @RequirePermissions("vision.read")
   async pitchPositions(@Param("trackId") trackId: string) {

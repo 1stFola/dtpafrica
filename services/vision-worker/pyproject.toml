@@ -5,6 +5,9 @@ description = "DTP Vision Engine worker — claims jobs over HTTP, processes med
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27",
+    # Game-state chunks are Parquet (docs/vision/04 § CV outputs). Apache-2.0; registered in
+    # docs/licenses/OSS_REGISTER.md.
+    "pyarrow>=17",
 ]
 
 [project.optional-dependencies]

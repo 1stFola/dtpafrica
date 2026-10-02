@@ -18,6 +18,7 @@ from .benchmark import run_benchmark
 from .cuts import run_cuts
 from .detect import run_detect
 from .fingerprint import run_fingerprint
+from .gamestate import run_gamestate
 from .identify import run_identify
 from .probe import run_probe
 from .track import run_track
@@ -42,6 +43,8 @@ STAGES: dict[str, StageHandler] = {
     "identify": run_identify,
     # CPU: FFmpeg's scene-change score over the proxy, proposing camera segments.
     "cuts": run_cuts,
+    # CPU: every track's foot point in metres through the declared calibrations, as Parquet.
+    "gamestate": run_gamestate,
     # GPU. Imports torch lazily inside the handler, so the CPU image can load this
     # registry without the model stack installed.
     "detect": run_detect,
@@ -52,7 +55,7 @@ STAGES: dict[str, StageHandler] = {
 #: Named rather than inferred, because the consequence of getting it wrong is a cost
 #: rather than an error: FFmpeg on a GPU pod works perfectly and bills at GPU rates.
 #: `tests/test_contract.py` checks both of these against the contract's routing table.
-CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track", "identify", "cuts"})
+CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track", "identify", "cuts", "gamestate"})
 
 #: Stages that need CUDA and the model stack, and so only run on the GPU image.
 GPU_STAGES = frozenset({"detect"})
@@ -70,6 +73,7 @@ __all__ = [
     "run_cuts",
     "run_detect",
     "run_fingerprint",
+    "run_gamestate",
     "run_identify",
     "run_probe",
     "run_track",

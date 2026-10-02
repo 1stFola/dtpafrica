@@ -51,8 +51,15 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * scene changes (`CutsJobParams`, a `cuts` artifact of `CameraCut`s and
  * `ProposedSegment`s in source time). The control plane files proposals as
  * `scene_detect` segments beside, never over, the ones a person declared.
+ *
+ * 1.9.0 -- `gamestate` exists: a CPU stage that places every track's foot point on
+ * the pitch in metres through the camera segments, calibrations and clock anchors the
+ * control plane declares (`GameStateJobParams`), under the suppression rule, as Parquet chunks
+ * (`GAMESTATE_CHUNK_ROLE`) with a `GameStateIndex` (`GAMESTATE_INDEX_ROLE`). It
+ * follows `track`; calibration is a person's row, not a stage, so the control plane
+ * refuses `NoCalibration` rather than waiting on a `calibrate` job.
  */
-export const VISION_CONTRACT_VERSION = "1.8.0";
+export const VISION_CONTRACT_VERSION = "1.9.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -143,7 +150,9 @@ export const JOB_TYPE_PREREQUISITES: Record<VisionJobType, readonly VisionJobTyp
   track: ["detect"],
   identify: ["track"],
   calibrate: ["transcode"],
-  gamestate: ["track", "calibrate"],
+  // Calibration is filed by a person per camera segment (docs/vision/38), not by a
+  // stage; the control plane checks for it when queueing.
+  gamestate: ["track"],
   events: ["gamestate"],
   clip: ["transcode"],
   vlm: ["clip"],
@@ -573,3 +582,66 @@ export type CameraCut = { proxyMs: number; sourceMs: number; score: number };
 
 /** A proposed camera segment, in source milliseconds, [start, end). */
 export type ProposedSegment = { startMs: number; endMs: number; proxyStartMs: number; proxyEndMs: number };
+
+// ── Game state ──────────────────────────────────────────────────────────────
+
+/** Role of the index artifact a `gamestate` job writes, and of each Parquet chunk. */
+export const GAMESTATE_INDEX_ROLE = "gamestate";
+export const GAMESTATE_CHUNK_ROLE = "gamestate_chunk";
+
+/** Source milliseconds per chunk, unless the job says otherwise. */
+export const DEFAULT_GAMESTATE_CHUNK_MS = 60_000;
+
+/**
+ * A camera segment as the control plane hands it to the stage: every segment on
+ * the asset, with its current calibration where a person filed one. A segment
+ * without one is still declared, so the stage can say `segment_not_calibrated`
+ * rather than `no_camera_segment` for the rows under it.
+ */
+export type DeclaredSegment = {
+  cameraSegmentId: string;
+  startMs: number;
+  endMs: number;
+  quality: CalibrationQuality | null;
+  homography: Homography | null;
+  pitch: PitchDimensions | null;
+};
+
+export type DeclaredClockAnchor = { half: number; sourceMs: number; endMs: number | null };
+
+/** What a `gamestate` job is given under `inputs.params`. */
+export type GameStateJobParams = {
+  tracks: { jobId: string; key: string; trackerVersionId: string | null };
+  segments: DeclaredSegment[];
+  anchors: DeclaredClockAnchor[];
+  chunkMs?: number;
+  readKeys: { bucket: "derived" | "models"; key: string }[];
+};
+
+/** Why a row was not placed. */
+export const GAMESTATE_SUPPRESSION_REASONS = ["no_camera_segment", "segment_not_calibrated", "calibration_failed", "beyond_horizon"] as const;
+
+export type GameStateCoverage = {
+  rows: number;
+  frames: number;
+  placed: number;
+  suppressed: number;
+  reasons: Partial<Record<(typeof GAMESTATE_SUPPRESSION_REASONS)[number], number>>;
+  /** Share of frames at least one row was placed on through a passing calibration; null with no frames. */
+  validFrameCoverage: number | null;
+};
+
+export type GameStateChunk = GameStateCoverage & { index: number; file: string; key: string; fromMs: number; toMs: number; bytes: number };
+
+/**
+ * The index artifact. Each chunk's rows are flat: frame_index, source_ms, half,
+ * match_minute, local_track_id, class, x_m, y_m, camera_segment_id, quality,
+ * reason -- `x_m`/`y_m` null with a `reason` when suppressed.
+ */
+export type GameStateIndex = GameStateCoverage & {
+  chunkMs: number;
+  chunks: GameStateChunk[];
+  tracks: number;
+  trackJobId: string | null;
+  trackerVersionId: string | null;
+};

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
+import { CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, GAMESTATE_CHUNK_ROLE, GAMESTATE_INDEX_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionBenchmarksService } from "../models/benchmarks.service";
 
@@ -47,7 +47,7 @@ export type ApplyContext = {
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify", "gamestate"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -85,6 +85,8 @@ export class VisionStageResultsService {
           return await this.applyIdentify(completion, context);
         case "cuts":
           return await this.applyCuts(videoAssetId, completion);
+        case "gamestate":
+          return this.applyGamestate(completion);
         default:
           return { applied: false, detail: `no domain effect for ${jobType}` };
       }
@@ -407,6 +409,33 @@ export class VisionStageResultsService {
       detail: `${data.length} track(s) (${Object.entries(byClass)
         .map(([k, v]) => `${v} ${k}`)
         .join(", ") || "none"}), ${written.count} new; tracker ${tracker}, detector ${detector ?? "unknown"}; positions in ${artifact.key}`,
+    };
+  }
+
+  /**
+   * gamestate → nothing in Postgres, on purpose, like detect.
+   *
+   * The rows are Parquet in object storage (docs/vision/04 § CV outputs); the job
+   * row keeps the index key, the chunk keys and the coverage in its summary, and
+   * the review surface reads those. This checks the completion is the shape the
+   * job promised -- an index and at least the chunks it names -- and says what
+   * the coverage was.
+   */
+  private applyGamestate(completion: StageCompletion): ApplyOutcome {
+    const index = completion.artifacts.find((a) => a.role === GAMESTATE_INDEX_ROLE);
+    if (!index) return { applied: false, detail: "gamestate reported no index artifact" };
+    const chunks = completion.artifacts.filter((a) => a.role === GAMESTATE_CHUNK_ROLE);
+    const declared = int(completion.summary.chunks);
+    if (declared === null || declared !== chunks.length) {
+      return { applied: false, detail: `gamestate summary names ${declared ?? "no"} chunk(s); the completion carries ${chunks.length}` };
+    }
+    const coverage = num(completion.summary.validFrameCoverage);
+    const placed = int(completion.summary.placed);
+    const suppressed = int(completion.summary.suppressed);
+    if (placed === null || suppressed === null) return { applied: false, detail: "gamestate summary carried no placed/suppressed counts" };
+    return {
+      applied: true,
+      detail: `${chunks.length} chunk(s), ${placed} placed and ${suppressed} suppressed row(s) over ${int(completion.summary.frames) ?? "?"} frame(s); valid-frame coverage ${coverage === null ? "n/a" : coverage.toFixed(3)}; index ${index.key}`,
     };
   }
 

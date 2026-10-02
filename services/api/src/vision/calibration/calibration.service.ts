@@ -10,7 +10,9 @@ import type { Prisma } from "@prisma/client";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
+import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionIdentityService } from "../identity/identity.service";
+import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CALIBRATION_THRESHOLDS, qualityOf, type CalibrationQuality, type CalibrationThresholds } from "./calibration-thresholds";
 import { fitHomography, homogeneousW, invert3, isFit, project, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
 import { DEFAULT_PITCH, landmarkById, pitchLines, pitchProblem, type PitchDimensions } from "./pitch-model";
@@ -61,7 +63,9 @@ export class VisionCalibrationService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(VisionAuditService) private readonly audit: VisionAuditService,
-    @Inject(VisionIdentityService) private readonly identity: VisionIdentityService
+    @Inject(VisionIdentityService) private readonly identity: VisionIdentityService,
+    @Inject(OBJECT_STORE) private readonly store: ObjectStore,
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig
   ) {}
 
   // ── Segments ─────────────────────────────────────────────────────────────
@@ -237,6 +241,53 @@ export class VisionCalibrationService {
       actor
     );
     return summarise(row);
+  }
+
+  // ── Game state ───────────────────────────────────────────────────────────
+
+  /**
+   * The asset's latest succeeded gamestate job: its coverage, its index, and a
+   * presigned URL per chunk. The chunks are Parquet in object storage and the
+   * control plane does not read them (docs/vision/01: the review UI fetches
+   * Parquet directly); it hands out the URLs and the index.
+   */
+  async gameState(videoAssetId: string) {
+    const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true } });
+    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    const job = await this.prisma.visionJob.findFirst({
+      where: { videoAssetId, type: "gamestate", state: "succeeded" },
+      orderBy: { finishedAt: "desc" },
+      select: { id: true, finishedAt: true, progress: true, inputSpec: true },
+    });
+    if (!job) return { videoAssetId, job: null, coverage: null, chunks: [], index: null };
+    const progress = (job.progress ?? {}) as { artifacts?: { key: string; role: string; bytes?: number }[]; summary?: Record<string, unknown> };
+    const summary = progress.summary ?? {};
+    const index = progress.artifacts?.find((a) => a.role === "gamestate") ?? null;
+    const ttl = this.config.playback.urlTtlSeconds;
+    const chunks = await Promise.all(
+      (progress.artifacts ?? [])
+        .filter((a) => a.role === "gamestate_chunk")
+        .map(async (a) => ({ key: a.key, bytes: a.bytes ?? null, url: await this.store.presignGet("derived", a.key, ttl) }))
+    );
+    const spec = (job.inputSpec ?? {}) as { segments?: { quality: string | null }[]; anchors?: unknown[] };
+    const segments = Array.isArray(spec.segments) ? spec.segments : [];
+    return {
+      videoAssetId,
+      job: { id: job.id, finishedAt: job.finishedAt },
+      coverage: {
+        rows: summary.rows ?? null,
+        frames: summary.frames ?? null,
+        placed: summary.placed ?? null,
+        suppressed: summary.suppressed ?? null,
+        reasons: summary.reasons ?? {},
+        validFrameCoverage: summary.validFrameCoverage ?? null,
+        chunkMs: summary.chunkMs ?? null,
+      },
+      placedWith: { segments: segments.length, calibrations: segments.filter((s) => s.quality).length, anchors: Array.isArray(spec.anchors) ? spec.anchors.length : 0 },
+      index: index ? { key: index.key, url: await this.store.presignGet("derived", index.key, ttl) } : null,
+      chunks,
+      expiresInSeconds: ttl,
+    };
   }
 
   // ── Derived coordinates, under the suppression rule ──────────────────────

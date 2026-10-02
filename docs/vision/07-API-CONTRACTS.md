@@ -118,6 +118,7 @@ Poll at 5 s while a job page is open.
 | `GET` | `/vision/assets/:id/identity?public=1` | `vision.read` |
 | `GET` | `/vision/review/:assetId/clock` (`?sourceMs` reads a moment) | `vision.read` |
 | `POST` | `/vision/review/:assetId/clock` | `vision.review` |
+| `GET` | `/vision/review/:assetId/game-state` | `vision.read` |
 | `POST` | `/vision/review/events` | `vision.review` |
 | `PATCH` | `/vision/review/events/:id` | `vision.review` |
 | `POST` | `/vision/review/events/:id/decision` | `vision.review` |
@@ -278,6 +279,21 @@ the anchors and where that millisecond falls, broadcast minutes (`47:12`), or `b
 `matchClock`; once anchored, a track's candidates carry `onPitch` (`yes` | `partly`, the `no`s
 removed) and a `window` with what the clock removed, substitutions applied from the match record.
 See [41-PHASE-5-INCREMENT-4.md](./41-PHASE-5-INCREMENT-4.md).
+
+**Game state.** `POST /vision/jobs` with `type: "gamestate"` queues the placement stage on
+`cpu_small` after `track`, refusing `TracksMissing` and `NoCalibration` (no camera segment has a
+calibration); optional `params.chunkMs`. The job is handed the track artifact by declared key,
+every camera segment on the asset with its current calibration or nulls, and the clock anchors —
+none of which a caller can supply. The stage writes Parquet chunks (`gamestate_chunk`, one row
+per track per frame: `frame_index, source_ms, half, match_minute, local_track_id, class, x_m, y_m,
+camera_segment_id, quality, reason`) and an index (`gamestate`) with each chunk's key, time range
+and coverage; `x_m`/`y_m` are null with a `reason` (`no_camera_segment`,
+`segment_not_calibrated`, `calibration_failed`, `beyond_horizon`) wherever no calibration passed
+the bar. The completion lands nothing in Postgres beyond the job's summary. `GET
+/vision/review/:assetId/game-state` returns the latest succeeded job's `coverage`
+(`validFrameCoverage` is the share of frames a passing calibration covered), `placedWith`
+(segments, calibrations, anchors), and a presigned URL for the index and for each chunk; the API
+reads none of the rows. See [42-PHASE-5-INCREMENT-5.md](./42-PHASE-5-INCREMENT-5.md).
 
 `POST /vision/jobs` with `type: "cuts"` queues the scene-change proposer on `cpu_small` after
 `transcode`, with optional `params.threshold` and `params.minSegmentMs`; its completion files

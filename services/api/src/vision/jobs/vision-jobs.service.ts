@@ -13,6 +13,7 @@ import {
   MIN_TRACK_SAMPLE_FPS,
   TRACK_ARTIFACT_ROLE,
   visionKeys,
+  type GameStateJobParams,
   type IdentifyJobParams,
   type TrackJobParams,
   type VisionJobType,
@@ -107,6 +108,7 @@ export class VisionJobsService {
     const proxy = dependsOn(params.type, "transcode") ? await this.proxyClock(asset.id) : null;
     const track = params.type === "track" ? await this.trackInputs(asset.id, params.params) : null;
     const identify = params.type === "identify" ? await this.identifyInputs(asset.id, params.params) : null;
+    const gamestate = params.type === "gamestate" ? await this.gamestateInputs(asset.id, params.params) : null;
 
     const resourceClass = params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type];
 
@@ -128,6 +130,7 @@ export class VisionJobsService {
         ...(proxy ? { proxy } : {}),
         ...(track ?? {}),
         ...(identify ?? {}),
+        ...(gamestate ?? {}),
       },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
       outputPrefix: visionKeys.inferencePrefix(id, 1),
@@ -199,6 +202,59 @@ export class VisionJobsService {
     return {
       detections: { jobId: job.id, key: artifact.key, modelVersionId: job.modelVersionId, sampleFps },
       readKeys: [{ bucket: "derived", key: artifact.key }],
+    };
+  }
+
+  /**
+   * What a gamestate job places with: the track artifact (as identify finds it),
+   * every camera segment with its current calibration where there is one, and
+   * the clock anchors. Refused when no segment has a calibration at all -- there
+   * would be nothing but suppressed rows -- but not when some have failed or
+   * none was filed on some: those rows say so.
+   */
+  private async gamestateInputs(
+    videoAssetId: string,
+    requested: Record<string, unknown> | undefined
+  ): Promise<GameStateJobParams> {
+    const identify = await this.identifyInputs(videoAssetId, requested);
+    const segments = await this.prisma.visionCameraSegment.findMany({
+      where: { videoAssetId },
+      orderBy: { startMs: "asc" },
+      include: { calibrations: { where: { supersededBy: null }, take: 1 } },
+    });
+    const declared: GameStateJobParams["segments"] = segments.map((s) => {
+      const c = s.calibrations[0] ?? null;
+      return {
+        cameraSegmentId: s.id,
+        startMs: s.startMs,
+        endMs: s.endMs,
+        quality: c ? (c.quality as NonNullable<GameStateJobParams["segments"][number]["quality"]>) : null,
+        homography: c ? (c.homography as NonNullable<GameStateJobParams["segments"][number]["homography"]>) : null,
+        pitch: c ? { lengthM: c.pitchLengthM, widthM: c.pitchWidthM } : null,
+      };
+    });
+    if (!declared.some((s) => s.quality)) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "NoCalibration",
+        message: segments.length
+          ? `None of the asset's ${segments.length} camera segment(s) has a calibration.`
+          : "The asset has no camera segments, so nothing can be placed on the pitch.",
+        remediation: "Declare segments and calibrate them in the editor, then queue gamestate.",
+      });
+    }
+    const anchors = await this.prisma.visionClockAnchor.findMany({
+      where: { videoAssetId, supersededBy: null },
+      select: { half: true, sourceMs: true, endMs: true },
+      orderBy: { half: "asc" },
+    });
+    const chunkMs = typeof requested?.chunkMs === "number" && Number.isInteger(requested.chunkMs) && requested.chunkMs > 0 ? requested.chunkMs : undefined;
+    return {
+      tracks: identify.tracks,
+      segments: declared,
+      anchors,
+      ...(chunkMs ? { chunkMs } : {}),
+      readKeys: identify.readKeys,
     };
   }
 

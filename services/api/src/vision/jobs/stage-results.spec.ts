@@ -635,3 +635,22 @@ describe("cut proposals become camera segments", () => {
     expect(mockPrisma.visionCameraSegment.createMany).not.toHaveBeenCalled();
   });
 });
+
+/** gamestate -> nothing in Postgres; the completion is checked against what it promised. */
+describe("gamestate results are checked, not stored", () => {
+  const index = { key: "inference/j/1/gamestate.json", bucket: "derived", role: "gamestate" };
+  const chunk = (n: number) => ({ key: `inference/j/1/gamestate/chunk-0000${n}.parquet`, bucket: "derived", role: "gamestate_chunk" });
+  const summary = (over: Record<string, unknown> = {}) => ({ chunks: 2, rows: 82, frames: 41, placed: 80, suppressed: 2, reasons: { beyond_horizon: 2 }, validFrameCoverage: 1, ...over });
+
+  it("accepts an index with the chunks it names and reports the coverage", async () => {
+    const outcome = await service().apply("gamestate", ASSET, { artifacts: [chunk(0), chunk(1), index], summary: summary() });
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("2 chunk(s), 80 placed and 2 suppressed row(s) over 41 frame(s); valid-frame coverage 1.000");
+  });
+
+  it("refuses a completion with no index, with fewer chunks than promised, or with no counts", async () => {
+    expect((await service().apply("gamestate", ASSET, { artifacts: [chunk(0)], summary: summary() })).applied).toBe(false);
+    expect((await service().apply("gamestate", ASSET, { artifacts: [chunk(0), index], summary: summary() })).applied).toBe(false);
+    expect((await service().apply("gamestate", ASSET, { artifacts: [chunk(0), chunk(1), index], summary: { chunks: 2 } })).applied).toBe(false);
+  });
+});

@@ -240,6 +240,14 @@ players is roughly 3 million detections; that does not belong in a row store on 
 | `VisionPossessionSegment` | |
 | `VisionEventCandidate` | |
 
+A game-state chunk (Phase 5, [42](./42-PHASE-5-INCREMENT-5.md)) is one Parquet file per sixty
+seconds of source time under the `gamestate` job's prefix, one row per track per frame:
+`frame_index, source_ms, half, match_minute, local_track_id, class, x_m, y_m, camera_segment_id,
+quality, reason`. Metres are present only through a calibration that passed the bar; otherwise
+`x_m`/`y_m` are null and `reason` says why. A `gamestate.json` index beside the chunks names each
+one's key, time range and coverage. The job row keeps the keys and the coverage; nothing else
+about a chunk is in Postgres.
+
 ```prisma
 model VisionTrack {
   id             String @id @default(uuid())
