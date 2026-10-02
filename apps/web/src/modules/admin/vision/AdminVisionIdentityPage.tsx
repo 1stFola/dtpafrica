@@ -17,6 +17,7 @@ import {
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
+import { usePictureRect } from "./use-picture-rect";
 import {
   candidateLabel,
   describeAssignment,
@@ -55,6 +56,7 @@ export function AdminVisionIdentityPage() {
   const me = session?.userId;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [review, setReview] = useState<VisionIdentityReview | null>(null);
   const [media, setMedia] = useState<VisionReviewMedia | null>(null);
   const [proxyMs, setProxyMs] = useState(0);
@@ -236,6 +238,7 @@ export function AdminVisionIdentityPage() {
     return out;
   }, [media, positions, proxyMs, review]);
 
+  const picture = usePictureRect(stageRef, { width: media?.width ?? review?.proxy?.width ?? 0, height: media?.height ?? review?.proxy?.height ?? 0 }, Boolean(review && media));
   const identifyJob = useMemo(() => (review ? identifyJobOf(review.tracks) : null), [review]);
   const shownCandidates = useMemo(() => (candidates ? filterCandidates(candidates.candidates, query) : []), [candidates, query]);
 
@@ -327,7 +330,7 @@ export function AdminVisionIdentityPage() {
 
       <div className="vision-workstation__body">
         <div className="vision-workstation__video">
-          <div className={`vision-stage vision-stage--review${playing ? " vision-stage--playing" : ""}`}>
+          <div ref={stageRef} className={`vision-stage vision-stage--review${playing ? " vision-stage--playing" : ""}`}>
             <video
               ref={videoRef}
               src={media.url}
@@ -336,6 +339,7 @@ export function AdminVisionIdentityPage() {
               onPause={() => setPlaying(false)}
               onPlay={() => setPlaying(true)}
             />
+            <div className="vision-picture" style={{ left: picture.x, top: picture.y, width: picture.width, height: picture.height }}>
             {boxesHere.map(({ track, rect }) => (
               <div
                 key={track.id}
@@ -357,6 +361,7 @@ export function AdminVisionIdentityPage() {
                 </span>
               </div>
             ))}
+            </div>
           </div>
 
           <div className="vision-clocks">

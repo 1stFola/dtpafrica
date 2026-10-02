@@ -624,3 +624,102 @@
   opacity: 0.55;
   text-decoration: line-through;
 }
+
+/* ── The picture inside the element ─────────────────────────────────────── */
+
+/* A <video> letterboxes its picture into its own box. Overlays are drawn inside
+   this rectangle, sized to the picture, so a fraction of it is a fraction of the
+   picture and never of the bars. */
+.vision-picture {
+  pointer-events: none;
+  position: absolute;
+}
+
+.vision-picture > * {
+  pointer-events: auto;
+}
+
+/* ── Calibration editor ──────────────────────────────────────────────────── */
+
+.vision-stage--calibrate {
+  cursor: crosshair;
+}
+
+/* The fitted pitch, drawn over the picture in a hundred-unit box that follows it. */
+.vision-overlay {
+  height: 100%;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.vision-overlay path {
+  fill: none;
+  stroke: #facc15;
+  stroke-opacity: 0.85;
+  stroke-width: 2px;
+}
+
+.vision-landmark {
+  background: transparent;
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  padding: 0;
+  position: absolute;
+  width: 14px;
+}
+
+.vision-landmark.is-target {
+  border-color: #facc15;
+}
+
+.vision-landmark--reprojected {
+  border-color: #fb7185;
+  border-style: dashed;
+  pointer-events: none;
+}
+
+.vision-landmark__tag {
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.62rem;
+  left: 10px;
+  padding: 0.05rem 0.3rem;
+  position: absolute;
+  top: -4px;
+  white-space: nowrap;
+}
+
+.vision-candidates__pick.is-placed {
+  opacity: 0.75;
+}
+
+.vision-quality--good {
+  color: #4ade80;
+}
+
+.vision-quality--usable {
+  color: #facc15;
+}
+
+.vision-quality--failed {
+  color: #fb7185;
+}
+
+.vision-linklike {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+}

@@ -12,8 +12,8 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { VisionIdentityService } from "../identity/identity.service";
 import { CALIBRATION_THRESHOLDS, qualityOf, type CalibrationQuality, type CalibrationThresholds } from "./calibration-thresholds";
-import { fitHomography, isFit, project, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
-import { DEFAULT_PITCH, landmarkById, pitchProblem, type PitchDimensions } from "./pitch-model";
+import { fitHomography, homogeneousW, invert3, isFit, project, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
+import { DEFAULT_PITCH, landmarkById, pitchLines, pitchProblem, type PitchDimensions } from "./pitch-model";
 
 /**
  * Calibration: a homography per camera segment, and what may be derived from it.
@@ -34,8 +34,24 @@ import { DEFAULT_PITCH, landmarkById, pitchProblem, type PitchDimensions } from 
 
 export type CalibrationPointInput = { landmark: string; px: number; py: number; frameIndex?: number };
 
+/** The pitch's markings in proxy pixels, each polyline broken where it leaves the picture or crosses the horizon. */
+export type Overlay = { id: string; points: { px: number; py: number }[] }[];
+
 export type PreviewResult =
-  | { ok: true; pitch: PitchDimensions; homography: Homography; reprojectionErrorM: number; maxPointErrorM: number; reprojectionErrorPx: number; points: number; quality: CalibrationQuality; thresholdsVersion: string }
+  | {
+      ok: true;
+      pitch: PitchDimensions;
+      homography: Homography;
+      reprojectionErrorM: number;
+      maxPointErrorM: number;
+      reprojectionErrorPx: number;
+      points: number;
+      quality: CalibrationQuality;
+      thresholdsVersion: string;
+      overlay: Overlay;
+      /** Each clicked landmark projected back from the pitch: where the fit thinks the click should have been. */
+      reprojected: { landmark: string; px: number; py: number; errorM: number }[];
+    }
   | { ok: false; pitch: PitchDimensions; reason: FitFailure["reason"] | "unknown_landmark"; detail?: string };
 
 @Injectable()
@@ -157,7 +173,17 @@ export class VisionCalibrationService {
     }
     const fit = fitHomography(pairs);
     if (!isFit(fit)) return { ok: false, pitch, reason: fit.reason };
-    return { ok: true, pitch, ...describeFit(fit, this.thresholds) };
+    const back = invert3(fit.homography);
+    const reprojected = back
+      ? points.map((p, i) => {
+          const l = pairs[i]!;
+          const onPitch = project(fit.homography, { x: p.px, y: p.py });
+          const onPicture = project(back, { x: l.xM, y: l.yM });
+          return { landmark: p.landmark, px: onPicture ? round(onPicture.x) : p.px, py: onPicture ? round(onPicture.y) : p.py, errorM: onPitch ? round(Math.hypot(onPitch.x - l.xM, onPitch.y - l.yM)) : 0 };
+        })
+      : [];
+    const inView = { x: pairs[0]!.xM, y: pairs[0]!.yM };
+    return { ok: true, pitch, ...describeFit(fit, this.thresholds), overlay: back ? overlayFor(back, pitch, inView) : [], reprojected };
   }
 
   /**
@@ -300,6 +326,37 @@ export class VisionCalibrationService {
   }
 }
 
+/**
+ * The pitch's markings through the inverse homography, in proxy pixels. A vertex
+ * beyond the horizon -- on the other side of it from a landmark known to be in
+ * view, which a projective map would mirror to a finite pixel that means nothing
+ * -- or absurdly far outside the picture breaks the polyline, so the far
+ * touchline of a low camera does not become a line across the sky.
+ */
+function overlayFor(pitchToPixel: Homography, pitch: PitchDimensions, inView: { x: number; y: number }): Overlay {
+  const LIMIT = 20_000;
+  const side = Math.sign(homogeneousW(pitchToPixel, inView)) || 1;
+  const out: Overlay = [];
+  for (const line of pitchLines(pitch)) {
+    let run: { px: number; py: number }[] = [];
+    const flush = () => {
+      if (run.length >= 2) out.push({ id: line.id, points: run });
+      run = [];
+    };
+    for (const v of line.points) {
+      const p = project(pitchToPixel, { x: v.xM, y: v.yM });
+      const beyond = Math.sign(homogeneousW(pitchToPixel, { x: v.xM, y: v.yM })) !== side;
+      if (!p || beyond || Math.abs(p.x) > LIMIT || Math.abs(p.y) > LIMIT) {
+        flush();
+        continue;
+      }
+      run.push({ px: round(p.x), py: round(p.y) });
+    }
+    flush();
+  }
+  return out;
+}
+
 function describeFit(fit: Fit, thresholds: CalibrationThresholds) {
   return {
     homography: fit.homography,
@@ -319,6 +376,7 @@ function summarise(row: {
   pitchWidthM: number;
   method: string;
   modelVersionId: string | null;
+  points: unknown;
   homography: unknown;
   reprojectionErrorM: number;
   maxPointErrorM: number;
@@ -341,6 +399,7 @@ function summarise(row: {
     maxPointErrorM: row.maxPointErrorM,
     reprojectionErrorPx: row.reprojectionErrorPx,
     points: row.pointsUsed,
+    clicked: Array.isArray(row.points) ? (row.points as CalibrationPointInput[]) : [],
     quality: row.quality as CalibrationQuality,
     thresholdsVersion: row.thresholdsVersion,
     decidedBy: row.decidedBy,
