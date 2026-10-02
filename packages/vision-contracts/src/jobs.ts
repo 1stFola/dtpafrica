@@ -58,8 +58,13 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * (`GAMESTATE_CHUNK_ROLE`) with a `GameStateIndex` (`GAMESTATE_INDEX_ROLE`). It
  * follows `track`; calibration is a person's row, not a stage, so the control plane
  * refuses `NoCalibration` rather than waiting on a `calibrate` job.
+ *
+ * 1.10.0 -- event candidates (`events.ts`): the first taxonomy under
+ * `VISION_EVENT_TAXONOMY_VERSION`, review states, evidence kinds, promotion kinds,
+ * and `VisionEventPromotionV1`, what promotion writes under the recorder event's
+ * metadata. No stage changes.
  */
-export const VISION_CONTRACT_VERSION = "1.9.0";
+export const VISION_CONTRACT_VERSION = "1.10.0";
 
 export const VISION_JOB_TYPES = [
   "probe",

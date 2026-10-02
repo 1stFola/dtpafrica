@@ -55,6 +55,7 @@ describe("names a gate generated", () => {
     expect(GATE_PARTNER.pattern.test("Cuts gate 417d1577")).toBe(true);
     expect(GATE_PARTNER.pattern.test("Clock gate 417d1577")).toBe(true);
     expect(GATE_PARTNER.pattern.test("Game state gate 417d1577")).toBe(true);
+    expect(GATE_PARTNER.pattern.test("Events gate 417d1577")).toBe(true);
   });
 });
 
