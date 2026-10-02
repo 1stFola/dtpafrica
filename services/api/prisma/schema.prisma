@@ -1257,6 +1257,7 @@ model VisionVideoAsset {
   duplicateCluster  VisionDuplicateCluster?  @relation(fields: [duplicateClusterId], references: [id], onDelete: SetNull)
   variants          VisionVideoVariant[]
   cameraSegments    VisionCameraSegment[]
+  clockAnchors      VisionClockAnchor[]
   uploadSessions    VisionUploadSession[]
   jobs              VisionJob[]
   datasetMembers    VisionDatasetMember[]
@@ -1327,6 +1328,26 @@ model VisionCameraSegment {
 
   @@index([videoAssetId, startMs])
   @@map("vision_camera_segments")
+}
+
+/// The match clock anchored to the footage: the source millisecond a person
+/// marked as a half's kick-off, and the whistle that ended it when they marked
+/// that too. One current row per half per asset; a new anchor supersedes.
+model VisionClockAnchor {
+  id           String   @id @default(uuid())
+  videoAssetId String   @map("video_asset_id")
+  /// 1, 2, and 3, 4 for extra time.
+  half         Int
+  sourceMs     Int      @map("source_ms")
+  endMs        Int?     @map("end_ms")
+  decidedBy    String   @map("decided_by")
+  supersededBy String?  @map("superseded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+
+  @@index([videoAssetId, half])
+  @@map("vision_clock_anchors")
 }
 
 /// A homography from the proxy's pixels to the pitch in metres, for one camera

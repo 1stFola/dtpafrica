@@ -124,8 +124,10 @@ reassign and mark-unknown as one assignment over a window, a second person's acc
 reject, and the public view. It lives at `/admin/vision/workstation/identity/:assetId`
 beside the annotation workstation. The calibration editor ([40](./40-PHASE-5-INCREMENT-3.md))
 sits beside it: landmarks clicked on a paused frame, the fitted pitch drawn back over the
-picture, segments declared and calibrations filed. Overlays on both screens are reckoned against
-the letterboxed picture inside the `<video>` element, never the element itself. The timeline,
+picture, segments declared and calibrations filed, and the match clock anchored from the playhead
+([41](./41-PHASE-5-INCREMENT-4.md)); both screens show the match clock beside the two file
+clocks. Overlays on both screens are reckoned against the letterboxed picture inside the
+`<video>` element, never the element itself. The timeline,
 minimap and inspector wait on events and game state.
 
 ### Non-negotiable behaviours

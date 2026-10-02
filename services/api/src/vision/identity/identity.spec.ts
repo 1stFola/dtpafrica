@@ -27,6 +27,7 @@ const mockPrisma = {
   visionVideoAsset: { findUnique: vi.fn() },
   sbMatch: { findUnique: vi.fn() },
   sbMatchSquadPlayer: { findMany: vi.fn(), findUnique: vi.fn() },
+  sbMatchEvent: { findMany: vi.fn() },
   visionTeamSide: { upsert: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   visionTeamAssignment: { findFirst: vi.fn(), updateMany: vi.fn() },
   visionTrack: { findUnique: vi.fn(), findMany: vi.fn() },
@@ -34,6 +35,7 @@ const mockPrisma = {
   $transaction: vi.fn(),
 };
 const mockAudit = { record: vi.fn() };
+const mockClock = { currentAnchors: vi.fn() };
 
 const reviewer: AdminAuthContext = { method: "jwt", roleSlug: "vision_reviewer", roleName: null, permissions: [], userId: "u-reviewer", email: "r@dtp.test" };
 const second: AdminAuthContext = { method: "jwt", roleSlug: "vision_admin", roleName: null, permissions: [], userId: "u-second", email: "s@dtp.test" };
@@ -56,7 +58,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   created = [];
   store = new InMemoryObjectStore();
-  service = new VisionIdentityService(mockPrisma as never, mockAudit as never, store, config as never);
+  service = new VisionIdentityService(mockPrisma as never, mockAudit as never, store, config as never, mockClock as never);
+  mockClock.currentAnchors.mockResolvedValue([]);
+  mockPrisma.sbMatchEvent.findMany.mockResolvedValue([]);
   mockAudit.record.mockResolvedValue(undefined);
   mockPrisma.sbMatch.findUnique.mockResolvedValue({ id: MATCH, homeTeamId: HOME, awayTeamId: AWAY });
   mockPrisma.visionTrack.findUnique.mockResolvedValue(track());
@@ -117,6 +121,34 @@ describe("who a track could be", () => {
     expect(out.sbTeamId).toBe(HOME);
     expect(mockPrisma.sbMatchSquadPlayer.findMany.mock.calls[0]![0].where).toEqual({ matchId: MATCH, teamId: HOME });
     expect(out.candidates[0]).toMatchObject({ matchSquadPlayerId: SLOT_HOME, playerId: PLAYER, jerseyNumber: 7, isStarter: true });
+    expect(out.clock).toContain("not anchored");
+  });
+
+  it("applies substitutions once the clock is anchored, and says so", async () => {
+    // Kick-off at 0; the track runs 70:00-75:00; number 7 went off for 14 at 60'.
+    mockClock.currentAnchors.mockResolvedValue([{ half: 2, sourceMs: 0, endMs: null }]);
+    mockPrisma.visionTrack.findUnique.mockResolvedValue(track({ startMs: 25 * 60_000, endMs: 30 * 60_000 }));
+    mockPrisma.sbMatchSquadPlayer.findMany.mockResolvedValue([
+      { id: SLOT_HOME, playerId: PLAYER, playerName: "A. Player", jerseyNumber: 7, position: "FW", isStarter: true, teamId: HOME, squadId: "sq-1" },
+      { id: "slot-14", playerId: "p-14", playerName: "B. Sub", jerseyNumber: 14, position: "FW", isStarter: false, teamId: HOME, squadId: null },
+      { id: "slot-3", playerId: "p-3", playerName: "C. Back", jerseyNumber: 3, position: "DF", isStarter: true, teamId: HOME, squadId: null },
+    ]);
+    mockPrisma.sbMatchEvent.findMany.mockResolvedValue([
+      { teamId: HOME, minute: 60, playerId: PLAYER, detail: "#7 off, #14 on", metadata: null },
+      // The other side's number 3 went off at 20'; the home number 3 did not.
+      { teamId: AWAY, minute: 20, playerId: null, detail: "#3 off, #5 on", metadata: null },
+    ]);
+    const out = await service.candidates(TRACK);
+    expect(out.window).toMatchObject({ display: "70:00–75:00", substitutions: 2, offPitch: 1 });
+    expect(out.candidates.map((c) => `${c.jerseyNumber}:${c.onPitch}`)).toEqual(["14:yes", "3:yes"]);
+    expect(out.clock).toContain("substitutions are applied");
+    expect(mockPrisma.sbMatchEvent.findMany.mock.calls[0]![0].where).toEqual({ matchId: MATCH, type: "substitution" });
+  });
+
+  it("lists everyone with the caveat when the clock is not anchored", async () => {
+    const out = await service.candidates(TRACK);
+    expect(out.window).toBeNull();
+    expect(out.candidates[0]!.onPitch).toBeNull();
     expect(out.clock).toContain("not anchored");
   });
 
@@ -255,6 +287,7 @@ describe("what the public may read", () => {
     const out = await service.forAsset(ASSET, false);
     expect(out.match).toEqual({ id: MATCH, homeTeam: { id: HOME, name: "Home FC" }, awayTeam: { id: AWAY, name: "Away FC" } });
     expect(out.proxy).toMatchObject({ fps: 25, sourceOffsetMs: 5000, width: 1280 });
+    expect(out.clock).toEqual({ anchored: false, anchors: [] });
   });
 
   it("is only an accepted, named, current assignment; tracks with none are not listed", async () => {
@@ -275,10 +308,12 @@ describe("what the public may read", () => {
     mockPrisma.visionTrack.findMany.mockResolvedValue([
       { id: OTHER, localTrackId: 2, class: "player", startMs: 9000, endMs: 19000, teamAssignments: [], identities: [] },
     ]);
+    mockClock.currentAnchors.mockResolvedValue([{ half: 1, sourceMs: 9000, endMs: null }]);
     const out = await service.forAsset(ASSET, false);
     expect(mockPrisma.visionTrack.findMany.mock.calls[0]![0].include.identities.where).toEqual({ supersededBy: null });
     expect(out.count).toBe(1);
-    expect(out.tracks[0]).toMatchObject({ team: null, sbTeamId: null });
+    expect(out.tracks[0]).toMatchObject({ team: null, sbTeamId: null, matchClock: "0:00–0:10" });
+    expect(out.clock.anchored).toBe(true);
   });
 });
 

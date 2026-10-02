@@ -17,6 +17,7 @@ import {
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
+import { describeClock } from "./match-clock";
 import { usePictureRect } from "./use-picture-rect";
 import {
   candidateLabel,
@@ -377,6 +378,10 @@ export function AdminVisionIdentityPage() {
               <span className="vision-clocks__label">Frame</span>
               <strong className="vision-mono">{frameIndexAt(proxyMs, media.fps) ?? "—"}</strong>
             </div>
+            <div>
+              <span className="vision-clocks__label">Match clock</span>
+              <strong className="vision-mono">{describeClock(review.clock.anchors, sourceMs)}</strong>
+            </div>
           </div>
 
           <input
@@ -454,7 +459,7 @@ export function AdminVisionIdentityPage() {
                     onClick={() => setSelectedId(t.id)}
                   >
                     <span className="vision-mono">#{t.localTrackId}</span> <span>{t.class}</span>{" "}
-                    <span className="vision-sub">{formatSeconds(t.startMs)}–{formatSeconds(t.endMs)}</span>
+                    <span className="vision-sub">{formatSeconds(t.startMs)}–{formatSeconds(t.endMs)}{t.matchClock ? ` · ${t.matchClock}` : ""}</span>
                     <br />
                     <span className="vision-sub">{sideLabel(t, review.match)}</span>
                     <br />
@@ -514,7 +519,7 @@ export function AdminVisionIdentityPage() {
                 <>
                   <p className="vision-footnote">
                     Candidates: {candidates.narrowedBy === "side" ? "this side's match squad" : "the whole match squad"} ({candidates.candidates.length}).{" "}
-                    {candidates.clock}
+                    {candidates.window ? `On the pitch ${candidates.window.display}; ${candidates.window.offPitch} left out by ${candidates.window.substitutions} substitution(s).` : candidates.clock}
                   </p>
                   <input
                     type="search"
@@ -534,6 +539,7 @@ export function AdminVisionIdentityPage() {
                           onClick={() => setSlotId(c.matchSquadPlayerId)}
                         >
                           {candidateLabel(c)}
+                          {c.onPitch === "partly" && <span className="vision-sub"> · partly on</span>}
                           {candidates.narrowedBy === "match" && review.match && (
                             <span className="vision-sub"> · {teamNameOf(c.sbTeamId, review.match) ?? c.sbTeamId.slice(0, 8)}</span>
                           )}

@@ -475,6 +475,8 @@ export type VisionReviewTrack = {
   endMs: number;
   team: VisionReviewTeam | null;
   sbTeamId: string | null;
+  /** `10:00–15:00` once the clock is anchored. */
+  matchClock: string | null;
   identities: VisionIdentityAssignment[];
 };
 
@@ -490,10 +492,28 @@ export type VisionIdentityReview = {
   match: VisionReviewMatch | null;
   proxy: { fps: number | null; sourceOffsetMs: number; durationMs: number | null; width: number | null; height: number | null } | null;
   publicOnly: boolean;
+  clock: { anchored: boolean; anchors: VisionClockAnchor[] };
   sidesDecided: { inferenceJobId: string; team: "A" | "B"; sbTeamId: string }[];
   tracks: VisionReviewTrack[];
   count: number;
 };
+
+export type VisionClockAnchor = { half: number; sourceMs: number; endMs: number | null; name?: string };
+
+export type VisionClockReading = {
+  videoAssetId: string;
+  anchored: boolean;
+  anchors: VisionClockAnchor[];
+  at: { sourceMs: number; status: string; display: string; half?: number; minute?: number; second?: number } | null;
+};
+
+export function fetchVisionClock(assetId: string, sourceMs?: number) {
+  return adminFetch<VisionClockReading>(`/vision/review/${assetId}/clock${sourceMs === undefined ? "" : `?sourceMs=${Math.round(sourceMs)}`}`);
+}
+
+export function anchorVisionClock(assetId: string, body: { half: number; sourceMs: number; endMs?: number }) {
+  return adminFetch<VisionClockAnchor & { id: string }>(`/vision/review/${assetId}/clock`, { method: "POST", body: JSON.stringify(body) });
+}
 
 export type VisionReviewMedia = {
   url: string;
@@ -514,6 +534,7 @@ export type VisionRosterCandidate = {
   isStarter: boolean;
   sbTeamId: string;
   sbTeamSquadId: string | null;
+  onPitch: "yes" | "no" | "partly" | null;
 };
 
 export type VisionTrackCandidates = {
@@ -524,6 +545,8 @@ export type VisionTrackCandidates = {
   narrowedBy: "side" | "match";
   candidates: VisionRosterCandidate[];
   clock: string;
+  /** The track's window on the match clock, once anchored, with what the clock removed. */
+  window: { fromMinute: number; toMinute: number; display: string; substitutions: number; offPitch: number } | null;
 };
 
 export function fetchVisionIdentityReview(assetId: string, publicOnly = false) {

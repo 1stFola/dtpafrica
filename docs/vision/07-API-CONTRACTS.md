@@ -116,6 +116,8 @@ Poll at 5 s while a job page is open.
 | `POST` | `/vision/review/identity/:id/accept` | `vision.review` |
 | `POST` | `/vision/review/identity/:id/reject` | `vision.review` |
 | `GET` | `/vision/assets/:id/identity?public=1` | `vision.read` |
+| `GET` | `/vision/review/:assetId/clock` (`?sourceMs` reads a moment) | `vision.read` |
+| `POST` | `/vision/review/:assetId/clock` | `vision.review` |
 | `POST` | `/vision/review/events` | `vision.review` |
 | `PATCH` | `/vision/review/events/:id` | `vision.review` |
 | `POST` | `/vision/review/events/:id/decision` | `vision.review` |
@@ -266,6 +268,16 @@ proxy pixels through the inverse homography, each polyline broken at the horizon
 `reprojected`, each click's position as the fit would place it with its error in metres; a filed
 calibration carries its `clicked` points so the editor can load them back. See
 [40-PHASE-5-INCREMENT-3.md](./40-PHASE-5-INCREMENT-3.md).
+
+**The match clock.** `POST /vision/review/:assetId/clock` files a person's anchor for a half —
+`{ half, sourceMs, endMs? }`, the kick-off and optionally the whistle ending it — superseding the
+half's current anchor (`ClockNeedsAPerson`, `HalfUnknown`, `AnchorOutsideAsset`,
+`HalfEndsBeforeItStarts`, `HalfOutOfOrder`). `GET /vision/review/:assetId/clock?sourceMs=` returns
+the anchors and where that millisecond falls, broadcast minutes (`47:12`), or `before_kickoff`,
+`between_halves`, `after_play`, `unanchored`. The review view carries `clock` and each track's
+`matchClock`; once anchored, a track's candidates carry `onPitch` (`yes` | `partly`, the `no`s
+removed) and a `window` with what the clock removed, substitutions applied from the match record.
+See [41-PHASE-5-INCREMENT-4.md](./41-PHASE-5-INCREMENT-4.md).
 
 `POST /vision/jobs` with `type: "cuts"` queues the scene-change proposer on `cpu_small` after
 `transcode`, with optional `params.threshold` and `params.minSegmentMs`; its completion files
