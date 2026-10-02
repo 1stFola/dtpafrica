@@ -30,6 +30,7 @@ export const VISION_AUDIT_ACTIONS = [
   "identity.accepted",
   "identity.rejected",
   "camera.segment.declared",
+  "camera.segment.removed",
   "calibration.set",
   "annotation.schema.published",
   "annotation.task.created",

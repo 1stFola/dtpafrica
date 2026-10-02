@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { DETECTION_ARTIFACT_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
+import { CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionBenchmarksService } from "../models/benchmarks.service";
 
@@ -47,7 +47,7 @@ export type ApplyContext = {
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "detect", "track", "identify"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -83,6 +83,8 @@ export class VisionStageResultsService {
           return await this.applyTrack(videoAssetId, completion, context);
         case "identify":
           return await this.applyIdentify(completion, context);
+        case "cuts":
+          return await this.applyCuts(videoAssetId, completion);
         default:
           return { applied: false, detail: `no domain effect for ${jobType}` };
       }
@@ -405,6 +407,65 @@ export class VisionStageResultsService {
       detail: `${data.length} track(s) (${Object.entries(byClass)
         .map(([k, v]) => `${v} ${k}`)
         .join(", ") || "none"}), ${written.count} new; tracker ${tracker}, detector ${detector ?? "unknown"}; positions in ${artifact.key}`,
+    };
+  }
+
+  /**
+   * cuts → proposed camera segments, `source: scene_detect`, beside the ones a
+   * person declared and never over them.
+   *
+   * A proposal that overlaps a manual segment is skipped and counted: a person's
+   * declaration is a fact about the footage, a filter's score is a guess. Earlier
+   * proposals that nobody calibrated are replaced by this run's; one that was
+   * calibrated has become a fact too and stays. Idempotent: a retried completion
+   * finds its own proposals already there and adds nothing.
+   */
+  private async applyCuts(videoAssetId: string, completion: StageCompletion): Promise<ApplyOutcome> {
+    const artifact = completion.artifacts.find((a) => a.role === CUTS_ARTIFACT_ROLE);
+    if (!artifact) return { applied: false, detail: "cuts reported no cuts artifact" };
+    const proposed = Array.isArray(completion.summary.segments) ? completion.summary.segments : null;
+    if (!proposed) return { applied: false, detail: "cuts summary carried no segments" };
+    const segments: { startMs: number; endMs: number }[] = [];
+    for (const row of proposed) {
+      const r = obj(row);
+      const startMs = int(r?.startMs);
+      const endMs = int(r?.endMs);
+      if (startMs === null || endMs === null || endMs <= startMs) {
+        return { applied: false, detail: `proposed segment ${JSON.stringify(row).slice(0, 80)} is malformed; nothing written` };
+      }
+      segments.push({ startMs, endMs });
+    }
+
+    const existing = await this.prisma.visionCameraSegment.findMany({
+      where: { videoAssetId },
+      select: { id: true, startMs: true, endMs: true, source: true, _count: { select: { calibrations: true } } },
+    });
+    const overlaps = (a: { startMs: number; endMs: number }, b: { startMs: number; endMs: number }) => a.startMs < b.endMs && b.startMs < a.endMs;
+    const same = (a: { startMs: number; endMs: number }, b: { startMs: number; endMs: number }) => a.startMs === b.startMs && a.endMs === b.endMs;
+    const kept = existing.filter((e) => e.source !== "scene_detect" || e._count.calibrations > 0);
+    const stale = existing.filter((e) => e.source === "scene_detect" && e._count.calibrations === 0);
+    // A stale proposal identical to a new one is this run's own, retried: keep it rather than churn ids.
+    const retained = stale.filter((e) => segments.some((s) => same(s, e)));
+    const toDelete = stale.filter((e) => !retained.includes(e));
+    const fixed = [...kept, ...retained];
+    const toCreate: { startMs: number; endMs: number }[] = [];
+    let alreadyThere = 0;
+    let skipped = 0;
+    for (const s of segments) {
+      if (fixed.some((e) => same(s, e))) alreadyThere += 1;
+      else if (fixed.some((e) => overlaps(s, e))) skipped += 1;
+      else toCreate.push(s);
+    }
+
+    await this.prisma.$transaction([
+      ...(toDelete.length ? [this.prisma.visionCameraSegment.deleteMany({ where: { id: { in: toDelete.map((e) => e.id) } } })] : []),
+      ...(toCreate.length
+        ? [this.prisma.visionCameraSegment.createMany({ data: toCreate.map((s) => ({ videoAssetId, startMs: s.startMs, endMs: s.endMs, kind: "unknown", source: "scene_detect" })) })]
+        : []),
+    ]);
+    return {
+      applied: true,
+      detail: `${segments.length} proposed segment(s): ${toCreate.length} new, ${alreadyThere} already there, ${skipped} skipped for overlapping a segment a person declared or calibrated, ${toDelete.length} earlier proposal(s) replaced; cuts in ${artifact.key}`,
     };
   }
 

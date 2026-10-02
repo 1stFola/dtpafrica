@@ -31,7 +31,7 @@ const SIX = ["corner_left_near", "corner_left_far", "halfway_near", "halfway_far
 
 const mockPrisma = {
   visionVideoAsset: { findUnique: vi.fn() },
-  visionCameraSegment: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
+  visionCameraSegment: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
   visionPitchCalibration: { create: vi.fn(), updateMany: vi.fn() },
   visionTrack: { findUnique: vi.fn() },
   $transaction: vi.fn(),
@@ -68,6 +68,19 @@ describe("a camera segment", () => {
     const out = await service.declareSegment(ASSET, { startMs: 0, endMs: 1000, kind: "wide" }, reviewer);
     expect(out).toMatchObject({ videoAssetId: ASSET, startMs: 0, endMs: 1000, kind: "wide", source: "manual", createdBy: "u-reviewer" });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "camera.segment.declared" }), reviewer);
+  });
+});
+
+describe("removing a segment", () => {
+  it("is a person's, and only for a segment with no calibration on it", async () => {
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ id: SEGMENT, videoAssetId: ASSET, source: "scene_detect", startMs: 0, endMs: 1000, _count: { calibrations: 0 } });
+    mockPrisma.visionCameraSegment.delete.mockResolvedValue({});
+    await expect(service.deleteSegment(SEGMENT, apiKey)).rejects.toMatchObject({ response: { error: "CalibrationNeedsAPerson" } });
+    expect(await service.deleteSegment(SEGMENT, reviewer)).toEqual({ removed: SEGMENT });
+    expect(mockPrisma.visionCameraSegment.delete).toHaveBeenCalledWith({ where: { id: SEGMENT } });
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "camera.segment.removed" }), reviewer);
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ id: SEGMENT, videoAssetId: ASSET, source: "manual", startMs: 0, endMs: 1000, _count: { calibrations: 2 } });
+    await expect(service.deleteSegment(SEGMENT, reviewer)).rejects.toMatchObject({ response: { error: "SegmentCalibrated" } });
   });
 });
 

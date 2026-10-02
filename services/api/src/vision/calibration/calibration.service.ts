@@ -83,6 +83,31 @@ export class VisionCalibrationService {
     return segment;
   }
 
+  /**
+   * A person removes a segment that has no calibration -- a proposal that was
+   * wrong, or a declaration that was. One with a calibration is a fact with a
+   * name on it and stays; supersede its calibration instead.
+   */
+  async deleteSegment(cameraSegmentId: string, actor?: AdminAuthContext) {
+    requirePerson(actor, "remove a camera segment");
+    const segment = await this.prisma.visionCameraSegment.findUnique({
+      where: { id: cameraSegmentId },
+      select: { id: true, videoAssetId: true, source: true, startMs: true, endMs: true, _count: { select: { calibrations: true } } },
+    });
+    if (!segment) throw new NotFoundException(`Unknown camera segment ${cameraSegmentId}`);
+    if (segment._count.calibrations > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "SegmentCalibrated",
+        message: `Segment ${cameraSegmentId} has ${segment._count.calibrations} calibration(s) on it.`,
+        remediation: "A calibrated segment is a fact with a name on it. Supersede the calibration instead.",
+      });
+    }
+    await this.prisma.visionCameraSegment.delete({ where: { id: segment.id } });
+    await this.audit.record({ action: "camera.segment.removed", targetKind: "vision_camera_segment", targetId: segment.id, data: { videoAssetId: segment.videoAssetId, source: segment.source, startMs: segment.startMs, endMs: segment.endMs } }, actor);
+    return { removed: segment.id };
+  }
+
   /** The asset's segments with each one's current calibration, as a reviewer reads them. */
   async segments(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, durationMs: true } });

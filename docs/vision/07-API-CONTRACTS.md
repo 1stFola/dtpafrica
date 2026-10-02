@@ -261,6 +261,14 @@ under the suppression rule: positions in metres only through a calibration that 
 and `distance` is `{ suppressed: true, reason }` unless every position was placed. See
 [38-PHASE-5-INCREMENT-1.md](./38-PHASE-5-INCREMENT-1.md).
 
+`POST /vision/jobs` with `type: "cuts"` queues the scene-change proposer on `cpu_small` after
+`transcode`, with optional `params.threshold` and `params.minSegmentMs`; its completion files
+proposed segments as `source: scene_detect`, kind `unknown`, skipping any that overlap a segment
+a person declared or calibrated, replacing earlier uncalibrated proposals, and adding nothing on
+a retry. `DELETE /vision/review/camera-segments/:id` removes a segment with no calibration
+(`SegmentCalibrated` otherwise; a person only). See
+[39-PHASE-5-INCREMENT-2.md](./39-PHASE-5-INCREMENT-2.md).
+
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the
 job is refused (`NoProductionModel`) rather than run against whichever version happened to exist.

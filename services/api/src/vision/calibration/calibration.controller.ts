@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { AdminAuth } from "../../admin/decorators/admin-auth.decorator";
 import { RequirePermissions } from "../../admin/decorators/require-permissions.decorator";
 import { AdminAuthGuard } from "../../admin/guards/admin-auth.guard";
@@ -43,6 +43,12 @@ export class VisionCalibrationController {
   @RequirePermissions("vision.review")
   async declare(@Param("assetId") assetId: string, @Body() dto: DeclareSegmentDto, @AdminAuth() auth: AdminAuthContext) {
     return jsonSafe(await this.calibration.declareSegment(assetId, dto, auth));
+  }
+
+  @Delete("review/camera-segments/:id")
+  @RequirePermissions("vision.review")
+  async remove(@Param("id") id: string, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.calibration.deleteSegment(id, auth));
   }
 
   @Post("review/camera-segments/:id/calibration")

@@ -52,6 +52,7 @@ describe("names a gate generated", () => {
     expect(GATE_PARTNER.pattern.test("Identity gate 417d1577")).toBe(true);
     expect(GATE_PARTNER.pattern.test("Identity metrics gate 417d1577")).toBe(true);
     expect(GATE_PARTNER.pattern.test("Calibration gate 417d1577")).toBe(true);
+    expect(GATE_PARTNER.pattern.test("Cuts gate 417d1577")).toBe(true);
   });
 });
 
