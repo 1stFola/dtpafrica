@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  fetchVisionAnnotationPayload,
   fetchVisionTask,
   reviewVisionAnnotation,
   submitVisionAnnotation,
@@ -13,11 +14,25 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import {
   clampToWindow,
   describePosition,
-
   frameStartMs,
+  proxyOffsetMs,
   stepFrames,
   windowDurationMs,
 } from "./annotation-time";
+import {
+  DETECTION_CLASSES,
+  boxesOnFrame,
+  countByClass,
+  framesWithBoxes,
+  newBoxId,
+  parseStoredBoxes,
+  rectFromDrag,
+  snapSourceTimeMs,
+  toPayloadBoxes,
+  type DetectionClass,
+  type DraftBox,
+  type Rect,
+} from "./annotation-boxes";
 
 /**
  * The annotation workstation.
@@ -26,11 +41,12 @@ import {
  * frame-accurate video tool needs the whole viewport, and a site header competing for
  * vertical space and keyboard focus makes it worse at its job.
  *
- * What this screen is responsible for, and what it is not: the drawing of dense boxes
- * and tracks belongs in a dedicated tool (CVAT, per the phase plan). This is the
- * **review workstation** — claim a window, watch exactly the right frames, record what
- * was seen, and accept or send back somebody else's work. That is the loop that exists
- * today; identity, events and merge/split arrive when there are detections to merge.
+ * What this screen is responsible for: claim a window, watch exactly the right frames,
+ * draw the boxes a detector will be scored against, record what was seen, and accept
+ * or send back somebody else's work. Dense tracks across hundreds of frames still
+ * belong in a dedicated tool (CVAT, per the phase plan); per-frame boxes on sampled
+ * windows are drawn here, because Phase 3 cannot score a detector against a window.
+ * Identity, events and merge/split arrive when there are detections to merge.
  *
  * Two behaviours are load-bearing:
  *
@@ -41,6 +57,8 @@ import {
  *     and if marking something uncertain is harder than guessing, reviewers guess —
  *     which is the single worst failure mode in the system.
  */
+
+const CLASS_KEYS: Record<string, DetectionClass> = { "1": "player", "2": "goalkeeper", "3": "referee", "4": "ball" };
 
 const REJECTION_LABELS: Record<RejectionReason, string> = {
   wrong_box: "Box is wrong",
@@ -67,6 +85,15 @@ export function AdminVisionTaskPage() {
   const [notes, setNotes] = useState("");
   const [uncertain, setUncertain] = useState(false);
 
+  /** The boxes, as they will be submitted, keyed for the screen. */
+  const [boxes, setBoxes] = useState<DraftBox[]>([]);
+  const [activeClass, setActiveClass] = useState<DetectionClass>("player");
+  const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
+  /** The rectangle being dragged out right now, in normalised coordinates. */
+  const [draft, setDraft] = useState<Rect | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+
   /**
    * When this reviewer actually started.
    *
@@ -84,6 +111,24 @@ export function AdminVisionTaskPage() {
       setMedia(result.media);
       setProxyMs(result.media.windowStartMs);
       startedAt.current = Date.now();
+
+      /* A correction starts from the last attempt, pre-labels included -- so the
+         reviewer sees the model's boxes rather than redrawing them, and sees which
+         ones the model drew. */
+      const latest = result.task.versions?.[0];
+      if (latest) {
+        try {
+          const previous = await fetchVisionAnnotationPayload(latest.id);
+          setBoxes(parseStoredBoxes(previous.payload));
+        } catch {
+          // The previous attempt's labels are missing or tampered with. The screen
+          // still works; the export is what refuses such a version.
+          setBoxes([]);
+        }
+      } else {
+        setBoxes([]);
+      }
+      setSelectedBoxId(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -100,6 +145,84 @@ export function AdminVisionTaskPage() {
   const position = useMemo(
     () => (media ? describePosition(proxyMs, source, media) : null),
     [media, proxyMs, source]
+  );
+  const offsetMs = useMemo(() => (media ? proxyOffsetMs(source, media) : 0), [media, source]);
+  const boxesHere = useMemo(
+    () => (media ? boxesOnFrame(boxes, proxyMs, media.fps, offsetMs) : []),
+    [boxes, media, offsetMs, proxyMs]
+  );
+  const boxedFrames = useMemo(
+    () => (media ? framesWithBoxes(boxes, media.fps, offsetMs) : []),
+    [boxes, media, offsetMs]
+  );
+  const classCounts = useMemo(() => countByClass(boxes), [boxes]);
+
+  const removeSelectedBox = useCallback(() => {
+    if (!selectedBoxId) return;
+    setBoxes((current) => current.filter((b) => b.id !== selectedBoxId));
+    setSelectedBoxId(null);
+  }, [selectedBoxId]);
+
+  /** Pointer position inside the stage, in pixels. */
+  const stagePoint = useCallback((event: { clientX: number; clientY: number }) => {
+    const el = stageRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width, height: rect.height };
+  }, []);
+
+  const onStagePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      // Drawing while the clip plays would put the box on whichever frame the
+      // scrubber reached by the time the pointer came up.
+      if (playing || event.button !== 0) return;
+      const point = stagePoint(event);
+      if (!point) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragStart.current = { x: point.x, y: point.y };
+      setSelectedBoxId(null);
+      setDraft(null);
+    },
+    [playing, stagePoint]
+  );
+
+  const onStagePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragStart.current) return;
+      const point = stagePoint(event);
+      if (!point) return;
+      setDraft(rectFromDrag(dragStart.current, point, point));
+    },
+    [stagePoint]
+  );
+
+  const onStagePointerUp = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const start = dragStart.current;
+      dragStart.current = null;
+      setDraft(null);
+      if (!start || !media) return;
+      const point = stagePoint(event);
+      if (!point) return;
+      const rect = rectFromDrag(start, point, point);
+      if (!rect) return;
+      setBoxes((current) => [
+        ...current,
+        {
+          id: newBoxId(),
+          // The start of the frame on screen, in source time: the frame the
+          // reviewer is looking at, and the frame the export will put it on.
+          sourceTimeMs: snapSourceTimeMs(proxyMs, media.fps, offsetMs),
+          class: activeClass,
+          ...rect,
+        },
+      ]);
+      // Deliberately NOT selected: a reviewer who draws and then presses 4 to arm
+      // the next box would otherwise silently re-class the one they just drew.
+      // Selecting is a click on the box, and nothing else.
+      setSelectedBoxId(null);
+    },
+    [activeClass, media, offsetMs, proxyMs, stagePoint]
   );
 
   /** Seeks the element to an exact frame start, so the frame shown is the frame stored. */
@@ -159,15 +282,43 @@ export function AdminVisionTaskPage() {
           // One keystroke, deliberately. If marking something uncertain is harder
           // than guessing, reviewers guess.
           event.preventDefault();
-          setUncertain((current) => !current);
+          if (selectedBoxId) {
+            setBoxes((current) =>
+              current.map((b) => (b.id === selectedBoxId ? { ...b, uncertain: !b.uncertain } : b))
+            );
+          } else {
+            setUncertain((current) => !current);
+          }
+          return;
+        case "Delete":
+        case "Backspace":
+          if (!selectedBoxId) return;
+          event.preventDefault();
+          removeSelectedBox();
+          return;
+        case "Escape":
+          setSelectedBoxId(null);
+          setDraft(null);
+          dragStart.current = null;
           return;
         default:
+          if (CLASS_KEYS[event.key]) {
+            event.preventDefault();
+            const next = CLASS_KEYS[event.key]!;
+            setActiveClass(next);
+            // With a box selected, the keys re-class it; otherwise they arm the next drag.
+            if (selectedBoxId) {
+              setBoxes((current) =>
+                current.map((b) => (b.id === selectedBoxId ? { ...b, class: next } : b))
+              );
+            }
+          }
           return;
       }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [media, step, togglePlay]);
+  }, [media, removeSelectedBox, selectedBoxId, step, togglePlay]);
 
   /** Keeps the readout in step with playback without re-rendering per frame. */
   useEffect(() => {
@@ -215,6 +366,9 @@ export function AdminVisionTaskPage() {
           labelSchemaVersion: task.labelSchemaVersion?.version ?? null,
           uncertain,
           notes: notes.trim() || null,
+          // Every box, in source time and normalised to the frame. The API refuses a
+          // box outside the window or crediting a model that never pre-labelled here.
+          boxes: toPayloadBoxes(boxes),
         },
         effortMinutes: minutes,
         annotatorId: task.assignedTo ?? undefined,
@@ -299,14 +453,75 @@ export function AdminVisionTaskPage() {
 
       <div className="vision-workstation__body">
         <section className="vision-workstation__video">
-          <video
-            ref={videoRef}
-            src={media.url}
-            preload="auto"
-            onLoadedMetadata={() => seekTo(media.windowStartMs)}
-            onPause={() => setPlaying(false)}
-            onPlay={() => setPlaying(true)}
-          />
+          {/* The stage: the video, and over it the boxes on this frame. Drawing is a
+              drag on the stage; the boxes are plain positioned elements in
+              percentages, so they follow the picture at any size without a canvas
+              repaint per frame. */}
+          <div
+            ref={stageRef}
+            className={`vision-stage${playing ? " vision-stage--playing" : ""}`}
+            onPointerDown={onStagePointerDown}
+            onPointerMove={onStagePointerMove}
+            onPointerUp={onStagePointerUp}
+            onPointerCancel={() => {
+              dragStart.current = null;
+              setDraft(null);
+            }}
+          >
+            <video
+              ref={videoRef}
+              src={media.url}
+              preload="auto"
+              onLoadedMetadata={() => seekTo(media.windowStartMs)}
+              onPause={() => setPlaying(false)}
+              onPlay={() => setPlaying(true)}
+            />
+            {boxesHere.map((box) => (
+              <div
+                key={box.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`${box.class} box`}
+                className={[
+                  "vision-box",
+                  `vision-box--${box.class}`,
+                  box.id === selectedBoxId ? "vision-box--selected" : "",
+                  box.fromModelVersionId ? "vision-box--model" : "",
+                  box.uncertain ? "vision-box--uncertain" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                style={{
+                  left: `${box.x * 100}%`,
+                  top: `${box.y * 100}%`,
+                  width: `${box.width * 100}%`,
+                  height: `${box.height * 100}%`,
+                }}
+                onPointerDown={(event) => {
+                  // Selecting, not drawing: the stage must not start a drag.
+                  event.stopPropagation();
+                  setSelectedBoxId(box.id);
+                }}
+              >
+                <span className="vision-box__tag">
+                  {box.class}
+                  {box.fromModelVersionId && " · model"}
+                  {box.uncertain && " · ?"}
+                </span>
+              </div>
+            ))}
+            {draft && (
+              <div
+                className={`vision-box vision-box--draft vision-box--${activeClass}`}
+                style={{
+                  left: `${draft.x * 100}%`,
+                  top: `${draft.y * 100}%`,
+                  width: `${draft.width * 100}%`,
+                  height: `${draft.height * 100}%`,
+                }}
+              />
+            )}
+          </div>
 
           <div className="vision-clocks">
             {/* Both clocks, side by side, always. Conflating them corrupts events. */}
@@ -360,8 +575,29 @@ export function AdminVisionTaskPage() {
             </button>
           </div>
 
+          <div className="vision-classes" role="radiogroup" aria-label="Class for the next box">
+            {DETECTION_CLASSES.map((cls, index) => (
+              <button
+                key={cls}
+                type="button"
+                role="radio"
+                aria-checked={activeClass === cls}
+                className={`vision-classes__pick vision-box--${cls}${activeClass === cls ? " is-active" : ""}`}
+                onClick={() => setActiveClass(cls)}
+              >
+                <kbd>{index + 1}</kbd> {cls} <em>{classCounts[cls]}</em>
+              </button>
+            ))}
+            <span className="vision-footnote">
+              {boxesHere.length} on this frame · {boxes.length} in the window
+              {boxedFrames.length > 0 && ` · ${boxedFrames.length} frame(s) boxed`}
+            </span>
+          </div>
+
           <p className="vision-footnote">
-            Space play/pause · ← → one frame · Shift + ← → one second · U mark uncertain
+            Space play/pause · ← → one frame · Shift + ← → one second · 1–4 pick a class ·
+            drag to draw · click a box, then Delete removes it, U marks it uncertain, 1–4
+            re-class it · U with nothing selected marks the whole window uncertain
           </p>
         </section>
 

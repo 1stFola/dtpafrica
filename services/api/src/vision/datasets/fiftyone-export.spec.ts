@@ -35,6 +35,7 @@ function label(overrides: Partial<ExportLabel> = {}): ExportLabel {
     decision: "approved" as string | null,
     reviewerId: "rev-1" as string | null,
     preLabelled: false,
+    preLabelModelVersionId: null as string | null,
     effortMinutes: 4 as number | null,
     uncertain: false,
     notes: null as string | null,
@@ -460,5 +461,185 @@ describe("the export a consumer actually reads", () => {
     expect(e.samples).toHaveLength(0);
     expect(e.qa.labels).toBe(0);
     expect(e.qa.hardCaseFraction).toBeNull();
+  });
+});
+
+/**
+ * Boxes: the ground truth a detector is actually scored against.
+ *
+ * Same two kinds of test as the windows above. The refusals keep a box that would
+ * train a detector on a frame the annotator never saw out of the corpus; the
+ * arithmetic puts the box on the frame the annotator was looking at, and not its
+ * neighbour.
+ */
+describe("boxes land on the frame they were drawn on", () => {
+  const MODEL = "55556666-7777-4888-9999-aaaabbbbcccc";
+  const box = (overrides: Record<string, unknown> = {}) => ({
+    sourceTimeMs: 10_500,
+    class: "player",
+    x: 0.1,
+    y: 0.2,
+    width: 0.05,
+    height: 0.1,
+    ...overrides,
+  });
+
+  function framesOf(members: ExportMember[]) {
+    return build(members).samples[0]!.frames;
+  }
+
+  it("converts source time through the proxy offset and floors to a 1-based frame", () => {
+    // Source 10,500ms on a proxy offset by 9,000ms is proxy 1,500ms. At 25fps that
+    // is frame 37.5 -> 37 zero-based -> FiftyOne 38. Rounding would say 39.
+    const frames = framesOf([
+      member({
+        proxy: { ...member().proxy!, sourceOffsetMs: 9_000 },
+        labels: [label({ boxes: [box()] })],
+      }),
+    ]);
+    expect(Object.keys(frames)).toEqual(["38"]);
+    expect(frames["38"]!.detections.detections[0]).toMatchObject({
+      _cls: "Detection",
+      label: "player",
+      bounding_box: [0.1, 0.2, 0.05, 0.1],
+      confidence: null,
+      source_time_ms: 10_500,
+    });
+  });
+
+  it("groups several boxes on one frame and keeps frames apart", () => {
+    const frames = framesOf([
+      member({
+        labels: [
+          label({
+            boxes: [box(), box({ class: "ball", x: 0.5 }), box({ sourceTimeMs: 10_540 })],
+          }),
+        ],
+      }),
+    ]);
+    // 10,500ms at 25fps with no offset is frame 262 zero-based -> 263; 10,540 is 264.
+    expect(Object.keys(frames).sort()).toEqual(["263", "264"]);
+    expect(frames["263"]!.detections.detections.map((d) => d.label)).toEqual(["player", "ball"]);
+    expect(frames["264"]!.detections.detections).toHaveLength(1);
+  });
+
+  it("carries doubt, provenance and the review verdict on every box", () => {
+    const frames = framesOf([
+      member({
+        labels: [
+          label({
+            preLabelled: true,
+            preLabelModelVersionId: MODEL,
+            decision: "corrected",
+            boxes: [box({ uncertain: true, fromModelVersionId: MODEL })],
+          }),
+        ],
+      }),
+    ]);
+    const detection = Object.values(frames)[0]!.detections.detections[0]!;
+    expect(detection).toMatchObject({
+      uncertain: true,
+      from_model_version_id: MODEL,
+      annotation_version_id: "av-1",
+      task_id: "task-1",
+      review_decision: "corrected",
+    });
+  });
+
+  it("exports an empty frames map for a Phase 2 payload with no boxes", () => {
+    const result = build([member()]);
+    expect(result.samples[0]!.frames).toEqual({});
+    expect(result.qa.boxes).toBe(0);
+    expect(result.qa.ok).toBe(true);
+  });
+
+  it("refuses a box the submit rule would refuse, naming the problem", () => {
+    const result = build([member({ labels: [label({ boxes: [box({ class: "person" })] })] })]);
+    expect(result.qa.ok).toBe(false);
+    const problem = result.qa.problems.find((p) => p.kind === "boxes_invalid");
+    expect(problem?.detail).toMatch(/person/);
+    expect(result.samples[0]!.frames).toEqual({});
+  });
+
+  it("refuses a box crediting a model that did not pre-label the task", () => {
+    const result = build([member({ labels: [label({ boxes: [box({ fromModelVersionId: MODEL })] })] })]);
+    expect(result.qa.problems[0]?.kind).toBe("boxes_invalid");
+  });
+
+  it("refuses a box before the proxy begins", () => {
+    // Window 10,000-11,000 on a proxy that begins at source 10,600: the window's
+    // own check passes only because... it does not; so shift the window too.
+    const result = build([
+      member({
+        proxy: { ...member().proxy!, sourceOffsetMs: 10_600 },
+        labels: [label({ sourceStartMs: 10_600, sourceEndMs: 11_600, boxes: [box({ sourceTimeMs: 10_600 })] })],
+      }),
+    ]);
+    expect(result.qa.ok).toBe(true);
+    // A box inside the window but, through a wrong offset on a hand-edited payload,
+    // before the proxy: the window check cannot catch it, so the box check must.
+    const before = build([
+      member({
+        proxy: { ...member().proxy!, sourceOffsetMs: 10_600 },
+        labels: [
+          label({
+            sourceStartMs: 10_000,
+            sourceEndMs: 11_600,
+            boxes: [box({ sourceTimeMs: 10_000 })],
+          }),
+        ],
+      }),
+    ]);
+    expect(before.qa.problems.map((p) => p.kind)).toContain("label_before_proxy_start");
+  });
+
+  it("refuses a box past the proxy's last frame", () => {
+    // A 2s proxy has 50 frames. A window that ends at its last millisecond passes;
+    // a box on the frame after it does not exist in the file.
+    const result = build([
+      member({
+        proxy: { ...member().proxy!, durationMs: 2_000 },
+        labels: [label({ sourceStartMs: 1_000, sourceEndMs: 2_000, boxes: [box({ sourceTimeMs: 1_990 })] })],
+      }),
+    ]);
+    expect(result.qa.ok).toBe(true);
+    expect(Object.keys(result.samples[0]!.frames)).toEqual(["50"]);
+  });
+
+  it("counts boxes by class, frames with boxes, kept pre-labels and doubt", () => {
+    const result = build([
+      member({
+        labels: [
+          label({
+            preLabelled: true,
+            preLabelModelVersionId: MODEL,
+            boxes: [
+              box(),
+              box({ class: "ball", x: 0.5, uncertain: true }),
+              box({ sourceTimeMs: 10_540, fromModelVersionId: MODEL }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+    expect(result.qa).toMatchObject({
+      boxes: 3,
+      boxesByClass: { player: 2, ball: 1 },
+      framesWithBoxes: 2,
+      boxesFromModel: 1,
+      boxesUncertain: 1,
+    });
+  });
+
+  it("says in the metadata which clock and which origin the boxes use", () => {
+    const result = build([member()]);
+    expect(String(result.metadata.info.box_note)).toMatch(/1-based PROXY frame/);
+    expect(String(result.metadata.info.box_note)).toMatch(/top-left/);
+  });
+
+  it("does not export boxes from a label nobody signed off", () => {
+    const result = build([member({ labels: [label({ decision: null, boxes: [box()] })] })]);
+    expect(result.samples[0]!.frames).toEqual({});
+    expect(result.qa.boxes).toBe(0);
   });
 });

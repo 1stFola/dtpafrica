@@ -371,6 +371,21 @@ export function fetchVisionTask(id: string) {
   );
 }
 
+/**
+ * One box in a submission. Source time and normalised geometry: see
+ * `modules/admin/vision/annotation-boxes.ts` for why neither is in proxy pixels.
+ */
+export type VisionAnnotationBox = {
+  sourceTimeMs: number;
+  class: "player" | "goalkeeper" | "referee" | "ball";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  uncertain?: boolean;
+  fromModelVersionId?: string | null;
+};
+
 export function submitVisionAnnotation(
   taskId: string,
   body: { payload: Record<string, unknown>; effortMinutes?: number; annotatorId?: string }

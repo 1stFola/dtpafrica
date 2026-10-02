@@ -533,6 +533,7 @@ export class VisionDatasetsService {
                 startMs: true,
                 endMs: true,
                 preLabelled: true,
+                preLabelModelVersionId: true,
                 labelSchemaVersion: { select: { version: true } },
                 /* The tip of the chain only. Superseded submissions are kept
                    because the corrections are the signal, but the corpus trains on
@@ -588,9 +589,11 @@ export class VisionDatasetsService {
           decision: review?.decision ?? null,
           reviewerId: review?.reviewerId ?? null,
           preLabelled: task.preLabelled,
+          preLabelModelVersionId: task.preLabelModelVersionId,
           effortMinutes: tip.effortMinutes,
           uncertain: payload.uncertain,
           notes: payload.notes,
+          boxes: payload.boxes,
           payloadSourceStartMs: payload.windowStartMs,
           payloadSourceEndMs: payload.windowEndMs,
           payloadIntegrity: payload.integrity,
@@ -683,7 +686,13 @@ export class VisionDatasetsService {
    * drifted payload instead of stopping at the first one.
    */
   private async readPayload(payloadKey: string, expectedChecksum: string) {
-    const empty = { uncertain: false, notes: null, windowStartMs: null, windowEndMs: null };
+    const empty = {
+      uncertain: false,
+      notes: null,
+      windowStartMs: null,
+      windowEndMs: null,
+      boxes: undefined as unknown,
+    };
     const raw = await this.store.getSmallObject("derived", payloadKey);
     if (!raw) return { ...empty, integrity: "missing" as const };
     if (createHash("sha256").update(raw).digest("hex") !== expectedChecksum) {
@@ -707,6 +716,9 @@ export class VisionDatasetsService {
       notes: typeof parsed.notes === "string" ? parsed.notes : null,
       windowStartMs: num("windowSourceStartMs"),
       windowEndMs: num("windowSourceEndMs"),
+      /* Raw, not validated here: the export applies the one rule and reports every
+         problem by member, which a throw in the middle of a batch cannot. */
+      boxes: parsed.boxes,
       integrity: "ok" as const,
     };
   }

@@ -20,6 +20,7 @@ import {
   type RejectionReason,
   type ReviewDecision,
   type SamplingStrategy,
+  validateAnnotationBoxes,
 } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -503,6 +504,7 @@ export class VisionAnnotationService {
     if (dto.payload === null || dto.payload === undefined) {
       throw new BadRequestException("A submission needs a payload, even an empty label set");
     }
+    this.assertBoxesAreValid(dto.payload, task);
     if (dto.effortMinutes !== undefined && (!(dto.effortMinutes >= 0) || dto.effortMinutes > 480)) {
       throw new BadRequestException("effortMinutes must be between 0 and 480");
     }
@@ -555,6 +557,39 @@ export class VisionAnnotationService {
       actor
     );
     return version;
+  }
+
+  /**
+   * Boxes are checked at the door, against the task's own window and pre-label
+   * provenance, with the same rule the export applies (`validateAnnotationBoxes`
+   * in the contracts). A payload without `boxes` is a Phase 2 payload and passes.
+   *
+   * Refused, not trimmed: a submission with one box outside the window is a
+   * submission the annotator should look at again, and silently dropping the box
+   * would make the rest look complete.
+   */
+  private assertBoxesAreValid(
+    payload: unknown,
+    task: { startMs: number; endMs: number; preLabelModelVersionId: string | null }
+  ) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+    const raw = (payload as Record<string, unknown>).boxes;
+    const result = validateAnnotationBoxes(
+      raw,
+      { startMs: task.startMs, endMs: task.endMs },
+      { preLabelModelVersionId: task.preLabelModelVersionId }
+    );
+    if (result.problems.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: "InvalidBoxes",
+        message: `${result.problems.length} problem(s) with the submitted boxes.`,
+        problems: result.problems.slice(0, 20),
+        remediation:
+          "Every box needs an integer sourceTimeMs inside the task's window, a contract class, " +
+          "normalised geometry inside [0, 1], and may credit only the model that pre-labelled this task.",
+      });
+    }
   }
 
   /** The labels themselves, verified against the checksum recorded at submission. */

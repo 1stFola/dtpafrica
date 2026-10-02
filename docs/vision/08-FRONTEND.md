@@ -121,6 +121,7 @@ correction time is operationally worse — so correction time is a tracked metri
 | Requirement | Why |
 |---|---|
 | Frame-deterministic seek | Annotation is worthless if the frame shown is not the frame stored. Seek uses `frameIndex` on the constant-FPS proxy, and both source-time and proxy-time are displayed. |
+| A box is stored at its frame's start, in source time | The scrubber stops mid-frame; the box must not. `snapSourceTimeMs` floors the position to a frame and stores that frame's first millisecond, so the export's floor lands it on the same frame after any re-transcode. A model's box is always drawn dashed and tagged. |
 | Match clock and media time shown separately | `47:12` on the match clock is not `47:12` in the file. Conflating them corrupts events. |
 | Milliseconds visible | Event boundaries are sub-second. |
 | `Unknown` is one keystroke | If marking unknown is harder than guessing, reviewers will guess. That is the single worst failure mode in the system. |

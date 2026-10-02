@@ -317,10 +317,10 @@ describe("claiming", () => {
 
 describe("submission", () => {
   it("stores the labels and records a checksum", async () => {
-    const version = await service.submit(TASK, { payload: { boxes: [1, 2, 3] } });
+    const version = await service.submit(TASK, { payload: { labels: [1, 2, 3] } });
     expect(version.payloadChecksum).toHaveLength(64);
     const stored = await store.getSmallObject("derived", version.payloadKey);
-    expect(JSON.parse(stored!.toString("utf8"))).toEqual({ boxes: [1, 2, 3] });
+    expect(JSON.parse(stored!.toString("utf8"))).toEqual({ labels: [1, 2, 3] });
   });
 
   it("supersedes the previous submission instead of overwriting it", async () => {
@@ -614,5 +614,71 @@ describe("mix report", () => {
     });
     const report = await service.mixReport();
     expect(report.hardCaseShare).toBeNull();
+  });
+});
+
+/**
+ * Boxes are checked at submit, against the task's own window and provenance.
+ * The rule itself is tested in the contracts; what matters here is that a bad
+ * submission is refused before anything is written, and a Phase 2 payload still
+ * passes.
+ */
+describe("boxes at the door", () => {
+  const MODEL = "55556666-7777-4888-9999-aaaabbbbcccc";
+  const box = (overrides: Record<string, unknown> = {}) => ({
+    sourceTimeMs: 60_500,
+    class: "player",
+    x: 0.1,
+    y: 0.2,
+    width: 0.05,
+    height: 0.1,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    mockPrisma.visionAnnotationTask.findUnique.mockResolvedValue(taskRow());
+    mockPrisma.visionAnnotationVersion.findFirst.mockResolvedValue(null);
+    mockPrisma.visionAnnotationVersion.create.mockImplementation(({ data }: never) =>
+      Promise.resolve({ id: "av-new", ...(data as object) })
+    );
+    mockPrisma.visionAnnotationTask.update.mockResolvedValue({});
+  });
+
+  it("accepts boxes inside the window and stores the payload as submitted", async () => {
+    const payload = { windowSourceStartMs: 60_000, windowSourceEndMs: 120_000, uncertain: false, notes: null, boxes: [box()] };
+    await service.submit(TASK, { payload });
+    expect(mockPrisma.visionAnnotationVersion.create).toHaveBeenCalled();
+  });
+
+  it("refuses a box outside the task's window with every problem listed", async () => {
+    const payload = { boxes: [box({ sourceTimeMs: 59_999 }), box({ class: "dog" })] };
+    await expect(service.submit(TASK, { payload })).rejects.toMatchObject({
+      response: {
+        error: "InvalidBoxes",
+        problems: [
+          { index: 0, kind: "box_outside_window" },
+          { index: 1, kind: "box_unknown_class" },
+        ],
+      },
+    });
+    expect(mockPrisma.visionAnnotationVersion.create).not.toHaveBeenCalled();
+    expect(store.objectCount).toBe(0);
+  });
+
+  it("refuses a box crediting a model unless that model pre-labelled the task", async () => {
+    await expect(
+      service.submit(TASK, { payload: { boxes: [box({ fromModelVersionId: MODEL })] } })
+    ).rejects.toMatchObject({ response: { error: "InvalidBoxes" } });
+
+    mockPrisma.visionAnnotationTask.findUnique.mockResolvedValue(
+      taskRow({ preLabelled: true, preLabelModelVersionId: MODEL })
+    );
+    await expect(
+      service.submit(TASK, { payload: { boxes: [box({ fromModelVersionId: MODEL })] } })
+    ).resolves.toBeDefined();
+  });
+
+  it("still accepts a payload with no boxes field at all", async () => {
+    await expect(service.submit(TASK, { payload: { uncertain: true, notes: "hard" } })).resolves.toBeDefined();
   });
 });
