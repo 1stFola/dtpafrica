@@ -587,3 +587,90 @@ export function rejectVisionIdentity(id: string, reason: string) {
     body: JSON.stringify({ reason }),
   });
 }
+
+// ── Calibration (Phase 5) ──────────────────────────────────────────────────
+
+export type VisionPitchDimensions = { lengthM: number; widthM: number };
+export type VisionPitchLandmark = { id: string; name: string; xM: number; yM: number };
+export type VisionCalibrationPoint = { landmark: string; px: number; py: number; frameIndex?: number };
+export type VisionCalibrationQuality = "good" | "usable" | "failed";
+export type VisionOverlay = { id: string; points: { px: number; py: number }[] }[];
+
+export type VisionCalibrationPreview =
+  | {
+      ok: true;
+      pitch: VisionPitchDimensions;
+      homography: number[];
+      reprojectionErrorM: number;
+      maxPointErrorM: number;
+      reprojectionErrorPx: number;
+      points: number;
+      quality: VisionCalibrationQuality;
+      thresholdsVersion: string;
+      overlay: VisionOverlay;
+      reprojected: { landmark: string; px: number; py: number; errorM: number }[];
+    }
+  | { ok: false; pitch: VisionPitchDimensions; reason: string; detail?: string };
+
+export type VisionCalibrationSummary = {
+  id: string;
+  cameraSegmentId: string;
+  pitch: VisionPitchDimensions;
+  method: string;
+  reprojectionErrorM: number;
+  maxPointErrorM: number;
+  reprojectionErrorPx: number;
+  points: number;
+  clicked: VisionCalibrationPoint[];
+  quality: VisionCalibrationQuality;
+  thresholdsVersion: string;
+  decidedBy: string | null;
+  createdAt: string;
+};
+
+export type VisionCameraSegment = {
+  id: string;
+  kind: string;
+  source: "manual" | "scene_detect" | string;
+  startMs: number;
+  endMs: number;
+  calibration: VisionCalibrationSummary | null;
+  superseded: number;
+};
+
+export type VisionCameraSegments = {
+  videoAssetId: string;
+  durationMs: number | null;
+  segments: VisionCameraSegment[];
+  coverage: { segmentedMs: number; calibratedMs: number };
+  thresholds: { version: string; goodRmseM: number; goodMinPoints: number; usableRmseM: number; maxPointErrorM: number };
+};
+
+export function fetchVisionCameraSegments(assetId: string) {
+  return adminFetch<VisionCameraSegments>(`/vision/review/${assetId}/camera-segments`);
+}
+
+export function declareVisionCameraSegment(assetId: string, body: { startMs: number; endMs: number; kind: string }) {
+  return adminFetch<VisionCameraSegment>(`/vision/review/${assetId}/camera-segments`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function removeVisionCameraSegment(segmentId: string) {
+  return adminFetch<{ removed: string }>(`/vision/review/camera-segments/${segmentId}`, { method: "DELETE" });
+}
+
+export function fetchVisionPitchLandmarks(pitch?: VisionPitchDimensions) {
+  const query = pitch ? `?lengthM=${pitch.lengthM}&widthM=${pitch.widthM}` : "";
+  return adminFetch<{ pitch: VisionPitchDimensions; problem: string | null; landmarks: VisionPitchLandmark[] }>(`/vision/calibration/landmarks${query}`);
+}
+
+export function previewVisionCalibration(points: VisionCalibrationPoint[], pitch?: VisionPitchDimensions) {
+  return adminFetch<VisionCalibrationPreview>(`/vision/calibration/preview`, { method: "POST", body: JSON.stringify({ points, pitch }) });
+}
+
+export function calibrateVisionSegment(segmentId: string, points: VisionCalibrationPoint[], pitch?: VisionPitchDimensions) {
+  return adminFetch<VisionCalibrationSummary>(`/vision/review/camera-segments/${segmentId}/calibration`, { method: "POST", body: JSON.stringify({ points, pitch }) });
+}
+
+export function queueVisionJob(body: { type: string; videoAssetId: string; params?: Record<string, unknown> }) {
+  return adminFetch<{ id: string }>(`/vision/jobs`, { method: "POST", body: JSON.stringify(body) });
+}

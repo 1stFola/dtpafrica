@@ -93,6 +93,36 @@ describe("a person's calibration", () => {
     expect(out.reprojectionErrorM).toBeLessThan(0.01);
     expect(out.thresholdsVersion).toContain("provisional");
     expect(mockPrisma.visionPitchCalibration.create).not.toHaveBeenCalled();
+    // The pitch drawn back in pixels: the outline's first corner is where the camera saw (0, 0).
+    const outline = out.overlay.find((l) => l.id === "outline")!;
+    expect(outline.points[0]!.px).toBeCloseTo(see(0, 0).x, 1);
+    expect(outline.points[0]!.py).toBeCloseTo(see(0, 0).y, 1);
+    expect(out.overlay.map((l) => l.id)).toContain("centre_circle");
+    // And each click, reprojected: with an exact fit it lands on itself.
+    expect(out.reprojected).toHaveLength(6);
+    expect(out.reprojected[0]!.landmark).toBe("corner_left_near");
+    expect(out.reprojected[0]!.errorM).toBeLessThan(0.01);
+  });
+
+  it("breaks the drawn pitch where it crosses the horizon rather than mirroring it", () => {
+    // A camera so low that the far touchline is behind it: w changes sign across the pitch.
+    const low: Homography = [9.2, -3.1, 160, 0.4, 2.6, 80, 0.0004, -0.02, 1];
+    const by = landmarkById({ lengthM: 105, widthM: 68 });
+    const near = ["corner_left_near", "corner_right_near", "halfway_near", "left_box_near", "right_box_near"].map((id) => {
+      const l = by.get(id)!;
+      const p = project(low, { x: l.xM, y: l.yM })!;
+      return { landmark: id, px: p.x, py: p.y };
+    });
+    const out = service.preview(near);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    // The outline loses its two far corners; the halfway line, with one end beyond, is not drawn at all.
+    const outlinePoints = out.overlay.filter((l) => l.id === "outline").reduce((n, l) => n + l.points.length, 0);
+    expect(outlinePoints).toBeGreaterThanOrEqual(2);
+    expect(outlinePoints).toBeLessThan(5);
+    expect(out.overlay.some((l) => l.id === "halfway")).toBe(false);
+    const farCorner = project(low, { x: 0, y: 68 })!;
+    expect(out.overlay.flatMap((l) => l.points).some((p) => Math.abs(p.px - farCorner.x) < 1 && Math.abs(p.py - farCorner.y) < 1)).toBe(false);
   });
 
   it("names an unknown landmark, too few points, and a degenerate set", () => {
@@ -109,6 +139,8 @@ describe("a person's calibration", () => {
     await expect(service.calibrate(SEGMENT, { points: clicks(SIX) }, apiKey)).rejects.toMatchObject({ response: { error: "CalibrationNeedsAPerson" } });
     const out = await service.calibrate(SEGMENT, { points: clicks(SIX), pitch: { lengthM: 105, widthM: 68 } }, reviewer);
     expect(out).toMatchObject({ cameraSegmentId: SEGMENT, method: "manual", quality: "good", points: 6, decidedBy: "u-reviewer", pitch: { lengthM: 105, widthM: 68 } });
+    expect(out.clicked).toHaveLength(6);
+    expect(out.clicked[0]).toMatchObject({ landmark: "corner_left_near" });
     expect(mockPrisma.visionPitchCalibration.updateMany).toHaveBeenCalledWith({ where: { cameraSegmentId: SEGMENT, supersededBy: null, id: { not: "cal-1" } }, data: { supersededBy: "cal-1" } });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "calibration.set", data: expect.objectContaining({ quality: "good" }) }), reviewer);
   });

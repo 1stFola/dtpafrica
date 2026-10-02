@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CALIBRATION_THRESHOLDS, qualityOf } from "./calibration-thresholds";
 import { fitHomography, invert3, isFit, multiply, normalise, project, type Correspondence, type Homography } from "./homography";
-import { DEFAULT_PITCH, PENALTY_SPOT_M, landmarkById, pitchLandmarks, pitchProblem } from "./pitch-model";
+import { DEFAULT_PITCH, PENALTY_SPOT_M, landmarkById, pitchLandmarks, pitchLines, pitchProblem } from "./pitch-model";
 
 /**
  * A synthetic camera: a known homography from pitch metres to picture pixels,
@@ -45,6 +45,17 @@ describe("the pitch model", () => {
     expect(small.get("right_penalty_spot")).toMatchObject({ xM: 79, yM: 27.5 });
     expect(small.get("left_post_far")).toMatchObject({ xM: 0, yM: 27.5 + 3.66 });
     expect(pitchLandmarks().length).toBe(33);
+  });
+
+  it("draws its markings as polylines from the dimensions, the circle sampled", () => {
+    const lines = pitchLines({ lengthM: 90, widthM: 55 });
+    const byId = new Map(lines.map((l) => [l.id, l]));
+    expect([...byId.keys()]).toEqual(["outline", "halfway", "centre_circle", "left_box", "left_goal_area", "right_box", "right_goal_area"]);
+    expect(byId.get("outline")!.points).toEqual([{ xM: 0, yM: 0 }, { xM: 90, yM: 0 }, { xM: 90, yM: 55 }, { xM: 0, yM: 55 }, { xM: 0, yM: 0 }]);
+    expect(byId.get("halfway")!.points).toEqual([{ xM: 45, yM: 0 }, { xM: 45, yM: 55 }]);
+    expect(byId.get("centre_circle")!.points).toHaveLength(37);
+    expect(byId.get("centre_circle")!.points[0]).toEqual({ xM: 54.15, yM: 27.5 });
+    expect(byId.get("right_box")!.points[1]).toEqual({ xM: 73.5, yM: 27.5 - 20.16 });
   });
 
   it("refuses dimensions no pitch has", () => {

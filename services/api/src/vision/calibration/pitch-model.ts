@@ -94,6 +94,37 @@ export function landmarkById(dims: PitchDimensions): Map<string, PitchLandmark> 
   return new Map(pitchLandmarks(dims).map((l) => [l.id, l]));
 }
 
+export type PitchLine = { id: string; points: { xM: number; yM: number }[] };
+
+/**
+ * The pitch's markings as polylines in metres, for drawing the fitted pitch back
+ * over the picture so a person can see where their homography disagrees with the
+ * grass. The circle and arcs are sampled; everything else is its corners.
+ */
+export function pitchLines(dims: PitchDimensions = DEFAULT_PITCH): PitchLine[] {
+  const L = dims.lengthM;
+  const W = dims.widthM;
+  const mid = W / 2;
+  const lines: PitchLine[] = [];
+  const poly = (id: string, pts: [number, number][]) => lines.push({ id, points: pts.map(([xM, yM]) => ({ xM: round(xM), yM: round(yM) })) });
+
+  poly("outline", [[0, 0], [L, 0], [L, W], [0, W], [0, 0]]);
+  poly("halfway", [[L / 2, 0], [L / 2, W]]);
+  const circle: [number, number][] = [];
+  for (let i = 0; i <= 36; i += 1) {
+    const a = (i / 36) * Math.PI * 2;
+    circle.push([L / 2 + CENTRE_CIRCLE_RADIUS_M * Math.cos(a), mid + CENTRE_CIRCLE_RADIUS_M * Math.sin(a)]);
+  }
+  poly("centre_circle", circle);
+  for (const [side, x0, dir] of [["left", 0, 1], ["right", L, -1]] as const) {
+    const boxX = x0 + dir * PENALTY_AREA_DEPTH_M;
+    const goalX = x0 + dir * GOAL_AREA_DEPTH_M;
+    poly(`${side}_box`, [[x0, mid - PENALTY_AREA_WIDTH_M / 2], [boxX, mid - PENALTY_AREA_WIDTH_M / 2], [boxX, mid + PENALTY_AREA_WIDTH_M / 2], [x0, mid + PENALTY_AREA_WIDTH_M / 2]]);
+    poly(`${side}_goal_area`, [[x0, mid - GOAL_AREA_WIDTH_M / 2], [goalX, mid - GOAL_AREA_WIDTH_M / 2], [goalX, mid + GOAL_AREA_WIDTH_M / 2], [x0, mid + GOAL_AREA_WIDTH_M / 2]]);
+  }
+  return lines;
+}
+
 function round(v: number): number {
   return Math.round(v * 1000) / 1000;
 }

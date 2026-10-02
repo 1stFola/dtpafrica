@@ -117,6 +117,16 @@ export function isFit(result: Fit | FitFailure): result is Fit {
   return "homography" in result;
 }
 
+/**
+ * The homogeneous scale a point gets through the homography. Its sign tells which
+ * side of the horizon the point is on: a point whose sign differs from a point
+ * known to be in view is behind the camera, and `project` would mirror it to a
+ * finite pixel that means nothing.
+ */
+export function homogeneousW(H: Homography, p: Point): number {
+  return H[6] * p.x + H[7] * p.y + H[8];
+}
+
 /** A point through the homography, or null when it maps to infinity (the horizon). */
 export function project(H: Homography, p: Point): Point | null {
   const w = H[6] * p.x + H[7] * p.y + H[8];

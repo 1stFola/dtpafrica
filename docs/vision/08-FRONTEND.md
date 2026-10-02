@@ -26,6 +26,7 @@ Reuse, do not rebuild: `AdminAuthContext`, `AdminRequirePermission`, `AdminLayou
 | `/admin/vision/assets/:id` | Asset processing workspace | `vision.read` | `AdminLayout` |
 | `/admin/vision/review/:assetId/*` | **Analysis & review workstation** | `vision.review` | **Full viewport, outside `AdminLayout`** |
 | `/admin/vision/workstation/identity/:assetId` | Identity review (the roster panel of the above, as built — [36](./36-PHASE-4-INCREMENT-5.md)) | `vision.review` | Full viewport, `VisionWorkstationApp` |
+| `/admin/vision/workstation/calibration/:assetId` | Calibration editor (as built — [40](./40-PHASE-5-INCREMENT-3.md)) | `vision.review` | Full viewport, `VisionWorkstationApp` |
 | `/admin/vision/annotation` | Annotation queue | `vision.annotate` | `AdminLayout` |
 | `/admin/vision/datasets` | Dataset registry | `vision.read` | `AdminLayout` |
 | `/admin/vision/datasets/:id` | Dataset detail, leakage, representation | `vision.read` | `AdminLayout` |
@@ -121,8 +122,11 @@ correction time is operationally worse — so correction time is a tracked metri
 track's box on the frame, and the roster/identity panel — sides, candidates, split, merge,
 reassign and mark-unknown as one assignment over a window, a second person's accept and
 reject, and the public view. It lives at `/admin/vision/workstation/identity/:assetId`
-beside the annotation workstation. The timeline, minimap and inspector wait on events and
-calibration.
+beside the annotation workstation. The calibration editor ([40](./40-PHASE-5-INCREMENT-3.md))
+sits beside it: landmarks clicked on a paused frame, the fitted pitch drawn back over the
+picture, segments declared and calibrations filed. Overlays on both screens are reckoned against
+the letterboxed picture inside the `<video>` element, never the element itself. The timeline,
+minimap and inspector wait on events and game state.
 
 ### Non-negotiable behaviours
 

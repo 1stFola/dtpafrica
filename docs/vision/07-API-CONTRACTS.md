@@ -261,6 +261,12 @@ under the suppression rule: positions in metres only through a calibration that 
 and `distance` is `{ suppressed: true, reason }` unless every position was placed. See
 [38-PHASE-5-INCREMENT-1.md](./38-PHASE-5-INCREMENT-1.md).
 
+The preview and a filed calibration also carry `overlay` — the pitch's markings projected into
+proxy pixels through the inverse homography, each polyline broken at the horizon — and
+`reprojected`, each click's position as the fit would place it with its error in metres; a filed
+calibration carries its `clicked` points so the editor can load them back. See
+[40-PHASE-5-INCREMENT-3.md](./40-PHASE-5-INCREMENT-3.md).
+
 `POST /vision/jobs` with `type: "cuts"` queues the scene-change proposer on `cpu_small` after
 `transcode`, with optional `params.threshold` and `params.minSegmentMs`; its completion files
 proposed segments as `source: scene_detect`, kind `unknown`, skipping any that overlap a segment

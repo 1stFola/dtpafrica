@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { AdminAuthProvider } from "./AdminAuthContext";
 import { AdminRequireAuth } from "./AdminRequireAuth";
 import { AdminRequirePermission } from "./AdminRequirePermission";
+import { AdminVisionCalibrationPage } from "./vision/AdminVisionCalibrationPage";
 import { AdminVisionIdentityPage } from "./vision/AdminVisionIdentityPage";
 import { AdminVisionTaskPage } from "./vision/AdminVisionTaskPage";
 
@@ -31,6 +32,7 @@ export function VisionWorkstationApp() {
         <Route element={<AdminRequireAuth />}>
           <Route element={<AdminRequirePermission permission="vision.review" />}>
             <Route path="identity/:assetId" element={<AdminVisionIdentityPage />} />
+            <Route path="calibration/:assetId" element={<AdminVisionCalibrationPage />} />
           </Route>
           <Route element={<AdminRequirePermission permission="vision.annotate" />}>
             <Route path=":taskId" element={<AdminVisionTaskPage />} />
