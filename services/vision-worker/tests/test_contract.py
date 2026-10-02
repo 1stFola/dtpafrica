@@ -21,6 +21,7 @@ import pytest
 
 from dtp_vision_worker.config import CONTRACT_VERSION
 from dtp_vision_worker.stages import CPU_STAGES, GPU_STAGES, STAGES
+from dtp_vision_worker.stages.detect import ARTIFACT_ROLE, CONTRACT_CLASSES, DETECTION_CLASS_BY_LABEL
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages" / "vision-contracts" / "src"
 
@@ -98,3 +99,46 @@ def test_gpu_stages_are_not_routed_to_a_cpu_class() -> None:
         assert routing.get(stage, "").startswith("gpu_"), (
             f"{stage} needs CUDA but the contract routes it to {routing.get(stage)!r}"
         )
+
+
+def _typescript_list(source: str, name: str) -> set[str]:
+    block = re.search(name + r"\s*=\s*\[(.*?)\]", source, re.S)
+    assert block, f"{name} not found"
+    return set(re.findall(r'"([a-z_]+)"', block.group(1)))
+
+
+def test_detection_classes_mirror_the_contract() -> None:
+    """The stage mirrors `DETECTION_CLASSES` so it can refuse a label the review UI has
+    never heard of. A mirror that drifted would let the worker write a class nothing
+    downstream can display -- or refuse one it should accept."""
+    declared = _typescript_list(_read("prediction.ts"), "DETECTION_CLASSES")
+    assert set(CONTRACT_CLASSES) == declared, (
+        f"Python mirrors {sorted(CONTRACT_CLASSES)}, TypeScript declares {sorted(declared)}"
+    )
+    for cls in DETECTION_CLASS_BY_LABEL.values():
+        assert cls in declared, f"the baseline maps onto {cls!r}, which the contract does not declare"
+
+
+def test_ball_unknown_is_a_declared_quality_flag() -> None:
+    """The stage flags a frame with no ball as `ball_unknown`. If the contract ever
+    renames the flag, the artifact would carry a value the envelope rejects."""
+    assert "ball_unknown" in _typescript_list(_read("prediction.ts"), "QUALITY_FLAGS")
+
+
+def test_the_artifact_role_matches_the_contract() -> None:
+    source = _read("prediction.ts")
+    match = re.search(r'DETECTION_ARTIFACT_ROLE\s*=\s*"([a-z_]+)"', source)
+    assert match, "DETECTION_ARTIFACT_ROLE not found in prediction.ts"
+    assert ARTIFACT_ROLE == match.group(1)
+
+
+def test_every_model_bound_job_type_the_contract_names_is_a_gpu_stage_here() -> None:
+    """`MODEL_TASK_BY_JOB_TYPE` must only name stages this image implements on a GPU.
+    Naming one that does not exist would be S0-1 again: a job the control plane
+    dispatches with a model version and no worker can claim."""
+    source = _read("jobs.ts")
+    block = re.search(r"MODEL_TASK_BY_JOB_TYPE[^=]*=\s*\{(.*?)\n\};", source, re.S)
+    assert block, "MODEL_TASK_BY_JOB_TYPE not found in jobs.ts"
+    bound = set(re.findall(r'(\w+):\s*"[a-z]+"', block.group(1)))
+    assert bound, "the contract binds no job type to a model"
+    assert bound <= GPU_STAGES, f"bound to a model but not a GPU stage here: {bound - GPU_STAGES}"

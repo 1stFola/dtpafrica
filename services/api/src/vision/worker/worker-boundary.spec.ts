@@ -23,6 +23,7 @@ const PREFIX = visionKeys.inferencePrefix(JOB, 1);
 const mockPrisma = {
   visionJob: { findUnique: vi.fn() },
   visionJobCost: { upsert: vi.fn() },
+  visionJobEvent: { create: vi.fn() },
 };
 
 const mockQueue = {
@@ -39,6 +40,15 @@ const mockTokens = { register: vi.fn(), verify: vi.fn(), retire: vi.fn(), mintBo
 const mockStageResults = {
   apply: vi.fn().mockResolvedValue({ applied: true, detail: "" }),
   markIngestFailed: vi.fn(),
+};
+
+/**
+ * Provenance is exercised in models.spec.ts; here the registry answers "fine" unless
+ * a test says otherwise, and the two refusals it can raise are checked at the door.
+ */
+const mockModels = {
+  verifyCompletion: vi.fn(),
+  recordWeightsChecksum: vi.fn(),
 };
 
 let store: InMemoryObjectStore;
@@ -65,6 +75,13 @@ function heldJob(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockModels.verifyCompletion.mockResolvedValue({
+    ok: true,
+    modelVersionId: null,
+    weights: { outcome: "not_applicable", sha256: null },
+  });
+  mockModels.recordWeightsChecksum.mockResolvedValue(true);
+  mockPrisma.visionJobEvent.create.mockResolvedValue({});
   store = new InMemoryObjectStore();
   controller = new VisionWorkerController(
     mockPrisma as never,
@@ -72,7 +89,8 @@ beforeEach(() => {
     mockStageResults as never,
     mockQueue as never,
     store,
-    loadVisionConfig({})
+    loadVisionConfig({}),
+    mockModels as never
   );
 });
 
@@ -312,5 +330,127 @@ describe("the worker guard is a separate stack from admin auth", () => {
 
     await expect(guard.canActivate(ctx as never)).resolves.toBe(true);
     expect(req.workerAuth).toMatchObject({ workerId: WORKER });
+  });
+});
+
+/**
+ * The same door, a second lock. A completion that cannot be attributed to the model
+ * version the job was dispatched with is refused before the job can succeed, for the
+ * same reason a stray artifact is: the control plane must not record the claim.
+ */
+describe("completion is refused when its provenance does not hold", () => {
+  const MODEL_VERSION = "55556666-7777-4888-9999-aaaabbbbcccc";
+
+  function detectJob() {
+    return heldJob({ type: "detect", videoAssetId: "asset-1", modelVersionId: MODEL_VERSION });
+  }
+
+  it("refuses a model-version mismatch with 403 and never marks the job succeeded", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(detectJob());
+    mockModels.verifyCompletion.mockResolvedValue({
+      ok: false,
+      error: "ProvenanceMismatch",
+      message: "wrong version",
+      detail: "",
+    });
+
+    await expect(
+      controller.complete(request(), JOB, {
+        idempotencyKey: "complete-1",
+        artifacts: [],
+        modelVersionIds: ["other"],
+      })
+    ).rejects.toMatchObject({ response: { statusCode: 403, error: "ProvenanceMismatch" } });
+
+    expect(mockQueue.succeed).not.toHaveBeenCalled();
+    expect(mockStageResults.apply).not.toHaveBeenCalled();
+  });
+
+  it("refuses a weights mismatch the same way", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(detectJob());
+    mockModels.verifyCompletion.mockResolvedValue({
+      ok: false,
+      error: "WeightsMismatch",
+      message: "different bytes",
+      detail: "",
+    });
+
+    await expect(
+      controller.complete(request(), JOB, { idempotencyKey: "complete-1", artifacts: [] })
+    ).rejects.toMatchObject({ response: { error: "WeightsMismatch" } });
+    expect(mockQueue.succeed).not.toHaveBeenCalled();
+  });
+
+  it("hands the registry exactly what the job row and the worker said", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(detectJob());
+    mockQueue.succeed.mockResolvedValue({ alreadyApplied: false });
+
+    await controller.complete(request(), JOB, {
+      idempotencyKey: "complete-1",
+      artifacts: [],
+      modelVersionIds: [MODEL_VERSION],
+      summary: { modelVersionId: MODEL_VERSION },
+    });
+
+    expect(mockModels.verifyCompletion).toHaveBeenCalledWith(
+      { id: JOB, type: "detect", modelVersionId: MODEL_VERSION },
+      { modelVersionIds: [MODEL_VERSION], summary: { modelVersionId: MODEL_VERSION } }
+    );
+    // And the projection learns which version the job carried.
+    expect(mockStageResults.apply).toHaveBeenCalledWith(
+      "detect",
+      "asset-1",
+      expect.anything(),
+      { modelVersionId: MODEL_VERSION }
+    );
+  });
+
+  it("pins a first-seen weights checksum only after the job has succeeded, once", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(detectJob());
+    mockModels.verifyCompletion.mockResolvedValue({
+      ok: true,
+      modelVersionId: MODEL_VERSION,
+      weights: { outcome: "recorded", sha256: "a".repeat(64) },
+    });
+    mockQueue.succeed.mockResolvedValueOnce({ alreadyApplied: false });
+
+    await controller.complete(request(), JOB, {
+      idempotencyKey: "complete-1",
+      artifacts: [],
+      modelVersionIds: [MODEL_VERSION],
+    });
+    expect(mockModels.recordWeightsChecksum).toHaveBeenCalledWith(MODEL_VERSION, "a".repeat(64));
+    expect(mockPrisma.visionJobEvent.create.mock.calls[0]![0].data.kind).toBe(
+      "weights_checksum_recorded"
+    );
+
+    // The retried completion: already applied, so nothing is pinned twice.
+    mockQueue.succeed.mockResolvedValueOnce({ alreadyApplied: true });
+    await controller.complete(request(), JOB, {
+      idempotencyKey: "complete-1",
+      artifacts: [],
+      modelVersionIds: [MODEL_VERSION],
+    });
+    expect(mockModels.recordWeightsChecksum).toHaveBeenCalledTimes(1);
+  });
+
+  it("says so when another run pinned the version first", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(detectJob());
+    mockModels.verifyCompletion.mockResolvedValue({
+      ok: true,
+      modelVersionId: MODEL_VERSION,
+      weights: { outcome: "recorded", sha256: "b".repeat(64) },
+    });
+    mockModels.recordWeightsChecksum.mockResolvedValue(false);
+    mockQueue.succeed.mockResolvedValue({ alreadyApplied: false });
+
+    await controller.complete(request(), JOB, {
+      idempotencyKey: "complete-2",
+      artifacts: [],
+      modelVersionIds: [MODEL_VERSION],
+    });
+    expect(mockPrisma.visionJobEvent.create.mock.calls[0]![0].data.kind).toBe(
+      "weights_checksum_already_pinned"
+    );
   });
 });

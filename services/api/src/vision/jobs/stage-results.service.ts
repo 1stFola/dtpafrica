@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { VisionJobType } from "@dtp/vision-contracts";
+import { DETECTION_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 
 /**
@@ -37,6 +37,11 @@ export type ApplyOutcome = {
   detail: string;
 };
 
+/** What the job row knows that the completion payload does not. */
+export type ApplyContext = {
+  modelVersionId: string | null;
+};
+
 @Injectable()
 export class VisionStageResultsService {
   private readonly log = new Logger(VisionStageResultsService.name);
@@ -46,7 +51,8 @@ export class VisionStageResultsService {
   async apply(
     jobType: VisionJobType,
     videoAssetId: string | null,
-    completion: StageCompletion
+    completion: StageCompletion,
+    context: ApplyContext = { modelVersionId: null }
   ): Promise<ApplyOutcome> {
     if (!videoAssetId) return { applied: false, detail: "job has no video asset" };
 
@@ -58,6 +64,8 @@ export class VisionStageResultsService {
           return await this.applyFingerprint(videoAssetId, completion.summary);
         case "transcode":
           return await this.applyTranscode(videoAssetId, completion);
+        case "detect":
+          return this.applyDetect(completion, context);
         default:
           return { applied: false, detail: `no domain effect for ${jobType}` };
       }
@@ -298,6 +306,49 @@ export class VisionStageResultsService {
     return {
       applied: true,
       detail: `proxy at ${fps ?? "?"}fps/${height ?? "?"}p plus ${thumbnails} thumbnail(s); asset is ready`,
+    };
+  }
+
+  /**
+   * detect → nothing in Postgres, on purpose.
+   *
+   * Dense per-frame output lives in object storage (docs/vision/04-DATA-MODEL.md
+   * § CV outputs); a 90-minute match is millions of boxes and does not belong in a
+   * row store on a 2 GB box. What the control plane keeps is on the job row already:
+   * the artifact key, the summary, the model version. So this projection only checks
+   * that the completion is the shape the job promised, and says what it found.
+   *
+   * Provenance was verified at the door (`VisionModelsService.verifyCompletion`)
+   * before the job could succeed; the check here is the belt to that brace.
+   */
+  private applyDetect(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const artifact = completion.artifacts.find((a) => a.role === DETECTION_ARTIFACT_ROLE);
+    if (!artifact) {
+      return { applied: false, detail: "detect reported no detections artifact" };
+    }
+
+    const modelVersionId = str(completion.summary.modelVersionId);
+    if (!modelVersionId || modelVersionId !== context.modelVersionId) {
+      return {
+        applied: false,
+        detail: `detect summary names model version ${modelVersionId ?? "none"}; the job carries ${
+          context.modelVersionId ?? "none"
+        }`,
+      };
+    }
+
+    const frames = int(completion.summary.framesSampled);
+    const fps = num(completion.summary.sampleFps);
+    const ballPct = num(completion.summary.ballVisibilityPct);
+    const weights = str(completion.summary.weightsSha256);
+
+    return {
+      applied: true,
+      detail: `${frames ?? "?"} frame(s) at ${fps ?? "?"}fps, ball visible in ${
+        ballPct ?? "?"
+      }%, model version ${modelVersionId}${
+        weights ? ` (weights ${weights.slice(0, 12)}...)` : " (weights unreported)"
+      }; boxes in ${artifact.key}`,
     };
   }
 

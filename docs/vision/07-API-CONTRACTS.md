@@ -136,6 +136,8 @@ accepted review decision and a valid `canPublishHighlight`/publication rights ch
 | `POST` | `/vision/datasets/:id/freeze` | `vision.datasets.manage` |
 | `POST` | `/vision/datasets/:id/export` | `vision.datasets.manage` |
 | `GET` | `/vision/models` | `vision.read` |
+| `POST` | `/vision/models` | `vision.models.train` |
+| `GET` | `/vision/models/versions/:id` | `vision.read` |
 | `POST` | `/vision/models/:id/versions` | `vision.models.train` |
 | `POST` | `/vision/models/versions/:id/benchmark` | `vision.models.train` |
 | `POST` | `/vision/models/versions/:id/promotion-request` | `vision.models.train` |
@@ -148,6 +150,25 @@ members rather than freezing a dirty dataset.
 
 The split between `promotion-request` (`models.train`) and `promote` (`models.promote`) is the
 two-person rule from [04-DATA-MODEL.md](./04-DATA-MODEL.md#rbac-extends-the-existing-catalogue).
+
+`POST /vision/models/:id/versions` refuses a version whose `licenceNote` is blank, or whose
+`datasetVersionId` names a draft, a version holding revoked footage, or one that trains on another
+frozen version's gold — the same three refusals the export makes, because registering the version
+is how a training run would be *recorded*. There is no route that changes a version's `stage`
+until the benchmark ledger exists to justify one.
+
+`POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
+in the contracts). Omitted, the single `production` version for the task is used; with none, the
+job is refused (`NoProductionModel`) rather than run against whichever version happened to exist.
+Any stage downstream of `transcode` is dispatched with the proxy's clock under
+`inputs.params.proxy` (`{ fps, sourceOffsetMs }`), resolved from the variant row at enqueue; a
+caller's own `params.proxy` is overwritten, not trusted.
+
+`POST /vision/worker/jobs/:id/complete` refuses, with `403 ProvenanceMismatch`, a completion whose
+`modelVersionIds` is not exactly the version the job was dispatched with, and with
+`403 WeightsMismatch` one whose `summary.weightsSha256` differs from the checksum the version is
+pinned to. The first accepted completion that reports a checksum pins the version to it. See
+[28-PHASE-3-INCREMENT-1.md](./28-PHASE-3-INCREMENT-1.md).
 
 ### Highlights, metrics, scout search
 

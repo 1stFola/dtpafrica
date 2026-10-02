@@ -30,6 +30,7 @@ shipped) · `dev-tool` (developer machines and CI only) · `reference` (read, no
 
 | Component | Link | Code licence | Weights licence | Use | Status | Notes |
 |---|---|---|---|---|---|---|
+| torchvision Faster R-CNN (ResNet-50 FPN), COCO-pretrained | pytorch/vision | BSD-3-Clause | BSD-3-Clause (distributed with torchvision); pretrained on COCO 2017 upstream, by PyTorch, not by DTP | runtime | APPROVED as the **Spike S0 / Phase 3 baseline only** | Chosen over YOLO for licence, not accuracy ([27, S0-4](../vision/27-SPIKE-S0-SURPRISES.md)). COCO has no goalkeeper or referee, so the baseline maps every `person` to `player` and says so in each artifact. Registered as `detector/torchvision-fasterrcnn-coco`; the first worker run pins the version to the checksum of the weights it loaded. Not a candidate for production: Phase 3 trains RF-DETR. |
 | RF-DETR | roboflow/rf-detr | Apache-2.0 (core) | Apache-designated for core weights; **Plus/XL under separate terms** | runtime | **REVIEW REQUIRED** before first training run | Core is the baseline. Confirm the exact weight variant before use — the variant, not the repo, is what matters. |
 | ByteTrack | ifzhang/ByteTrack | MIT (verify at pinned commit) | n/a | runtime | **REVIEW REQUIRED** | Verify transitive deps; some tracking repos pull Ultralytics. |
 | BoT-SORT | NirAharon/BoT-SORT | Verify at pinned commit | n/a | runtime | **REVIEW REQUIRED** | Benchmark candidate against ByteTrack. |

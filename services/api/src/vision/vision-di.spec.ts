@@ -18,6 +18,8 @@ import { JOB_QUEUE } from "./jobs/job-queue";
 import { VisionJobsController } from "./jobs/jobs.controller";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
+import { VisionModelsController } from "./models/models.controller";
+import { VisionModelsService } from "./models/models.service";
 import { RightsPolicyService } from "./rights/rights-policy.service";
 import { OBJECT_STORE } from "./storage/object-store";
 import { VisionModule } from "./vision.module";
@@ -59,6 +61,7 @@ const PROVIDERS = [
   VisionSourcesService,
   VisionDatasetsService,
   VisionAnnotationService,
+  VisionModelsService,
   WorkerTokenService,
 ] as const;
 
@@ -71,6 +74,7 @@ const CONTROLLERS = [
   VisionSourcesController,
   VisionDatasetsController,
   VisionAnnotationController,
+  VisionModelsController,
 ] as const;
 
 const SERVICES = [
@@ -83,6 +87,7 @@ const SERVICES = [
   VisionAuditService,
   VisionDatasetsService,
   VisionAnnotationService,
+  VisionModelsService,
   WorkerTokenService,
 ] as const;
 
