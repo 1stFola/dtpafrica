@@ -39,7 +39,7 @@ const thresholds: BenchmarkThresholds = {
   iou: 0.5,
   minimums: {},
   criticalSlices: ["quality:platform_copy"],
-  regressionMetrics: ["ap:all", "recall:ball"],
+  regressionMetrics: { detect: ["ap:all", "recall:ball"], track: ["idf1:all", "mota:all"] },
   regressionTolerance: 0.02,
 };
 
@@ -88,9 +88,10 @@ describe("requesting a run", () => {
     expect(args).toMatchObject({ type: "benchmark", datasetVersionId: DATASET, modelVersionId: VERSION });
     expect(args.params).toMatchObject({
       benchmarkRunId: RUN,
+      task: "detect",
       goldLabelsKey: EXPORT_KEY,
       iou: 0.5,
-      detections: [
+      predictions: [
         { videoAssetId: "a1", key: "inference/j1/1/detections.json" },
         { videoAssetId: "a2", key: "inference/j2/1/detections.json" },
       ],
@@ -120,12 +121,33 @@ describe("requesting a run", () => {
     ]);
     await service.request(VERSION, DATASET);
     const [args] = mockJobs.enqueueDetached.mock.calls[0]!;
-    expect(args.params.detections[0]).toEqual({ videoAssetId: "a1", key: "inference/new/1/detections.json" });
+    expect(args.params.predictions[0]).toEqual({ videoAssetId: "a1", key: "inference/new/1/detections.json" });
   });
 
-  it("refuses a model that is not a detector", async () => {
-    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(detector({ model: { key: "t", task: "track" } }));
+  it("refuses a model that is neither a detector nor a tracker", async () => {
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(detector({ model: { key: "c", task: "calibrate" } }));
     await expect(service.request(VERSION, DATASET)).rejects.toMatchObject({ response: { error: "ModelTaskUnsupported" } });
+  });
+
+  it("scores a tracker against the latest track artifacts, and names who lacks one", async () => {
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(detector({ model: { key: "tracker/x", task: "track" } }));
+    mockPrisma.visionJob.findMany.mockResolvedValue([
+      { videoAssetId: "a1", progress: { artifacts: [{ key: "inference/t1/1/tracks.json", bucket: "derived", role: "tracks" }] } },
+    ]);
+    await expect(service.request(VERSION, DATASET)).rejects.toMatchObject({ response: { error: "TracksMissing", members: ["a2"] } });
+    expect(mockPrisma.visionJob.findMany.mock.calls[0]![0].where).toMatchObject({ type: "track" });
+
+    mockPrisma.visionJob.findMany.mockResolvedValue([
+      { videoAssetId: "a1", progress: { artifacts: [{ key: "inference/t1/1/tracks.json", bucket: "derived", role: "tracks" }] } },
+      { videoAssetId: "a2", progress: { artifacts: [{ key: "inference/t2/1/tracks.json", bucket: "derived", role: "tracks" }] } },
+    ]);
+    await service.request(VERSION, DATASET);
+    const [args] = mockJobs.enqueueDetached.mock.calls[0]!;
+    expect(args.params.task).toBe("track");
+    expect(args.params.predictions).toEqual([
+      { videoAssetId: "a1", key: "inference/t1/1/tracks.json" },
+      { videoAssetId: "a2", key: "inference/t2/1/tracks.json" },
+    ]);
   });
 
   it("refuses an archived version", async () => {
@@ -309,7 +331,7 @@ describe("the error shapes", () => {
       expect(error).toBeInstanceOf(ConflictException);
       expect((error as ConflictException).getResponse()).toMatchObject({ statusCode: 409, remediation: expect.any(String) });
     }
-    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(detector({ model: { key: "t", task: "track" } }));
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(detector({ model: { key: "c", task: "calibrate" } }));
     await expect(service.request(VERSION, DATASET)).rejects.toBeInstanceOf(BadRequestException);
   });
 });

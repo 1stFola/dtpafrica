@@ -19,9 +19,9 @@ Three decisions a reader of the output needs to know:
 - **A track that never reached the minimum hits is noise, and not written.** It is
   counted (`detectionsUnlinked`), so a detector that flickers is visible.
 
-The association is greedy by IoU rather than the Hungarian assignment ByteTrack
-uses: deterministic, dependency-free, and wrong only when two candidates are both
-good for two tracks, which the benchmark will show if it matters.
+The association is the optimal assignment (`assignment.hungarian`) over IoU, as
+ByteTrack's is: greedy best-first pairing is wrong exactly when two candidates are
+both good for two tracks, which is the crossing-players case.
 
 See docs/vision/32-PHASE-4-INCREMENT-1.md.
 """
@@ -33,6 +33,8 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
+
+from .assignment import INF, hungarian
 
 #: Detections sampled below this cannot be linked: a player moves too far between frames.
 MIN_TRACK_SAMPLE_FPS = 10
@@ -121,26 +123,21 @@ def iou(a: Box, b: Box) -> float:
 def _associate(
     tracks: list[Track], detections: list[Observation], frame: int, threshold: float
 ) -> tuple[list[tuple[Track, Observation]], list[Track], list[Observation]]:
-    """Greedy best-IoU-first matching within class. Returns matches, leftover tracks, leftover detections."""
-    pairs: list[tuple[float, int, int]] = []
-    for ti, track in enumerate(tracks):
+    """Optimal IoU matching within class. Returns matches, leftover tracks, leftover detections."""
+    if not tracks or not detections:
+        return [], list(tracks), list(detections)
+    cost: list[list[float]] = []
+    for track in tracks:
         predicted = track.predict(frame)
-        for di, det in enumerate(detections):
-            if det.cls != track.cls:
-                continue
-            overlap = iou(predicted, det.box)
-            if overlap >= threshold:
-                pairs.append((overlap, ti, di))
-    pairs.sort(key=lambda p: (-p[0], p[1], p[2]))
-    used_t: set[int] = set()
-    used_d: set[int] = set()
-    matches: list[tuple[Track, Observation]] = []
-    for _, ti, di in pairs:
-        if ti in used_t or di in used_d:
-            continue
-        used_t.add(ti)
-        used_d.add(di)
-        matches.append((tracks[ti], detections[di]))
+        row: list[float] = []
+        for det in detections:
+            overlap = iou(predicted, det.box) if det.cls == track.cls else 0.0
+            row.append(1.0 - overlap if overlap >= threshold else INF)
+        cost.append(row)
+    assigned = hungarian(cost)
+    used_t = {ti for ti, _ in assigned}
+    used_d = {di for _, di in assigned}
+    matches: list[tuple[Track, Observation]] = [(tracks[ti], detections[di]) for ti, di in assigned]
     rest_t = [t for i, t in enumerate(tracks) if i not in used_t]
     rest_d = [d for i, d in enumerate(detections) if i not in used_d]
     return matches, rest_t, rest_d

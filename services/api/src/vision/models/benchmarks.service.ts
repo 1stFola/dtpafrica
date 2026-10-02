@@ -97,11 +97,12 @@ export class VisionBenchmarksService {
       include: { model: { select: { key: true, task: true } } },
     });
     if (!version) throw new NotFoundException(`Unknown model version ${modelVersionId}`);
-    if (version.model.task !== "detect") {
+    const task = version.model.task;
+    if (task !== "detect" && task !== "track") {
       throw new BadRequestException({
         statusCode: 400,
         error: "ModelTaskUnsupported",
-        message: `${version.model.key} is a ${version.model.task} model; only detection is benchmarked yet.`,
+        message: `${version.model.key} is a ${task} model; only detection and tracking are benchmarked yet.`,
       });
     }
     if (version.stage === "archived") {
@@ -169,14 +170,14 @@ export class VisionBenchmarksService {
       });
     }
 
-    const detections = await this.detectArtifactsFor(version.id, gold.map((g) => g.videoAssetId));
-    if (detections.missing.length) {
+    const predictions = await this.artifactsFor(task, version.id, gold.map((g) => g.videoAssetId));
+    if (predictions.missing.length) {
       throw new ConflictException({
         statusCode: 409,
-        error: "DetectionsMissing",
-        message: `${detections.missing.length} gold member(s) have no succeeded detect job by this model version.`,
-        members: detections.missing.slice(0, 20),
-        remediation: `Queue detect for each with modelVersionId=${version.id}, then request the benchmark again.`,
+        error: task === "track" ? "TracksMissing" : "DetectionsMissing",
+        message: `${predictions.missing.length} gold member(s) have no succeeded ${task} job by this model version.`,
+        members: predictions.missing.slice(0, 20),
+        remediation: `Queue ${task} for each with modelVersionId=${version.id}, then request the benchmark again.`,
       });
     }
 
@@ -192,11 +193,12 @@ export class VisionBenchmarksService {
 
     const params: BenchmarkJobParams = {
       benchmarkRunId: run.id,
+      task,
       goldLabelsKey: exportRef.key,
-      detections: detections.found,
+      predictions: predictions.found,
       readKeys: [
         { bucket: "derived", key: exportRef.key },
-        ...detections.found.map((d) => ({ bucket: "derived" as const, key: d.key })),
+        ...predictions.found.map((d) => ({ bucket: "derived" as const, key: d.key })),
       ],
       iou: this.thresholds.iou,
       classes: DETECTION_CLASSES,
@@ -231,10 +233,15 @@ export class VisionBenchmarksService {
     return { ...run, jobId: job.id, goldMembers: gold.length };
   }
 
-  /** The latest succeeded detect artifact per gold member, by this model version, or who lacks one. */
-  private async detectArtifactsFor(modelVersionId: string, videoAssetIds: string[]) {
+  /**
+   * The latest succeeded artifact per gold member by this model version -- a
+   * `detections` artifact of a detect job for a detector, a `tracks` artifact of a
+   * track job for a tracker -- or who lacks one.
+   */
+  private async artifactsFor(task: "detect" | "track", modelVersionId: string, videoAssetIds: string[]) {
+    const role = task === "track" ? "tracks" : "detections";
     const jobs = await this.prisma.visionJob.findMany({
-      where: { type: "detect", state: "succeeded", modelVersionId, videoAssetId: { in: videoAssetIds } },
+      where: { type: task, state: "succeeded", modelVersionId, videoAssetId: { in: videoAssetIds } },
       orderBy: { finishedAt: "desc" },
       select: { videoAssetId: true, progress: true },
     });
@@ -244,7 +251,7 @@ export class VisionBenchmarksService {
     for (const job of jobs) {
       if (!job.videoAssetId || seen.has(job.videoAssetId)) continue;
       const artifacts = ((job.progress as { artifacts?: StageArtifact[] } | null)?.artifacts ?? []).filter(
-        (a) => a && a.role === "detections" && a.bucket === "derived" && typeof a.key === "string"
+        (a) => a && a.role === role && a.bucket === "derived" && typeof a.key === "string"
       );
       const artifact = artifacts[0];
       if (!artifact) continue;

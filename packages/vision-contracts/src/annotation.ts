@@ -39,6 +39,12 @@ export type AnnotationBox = {
    * an unmarked model suggestion is an anchoring-bias machine.
    */
   fromModelVersionId?: string | null;
+  /**
+   * Which track this box belongs to, as the annotator named it: the same id on
+   * boxes across frames says "this is the same player". Local to the submission.
+   * Absent for a box nobody linked. One class per track, one box per frame.
+   */
+  trackId?: string;
 };
 
 /** What the workstation submits. Fields outside these are kept but unread. */
@@ -70,6 +76,11 @@ export const BOX_PROBLEM_KINDS = [
   "box_unknown_class",
   "box_bad_geometry",
   "box_model_claim_unsupported",
+  "box_bad_track_id",
+  /** One track id, two classes: a player cannot become the ball. */
+  "track_class_conflict",
+  /** One track id twice on one frame: a thing is in one place at a time. */
+  "track_frame_conflict",
 ] as const;
 export type BoxProblemKind = (typeof BOX_PROBLEM_KINDS)[number];
 
@@ -189,6 +200,20 @@ export function validateAnnotationBoxes(
       }
     }
 
+    const rawTrack = box.trackId;
+    let trackId: string | undefined;
+    if (rawTrack !== undefined && rawTrack !== null) {
+      if ((typeof rawTrack !== "string" && typeof rawTrack !== "number") || String(rawTrack).trim() === "" || String(rawTrack).length > 64) {
+        problems.push({
+          kind: "box_bad_track_id",
+          index,
+          detail: `box ${index}: trackId must be a short string or number; got ${describe(rawTrack)}`,
+        });
+      } else {
+        trackId = String(rawTrack).trim();
+      }
+    }
+
     if (problems.length === before && geometry) {
       boxes.push({
         sourceTimeMs: time as number,
@@ -196,8 +221,35 @@ export function validateAnnotationBoxes(
         ...geometry,
         ...(box.uncertain === true ? { uncertain: true } : {}),
         ...(typeof claimed === "string" ? { fromModelVersionId: claimed } : {}),
+        ...(trackId !== undefined ? { trackId } : {}),
       });
     }
+  });
+
+  /* Track consistency is a property of the list, not of a box, so it is checked
+     once the boxes are known. Reported by the index of the box that broke it. */
+  const classOf = new Map<string, string>();
+  const seenAt = new Set<string>();
+  boxes.forEach((b, index) => {
+    if (b.trackId === undefined) return;
+    const known = classOf.get(b.trackId);
+    if (known === undefined) classOf.set(b.trackId, b.class);
+    else if (known !== b.class) {
+      problems.push({
+        kind: "track_class_conflict",
+        index,
+        detail: `box ${index}: track ${b.trackId} is ${known} elsewhere but ${b.class} here`,
+      });
+    }
+    const at = `${b.trackId}@${b.sourceTimeMs}`;
+    if (seenAt.has(at)) {
+      problems.push({
+        kind: "track_frame_conflict",
+        index,
+        detail: `box ${index}: track ${b.trackId} already has a box at ${b.sourceTimeMs}ms`,
+      });
+    }
+    seenAt.add(at);
   });
 
   return { boxes: problems.length ? [] : boxes, problems };

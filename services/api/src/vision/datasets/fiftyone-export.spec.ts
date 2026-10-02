@@ -109,6 +109,16 @@ describe("frame support", () => {
   it("does not go negative on a zero start", () => {
     expect(frameSupport(0, 40, 25)[0]).toBe(1);
   });
+
+  it("survives floating-point noise at an exact frame boundary", () => {
+    // (1160 / 1000) * 25 is 28.999999999999996 in binary floating point. Floored
+    // naively it is frame 28, and a box drawn on frame 29 lands beside the one on
+    // 28. Found by the track-metrics gate: ten gold boxes 40ms apart made nine frames.
+    expect(frameSupport(1160, 1200, 25)).toEqual([30, 30]);
+    for (let i = 0; i < 10; i += 1) {
+      expect(frameSupport(1000 + 40 * i, 1040 + 40 * i, 25)[0]).toBe(26 + i);
+    }
+  });
 });
 
 describe("source time to proxy time", () => {
@@ -641,5 +651,30 @@ describe("boxes land on the frame they were drawn on", () => {
     const result = build([member({ labels: [label({ decision: null, boxes: [box()] })] })]);
     expect(result.samples[0]!.frames).toEqual({});
     expect(result.qa.boxes).toBe(0);
+  });
+});
+
+describe("gold tracks travel as FiftyOne's index", () => {
+  const box = (overrides: Record<string, unknown> = {}) => ({
+    sourceTimeMs: 10_500, class: "player", x: 0.1, y: 0.2, width: 0.05, height: 0.1, ...overrides,
+  });
+
+  it("numbers each track per label in order of first appearance and keeps the annotator's id", () => {
+    const result = build([
+      member({
+        labels: [label({ boxes: [box({ trackId: "B" }), box({ trackId: "A", x: 0.5 }), box({ sourceTimeMs: 10_540, trackId: "B" }), box({ sourceTimeMs: 10_540, class: "ball", x: 0.7 })] })],
+      }),
+    ]);
+    const frames = result.samples[0]!.frames;
+    const first = frames["263"]!.detections.detections;
+    expect(first.map((d) => [d.index, d.track_id])).toEqual([[1, "B"], [2, "A"]]);
+    expect(frames["264"]!.detections.detections.map((d) => [d.index, d.track_id])).toEqual([[1, "B"], [null, null]]);
+    expect(result.qa.goldTracks).toBe(2);
+    expect(String(result.metadata.info.track_note)).toMatch(/same object across frames/);
+  });
+
+  it("counts no gold tracks when nothing is linked", () => {
+    const result = build([member({ labels: [label({ boxes: [box()] })] })]);
+    expect(result.qa.goldTracks).toBe(0);
   });
 });

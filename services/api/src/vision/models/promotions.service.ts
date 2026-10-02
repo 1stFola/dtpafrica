@@ -394,11 +394,12 @@ export class VisionPromotionsService {
           continue;
         }
         gate.comparedWith = current.id;
-        const regressions = await this.regressions(run.id, theirs.id);
+        const metrics = this.thresholds.regressionMetrics[version.model.task] ?? [];
+        const regressions = await this.regressions(run.id, theirs.id, metrics);
         if (regressions.length) {
           add("failures", "regression", `Against ${label}: ${regressions.join("; ")}.`);
         } else {
-          add("passed", "regression", `No regression beyond ${this.thresholds.regressionTolerance} against ${label} on ${this.thresholds.regressionMetrics.join(", ")}.`);
+          add("passed", "regression", `No regression beyond ${this.thresholds.regressionTolerance} against ${label} on ${metrics.join(", ")}.`);
         }
       }
     }
@@ -483,12 +484,12 @@ export class VisionPromotionsService {
   }
 
   /** Metrics on which the candidate run falls more than the tolerance below the production run. */
-  private async regressions(candidateRunId: string, productionRunId: string): Promise<string[]> {
+  private async regressions(candidateRunId: string, productionRunId: string, metricsToCompare: readonly string[]): Promise<string[]> {
     const slices = [ALL_SLICE, ...this.thresholds.criticalSlices];
     const rows = await this.prisma.visionMetricResult.findMany({
       where: {
         benchmarkRunId: { in: [candidateRunId, productionRunId] },
-        metric: { in: [...this.thresholds.regressionMetrics] },
+        metric: { in: [...metricsToCompare] },
         slice: { in: slices },
       },
       select: { benchmarkRunId: true, metric: true, slice: true, value: true, support: true },
@@ -496,7 +497,7 @@ export class VisionPromotionsService {
     const key = (runId: string, metric: string, slice: string) => `${runId}|${metric}|${slice}`;
     const byKey = new Map(rows.map((r) => [key(r.benchmarkRunId, r.metric, r.slice), r]));
     const out: string[] = [];
-    for (const metric of this.thresholds.regressionMetrics) {
+    for (const metric of metricsToCompare) {
       for (const slice of slices) {
         const theirs = byKey.get(key(productionRunId, metric, slice));
         if (!theirs || theirs.value === null) continue;

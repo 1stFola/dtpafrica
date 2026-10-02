@@ -35,6 +35,8 @@ export type AnnotationBox = {
   height: number;
   uncertain?: boolean;
   fromModelVersionId?: string | null;
+  /** The same id on boxes across frames says "the same player". Local to the task. */
+  trackId?: string;
 };
 
 /** A box on screen: the payload's shape plus a key React can track it by. */
@@ -169,9 +171,53 @@ export function parseStoredBoxes(payload: unknown): DraftBox[] {
       height: b.height as number,
       ...(b.uncertain === true ? { uncertain: true } : {}),
       ...(typeof b.fromModelVersionId === "string" ? { fromModelVersionId: b.fromModelVersionId } : {}),
+      ...(typeof b.trackId === "string" || typeof b.trackId === "number" ? { trackId: String(b.trackId) } : {}),
     });
   }
   return out;
+}
+
+/** Overlap at or above which a new box is taken to be the same thing as one on the previous frame. */
+export const LINK_IOU = 0.5;
+
+export function boxIou(a: Rect, b: Rect): number {
+  const ix = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+  const iy = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  const inter = ix * iy;
+  const union = a.width * a.height + b.width * b.height - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/**
+ * The track a freshly drawn box most likely continues: the best-overlapping box
+ * of the same class on the previous frame, if it overlaps enough and has a track.
+ * Null when there is nothing to continue -- the caller then starts a new track.
+ * A suggestion the reviewer can override with N; never a silent merge of two
+ * players, because the threshold is high and the class must agree.
+ */
+export function inheritTrackId(rect: Rect, cls: DetectionClass, previousFrame: readonly AnnotationBox[]): string | null {
+  let best: { trackId: string; iou: number } | null = null;
+  for (const b of previousFrame) {
+    if (b.class !== cls || b.trackId === undefined) continue;
+    const overlap = boxIou(rect, b);
+    if (overlap >= LINK_IOU && (!best || overlap > best.iou)) best = { trackId: b.trackId, iou: overlap };
+  }
+  return best?.trackId ?? null;
+}
+
+/** The next unused numeric track id in this task: one more than the largest so far. */
+export function nextTrackId(boxes: readonly AnnotationBox[]): string {
+  let max = 0;
+  for (const b of boxes) {
+    const n = b.trackId !== undefined ? Number(b.trackId) : Number.NaN;
+    if (Number.isInteger(n) && n > max) max = n;
+  }
+  return String(max + 1);
+}
+
+/** Distinct tracks in the window, for the running count. */
+export function countTracks(boxes: readonly AnnotationBox[]): number {
+  return new Set(boxes.filter((b) => b.trackId !== undefined).map((b) => `${b.class}:${b.trackId}`)).size;
 }
 
 /** The payload's shape: the screen's key stripped, nothing else changed. */

@@ -340,14 +340,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(prog="dtp-vision-evaluate")
     parser.add_argument("--gold", required=True)
+    parser.add_argument("--task", choices=["detect", "track"], default="detect")
     parser.add_argument("--detections", action="append", default=[], metavar="ASSET=PATH")
+    parser.add_argument("--tracks", action="append", default=[], metavar="ASSET=PATH")
     parser.add_argument("--iou", type=float, default=0.5)
     parser.add_argument("--classes", default="player,goalkeeper,referee,ball")
     args = parser.parse_args(argv)
 
     with open(args.gold, encoding="utf-8") as handle:
         samples = json.load(handle)["samples"]
-    gold = gold_from_export(samples)
     sizes = {
         str((s.get("provenance") or {}).get("video_asset_id")): (
             (s.get("metadata") or {}).get("frame_width"),
@@ -355,16 +356,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         for s in samples
     }
-    predictions: dict[str, dict[int, list[Prediction]]] = {}
-    for spec in args.detections:
-        asset_id, _, path = spec.partition("=")
+
+    def size_of(asset_id: str) -> tuple[float, float]:
         width, height = sizes.get(asset_id, (None, None))
         if not width or not height:
             raise SystemExit(f"gold export records no frame size for asset {asset_id}")
-        with open(path, encoding="utf-8") as handle:
-            predictions[asset_id] = predictions_from_artifact(json.load(handle), float(width), float(height))
+        return float(width), float(height)
 
-    report = evaluate(gold, predictions, args.classes.split(","), args.iou)
+    if args.task == "track":
+        from .track_metrics import gold_tracks_from_export, score_tracks, tracks_from_artifact  # noqa: PLC0415
+
+        tracked: dict[str, dict[int, list[Any]]] = {}
+        for spec in args.tracks:
+            asset_id, _, path = spec.partition("=")
+            with open(path, encoding="utf-8") as handle:
+                tracked[asset_id] = tracks_from_artifact(json.load(handle), *size_of(asset_id))
+        report = score_tracks(gold_tracks_from_export(samples), tracked, args.classes.split(","), args.iou)
+    else:
+        gold = gold_from_export(samples)
+        predictions: dict[str, dict[int, list[Prediction]]] = {}
+        for spec in args.detections:
+            asset_id, _, path = spec.partition("=")
+            with open(path, encoding="utf-8") as handle:
+                predictions[asset_id] = predictions_from_artifact(json.load(handle), *size_of(asset_id))
+        report = evaluate(gold, predictions, args.classes.split(","), args.iou)
     json.dump(report, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0

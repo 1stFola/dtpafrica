@@ -29,6 +29,7 @@ from typing import Any
 from ..config import CONTRACT_VERSION
 from ..evaluate import Prediction, evaluate, gold_from_export, predictions_from_artifact
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
+from ..track_metrics import TrackedBox, gold_tracks_from_export, score_tracks, tracks_from_artifact
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +49,10 @@ def run_benchmark(ctx: StageContext) -> StageResult:
 
     run_id = params.get("benchmarkRunId")
     gold_key = params.get("goldLabelsKey")
-    listed = params.get("detections") or []
+    task = params.get("task") or "detect"
+    if task not in ("detect", "track"):
+        raise StageRefusal(f"benchmark cannot score task {task!r}")
+    listed = params.get("predictions") or []
     threshold = params.get("iou")
     classes = params.get("classes") or []
     if not isinstance(run_id, str) or not isinstance(gold_key, str):
@@ -58,13 +62,13 @@ def run_benchmark(ctx: StageContext) -> StageResult:
     if not isinstance(classes, list) or not classes:
         raise StageRefusal("benchmark needs params.classes")
     if not isinstance(listed, list):
-        raise StageRefusal("benchmark needs params.detections as a list")
+        raise StageRefusal("benchmark needs params.predictions as a list")
 
     ctx.progress.set("download")
     gold_path = ctx.work_dir / "gold.json"
     bytes_read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=gold_key), gold_path)
     samples = json.loads(gold_path.read_bytes())["samples"]
-    gold = gold_from_export(samples)
+    gold = gold_tracks_from_export(samples) if task == "track" else gold_from_export(samples)
     sizes: dict[str, tuple[float | None, float | None]] = {
         str((s.get("provenance") or {}).get("video_asset_id")): (
             (s.get("metadata") or {}).get("frame_width"),
@@ -77,10 +81,11 @@ def run_benchmark(ctx: StageContext) -> StageResult:
     missing = [g.asset_id for g in gold if g.asset_id not in by_asset]
     if missing:
         raise StageRefusal(
-            f"{len(missing)} gold member(s) have no detect artifact listed: {', '.join(missing[:5])}"
+            f"{len(missing)} gold member(s) have no {task} artifact listed: {', '.join(missing[:5])}"
         )
 
     predictions: dict[str, dict[int, list[Prediction]]] = {}
+    tracked: dict[str, dict[int, list[TrackedBox]]] = {}
     for index, (asset_id, key) in enumerate(by_asset.items()):
         ctx.progress.set("download", fraction=index / max(1, len(by_asset)))
         width, height = sizes.get(asset_id, (None, None))
@@ -89,16 +94,22 @@ def run_benchmark(ctx: StageContext) -> StageResult:
         path = ctx.work_dir / f"detections-{index}.json"
         bytes_read += download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=key), path)
         artifact = json.loads(path.read_bytes())
-        produced_by = artifact.get("modelVersionId")
+        produced_by = artifact.get("trackerVersionId") if task == "track" else artifact.get("modelVersionId")
         if produced_by != model_version_id:
             raise StageRefusal(
-                f"detect artifact {key} was produced by model version {produced_by!r}, "
+                f"{task} artifact {key} was produced by model version {produced_by!r}, "
                 f"but this benchmark scores {model_version_id}"
             )
-        predictions[asset_id] = predictions_from_artifact(artifact, float(width), float(height))
+        if task == "track":
+            tracked[asset_id] = tracks_from_artifact(artifact, float(width), float(height))
+        else:
+            predictions[asset_id] = predictions_from_artifact(artifact, float(width), float(height))
 
     ctx.progress.set("score")
-    report = evaluate(gold, predictions, [str(c) for c in classes], float(threshold))
+    if task == "track":
+        report = score_tracks(gold, tracked, [str(c) for c in classes], float(threshold))  # type: ignore[arg-type]
+    else:
+        report = evaluate(gold, predictions, [str(c) for c in classes], float(threshold))  # type: ignore[arg-type]
 
     ctx.progress.set("upload")
     key = f"{ctx.job.output_prefix}benchmark.json"
@@ -109,7 +120,8 @@ def run_benchmark(ctx: StageContext) -> StageResult:
         "modelVersionId": model_version_id,
         "datasetVersionId": dataset_version_id,
         "goldLabelsKey": gold_key,
-        "detections": [{"videoAssetId": a, "key": k} for a, k in by_asset.items()],
+        "task": task,
+        "predictions": [{"videoAssetId": a, "key": k} for a, k in by_asset.items()],
         **report,
     }
     artifact_path = ctx.work_dir / "benchmark.json"
@@ -125,6 +137,7 @@ def run_benchmark(ctx: StageContext) -> StageResult:
             "benchmarkRunId": run_id,
             "modelVersionId": model_version_id,
             "datasetVersionId": dataset_version_id,
+            "task": task,
             **report,
         },
         # The stage ran no model; it scored one. The registry checks this list against

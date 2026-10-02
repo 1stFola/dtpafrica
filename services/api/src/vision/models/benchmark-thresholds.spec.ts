@@ -20,7 +20,7 @@ const strict: BenchmarkThresholds = {
   iou: 0.5,
   minimums: { "ap:all": 0.5, "recall:ball": 0.3 },
   criticalSlices: ["quality:platform_copy"],
-  regressionMetrics: ["ap:all", "recall:ball"],
+  regressionMetrics: { detect: ["ap:all", "recall:ball"], track: ["idf1:all", "mota:all"] },
   regressionTolerance: 0.02,
 };
 

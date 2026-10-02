@@ -25,8 +25,13 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * 1.3.0 -- `track` exists: a CPU stage that links a detect artifact's boxes across
  * frames (declared key, like `benchmark`), bound to a tracker model version and
  * naming the detector version it consumed. Routes to `cpu_small`.
+ *
+ * 1.4.0 -- `benchmark` takes a `task`: `detect` scores detect artifacts against gold
+ * boxes as before; `track` scores track artifacts against gold tracks (boxes linked by
+ * `trackId`, exported as FiftyOne `index`) with MOTA, IDF1, identity switches and
+ * fragmentations.
  */
-export const VISION_CONTRACT_VERSION = "1.3.0";
+export const VISION_CONTRACT_VERSION = "1.4.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -339,8 +344,11 @@ export type JobFailureKind = (typeof JOB_FAILURE_KINDS)[number];
  */
 export type BenchmarkJobParams = {
   benchmarkRunId: string;
+  /** Which kind of model is being scored, and so which artifacts `predictions` are. */
+  task: "detect" | "track";
   goldLabelsKey: string;
-  detections: { videoAssetId: string; key: string }[];
+  /** One artifact per gold member: a `detections` artifact for `detect`, a `tracks` artifact for `track`. */
+  predictions: { videoAssetId: string; key: string }[];
   /** Every key the worker may read, bucket by bucket. The control plane checks each input-url against it. */
   readKeys: { bucket: "derived" | "models"; key: string }[];
   /** IoU at which a prediction counts as matching a box. */
@@ -351,6 +359,10 @@ export type BenchmarkJobParams = {
 /** `"<metric>:<class>"`, with `all` for every class together. */
 export const BENCHMARK_METRIC_NAMES = ["precision", "recall", "f1", "ap", "boxes"] as const;
 export type BenchmarkMetricName = (typeof BENCHMARK_METRIC_NAMES)[number];
+
+/** Tracking metrics, per class and `all`: CLEAR's MOTA, identity F1, switches, fragmentations, and the gold-track count. */
+export const TRACKING_METRIC_NAMES = ["mota", "idf1", "idsw", "frag", "tracks"] as const;
+export type TrackingMetricName = (typeof TRACKING_METRIC_NAMES)[number];
 
 /** The slice every metric is also reported under. Never only this one. */
 export const ALL_SLICE = "all";

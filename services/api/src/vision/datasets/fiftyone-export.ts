@@ -225,6 +225,8 @@ export type ExportQaReport = {
   /** Boxes a model drew and the annotator kept. The anchoring question, measured. */
   boxesFromModel: number;
   boxesUncertain: number;
+  /** Distinct gold tracks: boxes linked across frames by the annotator. What a tracker is scored against. */
+  goldTracks: number;
   problems: ExportProblem[];
 };
 
@@ -252,7 +254,11 @@ export type FiftyOneExport = {
  * both are tested against the rule rather than against each other.
  */
 function frameIndexAt(proxyMs: number, fps: number): number {
-  return Math.max(0, Math.floor((proxyMs / 1000) * fps));
+  /* Multiply before dividing, and absorb float noise: `(1160 / 1000) * 25` is
+     28.999999999999996 in binary floating point, which floors to 28 and puts a box
+     drawn on frame 29 onto frame 28 -- beside the box already there. The worker's
+     `proxy_frame_index` guards the same way; the three copies must agree. */
+  return Math.max(0, Math.floor((proxyMs * fps) / 1000 + 1e-9));
 }
 
 /**
@@ -323,6 +329,7 @@ export function buildFiftyOneExport(input: {
   let boxesUncertain = 0;
   let framesWithBoxes = 0;
   const boxesByClass: Record<string, number> = {};
+  const goldTracks = new Set<string>();
 
   const fail = (kind: FatalExportProblem, member: ExportMember, detail: string, versionId?: string) =>
     problems.push({
@@ -471,15 +478,27 @@ export function buildFiftyOneExport(input: {
         fail(placed.problem.kind, member, placed.problem.detail, label.annotationVersionId);
         continue;
       }
+      /* FiftyOne links boxes across frames by an integer `index`. Track ids are
+         numbered per label in order of first appearance, and the annotator's own
+         id is kept beside it as `track_id`, so the number can be traced back. */
+      const indexOf = new Map<string, number>();
       for (const [frameNumber, boxes] of placed.byFrame) {
         const key = String(frameNumber);
         frames[key] ??= { detections: { _cls: "Detections", detections: [] } };
         for (const box of boxes) {
+          let index: number | null = null;
+          if (box.trackId !== undefined) {
+            if (!indexOf.has(box.trackId)) indexOf.set(box.trackId, indexOf.size + 1);
+            index = indexOf.get(box.trackId)!;
+            goldTracks.add(`${label.annotationVersionId}:${box.class}:${box.trackId}`);
+          }
           frames[key].detections.detections.push({
             _cls: "Detection",
             label: box.class,
             bounding_box: [box.x, box.y, box.width, box.height],
             confidence: null,
+            index,
+            track_id: box.trackId ?? null,
             uncertain: box.uncertain === true,
             from_model_version_id: box.fromModelVersionId ?? null,
             source_time_ms: box.sourceTimeMs,
@@ -604,6 +623,7 @@ export function buildFiftyOneExport(input: {
     framesWithBoxes,
     boxesFromModel,
     boxesUncertain,
+    goldTracks: goldTracks.size,
     problems,
   };
 
@@ -624,6 +644,8 @@ export function buildFiftyOneExport(input: {
           "TemporalDetection.support is in PROXY frames, 1-based and inclusive. source_start_ms and source_end_ms on each detection are the original SOURCE-time window.",
         box_note:
           "frames[n].detections holds per-frame Detection boxes with bounding_box = [x, y, width, height] relative to the proxy frame, top-left origin. n is the 1-based PROXY frame number; source_time_ms on each box is the SOURCE time of that frame.",
+        track_note:
+          "A box with a non-null index belongs to a gold track: boxes sharing an index (per label, per annotation version) are the same object across frames. track_id is the annotator's own id for it.",
       },
     },
     samples,

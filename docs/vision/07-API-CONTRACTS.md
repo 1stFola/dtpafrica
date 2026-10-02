@@ -170,14 +170,20 @@ is how a training run would be *recorded*. There is no route that changes a vers
 until the benchmark ledger exists to justify one.
 
 `POST /vision/annotation/tasks/:id/submit` accepts `boxes` in the payload: each
-`{ sourceTimeMs, class, x, y, width, height, uncertain?, fromModelVersionId? }`, with the time
+`{ sourceTimeMs, class, x, y, width, height, uncertain?, fromModelVersionId?, trackId? }`, with the time
 in SOURCE milliseconds inside the task's half-open window, the class one of the contract's
 four, and the geometry normalised to the proxy frame. A bad box set is `400 InvalidBoxes`
 with every problem and its index; nothing is written. The same rule
 (`validateAnnotationBoxes` in the contracts) runs again at export, where a failure is
-`boxes_invalid`. See [29-PHASE-3-INCREMENT-2.md](./29-PHASE-3-INCREMENT-2.md).
+`boxes_invalid`. See [29-PHASE-3-INCREMENT-2.md](./29-PHASE-3-INCREMENT-2.md). A `trackId` links
+boxes across frames: one class per track and one box per frame (`track_class_conflict`,
+`track_frame_conflict`); the export carries it as FiftyOne `index`. See
+[33-PHASE-4-INCREMENT-2.md](./33-PHASE-4-INCREMENT-2.md).
 
-`POST /vision/models/versions/:id/benchmark` takes `{ datasetVersionId }` and refuses a draft
+`POST /vision/models/versions/:id/benchmark` scores a detector against gold boxes or a tracker
+against gold tracks (`TracksMissing` names gold members with no succeeded `track` job by that
+version; the job carries `task: "track"` and reports `mota`, `idf1`, `idsw`, `frag`, `tracks`).
+It takes `{ datasetVersionId }` and refuses a draft
 or revoked version, one with no gold split, gold one reviewer short, a version never exported,
 or a gold member with no succeeded `detect` job by this exact model version
 (`DetectionsMissing`, naming them). It queues a `benchmark` job on `cpu_small` whose inputs

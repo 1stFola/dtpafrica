@@ -14,6 +14,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import {
   clampToWindow,
   describePosition,
+  frameIndexAt,
   frameStartMs,
   proxyOffsetMs,
   stepFrames,
@@ -23,8 +24,11 @@ import {
   DETECTION_CLASSES,
   boxesOnFrame,
   countByClass,
+  countTracks,
   framesWithBoxes,
+  inheritTrackId,
   newBoxId,
+  nextTrackId,
   parseStoredBoxes,
   rectFromDrag,
   snapSourceTimeMs,
@@ -91,6 +95,8 @@ export function AdminVisionTaskPage() {
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
   /** The rectangle being dragged out right now, in normalised coordinates. */
   const [draft, setDraft] = useState<Rect | null>(null);
+  /** The track the last selected box belonged to, so L can link the next one to it. */
+  const [lastTrackId, setLastTrackId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -156,6 +162,7 @@ export function AdminVisionTaskPage() {
     [boxes, media, offsetMs]
   );
   const classCounts = useMemo(() => countByClass(boxes), [boxes]);
+  const trackCount = useMemo(() => countTracks(boxes), [boxes]);
 
   const removeSelectedBox = useCallback(() => {
     if (!selectedBoxId) return;
@@ -206,17 +213,26 @@ export function AdminVisionTaskPage() {
       if (!point) return;
       const rect = rectFromDrag(start, point, point);
       if (!rect) return;
-      setBoxes((current) => [
-        ...current,
-        {
-          id: newBoxId(),
-          // The start of the frame on screen, in source time: the frame the
-          // reviewer is looking at, and the frame the export will put it on.
-          sourceTimeMs: snapSourceTimeMs(proxyMs, media.fps, offsetMs),
-          class: activeClass,
-          ...rect,
-        },
-      ]);
+      setBoxes((current) => {
+        /* Link to the previous frame's box if one of the same class sits where
+           this one is; otherwise this is a new track. Shown on the tag, and N
+           undoes it, so a wrong link is a glance away rather than a silent merge. */
+        const previous = frameStartMs(Math.max(0, (frameIndexAt(proxyMs, media.fps) ?? 1) - 1), media.fps);
+        const onPreviousFrame = previous === null ? [] : boxesOnFrame(current, previous, media.fps, offsetMs);
+        const trackId = inheritTrackId(rect, activeClass, onPreviousFrame) ?? nextTrackId(current);
+        return [
+          ...current,
+          {
+            id: newBoxId(),
+            // The start of the frame on screen, in source time: the frame the
+            // reviewer is looking at, and the frame the export will put it on.
+            sourceTimeMs: snapSourceTimeMs(proxyMs, media.fps, offsetMs),
+            class: activeClass,
+            trackId,
+            ...rect,
+          },
+        ];
+      });
       // Deliberately NOT selected: a reviewer who draws and then presses 4 to arm
       // the next box would otherwise silently re-class the one they just drew.
       // Selecting is a click on the box, and nothing else.
@@ -301,6 +317,23 @@ export function AdminVisionTaskPage() {
           setDraft(null);
           dragStart.current = null;
           return;
+        case "n":
+        case "N":
+          // A new track for the selected box: the link the drag inherited was wrong.
+          if (!selectedBoxId) return;
+          event.preventDefault();
+          setBoxes((current) => {
+            const fresh = nextTrackId(current);
+            return current.map((b) => (b.id === selectedBoxId ? { ...b, trackId: fresh } : b));
+          });
+          return;
+        case "l":
+        case "L":
+          // Link the selected box to the track of the box selected before it.
+          if (!selectedBoxId || !lastTrackId) return;
+          event.preventDefault();
+          setBoxes((current) => current.map((b) => (b.id === selectedBoxId ? { ...b, trackId: lastTrackId } : b)));
+          return;
         default:
           if (CLASS_KEYS[event.key]) {
             event.preventDefault();
@@ -318,7 +351,7 @@ export function AdminVisionTaskPage() {
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [media, removeSelectedBox, selectedBoxId, step, togglePlay]);
+  }, [lastTrackId, media, removeSelectedBox, selectedBoxId, step, togglePlay]);
 
   /** Keeps the readout in step with playback without re-rendering per frame. */
   useEffect(() => {
@@ -500,11 +533,16 @@ export function AdminVisionTaskPage() {
                 onPointerDown={(event) => {
                   // Selecting, not drawing: the stage must not start a drag.
                   event.stopPropagation();
-                  setSelectedBoxId(box.id);
+                  setSelectedBoxId((current) => {
+                    const previous = current ? boxes.find((b) => b.id === current) : undefined;
+                    if (previous?.trackId) setLastTrackId(previous.trackId);
+                    return box.id;
+                  });
                 }}
               >
                 <span className="vision-box__tag">
                   {box.class}
+                  {box.trackId && ` #${box.trackId}`}
                   {box.fromModelVersionId && " · model"}
                   {box.uncertain && " · ?"}
                 </span>
@@ -591,13 +629,16 @@ export function AdminVisionTaskPage() {
             <span className="vision-footnote">
               {boxesHere.length} on this frame · {boxes.length} in the window
               {boxedFrames.length > 0 && ` · ${boxedFrames.length} frame(s) boxed`}
+              {trackCount > 0 && ` · ${trackCount} track(s)`}
             </span>
           </div>
 
           <p className="vision-footnote">
             Space play/pause · ← → one frame · Shift + ← → one second · 1–4 pick a class ·
             drag to draw · click a box, then Delete removes it, U marks it uncertain, 1–4
-            re-class it · U with nothing selected marks the whole window uncertain
+            re-class it · U with nothing selected marks the whole window uncertain · a new box
+            joins the track of the box it overlaps on the previous frame; N gives it a new
+            track, L links it to the track of the box you selected before
           </p>
         </section>
 
