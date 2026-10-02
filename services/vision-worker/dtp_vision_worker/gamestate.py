@@ -204,7 +204,9 @@ def write_chunk(rows: Sequence[dict[str, Any]], path: Path) -> int:
     schema = pa.schema([(name, types[kind]) for name, kind in CHUNK_SCHEMA])
     table = pa.table({name: [r[name] for r in rows] for name, _ in CHUNK_SCHEMA}, schema=schema)
     path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, path, compression="zstd")
+    # Snappy, not zstd: the minimap decodes a chunk in the browser with hyparquet, which
+    # carries snappy alone; every other codec would mean a second package shipped to the client.
+    pq.write_table(table, path, compression="snappy")
     return path.stat().st_size
 
 

@@ -127,8 +127,11 @@ sits beside it: landmarks clicked on a paused frame, the fitted pitch drawn back
 picture, segments declared and calibrations filed, and the match clock anchored from the playhead
 ([41](./41-PHASE-5-INCREMENT-4.md)); both screens show the match clock beside the two file
 clocks. Overlays on both screens are reckoned against the letterboxed picture inside the
-`<video>` element, never the element itself. The timeline,
-minimap and inspector wait on events and game state.
+`<video>` element, never the element itself. The minimap
+([43](./43-PHASE-5-INCREMENT-6.md)) sits under the player on the identity screen: the pitch in
+metres with a labelled dot per track at the playhead, from game-state chunks the browser fetches
+from the bucket and decodes itself; a dot selects its track, and a frame with nothing placed says
+why. The timeline and inspector wait on events.
 
 ### Non-negotiable behaviours
 

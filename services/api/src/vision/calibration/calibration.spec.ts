@@ -225,20 +225,23 @@ describe("the latest game state", () => {
     mockPrisma.visionJob.findFirst.mockResolvedValue({
       id: "job-g",
       finishedAt: new Date("2026-10-03"),
-      inputSpec: { segments: [{ quality: "good" }, { quality: null }, { quality: "failed" }], anchors: [{}] },
+      inputSpec: { segments: [{ quality: null, pitch: null }, { quality: "good", pitch: { lengthM: 100, widthM: 64 } }, { quality: "failed", pitch: { lengthM: 105, widthM: 68 } }], anchors: [{}] },
       progress: {
         artifacts: [
           { key: "inference/job-g/1/gamestate/chunk-00000.parquet", role: "gamestate_chunk", bytes: 1200 },
           { key: "inference/job-g/1/gamestate/chunk-00001.parquet", role: "gamestate_chunk", bytes: 900 },
           { key: "inference/job-g/1/gamestate.json", role: "gamestate", bytes: 300 },
         ],
-        summary: { rows: 82, frames: 41, placed: 80, suppressed: 2, reasons: { beyond_horizon: 2 }, validFrameCoverage: 1, chunkMs: 1000, chunks: 2 },
+        summary: { trackJobId: "job-t", rows: 82, frames: 41, placed: 80, suppressed: 2, reasons: { beyond_horizon: 2 }, validFrameCoverage: 1, chunkMs: 1000, chunks: 2 },
       },
     });
     const out = await service.gameState(ASSET);
     expect(out.job).toMatchObject({ id: "job-g" });
     expect(out.coverage).toMatchObject({ rows: 82, frames: 41, placed: 80, suppressed: 2, validFrameCoverage: 1, chunkMs: 1000 });
     expect(out.placedWith).toEqual({ segments: 3, calibrations: 2, anchors: 1 });
+    expect(out.trackJobId).toBe("job-t");
+    expect(out.pitch).toEqual({ lengthM: 100, widthM: 64 });
+    expect(out.chunks.map((c) => [c.index, c.fromMs, c.toMs])).toEqual([[0, 0, 1000], [1, 1000, 2000]]);
     expect(out.chunks.map((c) => c.key)).toEqual(["inference/job-g/1/gamestate/chunk-00000.parquet", "inference/job-g/1/gamestate/chunk-00001.parquet"]);
     expect(out.chunks[0]!.url).toContain("chunk-00000.parquet");
     expect(out.index?.url).toContain("gamestate.json");

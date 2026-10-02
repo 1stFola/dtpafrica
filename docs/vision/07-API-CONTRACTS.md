@@ -292,8 +292,13 @@ and coverage; `x_m`/`y_m` are null with a `reason` (`no_camera_segment`,
 the bar. The completion lands nothing in Postgres beyond the job's summary. `GET
 /vision/review/:assetId/game-state` returns the latest succeeded job's `coverage`
 (`validFrameCoverage` is the share of frames a passing calibration covered), `placedWith`
-(segments, calibrations, anchors), and a presigned URL for the index and for each chunk; the API
-reads none of the rows. See [42-PHASE-5-INCREMENT-5.md](./42-PHASE-5-INCREMENT-5.md).
+(segments, calibrations, anchors), `trackJobId`, the `pitch` dimensions the placement used, and
+a presigned URL for the index and for each chunk with the chunk's `index`, `fromMs` and `toMs`
+(from its name and the job's chunk size); the API reads none of the rows. The minimap in the
+identity workstation fetches and decodes the chunks in the browser
+([43-PHASE-5-INCREMENT-6.md](./43-PHASE-5-INCREMENT-6.md)), which needs the derived bucket's
+CORS rule to allow `GET` from the UI's origin. See
+[42-PHASE-5-INCREMENT-5.md](./42-PHASE-5-INCREMENT-5.md).
 
 `POST /vision/jobs` with `type: "cuts"` queues the scene-change proposer on `cpu_small` after
 `transcode`, with optional `params.threshold` and `params.minSegmentMs`; its completion files
