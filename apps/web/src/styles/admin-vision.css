@@ -723,3 +723,84 @@
   text-align: left;
   text-decoration: underline;
 }
+
+/* The tactical minimap under the player: the pitch in metres, dots where the
+   game-state rows placed a foot point on this frame. Colour is never the only
+   signal: the label names the track or the player, and the caption counts. */
+.vision-minimap {
+  margin-top: 0.8rem;
+}
+
+.vision-minimap__head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
+}
+
+/* Width follows the column and height follows the pitch's shape; the cap keeps a
+   tall laptop screen from giving the map more room than the video. */
+.vision-minimap__pitch {
+  aspect-ratio: 111 / 74;
+  display: block;
+  margin: 0.5rem auto 0;
+  max-width: calc(34vh * 111 / 74);
+  width: 100%;
+}
+
+.vision-minimap__grass {
+  fill: #14532d;
+  rx: 1;
+}
+
+.vision-minimap__line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.78);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.vision-minimap__spot {
+  fill: rgba(255, 255, 255, 0.78);
+}
+
+.vision-dot circle {
+  fill: var(--dot-colour, #facc15);
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.vision-dot[role="button"] {
+  cursor: pointer;
+}
+
+.vision-dot text {
+  fill: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 2.6px;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 0.6px;
+}
+
+.vision-dot--player { --dot-colour: #facc15; }
+.vision-dot--goalkeeper { --dot-colour: #34d399; }
+.vision-dot--referee { --dot-colour: #f472b6; }
+.vision-dot--ball { --dot-colour: #ffffff; }
+.vision-dot--team-A { --dot-colour: #60a5fa; }
+.vision-dot--team-B { --dot-colour: #f87171; }
+
+.vision-dot--selected circle {
+  stroke: #fff;
+  stroke-width: 2.5;
+}
+
+.vision-minimap__caption {
+  margin-top: 0.5rem;
+}
+
+.vision-minimap__blocked {
+  color: #fca5a5;
+}
