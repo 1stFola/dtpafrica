@@ -573,6 +573,25 @@ export function fetchVisionTrackPositions(trackId: string) {
   );
 }
 
+export type VisionGameStateChunk = { key: string; bytes: number | null; index: number | null; fromMs: number | null; toMs: number | null; url: string };
+
+export type VisionGameState = {
+  videoAssetId: string;
+  job: { id: string; finishedAt: string | null } | null;
+  trackJobId: string | null;
+  pitch: { lengthM: number; widthM: number } | null;
+  coverage: { rows: number | null; frames: number | null; placed: number | null; suppressed: number | null; reasons: Record<string, number>; validFrameCoverage: number | null; chunkMs: number | null } | null;
+  placedWith: { segments: number; calibrations: number; anchors: number } | null;
+  index: { key: string; url: string } | null;
+  chunks: VisionGameStateChunk[];
+  expiresInSeconds?: number;
+};
+
+/** The latest game state: coverage, and a presigned URL per Parquet chunk the browser fetches itself. */
+export function fetchVisionGameState(assetId: string) {
+  return adminFetch<VisionGameState>(`/vision/review/${assetId}/game-state`);
+}
+
 export function fetchVisionTrackCandidates(trackId: string, wholeMatch = false) {
   return adminFetch<VisionTrackCandidates>(`/vision/review/tracks/${trackId}/candidates${wholeMatch ? "?all=1" : ""}`);
 }

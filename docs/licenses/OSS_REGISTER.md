@@ -52,6 +52,7 @@ shipped) · `dev-tool` (developer machines and CI only) · `reference` (read, no
 | FiftyOne | voxel51/fiftyone | Apache-2.0 | dev-tool | APPROVED | Dataset QA and error analysis. |
 | DVC | iterative/dvc | Apache-2.0 | dev-tool | APPROVED | Dataset and artifact lineage. |
 | MLflow | mlflow/mlflow | Apache-2.0 | dev-tool | APPROVED | Experiments and model registry. |
+| hyparquet | hyparam/hyparquet | MIT | runtime (browser) | APPROVED | Decodes game-state Parquet chunks in the review UI (`apps/web/.../game-state.ts`). Pure JavaScript, no dependencies; snappy is the one codec it carries, so the worker writes snappy. |
 | Kloppy | PySport/kloppy | Verify | reference | CANDIDATE | Event/tracking standardization reference. DTP keeps its own canonical schema. |
 | SportsLabKit | AtomScott/SportsLabKit | **GPL implications** | reference | **RESEARCH ONLY** | Useful reference. Do not link into the product without legal review. |
 | MinIO | min.io | **AGPL-3.0** | — | **REJECTED** | Managed S3-compatible store (R2) used instead. Recorded so the decision is not silently reversed. |

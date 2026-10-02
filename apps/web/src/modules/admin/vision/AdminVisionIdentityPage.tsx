@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   acceptVisionIdentity,
   assignVisionIdentity,
+  fetchVisionGameState,
   fetchVisionIdentityReview,
   fetchVisionReviewMedia,
   fetchVisionTrackCandidates,
@@ -12,12 +13,15 @@ import {
   type VisionIdentityReview,
   type VisionReviewMedia,
   type VisionReviewTrack,
+  type VisionGameState,
   type VisionTrackCandidates,
 } from "../../../api/vision";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
+import { ChunkCache, chunkCovering, explainChunkFailure, loadChunk, rowsNear, rowsOnFrame, type DecodedChunk } from "./game-state";
 import { describeClock } from "./match-clock";
+import { VisionMinimap, type MinimapStatus } from "./VisionMinimap";
 import { usePictureRect } from "./use-picture-rect";
 import {
   candidateLabel,
@@ -82,6 +86,13 @@ export function AdminVisionIdentityPage() {
   const [positions, setPositions] = useState<Map<string, TrackPosition[]>>(new Map());
   /** Roster names by slot id, so assignments read as people rather than ids. */
   const [slotNames, setSlotNames] = useState<Map<string, string>>(new Map());
+  /* The minimap's rows: the latest game state's chunk list from the API, and the
+     decoded chunk covering the playhead, fetched from the bucket by the browser. */
+  const [gameState, setGameState] = useState<VisionGameState | null>(null);
+  const [chunk, setChunk] = useState<DecodedChunk | null>(null);
+  const [chunkStatus, setChunkStatus] = useState<MinimapStatus>({ kind: "loading" });
+  const chunkCache = useRef(new ChunkCache(4));
+  const chunkInFlight = useRef<string | null>(null);
 
   /* The review rows reload after every action; the media does not, or the video
      element would take a fresh URL and jump back to the start each time. */
@@ -108,6 +119,12 @@ export function AdminVisionIdentityPage() {
     fetchVisionReviewMedia(assetId)
       .then(setMedia)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    fetchVisionGameState(assetId)
+      .then((g) => {
+        setGameState(g);
+        if (!g.job) setChunkStatus({ kind: "none" });
+      })
+      .catch((e) => setChunkStatus({ kind: "blocked", message: e instanceof Error ? e.message : String(e) }));
   }, [assetId, load]);
 
   /* Every track's positions, fetched once each; a track whose artifact cannot be
@@ -169,6 +186,54 @@ export function AdminVisionIdentityPage() {
   const clipEndMs = media?.durationMs ?? 0;
   const clipWindow = useMemo(() => ({ windowStartMs: 0, windowEndMs: clipEndMs, fps: media?.fps ?? null }), [clipEndMs, media]);
   const sourceMs = proxyMs + offsetMs;
+
+  /* The chunk under the playhead: from the cache when scrubbing within a minute,
+     otherwise one GET to the bucket. A chunk the bucket refuses is reported once,
+     in words, and the map stays empty rather than guessing. */
+  useEffect(() => {
+    if (!gameState?.job) return;
+    const ref = chunkCovering(gameState.chunks, sourceMs);
+    if (!ref) {
+      setChunk(null);
+      setChunkStatus({ kind: "gap" });
+      return;
+    }
+    const cached = chunkCache.current.get(ref.key);
+    if (cached) {
+      setChunk(cached);
+      setChunkStatus({ kind: "ready" });
+      return;
+    }
+    if (chunkInFlight.current === ref.key) return;
+    chunkInFlight.current = ref.key;
+    setChunkStatus({ kind: "loading" });
+    loadChunk(ref)
+      .then((decoded) => {
+        chunkCache.current.put(decoded);
+        if (chunkInFlight.current !== ref.key) return;
+        setChunk(decoded);
+        setChunkStatus({ kind: "ready" });
+      })
+      .catch((e) => {
+        if (chunkInFlight.current !== ref.key) return;
+        setChunk(null);
+        setChunkStatus({ kind: "blocked", message: explainChunkFailure(e) });
+      })
+      .finally(() => {
+        if (chunkInFlight.current === ref.key) chunkInFlight.current = null;
+      });
+  }, [gameState, sourceMs]);
+
+  const rowsHere = useMemo(() => {
+    const frame = frameIndexAt(proxyMs, media?.fps ?? null);
+    return frame === null ? rowsNear(chunk, sourceMs) : rowsOnFrame(chunk, frame);
+  }, [chunk, media, proxyMs, sourceMs]);
+  const tracksByLocalId = useMemo(() => {
+    const out = new Map<number, VisionReviewTrack>();
+    if (!review) return out;
+    for (const t of review.tracks) if (!gameState?.trackJobId || t.inferenceJobId === gameState.trackJobId) out.set(t.localTrackId, t);
+    return out;
+  }, [gameState, review]);
   const nameOfSlot = useCallback((id: string) => slotNames.get(id), [slotNames]);
 
   const seekTo = useCallback(
@@ -409,6 +474,20 @@ export function AdminVisionIdentityPage() {
             {boxesHere.length} track(s) on this frame · a box is where the tracker saw the player, never interpolated across a gap · Space
             play/pause · ← → one frame · Shift + ← → one second · click a box to select its track
           </p>
+
+          <VisionMinimap
+            state={gameState}
+            status={chunkStatus}
+            rows={rowsHere}
+            tracksByLocalId={tracksByLocalId}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            labelOf={(track, row) => {
+              if (!track) return `#${row.localTrackId}`;
+              const who = identitySummary(track, nameOfSlot);
+              return who === "nobody has said" ? `#${track.localTrackId}` : who;
+            }}
+          />
         </div>
 
         <div className="vision-workstation__side">

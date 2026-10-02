@@ -264,16 +264,28 @@ export class VisionCalibrationService {
     const summary = progress.summary ?? {};
     const index = progress.artifacts?.find((a) => a.role === "gamestate") ?? null;
     const ttl = this.config.playback.urlTtlSeconds;
+    const spec = (job.inputSpec ?? {}) as { segments?: { quality: string | null; pitch: { lengthM: number; widthM: number } | null }[]; anchors?: unknown[] };
+    const segments = Array.isArray(spec.segments) ? spec.segments : [];
+    const chunkMs = typeof summary.chunkMs === "number" && summary.chunkMs > 0 ? summary.chunkMs : null;
+    // A chunk's range is in its name (`chunk-00004` is the fifth chunkMs of source time); the
+    // job's artifact list carries keys and sizes, not the index's ranges, and the browser
+    // must pick a chunk for the playhead without fetching the index first.
+    const rangeOf = (key: string) => {
+      const m = key.match(/chunk-(\d+)\.parquet$/);
+      if (!m || chunkMs === null) return { index: null, fromMs: null, toMs: null };
+      const index = Number(m[1]);
+      return { index, fromMs: index * chunkMs, toMs: (index + 1) * chunkMs };
+    };
     const chunks = await Promise.all(
       (progress.artifacts ?? [])
         .filter((a) => a.role === "gamestate_chunk")
-        .map(async (a) => ({ key: a.key, bytes: a.bytes ?? null, url: await this.store.presignGet("derived", a.key, ttl) }))
+        .map(async (a) => ({ key: a.key, bytes: a.bytes ?? null, ...rangeOf(a.key), url: await this.store.presignGet("derived", a.key, ttl) }))
     );
-    const spec = (job.inputSpec ?? {}) as { segments?: { quality: string | null }[]; anchors?: unknown[] };
-    const segments = Array.isArray(spec.segments) ? spec.segments : [];
     return {
       videoAssetId,
       job: { id: job.id, finishedAt: job.finishedAt },
+      trackJobId: typeof summary.trackJobId === "string" ? summary.trackJobId : null,
+      pitch: segments.find((s) => s.quality && s.pitch)?.pitch ?? null,
       coverage: {
         rows: summary.rows ?? null,
         frames: summary.frames ?? null,
@@ -281,7 +293,7 @@ export class VisionCalibrationService {
         suppressed: summary.suppressed ?? null,
         reasons: summary.reasons ?? {},
         validFrameCoverage: summary.validFrameCoverage ?? null,
-        chunkMs: summary.chunkMs ?? null,
+        chunkMs,
       },
       placedWith: { segments: segments.length, calibrations: segments.filter((s) => s.quality).length, anchors: Array.isArray(spec.anchors) ? spec.anchors.length : 0 },
       index: index ? { key: index.key, url: await this.store.presignGet("derived", index.key, ttl) } : null,
