@@ -412,8 +412,14 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
   const streamingUnavailableRef = useRef(false);
   const playbackBlockedRef = useRef(false);
   const playbackAllowedRef = useRef(false);
+  const playbackGenerationRef = useRef(0);
+  const finishPlaybackRef = useRef<(() => void) | null>(null);
 
   const clearAudioStream = () => {
+    playbackGenerationRef.current += 1;
+    finishPlaybackRef.current?.();
+    finishPlaybackRef.current = null;
+    playbackRef.current = Promise.resolve();
     playbackAllowedRef.current = false;
     const sourceBuffer = sourceBufferRef.current;
     if (sourceBuffer) sourceBuffer.onupdateend = null;
@@ -455,6 +461,11 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
   const appendPendingBuffer = () => {
     const sourceBuffer = sourceBufferRef.current;
     if (!sourceBuffer || sourceBuffer.updating || pendingBuffersRef.current.length === 0) return;
+    const audio = audioRef.current;
+    if (audio && sourceBuffer.buffered.length && audio.currentTime - sourceBuffer.buffered.start(0) > 60) {
+      sourceBuffer.remove(sourceBuffer.buffered.start(0), audio.currentTime - 20);
+      return;
+    }
     const nextBuffer = pendingBuffersRef.current.shift();
     if (!nextBuffer) return;
     try {
@@ -517,17 +528,21 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
   const playFallbackChunk = (data: string, mimeType: string) => {
     const audio = audioRef.current;
     if (!audio) return;
+    const generation = playbackGenerationRef.current;
     playbackRef.current = playbackRef.current
       .then(
         () =>
           new Promise<void>((resolve) => {
+            if (generation !== playbackGenerationRef.current || !playbackAllowedRef.current) { resolve(); return; }
             const url = URL.createObjectURL(base64ToBlob(data, mimeType));
             urlsRef.current.push(url);
             const cleanup = () => {
+              if (finishPlaybackRef.current === cleanup) finishPlaybackRef.current = null;
               URL.revokeObjectURL(url);
               urlsRef.current = urlsRef.current.filter((item) => item !== url);
               resolve();
             };
+            finishPlaybackRef.current = cleanup;
             audio.onended = cleanup;
             audio.onerror = cleanup;
             audio.src = url;
@@ -555,6 +570,7 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
     let pollTimer: number | null = null;
     let pollController: AbortController | null = null;
     let lastSequence = 0;
+    let startedAt: string | null = null;
 
     const handleAudioPayload = (data:
       | {
@@ -566,9 +582,13 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         }
       | { type: "chunk"; sequence: number; mimeType: string; data: string; createdAt: number }) => {
       if (data.type === "status") {
+        if (data.active && data.startedAt !== startedAt) {
+          startedAt = data.startedAt;
+          lastSequence = 0;
+          prepareAudioStream();
+        }
         setActive(data.active);
         setMessage(data.active ? null : "Waiting for live audio commentary.");
-        lastSequence = Math.max(lastSequence, data.sequence);
         if (!data.active) {
           pendingBuffersRef.current = [];
           playbackBlockedRef.current = false;
@@ -576,11 +596,13 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         return;
       }
       if (data.type === "chunk") {
+        if (data.sequence <= lastSequence) return;
         lastSequence = Math.max(lastSequence, data.sequence);
         setActive(true);
         if (ensureSourceBuffer(data.mimeType)) {
           if (!playbackBlockedRef.current) setMessage(null);
           pendingBuffersRef.current.push(base64ToArrayBuffer(data.data));
+          if (pendingBuffersRef.current.length > 48) pendingBuffersRef.current.splice(0, pendingBuffersRef.current.length - 48);
           appendPendingBuffer();
         } else {
           if (!playbackBlockedRef.current) setMessage(null);
@@ -599,7 +621,8 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
         pollController = new AbortController();
         try {
           const data = await fetchLiveAudioPoll(matchId, lastSequence, pollController.signal);
-          setActive(data.active);
+          if (closedByClient) return;
+          handleAudioPayload({ type: "status", ...data });
           if (!data.active && !data.chunks.length) {
             setMessage("Waiting for live audio commentary.");
           }
@@ -621,11 +644,16 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
     const socket = new WebSocket(
       liveAudioSocketUrl(`/api/v1/live-audio/listen/${encodeURIComponent(matchId)}`)
     );
+    const connectTimeout = window.setTimeout(() => {
+      if (socket.readyState !== WebSocket.OPEN) { startHttpFallback(); socket.close(); }
+    }, 6000);
 
     socket.onopen = () => {
+      window.clearTimeout(connectTimeout);
       setMessage("Waiting for live audio commentary.");
     };
     socket.onmessage = (event) => {
+      if (closedByClient || usingHttpFallback) return;
       try {
         const data = JSON.parse(String(event.data)) as
           | {
@@ -645,6 +673,7 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
       if (!closedByClient) startHttpFallback();
     };
     socket.onclose = (event) => {
+      window.clearTimeout(connectTimeout);
       setActive(false);
       if (!closedByClient && !usingHttpFallback && event.code !== 1000 && event.code !== 1008) {
         startHttpFallback();
@@ -659,6 +688,7 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
     };
     return () => {
       closedByClient = true;
+      window.clearTimeout(connectTimeout);
       if (pollTimer) window.clearTimeout(pollTimer);
       pollController?.abort();
       socket.close(1000, "Listener stopped live audio");

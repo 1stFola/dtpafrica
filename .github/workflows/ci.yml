@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - dev
+      - features
 
 jobs:
   # Every other check in this workflow asks whether the code is correct. None of them asks

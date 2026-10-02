@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { URL } from "node:url";
-import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { WebSocket, WebSocketServer } from "ws";
 import { PrismaService } from "../prisma/prisma.service";
 import { readLiveFeature } from "../admin/admin-match-stats.service";
@@ -35,6 +35,7 @@ type AudioStream = {
 type RecorderTicket = {
   matchId: string;
   expiresAt: number;
+  authorize?: () => Promise<void>;
 };
 
 type HttpRecorderSession = {
@@ -76,7 +77,9 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
   private readonly streams = new Map<string, AudioStream>();
   private readonly tickets = new Map<string, RecorderTicket>();
   private readonly httpSessions = new Map<string, HttpRecorderSession>();
-  private readonly wss = new WebSocketServer({ noServer: true });
+  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 350_000 });
+  private sequence = 0;
+  private lastStartedAt = 0;
   private readonly sweep = setInterval(() => this.prune(), 30_000);
   private server: Server | null = null;
 
@@ -91,6 +94,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
       if (!url.pathname.startsWith("/api/v1/live-audio/")) return;
 
       this.wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on("error", () => ws.close(1011, "Live audio connection failed"));
         void this.handleConnection(ws, url).catch(() => {
           ws.close(1011, "Unable to open live audio stream");
         });
@@ -110,10 +114,10 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     this.httpSessions.clear();
   }
 
-  createRecorderTicket(matchId: string): LiveAudioTicket {
+  createRecorderTicket(matchId: string, authorize?: () => Promise<void>): LiveAudioTicket {
     const ticket = randomUUID();
     const expiresAt = Date.now() + TICKET_TTL_MS;
-    this.tickets.set(ticket, { matchId, expiresAt });
+    this.tickets.set(ticket, { matchId, expiresAt, authorize });
     return {
       ticket,
       expiresAt: new Date(expiresAt).toISOString(),
@@ -126,10 +130,10 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     return this.statusFor(this.streams.get(matchId));
   }
 
-  startHttpRecorder(matchId: string, ticket: string, mimeType: string | undefined): LiveAudioHttpSession {
-    if (!this.claimTicket(matchId, ticket)) {
-      throw new Error("Live audio ticket expired");
-    }
+  async startHttpRecorder(matchId: string, ticket: string, mimeType: string | undefined): Promise<LiveAudioHttpSession> {
+    await this.claimTicket(matchId, ticket);
+    this.validateMimeType(mimeType);
+    this.invalidateHttpSessions(matchId);
     const stream = this.ensureStream(matchId);
     stream.recorder?.close(1000, "Live audio moved to HTTP recorder");
     stream.recorder = null;
@@ -139,22 +143,24 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     return { sessionId, status: this.statusFor(stream) };
   }
 
-  pushHttpChunk(sessionId: string, mimeType: string | undefined, data: string | undefined) {
+  pushHttpChunk(sessionId: string, mimeType: string | undefined, data: string | undefined, matchId?: string) {
     const session = this.httpSessions.get(sessionId);
     if (!session || session.expiresAt < Date.now()) {
       this.httpSessions.delete(sessionId);
       throw new Error("Live audio session expired");
     }
+    if (matchId && session.matchId !== matchId) throw new Error("Live audio session belongs to another match");
     session.expiresAt = Date.now() + SESSION_TTL_MS;
-    this.appendChunk(session.matchId, mimeType, data, () => {
-      throw new Error("Live audio is not active");
+    this.appendChunk(session.matchId, mimeType, data, (reason) => {
+      throw new Error(reason);
     });
     return this.status(session.matchId);
   }
 
-  stopHttpRecorder(sessionId: string) {
+  stopHttpRecorder(sessionId: string, matchId?: string) {
     const session = this.httpSessions.get(sessionId);
     if (!session) return { stopped: true };
+    if (matchId && session.matchId !== matchId) throw new Error("Live audio session belongs to another match");
     this.httpSessions.delete(sessionId);
     this.stopStream(session.matchId);
     return { stopped: true };
@@ -162,18 +168,20 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
 
   async poll(matchId: string, afterSequence = 0): Promise<LiveAudioPoll> {
     await this.assertPublicAudioEnabled(matchId);
+    this.prune(matchId);
     const stream = this.streams.get(matchId);
     if (!stream) return { ...this.statusFor(stream), chunks: [] };
     this.trimRecentChunks(stream);
     return {
       ...this.statusFor(stream),
-      chunks: stream.recentChunks
+      chunks: (stream.active ? stream.recentChunks : [])
         .filter((chunk) => chunk.sequence > afterSequence)
-        .slice(-RECENT_REPLAY_HARD_LIMIT),
+        .slice(afterSequence === 0 ? -2 : -RECENT_REPLAY_HARD_LIMIT),
     };
   }
 
   endPublicStream(matchId: string, reason = "Public live disabled") {
+    this.invalidateHttpSessions(matchId);
     const stream = this.streams.get(matchId);
     if (!stream) return;
     stream.active = false;
@@ -195,7 +203,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     }
 
     if (action === "record") {
-      this.acceptRecorder(ws, matchId, url.searchParams.get("ticket") || "");
+      await this.acceptRecorder(ws, matchId, url.searchParams.get("ticket") || "");
       return;
     }
     if (action === "listen") {
@@ -205,19 +213,33 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     ws.close(1008, "Unknown live audio stream");
   }
 
-  private acceptRecorder(ws: WebSocket, matchId: string, ticket: string) {
-    if (!this.claimTicket(matchId, ticket)) {
+  private async acceptRecorder(ws: WebSocket, matchId: string, ticket: string) {
+    let authorize: (() => Promise<void>) | undefined;
+    try {
+      authorize = await this.claimTicket(matchId, ticket);
+    } catch {
       ws.close(1008, "Live audio ticket expired");
       return;
     }
-
+    if (ws.readyState !== WebSocket.OPEN) return;
+    this.invalidateHttpSessions(matchId);
     const stream = this.ensureStream(matchId);
     stream.recorder?.close(1000, "Live audio moved to a new recorder");
     stream.recorder = ws;
     stream.updatedAt = Date.now();
     ws.send(JSON.stringify({ type: "status", ...this.statusFor(stream) }));
 
-    ws.on("message", (raw) => this.handleRecorderMessage(matchId, raw.toString()));
+    let messages = Promise.resolve();
+    ws.on("message", (raw) => {
+      messages = messages.then(async () => {
+        if (this.streams.get(matchId)?.recorder !== ws) return;
+        if (authorize) await authorize();
+        await this.assertPublicAudioEnabled(matchId);
+        if (this.streams.get(matchId)?.recorder === ws) this.handleRecorderMessage(matchId, raw.toString());
+      }).catch(() => {
+        if (this.streams.get(matchId)?.recorder === ws) this.endPublicStream(matchId, "Live audio is no longer available");
+      });
+    });
     ws.on("close", () => {
       const current = this.streams.get(matchId);
       if (current?.recorder === ws) {
@@ -238,18 +260,16 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
 
     const stream = this.ensureStream(matchId);
     stream.listeners.add(ws);
-    stream.updatedAt = Date.now();
     ws.send(JSON.stringify({ type: "status", ...this.statusFor(stream) }));
     if (stream.active) {
       this.trimRecentChunks(stream);
-      for (const chunk of stream.recentChunks) {
+      for (const chunk of stream.recentChunks.slice(-2)) {
         if (ws.readyState !== WebSocket.OPEN) break;
         ws.send(JSON.stringify(chunk));
       }
     }
     ws.on("close", () => {
       stream.listeners.delete(ws);
-      stream.updatedAt = Date.now();
     });
   }
 
@@ -260,12 +280,14 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     let message: SocketMessage;
     try {
       message = JSON.parse(raw) as SocketMessage;
+      if (!message || typeof message !== "object") throw new Error("Invalid message");
     } catch {
       stream.recorder.close(1003, "Live audio message must be JSON");
       return;
     }
 
     if (message.type === "start") {
+      try { this.validateMimeType(message.mimeType); } catch { stream.recorder.close(1003, "Unsupported live audio format"); return; }
       this.startStream(stream, message.mimeType);
       return;
     }
@@ -287,16 +309,19 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     onInvalid: (reason: string) => void
   ) {
     const stream = this.streams.get(matchId);
-    if (!stream) return;
+    if (!stream || !stream.active) { onInvalid("Live audio is not active"); return; }
     const data = typeof dataValue === "string" ? dataValue : "";
-    if (!data || !stream.active) return;
-    const bytes = Math.ceil((data.length * 3) / 4);
+    const bytes = Math.floor((data.length * 3) / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
     if (bytes > MAX_CHUNK_BYTES) {
       onInvalid("Live audio chunk is too large");
       return;
     }
+    if (!data || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {
+      onInvalid("Live audio chunk must contain valid base64"); return;
+    }
+    if (mimeType && mimeType !== stream.mimeType) { onInvalid("Live audio format changed during recording"); return; }
 
-    stream.sequence += 1;
+    stream.sequence = ++this.sequence;
     stream.mimeType = mimeType || stream.mimeType;
     stream.updatedAt = Date.now();
     const chunk: AudioChunk = {
@@ -311,18 +336,34 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     this.broadcast(stream, chunk);
   }
 
-  private claimTicket(matchId: string, ticket: string) {
+  private async claimTicket(matchId: string, ticket: string) {
     const claim = this.tickets.get(ticket);
     this.tickets.delete(ticket);
-    return Boolean(claim && claim.matchId === matchId && claim.expiresAt >= Date.now());
+    if (!claim || claim.matchId !== matchId || claim.expiresAt < Date.now()) throw new Error("Live audio ticket expired");
+    await claim.authorize?.();
+    await this.assertPublicAudioEnabled(matchId);
+    return claim.authorize;
+  }
+
+  private validateMimeType(mimeType?: string) {
+    if (mimeType && !/^audio\/(webm|mp4|ogg)(;\s*codecs=[a-zA-Z0-9.," -]+)?$/.test(mimeType)) throw new Error("Unsupported live audio format");
+  }
+
+  private invalidateHttpSessions(matchId: string) {
+    for (const [id, session] of this.httpSessions) if (session.matchId === matchId) this.httpSessions.delete(id);
   }
 
   private async publicAudioAccess(matchId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const match = await this.prisma.sbMatch.findUnique({
       where: { id: matchId },
-      select: { id: true, stats: true },
+      select: { id: true, stats: true, isPublished: true, statisticsSheet: { select: { clock: true } } },
     });
     if (!match) return { ok: false, reason: "Match not found" };
+    if (!match.isPublished) return { ok: false, reason: "Match is not published" };
+    const clock = match.statisticsSheet?.clock as { firstHalfStartedAt?: unknown; phase?: unknown } | null;
+    if (!clock?.firstHalfStartedAt || clock.phase === "finished") {
+      return { ok: false, reason: "Live audio recording is not active" };
+    }
     const liveFeature = readLiveFeature(match.stats);
     if (!liveFeature.enabled) {
       return { ok: false, reason: "Public live is not enabled for this match" };
@@ -335,7 +376,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
 
   private async assertPublicAudioEnabled(matchId: string) {
     const access = await this.publicAudioAccess(matchId);
-    if (!access.ok) throw new Error(access.reason);
+    if (!access.ok) throw new ForbiddenException(access.reason);
   }
 
   private trimRecentChunks(stream: AudioStream) {
@@ -348,9 +389,9 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
   private startStream(stream: AudioStream, mimeType: string | undefined) {
     const now = Date.now();
     stream.active = true;
-    stream.sequence = 0;
     stream.mimeType = mimeType || "audio/webm";
-    stream.startedAt = new Date(now).toISOString();
+    this.lastStartedAt = Math.max(now, this.lastStartedAt + 1);
+    stream.startedAt = new Date(this.lastStartedAt).toISOString();
     stream.updatedAt = now;
     stream.recentChunks = [];
     this.broadcastStatus(stream);
@@ -360,6 +401,8 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     const stream = this.streams.get(matchId);
     if (!stream) return;
     stream.active = false;
+    stream.recentChunks = [];
+    this.invalidateHttpSessions(matchId);
     stream.updatedAt = Date.now();
     this.broadcastStatus(stream);
     const recorder = stream.recorder;
@@ -404,7 +447,10 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
   private broadcast(stream: AudioStream, payload: unknown) {
     const message = JSON.stringify(payload);
     for (const listener of stream.listeners) {
-      if (listener.readyState === WebSocket.OPEN) listener.send(message);
+      if (listener.readyState === WebSocket.OPEN) {
+        if (listener.bufferedAmount > 1_000_000) listener.close(1013, "Listener connection is too slow");
+        else listener.send(message);
+      }
     }
   }
 
@@ -424,6 +470,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
       ? [...this.streams.entries()].filter(([id]) => id === matchId)
       : [...this.streams.entries()];
     for (const [id, stream] of entries) {
+      if (stream.active && now - stream.updatedAt > SESSION_TTL_MS) this.stopStream(id);
       if (stream.active && now - stream.updatedAt <= SESSION_TTL_MS) continue;
       if (stream.recorder || stream.listeners.size > 0) continue;
       this.streams.delete(id);

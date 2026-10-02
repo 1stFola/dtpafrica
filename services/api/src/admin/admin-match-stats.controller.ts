@@ -94,7 +94,7 @@ export class AdminMatchStatsController {
   @RequirePermissions("scoreboard.stats.record")
   async createLiveAudioTicket(@Param("matchId") matchId: string, @Req() req: AdminRequest) {
     await this.stats.assertLiveAudioAccess(matchId, req.adminAuth);
-    return this.liveAudio.createRecorderTicket(matchId);
+    return this.liveAudio.createRecorderTicket(matchId, () => this.stats.assertLiveAudioAccess(matchId, req.adminAuth));
   }
 
   @Get(":matchId/live-audio/status")
@@ -113,7 +113,7 @@ export class AdminMatchStatsController {
   ) {
     await this.stats.assertLiveAudioAccess(matchId, req.adminAuth);
     try {
-      return this.liveAudio.startHttpRecorder(matchId, body.ticket || "", body.mimeType);
+      return await this.liveAudio.startHttpRecorder(matchId, body.ticket || "", body.mimeType);
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : "Could not start live audio"
@@ -123,12 +123,14 @@ export class AdminMatchStatsController {
 
   @Post(":matchId/live-audio/http/chunk")
   @RequirePermissions("scoreboard.stats.record")
-  liveAudioHttpChunk(
+  async liveAudioHttpChunk(
     @Param("matchId") matchId: string,
-    @Body() body: { sessionId?: string; mimeType?: string; data?: string }
+    @Body() body: { sessionId?: string; mimeType?: string; data?: string },
+    @Req() req: AdminRequest
   ) {
+    await this.stats.assertLiveAudioAccess(matchId, req.adminAuth);
     try {
-      return this.liveAudio.pushHttpChunk(body.sessionId || "", body.mimeType, body.data);
+      return this.liveAudio.pushHttpChunk(body.sessionId || "", body.mimeType, body.data, matchId);
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : "Could not send live audio"
@@ -138,11 +140,13 @@ export class AdminMatchStatsController {
 
   @Post(":matchId/live-audio/http/stop")
   @RequirePermissions("scoreboard.stats.record")
-  liveAudioHttpStop(
+  async liveAudioHttpStop(
     @Param("matchId") matchId: string,
-    @Body() body: { sessionId?: string }
+    @Body() body: { sessionId?: string },
+    @Req() req: AdminRequest
   ) {
-    return this.liveAudio.stopHttpRecorder(body.sessionId || "");
+    await this.stats.assertLiveAudioAccess(matchId, req.adminAuth, { allowAfterFullTime: true, allowWhenPublicLiveOff: true });
+    return this.liveAudio.stopHttpRecorder(body.sessionId || "", matchId);
   }
 
   @Get(":matchId")
