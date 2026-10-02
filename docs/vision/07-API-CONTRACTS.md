@@ -247,6 +247,20 @@ accepted, on `all` and per kit colour, with `summary.unit: "tracks"`. It refuses
 and `IdentitiesMissing` after the dataset rules every run has. See
 [37-PHASE-4-INCREMENT-6.md](./37-PHASE-4-INCREMENT-6.md).
 
+**Calibration** (`vision.review` to write, `vision.read` to read): `GET /vision/calibration/landmarks`
+(`?lengthM&widthM`) is the pitch's landmark catalogue placed from its dimensions; `POST
+/vision/calibration/preview` fits the clicked points and returns the homography, its
+reprojection error in metres and pixels and a `quality`, saved nowhere. `POST
+/vision/review/:assetId/camera-segments` declares a segment (`SegmentEmpty`,
+`SegmentOutsideAsset`, `SegmentOverlaps`; the operator key is refused with
+`CalibrationNeedsAPerson`) and `GET` lists them with each one's current calibration and coverage.
+`POST /vision/review/camera-segments/:id/calibration` files a person's calibration, superseding the
+segment's current one, and refuses `CalibrationDegenerate` when no homography can be made. `GET
+/vision/review/tracks/:trackId/pitch-positions` is the first coordinate anyone can derive and is
+under the suppression rule: positions in metres only through a calibration that passed the bar,
+and `distance` is `{ suppressed: true, reason }` unless every position was placed. See
+[38-PHASE-5-INCREMENT-1.md](./38-PHASE-5-INCREMENT-1.md).
+
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the
 job is refused (`NoProductionModel`) rather than run against whichever version happened to exist.

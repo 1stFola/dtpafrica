@@ -281,6 +281,13 @@ and `validToMs` is required -- a window is always closed, because a track is. `V
 match's two teams a kit cluster is, decided by a person; `VisionTeamAssignment` (from [34](./34-PHASE-4-INCREMENT-3.md))
 holds the cluster itself. Both relations to `Player` have their foreign key on the Vision side.
 
+**Calibration, as built** ([38](./38-PHASE-5-INCREMENT-1.md)): `VisionPitchCalibration` hangs
+off `VisionCameraSegment` — one current row per segment, superseded never edited — with the
+pitch's actual dimensions, `method` (`manual` | `model`), the clicked `points`, the 3 × 3
+`homography` from proxy pixels to metres, the reprojection error in metres and pixels, the
+worst point, and a `quality` under a recorded `thresholdsVersion`. Per-frame homographies
+stay in object storage when the automatic pipeline produces them; the row is the segment's.
+
 ### 5. Events and evidence — Phases 6–7
 
 ```prisma
