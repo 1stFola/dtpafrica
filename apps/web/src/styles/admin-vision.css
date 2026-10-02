@@ -548,3 +548,79 @@
   margin-left: 0.35em;
   opacity: 0.75;
 }
+
+/* ── Identity review ─────────────────────────────────────────────────────── */
+
+/* Boxes here are read, not drawn: no crosshair, and a box is a button. */
+.vision-stage--review {
+  cursor: default;
+}
+
+.vision-tracklist,
+.vision-candidates,
+.vision-identities {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+
+.vision-tracklist__row {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  line-height: 1.35;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  width: 100%;
+}
+
+.vision-tracklist__row:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+.vision-tracklist__row.is-selected {
+  background: rgba(250, 204, 21, 0.18);
+  border-color: #facc15;
+}
+
+.vision-candidates {
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.vision-candidates__pick {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  padding: 0.2rem 0.45rem;
+  text-align: left;
+  width: 100%;
+}
+
+.vision-candidates__pick.is-active {
+  background: rgba(250, 204, 21, 0.18);
+  border-color: #facc15;
+}
+
+.vision-identity-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+}
+
+.vision-identity-row--accepted {
+  font-weight: 600;
+}
+
+.vision-identity-row--rejected {
+  opacity: 0.55;
+  text-decoration: line-through;
+}

@@ -108,9 +108,10 @@ Poll at 5 s while a job page is open.
 |---|---|---|
 | `GET` | `/vision/review/:assetId/timeline` | `vision.read` |
 | `GET` | `/vision/review/:assetId/tracks` | `vision.read` |
-| `GET` | `/vision/review/tracks/:trackId/crops` | `vision.review` |
+| `GET` | `/vision/review/:assetId/media` | `vision.read` |
+| `GET` | `/vision/review/tracks/:trackId/positions` | `vision.read` |
 | `POST` | `/vision/review/jobs/:jobId/sides` | `vision.review` |
-| `GET` | `/vision/review/tracks/:trackId/candidates` | `vision.read` |
+| `GET` | `/vision/review/tracks/:trackId/candidates` (`?all=1` for the whole match squad) | `vision.read` |
 | `POST` | `/vision/review/tracks/:trackId/identity` | `vision.review` |
 | `POST` | `/vision/review/identity/:id/accept` | `vision.review` |
 | `POST` | `/vision/review/identity/:id/reject` | `vision.review` |
@@ -228,6 +229,15 @@ split of tracks themselves. `accept` needs a second person (`SelfAcceptanceRefus
 `AssignmentSuperseded`); `reject` takes a reason. `GET /vision/assets/:id/identity?public=1` returns
 only accepted, named, current assignments, and is the only read anything public may make. See
 [35-PHASE-4-INCREMENT-4.md](./35-PHASE-4-INCREMENT-4.md).
+
+The review screen plays `GET /vision/review/:assetId/media` (a presigned proxy, never the
+master, with its clock and picture size) and draws tracks from
+`GET /vision/review/tracks/:trackId/positions`, which reads the track artifact through the
+control plane -- a browser cannot read the bucket -- caches it by key, and refuses one over
+32 MB (`ArtifactTooLarge`) or missing (`ArtifactMissing`). The review view carries each
+identity's roster `slot` and the match's two teams. The planned `crops` route is dropped: the
+proxy frame with the box on it serves the need. See
+[36-PHASE-4-INCREMENT-5.md](./36-PHASE-4-INCREMENT-5.md).
 
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the

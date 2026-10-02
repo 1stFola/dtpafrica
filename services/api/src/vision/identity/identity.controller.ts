@@ -32,6 +32,18 @@ export class VisionIdentityController {
     return jsonSafe(await this.identity.forAsset(assetId, pub === "1" || pub === "true"));
   }
 
+  @Get("review/:assetId/media")
+  @RequirePermissions("vision.read")
+  async media(@Param("assetId") assetId: string) {
+    return jsonSafe(await this.identity.media(assetId));
+  }
+
+  @Get("review/tracks/:trackId/positions")
+  @RequirePermissions("vision.read")
+  async positions(@Param("trackId") trackId: string) {
+    return jsonSafe(await this.identity.positions(trackId));
+  }
+
   @Post("review/jobs/:jobId/sides")
   @RequirePermissions("vision.review")
   async setSides(@Param("jobId") jobId: string, @Body() dto: SetSidesDto, @AdminAuth() auth: AdminAuthContext) {
@@ -40,8 +52,8 @@ export class VisionIdentityController {
 
   @Get("review/tracks/:trackId/candidates")
   @RequirePermissions("vision.read")
-  async candidates(@Param("trackId") trackId: string) {
-    return jsonSafe(await this.identity.candidates(trackId));
+  async candidates(@Param("trackId") trackId: string, @Query("all") all?: string) {
+    return jsonSafe(await this.identity.candidates(trackId, all === "1" || all === "true"));
   }
 
   @Post("review/tracks/:trackId/identity")

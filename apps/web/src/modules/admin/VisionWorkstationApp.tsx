@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { AdminAuthProvider } from "./AdminAuthContext";
 import { AdminRequireAuth } from "./AdminRequireAuth";
 import { AdminRequirePermission } from "./AdminRequirePermission";
+import { AdminVisionIdentityPage } from "./vision/AdminVisionIdentityPage";
 import { AdminVisionTaskPage } from "./vision/AdminVisionTaskPage";
 
 /**
@@ -19,12 +20,18 @@ import { AdminVisionTaskPage } from "./vision/AdminVisionTaskPage";
  *
  * `vision.annotate` rather than `vision.read`: this screen claims work and submits
  * labels, and someone who may only read the catalogue has no business doing either.
+ *
+ * The identity review screen sits here too, under `vision.review`: it names
+ * children on footage, and the API refuses everyone but a signed-in reviewer.
  */
 export function VisionWorkstationApp() {
   return (
     <AdminAuthProvider>
       <Routes>
         <Route element={<AdminRequireAuth />}>
+          <Route element={<AdminRequirePermission permission="vision.review" />}>
+            <Route path="identity/:assetId" element={<AdminVisionIdentityPage />} />
+          </Route>
           <Route element={<AdminRequirePermission permission="vision.annotate" />}>
             <Route path=":taskId" element={<AdminVisionTaskPage />} />
           </Route>
