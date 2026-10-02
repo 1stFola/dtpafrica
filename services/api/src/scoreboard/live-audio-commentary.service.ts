@@ -94,6 +94,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
       if (!url.pathname.startsWith("/api/v1/live-audio/")) return;
 
       this.wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on("error", () => ws.close(1011, "Live audio connection failed"));
         void this.handleConnection(ws, url).catch(() => {
           ws.close(1011, "Unable to open live audio stream");
         });

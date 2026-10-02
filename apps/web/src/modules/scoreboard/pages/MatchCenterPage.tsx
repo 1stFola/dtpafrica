@@ -584,6 +584,7 @@ function LiveAudioListener({ matchId }: { matchId: string }) {
       if (data.type === "status") {
         if (data.active && data.startedAt !== startedAt) {
           startedAt = data.startedAt;
+          lastSequence = 0;
           prepareAudioStream();
         }
         setActive(data.active);

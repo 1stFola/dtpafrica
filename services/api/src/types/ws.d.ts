@@ -10,6 +10,7 @@ declare module "ws" {
     close(code?: number, reason?: string): void;
     on(event: "message", listener: (data: { toString(): string }) => void): this;
     on(event: "close", listener: () => void): this;
+    on(event: "error", listener: (error: Error) => void): this;
   }
 
   export class WebSocketServer {

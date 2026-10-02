@@ -59,6 +59,13 @@ describe("live audio transports", () => {
     const polled = await service.poll("match", sequence);
     expect(polled.chunks).toHaveLength(1);
     expect(polled.sequence).toBeGreaterThan(sequence);
+    expect(second.status.startedAt).not.toBe(first.status.startedAt);
+  });
+  it("starts late listeners near the live edge with two complete segments", async () => {
+    const session = await start();
+    for (let n = 0; n < 8; n += 1) service.pushHttpChunk(session.sessionId, mime, data);
+    expect((await service.poll("match")).chunks.map((chunk) => chunk.sequence)).toEqual([7, 8]);
+    expect((await service.poll("match", 3)).chunks).toHaveLength(5);
   });
   it("rejects malformed, oversized and changed-format chunks", async () => {
     const session = await start();
