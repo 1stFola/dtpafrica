@@ -70,6 +70,8 @@ model Player {
   visionRightsScopes    VisionRightsScope[]
   /// Who a Vision track was said to be. Foreign key on the Vision side; see docs/vision/35.
   visionIdentities      VisionIdentityAssignment[]
+  /// Vision's event candidates naming this player as the actor; see docs/vision/44.
+  visionEventCandidates VisionEventCandidate[]
 
   @@index([academyId])
   @@index([positionPrimary])
@@ -805,6 +807,8 @@ model SbMatchEvent {
   player       Player?       @relation("SbEventPlayer", fields: [playerId], references: [id], onDelete: SetNull)
   assistPlayer Player?       @relation("SbEventAssistPlayer", fields: [assistPlayerId], references: [id], onDelete: SetNull)
   highlights   SbHighlight[]
+  /// The Vision candidate promoted into this event, if one was; see docs/vision/44.
+  visionCandidate VisionEventCandidate?
 
   @@index([matchId, minute])
   @@index([teamId])
@@ -1258,6 +1262,7 @@ model VisionVideoAsset {
   variants          VisionVideoVariant[]
   cameraSegments    VisionCameraSegment[]
   clockAnchors      VisionClockAnchor[]
+  eventCandidates   VisionEventCandidate[]
   uploadSessions    VisionUploadSession[]
   jobs              VisionJob[]
   datasetMembers    VisionDatasetMember[]
@@ -1512,6 +1517,7 @@ model VisionTrack {
   inferenceJob    VisionJob                  @relation(fields: [inferenceJobId], references: [id], onDelete: Cascade)
   teamAssignments VisionTeamAssignment[]
   identities      VisionIdentityAssignment[]
+  eventCandidates VisionEventCandidate[]
 
   @@unique([inferenceJobId, localTrackId])
   @@index([videoAssetId, class])
@@ -2007,4 +2013,76 @@ model VisionActiveLearningItem {
 
   @@index([state, score])
   @@map("vision_active_learning_items")
+}
+
+/// Vision's proposal that something happened: a type from a versioned taxonomy, a
+/// window in source time, an actor, and the evidence it rests on. The recorder's
+/// `SbMatchEvent` stays canonical; a candidate two people stand behind enriches a
+/// matching one, or creates one where the recorder logged nothing and a publisher
+/// says so. Never edited: a correction is a new row superseding this one.
+/// See docs/vision/44.
+model VisionEventCandidate {
+  id                      String   @id @default(uuid())
+  videoAssetId            String   @map("video_asset_id")
+  sbMatchId               String?  @map("sb_match_id")
+  type                    String
+  taxonomyVersion         String   @map("taxonomy_version")
+  /// Source time, like every other label. An instant event has startMs == endMs.
+  startMs                 Int      @map("start_ms")
+  endMs                   Int      @map("end_ms")
+  actorTrackId            String?  @map("actor_track_id")
+  actorPlayerId           String?  @map("actor_player_id")
+  /// The roster slot of this match the actor is, when a person named one.
+  actorMatchSquadPlayerId String?  @map("actor_match_squad_player_id")
+  sbTeamId                String?  @map("sb_team_id")
+  confidence              Float
+  /// manual | model
+  method                  String
+  modelVersionId          String?  @map("model_version_id")
+  /// The camera segment covering startMs when the candidate was filed, if any.
+  cameraSegmentId         String?  @map("camera_segment_id")
+  /// False inside a replay, intro or halftime segment: flagged, and never promoted.
+  inPlay                  Boolean  @default(true) @map("in_play")
+  /// unreviewed | accepted | rejected
+  reviewState             String   @default("unreviewed") @map("review_state")
+  decidedBy               String   @map("decided_by")
+  reviewedBy              String?  @map("reviewed_by")
+  reviewNote              String?  @map("review_note")
+  note                    String?
+  promotedEventId         String?  @unique @map("promoted_event_id")
+  /// enriched | created
+  promotionKind           String?  @map("promotion_kind")
+  promotedBy              String?  @map("promoted_by")
+  promotedAt              DateTime? @map("promoted_at")
+  supersededBy            String?  @map("superseded_by")
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  videoAsset    VisionVideoAsset     @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  actorTrack    VisionTrack?         @relation(fields: [actorTrackId], references: [id], onDelete: SetNull)
+  actorPlayer   Player?              @relation(fields: [actorPlayerId], references: [id], onDelete: SetNull)
+  promotedEvent SbMatchEvent?        @relation(fields: [promotedEventId], references: [id], onDelete: SetNull)
+  evidence      VisionEvidenceLink[]
+
+  @@index([videoAssetId, startMs])
+  @@index([sbMatchId])
+  @@index([actorTrackId])
+  @@map("vision_event_candidates")
+}
+
+/// What a candidate rests on: a track, a camera segment, a calibration, an identity
+/// assignment, a clock anchor. The provenance drawer reads these; staleness
+/// propagation (Phase 7) will walk them the other way.
+model VisionEvidenceLink {
+  id          String   @id @default(uuid())
+  candidateId String   @map("candidate_id")
+  kind        String
+  targetId    String   @map("target_id")
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  candidate VisionEventCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@index([kind, targetId])
+  @@map("vision_evidence_links")
 }

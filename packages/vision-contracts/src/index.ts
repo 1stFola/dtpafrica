@@ -4,3 +4,4 @@ export * from "./storage";
 export * from "./jobs";
 export * from "./prediction";
 export * from "./annotation";
+export * from "./events";

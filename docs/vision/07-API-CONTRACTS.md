@@ -119,6 +119,8 @@ Poll at 5 s while a job page is open.
 | `GET` | `/vision/review/:assetId/clock` (`?sourceMs` reads a moment) | `vision.read` |
 | `POST` | `/vision/review/:assetId/clock` | `vision.review` |
 | `GET` | `/vision/review/:assetId/game-state` | `vision.read` |
+| `GET` | `/vision/review/:assetId/events` (`?all=1` includes superseded) | `vision.read` |
+| `GET` | `/vision/review/events/:id` | `vision.read` |
 | `POST` | `/vision/review/events` | `vision.review` |
 | `PATCH` | `/vision/review/events/:id` | `vision.review` |
 | `POST` | `/vision/review/events/:id/decision` | `vision.review` |
@@ -130,6 +132,28 @@ response returns both the new row and the ID it supersedes, so the UI can show w
 
 `POST /vision/review/events/:id/promote` is the bridge into `SbMatchEvent`. It requires an
 accepted review decision and a valid `canPublishHighlight`/publication rights check.
+
+**Event candidates, as built** ([44-PHASE-6-INCREMENT-1.md](./44-PHASE-6-INCREMENT-1.md)).
+`POST /vision/review/events` files a person's candidate: `{ videoAssetId, type, startMs, endMs,
+actorTrackId?, actorMatchSquadPlayerId?, sbTeamId?, confidence?, note?, evidence? }` with `type` from
+`VISION_EVENT_TYPES` under `VISION_EVENT_TAXONOMY_VERSION` (`EventNeedsAPerson`,
+`EventOutsideAsset`, `ActorNotOnThisAsset`, `NotOnThisMatchSquad`, `TeamNotInThisMatch`). The
+service finds the evidence itself — the actor track, the identity current on it at that moment,
+the camera segment covering the start and its calibration, the half's clock anchor — and adds the
+caller's links beside them; a candidate inside a `replay`, `intro` or `halftime` segment is
+`inPlay: false`. `PATCH /vision/review/events/:id` is a correction: a new unreviewed row
+superseding the old (`EventSuperseded`, `EventPromoted`). `POST .../decision`
+`{ decision: accepted | rejected, reason? }` is a second person's (`SelfAcceptanceRefused`,
+`ReasonRequired`). `POST .../promote` `{ create? }` needs, in order, acceptance (`NotAccepted`), a
+linked match (`NoMatchLinked`), a recorder type for the candidate's type (`NoScoreBoardType`;
+only `goal_candidate` → `goal` today), play (`NotInPlay`, re-checked against the segments as
+they are then), publication rights (`PublicationRightsRefused`) and an anchored clock
+(`ClockNotAnchored`); it then *enriches* the recorder's event of that type within a minute,
+compatible on team and player, by writing `metadata.vision` (`VisionEventPromotionV1`) on it —
+or, with `create: true`, where none matches and the team is known, creates one at the candidate's
+match minute (`NoMatchingEvent` names the nearest; `AmbiguousRecorderEvent` when two are equally
+near; `TeamUnknown`; `AlreadyPromoted`). The reads return each candidate with its `evidence`,
+`matchClock`, `scoreboardType` and `promotable`.
 
 ### Datasets and models
 

@@ -23,6 +23,8 @@ import { VisionCalibrationController } from "./calibration/calibration.controlle
 import { VisionCalibrationService } from "./calibration/calibration.service";
 import { VisionClockController } from "./clock/clock.controller";
 import { VisionClockService } from "./clock/clock.service";
+import { VisionEventsController } from "./events/events.controller";
+import { VisionEventsService } from "./events/events.service";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { VisionBenchmarksService } from "./models/benchmarks.service";
@@ -76,6 +78,7 @@ const PROVIDERS = [
   VisionIdentityService,
   VisionCalibrationService,
   VisionClockService,
+  VisionEventsService,
   WorkerTokenService,
 ] as const;
 
@@ -93,6 +96,7 @@ const CONTROLLERS = [
   VisionIdentityController,
   VisionCalibrationController,
   VisionClockController,
+  VisionEventsController,
 ] as const;
 
 const SERVICES = [
@@ -111,6 +115,7 @@ const SERVICES = [
   VisionIdentityService,
   VisionCalibrationService,
   VisionClockService,
+  VisionEventsService,
   WorkerTokenService,
 ] as const;
 

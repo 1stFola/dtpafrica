@@ -329,6 +329,13 @@ model VisionCalculationVersion  { /* metric key, formula, units, prerequisites, 
 model VisionPlayerMetric        { /* playerId, sbMatchId, key, value, calcVersion, evidenceLinkIds, staleAt */ }
 ```
 
+*As built* ([44](./44-PHASE-6-INCREMENT-1.md)): `VisionEventCandidate` carries, beside the sketch
+above, `actorMatchSquadPlayerId` (the roster slot named), `method` (`manual` | `model`) with
+`modelVersionId` nullable because a person's candidate has no model, `cameraSegmentId` and
+`inPlay` (flagged inside a replay, intro or halftime segment), `decidedBy` / `reviewedBy` /
+`reviewNote`, and `promotionKind` (`enriched` | `created`) with `promotedBy` / `promotedAt`.
+`VisionEvidenceLink` is `{ candidateId, kind, targetId, note }` with `kind` from `EVIDENCE_KINDS`.
+
 `promotedEventId` and `promotedHighlightId` are the bridge to the public product — see
 [02-DECISIONS.md, D10](./02-DECISIONS.md#d10--highlights-and-events-collide-with-existing-models).
 The Vision row stays the evidence of record; the ScoreBoard row is the published projection.
