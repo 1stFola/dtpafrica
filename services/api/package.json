@@ -39,6 +39,7 @@
     "vision:trackcheck": "tsx scripts/vision-track-check.ts",
     "vision:trackmetricscheck": "tsx scripts/vision-track-metrics-check.ts",
     "vision:teamcheck": "tsx scripts/vision-team-check.ts",
+    "vision:identitycheck": "tsx scripts/vision-identity-check.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
     "db:sync:timeline-squad-numbers": "tsx scripts/sync-timeline-squad-numbers.ts",

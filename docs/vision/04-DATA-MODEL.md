@@ -274,6 +274,13 @@ schema or the UI may pressure it toward a guess.
 `validFromMs`/`validToMs` make identity time-aware, which matters because a jersey number is
 reused across substitutions and across matches in youth tournaments.
 
+As built ([35](./35-PHASE-4-INCREMENT-4.md)): the row also names the match roster slot
+(`matchSquadPlayerId`, `sbTeamId`), who decided (`decidedBy`) and who accepted (`reviewedBy`),
+and `validToMs` is required -- a window is always closed, because a track is. `VisionTeamSide`
+(one row per identify job and side, `A`/`B` → `sbTeamId`, `decidedBy`) records which of the
+match's two teams a kit cluster is, decided by a person; `VisionTeamAssignment` (from [34](./34-PHASE-4-INCREMENT-3.md))
+holds the cluster itself. Both relations to `Player` have their foreign key on the Vision side.
+
 ### 5. Events and evidence — Phases 6–7
 
 ```prisma

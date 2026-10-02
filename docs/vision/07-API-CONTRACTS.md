@@ -109,9 +109,12 @@ Poll at 5 s while a job page is open.
 | `GET` | `/vision/review/:assetId/timeline` | `vision.read` |
 | `GET` | `/vision/review/:assetId/tracks` | `vision.read` |
 | `GET` | `/vision/review/tracks/:trackId/crops` | `vision.review` |
+| `POST` | `/vision/review/jobs/:jobId/sides` | `vision.review` |
+| `GET` | `/vision/review/tracks/:trackId/candidates` | `vision.read` |
 | `POST` | `/vision/review/tracks/:trackId/identity` | `vision.review` |
-| `POST` | `/vision/review/tracks/merge` | `vision.review` |
-| `POST` | `/vision/review/tracks/:trackId/split` | `vision.review` |
+| `POST` | `/vision/review/identity/:id/accept` | `vision.review` |
+| `POST` | `/vision/review/identity/:id/reject` | `vision.review` |
+| `GET` | `/vision/assets/:id/identity?public=1` | `vision.read` |
 | `POST` | `/vision/review/events` | `vision.review` |
 | `PATCH` | `/vision/review/events/:id` | `vision.review` |
 | `POST` | `/vision/review/events/:id/decision` | `vision.review` |
@@ -209,6 +212,22 @@ artifact by declared key, and its completion becomes one `VisionTeamAssignment` 
 `kit_outlier`, `not_clustered`), `kitDescription`, and `reviewState: unreviewed`. The tracks route
 returns each track's latest assignment as `teamAssignments[0]`. See
 [34-PHASE-4-INCREMENT-3.md](./34-PHASE-4-INCREMENT-3.md).
+
+**Identity** is a person's word, never a machine's. `POST /vision/review/jobs/:jobId/sides` says
+which of the match's two teams cluster `A` and `B` are (`SidesSame`, `SidesNotTheMatch`,
+`NotAnIdentifyJob`); `GET /vision/review/tracks/:trackId/candidates` is the track's side's match
+squad, or the whole squad when nothing narrows it, with a stated clock caveat; `POST
+/vision/review/tracks/:trackId/identity` writes one `VisionIdentityAssignment` for a window of the
+track (`matchSquadPlayerId` or `null` for unknown; `validFromMs`/`validToMs` default to the track;
+`propagateTo` writes the same person onto other tracks as `propagated` rows; `acceptSideMismatch`
+overrules the kit and marks its side `corrected`). Refusals: `IdentityNeedsAPerson`,
+`WindowOutsideTrack`, `WindowEmpty`, `NotOnThisMatchSquad`, `SideDisagrees`,
+`PropagateTargetInvalid`, `PropagateUnknownRefused`. A new window supersedes every current
+assignment it overlaps -- a split is two windows, a merge is propagation, there is no merge or
+split of tracks themselves. `accept` needs a second person (`SelfAcceptanceRefused`;
+`AssignmentSuperseded`); `reject` takes a reason. `GET /vision/assets/:id/identity?public=1` returns
+only accepted, named, current assignments, and is the only read anything public may make. See
+[35-PHASE-4-INCREMENT-4.md](./35-PHASE-4-INCREMENT-4.md).
 
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the
