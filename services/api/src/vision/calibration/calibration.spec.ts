@@ -1,6 +1,7 @@
 import { ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
+import { InMemoryObjectStore } from "../storage/in-memory-object-store";
 import { VisionCalibrationService } from "./calibration.service";
 import { invert3, project, type Homography } from "./homography";
 import { landmarkById } from "./pitch-model";
@@ -34,6 +35,7 @@ const mockPrisma = {
   visionCameraSegment: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
   visionPitchCalibration: { create: vi.fn(), updateMany: vi.fn() },
   visionTrack: { findUnique: vi.fn() },
+  visionJob: { findFirst: vi.fn() },
   $transaction: vi.fn(),
 };
 const mockAudit = { record: vi.fn() };
@@ -45,7 +47,7 @@ let service: VisionCalibrationService;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  service = new VisionCalibrationService(mockPrisma as never, mockAudit as never, mockIdentity as never);
+  service = new VisionCalibrationService(mockPrisma as never, mockAudit as never, mockIdentity as never, new InMemoryObjectStore(), { playback: { urlTtlSeconds: 600 } } as never);
   mockAudit.record.mockResolvedValue(undefined);
   mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, durationMs: 120_000 });
   mockPrisma.visionCameraSegment.findFirst.mockResolvedValue(null);
@@ -210,5 +212,36 @@ describe("the suppression rule", () => {
     mockPrisma.visionCameraSegment.findMany.mockResolvedValue([]);
     const out = await service.pitchPositions(TRACK);
     expect(out.distance).toEqual({ suppressed: true, reason: "no positions" });
+  });
+});
+
+describe("the latest game state", () => {
+  it("is nothing until a gamestate job succeeded", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue(null);
+    expect(await service.gameState(ASSET)).toMatchObject({ job: null, coverage: null, chunks: [], index: null });
+  });
+
+  it("hands out the index and a presigned url per chunk, with the coverage the job reported", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue({
+      id: "job-g",
+      finishedAt: new Date("2026-10-03"),
+      inputSpec: { segments: [{ quality: "good" }, { quality: null }, { quality: "failed" }], anchors: [{}] },
+      progress: {
+        artifacts: [
+          { key: "inference/job-g/1/gamestate/chunk-00000.parquet", role: "gamestate_chunk", bytes: 1200 },
+          { key: "inference/job-g/1/gamestate/chunk-00001.parquet", role: "gamestate_chunk", bytes: 900 },
+          { key: "inference/job-g/1/gamestate.json", role: "gamestate", bytes: 300 },
+        ],
+        summary: { rows: 82, frames: 41, placed: 80, suppressed: 2, reasons: { beyond_horizon: 2 }, validFrameCoverage: 1, chunkMs: 1000, chunks: 2 },
+      },
+    });
+    const out = await service.gameState(ASSET);
+    expect(out.job).toMatchObject({ id: "job-g" });
+    expect(out.coverage).toMatchObject({ rows: 82, frames: 41, placed: 80, suppressed: 2, validFrameCoverage: 1, chunkMs: 1000 });
+    expect(out.placedWith).toEqual({ segments: 3, calibrations: 2, anchors: 1 });
+    expect(out.chunks.map((c) => c.key)).toEqual(["inference/job-g/1/gamestate/chunk-00000.parquet", "inference/job-g/1/gamestate/chunk-00001.parquet"]);
+    expect(out.chunks[0]!.url).toContain("chunk-00000.parquet");
+    expect(out.index?.url).toContain("gamestate.json");
+    expect(mockPrisma.visionJob.findFirst.mock.calls[0]![0].where).toEqual({ videoAssetId: ASSET, type: "gamestate", state: "succeeded" });
   });
 });

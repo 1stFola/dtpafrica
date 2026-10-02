@@ -19,6 +19,8 @@ const mockPrisma = {
   visionJob: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   visionJobEvent: { create: vi.fn() },
   visionVideoVariant: { findFirst: vi.fn() },
+  visionCameraSegment: { findMany: vi.fn() },
+  visionClockAnchor: { findMany: vi.fn() },
 };
 const mockRights = { canAnalyze: vi.fn() };
 const mockAudit = { record: vi.fn() };
@@ -255,5 +257,46 @@ describe("an identify job is given the track artifact it assigns teams on", () =
   it("refuses when no succeeded track job carries an artifact", async () => {
     mockPrisma.visionJob.findFirst.mockResolvedValue(null);
     await expect(service.enqueueForAsset({ type: "identify", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "TracksMissing" } });
+  });
+});
+
+describe("a gamestate job is given the tracks, the calibrations and the clock", () => {
+  const TRACKER = "55556666-7777-4888-9999-aaaabbbbcccc";
+  const H = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+  beforeEach(() => {
+    mockPrisma.visionJob.findMany.mockResolvedValue([{ type: "probe" }, { type: "fingerprint" }, { type: "transcode" }, { type: "detect" }, { type: "track" }]);
+    mockPrisma.visionJob.findFirst.mockResolvedValue({ id: "job-t", modelVersionId: TRACKER, progress: { artifacts: [{ key: "inference/job-t/1/tracks.json", bucket: "derived", role: "tracks" }] } });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "seg-1", startMs: 9000, endMs: 60000, calibrations: [{ quality: "good", homography: H, pitchLengthM: 105, pitchWidthM: 68 }] },
+      { id: "seg-2", startMs: 60001, endMs: 120000, calibrations: [] },
+      { id: "seg-3", startMs: 120001, endMs: 180000, calibrations: [{ quality: "failed", homography: H, pitchLengthM: 100, pitchWidthM: 64 }] },
+    ]);
+    mockPrisma.visionClockAnchor.findMany.mockResolvedValue([{ half: 1, sourceMs: 9000, endMs: null }]);
+  });
+
+  it("declares the track artifact, every segment with its calibration where one exists, and the anchors", async () => {
+    await service.enqueueForAsset({ type: "gamestate", videoAssetId: ASSET, params: { chunkMs: 30000 } });
+    const spec = enqueued().inputSpec;
+    expect(spec.tracks).toEqual({ jobId: "job-t", key: "inference/job-t/1/tracks.json", trackerVersionId: TRACKER });
+    expect(spec.readKeys).toEqual([{ bucket: "derived", key: "inference/job-t/1/tracks.json" }]);
+    expect(spec.segments).toEqual([
+      { cameraSegmentId: "seg-1", startMs: 9000, endMs: 60000, quality: "good", homography: H, pitch: { lengthM: 105, widthM: 68 } },
+      { cameraSegmentId: "seg-2", startMs: 60001, endMs: 120000, quality: null, homography: null, pitch: null },
+      { cameraSegmentId: "seg-3", startMs: 120001, endMs: 180000, quality: "failed", homography: H, pitch: { lengthM: 100, widthM: 64 } },
+    ]);
+    expect(spec.anchors).toEqual([{ half: 1, sourceMs: 9000, endMs: null }]);
+    expect(spec.chunkMs).toBe(30000);
+    expect(spec.proxy).toEqual({ fps: 25, sourceOffsetMs: 9000 });
+    expect(enqueued().modelVersionId).toBeNull();
+    expect(mockPrisma.visionClockAnchor.findMany.mock.calls[0]![0].where).toEqual({ videoAssetId: ASSET, supersededBy: null });
+  });
+
+  it("refuses when no segment is calibrated, and when there are no tracks", async () => {
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: "seg-2", startMs: 0, endMs: 1, calibrations: [] }]);
+    await expect(service.enqueueForAsset({ type: "gamestate", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "NoCalibration" } });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(null);
+    await expect(service.enqueueForAsset({ type: "gamestate", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "TracksMissing" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
   });
 });

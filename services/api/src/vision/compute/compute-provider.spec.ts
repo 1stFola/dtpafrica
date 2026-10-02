@@ -137,9 +137,9 @@ describe("job routing", () => {
   it("declares the stage order the dispatcher enforces", () => {
     expect(JOB_TYPE_PREREQUISITES.detect).toContain("transcode");
     expect(JOB_TYPE_PREREQUISITES.track).toContain("detect");
-    expect(JOB_TYPE_PREREQUISITES.gamestate).toEqual(
-      expect.arrayContaining(["track", "calibrate"])
-    );
+    // Calibration is a person's row per camera segment, not a stage: gamestate
+    // follows track, and the control plane refuses NoCalibration at enqueue.
+    expect(JOB_TYPE_PREREQUISITES.gamestate).toEqual(["track"]);
     expect(JOB_TYPE_PREREQUISITES.probe).toEqual([]);
   });
 });
