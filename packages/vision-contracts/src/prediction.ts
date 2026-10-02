@@ -82,6 +82,61 @@ export type BoundingBox = {
 export const DETECTION_CLASSES = ["player", "goalkeeper", "referee", "ball"] as const;
 export type DetectionClass = (typeof DETECTION_CLASSES)[number];
 
+/** One box in one frame. Pixels in the proxy's own coordinate space. */
+export type DetectionPrediction = {
+  class: DetectionClass;
+  /** 0-1, the detector's own score. Never null here: a detector that cannot score a box did not detect it. */
+  confidence: number;
+  box: BoundingBox;
+  /** The detector's native label before it was mapped onto `class`, kept so a mapping can be audited later. */
+  rawLabel?: string;
+};
+
+/**
+ * One sampled frame of the detection artifact.
+ *
+ * Carries both clocks, like the envelope, for the same reason: a prediction that
+ * knows only proxy time cannot be placed in the source after a re-transcode.
+ * `qualityFlags` holds `ball_unknown` when no ball was found -- an absence stated,
+ * never a coordinate carried forward.
+ */
+export type DetectionFrame = {
+  /** 1-based index among the frames the stage sampled. */
+  sampleIndex: number;
+  /** Frame index in the constant-FPS proxy (0-based), floored from `proxyTimeMs`. */
+  frameIndex: number;
+  proxyTimeMs: number;
+  sourceTimeMs: number;
+  qualityFlags: QualityFlag[];
+  detections: DetectionPrediction[];
+};
+
+/** Artifact role under which a `detect` job writes its predictions. */
+export const DETECTION_ARTIFACT_ROLE = "detections";
+
+/**
+ * What `detect` writes to object storage, whole.
+ *
+ * The bulk stays here rather than in Postgres (docs/vision/04-DATA-MODEL.md § CV
+ * outputs); the control plane indexes only the summary. Everything a reader needs
+ * to interpret a box -- which model, which dataset, which clock, which label map --
+ * travels inside the file, so the artifact is meaningful without the database.
+ */
+export type DetectionArtifact = {
+  contractVersion: string;
+  role: typeof DETECTION_ARTIFACT_ROLE;
+  videoAssetId: string | null;
+  modelVersionId: string;
+  datasetVersionId: string | null;
+  proxy: { fps: number; sourceOffsetMs: number };
+  sampleFps: number;
+  minScore: number;
+  /** Native label -> contract class, as applied. */
+  classes: Record<string, DetectionClass>;
+  detector: { weightsSha256: string | null; device: string | null };
+  frames: DetectionFrame[];
+};
+
 export type PitchPoint = {
   /** Metres along the touchline, origin at one corner. */
   x: number;

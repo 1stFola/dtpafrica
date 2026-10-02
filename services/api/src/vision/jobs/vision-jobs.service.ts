@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
 import {
   DEFAULT_RESOURCE_CLASS,
   JOB_TYPE_PREREQUISITES,
@@ -11,6 +17,7 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
+import { VisionModelsService } from "../models/models.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { JOB_QUEUE, type JobQueue } from "./job-queue";
 
@@ -27,7 +34,8 @@ export class VisionJobsService {
     @Inject(RightsPolicyService) private readonly rights: RightsPolicyService,
     @Inject(VisionAuditService) private readonly audit: VisionAuditService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
-    @Inject(VISION_CONFIG) private readonly config: VisionConfig
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig,
+    @Inject(VisionModelsService) private readonly models: VisionModelsService
   ) {}
 
   /**
@@ -39,6 +47,12 @@ export class VisionJobsService {
    *   1. the asset exists and is linked to a fixture
    *   2. `canAnalyze` is granted right now
    *   3. every prerequisite stage has already succeeded
+   *
+   * Then two resolutions, so the worker receives what it cannot work out alone:
+   * the one model version a model-bound job must run, and the proxy's clock for any
+   * stage that reads the proxy. Both are written into the job here, at enqueue,
+   * because a worker sees a presigned URL and a job id -- it cannot ask which model
+   * the operator meant, or what a trimmed proxy's source offset is.
    */
   async enqueueForAsset(
     params: {
@@ -49,6 +63,8 @@ export class VisionJobsService {
       params?: Record<string, unknown>;
       budgetSeconds?: number;
       budgetUsdCents?: number;
+      /** For a model-bound job type. Omitted, the production version for the task is used. */
+      modelVersionId?: string;
     },
     actor?: AdminAuthContext
   ): Promise<{ id: string }> {
@@ -81,6 +97,11 @@ export class VisionJobsService {
 
     await this.assertPrerequisitesMet(params.type, asset.id);
 
+    const model = await this.models.resolveForJob(params.type, params.modelVersionId);
+    const proxy = JOB_TYPE_PREREQUISITES[params.type].includes("transcode")
+      ? await this.proxyClock(asset.id)
+      : null;
+
     const resourceClass = params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type];
 
     // The id is generated here so the output prefix can be derived from it in the
@@ -93,7 +114,9 @@ export class VisionJobsService {
       resourceClass,
       priority: params.priority,
       videoAssetId: asset.id,
-      inputSpec: { videoAssetId: asset.id, ...(params.params ?? {}) },
+      modelVersionId: model?.id ?? null,
+      // The clock is spread last so a caller's `params.proxy` cannot forge it.
+      inputSpec: { videoAssetId: asset.id, ...(params.params ?? {}), ...(proxy ? { proxy } : {}) },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
       outputPrefix: visionKeys.inferencePrefix(id, 1),
       budgetSeconds: params.budgetSeconds ?? this.config.jobs.defaultBudgetSeconds,
@@ -106,12 +129,49 @@ export class VisionJobsService {
         action: "job.queued",
         targetKind: "vision_job",
         targetId: created.id,
-        data: { type: params.type, resourceClass, videoAssetId: asset.id },
+        data: {
+          type: params.type,
+          resourceClass,
+          videoAssetId: asset.id,
+          modelVersionId: model?.id ?? null,
+        },
       },
       actor
     );
 
     return created;
+  }
+
+  /**
+   * The proxy's constant frame rate and source offset, from the variant row.
+   *
+   * Refused rather than defaulted when the proxy records no frame rate: a guessed
+   * rate produces frame indices that look precise and are wrong, which is the same
+   * refusal the dataset export makes (`proxy_without_fps`).
+   */
+  private async proxyClock(videoAssetId: string): Promise<{ fps: number; sourceOffsetMs: number }> {
+    const proxy = await this.prisma.visionVideoVariant.findFirst({
+      where: { videoAssetId, kind: "proxy" },
+      orderBy: { createdAt: "desc" },
+      select: { fps: true, sourceOffsetMs: true },
+    });
+    if (!proxy) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "ProxyMissing",
+        message: "transcode succeeded for this asset but no proxy variant is recorded.",
+        remediation: "Re-run transcode so the variant row is written.",
+      });
+    }
+    if (proxy.fps === null || !(proxy.fps > 0)) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "ProxyWithoutFps",
+        message: "The proxy records no frame rate, so no stage can map its frames to time.",
+        remediation: "Re-run transcode; the worker reports the proxy's frame rate.",
+      });
+    }
+    return { fps: proxy.fps, sourceOffsetMs: proxy.sourceOffsetMs };
   }
 
   async retry(jobId: string, actor?: AdminAuthContext) {

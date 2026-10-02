@@ -13,7 +13,7 @@ import pytest
 
 from dtp_vision_worker.config import CONTRACT_VERSION, load_config
 from dtp_vision_worker.control_plane import ContractMismatchError, JobSpec
-from dtp_vision_worker.runner import StageContext, StageResult, Worker
+from dtp_vision_worker.runner import StageContext, StageRefusal, StageResult, Worker
 
 ENV = {
     "VISION_WORKER_CALLBACK_URL": "https://api.example.test/api/v1/vision/worker",
@@ -57,7 +57,9 @@ class FakeControlPlane:
     def heartbeat(self, *_a: object, **_k: object) -> None:
         self.heartbeats += 1
 
-    def complete(self, job_id: str, idempotency_key: str, artifacts, summary, cost):
+    def complete(
+        self, job_id: str, idempotency_key: str, artifacts, summary, cost, model_version_ids=None
+    ):
         self.completions.append(
             {
                 "jobId": job_id,
@@ -65,6 +67,7 @@ class FakeControlPlane:
                 "artifacts": artifacts,
                 "summary": summary,
                 "cost": cost,
+                "modelVersionIds": list(model_version_ids or []),
             }
         )
         return {"ok": True, "alreadyApplied": False}
@@ -203,3 +206,50 @@ def test_a_gpu_stage_bills_the_gpu_seconds_it_reports(tmp_path: Path) -> None:
 
     assert worker.run_one(spec()) is True
     assert plane.completions[0]["cost"]["gpuSeconds"] == 12.346
+
+
+def test_a_stage_that_ran_a_model_names_it_on_completion(tmp_path: Path) -> None:
+    """The control plane checks this list against the job it dispatched. A stage that
+    ran a model and reported none would be refused at the door, and rightly."""
+    plane = FakeControlPlane()
+    worker = Worker(load_config({**ENV, "VISION_WORK_DIR": str(tmp_path)}), client=plane)  # type: ignore[arg-type]
+    worker._stages = {"probe": lambda _ctx: StageResult(model_version_ids=["mv-1"])}
+    assert worker.run_one(spec()) is True
+    assert plane.completions[0]["modelVersionIds"] == ["mv-1"]
+
+
+def test_a_stage_with_no_model_reports_none(tmp_path: Path) -> None:
+    plane = FakeControlPlane()
+    worker = Worker(load_config({**ENV, "VISION_WORK_DIR": str(tmp_path)}), client=plane)  # type: ignore[arg-type]
+    worker._stages = {"probe": lambda _ctx: StageResult()}
+    worker.run_one(spec())
+    assert plane.completions[0]["modelVersionIds"] == []
+
+
+def test_a_stage_refusal_is_failed_without_retry(tmp_path: Path) -> None:
+    """A stage refusing its inputs would refuse them again on every attempt. Burning
+    the remaining attempts is how a misdispatched job costs three GPU minutes."""
+    plane = FakeControlPlane()
+    worker = Worker(load_config({**ENV, "VISION_WORK_DIR": str(tmp_path)}), client=plane)  # type: ignore[arg-type]
+
+    def refuse(_ctx: StageContext) -> StageResult:
+        raise StageRefusal("no model version")
+
+    worker._stages = {"probe": refuse}
+    assert worker.run_one(spec()) is False
+    assert plane.failures[0]["reason"] == "StageRefusal"
+    assert plane.failures[0]["retryable"] is False
+
+
+def test_an_ordinary_error_is_still_retried(tmp_path: Path) -> None:
+    """The refusal is the exception. A dropped connection or a full disk may well
+    succeed next time, and the queue's default stands."""
+    plane = FakeControlPlane()
+    worker = Worker(load_config({**ENV, "VISION_WORK_DIR": str(tmp_path)}), client=plane)  # type: ignore[arg-type]
+
+    def boom(_ctx: StageContext) -> StageResult:
+        raise OSError("disk full")
+
+    worker._stages = {"probe": boom}
+    worker.run_one(spec())
+    assert plane.failures[0]["retryable"] is True

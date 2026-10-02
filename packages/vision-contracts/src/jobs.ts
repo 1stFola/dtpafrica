@@ -9,7 +9,13 @@
  */
 
 /** Bumped on any change to VisionJobSpec or the prediction envelope. */
-export const VISION_CONTRACT_VERSION = "1.0.0";
+/**
+ * 1.1.0 — a `detect` job now carries the model version it must run, and the proxy's
+ * clock (`params.proxy`), so every prediction can name its model and its source time.
+ * A worker on 1.0.0 would run `detect` and produce predictions nobody can attribute,
+ * which is why the handshake refuses it rather than warning.
+ */
+export const VISION_CONTRACT_VERSION = "1.1.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -99,13 +105,60 @@ export const JOB_TYPE_PREREQUISITES: Record<VisionJobType, readonly VisionJobTyp
   benchmark: [],
 };
 
+/**
+ * Job types that run a model, and therefore must be dispatched with exactly one
+ * model version. The control plane resolves it before the job is queued and the
+ * worker refuses to run without it: a prediction that cannot name its model cannot
+ * be reviewed, benchmarked or rolled back.
+ *
+ * One entry per stage that exists. `track`, `calibrate` and the rest join as their
+ * stages are written -- declaring them early would repeat the mistake Spike S0 found
+ * (docs/vision/27-SPIKE-S0-SURPRISES.md, S0-1): a contract promising what no worker
+ * can honour.
+ */
+export const MODEL_TASK_BY_JOB_TYPE: Partial<Record<VisionJobType, VisionModelTask>> = {
+  detect: "detect",
+};
+
+/** What a `VisionModel` is for. One task per model; a version inherits it. */
+export const VISION_MODEL_TASKS = ["detect", "track", "calibrate", "event", "vlm"] as const;
+export type VisionModelTask = (typeof VISION_MODEL_TASKS)[number];
+
+/** Registry lifecycle. Promotion rules are in docs/vision/10-EVALUATION-AND-GATES.md. */
+export const VISION_MODEL_STAGES = [
+  "candidate",
+  "benchmarked",
+  "staging",
+  "production",
+  "archived",
+] as const;
+export type VisionModelStage = (typeof VISION_MODEL_STAGES)[number];
+
+/**
+ * The proxy's clock, handed to any stage that reads the proxy.
+ *
+ * Resolved by the control plane from the variant row at enqueue time, because the
+ * worker sees a presigned URL and nothing else: it cannot ask the proxy what its
+ * source offset is, and guessing zero would put every source timestamp on a trimmed
+ * proxy out by the trim.
+ */
+export type ProxyClock = {
+  /** Constant by construction; what makes a frame index a timestamp. */
+  fps: number;
+  /** `sourceTimeMs = proxyTimeMs + sourceOffsetMs`. */
+  sourceOffsetMs: number;
+};
+
 export type VisionJobInputs = {
   videoAssetId?: string;
   /** Objects the worker is permitted to read, as logical refs. */
   readKeys?: { bucket: string; key: string }[];
   datasetVersionId?: string;
   modelVersionIds?: string[];
-  /** Stage-specific parameters, validated per job type. */
+  /**
+   * Stage-specific parameters, validated per job type. A stage downstream of
+   * `transcode` finds the proxy's clock under `params.proxy` (a `ProxyClock`).
+   */
   params?: Record<string, unknown>;
 };
 

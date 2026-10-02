@@ -35,6 +35,14 @@ export class EnqueueJobDto {
   @IsInt()
   @Min(1)
   budgetUsdCents?: number;
+
+  /**
+   * For a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`). Omitted, the single
+   * production version for the task is used; absent that, the job is refused.
+   */
+  @IsOptional()
+  @IsUUID()
+  modelVersionId?: string;
 }
 
 export class CancelJobDto {

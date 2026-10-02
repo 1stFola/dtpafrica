@@ -23,6 +23,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { JOB_QUEUE, type JobQueue } from "../jobs/job-queue";
 import { VisionStageResultsService } from "../jobs/stage-results.service";
+import { VisionModelsService } from "../models/models.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CompleteJobDto } from "./dto/complete-job.dto";
 import { ClaimJobDto } from "./dto/claim-job.dto";
@@ -53,7 +54,8 @@ export class VisionWorkerController {
     @Inject(VisionStageResultsService) private readonly stageResults: VisionStageResultsService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
-    @Inject(VISION_CONFIG) private readonly config: VisionConfig
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig,
+    @Inject(VisionModelsService) private readonly models: VisionModelsService
   ) {}
 
   @Post("register")
@@ -249,7 +251,7 @@ export class VisionWorkerController {
 
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
-      select: { outputPrefix: true, type: true, videoAssetId: true },
+      select: { outputPrefix: true, type: true, videoAssetId: true, modelVersionId: true },
     });
     if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
 
@@ -261,6 +263,24 @@ export class VisionWorkerController {
       throw new ForbiddenException(
         `Artifact ${stray.key} is outside this job's output prefix ${job.outputPrefix}`
       );
+    }
+
+    // Same category as a stray artifact, checked at the same door: a completion that
+    // names a different model version than the job was dispatched with, or weights
+    // that differ from the ones the version is pinned to, is refused before the job
+    // can succeed. The worker then fails the job, and a stage that cannot attribute
+    // its own output does not get to count as done.
+    const provenance = await this.models.verifyCompletion(
+      { id: jobId, type: job.type as VisionJobType, modelVersionId: job.modelVersionId },
+      { modelVersionIds: dto.modelVersionIds ?? [], summary: dto.summary ?? {} }
+    );
+    if (!provenance.ok) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: provenance.error,
+        message: provenance.message,
+        detail: provenance.detail,
+      });
     }
 
     const outcome = await this.queue.succeed(jobId, auth.workerId, dto.idempotencyKey, {
@@ -275,16 +295,41 @@ export class VisionWorkerController {
     let applied: { applied: boolean; detail: string } | null = null;
     if (!outcome.alreadyApplied) {
       if (dto.cost) await this.recordCost(jobId, dto);
-      applied = await this.stageResults.apply(job.type as VisionJobType, job.videoAssetId, {
-        artifacts: (dto.artifacts ?? []).map((a) => ({
-          key: a.key,
-          bucket: a.bucket,
-          bytes: a.bytes,
-          contentType: a.contentType,
-          role: a.role,
-        })),
-        summary: dto.summary ?? {},
-      });
+
+      // The first run of a version pins it to the weights that actually ran. Done
+      // after the job has succeeded, so a refused completion records nothing.
+      if (provenance.weights.outcome === "recorded" && provenance.modelVersionId) {
+        const pinned = await this.models.recordWeightsChecksum(
+          provenance.modelVersionId,
+          provenance.weights.sha256
+        );
+        await this.prisma.visionJobEvent.create({
+          data: {
+            jobId,
+            kind: pinned ? "weights_checksum_recorded" : "weights_checksum_already_pinned",
+            message: `model version ${provenance.modelVersionId} ${
+              pinned ? "pinned to" : "was already pinned when this run reported"
+            } sha256 ${provenance.weights.sha256}`,
+            data: { modelVersionId: provenance.modelVersionId, sha256: provenance.weights.sha256 } as never,
+          },
+        });
+      }
+
+      applied = await this.stageResults.apply(
+        job.type as VisionJobType,
+        job.videoAssetId,
+        {
+          artifacts: (dto.artifacts ?? []).map((a) => ({
+            key: a.key,
+            bucket: a.bucket,
+            bytes: a.bytes,
+            contentType: a.contentType,
+            role: a.role,
+          })),
+          summary: dto.summary ?? {},
+        },
+        { modelVersionId: job.modelVersionId }
+      );
     }
 
     return { ok: true, alreadyApplied: outcome.alreadyApplied, applied };

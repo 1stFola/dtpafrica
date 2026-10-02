@@ -151,6 +151,7 @@ class ControlPlaneClient:
         artifacts: list[dict[str, Any]],
         summary: dict[str, Any],
         cost: dict[str, Any],
+        model_version_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         res = self._client.post(
             f"/jobs/{job_id}/complete",
@@ -160,6 +161,11 @@ class ControlPlaneClient:
                 "artifacts": artifacts,
                 "summary": summary,
                 "workerImage": self._config.image,
+                # Which model versions actually ran. The control plane refuses a
+                # completion whose list disagrees with the job it dispatched, so a
+                # stage that ran a model must say so here rather than only in its
+                # artifact.
+                "modelVersionIds": list(model_version_ids or []),
                 "cost": cost,
             },
         )

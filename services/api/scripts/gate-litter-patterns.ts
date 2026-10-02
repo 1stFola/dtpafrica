@@ -45,12 +45,13 @@ export const REVIEWER_IDS: NamePattern[] = [
  *
  * Matched on the placeholder contact address **and** a run-id name. Either alone is
  * too broad: a real partner can be called anything, and an address is not a name.
- * Only `vision:datasetcheck` and `vision:annotationcheck` use this address; the other
- * gates name their partners after real-looking clubs and clean up after themselves.
+ * Only `vision:datasetcheck`, `vision:annotationcheck` and `vision:modelcheck` use this
+ * address; the other gates name their partners after real-looking clubs and clean up
+ * after themselves.
  */
 export const GATE_PARTNER = {
   contactEmail: "gate@example.test",
-  pattern: new RegExp(`^(Dataset|Annotation) gate ${RUN}$`),
+  pattern: new RegExp(`^(Dataset|Annotation|Model registry) gate ${RUN}$`),
 };
 
 /** Whether a name is one a gate generated, rather than one a person chose. */

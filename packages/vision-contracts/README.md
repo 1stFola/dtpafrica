@@ -38,3 +38,10 @@ handshake works from day one.
 - **Additive changes only** within a major version. The worker and the control plane deploy
   independently, so a removed field breaks a running worker.
 - **Bump `VISION_CONTRACT_VERSION`** on any change to the job spec or the prediction envelope.
+
+## Versions
+
+| Version | Change |
+|---|---|
+| `1.0.0` | Phase 0 through Spike S0. |
+| `1.1.0` | A model-bound job (`MODEL_TASK_BY_JOB_TYPE`) is dispatched with exactly one `modelVersionIds` entry, and any stage downstream of `transcode` receives the proxy's clock under `params.proxy`. The `detect` artifact is `DetectionArtifact`: contract classes, both clocks, `ball_unknown`, the model version and the weights checksum. A worker reports `modelVersionIds` on completion. A 1.0.0 worker is refused at the handshake: it would run `detect` and write predictions nobody can attribute. |

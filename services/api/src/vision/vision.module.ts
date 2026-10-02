@@ -25,6 +25,8 @@ import { JOB_QUEUE } from "./jobs/job-queue";
 import { PostgresJobQueue } from "./jobs/postgres-job-queue";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
+import { VisionModelsController } from "./models/models.controller";
+import { VisionModelsService } from "./models/models.service";
 import { RightsPolicyService } from "./rights/rights-policy.service";
 import { InMemoryObjectStore } from "./storage/in-memory-object-store";
 import { OBJECT_STORE, type ObjectStore } from "./storage/object-store";
@@ -96,6 +98,7 @@ const computeRegistryProvider: Provider = {
     VisionSourcesController,
     VisionDatasetsController,
     VisionAnnotationController,
+    VisionModelsController,
   ],
   providers: [
     configProvider,
@@ -111,6 +114,7 @@ const computeRegistryProvider: Provider = {
     VisionSourcesService,
     VisionDatasetsService,
     VisionAnnotationService,
+    VisionModelsService,
     // A third auth stack, unrelated to admin sessions and worker tokens.
     PartnerUploadGuard,
     // Worker auth is a separate stack from admin auth on purpose: a worker token
@@ -137,6 +141,7 @@ const computeRegistryProvider: Provider = {
     VisionSourcesService,
     VisionDatasetsService,
     VisionAnnotationService,
+    VisionModelsService,
   ],
 })
 export class VisionModule {}

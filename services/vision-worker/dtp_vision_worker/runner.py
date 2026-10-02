@@ -50,6 +50,21 @@ class StageResult:
     #: bill the cost ledger for no GPU time at all, and the cost model would then
     #: understate the expensive half of the pipeline forever.
     gpu_seconds: float | None = None
+    #: Model versions this stage ran, as the control plane named them in the job's
+    #: inputs. Empty for a stage that runs no model. Reported on completion, where the
+    #: control plane checks it against the job it dispatched.
+    model_version_ids: list[str] = field(default_factory=list)
+
+
+class StageRefusal(RuntimeError):
+    """A stage declining to run because its inputs cannot produce a valid result.
+
+    Not retryable: the same job on the same image fails the same way, and burning the
+    remaining attempts on it is how a misconfigured dispatch costs three GPU minutes
+    instead of none. The runner reads `retryable` off the exception.
+    """
+
+    retryable = False
 
 
 class ProgressReporter:
@@ -170,6 +185,7 @@ class Worker:
                 idempotency_key=f"{job.job_id}:{job.attempt_number}",
                 artifacts=result.artifacts,
                 summary=result.summary,
+                model_version_ids=result.model_version_ids,
                 cost={
                     "cpuSeconds": round(elapsed, 3),
                     "gpuSeconds": (
@@ -190,7 +206,14 @@ class Worker:
 
         except Exception as exc:  # noqa: BLE001 - one bad job must not kill the worker
             log.exception("job %s failed", job.job_id)
-            self._client.fail(job.job_id, reason=type(exc).__name__, detail=str(exc))
+            self._client.fail(
+                job.job_id,
+                reason=type(exc).__name__,
+                detail=str(exc),
+                # A stage that refused its inputs says so; everything else is assumed
+                # transient, which is the queue's default.
+                retryable=bool(getattr(exc, "retryable", True)),
+            )
             self.jobs_failed += 1
             return False
 

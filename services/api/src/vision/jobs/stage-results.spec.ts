@@ -292,7 +292,8 @@ describe("failure handling", () => {
   });
 
   it("has no domain effect for a stage that does not produce one", async () => {
-    const outcome = await service().apply("detect", ASSET, { artifacts: [], summary: {} });
+    // `track` has no projection yet; `detect` gained one in Phase 3 Increment 1.
+    const outcome = await service().apply("track", ASSET, { artifacts: [], summary: {} });
     expect(outcome.applied).toBe(false);
     expect(outcome.detail).toMatch(/no domain effect/);
   });
@@ -329,5 +330,82 @@ describe("failure handling", () => {
   it("truncates a runaway error rather than blowing the column", async () => {
     await service().markIngestFailed(ASSET, "x".repeat(5000));
     expect(lastAssetUpdate().ingestError.length).toBe(2000);
+  });
+});
+
+/**
+ * detect writes nothing to Postgres -- the boxes live in object storage and the
+ * summary on the job row -- so what the projection owes is an honest account of
+ * whether the completion is the shape the job promised.
+ */
+describe("detect results are checked, not stored", () => {
+  const MODEL_VERSION = "55556666-7777-4888-9999-aaaabbbbcccc";
+  const detections = { key: "inference/j/1/detections.json", bucket: "derived", role: "detections" };
+  const summary = {
+    framesSampled: 11_520,
+    sampleFps: 2,
+    ballVisibilityPct: 37.5,
+    modelVersionId: MODEL_VERSION,
+    weightsSha256: "c".repeat(64),
+  };
+
+  it("accepts a completion whose summary names the job's model version", async () => {
+    const outcome = await service().apply(
+      "detect",
+      ASSET,
+      { artifacts: [detections], summary },
+      { modelVersionId: MODEL_VERSION }
+    );
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("11520 frame(s) at 2fps");
+    expect(outcome.detail).toContain("ball visible in 37.5%");
+    expect(outcome.detail).toContain(MODEL_VERSION);
+    expect(outcome.detail).toContain("cccccccccccc");
+    // Nothing is written: the asset row has nothing to learn from a detect job.
+    expect(mockPrisma.visionVideoAsset.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a completion with no detections artifact", async () => {
+    const outcome = await service().apply(
+      "detect",
+      ASSET,
+      { artifacts: [{ key: "inference/j/1/x.json", bucket: "derived", role: "other" }], summary },
+      { modelVersionId: MODEL_VERSION }
+    );
+    expect(outcome.applied).toBe(false);
+    expect(outcome.detail).toMatch(/no detections artifact/);
+  });
+
+  it("refuses a summary whose model version is not the job's", async () => {
+    const outcome = await service().apply(
+      "detect",
+      ASSET,
+      { artifacts: [detections], summary: { ...summary, modelVersionId: "someone-else" } },
+      { modelVersionId: MODEL_VERSION }
+    );
+    expect(outcome.applied).toBe(false);
+    expect(outcome.detail).toMatch(/someone-else/);
+  });
+
+  it("refuses a summary that names no model version at all", async () => {
+    const { modelVersionId: _omitted, ...anonymous } = summary;
+    const outcome = await service().apply(
+      "detect",
+      ASSET,
+      { artifacts: [detections], summary: anonymous },
+      { modelVersionId: MODEL_VERSION }
+    );
+    expect(outcome.applied).toBe(false);
+  });
+
+  it("says when the weights went unreported rather than inventing a checksum", async () => {
+    const outcome = await service().apply(
+      "detect",
+      ASSET,
+      { artifacts: [detections], summary: { ...summary, weightsSha256: null } },
+      { modelVersionId: MODEL_VERSION }
+    );
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("weights unreported");
   });
 });
