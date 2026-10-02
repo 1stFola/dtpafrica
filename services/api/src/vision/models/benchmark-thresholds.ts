@@ -38,7 +38,13 @@ export const BENCHMARK_THRESHOLDS: BenchmarkThresholds = {
   // Detection: mAP and ball recall, the headline and the one metric docs/vision/10
   // names on its own. Tracking: identity F1 and MOTA. Two hundredths absorbs
   // benchmark noise without hiding a real drop.
-  regressionMetrics: { detect: ["ap:all", "recall:ball"], track: ["idf1:all", "mota:all"] },
+  // Identity: team accuracy, and the precision of abstaining -- a version that gains
+  // accuracy by guessing where it used to abstain must show it here.
+  regressionMetrics: {
+    detect: ["ap:all", "recall:ball"],
+    track: ["idf1:all", "mota:all"],
+    identify: ["team_accuracy:all", "unknown_precision:all"],
+  },
   regressionTolerance: 0.02,
 };
 

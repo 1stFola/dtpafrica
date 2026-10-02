@@ -117,7 +117,10 @@ def test_a_kit_halfway_between_the_two_gets_no_side() -> None:
     purple = next(r for r in result["rows"] if r["localTrackId"] == 5)
     assert purple["team"] is None
     assert purple["method"] == "kit_cluster"
+    assert purple["nearest"] in {"A", "B"}
     assert result["unknown"] == 1
+    # A named side is its own nearest side.
+    assert all(r["nearest"] == r["team"] for r in result["rows"] if r["team"] is not None)
 
 
 def test_goalkeepers_and_referees_are_never_clustered() -> None:
@@ -135,7 +138,7 @@ def test_a_track_with_no_decoded_kit_is_not_clustered() -> None:
     tracks = [kit(1, RED), kit(2, BLUE), KitTrack(3, "player", None, 0)]
     result = cluster_teams(tracks)
     unseen = next(r for r in result["rows"] if r["localTrackId"] == 3)
-    assert unseen == {"localTrackId": 3, "class": "player", "team": None, "confidence": None, "method": "not_clustered", "samples": 0}
+    assert unseen == {"localTrackId": 3, "class": "player", "team": None, "nearest": None, "confidence": None, "method": "not_clustered", "samples": 0}
 
 
 def test_one_kit_alone_cannot_make_two_sides() -> None:
@@ -175,7 +178,7 @@ def test_a_lone_third_kit_is_an_outlier_not_a_side() -> None:
     tracks.append(KitTrack(9, "player", feature_of((230, 220, 40)), 3))
     result = cluster_teams(tracks)
     by = {r["localTrackId"]: r for r in result["rows"]}
-    assert by[9] == {"localTrackId": 9, "class": "player", "team": None, "confidence": None, "method": "kit_outlier", "samples": 3}
+    assert by[9] == {"localTrackId": 9, "class": "player", "team": None, "nearest": None, "confidence": None, "method": "kit_outlier", "samples": 3}
     assert {by[i]["team"] for i in range(1, 5)} == {by[1]["team"]} and by[1]["team"] is not None
     assert {by[i]["team"] for i in range(5, 9)} == {by[5]["team"]} and by[5]["team"] is not None
     assert by[1]["team"] != by[5]["team"]

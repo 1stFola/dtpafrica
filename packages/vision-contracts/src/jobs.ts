@@ -35,8 +35,14 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * appearance, clustered per match. Model-bound to an `identify` version (an
  * algorithm with parameters), reading the proxy by role and the one track artifact by
  * declared key.
+ *
+ * 1.6.0 -- a `TeamAssignmentRow` records the side the kit was `nearest` to even when
+ * the margin was too small to name it, so an abstention can later be judged: unknown
+ * precision asks whether abstaining avoided a wrong answer. `IDENTITY_METRIC_NAMES`
+ * are what the ledger measures for an `identify` version, scored in the control
+ * plane against identities two people accepted -- rows, not artifacts.
  */
-export const VISION_CONTRACT_VERSION = "1.5.0";
+export const VISION_CONTRACT_VERSION = "1.6.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -373,6 +379,15 @@ export type BenchmarkMetricName = (typeof BENCHMARK_METRIC_NAMES)[number];
 export const TRACKING_METRIC_NAMES = ["mota", "idf1", "idsw", "frag", "tracks"] as const;
 export type TrackingMetricName = (typeof TRACKING_METRIC_NAMES)[number];
 
+/**
+ * Identity metrics, for an `identify` version, over tracks whose identity two people
+ * accepted: team accuracy among the sided, coverage of the sided, the precision of
+ * abstaining (how often the nearest side would have been wrong), and the track count.
+ * Scored in the control plane: the evidence is rows, not artifacts.
+ */
+export const IDENTITY_METRIC_NAMES = ["team_accuracy", "team_coverage", "unknown_precision", "tracks"] as const;
+export type IdentityMetricName = (typeof IDENTITY_METRIC_NAMES)[number];
+
 /** The slice every metric is also reported under. Never only this one. */
 export const ALL_SLICE = "all";
 
@@ -397,6 +412,12 @@ export type BenchmarkSummary = {
   iou: number;
   classes: readonly string[];
   assets: number;
+  /**
+   * What `framesLabelled` and `framesScored` count: gold frames for a detector or
+   * tracker, tracks with an accepted identity (and how many were sided) for an
+   * identify version. Absent means frames.
+   */
+  unit?: "frames" | "tracks";
   /** Labelled frames in the gold set, and how many of them the detect artifacts sampled. */
   framesLabelled: number;
   framesScored: number;
@@ -470,6 +491,11 @@ export type TeamAssignmentRow = {
   confidence: number | null;
   /** `kit_outlier`: a third kit, far from both sides, set aside rather than forced onto one. */
   method: "kit_cluster" | "kit_outlier" | "not_clustered";
+  /**
+   * The side the kit was nearest to, named even when `team` is null because the
+   * margin was too small. What unknown precision is measured against.
+   */
+  nearest?: TeamLabel | null;
   /** Frames the kit was sampled on. */
   samples: number;
 };

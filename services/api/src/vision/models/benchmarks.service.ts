@@ -21,6 +21,7 @@ import { goldReadiness } from "../datasets/gold-benchmark";
 import { VisionJobsService } from "../jobs/vision-jobs.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { BENCHMARK_THRESHOLDS, judge, type BenchmarkThresholds } from "./benchmark-thresholds";
+import { scoreTeams, type TeamEvidence } from "./identity-metrics";
 
 /**
  * The benchmark ledger.
@@ -98,11 +99,11 @@ export class VisionBenchmarksService {
     });
     if (!version) throw new NotFoundException(`Unknown model version ${modelVersionId}`);
     const task = version.model.task;
-    if (task !== "detect" && task !== "track") {
+    if (task !== "detect" && task !== "track" && task !== "identify") {
       throw new BadRequestException({
         statusCode: 400,
         error: "ModelTaskUnsupported",
-        message: `${version.model.key} is a ${task} model; only detection and tracking are benchmarked yet.`,
+        message: `${version.model.key} is a ${task} model; only detection, tracking and identity are benchmarked yet.`,
       });
     }
     if (version.stage === "archived") {
@@ -147,6 +148,12 @@ export class VisionBenchmarksService {
         message: `${dataset.label} has no gold split.`,
         remediation: "A benchmark is measured against gold. Build a version with a gold split.",
       });
+    }
+
+    // Identity is scored from rows two people accepted, here and now; the box-gold
+    // readiness and the export below are the detect and track paths' concerns.
+    if (task === "identify") {
+      return this.scoreIdentity(version, dataset, gold.map((g) => g.videoAssetId), actor);
     }
 
     const readiness = await goldReadiness(this.prisma, dataset.id);
@@ -231,6 +238,132 @@ export class VisionBenchmarksService {
     );
 
     return { ...run, jobId: job.id, goldMembers: gold.length };
+  }
+
+  /**
+   * An identify version, scored in the control plane.
+   *
+   * The evidence is rows: the kit clustering's side per track (and the side it was
+   * nearest to when it abstained), the team a person said each side is, and the
+   * player two people accepted on each track. No worker, no artifact, no job: the
+   * run is created complete, through the same `complete` as every other run, so
+   * the ledger, the verdict and `candidate -> benchmarked` are the same.
+   *
+   * Refusals, in order: a gold member with no succeeded identify job by this
+   * version (`TeamAssignmentsMissing`); an identify job whose sides nobody has
+   * decided (`SidesNotDecided` -- a side is a cluster until a person says which
+   * team it is); no gold member with any accepted identity (`IdentitiesMissing`).
+   */
+  private async scoreIdentity(
+    version: { id: string; version: string; model: { key: string } },
+    dataset: { id: string; label: string },
+    goldAssetIds: string[],
+    actor?: AdminAuthContext
+  ) {
+    const jobs = await this.prisma.visionJob.findMany({
+      where: { type: "identify", state: "succeeded", modelVersionId: version.id, videoAssetId: { in: goldAssetIds } },
+      orderBy: { finishedAt: "desc" },
+      select: { id: true, videoAssetId: true },
+    });
+    const jobOf = new Map<string, string>();
+    for (const j of jobs) if (j.videoAssetId && !jobOf.has(j.videoAssetId)) jobOf.set(j.videoAssetId, j.id);
+    const missing = goldAssetIds.filter((id) => !jobOf.has(id));
+    if (missing.length) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "TeamAssignmentsMissing",
+        message: `${missing.length} gold member(s) have no succeeded identify job by this model version.`,
+        members: missing.slice(0, 20),
+        remediation: `Queue identify for each with modelVersionId=${version.id}, then request the benchmark again.`,
+      });
+    }
+    const jobIds = [...jobOf.values()];
+
+    const sides = await this.prisma.visionTeamSide.findMany({ where: { inferenceJobId: { in: jobIds } } });
+    const teamOfSide = new Map(sides.map((s) => [`${s.inferenceJobId}:${s.team}`, s.sbTeamId]));
+    const undecided = jobIds.filter((id) => !teamOfSide.has(`${id}:A`) || !teamOfSide.has(`${id}:B`));
+    if (undecided.length) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "SidesNotDecided",
+        message: `${undecided.length} identify job(s) have no decision on which team each side is.`,
+        jobs: undecided.slice(0, 20),
+        remediation: "A reviewer decides with POST /vision/review/jobs/:jobId/sides, then request the benchmark again.",
+      });
+    }
+
+    const assignments = await this.prisma.visionTeamAssignment.findMany({
+      where: { inferenceJobId: { in: jobIds } },
+      select: { trackId: true, inferenceJobId: true, team: true, nearestTeam: true, method: true, kitDescription: true },
+    });
+    const trackIds = assignments.map((a) => a.trackId);
+    const accepted = await this.prisma.visionIdentityAssignment.findMany({
+      where: { trackId: { in: trackIds }, supersededBy: null, reviewState: "accepted", sbTeamId: { not: null } },
+      select: { trackId: true, sbTeamId: true },
+    });
+    if (!accepted.length) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "IdentitiesMissing",
+        message: `No gold member of ${dataset.label} has an identity two people accepted, so there is no truth to score against.`,
+        remediation: "Name players in the identity review screen and have a second person accept them, then request the benchmark again.",
+      });
+    }
+    // One team per track, or no truth: a track accepted on both teams is not evidence either way.
+    const truthOf = new Map<string, string | null>();
+    for (const a of accepted) {
+      const seen = truthOf.get(a.trackId);
+      if (seen === undefined) truthOf.set(a.trackId, a.sbTeamId);
+      else if (seen !== a.sbTeamId) truthOf.set(a.trackId, null);
+    }
+
+    const evidence: TeamEvidence[] = assignments.map((a) => ({
+      trackId: a.trackId,
+      method: a.method,
+      machineTeamId: a.team ? (teamOfSide.get(`${a.inferenceJobId}:${a.team}`) ?? null) : null,
+      nearestTeamId: a.nearestTeam ? (teamOfSide.get(`${a.inferenceJobId}:${a.nearestTeam}`) ?? null) : null,
+      kit: a.kitDescription,
+      truthTeamId: truthOf.get(a.trackId) ?? null,
+    }));
+    const score = scoreTeams(evidence);
+
+    const run = await this.prisma.visionBenchmarkRun.create({
+      data: {
+        modelVersionId: version.id,
+        datasetVersionId: dataset.id,
+        thresholdsVersion: this.thresholds.version,
+        iouThreshold: this.thresholds.iou,
+        requestedBy: actor?.userId ?? null,
+        state: "running",
+      },
+    });
+    await this.audit.record(
+      {
+        action: "model.benchmark.requested",
+        targetKind: "vision_benchmark_run",
+        targetId: run.id,
+        data: { modelVersionId: version.id, datasetVersionId: dataset.id, goldMembers: goldAssetIds.length, thresholdsVersion: this.thresholds.version, scoredBy: "control_plane" },
+      },
+      actor
+    );
+    const summary: BenchmarkSummary = {
+      benchmarkRunId: run.id,
+      modelVersionId: version.id,
+      datasetVersionId: dataset.id,
+      iou: this.thresholds.iou,
+      classes: ["player"],
+      assets: goldAssetIds.length,
+      unit: "tracks",
+      framesLabelled: score.tracks,
+      framesScored: score.sided,
+      metrics: score.metrics,
+    };
+    const applied = await this.complete(run.id, summary as unknown as Record<string, unknown>, []);
+    if (!applied.applied) {
+      await this.fail(run.id, applied.detail);
+      throw new ConflictException({ statusCode: 409, error: "BenchmarkNotApplied", message: applied.detail });
+    }
+    return { ...run, state: "completed", jobId: null, goldMembers: goldAssetIds.length, scored: { tracks: score.tracks, sided: score.sided, abstained: score.abstained, outOfScope: score.outOfScope, withoutTruth: score.withoutTruth } };
   }
 
   /**
@@ -319,6 +452,7 @@ export class VisionBenchmarksService {
             iou: parsed.iou,
             classes: parsed.classes,
             assets: parsed.assets,
+            unit: parsed.unit,
             framesLabelled: parsed.framesLabelled,
             framesScored: parsed.framesScored,
             metrics: parsed.metrics.length,
@@ -348,13 +482,19 @@ export class VisionBenchmarksService {
       },
     });
 
-    const headline = parsed.metrics.find((m) => m.metric === "ap:all" && m.slice === "all");
-    const ball = parsed.metrics.find((m) => m.metric === "recall:ball" && m.slice === "all");
+    const show = (metric: string) => {
+      const m = parsed.metrics.find((x) => x.metric === metric && x.slice === "all");
+      return m?.value === null || m?.value === undefined ? "n/a" : m.value.toFixed(3);
+    };
+    if (parsed.unit === "tracks") {
+      return {
+        applied: true,
+        detail: `${parsed.metrics.length} metric(s) over ${parsed.framesScored} sided of ${parsed.framesLabelled} track(s) with an accepted identity; team accuracy ${show("team_accuracy:all")}, unknown precision ${show("unknown_precision:all")}; verdict ${verdict.verdict} under ${verdict.judgedUnder}`,
+      };
+    }
     return {
       applied: true,
-      detail: `${parsed.metrics.length} metric(s) over ${parsed.framesScored}/${parsed.framesLabelled} labelled frame(s); mAP@${parsed.iou} ${
-        headline?.value === null || headline?.value === undefined ? "n/a" : headline.value.toFixed(3)
-      }, ball recall ${ball?.value === null || ball?.value === undefined ? "n/a" : ball.value.toFixed(3)}; verdict ${verdict.verdict} under ${verdict.judgedUnder}`,
+      detail: `${parsed.metrics.length} metric(s) over ${parsed.framesScored}/${parsed.framesLabelled} labelled frame(s); mAP@${parsed.iou} ${show("ap:all")}, ball recall ${show("recall:ball")}; verdict ${verdict.verdict} under ${verdict.judgedUnder}`,
     };
   }
 
@@ -394,6 +534,7 @@ function parseSummary(summary: Record<string, unknown>): BenchmarkSummary | null
     iou: num("iou"),
     classes: Array.isArray(summary.classes) ? summary.classes.map(String) : [],
     assets: num("assets"),
+    unit: str("unit") === "tracks" ? "tracks" : "frames",
     framesLabelled: num("framesLabelled"),
     framesScored: num("framesScored"),
     metrics: rows,

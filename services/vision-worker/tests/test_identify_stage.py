@@ -104,7 +104,7 @@ def test_assigns_the_two_players_to_two_sides_and_leaves_the_keeper_alone(ctx) -
     rows = {r["localTrackId"]: r for r in result.summary["teamRows"]}
     assert rows[1]["team"] is not None and rows[2]["team"] is not None
     assert rows[1]["team"] != rows[2]["team"]
-    assert rows[3] == {"localTrackId": 3, "class": "goalkeeper", "team": None, "confidence": None, "method": "not_clustered", "samples": 5}
+    assert rows[3] == {"localTrackId": 3, "class": "goalkeeper", "team": None, "nearest": None, "confidence": None, "method": "not_clustered", "samples": 5}
     assert {k["description"] for k in result.summary["kits"]} == {"red", "blue"}
     assert result.summary["framesDecoded"] == 5  # five sampled frames shared by all tracks
     assert result.summary["identifyVersionId"] == IDENTIFY

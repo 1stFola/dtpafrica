@@ -1470,6 +1470,8 @@ model VisionTeamAssignment {
   inferenceJobId String  @map("inference_job_id")
   /// A | B | null. Sides as clusters; the roster says which is which, later.
   team           String?
+  /// The side the kit was nearest to, even when `team` is null: what unknown precision judges.
+  nearestTeam    String? @map("nearest_team")
   confidence     Float?
   /// kit_cluster | kit_outlier | not_clustered | manual
   method         String

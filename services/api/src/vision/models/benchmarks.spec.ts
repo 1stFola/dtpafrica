@@ -24,6 +24,9 @@ const mockPrisma = {
   visionDatasetMember: { findMany: vi.fn() },
   visionAnnotationVersion: { findMany: vi.fn() },
   visionJob: { findMany: vi.fn() },
+  visionTeamSide: { findMany: vi.fn() },
+  visionTeamAssignment: { findMany: vi.fn() },
+  visionIdentityAssignment: { findMany: vi.fn() },
   visionBenchmarkRun: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   visionMetricResult: { createMany: vi.fn() },
   $transaction: vi.fn(),
@@ -39,7 +42,7 @@ const thresholds: BenchmarkThresholds = {
   iou: 0.5,
   minimums: {},
   criticalSlices: ["quality:platform_copy"],
-  regressionMetrics: { detect: ["ap:all", "recall:ball"], track: ["idf1:all", "mota:all"] },
+  regressionMetrics: { detect: ["ap:all", "recall:ball"], track: ["idf1:all", "mota:all"], identify: ["team_accuracy:all", "unknown_precision:all"] },
   regressionTolerance: 0.02,
 };
 
@@ -333,5 +336,94 @@ describe("the error shapes", () => {
     }
     mockPrisma.visionModelVersion.findUnique.mockResolvedValue(detector({ model: { key: "c", task: "calibrate" } }));
     await expect(service.request(VERSION, DATASET)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+/**
+ * An identify version is scored from rows, in the control plane, through the same
+ * ledger. The six-track case is the one in identity-metrics.spec.ts, worked by hand.
+ */
+describe("an identify version is scored from accepted identities", () => {
+  const HOME = "home-team";
+  const AWAY = "away-team";
+
+  beforeEach(() => {
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(detector({ model: { key: "identify/kits", task: "identify" } }));
+    mockPrisma.visionDatasetMember.findMany.mockResolvedValue([{ videoAssetId: "a1" }]);
+    mockPrisma.visionJob.findMany.mockResolvedValue([{ id: "job-i", videoAssetId: "a1" }]);
+    mockPrisma.visionTeamSide.findMany.mockResolvedValue([
+      { inferenceJobId: "job-i", team: "A", sbTeamId: HOME },
+      { inferenceJobId: "job-i", team: "B", sbTeamId: AWAY },
+    ]);
+    mockPrisma.visionTeamAssignment.findMany.mockResolvedValue([
+      { trackId: "t1", inferenceJobId: "job-i", team: "A", nearestTeam: "A", method: "kit_cluster", kitDescription: "red" },
+      { trackId: "t2", inferenceJobId: "job-i", team: "B", nearestTeam: "B", method: "kit_cluster", kitDescription: "blue" },
+      { trackId: "t3", inferenceJobId: "job-i", team: "A", nearestTeam: "A", method: "kit_cluster", kitDescription: "red" },
+      { trackId: "t4", inferenceJobId: "job-i", team: null, nearestTeam: "A", method: "kit_cluster", kitDescription: "red" },
+      { trackId: "t5", inferenceJobId: "job-i", team: null, nearestTeam: "B", method: "kit_cluster", kitDescription: "blue" },
+      { trackId: "t6", inferenceJobId: "job-i", team: null, nearestTeam: null, method: "not_clustered", kitDescription: null },
+    ]);
+    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([
+      { trackId: "t1", sbTeamId: HOME },
+      { trackId: "t2", sbTeamId: AWAY },
+      { trackId: "t3", sbTeamId: AWAY },
+      { trackId: "t4", sbTeamId: HOME },
+      { trackId: "t5", sbTeamId: HOME },
+      { trackId: "t6", sbTeamId: HOME },
+    ]);
+    mockPrisma.visionBenchmarkRun.findUnique.mockResolvedValue({ id: RUN, modelVersionId: VERSION, datasetVersionId: DATASET, thresholdsVersion: "test-1" });
+    mockPrisma.visionMetricResult.createMany.mockReturnValue("rows-op");
+    mockPrisma.visionBenchmarkRun.update.mockReturnValue("run-op");
+    mockPrisma.visionModelVersion.updateMany.mockReturnValue("stage-op");
+    mockPrisma.$transaction.mockResolvedValue([]);
+  });
+
+  it("creates the run complete, with the numbers by hand, and no job", async () => {
+    const out = await service.request(VERSION, DATASET);
+    expect(mockJobs.enqueueDetached).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ id: RUN, state: "completed", jobId: null, goldMembers: 1, scored: { tracks: 5, sided: 3, abstained: 2, outOfScope: 1, withoutTruth: 0 } });
+    const rows = mockPrisma.visionMetricResult.createMany.mock.calls[0]![0].data as { metric: string; slice: string; value: number | null; support: number }[];
+    const at = (metric: string, slice = "all") => rows.find((r) => r.metric === metric && r.slice === slice);
+    expect(at("team_accuracy:all")).toMatchObject({ value: 0.6667, support: 3 });
+    expect(at("team_coverage:all")).toMatchObject({ value: 0.6, support: 5 });
+    expect(at("unknown_precision:all")).toMatchObject({ value: 0.5, support: 2 });
+    expect(at("tracks:all")).toMatchObject({ value: 5, support: 5 });
+    expect(at("team_accuracy:all", "kit:red")).toMatchObject({ value: 0.5, support: 2 });
+    const update = mockPrisma.visionBenchmarkRun.update.mock.calls[0]![0].data;
+    expect(update).toMatchObject({ state: "completed", verdict: "unthresholded", summary: { unit: "tracks", framesLabelled: 5, framesScored: 3, classes: ["player"] } });
+    expect(mockPrisma.visionModelVersion.updateMany).toHaveBeenCalledWith({ where: { id: VERSION, stage: "candidate" }, data: { stage: "benchmarked" } });
+    expect(mockPrisma.visionIdentityAssignment.findMany.mock.calls[0]![0].where).toMatchObject({ supersededBy: null, reviewState: "accepted", sbTeamId: { not: null } });
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "model.benchmarked" }));
+  });
+
+  it("refuses a gold member with no identify job by this version", async () => {
+    mockPrisma.visionJob.findMany.mockResolvedValue([]);
+    await expect(service.request(VERSION, DATASET)).rejects.toMatchObject({ response: { error: "TeamAssignmentsMissing", members: ["a1"] } });
+    expect(mockPrisma.visionBenchmarkRun.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a job whose sides nobody has decided", async () => {
+    mockPrisma.visionTeamSide.findMany.mockResolvedValue([{ inferenceJobId: "job-i", team: "A", sbTeamId: HOME }]);
+    await expect(service.request(VERSION, DATASET)).rejects.toMatchObject({ response: { error: "SidesNotDecided", jobs: ["job-i"] } });
+  });
+
+  it("refuses when nobody has accepted any identity", async () => {
+    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([]);
+    await expect(service.request(VERSION, DATASET)).rejects.toMatchObject({ response: { error: "IdentitiesMissing" } });
+  });
+
+  it("treats a track accepted on both teams as no truth", async () => {
+    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([
+      { trackId: "t1", sbTeamId: HOME },
+      { trackId: "t1", sbTeamId: AWAY },
+      { trackId: "t2", sbTeamId: AWAY },
+    ]);
+    const out = await service.request(VERSION, DATASET);
+    expect(out).toMatchObject({ scored: { tracks: 1, withoutTruth: 4 } });
+  });
+
+  it("still needs a frozen dataset with gold members, like every run", async () => {
+    mockPrisma.visionDatasetVersion.findUnique.mockResolvedValue(frozen({ frozenAt: null }));
+    await expect(service.request(VERSION, DATASET)).rejects.toMatchObject({ response: { error: "DatasetNotFrozen" } });
   });
 });
