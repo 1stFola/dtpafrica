@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { DETECTION_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
+import { DETECTION_ARTIFACT_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionBenchmarksService } from "../models/benchmarks.service";
 
@@ -47,7 +47,7 @@ export type ApplyContext = {
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "detect", "track"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "detect", "track", "identify"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -81,6 +81,8 @@ export class VisionStageResultsService {
           return this.applyDetect(completion, context);
         case "track":
           return await this.applyTrack(videoAssetId, completion, context);
+        case "identify":
+          return await this.applyIdentify(completion, context);
         default:
           return { applied: false, detail: `no domain effect for ${jobType}` };
       }
@@ -403,6 +405,87 @@ export class VisionStageResultsService {
       detail: `${data.length} track(s) (${Object.entries(byClass)
         .map(([k, v]) => `${v} ${k}`)
         .join(", ") || "none"}), ${written.count} new; tracker ${tracker}, detector ${detector ?? "unknown"}; positions in ${artifact.key}`,
+    };
+  }
+
+  /**
+   * identify → one `VisionTeamAssignment` per track the job saw.
+   *
+   * The rows attach to the `VisionTrack` rows of the track job the artifact came
+   * from, found by `(trackJobId, localTrackId)`. A row for a track that does not
+   * exist is skipped and counted rather than failing the lot: the tracks table is
+   * the authority on which tracks exist. Idempotent on `(track, identify job)`.
+   */
+  private async applyIdentify(completion: StageCompletion, context: ApplyContext): Promise<ApplyOutcome> {
+    const artifact = completion.artifacts.find((a) => a.role === IDENTITY_ARTIFACT_ROLE);
+    if (!artifact) return { applied: false, detail: "identify reported no identity artifact" };
+    if (!context.jobId) return { applied: false, detail: "no job id to attach assignments to" };
+
+    const identifyVersion = str(completion.summary.identifyVersionId);
+    if (!identifyVersion || identifyVersion !== context.modelVersionId) {
+      return {
+        applied: false,
+        detail: `identify summary names version ${identifyVersion ?? "none"}; the job carries ${context.modelVersionId ?? "none"}`,
+      };
+    }
+    const trackJobId = str(completion.summary.trackJobId);
+    if (!trackJobId) return { applied: false, detail: "identify summary names no trackJobId" };
+    const rows = Array.isArray(completion.summary.teamRows) ? completion.summary.teamRows : null;
+    if (!rows) return { applied: false, detail: "identify summary carried no teamRows" };
+
+    const tracks = await this.prisma.visionTrack.findMany({
+      where: { inferenceJobId: trackJobId },
+      select: { id: true, localTrackId: true },
+    });
+    const trackIdOf = new Map(tracks.map((t) => [t.localTrackId, t.id]));
+    const kits = Array.isArray(completion.summary.kits) ? completion.summary.kits : [];
+    const kitOf = new Map<string, string>();
+    for (const k of kits) {
+      const kit = obj(k);
+      const team = str(kit?.team);
+      const description = str(kit?.description);
+      if (team && description) kitOf.set(team, description);
+    }
+
+    const data: {
+      trackId: string;
+      inferenceJobId: string;
+      team: string | null;
+      confidence: number | null;
+      method: string;
+      kitDescription: string | null;
+      identifyVersionId: string;
+    }[] = [];
+    let skipped = 0;
+    for (const row of rows) {
+      const r = obj(row);
+      const localTrackId = int(r?.localTrackId);
+      const method = str(r?.method);
+      if (localTrackId === null || !method) {
+        return { applied: false, detail: `team row ${JSON.stringify(row).slice(0, 80)} is malformed; nothing written` };
+      }
+      const trackId = trackIdOf.get(localTrackId);
+      if (!trackId) {
+        skipped += 1;
+        continue;
+      }
+      const team = str(r?.team);
+      data.push({
+        trackId,
+        inferenceJobId: context.jobId,
+        team: team === "A" || team === "B" ? team : null,
+        confidence: num(r?.confidence),
+        method,
+        kitDescription: team ? (kitOf.get(team) ?? null) : null,
+        identifyVersionId: identifyVersion,
+      });
+    }
+
+    const written = await this.prisma.visionTeamAssignment.createMany({ data, skipDuplicates: true });
+    const assigned = data.filter((d) => d.team !== null).length;
+    return {
+      applied: true,
+      detail: `${data.length} assignment(s), ${assigned} with a side (${[...kitOf.entries()].map(([t, d]) => `${t}: ${d}`).join(", ") || "no kits"}), ${data.length - assigned} unknown, ${written.count} new${skipped ? `, ${skipped} for tracks not on record` : ""}; version ${identifyVersion}`,
     };
   }
 

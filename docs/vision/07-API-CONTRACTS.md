@@ -200,6 +200,16 @@ or the one in `params.detectJobId`. It refuses `DetectionsMissing` when none car
 becomes one `VisionTrack` row per confirmed track, naming both the tracker and the detector;
 `GET /vision/assets/:id/tracks` lists them. See [32-PHASE-4-INCREMENT-1.md](./32-PHASE-4-INCREMENT-1.md).
 
+`POST /vision/jobs` with `type: "identify"` resolves an identify version (kit clustering,
+registered as a model so every assignment names what made it) and declares the track artifact it
+assigns teams on: the latest succeeded `track` for the asset, or the one in `params.trackJobId`,
+refusing `TracksMissing` otherwise. It runs on `cpu_small`, reads the proxy by role and the
+artifact by declared key, and its completion becomes one `VisionTeamAssignment` per track —
+`team` `A`, `B` or `null` (unknown is an answer), `confidence`, `method` (`kit_cluster`,
+`kit_outlier`, `not_clustered`), `kitDescription`, and `reviewState: unreviewed`. The tracks route
+returns each track's latest assignment as `teamAssignments[0]`. See
+[34-PHASE-4-INCREMENT-3.md](./34-PHASE-4-INCREMENT-3.md).
+
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the
 job is refused (`NoProductionModel`) rather than run against whichever version happened to exist.

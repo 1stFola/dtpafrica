@@ -228,3 +228,32 @@ describe("a track job is given the detect artifact it will link", () => {
     expect(enqueued().inputSpec.detections.key).toBe("inference/job-d/1/detections.json");
   });
 });
+
+describe("an identify job is given the track artifact it assigns teams on", () => {
+  const IDENTIFY = "55556666-7777-4888-9999-aaaabbbbeeee";
+  const TRACKER = "55556666-7777-4888-9999-aaaabbbbcccc";
+
+  beforeEach(() => {
+    mockPrisma.visionJob.findMany.mockResolvedValue([{ type: "probe" }, { type: "fingerprint" }, { type: "transcode" }, { type: "detect" }, { type: "track" }]);
+    mockModels.resolveForJob.mockResolvedValue({ id: IDENTIFY, task: "identify" });
+    mockPrisma.visionJob.findFirst.mockResolvedValue({
+      id: "job-t", modelVersionId: TRACKER,
+      progress: { artifacts: [{ key: "inference/job-t/1/tracks.json", bucket: "derived", role: "tracks" }] },
+    });
+  });
+
+  it("declares the latest succeeded track artifact, the tracker that made it, and the proxy clock", async () => {
+    await service.enqueueForAsset({ type: "identify", videoAssetId: ASSET });
+    const spec = enqueued().inputSpec;
+    expect(spec.tracks).toEqual({ jobId: "job-t", key: "inference/job-t/1/tracks.json", trackerVersionId: TRACKER });
+    expect(spec.readKeys).toEqual([{ bucket: "derived", key: "inference/job-t/1/tracks.json" }]);
+    expect(spec.proxy).toEqual({ fps: 25, sourceOffsetMs: 9000 });
+    expect(enqueued().modelVersionId).toBe(IDENTIFY);
+    expect(mockPrisma.visionJob.findFirst.mock.calls[0]![0].where).toMatchObject({ type: "track", state: "succeeded" });
+  });
+
+  it("refuses when no succeeded track job carries an artifact", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue(null);
+    await expect(service.enqueueForAsset({ type: "identify", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "TracksMissing" } });
+  });
+});

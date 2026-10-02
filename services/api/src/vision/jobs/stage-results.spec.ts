@@ -7,7 +7,8 @@ const mockPrisma = {
   visionVideoAsset: { update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
   visionVideoVariant: { upsert: vi.fn() },
   visionDuplicateCluster: { create: vi.fn() },
-  visionTrack: { createMany: vi.fn() },
+  visionTrack: { createMany: vi.fn(), findMany: vi.fn() },
+  visionTeamAssignment: { createMany: vi.fn() },
   $transaction: vi.fn(),
 };
 
@@ -522,5 +523,57 @@ describe("track results become rows", () => {
   it("needs the job id, which only the controller knows", async () => {
     const outcome = await service().apply("track", ASSET, { artifacts, summary: summary() }, { modelVersionId: TRACKER });
     expect(outcome.applied).toBe(false);
+  });
+});
+
+/**
+ * identify -> one team assignment per track the job saw, attached to the track
+ * rows of the track job the artifact came from.
+ */
+describe("identify results become team assignments", () => {
+  const IDENTIFY = "55556666-7777-4888-9999-aaaabbbbeeee";
+  const JOB = "66667777-8888-4999-a000-bbbbccccdddd";
+  const artifacts = [{ key: "inference/j/1/identity.json", bucket: "derived", role: "identity" }];
+  const summary = (over: Record<string, unknown> = {}) => ({
+    identifyVersionId: IDENTIFY, trackerVersionId: "trk", trackJobId: "job-t",
+    kits: [{ team: "A", description: "red" }, { team: "B", description: "blue" }],
+    teamRows: [
+      { localTrackId: 1, class: "player", team: "A", confidence: 0.8, method: "kit_cluster", samples: 5 },
+      { localTrackId: 2, class: "player", team: null, confidence: 0.05, method: "kit_cluster", samples: 5 },
+      { localTrackId: 3, class: "goalkeeper", team: null, confidence: null, method: "not_clustered", samples: 5 },
+      { localTrackId: 9, class: "player", team: "B", confidence: 0.9, method: "kit_cluster", samples: 2 },
+    ],
+    ...over,
+  });
+  const context = { jobId: JOB, modelVersionId: IDENTIFY };
+
+  beforeEach(() => {
+    mockPrisma.visionTrack.findMany.mockResolvedValue([{ id: "t1", localTrackId: 1 }, { id: "t2", localTrackId: 2 }, { id: "t3", localTrackId: 3 }]);
+    mockPrisma.visionTeamAssignment.createMany.mockResolvedValue({ count: 3 });
+  });
+
+  it("writes one row per known track, with the kit named and unknown kept as null", async () => {
+    const outcome = await service().apply("identify", ASSET, { artifacts, summary: summary() }, context);
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("3 assignment(s), 1 with a side (A: red, B: blue), 2 unknown, 3 new, 1 for tracks not on record");
+    const call = mockPrisma.visionTeamAssignment.createMany.mock.calls[0]![0];
+    expect(call.skipDuplicates).toBe(true);
+    expect(call.data).toEqual([
+      { trackId: "t1", inferenceJobId: JOB, team: "A", confidence: 0.8, method: "kit_cluster", kitDescription: "red", identifyVersionId: IDENTIFY },
+      { trackId: "t2", inferenceJobId: JOB, team: null, confidence: 0.05, method: "kit_cluster", kitDescription: null, identifyVersionId: IDENTIFY },
+      { trackId: "t3", inferenceJobId: JOB, team: null, confidence: null, method: "not_clustered", kitDescription: null, identifyVersionId: IDENTIFY },
+    ]);
+    expect(mockPrisma.visionTrack.findMany.mock.calls[0]![0].where).toEqual({ inferenceJobId: "job-t" });
+  });
+
+  it("refuses a summary whose version is not the job's, or with no track job, or malformed rows", async () => {
+    expect((await service().apply("identify", ASSET, { artifacts, summary: summary({ identifyVersionId: "other" }) }, context)).applied).toBe(false);
+    expect((await service().apply("identify", ASSET, { artifacts, summary: summary({ trackJobId: undefined }) }, context)).applied).toBe(false);
+    expect((await service().apply("identify", ASSET, { artifacts, summary: summary({ teamRows: [{ localTrackId: "x" }] }) }, context)).applied).toBe(false);
+    expect(mockPrisma.visionTeamAssignment.createMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses a completion with no identity artifact", async () => {
+    expect((await service().apply("identify", ASSET, { artifacts: [], summary: summary() }, context)).applied).toBe(false);
   });
 });

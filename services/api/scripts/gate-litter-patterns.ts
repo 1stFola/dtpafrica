@@ -52,7 +52,7 @@ export const REVIEWER_IDS: NamePattern[] = [
  */
 export const GATE_PARTNER = {
   contactEmail: "gate@example.test",
-  pattern: new RegExp(`^(Dataset|Annotation|Model registry|Boxes|Benchmark|Promotion|Tracks|Track metrics) gate ${RUN}$`),
+  pattern: new RegExp(`^(Dataset|Annotation|Model registry|Boxes|Benchmark|Promotion|Tracks|Track metrics|Teams) gate ${RUN}$`),
 };
 
 /** Whether a name is one a gate generated, rather than one a person chose. */
