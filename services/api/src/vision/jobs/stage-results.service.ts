@@ -451,6 +451,7 @@ export class VisionStageResultsService {
       trackId: string;
       inferenceJobId: string;
       team: string | null;
+      nearestTeam: string | null;
       confidence: number | null;
       method: string;
       kitDescription: string | null;
@@ -470,13 +471,19 @@ export class VisionStageResultsService {
         continue;
       }
       const team = str(r?.team);
+      const nearest = str(r?.nearest);
+      const side = team === "A" || team === "B" ? team : null;
+      const nearestSide = nearest === "A" || nearest === "B" ? nearest : null;
       data.push({
         trackId,
         inferenceJobId: context.jobId,
-        team: team === "A" || team === "B" ? team : null,
+        team: side,
+        nearestTeam: nearestSide ?? side,
         confidence: num(r?.confidence),
         method,
-        kitDescription: team ? (kitOf.get(team) ?? null) : null,
+        // The kit of the side named, or of the nearest side for an abstention, so a
+        // slice by kit colour can hold abstentions too.
+        kitDescription: kitOf.get(side ?? nearestSide ?? "") ?? null,
         identifyVersionId: identifyVersion,
       });
     }

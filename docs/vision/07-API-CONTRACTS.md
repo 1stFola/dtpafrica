@@ -239,6 +239,14 @@ identity's roster `slot` and the match's two teams. The planned `crops` route is
 proxy frame with the box on it serves the need. See
 [36-PHASE-4-INCREMENT-5.md](./36-PHASE-4-INCREMENT-5.md).
 
+`POST /vision/models/versions/:id/benchmark` for an **identify** version is scored in the control
+plane, from rows, and the run comes back already `completed` with `jobId: null`: team accuracy,
+coverage and unknown precision (`IDENTITY_METRIC_NAMES`) over tracks whose identity two people
+accepted, on `all` and per kit colour, with `summary.unit: "tracks"`. It refuses
+`TeamAssignmentsMissing` (a gold member with no identify job by the version), `SidesNotDecided`
+and `IdentitiesMissing` after the dataset rules every run has. See
+[37-PHASE-4-INCREMENT-6.md](./37-PHASE-4-INCREMENT-6.md).
+
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the
 job is refused (`NoProductionModel`) rather than run against whichever version happened to exist.

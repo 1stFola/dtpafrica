@@ -23,7 +23,7 @@ export type NamePattern = { prefix: string; pattern: RegExp };
 
 /** Dataset version labels the gate's sections create. */
 export const VERSION_LABELS: NamePattern[] = [
-  { prefix: "gate-", pattern: new RegExp(`^gate-${RUN}-(v1|v2|bad|bad2|export)$`) },
+  { prefix: "gate-", pattern: new RegExp(`^gate-${RUN}-(v1|v2|bad|bad2|export|identity)$`) },
   { prefix: "gold benchmark ", pattern: new RegExp(`^gold benchmark ${RUN}$`) },
   { prefix: "trains on gold ", pattern: new RegExp(`^trains on gold ${RUN}$`) },
 ];
@@ -52,7 +52,7 @@ export const REVIEWER_IDS: NamePattern[] = [
  */
 export const GATE_PARTNER = {
   contactEmail: "gate@example.test",
-  pattern: new RegExp(`^(Dataset|Annotation|Model registry|Boxes|Benchmark|Promotion|Tracks|Track metrics|Teams|Identity) gate ${RUN}$`),
+  pattern: new RegExp(`^(Dataset|Annotation|Model registry|Boxes|Benchmark|Promotion|Tracks|Track metrics|Teams|Identity|Identity metrics) gate ${RUN}$`),
 };
 
 /** Whether a name is one a gate generated, rather than one a person chose. */

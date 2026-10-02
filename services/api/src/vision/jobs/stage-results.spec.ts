@@ -538,9 +538,9 @@ describe("identify results become team assignments", () => {
     identifyVersionId: IDENTIFY, trackerVersionId: "trk", trackJobId: "job-t",
     kits: [{ team: "A", description: "red" }, { team: "B", description: "blue" }],
     teamRows: [
-      { localTrackId: 1, class: "player", team: "A", confidence: 0.8, method: "kit_cluster", samples: 5 },
-      { localTrackId: 2, class: "player", team: null, confidence: 0.05, method: "kit_cluster", samples: 5 },
-      { localTrackId: 3, class: "goalkeeper", team: null, confidence: null, method: "not_clustered", samples: 5 },
+      { localTrackId: 1, class: "player", team: "A", nearest: "A", confidence: 0.8, method: "kit_cluster", samples: 5 },
+      { localTrackId: 2, class: "player", team: null, nearest: "B", confidence: 0.05, method: "kit_cluster", samples: 5 },
+      { localTrackId: 3, class: "goalkeeper", team: null, nearest: null, confidence: null, method: "not_clustered", samples: 5 },
       { localTrackId: 9, class: "player", team: "B", confidence: 0.9, method: "kit_cluster", samples: 2 },
     ],
     ...over,
@@ -559,9 +559,10 @@ describe("identify results become team assignments", () => {
     const call = mockPrisma.visionTeamAssignment.createMany.mock.calls[0]![0];
     expect(call.skipDuplicates).toBe(true);
     expect(call.data).toEqual([
-      { trackId: "t1", inferenceJobId: JOB, team: "A", confidence: 0.8, method: "kit_cluster", kitDescription: "red", identifyVersionId: IDENTIFY },
-      { trackId: "t2", inferenceJobId: JOB, team: null, confidence: 0.05, method: "kit_cluster", kitDescription: null, identifyVersionId: IDENTIFY },
-      { trackId: "t3", inferenceJobId: JOB, team: null, confidence: null, method: "not_clustered", kitDescription: null, identifyVersionId: IDENTIFY },
+      { trackId: "t1", inferenceJobId: JOB, team: "A", nearestTeam: "A", confidence: 0.8, method: "kit_cluster", kitDescription: "red", identifyVersionId: IDENTIFY },
+      // An abstention keeps the side it was nearest to, and that side's kit, so it can be judged later.
+      { trackId: "t2", inferenceJobId: JOB, team: null, nearestTeam: "B", confidence: 0.05, method: "kit_cluster", kitDescription: "blue", identifyVersionId: IDENTIFY },
+      { trackId: "t3", inferenceJobId: JOB, team: null, nearestTeam: null, confidence: null, method: "not_clustered", kitDescription: null, identifyVersionId: IDENTIFY },
     ]);
     expect(mockPrisma.visionTrack.findMany.mock.calls[0]![0].where).toEqual({ inferenceJobId: "job-t" });
   });

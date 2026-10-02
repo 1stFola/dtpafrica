@@ -216,10 +216,10 @@ def cluster_teams(tracks: Sequence[KitTrack], params: Params = Params(), iterati
     between = distance(centres[0], centres[1]) if len(centres) == 2 else 0.0
     for t in tracks:
         if t.cls not in CLUSTERED_CLASSES or t.feature is None or len(centres) < 2:
-            rows.append({"localTrackId": t.local_id, "class": t.cls, "team": None, "confidence": None, "method": "not_clustered", "samples": t.samples})
+            rows.append({"localTrackId": t.local_id, "class": t.cls, "team": None, "nearest": None, "confidence": None, "method": "not_clustered", "samples": t.samples})
             continue
         if t.local_id in outliers:
-            rows.append({"localTrackId": t.local_id, "class": t.cls, "team": None, "confidence": None, "method": "kit_outlier", "samples": t.samples})
+            rows.append({"localTrackId": t.local_id, "class": t.cls, "team": None, "nearest": None, "confidence": None, "method": "kit_outlier", "samples": t.samples})
             continue
         d0 = distance(t.feature, centres[0])
         d1 = distance(t.feature, centres[1])
@@ -230,6 +230,9 @@ def cluster_teams(tracks: Sequence[KitTrack], params: Params = Params(), iterati
             "localTrackId": t.local_id,
             "class": t.cls,
             "team": ("A" if own == 0 else "B") if confident else None,
+            # Named even when the margin was too small: unknown precision later asks
+            # whether abstaining here avoided a wrong answer.
+            "nearest": "A" if own == 0 else "B",
             "confidence": round(min(1.0, margin), 3),
             "method": "kit_cluster",
             "samples": t.samples,
