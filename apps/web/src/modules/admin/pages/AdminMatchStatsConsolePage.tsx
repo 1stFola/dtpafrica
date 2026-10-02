@@ -539,6 +539,10 @@ function LiveAudioCommentaryControl({
   const pendingChunksRef = useRef(0);
   const stopAfterFlushRef = useRef(false);
   const sampleStopRef = useRef<(() => void) | null>(null);
+  const segmentTimerRef = useRef<number | null>(null);
+  const generationRef = useRef(0);
+  const sendingRef = useRef(Promise.resolve());
+  const recorderStoppedRef = useRef(true);
 
   const friendlyLiveAudioError = (error: unknown) => {
     const message = error instanceof Error ? error.message : "";
@@ -574,27 +578,28 @@ function LiveAudioCommentaryControl({
     if (httpSessionId) {
       void matchStatsApi.stopLiveAudioHttp(matchId, httpSessionId).catch(() => undefined);
     }
+    setBusy(false);
   }, [matchId]);
 
   const finishStop = useCallback(() => {
-    if (pendingChunksRef.current === 0) closeTransport();
+    if (recorderStoppedRef.current && pendingChunksRef.current === 0) closeTransport();
   }, [closeTransport]);
 
   const stop = useCallback(() => {
+    generationRef.current += 1;
+    if (segmentTimerRef.current != null) window.clearInterval(segmentTimerRef.current);
+    segmentTimerRef.current = null;
     sampleStopRef.current?.();
     sampleStopRef.current = null;
     stopAfterFlushRef.current = true;
+    setBusy(true);
     const recorder = recorderRef.current;
     recorderRef.current = null;
     if (recorder && recorder.state !== "inactive") {
-      try {
-        recorder.requestData();
-      } catch {
-        /* Some browsers throw if no chunk is currently buffered. */
-      }
+      // stop() emits the final complete audio segment.
       recorder.stop();
-      window.setTimeout(finishStop, 1000);
-    } else {
+    } else if (!recorder) {
+      recorderStoppedRef.current = true;
       finishStop();
     }
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -605,10 +610,11 @@ function LiveAudioCommentaryControl({
   useEffect(() => () => void stop(), [stop]);
 
   useEffect(() => {
-    if (disabled && active) void stop();
-  }, [active, disabled, stop]);
+    if (disabled) stop();
+  }, [disabled, stop]);
 
   const start = async () => {
+    const generation = ++generationRef.current;
     if (trainingPreview) {
       setMessage("Playing a short public live audio sample.");
       setActive(true);
@@ -633,6 +639,8 @@ function LiveAudioCommentaryControl({
           autoGainControl: true,
         },
       });
+      if (generation !== generationRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      streamRef.current = stream;
       const preferredType =
         [
           "audio/webm;codecs=opus",
@@ -658,13 +666,20 @@ function LiveAudioCommentaryControl({
             }
           }, 6000);
           socket.onopen = () => {
-            opened = true;
-            window.clearTimeout(timeout);
-            resolve(socket);
+            // Wait for the server's authorized status before recording.
+          };
+          socket.onmessage = (event) => {
+            try {
+              if (JSON.parse(String(event.data)).type !== "status") return;
+              opened = true;
+              window.clearTimeout(timeout);
+              resolve(socket);
+            } catch { /* Ignore non-status messages during the handshake. */ }
           };
           socket.onerror = () => {
             if (!opened) {
               window.clearTimeout(timeout);
+              socket.close();
               reject(new Error("Could not connect live audio."));
             }
           };
@@ -681,18 +696,23 @@ function LiveAudioCommentaryControl({
 
       try {
         const socket = await openSocket();
+        if (generation !== generationRef.current) { socket.close(); return; }
         socket.send(JSON.stringify({ type: "start", mimeType }));
         socket.onclose = () => {
-          setActive(false);
-          recorderRef.current?.stop();
-          recorderRef.current = null;
+          if (socketRef.current === socket) {
+            setMessage("Live audio disconnected. Start it again to reconnect.");
+            stop();
+          }
         };
         socketRef.current = socket;
       } catch {
+        // The WebSocket may already have consumed its single-use ticket.
+        const fallbackTicket = await matchStatsApi.createLiveAudioTicket(matchId);
         const session = await matchStatsApi.startLiveAudioHttp(matchId, {
-          ticket: ticket.ticket,
+          ticket: fallbackTicket.ticket,
           mimeType,
         });
+        if (generation !== generationRef.current) { void matchStatsApi.stopLiveAudioHttp(matchId, session.sessionId); return; }
         httpSessionRef.current = session.sessionId;
         setMessage("Live audio is running in network-safe mode.");
       }
@@ -708,7 +728,7 @@ function LiveAudioCommentaryControl({
           return;
         }
         pendingChunksRef.current += 1;
-        void blobToBase64(event.data)
+        sendingRef.current = sendingRef.current.then(() => blobToBase64(event.data))
           .then((data) => {
             const latestSocket = socketRef.current;
             const latestHttpSession = httpSessionRef.current;
@@ -721,22 +741,37 @@ function LiveAudioCommentaryControl({
                 sessionId: latestHttpSession,
                 mimeType,
                 data,
-              });
+              }).then(() => undefined);
             }
             return undefined;
           })
-          .catch(() => setMessage("Audio stream is having trouble sending."))
+          .catch(() => {
+            setMessage("Audio could not be sent. Start live audio again to reconnect.");
+            stop();
+          })
           .finally(() => {
             pendingChunksRef.current = Math.max(0, pendingChunksRef.current - 1);
             if (stopAfterFlushRef.current) finishStop();
           });
       };
       recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        if (stopAfterFlushRef.current) finishStop();
+        if (stopAfterFlushRef.current || generation !== generationRef.current) {
+          recorderStoppedRef.current = true;
+          stream.getTracks().forEach((track) => track.stop());
+          finishStop();
+        } else {
+          recorder.start();
+        }
       };
-      recorder.start(LIVE_AUDIO_CHUNK_MS);
       stopAfterFlushRef.current = false;
+      recorderStoppedRef.current = false;
+      // Each segment includes its own container header, so late listeners and
+      // browsers without MediaSource can decode it independently.
+      recorder.start();
+      segmentTimerRef.current = window.setInterval(() => {
+        if (recorder.state === "recording") recorder.stop();
+      }, LIVE_AUDIO_CHUNK_MS);
+      recorder.onerror = () => { setMessage("Microphone recording failed. Try starting live audio again."); stop(); };
       setActive(true);
     } catch (error) {
       setMessage(friendlyLiveAudioError(error));
@@ -744,9 +779,9 @@ function LiveAudioCommentaryControl({
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       recorderRef.current = null;
-      socketRef.current?.close();
-      socketRef.current = null;
-      httpSessionRef.current = null;
+      closeTransport();
+      if (segmentTimerRef.current != null) window.clearInterval(segmentTimerRef.current);
+      segmentTimerRef.current = null;
       pendingChunksRef.current = 0;
       stopAfterFlushRef.current = false;
     } finally {
@@ -953,7 +988,7 @@ export function AdminMatchStatsConsolePage() {
         /* A draft this device never managed to sync outranks the server copy —
            those taps exist nowhere else. */
         const draft = readDraft(matchId);
-        if (draftIsAhead(draft) && draft) {
+        if (data.permissions.canEdit && draftIsAhead(draft) && draft) {
           setTallies(draft.tallies);
           setEvents(draft.events);
           setClock(draft.clock);
@@ -1001,10 +1036,16 @@ export function AdminMatchStatsConsolePage() {
 
   useEffect(() => loadHistory(), [loadHistory]);
 
-  const flush = useCallback(async () => {
+  const savingRef = useRef<Promise<void> | null>(null);
+  const flush = useCallback(async (): Promise<void> => {
+    if (savingRef.current) {
+      await savingRef.current;
+      return;
+    }
     if (!pending.current || !matchId) return;
     const payload = pending.current;
     setSaveState("saving");
+    const save = async () => {
     try {
       const next = await matchStatsApi.save(matchId, payload.tallies, {
         events: payload.events,
@@ -1012,16 +1053,26 @@ export function AdminMatchStatsConsolePage() {
         kits: payload.kits,
       });
       // Only clear the queue once the API has actually accepted this payload.
-      pending.current = null;
-      markSynced(matchId);
+      if (pending.current === payload) {
+        pending.current = null;
+        markSynced(matchId);
+      }
       // Keep the server's status/audit but not the recorded data: the recorder
       // may have tapped again while this request was in flight.
       setSheet((prev) => (prev ? { ...next, tallies: prev.tallies, events: prev.events } : next));
-      setSaveState("saved");
-    } catch {
+      setSaveState(pending.current ? "pending" : "saved");
+    } catch (e) {
       /* Keep the payload queued. The draft is already on the device, so
          nothing is lost — this just retries until the network returns. */
       setSaveState("pending");
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    };
+    savingRef.current = save();
+    try {
+      await savingRef.current;
+    } finally {
+      savingRef.current = null;
     }
   }, [matchId]);
 
@@ -1083,9 +1134,9 @@ export function AdminMatchStatsConsolePage() {
   const handleClockChange = useCallback(
     (next: ClockState) => {
       setClock(next);
-      queueSave({ clock: next });
+      if (editable) queueSave({ clock: next });
     },
-    [queueSave]
+    [queueSave, editable]
   );
 
   const matchClock = useMatchClock(clock, handleClockChange);
@@ -1143,6 +1194,8 @@ export function AdminMatchStatsConsolePage() {
     setTab("events");
     matchClock.kickOff(pendingHalfLength);
     handleEventsChange({ events: nextEvents });
+    // Claim on confirmation without waiting for the autosave debounce.
+    void flush();
   };
 
   const bump = (key: string, side: Side, delta: number) => {
@@ -1169,6 +1222,7 @@ export function AdminMatchStatsConsolePage() {
     try {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       await flush();
+      if (pending.current) throw new Error("Your latest changes have not saved yet. Wait for them to sync before continuing.");
       applySheet(await fn());
       clearDraft(matchId);
       loadHistory();

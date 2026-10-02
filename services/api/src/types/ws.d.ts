@@ -5,6 +5,7 @@ declare module "ws" {
   export class WebSocket {
     static readonly OPEN: number;
     readonly readyState: number;
+    readonly bufferedAmount: number;
     send(data: string): void;
     close(code?: number, reason?: string): void;
     on(event: "message", listener: (data: { toString(): string }) => void): this;
@@ -12,7 +13,7 @@ declare module "ws" {
   }
 
   export class WebSocketServer {
-    constructor(options: { noServer: boolean });
+    constructor(options: { noServer: boolean; maxPayload?: number });
     handleUpgrade(
       request: IncomingMessage,
       socket: Duplex,

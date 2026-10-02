@@ -172,6 +172,7 @@ export const MATCH_EVENT_TYPES = [
  * the next save, which is data loss disguised as a vocabulary change.
  */
 const RETIRED_EVENT_TYPES = [
+  "kick_off",
   "assist",
   "cross",
   "full_time",
@@ -807,7 +808,7 @@ export class AdminMatchStatsService {
       homeTeam: true,
       awayTeam: true,
       competition: true,
-      statisticsSheet: { select: { status: true, recorderName: true } },
+      statisticsSheet: { select: { status: true, recorderName: true, clock: true } },
     } as const;
 
     const scope = competitionScopeWhere(ctx);
@@ -860,7 +861,8 @@ export class AdminMatchStatsService {
       roundLabel: match.roundLabel,
       status: match.status,
       sheetStatus: (match.statisticsSheet?.status ?? null) as SheetStatus | null,
-      recorderName: match.statisticsSheet?.recorderName ?? null,
+      recorderName: readClock(match.statisticsSheet?.clock)?.firstHalfStartedAt
+        ? match.statisticsSheet?.recorderName ?? null : null,
       homeTeam: { name: match.homeTeam.name, logoUrl: match.homeTeam.logoUrl },
       awayTeam: { name: match.awayTeam.name, logoUrl: match.awayTeam.logoUrl },
       competition: {
@@ -973,8 +975,7 @@ export class AdminMatchStatsService {
   }
 
   /**
-   * Open the console for a fixture. The first recorder to open an un-owned
-   * sheet claims it; everyone else can still read it.
+   * Opening a fixture never claims it. Ownership starts when kickoff is saved.
    */
   async openSheet(matchId: string, ctx: AdminAuthContext) {
     const match = await this.loadMatch(matchId, ctx);
@@ -984,25 +985,14 @@ export class AdminMatchStatsService {
 
     let sheet = existing;
     if (!sheet && hasPermission(ctx, RECORD_PERMISSION)) {
-      sheet = await this.prisma.sbMatchStatistics.create({
-        data: {
+      sheet = await this.prisma.sbMatchStatistics.upsert({
+        where: { matchId },
+        update: {},
+        create: {
           matchId,
           status: "live",
           tallies: emptyTallies() as Prisma.InputJsonValue,
-          recorderId: ctx.userId ?? null,
-          recorderName: ctx.userId ? actorName(ctx) : null,
         },
-      });
-    } else if (
-      sheet &&
-      !sheet.recorderId &&
-      sheet.status === "live" &&
-      ctx.userId &&
-      hasPermission(ctx, RECORD_PERMISSION)
-    ) {
-      sheet = await this.prisma.sbMatchStatistics.update({
-        where: { matchId },
-        data: { recorderId: ctx.userId, recorderName: actorName(ctx) },
       });
     }
 
@@ -1019,6 +1009,9 @@ export class AdminMatchStatsService {
     const sheet = await this.requireSheet(matchId);
     this.assertOwnsSheet(sheet, ctx, match);
     const liveFeature = readLiveFeature(match.stats);
+    if (!options.allowAfterFullTime && (!readClock(sheet.clock)?.firstHalfStartedAt || sheetStatus(sheet) === "approved")) {
+      throw new BadRequestException("Live audio requires an active, unlocked recording after kickoff");
+    }
     if (!options.allowWhenPublicLiveOff && !liveFeature.enabled) {
       throw new ForbiddenException("Public live must be approved before live audio commentary can start");
     }
@@ -1063,9 +1056,19 @@ export class AdminMatchStatsService {
       );
     }
 
-    const updated = await this.prisma.sbMatchStatistics.update({
-      where: { matchId },
+    const nextClock = extras?.clock !== undefined ? readClock(extras.clock) : readClock(sheet.clock);
+    if (readClock(sheet.clock)?.firstHalfStartedAt && !nextClock?.firstHalfStartedAt) {
+      throw new BadRequestException("Kickoff cannot be cleared after recording has started.");
+    }
+    const kickedOff = Boolean(nextClock?.firstHalfStartedAt);
+    const result = await this.prisma.sbMatchStatistics.updateMany({
+      // A competing kickoff or supervisor action must not be overwritten.
+      where: { matchId, updatedAt: sheet.updatedAt },
       data: {
+        ...(!readClock(sheet.clock)?.firstHalfStartedAt
+          ? { recorderId: kickedOff ? ctx.userId ?? null : null,
+              recorderName: kickedOff ? actorName(ctx) : null }
+          : {}),
         tallies: normaliseTallies(talliesInput) as Prisma.InputJsonValue,
         ...(extras?.events !== undefined
           ? { events: readEvents(extras.events) as unknown as Prisma.InputJsonValue }
@@ -1078,6 +1081,10 @@ export class AdminMatchStatsService {
           : {}),
       },
     });
+    if (result.count !== 1) {
+      throw new BadRequestException("This sheet changed while saving. Reload the fixture before continuing.");
+    }
+    const updated = await this.requireSheet(matchId);
     await this.syncFinalScoreFromSheet(match, updated);
     return this.present(match, updated, ctx);
   }
@@ -1630,11 +1637,13 @@ export class AdminMatchStatsService {
    * the first trainee to open one would otherwise lock out everybody else.
    */
   private assertOwnsSheet(
-    sheet: { recorderId: string | null },
+    sheet: { recorderId: string | null; clock?: unknown },
     ctx: AdminAuthContext,
     match?: { competition?: { formatConfig?: unknown } | null }
   ) {
     if (match && isTrainingCompetition(match.competition ?? null)) return;
+    // Ignore ownership left by the former claim-on-open workflow.
+    if (!readClock(sheet.clock)?.firstHalfStartedAt) return;
     const isSuperAdmin = ctx.method === "api_key" || ctx.roleSlug === "super_admin";
     if (isSuperAdmin || !sheet.recorderId || !ctx.userId) return;
     if (sheet.recorderId !== ctx.userId) {
@@ -1655,9 +1664,14 @@ export class AdminMatchStatsService {
     const canRecord = hasPermission(ctx, RECORD_PERMISSION);
     const canApprove = hasPermission(ctx, APPROVE_PERMISSION);
     const ownsSheet =
+      !readClock(sheet?.clock)?.firstHalfStartedAt ||
+      isTrainingCompetition(match.competition) ||
+      ctx.method === "api_key" || ctx.roleSlug === "super_admin" ||
       !sheet?.recorderId || !ctx.userId || sheet.recorderId === ctx.userId;
 
     const recorded = readEvents(sheet?.events);
+    const lockedForEditing = !isTrainingCompetition(match.competition) &&
+      isFullTime(readClock(sheet?.clock));
 
     return {
       matchId: match.id,
@@ -1687,8 +1701,8 @@ export class AdminMatchStatsService {
       /* The statistics columns carry the sheet's audit trail. Both column sets
          are written together, so either tells the same story. */
       audit: {
-        recorderId: sheet?.recorderId ?? null,
-        recorderName: sheet?.recorderName ?? null,
+        recorderId: readClock(sheet?.clock)?.firstHalfStartedAt ? sheet?.recorderId ?? null : null,
+        recorderName: readClock(sheet?.clock)?.firstHalfStartedAt ? sheet?.recorderName ?? null : null,
         submittedByName: sheet?.submittedByName ?? null,
         submittedAt: sheet?.submittedAt ?? null,
         approvedByName: sheet?.approvedByName ?? null,
@@ -1711,7 +1725,7 @@ export class AdminMatchStatsService {
       permissions: {
         canRecord,
         canApprove,
-        canEdit: canRecord && status !== "approved" && ownsSheet,
+        canEdit: canRecord && status !== "approved" && ownsSheet && !lockedForEditing,
         canSubmit: canRecord && status !== "approved" && ownsSheet,
         canApproveThis: canApprove && status === "submitted",
       },
