@@ -1322,10 +1322,48 @@ model VisionCameraSegment {
   createdBy    String?  @map("created_by")
   createdAt    DateTime @default(now()) @map("created_at")
 
-  videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  videoAsset   VisionVideoAsset        @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  calibrations VisionPitchCalibration[]
 
   @@index([videoAssetId, startMs])
   @@map("vision_camera_segments")
+}
+
+/// A homography from the proxy's pixels to the pitch in metres, for one camera
+/// segment, with how far to trust it.
+///
+/// `quality` is what the suppression rule reads: `failed` yields no coordinates,
+/// and nothing derived from this row may be emitted with a caveat instead
+/// (docs/vision/09 § Calibration). A new calibration supersedes the segment's
+/// current one; nothing is edited. The pitch's actual dimensions are on the row,
+/// because assuming 105 × 68 on a short pitch corrupts every distance.
+model VisionPitchCalibration {
+  id                String   @id @default(uuid())
+  cameraSegmentId   String   @map("camera_segment_id")
+  pitchLengthM      Float    @map("pitch_length_m")
+  pitchWidthM       Float    @map("pitch_width_m")
+  /// manual | model
+  method            String
+  modelVersionId    String?  @map("model_version_id")
+  /// [{ landmark, px, py, frameIndex? }] the fit was made from, proxy pixels.
+  points            Json
+  /// Row-major 3 x 3, pixel -> metres.
+  homography        Json
+  reprojectionErrorM  Float  @map("reprojection_error_m")
+  maxPointErrorM      Float  @map("max_point_error_m")
+  reprojectionErrorPx Float  @map("reprojection_error_px")
+  pointsUsed        Int      @map("points_used")
+  /// good | usable | failed
+  quality           String
+  thresholdsVersion String   @map("thresholds_version")
+  decidedBy         String?  @map("decided_by")
+  supersededBy      String?  @map("superseded_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  cameraSegment VisionCameraSegment @relation(fields: [cameraSegmentId], references: [id], onDelete: Cascade)
+
+  @@index([cameraSegmentId, createdAt])
+  @@map("vision_pitch_calibrations")
 }
 
 /// A resumable multipart upload. Server-side state, so resume survives a closed

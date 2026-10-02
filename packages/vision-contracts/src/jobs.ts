@@ -41,8 +41,13 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * precision asks whether abstaining avoided a wrong answer. `IDENTITY_METRIC_NAMES`
  * are what the ledger measures for an `identify` version, scored in the control
  * plane against identities two people accepted -- rows, not artifacts.
+ *
+ * 1.7.0 -- calibration's shapes: a `PitchCalibration` is a homography from proxy
+ * pixels to pitch metres for one camera segment, with its reprojection error and a
+ * `CalibrationQuality` the suppression rule reads. Manual first; a `calibrate` stage
+ * will write the same shape.
  */
-export const VISION_CONTRACT_VERSION = "1.6.0";
+export const VISION_CONTRACT_VERSION = "1.7.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -498,4 +503,41 @@ export type TeamAssignmentRow = {
   nearest?: TeamLabel | null;
   /** Frames the kit was sampled on. */
   samples: number;
+};
+
+// ── Calibration ─────────────────────────────────────────────────────────────
+
+/** The pitch in metres. 105 × 68 unless the actual dimensions are known. */
+export type PitchDimensions = { lengthM: number; widthM: number };
+export const DEFAULT_PITCH_DIMENSIONS: PitchDimensions = { lengthM: 105, widthM: 68 };
+
+/** Row-major 3 × 3, mapping homogeneous proxy pixel [x, y, 1] to homogeneous pitch [X, Y, W] in metres. */
+export type Homography = [number, number, number, number, number, number, number, number, number];
+
+export const CALIBRATION_METHODS = ["manual", "model"] as const;
+export type CalibrationMethod = (typeof CALIBRATION_METHODS)[number];
+
+/**
+ * `good` and `usable` yield coordinates; `failed` yields none. A coordinate-derived
+ * metric under a failed calibration is suppressed and labelled, never emitted with
+ * a caveat (docs/vision/09 § Calibration).
+ */
+export const CALIBRATION_QUALITIES = ["good", "usable", "failed"] as const;
+export type CalibrationQuality = (typeof CALIBRATION_QUALITIES)[number];
+
+/** One clicked landmark: where it is in the picture, and which pitch landmark it is. */
+export type CalibrationPoint = { landmark: string; px: number; py: number; frameIndex?: number };
+
+export type PitchCalibration = {
+  cameraSegmentId: string;
+  pitch: PitchDimensions;
+  method: CalibrationMethod;
+  modelVersionId?: string | null;
+  points: CalibrationPoint[];
+  homography: Homography;
+  reprojectionErrorM: number;
+  maxPointErrorM: number;
+  reprojectionErrorPx: number;
+  quality: CalibrationQuality;
+  thresholdsVersion: string;
 };
