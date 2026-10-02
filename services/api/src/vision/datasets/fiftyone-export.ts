@@ -1,3 +1,9 @@
+import {
+  validateAnnotationBoxes,
+  type AnnotationBox,
+  type BoxProblem,
+} from "@dtp/vision-contracts";
+
 /**
  * A frozen dataset version, in the shape FiftyOne loads.
  *
@@ -54,10 +60,19 @@ export type ExportLabel = {
   decision: string | null;
   reviewerId: string | null;
   preLabelled: boolean;
+  /** Which model drew the starting labels, when one did. A box may credit only it. */
+  preLabelModelVersionId: string | null;
   effortMinutes: number | null;
   /** The annotator's own doubt, recorded with the labels. */
   uncertain: boolean;
   notes: string | null;
+  /**
+   * The payload's `boxes`, exactly as stored. Validated here with the same rule
+   * the submit path applied, because a payload can be written behind the
+   * service's back and a box that slipped past would train a detector on a frame
+   * the annotator never saw.
+   */
+  boxes?: unknown;
   /**
    * The window as the *payload* recorded it.
    *
@@ -117,6 +132,12 @@ export const FATAL_EXPORT_PROBLEMS = [
   "payload_missing",
   /** The stored labels no longer hash to the checksum recorded at submission. */
   "payload_checksum_mismatch",
+  /** The payload's boxes fail the rule the submit path applies. */
+  "boxes_invalid",
+  /** A box sits on a frame before the proxy begins. */
+  "box_before_proxy_start",
+  /** A box sits on a frame past the proxy's last. */
+  "box_past_proxy_end",
 ] as const;
 export type FatalExportProblem = (typeof FATAL_EXPORT_PROBLEMS)[number];
 
@@ -138,6 +159,19 @@ export type TemporalDetection = {
   confidence: null;
 } & Record<string, unknown>;
 
+/** One box on one frame, in FiftyOne's `Detection` shape plus provenance. */
+export type FrameDetection = {
+  _cls: "Detection";
+  label: string;
+  /** `[x, y, width, height]`, relative to the frame, top-left origin. */
+  bounding_box: [number, number, number, number];
+  confidence: null;
+} & Record<string, unknown>;
+
+export type FrameLabels = {
+  detections: { _cls: "Detections"; detections: FrameDetection[] };
+};
+
 export type FiftyOneSample = {
   filepath: string;
   /** FiftyOne's idiom for a split. `dataset.match_tags("train")` is how it is read. */
@@ -151,6 +185,11 @@ export type FiftyOneSample = {
     duration: number | null;
   };
   annotations: { _cls: "TemporalDetections"; detections: TemporalDetection[] } | null;
+  /**
+   * Per-frame boxes, keyed by FiftyOne's 1-based frame number. Empty when the
+   * member's labels carry none -- which every Phase 2 payload does.
+   */
+  frames: Record<string, FrameLabels>;
   provenance: Record<string, unknown>;
 };
 
@@ -179,6 +218,13 @@ export type ExportQaReport = {
   uncertainLabels: number;
   preLabelledLabels: number;
   labelledMinutes: number;
+  /** Box-level ground truth, which is what a detector is actually scored against. */
+  boxes: number;
+  boxesByClass: Record<string, number>;
+  framesWithBoxes: number;
+  /** Boxes a model drew and the annotator kept. The anchoring question, measured. */
+  boxesFromModel: number;
+  boxesUncertain: number;
   problems: ExportProblem[];
 };
 
@@ -272,6 +318,11 @@ export function buildFiftyOneExport(input: {
   let labelledMs = 0;
   let excludedRejected = 0;
   let excludedUnreviewed = 0;
+  let totalBoxes = 0;
+  let boxesFromModel = 0;
+  let boxesUncertain = 0;
+  let framesWithBoxes = 0;
+  const boxesByClass: Record<string, number> = {};
 
   const fail = (kind: FatalExportProblem, member: ExportMember, detail: string, versionId?: string) =>
     problems.push({
@@ -313,6 +364,7 @@ export function buildFiftyOneExport(input: {
     }
 
     const detections: TemporalDetection[] = [];
+    const frames: Record<string, FrameLabels> = {};
     const lastFrame = proxyFrameCount(member.proxy);
 
     for (const label of member.labels) {
@@ -397,6 +449,53 @@ export function buildFiftyOneExport(input: {
         continue;
       }
 
+      /* The boxes, under the same rule the submit path applied. The window is the
+         task row's, which the drift check above has just proved the payload agrees
+         with. */
+      const checked = validateAnnotationBoxes(
+        label.boxes,
+        { startMs: label.sourceStartMs, endMs: label.sourceEndMs },
+        { preLabelModelVersionId: label.preLabelModelVersionId }
+      );
+      if (checked.problems.length) {
+        fail(
+          "boxes_invalid",
+          member,
+          `${checked.problems.length} box problem(s): ${summariseBoxProblems(checked.problems)}`,
+          label.annotationVersionId
+        );
+        continue;
+      }
+      const placed = placeBoxes(checked.boxes, member.proxy.sourceOffsetMs, fps, lastFrame);
+      if (placed.problem) {
+        fail(placed.problem.kind, member, placed.problem.detail, label.annotationVersionId);
+        continue;
+      }
+      for (const [frameNumber, boxes] of placed.byFrame) {
+        const key = String(frameNumber);
+        frames[key] ??= { detections: { _cls: "Detections", detections: [] } };
+        for (const box of boxes) {
+          frames[key].detections.detections.push({
+            _cls: "Detection",
+            label: box.class,
+            bounding_box: [box.x, box.y, box.width, box.height],
+            confidence: null,
+            uncertain: box.uncertain === true,
+            from_model_version_id: box.fromModelVersionId ?? null,
+            source_time_ms: box.sourceTimeMs,
+            annotation_version_id: label.annotationVersionId,
+            task_id: label.taskId,
+            annotator_id: label.annotatorId,
+            reviewer_id: label.reviewerId,
+            review_decision: decision,
+          });
+          totalBoxes += 1;
+          boxesByClass[box.class] = (boxesByClass[box.class] ?? 0) + 1;
+          if (box.fromModelVersionId) boxesFromModel += 1;
+          if (box.uncertain) boxesUncertain += 1;
+        }
+      }
+
       detections.push({
         _cls: "TemporalDetection",
         label: detectionLabel(label),
@@ -430,6 +529,7 @@ export function buildFiftyOneExport(input: {
     }
 
     if (!detections.length) unlabelled.push(member.videoAssetId);
+    framesWithBoxes += Object.keys(frames).length;
 
     samples.push({
       filepath: member.proxy.objectKey,
@@ -443,6 +543,7 @@ export function buildFiftyOneExport(input: {
         duration: member.proxy.durationMs === null ? null : member.proxy.durationMs / 1000,
       },
       annotations: detections.length ? { _cls: "TemporalDetections", detections } : null,
+      frames,
       provenance: {
         video_asset_id: member.videoAssetId,
         split,
@@ -498,6 +599,11 @@ export function buildFiftyOneExport(input: {
     uncertainLabels,
     preLabelledLabels,
     labelledMinutes: Number((labelledMs / 60_000).toFixed(2)),
+    boxes: totalBoxes,
+    boxesByClass,
+    framesWithBoxes,
+    boxesFromModel,
+    boxesUncertain,
     problems,
   };
 
@@ -516,9 +622,62 @@ export function buildFiftyOneExport(input: {
           "filepath values are object keys in the `derived` bucket, not local paths. Resolve them against the bucket before loading.",
         time_base_note:
           "TemporalDetection.support is in PROXY frames, 1-based and inclusive. source_start_ms and source_end_ms on each detection are the original SOURCE-time window.",
+        box_note:
+          "frames[n].detections holds per-frame Detection boxes with bounding_box = [x, y, width, height] relative to the proxy frame, top-left origin. n is the 1-based PROXY frame number; source_time_ms on each box is the SOURCE time of that frame.",
       },
     },
     samples,
     qa,
   };
+}
+
+/**
+ * Put each box on its proxy frame, or say which one cannot be placed.
+ *
+ * The same conversion as the window: shift by the proxy's offset, floor to a
+ * frame, number from 1. Unlike a window, a box names one frame, so there is no
+ * inclusive end to get wrong -- but there are still two edges to fall off.
+ */
+function placeBoxes(
+  boxes: AnnotationBox[],
+  sourceOffsetMs: number,
+  fps: number,
+  lastFrame: number | null
+): {
+  byFrame: Map<number, AnnotationBox[]>;
+  problem: { kind: "box_before_proxy_start" | "box_past_proxy_end"; detail: string } | null;
+} {
+  const byFrame = new Map<number, AnnotationBox[]>();
+  for (const box of boxes) {
+    const proxyMs = box.sourceTimeMs - sourceOffsetMs;
+    if (proxyMs < 0) {
+      return {
+        byFrame,
+        problem: {
+          kind: "box_before_proxy_start",
+          detail: `A box at source ${box.sourceTimeMs}ms is ${-proxyMs}ms before this proxy begins.`,
+        },
+      };
+    }
+    const frameNumber = frameIndexAt(proxyMs, fps) + 1;
+    if (lastFrame !== null && frameNumber > lastFrame) {
+      return {
+        byFrame,
+        problem: {
+          kind: "box_past_proxy_end",
+          detail: `A box at source ${box.sourceTimeMs}ms lands on frame ${frameNumber}, past the proxy's last frame (${lastFrame}).`,
+        },
+      };
+    }
+    const list = byFrame.get(frameNumber);
+    if (list) list.push(box);
+    else byFrame.set(frameNumber, [box]);
+  }
+  return { byFrame, problem: null };
+}
+
+function summariseBoxProblems(problems: BoxProblem[]): string {
+  const shown = problems.slice(0, 3).map((p) => p.detail);
+  const more = problems.length - shown.length;
+  return shown.join("; ") + (more > 0 ? `; and ${more} more` : "");
 }

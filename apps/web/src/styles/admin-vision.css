@@ -452,3 +452,99 @@
     max-height: none;
   }
 }
+
+/* ── Boxes on the stage ──────────────────────────────────────────────────── */
+
+/* The stage is the positioning context for the boxes, which are laid out in
+   percentages of the picture so they follow it at any size. The video keeps its own
+   aspect ratio (width 100%, height auto), so there is no letterbox to correct for. */
+.vision-stage {
+  cursor: crosshair;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+}
+
+.vision-stage--playing {
+  cursor: default;
+}
+
+.vision-stage video {
+  pointer-events: none;
+}
+
+.vision-box {
+  border: 2px solid var(--box-colour, #facc15);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+  cursor: pointer;
+  position: absolute;
+}
+
+.vision-box--player { --box-colour: #facc15; }
+.vision-box--goalkeeper { --box-colour: #34d399; }
+.vision-box--referee { --box-colour: #f472b6; }
+.vision-box--ball { --box-colour: #60a5fa; }
+
+/* A model's suggestion is never drawn like a person's: the reviewer must always see
+   which is which, or they agree with it and its error becomes ground truth. */
+.vision-box--model {
+  border-style: dashed;
+}
+
+.vision-box--uncertain {
+  opacity: 0.7;
+}
+
+.vision-box--selected {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+.vision-box--draft {
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.vision-box__tag {
+  background: var(--box-colour, #facc15);
+  color: #0b0b0b;
+  font-size: 0.62rem;
+  font-weight: 600;
+  left: -2px;
+  line-height: 1.2;
+  padding: 0 0.3em;
+  position: absolute;
+  top: -1.1rem;
+  white-space: nowrap;
+}
+
+.vision-classes {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.vision-classes__pick {
+  border: 2px solid var(--box-colour, #facc15);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.vision-classes__pick.is-active {
+  background: var(--box-colour, #facc15);
+  color: #0b0b0b;
+}
+
+.vision-classes__pick kbd {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.vision-classes__pick em {
+  font-style: normal;
+  margin-left: 0.35em;
+  opacity: 0.75;
+}

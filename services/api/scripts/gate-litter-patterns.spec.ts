@@ -43,6 +43,7 @@ describe("names a gate generated", () => {
     expect(GATE_PARTNER.pattern.test("Dataset gate 417d1577")).toBe(true);
     expect(GATE_PARTNER.pattern.test("Annotation gate 417d1577")).toBe(true);
     expect(GATE_PARTNER.pattern.test("Model registry gate 417d1577")).toBe(true);
+    expect(GATE_PARTNER.pattern.test("Boxes gate 417d1577")).toBe(true);
   });
 });
 

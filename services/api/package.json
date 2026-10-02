@@ -33,6 +33,7 @@
     "vision:datasetcheck": "tsx scripts/vision-dataset-check.ts",
     "vision:catalogcheck": "tsx scripts/vision-catalog-check.ts",
     "vision:modelcheck": "tsx scripts/vision-model-registry-check.ts",
+    "vision:boxcheck": "tsx scripts/vision-boxes-check.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
     "db:sync:timeline-squad-numbers": "tsx scripts/sync-timeline-squad-numbers.ts",

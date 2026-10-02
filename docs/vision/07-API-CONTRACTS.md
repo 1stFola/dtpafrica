@@ -157,6 +157,14 @@ frozen version's gold — the same three refusals the export makes, because regi
 is how a training run would be *recorded*. There is no route that changes a version's `stage`
 until the benchmark ledger exists to justify one.
 
+`POST /vision/annotation/tasks/:id/submit` accepts `boxes` in the payload: each
+`{ sourceTimeMs, class, x, y, width, height, uncertain?, fromModelVersionId? }`, with the time
+in SOURCE milliseconds inside the task's half-open window, the class one of the contract's
+four, and the geometry normalised to the proxy frame. A bad box set is `400 InvalidBoxes`
+with every problem and its index; nothing is written. The same rule
+(`validateAnnotationBoxes` in the contracts) runs again at export, where a failure is
+`boxes_invalid`. See [29-PHASE-3-INCREMENT-2.md](./29-PHASE-3-INCREMENT-2.md).
+
 `POST /vision/jobs` accepts `modelVersionId` for a model-bound job type (`MODEL_TASK_BY_JOB_TYPE`
 in the contracts). Omitted, the single `production` version for the task is used; with none, the
 job is refused (`NoProductionModel`) rather than run against whichever version happened to exist.
