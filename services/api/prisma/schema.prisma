@@ -1446,12 +1446,42 @@ model VisionTrack {
   artifactKey       String  @map("artifact_key")
   createdAt         DateTime @default(now()) @map("created_at")
 
-  videoAsset   VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
-  inferenceJob VisionJob        @relation(fields: [inferenceJobId], references: [id], onDelete: Cascade)
+  videoAsset      VisionVideoAsset       @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  inferenceJob    VisionJob              @relation(fields: [inferenceJobId], references: [id], onDelete: Cascade)
+  teamAssignments VisionTeamAssignment[]
 
   @@unique([inferenceJobId, localTrackId])
   @@index([videoAssetId, class])
   @@map("vision_tracks")
+}
+
+/// Which side a track is on, by kit appearance, as a machine proposed it.
+///
+/// One row per (track, identify job): a re-run proposes anew rather than editing.
+/// `team` is null when the clustering could not say, and null is a correct answer.
+/// Review corrections supersede, never overwrite, like every other prediction.
+model VisionTeamAssignment {
+  id             String  @id @default(uuid())
+  trackId        String  @map("track_id")
+  inferenceJobId String  @map("inference_job_id")
+  /// A | B | null. Sides as clusters; the roster says which is which, later.
+  team           String?
+  confidence     Float?
+  /// kit_cluster | kit_outlier | not_clustered | manual
+  method         String
+  /// Dominant kit colour the cluster was named by, for a reviewer's eye.
+  kitDescription String? @map("kit_description")
+  identifyVersionId String? @map("identify_version_id")
+  /// unreviewed | accepted | corrected | rejected
+  reviewState    String  @default("unreviewed") @map("review_state")
+  supersededBy   String? @map("superseded_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  track VisionTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([trackId, inferenceJobId])
+  @@index([inferenceJobId])
+  @@map("vision_team_assignments")
 }
 
 /// Append-only job log. Never updated, so a failure can be reconstructed.

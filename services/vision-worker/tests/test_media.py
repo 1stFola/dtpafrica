@@ -72,3 +72,10 @@ def test_the_settings_hash_changes_when_the_recipe_does(monkeypatch) -> None:
     before = media.settings_hash()
     monkeypatch.setattr(media, "PROXY_CRF", 18)
     assert media.settings_hash() != before
+
+
+def test_a_frame_is_sought_half_a_frame_early_so_rounding_cannot_skip_it() -> None:
+    """FFmpeg keeps the first frame at or after the seek point; half a frame early lands on n."""
+    assert media.frame_seek_seconds(0, 25) == 0.0
+    assert media.frame_seek_seconds(1, 25) == 0.02
+    assert media.frame_seek_seconds(29, 25) == 1.14

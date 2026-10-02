@@ -24,6 +24,10 @@ export class VisionTracksController {
       where: { videoAssetId, ...(jobId ? { inferenceJobId: jobId } : {}), ...(cls ? { class: cls } : {}) },
       orderBy: [{ inferenceJobId: "desc" }, { startMs: "asc" }, { localTrackId: "asc" }],
       take: 2000,
+      include: {
+        // The latest proposal only; corrections supersede rather than edit.
+        teamAssignments: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
     });
     const byClass: Record<string, number> = {};
     for (const t of tracks) byClass[t.class] = (byClass[t.class] ?? 0) + 1;

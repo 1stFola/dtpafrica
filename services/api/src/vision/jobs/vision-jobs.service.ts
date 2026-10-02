@@ -11,7 +11,9 @@ import {
   DETECTION_ARTIFACT_ROLE,
   JOB_TYPE_PREREQUISITES,
   MIN_TRACK_SAMPLE_FPS,
+  TRACK_ARTIFACT_ROLE,
   visionKeys,
+  type IdentifyJobParams,
   type TrackJobParams,
   type VisionJobType,
   type VisionResourceClass,
@@ -104,6 +106,7 @@ export class VisionJobsService {
     // Any stage that, however indirectly, follows transcode reads the proxy.
     const proxy = dependsOn(params.type, "transcode") ? await this.proxyClock(asset.id) : null;
     const track = params.type === "track" ? await this.trackInputs(asset.id, params.params) : null;
+    const identify = params.type === "identify" ? await this.identifyInputs(asset.id, params.params) : null;
 
     const resourceClass = params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type];
 
@@ -124,6 +127,7 @@ export class VisionJobsService {
         ...(params.params ?? {}),
         ...(proxy ? { proxy } : {}),
         ...(track ?? {}),
+        ...(identify ?? {}),
       },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
       outputPrefix: visionKeys.inferencePrefix(id, 1),
@@ -194,6 +198,39 @@ export class VisionJobsService {
     }
     return {
       detections: { jobId: job.id, key: artifact.key, modelVersionId: job.modelVersionId, sampleFps },
+      readKeys: [{ bucket: "derived", key: artifact.key }],
+    };
+  }
+
+  /**
+   * The track artifact an identify job assigns teams on: the latest succeeded
+   * track job for the asset, or the one named in `params.trackJobId`, declared
+   * on the job so the worker may read it and nothing else.
+   */
+  private async identifyInputs(
+    videoAssetId: string,
+    requested: Record<string, unknown> | undefined
+  ): Promise<IdentifyJobParams> {
+    const wanted = typeof requested?.trackJobId === "string" ? requested.trackJobId : null;
+    const job = await this.prisma.visionJob.findFirst({
+      where: { type: "track", state: "succeeded", videoAssetId, ...(wanted ? { id: wanted } : {}) },
+      orderBy: { finishedAt: "desc" },
+      select: { id: true, modelVersionId: true, progress: true },
+    });
+    const progress = (job?.progress ?? null) as { artifacts?: { key: string; bucket: string; role: string }[] } | null;
+    const artifact = progress?.artifacts?.find((a) => a.role === TRACK_ARTIFACT_ROLE && a.bucket === "derived");
+    if (!job || !artifact || !job.modelVersionId) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "TracksMissing",
+        message: wanted
+          ? `Track job ${wanted} did not succeed for this asset, or reported no tracks artifact.`
+          : "No succeeded track job with a tracks artifact exists for this asset.",
+        remediation: "Queue track for the asset, then identify.",
+      });
+    }
+    return {
+      tracks: { jobId: job.id, key: artifact.key, trackerVersionId: job.modelVersionId },
       readKeys: [{ bucket: "derived", key: artifact.key }],
     };
   }

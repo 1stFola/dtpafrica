@@ -30,8 +30,13 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * boxes as before; `track` scores track artifacts against gold tracks (boxes linked by
  * `trackId`, exported as FiftyOne `index`) with MOTA, IDF1, identity switches and
  * fragmentations.
+ *
+ * 1.5.0 -- `identify` exists: a CPU stage that assigns a team to each track by kit
+ * appearance, clustered per match. Model-bound to an `identify` version (an
+ * algorithm with parameters), reading the proxy by role and the one track artifact by
+ * declared key.
  */
-export const VISION_CONTRACT_VERSION = "1.4.0";
+export const VISION_CONTRACT_VERSION = "1.5.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -73,7 +78,8 @@ export const DEFAULT_RESOURCE_CLASS: Record<VisionJobType, VisionResourceClass> 
   detect: "gpu_24gb",
   // Association over stored detections is arithmetic; see `benchmark`.
   track: "cpu_small",
-  identify: "gpu_24gb",
+  // Kit colour over a few decoded frames per track is arithmetic; see `benchmark`.
+  identify: "cpu_small",
   calibrate: "gpu_24gb",
   gamestate: "cpu_small",
   events: "cpu_small",
@@ -142,10 +148,13 @@ export const MODEL_TASK_BY_JOB_TYPE: Partial<Record<VisionJobType, VisionModelTa
   // registered as a model version all the same: every track names the tracker that
   // made it, or it cannot be reproduced or rolled back.
   track: "track",
+  // Kit clustering is an algorithm with parameters; it is a version so that every
+  // team assignment names what made it.
+  identify: "identify",
 };
 
 /** What a `VisionModel` is for. One task per model; a version inherits it. */
-export const VISION_MODEL_TASKS = ["detect", "track", "calibrate", "event", "vlm"] as const;
+export const VISION_MODEL_TASKS = ["detect", "track", "identify", "calibrate", "event", "vlm"] as const;
 export type VisionModelTask = (typeof VISION_MODEL_TASKS)[number];
 
 /** Registry lifecycle. Promotion rules are in docs/vision/10-EVALUATION-AND-GATES.md. */
@@ -432,3 +441,35 @@ export type TrackRecord = {
 
 /** The compact per-track index a `track` completion carries; the positions stay in the artifact. */
 export type TrackSummaryRow = Omit<TrackRecord, "positions">;
+
+// ── Identity: team assignment ───────────────────────────────────────────────
+
+/** Role of the artifact an `identify` job writes. */
+export const IDENTITY_ARTIFACT_ROLE = "identity";
+
+/** The two sides, as clusters. Which is which in football terms is the roster's job, later. */
+export const TEAM_LABELS = ["A", "B"] as const;
+export type TeamLabel = (typeof TEAM_LABELS)[number];
+
+/** What an `identify` job is given under `inputs.params`, beside the proxy clock. */
+export type IdentifyJobParams = {
+  tracks: { jobId: string; key: string; trackerVersionId: string };
+  readKeys: { bucket: "derived" | "models"; key: string }[];
+};
+
+/**
+ * One track's team, as the clustering saw it. `team` is null when the margin
+ * between the two kits was too small to say -- unknown beats wrong -- and for
+ * classes that are never clustered (goalkeepers, referees).
+ */
+export type TeamAssignmentRow = {
+  localTrackId: number;
+  class: DetectionClass;
+  team: TeamLabel | null;
+  /** 0-1: how much nearer the track's kit is to its team than to the other. */
+  confidence: number | null;
+  /** `kit_outlier`: a third kit, far from both sides, set aside rather than forced onto one. */
+  method: "kit_cluster" | "kit_outlier" | "not_clustered";
+  /** Frames the kit was sampled on. */
+  samples: number;
+};

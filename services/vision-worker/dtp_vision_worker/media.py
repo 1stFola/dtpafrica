@@ -291,6 +291,47 @@ def thumbnail(source: Path, target: Path, at_ms: int, timeout: float = 120.0) ->
     )
 
 
+def frame_seek_seconds(frame_index: int, fps: float) -> float:
+    """Where to seek so the first frame decoded is `frame_index`.
+
+    FFmpeg keeps the first frame whose timestamp is at or after the seek point. A
+    seek to exactly `n / fps` lands on frame n or n+1 depending on rounding in the
+    container's timebase; a seek to half a frame before it lands on n every time.
+    """
+    return max(0.0, (frame_index - 0.5) / fps)
+
+
+def decode_frame(source: Path, frame_index: int, fps: float, timeout: float = 120.0) -> tuple[int, int, bytes]:
+    """One proxy frame at its native size as raw RGB bytes: (width, height, pixels).
+
+    Native rather than scaled, because the boxes a caller brings are in the proxy's
+    own pixels and the proxy's width is not written in a detect artifact; the frame
+    itself says how wide it is. The caller samples a handful of frames per track,
+    so a match costs hundreds of decodes rather than a hundred thousand.
+    """
+    probed = probe(source, timeout)
+    width = probed.width
+    if not width:
+        raise MediaError("the proxy reports no width; its frames cannot be read")
+    out = _run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-ss", f"{frame_seek_seconds(frame_index, fps):.3f}",
+            "-i", str(source),
+            "-frames:v", "1",
+            "-f", "rawvideo",
+            "-pix_fmt", "rgb24",
+            "-",
+        ],
+        timeout,
+    )
+    data = out.stdout
+    if not data or len(data) % (width * 3) != 0:
+        raise MediaError(f"ffmpeg returned {len(data)} bytes, not a whole {width}-wide RGB frame")
+    return width, len(data) // (width * 3), data
+
+
 def sha256_file(path: Path, chunk: int = 8 * 1024 * 1024) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:

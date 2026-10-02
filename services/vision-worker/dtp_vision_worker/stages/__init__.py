@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from .benchmark import run_benchmark
 from .detect import run_detect
 from .fingerprint import run_fingerprint
+from .identify import run_identify
 from .probe import run_probe
 from .track import run_track
 from .transcode import run_transcode
@@ -36,6 +37,8 @@ STAGES: dict[str, StageHandler] = {
     # CPU: links stored detections frame to frame. No model stack; an algorithm
     # registered as one, so every track names its tracker.
     "track": run_track,
+    # CPU: a few decoded frames per track, a colour histogram each, two clusters.
+    "identify": run_identify,
     # GPU. Imports torch lazily inside the handler, so the CPU image can load this
     # registry without the model stack installed.
     "detect": run_detect,
@@ -46,7 +49,7 @@ STAGES: dict[str, StageHandler] = {
 #: Named rather than inferred, because the consequence of getting it wrong is a cost
 #: rather than an error: FFmpeg on a GPU pod works perfectly and bills at GPU rates.
 #: `tests/test_contract.py` checks both of these against the contract's routing table.
-CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track"})
+CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track", "identify"})
 
 #: Stages that need CUDA and the model stack, and so only run on the GPU image.
 GPU_STAGES = frozenset({"detect"})
@@ -63,6 +66,7 @@ __all__ = [
     "run_benchmark",
     "run_detect",
     "run_fingerprint",
+    "run_identify",
     "run_probe",
     "run_track",
     "run_transcode",
