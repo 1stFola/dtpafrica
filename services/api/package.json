@@ -42,6 +42,7 @@
     "vision:identitycheck": "tsx scripts/vision-identity-check.ts",
     "vision:identitymetricscheck": "tsx scripts/vision-identity-metrics-check.ts",
     "vision:calibrationcheck": "tsx scripts/vision-calibration-check.ts",
+    "vision:cutscheck": "tsx scripts/vision-cuts-check.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
     "db:sync:timeline-squad-numbers": "tsx scripts/sync-timeline-squad-numbers.ts",

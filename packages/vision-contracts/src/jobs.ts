@@ -46,13 +46,19 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * pixels to pitch metres for one camera segment, with its reprojection error and a
  * `CalibrationQuality` the suppression rule reads. Manual first; a `calibrate` stage
  * will write the same shape.
+ *
+ * 1.8.0 -- `cuts` exists: a CPU stage that proposes camera segments from the proxy's
+ * scene changes (`CutsJobParams`, a `cuts` artifact of `CameraCut`s and
+ * `ProposedSegment`s in source time). The control plane files proposals as
+ * `scene_detect` segments beside, never over, the ones a person declared.
  */
-export const VISION_CONTRACT_VERSION = "1.7.0";
+export const VISION_CONTRACT_VERSION = "1.8.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
   "fingerprint",
   "transcode",
+  "cuts",
   "detect",
   "track",
   "identify",
@@ -85,6 +91,8 @@ export const DEFAULT_RESOURCE_CLASS: Record<VisionJobType, VisionResourceClass> 
   probe: "cpu_small",
   fingerprint: "cpu_small",
   transcode: "cpu_small",
+  // FFmpeg's scene-change score over the proxy: a decode, no model.
+  cuts: "cpu_small",
   clip: "cpu_small",
   detect: "gpu_24gb",
   // Association over stored detections is arithmetic; see `benchmark`.
@@ -130,6 +138,7 @@ export const JOB_TYPE_PREREQUISITES: Record<VisionJobType, readonly VisionJobTyp
   probe: [],
   fingerprint: [],
   transcode: ["probe"],
+  cuts: ["transcode"],
   detect: ["transcode"],
   track: ["detect"],
   identify: ["track"],
@@ -329,6 +338,7 @@ export const OUTPUT_BUCKET_BY_JOB_TYPE: Record<VisionJobType, "derived" | "model
   probe: "derived",
   fingerprint: "derived",
   transcode: "derived",
+  cuts: "derived",
   detect: "derived",
   track: "derived",
   identify: "derived",
@@ -541,3 +551,25 @@ export type PitchCalibration = {
   quality: CalibrationQuality;
   thresholdsVersion: string;
 };
+
+// ── Camera cuts ─────────────────────────────────────────────────────────────
+
+/** Role of the artifact a `cuts` job writes. */
+export const CUTS_ARTIFACT_ROLE = "cuts";
+
+/** Who declared a camera segment: a person, or the scene-change filter. */
+export const CAMERA_SEGMENT_SOURCES = ["manual", "scene_detect"] as const;
+export type CameraSegmentSource = (typeof CAMERA_SEGMENT_SOURCES)[number];
+
+/** Optional knobs under `inputs.params`, beside the proxy clock the clock gives every stage after transcode. */
+export type CutsJobParams = {
+  /** Scene-change score, 0-1, at or above which a frame is a cut. Default 0.4. */
+  threshold?: number;
+  /** Segments shorter than this are absorbed into the one before. Default 2000. */
+  minSegmentMs?: number;
+};
+
+export type CameraCut = { proxyMs: number; sourceMs: number; score: number };
+
+/** A proposed camera segment, in source milliseconds, [start, end). */
+export type ProposedSegment = { startMs: number; endMs: number; proxyStartMs: number; proxyEndMs: number };

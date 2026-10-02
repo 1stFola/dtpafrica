@@ -332,6 +332,28 @@ def decode_frame(source: Path, frame_index: int, fps: float, timeout: float = 12
     return width, len(data) // (width * 3), data
 
 
+def scene_changes(source: Path, threshold: float, timeout: float = 7_200.0) -> str:
+    """FFmpeg's stderr with one `showinfo` line per frame whose scene-change score
+    clears `threshold`, and a `metadata` line carrying the score.
+
+    Nothing is encoded (`-f null`): the proxy is decoded once and the filter graph
+    prints what it kept. `dtp_vision_worker.cuts.parse_showinfo` reads the result.
+    """
+    out = _run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-i", str(source),
+            "-vf", f"select='gt(scene,{threshold})',metadata=print,showinfo",
+            "-an",
+            "-f", "null",
+            "-",
+        ],
+        timeout,
+    )
+    return (out.stderr or b"").decode("utf-8", "replace")
+
+
 def sha256_file(path: Path, chunk: int = 8 * 1024 * 1024) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:

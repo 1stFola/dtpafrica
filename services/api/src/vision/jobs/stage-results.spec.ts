@@ -9,6 +9,7 @@ const mockPrisma = {
   visionDuplicateCluster: { create: vi.fn() },
   visionTrack: { createMany: vi.fn(), findMany: vi.fn() },
   visionTeamAssignment: { createMany: vi.fn() },
+  visionCameraSegment: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
   $transaction: vi.fn(),
 };
 
@@ -576,5 +577,61 @@ describe("identify results become team assignments", () => {
 
   it("refuses a completion with no identity artifact", async () => {
     expect((await service().apply("identify", ASSET, { artifacts: [], summary: summary() }, context)).applied).toBe(false);
+  });
+});
+
+/** cuts -> proposed camera segments beside a person's, never over them. */
+describe("cut proposals become camera segments", () => {
+  const artifacts = [{ key: "inference/j/1/cuts.json", bucket: "derived", role: "cuts" }];
+  const summary = (segments: unknown[] = [{ startMs: 9000, endMs: 70200 }, { startMs: 70200, endMs: 189000 }, { startMs: 189000, endMs: 609000 }]) => ({ cuts: 2, segments });
+
+  beforeEach(() => {
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([]);
+    mockPrisma.visionCameraSegment.deleteMany.mockReturnValue("delete-op");
+    mockPrisma.visionCameraSegment.createMany.mockReturnValue("create-op");
+    mockPrisma.$transaction.mockResolvedValue([]);
+  });
+
+  it("writes every proposal as a scene_detect segment of kind unknown", async () => {
+    const outcome = await service().apply("cuts", ASSET, { artifacts, summary: summary() });
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("3 proposed segment(s): 3 new");
+    expect(mockPrisma.visionCameraSegment.createMany.mock.calls[0]![0].data).toEqual([
+      { videoAssetId: ASSET, startMs: 9000, endMs: 70200, kind: "unknown", source: "scene_detect" },
+      { videoAssetId: ASSET, startMs: 70200, endMs: 189000, kind: "unknown", source: "scene_detect" },
+      { videoAssetId: ASSET, startMs: 189000, endMs: 609000, kind: "unknown", source: "scene_detect" },
+    ]);
+    expect(mockPrisma.$transaction.mock.calls[0]![0]).toEqual(["create-op"]);
+  });
+
+  it("skips a proposal that overlaps a segment a person declared, and one a person calibrated", async () => {
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "m", startMs: 60000, endMs: 80000, source: "manual", _count: { calibrations: 0 } },
+      { id: "c", startMs: 200000, endMs: 300000, source: "scene_detect", _count: { calibrations: 1 } },
+    ]);
+    const outcome = await service().apply("cuts", ASSET, { artifacts, summary: summary() });
+    expect(outcome.detail).toContain("0 new");
+    expect(outcome.detail).toContain("3 skipped");
+    expect(mockPrisma.visionCameraSegment.createMany).not.toHaveBeenCalled();
+    expect(mockPrisma.visionCameraSegment.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("replaces earlier uncalibrated proposals and keeps its own on a retry", async () => {
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "old", startMs: 9000, endMs: 50000, source: "scene_detect", _count: { calibrations: 0 } },
+      { id: "same", startMs: 9000, endMs: 70200, source: "scene_detect", _count: { calibrations: 0 } },
+    ]);
+    const outcome = await service().apply("cuts", ASSET, { artifacts, summary: summary() });
+    expect(outcome.detail).toContain("2 new, 1 already there");
+    expect(outcome.detail).toContain("1 earlier proposal(s) replaced");
+    expect(mockPrisma.visionCameraSegment.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["old"] } } });
+    expect(mockPrisma.visionCameraSegment.createMany.mock.calls[0]![0].data.map((d: { startMs: number }) => d.startMs)).toEqual([70200, 189000]);
+  });
+
+  it("refuses a malformed proposal, and a completion with no artifact", async () => {
+    expect((await service().apply("cuts", ASSET, { artifacts, summary: summary([{ startMs: 5, endMs: 5 }]) })).applied).toBe(false);
+    expect((await service().apply("cuts", ASSET, { artifacts: [], summary: summary() })).applied).toBe(false);
+    expect((await service().apply("cuts", ASSET, { artifacts, summary: { cuts: 0 } })).applied).toBe(false);
+    expect(mockPrisma.visionCameraSegment.createMany).not.toHaveBeenCalled();
   });
 });
