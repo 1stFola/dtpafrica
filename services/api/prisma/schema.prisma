@@ -68,6 +68,8 @@ model Player {
   /// Per-player consent, which overrides a partner-wide grant. Virtual field:
   /// the foreign key lives on the Vision side, so this table is unchanged.
   visionRightsScopes    VisionRightsScope[]
+  /// Who a Vision track was said to be. Foreign key on the Vision side; see docs/vision/35.
+  visionIdentities      VisionIdentityAssignment[]
 
   @@index([academyId])
   @@index([positionPrimary])
@@ -1412,6 +1414,7 @@ model VisionJob {
   events         VisionJobEvent[]
   cost           VisionJobCost?
   tracks         VisionTrack[]
+  teamSides      VisionTeamSide[]
 
   /// The claim index: state, class and priority are exactly what the
   /// SKIP LOCKED claim query filters and orders by.
@@ -1446,9 +1449,10 @@ model VisionTrack {
   artifactKey       String  @map("artifact_key")
   createdAt         DateTime @default(now()) @map("created_at")
 
-  videoAsset      VisionVideoAsset       @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
-  inferenceJob    VisionJob              @relation(fields: [inferenceJobId], references: [id], onDelete: Cascade)
+  videoAsset      VisionVideoAsset           @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  inferenceJob    VisionJob                  @relation(fields: [inferenceJobId], references: [id], onDelete: Cascade)
   teamAssignments VisionTeamAssignment[]
+  identities      VisionIdentityAssignment[]
 
   @@unique([inferenceJobId, localTrackId])
   @@index([videoAssetId, class])
@@ -1482,6 +1486,62 @@ model VisionTeamAssignment {
   @@unique([trackId, inferenceJobId])
   @@index([inferenceJobId])
   @@map("vision_team_assignments")
+}
+
+/// Which of the match's two teams a kit cluster is, as a person decided it.
+///
+/// Clusters are per identify job (a re-run may swap A and B), so the decision is
+/// per job too. Both rows are written together and only by a signed-in person.
+model VisionTeamSide {
+  id             String   @id @default(uuid())
+  inferenceJobId String   @map("inference_job_id")
+  /// A | B
+  team           String
+  sbTeamId       String   @map("sb_team_id")
+  decidedBy      String   @map("decided_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  inferenceJob VisionJob @relation(fields: [inferenceJobId], references: [id], onDelete: Cascade)
+
+  @@unique([inferenceJobId, team])
+  @@map("vision_team_sides")
+}
+
+/// Who a track is, for a window of it, as a person said -- never as a machine said.
+///
+/// `playerId` null means unknown, and unknown is a correct answer: nothing here may
+/// pressure it toward a guess. The window makes identity time-aware: one track may
+/// carry two people in turn (a split), and one person may span several tracks (a
+/// merge, written as `propagated` rows). A new assignment supersedes every current
+/// one its window overlaps; nothing is edited. Public attribution reads only rows a
+/// *second* person accepted.
+model VisionIdentityAssignment {
+  id                 String   @id @default(uuid())
+  trackId            String   @map("track_id")
+  playerId           String?  @map("player_id")
+  /// The roster slot in this match the assignment names; null for unknown.
+  matchSquadPlayerId String?  @map("match_squad_player_id")
+  sbTeamSquadId      String?  @map("sb_team_squad_id")
+  sbTeamId           String?  @map("sb_team_id")
+  confidence         Float
+  /// manual | propagated. `jersey` and `roster_constraint` are reserved for machine proposals, later.
+  method             String
+  validFromMs        Int      @map("valid_from_ms")
+  validToMs          Int      @map("valid_to_ms")
+  /// unreviewed | accepted | rejected
+  reviewState        String   @default("unreviewed") @map("review_state")
+  decidedBy          String   @map("decided_by")
+  reviewedBy         String?  @map("reviewed_by")
+  note               String?
+  supersededBy       String?  @map("superseded_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  track  VisionTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  player Player?     @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([trackId])
+  @@index([playerId])
+  @@map("vision_identity_assignments")
 }
 
 /// Append-only job log. Never updated, so a failure can be reconstructed.
