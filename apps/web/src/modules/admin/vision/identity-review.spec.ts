@@ -64,7 +64,7 @@ describe("what window an action covers", () => {
 
 describe("how things are described", () => {
   const c = (over: Partial<VisionRosterCandidate> = {}): VisionRosterCandidate => ({
-    matchSquadPlayerId: "s1", playerId: "p1", name: "Ada Obi", jerseyNumber: 7, position: "FW", isStarter: true, sbTeamId: "home", sbTeamSquadId: null, ...over,
+    matchSquadPlayerId: "s1", playerId: "p1", name: "Ada Obi", jerseyNumber: 7, position: "FW", isStarter: true, sbTeamId: "home", sbTeamSquadId: null, onPitch: null, ...over,
   });
 
   it("finds a candidate by exact number or by part of a name", () => {
@@ -112,7 +112,7 @@ describe("how things are described", () => {
   const track = (over: Partial<VisionReviewTrack> = {}): VisionReviewTrack => ({
     id: "t1", localTrackId: 1, inferenceJobId: "job-i", artifactKey: "k", class: "player", startMs: 9000, endMs: 19000,
     team: { team: "A", confidence: 0.9, method: "kit_cluster", kitDescription: "red", reviewState: "unreviewed", inferenceJobId: "job-i" },
-    sbTeamId: "home", identities: [], ...over,
+    sbTeamId: "home", matchClock: null, identities: [], ...over,
   });
 
   it("labels a track's side with its kit and the team a person said it is", () => {

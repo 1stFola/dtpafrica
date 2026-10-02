@@ -32,6 +32,7 @@ export const VISION_AUDIT_ACTIONS = [
   "camera.segment.declared",
   "camera.segment.removed",
   "calibration.set",
+  "clock.anchored",
   "annotation.schema.published",
   "annotation.task.created",
   "annotation.task.abandoned",

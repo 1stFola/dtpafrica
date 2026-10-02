@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  anchorVisionClock,
   calibrateVisionSegment,
   declareVisionCameraSegment,
+  fetchVisionClock,
   fetchVisionCameraSegments,
   fetchVisionPitchLandmarks,
   fetchVisionReviewMedia,
@@ -12,6 +14,7 @@ import {
   type VisionCalibrationPoint,
   type VisionCalibrationPreview,
   type VisionCameraSegments,
+  type VisionClockAnchor,
   type VisionPitchDimensions,
   type VisionPitchLandmark,
   type VisionReviewMedia,
@@ -19,6 +22,7 @@ import {
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
+import { HALF_NAMES, describeClock, nextHalfToAnchor } from "./match-clock";
 import { usePictureRect } from "./use-picture-rect";
 import {
   clickToProxyPixel,
@@ -52,6 +56,12 @@ export function AdminVisionCalibrationPage() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [media, setMedia] = useState<VisionReviewMedia | null>(null);
   const [segments, setSegments] = useState<VisionCameraSegments | null>(null);
+  const [anchors, setAnchors] = useState<VisionClockAnchor[]>([]);
+  const [half, setHalf] = useState(1);
+  /* The half picker is set once, to the first half without an anchor, and then
+     stays where the reviewer put it: marking a half's end must not find the picker
+     moved on to the next half by the kick-off they just filed. */
+  const halfPicked = useRef(false);
   const [landmarks, setLandmarks] = useState<VisionPitchLandmark[]>([]);
   const [pitch, setPitch] = useState<VisionPitchDimensions>({ lengthM: 105, widthM: 68 });
   const [points, setPoints] = useState<VisionCalibrationPoint[]>([]);
@@ -68,7 +78,13 @@ export function AdminVisionCalibrationPage() {
 
   const loadSegments = useCallback(async () => {
     try {
-      setSegments(await fetchVisionCameraSegments(assetId));
+      const [s, c] = await Promise.all([fetchVisionCameraSegments(assetId), fetchVisionClock(assetId)]);
+      setSegments(s);
+      setAnchors(c.anchors);
+      if (!halfPicked.current) {
+        setHalf(nextHalfToAnchor(c.anchors));
+        halfPicked.current = true;
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -312,6 +328,10 @@ export function AdminVisionCalibrationPage() {
               <strong className="vision-mono">{formatClock(proxyMs)}</strong>
             </div>
             <div>
+              <span className="vision-clocks__label">Match clock</span>
+              <strong className="vision-mono">{describeClock(anchors, sourceMs)}</strong>
+            </div>
+            <div>
               <span className="vision-clocks__label">Segment here</span>
               <strong>{current ? describeSegment(current, formatClock) : "none"}</strong>
             </div>
@@ -388,6 +408,49 @@ export function AdminVisionCalibrationPage() {
                 );
               })}
             </ul>
+          </section>
+
+          <section className="vision-panel">
+            <h3 className="vision-panel__title">Match clock</h3>
+            {anchors.length ? (
+              <ul className="vision-candidates">
+                {anchors.map((a) => (
+                  <li key={a.half} className="vision-sub">
+                    {HALF_NAMES[a.half] ?? `half ${a.half}`}: kick-off {formatClock(a.sourceMs)}
+                    {a.endMs !== null ? `, ends ${formatClock(a.endMs)}` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="vision-footnote">Not anchored. Pause on the whistle and mark the kick-off; substitutions and every match minute depend on it.</p>
+            )}
+            <div className="vision-row">
+              <span className="vision-row__label">Half</span>
+              <span className="vision-row__value">
+                <select value={half} onChange={(e) => setHalf(Number(e.target.value))} aria-label="Half to anchor">
+                  {[1, 2, 3, 4].map((h) => (
+                    <option key={h} value={h}>
+                      {HALF_NAMES[h]}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </div>
+            <div className="vision-actions">
+              <button type="button" disabled={busy} onClick={() => void run(`${HALF_NAMES[half]} kicks off at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: Math.round(sourceMs) }))}>
+                Kick-off is here
+              </button>
+              <button
+                type="button"
+                disabled={busy || !anchors.some((a) => a.half === half)}
+                onClick={() => {
+                  const a = anchors.find((x) => x.half === half)!;
+                  void run(`${HALF_NAMES[half]} ends at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: a.sourceMs, endMs: Math.round(sourceMs) }));
+                }}
+              >
+                Half ends here
+              </button>
+            </div>
           </section>
 
           <section className="vision-panel">

@@ -26,6 +26,8 @@ import { VisionIdentityController } from "./identity/identity.controller";
 import { VisionIdentityService } from "./identity/identity.service";
 import { VisionCalibrationController } from "./calibration/calibration.controller";
 import { VisionCalibrationService } from "./calibration/calibration.service";
+import { VisionClockController } from "./clock/clock.controller";
+import { VisionClockService } from "./clock/clock.service";
 import { JOB_QUEUE } from "./jobs/job-queue";
 import { PostgresJobQueue } from "./jobs/postgres-job-queue";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
@@ -109,6 +111,7 @@ const computeRegistryProvider: Provider = {
     VisionTracksController,
     VisionIdentityController,
     VisionCalibrationController,
+    VisionClockController,
   ],
   providers: [
     configProvider,
@@ -129,6 +132,7 @@ const computeRegistryProvider: Provider = {
     VisionPromotionsService,
     VisionIdentityService,
     VisionCalibrationService,
+    VisionClockService,
     // A third auth stack, unrelated to admin sessions and worker tokens.
     PartnerUploadGuard,
     // Worker auth is a separate stack from admin auth on purpose: a worker token

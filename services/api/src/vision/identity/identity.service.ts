@@ -9,6 +9,8 @@ import type { Prisma } from "@prisma/client";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
+import { VisionClockService } from "../clock/clock.service";
+import { clockAt, onPitchFor, parseSubstitution, windowOnClock, type OnPitch } from "../clock/match-clock";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 
@@ -43,6 +45,8 @@ export type RosterCandidate = {
   isStarter: boolean;
   sbTeamId: string;
   sbTeamSquadId: string | null;
+  /** Whether the slot was on the pitch for the track's window, once the clock is anchored. */
+  onPitch: OnPitch | null;
 };
 
 export type AssignIdentityInput = {
@@ -65,6 +69,7 @@ type ParsedArtifact = { trackerVersionId?: string; tracks: { localTrackId: numbe
 
 const CLOCK_NOTE =
   "The match clock is not anchored to the footage, so substitutions are not applied; the whole match squad is listed, starters marked.";
+const CLOCK_APPLIED = "The match clock is anchored; substitutions are applied, and only players on the pitch for the track's window are listed, those crossing a change marked partly.";
 
 @Injectable()
 export class VisionIdentityService {
@@ -72,7 +77,8 @@ export class VisionIdentityService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(VisionAuditService) private readonly audit: VisionAuditService,
     @Inject(OBJECT_STORE) private readonly store: ObjectStore,
-    @Inject(VISION_CONFIG) private readonly config: VisionConfig
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig,
+    @Inject(VisionClockService) private readonly clock: VisionClockService
   ) {}
 
   // ── Sides ────────────────────────────────────────────────────────────────
@@ -135,21 +141,31 @@ export class VisionIdentityService {
 
   /**
    * Who a track could be: the match squad, narrowed to the track's side when a
-   * person has said which team that side is and the kit clustering named one.
-   * `wholeMatch` lifts the narrowing, for a reviewer who is about to say the kit
-   * was read wrongly and needs the other squad in front of them.
+   * person has said which team that side is and the kit clustering named one,
+   * and -- once the match clock is anchored to the footage -- to the players who
+   * were on the pitch for the track's window, substitutions applied from the
+   * match record. A player taken off before the window, or brought on after it,
+   * is not listed; one whose change falls inside the window is listed as
+   * `partly`. `wholeMatch` lifts the side narrowing (not the clock's), for a
+   * reviewer about to say the kit was read wrongly.
    */
   async candidates(trackId: string, wholeMatch = false) {
     const track = await this.loadTrack(trackId);
     const side = await this.sideOf(track);
     const match = await this.matchOf(track.videoAsset.sbMatchId);
     const narrowTo = wholeMatch ? null : side.sbTeamId;
-    const slots = await this.prisma.sbMatchSquadPlayer.findMany({
-      where: { matchId: match.id, ...(narrowTo ? { teamId: narrowTo } : {}) },
-      orderBy: [{ teamId: "asc" }, { isStarter: "desc" }, { jerseyNumber: "asc" }],
-      select: { id: true, playerId: true, playerName: true, jerseyNumber: true, position: true, isStarter: true, teamId: true, squadId: true },
-    });
-    const candidates: RosterCandidate[] = slots.map((s) => ({
+    const [slots, anchors, events] = await Promise.all([
+      this.prisma.sbMatchSquadPlayer.findMany({
+        where: { matchId: match.id, ...(narrowTo ? { teamId: narrowTo } : {}) },
+        orderBy: [{ teamId: "asc" }, { isStarter: "desc" }, { jerseyNumber: "asc" }],
+        select: { id: true, playerId: true, playerName: true, jerseyNumber: true, position: true, isStarter: true, teamId: true, squadId: true },
+      }),
+      this.clock.currentAnchors(track.videoAssetId),
+      this.prisma.sbMatchEvent.findMany({ where: { matchId: match.id, type: "substitution" }, select: { teamId: true, minute: true, playerId: true, detail: true, metadata: true } }),
+    ]);
+    const window = windowOnClock(anchors, track.startMs, track.endMs);
+    const subs = events.map(parseSubstitution).filter((s): s is NonNullable<typeof s> => s !== null);
+    const all: RosterCandidate[] = slots.map((s) => ({
       matchSquadPlayerId: s.id,
       playerId: s.playerId,
       name: s.playerName,
@@ -158,7 +174,9 @@ export class VisionIdentityService {
       isStarter: s.isStarter,
       sbTeamId: s.teamId,
       sbTeamSquadId: s.squadId,
+      onPitch: window ? onPitchFor(s, subs.filter((sub) => sub.teamId === s.teamId), window) : null,
     }));
+    const candidates = window ? all.filter((c) => c.onPitch !== "no") : all;
     return {
       trackId,
       matchId: match.id,
@@ -166,7 +184,8 @@ export class VisionIdentityService {
       sbTeamId: side.sbTeamId,
       narrowedBy: narrowTo ? ("side" as const) : ("match" as const),
       candidates,
-      clock: CLOCK_NOTE,
+      clock: window ? CLOCK_APPLIED : CLOCK_NOTE,
+      window: window ? { ...window, substitutions: subs.length, offPitch: all.length - candidates.length } : null,
     };
   }
 
@@ -358,6 +377,7 @@ export class VisionIdentityService {
     const jobIds = [...new Set(tracks.map((t) => t.teamAssignments[0]?.inferenceJobId).filter((x): x is string => !!x))];
     const sides = jobIds.length ? await this.prisma.visionTeamSide.findMany({ where: { inferenceJobId: { in: jobIds } } }) : [];
     const sideOf = new Map(sides.map((s) => [`${s.inferenceJobId}:${s.team}`, s.sbTeamId]));
+    const anchors = await this.clock.currentAnchors(videoAssetId);
     const slotIds = [...new Set(tracks.flatMap((t) => t.identities.map((a) => a.matchSquadPlayerId)).filter((x): x is string => !!x))];
     const slots = slotIds.length
       ? await this.prisma.sbMatchSquadPlayer.findMany({ where: { id: { in: slotIds } }, select: { id: true, playerName: true, jerseyNumber: true } })
@@ -375,6 +395,8 @@ export class VisionIdentityService {
           class: t.class,
           startMs: t.startMs,
           endMs: t.endMs,
+          /** The track's window on the match clock, when the clock is anchored. */
+          matchClock: anchors.length ? `${clockAt(anchors, t.startMs).display}–${clockAt(anchors, t.endMs).display}` : null,
           team: team ? { team: team.team, confidence: team.confidence, method: team.method, kitDescription: team.kitDescription, reviewState: team.reviewState, inferenceJobId: team.inferenceJobId } : null,
           sbTeamId,
           identities: t.identities.map((a) => ({ ...a, slot: a.matchSquadPlayerId ? (slotOf.get(a.matchSquadPlayerId) ?? null) : null })),
@@ -391,6 +413,7 @@ export class VisionIdentityService {
       match,
       proxy,
       publicOnly,
+      clock: { anchored: anchors.length > 0, anchors },
       sidesDecided: sides.map((s) => ({ inferenceJobId: s.inferenceJobId, team: s.team, sbTeamId: s.sbTeamId })),
       tracks: rows,
       count: rows.length,
