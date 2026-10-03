@@ -740,3 +740,306 @@ export function fetchVisionJobs(videoAssetId: string) {
 export function queueVisionJob(body: { type: string; videoAssetId: string; params?: Record<string, unknown> }) {
   return adminFetch<{ id: string }>(`/vision/jobs`, { method: "POST", body: JSON.stringify(body) });
 }
+
+// ── The Vision environment (docs/vision/47): every action the API offers, reachable from a page ──
+
+export type VisionOverview = {
+  enabled: boolean;
+  partners: number;
+  sources: number;
+  assets: number;
+  assetsReady: number;
+  jobsQueued: number;
+  jobsRunning: number;
+  jobsFailed: number;
+  workersActive: number;
+  annotationOpen: number;
+  candidatesUnreviewed: number;
+  datasets: number;
+  models: number;
+  modelsInProduction: number;
+};
+
+export function fetchVisionOverview() {
+  return adminFetch<VisionOverview>("/vision/overview");
+}
+
+// Partners, evidence and signatories
+
+export function createVisionPartner(body: { name: string; contactName?: string; contactEmail?: string; contactPhone?: string; notes?: string }) {
+  return adminFetch<{ id: string; name: string }>("/vision/partners", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function fetchVisionPartnerEvidence(partnerId: string) {
+  return adminFetch<{ evidence: VisionEvidenceRow[] }>(`/vision/partners/${partnerId}/evidence`);
+}
+
+/** The document goes through the API as multipart: a browser cannot PUT to the master bucket. */
+export function attachVisionEvidenceFile(partnerId: string, file: File, meta: { kind: string; documentDate?: string; notes?: string }) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", meta.kind);
+  if (meta.documentDate) form.append("documentDate", meta.documentDate);
+  if (meta.notes) form.append("notes", meta.notes);
+  return adminFetch<{ evidenceId: string; key: string; bytes: number }>(`/vision/partners/${partnerId}/evidence/file`, { method: "POST", body: form });
+}
+
+export function addVisionSignatory(partnerId: string, body: { name: string; role: string; contactEmail?: string; contactPhone?: string }) {
+  return adminFetch<{ id: string }>(`/vision/partners/${partnerId}/signatories`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function createVisionSource(body: {
+  partnerId: string;
+  title?: string;
+  url?: string;
+  sbMatchId?: string;
+  sbCompetitionId?: string;
+  sourceQualityRank: string;
+  originalAvailable?: boolean;
+  rightsOwnerName?: string;
+  notes?: string;
+}) {
+  return adminFetch<{ id: string }>("/vision/sources", { method: "POST", body: JSON.stringify(body) });
+}
+
+// Footage
+
+export type VisionAssetRow = {
+  id: string;
+  ingestState: string;
+  ingestError: string | null;
+  corpus: string;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  videoCodec: string | null;
+  bytes: number | string | null;
+  createdAt: string;
+  sbMatchId: string | null;
+  sourceVideoRecord: { id: string; title: string | null; partner: { id: string; name: string } } | null;
+  sbMatch: { id: string; slug: string | null; homeTeam: { name: string }; awayTeam: { name: string } } | null;
+  hasProxy: boolean;
+  stages: { type: string; state: string; finishedAt: string | null; error: string | null }[];
+  counts: { tracks: number; cameraSegments: number; eventCandidates: number };
+};
+
+function queryOf(params: Record<string, string | undefined>): string {
+  const query = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => Boolean(e[1]))).toString();
+  return query ? `?${query}` : "";
+}
+
+export function fetchVisionAssets(params: { ingestState?: string; partnerId?: string; q?: string } = {}) {
+  return adminFetch<{ assets: VisionAssetRow[] }>(`/vision/assets${queryOf(params)}`);
+}
+
+// Pipeline: jobs, the dispatcher, workers
+
+export function fetchVisionAllJobs(params: { state?: string; type?: string; videoAssetId?: string } = {}) {
+  return adminFetch<{ jobs: VisionJobRow[] }>(`/vision/jobs${queryOf(params)}`);
+}
+
+export function fetchVisionJobEvents(jobId: string) {
+  return adminFetch<{ events: { id: string; kind: string; message: string | null; createdAt: string }[] }>(`/vision/jobs/${jobId}/events`);
+}
+
+export function retryVisionJob(jobId: string) {
+  return adminFetch<unknown>(`/vision/jobs/${jobId}/retry`, { method: "POST" });
+}
+
+export function cancelVisionJob(jobId: string, reason: string) {
+  return adminFetch<unknown>(`/vision/jobs/${jobId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
+export function fetchVisionQueueDepth() {
+  return adminFetch<{ depth: unknown }>("/vision/jobs/queue-depth");
+}
+
+export type VisionDispatcherHealth = { dispatcherRunning: boolean; stats: Record<string, number>; oldestQueuedAgeSeconds: number | null; staleHeartbeats: number };
+
+export function fetchVisionDispatcher() {
+  return adminFetch<VisionDispatcherHealth>("/vision/jobs/dispatcher");
+}
+
+export function tickVisionDispatcher() {
+  return adminFetch<{ requeued: string[]; failed: string[]; sessionsExpired: string[] }>("/vision/jobs/dispatcher/tick", { method: "POST" });
+}
+
+export type VisionWorkerRow = {
+  id: string;
+  providerId: string;
+  providerRef: string | null;
+  resourceClass: string;
+  image: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  jobsCompleted: number;
+  retiredAt: string | null;
+  tokenExpiresAt: string;
+};
+
+export function fetchVisionWorkers() {
+  return adminFetch<{ workers: VisionWorkerRow[] }>("/vision/workers");
+}
+
+export function provisionVisionWorker(body: { resourceClass: string; providerId?: string }) {
+  return adminFetch<{ workerId: string; providerId: string; providerRef: string; resourceClass: string; image: string; bootstrapToken: string; bootstrapExpiresAt: string }>("/vision/workers/provision", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function retireVisionWorker(workerId: string) {
+  return adminFetch<unknown>(`/vision/workers/${workerId}/retire`, { method: "POST" });
+}
+
+// Datasets
+
+export type VisionDatasetVersionRow = {
+  id: string;
+  label: string;
+  description: string | null;
+  labelSchemaVersionId: string | null;
+  frozenAt: string | null;
+  frozenBy: string | null;
+  createdAt: string;
+  _count: { members: number; modelVersions: number };
+};
+
+export function fetchVisionDatasets() {
+  return adminFetch<{ versions: VisionDatasetVersionRow[] }>("/vision/datasets");
+}
+
+export function fetchVisionDataset(id: string) {
+  return adminFetch<Record<string, unknown>>(`/vision/datasets/${id}`);
+}
+
+export function createVisionDataset(body: { label: string; description?: string; labelSchemaVersionId?: string }) {
+  return adminFetch<{ id: string }>("/vision/datasets", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function addVisionDatasetMembers(id: string, videoAssetIds: string[]) {
+  return adminFetch<unknown>(`/vision/datasets/${id}/members`, { method: "POST", body: JSON.stringify({ videoAssetIds }) });
+}
+
+export function splitVisionDataset(id: string) {
+  return adminFetch<unknown>(`/vision/datasets/${id}/splits`, { method: "POST" });
+}
+
+export function freezeVisionDataset(id: string) {
+  return adminFetch<unknown>(`/vision/datasets/${id}/freeze`, { method: "POST" });
+}
+
+export function exportVisionDataset(id: string) {
+  return adminFetch<unknown>(`/vision/datasets/${id}/export`, { method: "POST", body: JSON.stringify({}) });
+}
+
+export function fetchVisionDatasetLeakage(id: string) {
+  return adminFetch<Record<string, unknown>>(`/vision/datasets/${id}/leakage`);
+}
+
+export function fetchVisionDatasetRepresentation(id: string) {
+  return adminFetch<Record<string, unknown>>(`/vision/datasets/${id}/representation`);
+}
+
+// Models, benchmarks and promotion
+
+export type VisionModelVersionRow = {
+  id: string;
+  version: string;
+  stage: string;
+  datasetVersionId: string | null;
+  gitCommit: string;
+  workerImage: string;
+  weightsChecksum: string | null;
+  promotedAt: string | null;
+  createdAt: string;
+  _count: { jobs: number };
+};
+
+export type VisionModelRow = { id: string; key: string; task: string; description: string | null; createdAt: string; versions: VisionModelVersionRow[] };
+
+export function fetchVisionModels() {
+  return adminFetch<{ models: VisionModelRow[] }>("/vision/models");
+}
+
+export function createVisionModel(body: { key: string; task: string; description?: string }) {
+  return adminFetch<{ id: string }>("/vision/models", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function registerVisionModelVersion(modelId: string, body: { version: string; gitCommit: string; configKey: string; workerImage: string; licenceNote: string; datasetVersionId?: string; weightsKey?: string; weightsChecksum?: string }) {
+  return adminFetch<{ id: string }>(`/vision/models/${modelId}/versions`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function requestVisionBenchmark(versionId: string, datasetVersionId: string) {
+  return adminFetch<unknown>(`/vision/models/versions/${versionId}/benchmark`, { method: "POST", body: JSON.stringify({ datasetVersionId }) });
+}
+
+export function fetchVisionBenchmarks(versionId: string) {
+  return adminFetch<Record<string, unknown>>(`/vision/models/versions/${versionId}/benchmarks`);
+}
+
+export function requestVisionPromotion(versionId: string) {
+  return adminFetch<unknown>(`/vision/models/versions/${versionId}/promotion-request`, { method: "POST" });
+}
+
+export function approveVisionPromotion(versionId: string, note?: string) {
+  return adminFetch<unknown>(`/vision/models/versions/${versionId}/promote`, { method: "POST", body: JSON.stringify({ note }) });
+}
+
+export function rejectVisionPromotion(promotionId: string, reason: string) {
+  return adminFetch<unknown>(`/vision/models/promotions/${promotionId}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
+export function rollbackVisionModel(versionId: string) {
+  return adminFetch<unknown>(`/vision/models/versions/${versionId}/rollback`, { method: "POST" });
+}
+
+export function fetchVisionPromotions(versionId: string) {
+  return adminFetch<Record<string, unknown>>(`/vision/models/versions/${versionId}/promotions`);
+}
+
+// Event candidates
+
+export type VisionEventCandidate = {
+  id: string;
+  videoAssetId: string;
+  sbMatchId: string | null;
+  type: string;
+  taxonomyVersion: string;
+  startMs: number;
+  endMs: number;
+  actorTrackId: string | null;
+  actorPlayerId: string | null;
+  actorMatchSquadPlayerId: string | null;
+  sbTeamId: string | null;
+  confidence: number;
+  method: string;
+  cameraSegmentId: string | null;
+  inPlay: boolean;
+  reviewState: string;
+  decidedBy: string;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  note: string | null;
+  promotedEventId: string | null;
+  promotionKind: string | null;
+  supersededBy: string | null;
+  createdAt: string;
+  matchClock: string | null;
+  scoreboardType: string | null;
+  promotable: boolean;
+  evidence: { id: string; kind: string; targetId: string; note: string | null }[];
+};
+
+export function fetchVisionEventCandidates(assetId: string, all = false) {
+  return adminFetch<{ videoAssetId: string; matchId: string | null; taxonomyVersion: string; clock: { anchored: boolean }; candidates: VisionEventCandidate[]; count: number }>(`/vision/review/${assetId}/events${all ? "?all=1" : ""}`);
+}
+
+export function proposeVisionEvent(body: { videoAssetId: string; type: string; startMs: number; endMs: number; actorTrackId?: string; actorMatchSquadPlayerId?: string; sbTeamId?: string; note?: string }) {
+  return adminFetch<VisionEventCandidate>("/vision/review/events", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function decideVisionEvent(id: string, decision: "accepted" | "rejected", reason?: string) {
+  return adminFetch<VisionEventCandidate>(`/vision/review/events/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, reason }) });
+}
+
+export function promoteVisionEvent(id: string, create = false) {
+  return adminFetch<VisionEventCandidate & { promotion: { kind: string; eventId: string; minute: number } }>(`/vision/review/events/${id}/promote`, { method: "POST", body: JSON.stringify({ create }) });
+}

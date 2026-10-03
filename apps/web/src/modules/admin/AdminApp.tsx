@@ -25,10 +25,7 @@ import { AdminRequirePermission } from "./AdminRequirePermission";
 import { AdminRolesPage } from "./settings/AdminRolesPage";
 import { AdminUsersPage } from "./settings/AdminUsersPage";
 import { AdminScoreboardEntitiesPage } from "./scoreboard/pages/AdminScoreboardEntitiesPage";
-import { AdminVisionStatusPage } from "./vision/AdminVisionStatusPage";
-import { AdminVisionSourcesPage } from "./vision/AdminVisionSourcesPage";
-import { AdminVisionSourceDetailPage } from "./vision/AdminVisionSourceDetailPage";
-import { AdminVisionAnnotationPage } from "./vision/AdminVisionAnnotationPage";
+import { AdminVisionApp } from "./vision/AdminVisionApp";
 
 export function AdminApp() {
   return (
@@ -63,15 +60,10 @@ export function AdminApp() {
             <Route element={<AdminRequirePermission permission="scoreboard.records.manage" />}>
               <Route path="records" element={<AdminScoreboardEntitiesPage />} />
             </Route>
+            {/* The Vision environment: its own shell and sections, like ScoreBoard's.
+                The workstation screens mount outside AdminLayout — see App.tsx. */}
             <Route element={<AdminRequirePermission permission="vision.read" />}>
-              <Route path="vision" element={<AdminVisionStatusPage />} />
-              <Route path="vision/sources" element={<AdminVisionSourcesPage />} />
-              <Route path="vision/sources/:id" element={<AdminVisionSourceDetailPage />} />
-            </Route>
-            {/* Claiming and labelling need `vision.annotate`; reading the queue does
-                not. The workstation itself mounts outside AdminLayout — see App.tsx. */}
-            <Route element={<AdminRequirePermission permission="vision.annotate" />}>
-              <Route path="vision/annotation" element={<AdminVisionAnnotationPage />} />
+              <Route path="vision/*" element={<AdminVisionApp />} />
             </Route>
             <Route path="blog" element={<AdminBlogListPage />} />
             <Route path="blog/new" element={<AdminBlogEditPage />} />

@@ -861,3 +861,169 @@
   gap: 0.5rem 0.8rem;
   margin-top: 0.6rem;
 }
+
+/* The Vision environment: tiles on the overview, forms on the registering
+   panels, stage dots on the footage list, and the small pieces every page shares. */
+.vision-panel__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
+}
+
+.vision-panel__head .vision-panel__title {
+  margin: 0;
+}
+
+.vision-tiles {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.vision-tile {
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.85rem 0.95rem;
+  text-decoration: none;
+}
+
+.vision-tile:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.vision-tile__count {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.vision-tile__label {
+  font-weight: 600;
+}
+
+.vision-tile__note {
+  font-size: 0.78rem;
+}
+
+.vision-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.vision-form--grid {
+  display: grid;
+  gap: 0.6rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.vision-form button[type="submit"] {
+  justify-self: start;
+}
+
+.vision-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.vision-field__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  text-transform: uppercase;
+}
+
+.vision-field__hint {
+  font-size: 0.74rem;
+}
+
+.vision-inline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.vision-inline input,
+.vision-inline select {
+  max-width: 14rem;
+}
+
+.vision-linklike {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.vision-stage-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.vision-stage-dot {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font-size: 0.66rem;
+  opacity: 0.5;
+  padding: 0.05rem 0.45rem;
+}
+
+.vision-stage-dot--ok { border-color: #34d399; color: #34d399; opacity: 1; }
+.vision-stage-dot--warn { border-color: #facc15; color: #facc15; opacity: 1; }
+.vision-stage-dot--bad { border-color: #f87171; color: #f87171; opacity: 1; }
+
+.vision-pill--ok { border-color: rgba(52, 211, 153, 0.6); color: #34d399; }
+.vision-pill--warn { border-color: rgba(250, 204, 21, 0.6); color: #facc15; }
+.vision-pill--bad { border-color: rgba(248, 113, 113, 0.6); color: #f87171; }
+.vision-pill--muted { opacity: 0.7; }
+
+.vision-pre {
+  background: rgba(2, 6, 23, 0.6);
+  border-radius: 8px;
+  font-size: 0.74rem;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.6rem 0.8rem;
+  white-space: pre-wrap;
+}
+
+.vision-events {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vision-table__detail td {
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.vision-table__superseded {
+  opacity: 0.55;
+}
+
+.vision-model {
+  margin-top: 0.8rem;
+}
+
+.admin-sb-badge--off {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #f87171;
+}

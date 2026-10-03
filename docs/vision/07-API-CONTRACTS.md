@@ -119,6 +119,10 @@ Poll at 5 s while a job page is open.
 | `GET` | `/vision/review/:assetId/clock` (`?sourceMs` reads a moment) | `vision.read` |
 | `POST` | `/vision/review/:assetId/clock` | `vision.review` |
 | `GET` | `/vision/review/:assetId/game-state` | `vision.read` |
+| `GET` | `/vision/overview` (counts for the environment's shell) | `vision.read` |
+| `GET` | `/vision/assets` (`?ingestState`, `?partnerId`, `?q`; each with proxy and latest stage runs) | `vision.read` |
+| `GET` | `/vision/workers` | `vision.read` |
+| `POST` | `/vision/partners/:id/evidence/file` (multipart `file` + `kind`; the document through the API) | `vision.rights.manage` |
 | `GET` | `/vision/review/:assetId/events` (`?all=1` includes superseded) | `vision.read` |
 | `GET` | `/vision/review/events/:id` | `vision.read` |
 | `POST` | `/vision/review/events` | `vision.review` |

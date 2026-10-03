@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { fetchVisionStatus, type VisionStatus } from "../../../api/vision";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -57,8 +56,8 @@ function State({ ok, on, off }: { ok: boolean; on: string; off: string }) {
   );
 }
 
-export function AdminVisionStatusPage() {
-  usePageTitle("Vision Engine");
+/** The configuration panels alone, for the environment's overview page. */
+export function VisionConfigurationPanels() {
   const [status, setStatus] = useState<VisionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,13 +76,7 @@ export function AdminVisionStatusPage() {
   }, []);
 
   return (
-    <div className="admin-sb-page vision-page">
-      <AdminPageHeader
-        title="Vision Engine"
-        description="Football video intelligence. Phase 0 — foundation, rights and provider abstractions."
-        crumbs={[{ label: "Vision" }]}
-      />
-
+    <>
       {error && (
         <div className="vision-panel vision-panel--error">
           <strong>Could not load Vision status.</strong>
@@ -95,17 +88,6 @@ export function AdminVisionStatusPage() {
 
       {status && (
         <>
-          <Panel title="Operations">
-            <p className="muted vision-footnote">
-              <Link to="/admin/vision/sources">Partner sources →</Link> Catalogue matches, attach
-              rights evidence, authorize acquisition and issue partner upload links.
-            </p>
-            <p className="muted vision-footnote">
-              <Link to="/admin/vision/annotation">Annotation queue →</Link> Claim a window to
-              label, review submitted work, and see what the corpus is actually made of.
-            </p>
-          </Panel>
-
           <Panel title="Subsystem">
             <Row
               label="Status"
@@ -245,6 +227,17 @@ export function AdminVisionStatusPage() {
           </Panel>
         </>
       )}
+    </>
+  );
+}
+
+/** Kept for anything still importing it; the environment's overview renders the panels itself. */
+export function AdminVisionStatusPage() {
+  usePageTitle("Vision Engine");
+  return (
+    <div className="admin-sb-page vision-page">
+      <AdminPageHeader title="Vision Engine" crumbs={[{ label: "Vision" }]} />
+      <VisionConfigurationPanels />
     </div>
   );
 }

@@ -26,6 +26,7 @@ import { VisionIdentityController } from "./identity/identity.controller";
 import { VisionIdentityService } from "./identity/identity.service";
 import { VisionCalibrationController } from "./calibration/calibration.controller";
 import { VisionCalibrationService } from "./calibration/calibration.service";
+import { VisionAssetsController } from "./assets/assets.controller";
 import { VisionEventsController } from "./events/events.controller";
 import { VisionEventsService } from "./events/events.service";
 import { VisionClockController } from "./clock/clock.controller";
@@ -115,6 +116,7 @@ const computeRegistryProvider: Provider = {
     VisionCalibrationController,
     VisionClockController,
     VisionEventsController,
+    VisionAssetsController,
   ],
   providers: [
     configProvider,
