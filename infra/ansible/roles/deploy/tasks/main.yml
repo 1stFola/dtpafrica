@@ -320,15 +320,36 @@
 # Live was baselined on 3 October 2026 (all migrations recorded), so `migrate deploy`
 # applies only what is new. A migration added from now on reaches live this way and
 # no other; no more `migrate resolve --applied` by hand after a deploy.
+#
+# `docker run` and the Prisma binary itself, not `docker compose run … pnpm`. The first
+# deploy under this step ran it through compose and pnpm: the migration applied and
+# Prisma said so, then the process never exited, `timeout 600` killed it, and the
+# deploy rolled back (docs/vision/52, "The first deploy"). It did not reproduce
+# locally, so everything between the step and Prisma is gone instead: no compose CLI,
+# no pnpm wrapper or its update check, Prisma's telemetry ping off, stdin closed, and a
+# hard kill. The database URL reaches the container through this task's environment
+# (`-e DATABASE_URL` with no value), so it is never on a command line or in the log.
+# The network is the compose project's default, `name: dtp-staging` in the compose file.
+- name: Remove any migrate container a killed deploy left behind
+  ansible.builtin.shell: |
+    docker ps -aq --filter "name=dtp-staging-api-run-" | xargs -r docker rm -f
+    docker ps -aq --filter "name=dtp-staging-migrate" | xargs -r docker rm -f
+  become: true
+  become_user: root
+  changed_when: false
+  failed_when: false
+  when: run_migrations | default(true) | bool
+
 - name: Apply database migrations (forward only)
   ansible.builtin.shell: |
-    timeout 600 docker compose \
-      --env-file infra/.env.staging \
-      -f infra/docker-compose.staging.yml \
-      run --rm --no-deps -T api \
-      pnpm --filter @dtp/api db:migrate:deploy
-  args:
-    chdir: "{{ app_dir }}/repo"
+    timeout --kill-after=15 300 docker run --rm --name dtp-staging-migrate \
+      --network dtp-staging_default \
+      -e DATABASE_URL -e CHECKPOINT_DISABLE=1 -e PRISMA_HIDE_UPDATE_MESSAGE=1 \
+      -w /app/services/api --entrypoint ./node_modules/.bin/prisma \
+      "{{ image_registry }}/dtp-api:{{ image_tag }}" migrate deploy < /dev/null
+  environment:
+    # The same URL compose builds for the api service.
+    DATABASE_URL: "postgresql://{{ db_creds.POSTGRES_USER }}:{{ db_creds.POSTGRES_PASSWORD }}@postgres:5432/{{ db_creds.POSTGRES_DB }}"
   become: true
   become_user: root
   changed_when: true

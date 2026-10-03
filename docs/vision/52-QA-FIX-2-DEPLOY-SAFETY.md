@@ -114,6 +114,33 @@ Before, `up -d` with the profile inactive left it polling.
 | The migrate step in the real image | API image built locally; `pnpm --filter @dtp/api db:migrate:deploy` inside it against a scratch database: 32 applied, then "No pending migrations" on the second run; the image's `Cmd` has no `db push`. Scratch database dropped |
 | The worker image | built; a new named volume at `/var/lib/dtp-vision` is owned by and writable as `worker`; `docker stop` on a worker under `--init` returns in 1 s (exit 143) instead of waiting out the grace period |
 
+## The first deploy
+
+The deploy of #211 (CD run 37149315798) ran the new step through `docker compose run
+… pnpm --filter @dtp/api db:migrate:deploy`. The migration applied:
+`20261003180000_vision_worker_token_kind`, then "All migrations have been successfully
+applied." But the process never exited. `timeout 600` killed it (rc 124), the
+playbook failed, and the rollback put back the previous image. The site answered
+throughout, and the rollback's health check passed.
+
+It did not reproduce locally. The same image and command, with stdin held open as
+Ansible leaves it, returned in 9 s. So the step now removes everything between Ansible
+and Prisma:
+
+- `docker run` on the project network instead of `docker compose run`;
+- the Prisma binary as the entrypoint instead of the `pnpm` wrapper and its update
+  check;
+- `CHECKPOINT_DISABLE=1` for Prisma's telemetry ping;
+- stdin from `/dev/null`;
+- `timeout --kill-after=15 300`.
+
+A step before it removes any `dtp-staging-api-run-*` container a killed run left
+behind. `DATABASE_URL` reaches the container through the task's `environment`, as a
+bare `-e DATABASE_URL`, so it is on no command line and in no log. Locally, against a
+throwaway compose project, the new command applied 32 migrations to an empty database
+in 5 s, found nothing pending on a re-run in 3 s, and failed in 10 s with `P1001`
+against an unreachable host.
+
 ## What is not done
 
 | | |
