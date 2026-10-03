@@ -44,6 +44,7 @@ function authorisedRecord(overrides: Record<string, unknown> = {}) {
     partnerId: PARTNER,
     acquisitionStatus: "authorized",
     acquisitionMethod: "partner_direct_upload",
+    sbMatchId: "match-1",
     _count: { videoAssets: 0 },
     ...overrides,
   };
@@ -164,6 +165,14 @@ describe("rights are checked before a single byte is accepted", () => {
     expect(view.state).toBe("in_progress");
     expect(view.bucket).toBe("master");
     expect(view.partSizeBytes).toBe(16 * 1024 * 1024);
+  });
+
+  it("links the asset to the record's match, since every stage after probe needs one", async () => {
+    await service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" });
+    expect(mockPrisma.visionVideoAsset.create.mock.calls[0]![0].data).toMatchObject({ sourceVideoRecordId: RECORD, sbMatchId: "match-1" });
+    mockPrisma.visionSourceVideoRecord.findUnique.mockResolvedValue(authorisedRecord({ sbMatchId: null }));
+    await service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" });
+    expect(mockPrisma.visionVideoAsset.create.mock.calls[1]![0].data).toMatchObject({ sbMatchId: null });
   });
 });
 
