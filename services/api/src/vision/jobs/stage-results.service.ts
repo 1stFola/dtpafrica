@@ -520,6 +520,15 @@ export class VisionStageResultsService {
     }
     const trackJobId = str(completion.summary.trackJobId);
     if (!trackJobId) return { applied: false, detail: "identify summary names no trackJobId" };
+    // The track job is the one the control plane dispatched, not whichever the worker
+    // reports: otherwise a summary could attach assignments to another asset's tracks.
+    const dispatched = context.inputSpec?.tracks as { jobId?: unknown } | undefined;
+    if (typeof dispatched?.jobId !== "string" || dispatched.jobId !== trackJobId) {
+      return {
+        applied: false,
+        detail: `identify summary names track job ${trackJobId}; the job was dispatched with ${typeof dispatched?.jobId === "string" ? dispatched.jobId : "none"}`,
+      };
+    }
     const rows = Array.isArray(completion.summary.teamRows) ? completion.summary.teamRows : null;
     if (!rows) return { applied: false, detail: "identify summary carried no teamRows" };
 

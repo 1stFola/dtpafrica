@@ -546,7 +546,7 @@ describe("identify results become team assignments", () => {
     ],
     ...over,
   });
-  const context = { jobId: JOB, modelVersionId: IDENTIFY };
+  const context = { jobId: JOB, modelVersionId: IDENTIFY, inputSpec: { tracks: { jobId: "job-t" } } };
 
   beforeEach(() => {
     mockPrisma.visionTrack.findMany.mockResolvedValue([{ id: "t1", localTrackId: 1 }, { id: "t2", localTrackId: 2 }, { id: "t3", localTrackId: 3 }]);
@@ -571,6 +571,9 @@ describe("identify results become team assignments", () => {
   it("refuses a summary whose version is not the job's, or with no track job, or malformed rows", async () => {
     expect((await service().apply("identify", ASSET, { artifacts, summary: summary({ identifyVersionId: "other" }) }, context)).applied).toBe(false);
     expect((await service().apply("identify", ASSET, { artifacts, summary: summary({ trackJobId: undefined }) }, context)).applied).toBe(false);
+    // The track job the worker reports must be the one it was dispatched with.
+    expect((await service().apply("identify", ASSET, { artifacts, summary: summary({ trackJobId: "job-other-asset" }) }, context)).applied).toBe(false);
+    expect((await service().apply("identify", ASSET, { artifacts, summary: summary() }, { jobId: JOB, modelVersionId: IDENTIFY })).applied).toBe(false);
     expect((await service().apply("identify", ASSET, { artifacts, summary: summary({ teamRows: [{ localTrackId: "x" }] }) }, context)).applied).toBe(false);
     expect(mockPrisma.visionTeamAssignment.createMany).not.toHaveBeenCalled();
   });

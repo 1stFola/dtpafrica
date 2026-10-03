@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   HttpCode,
@@ -15,7 +16,6 @@ import {
   OUTPUT_BUCKET_BY_JOB_TYPE,
   VISION_CONTRACT_VERSION,
   isKeyUnderPrefix,
-  visionKeys,
   type VisionJobSpec,
   type VisionJobType,
 } from "@dtp/vision-contracts";
@@ -242,11 +242,31 @@ export class VisionWorkerController {
     });
     if (!asset) throw new NotFoundException("The job's video asset no longer exists");
 
-    // Roles resolve to keys here, from the asset row. Never from the request.
-    const ref =
-      dto.role === "source"
-        ? { bucket: "master" as const, key: asset.objectKey }
-        : visionKeys.proxy(asset.id);
+    // Roles resolve to keys here, from the asset's rows. Never from the request.
+    //
+    // The proxy is wherever transcode actually wrote it: under that job's own output
+    // prefix, recorded as the asset's newest proxy variant. This used to hand out the
+    // fixed `visionKeys.proxy(asset.id)`, a key nothing writes, so detect, cuts and
+    // identify were given a URL to an object that does not exist (docs/vision/50, C2).
+    let ref: { bucket: "master" | "derived"; key: string };
+    if (dto.role === "source") {
+      ref = { bucket: "master", key: asset.objectKey };
+    } else {
+      const proxy = await this.prisma.visionVideoVariant.findFirst({
+        where: { videoAssetId: asset.id, kind: "proxy" },
+        orderBy: { createdAt: "desc" },
+        select: { objectKey: true },
+      });
+      if (!proxy) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: "ProxyNotTranscoded",
+          message: "This job's video asset has no proxy yet.",
+          remediation: "Run the transcode stage for the asset first, then retry this job.",
+        });
+      }
+      ref = { bucket: "derived", key: proxy.objectKey };
+    }
 
     const url = await this.objectStore.presignGet(
       ref.bucket,
@@ -292,6 +312,16 @@ export class VisionWorkerController {
     if (stray) {
       throw new ForbiddenException(
         `Artifact ${stray.key} is outside this job's output prefix ${job.outputPrefix}`
+      );
+    }
+    // The bucket too. Presign only ever wrote to this job type's output bucket, and the
+    // projections downstream select artifacts by bucket, so a reported bucket that
+    // differs is a claim about an object this worker could not have written.
+    const expectedBucket = OUTPUT_BUCKET_BY_JOB_TYPE[job.type as VisionJobType];
+    const misfiled = (dto.artifacts ?? []).find((a) => a.bucket !== expectedBucket);
+    if (misfiled) {
+      throw new ForbiddenException(
+        `Artifact ${misfiled.key} names bucket ${misfiled.bucket}; ${job.type} writes only to ${expectedBucket}`
       );
     }
 

@@ -11,8 +11,10 @@ See docs/vision/07-API-CONTRACTS.md.
 from __future__ import annotations
 
 import logging
+import re
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -25,6 +27,33 @@ class ControlPlaneError(RuntimeError):
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status
+
+
+class JobLostError(ControlPlaneError):
+    """The control plane says this worker no longer holds the job.
+
+    It was reaped, cancelled, ran over budget or was handed to another worker. The
+    job is not ours to finish or to fail, so the stage stops and nothing is reported.
+    """
+
+
+#: Heartbeat answers that mean the job is gone, not that the network blinked.
+JOB_LOST_STATUSES = frozenset({403, 404, 409, 410})
+
+#: Answers that mean this worker's credential or contract is no good. A retry will
+#: not fix them; the supervisor provisions a fresh worker.
+FATAL_CLAIM_STATUSES = frozenset({400, 401, 403})
+
+_URL_QUERY = re.compile(r"(https?://[^\s?\"']+)\?[^\s\"']*")
+
+
+def redact_urls(text: str) -> str:
+    """Drops the query string from every URL in `text`.
+
+    A presigned URL's query is its signature. An httpx error message carries the full
+    URL, and that message reaches the log and the job's stored error (docs/vision/50).
+    """
+    return _URL_QUERY.sub(r"\1?<redacted>", text)
 
 
 class ContractMismatchError(ControlPlaneError):
@@ -77,6 +106,10 @@ class ControlPlaneClient:
         self._worker_token: str | None = None
         self.worker_id: str | None = None
         self.resource_classes: tuple[str, ...] = ()
+        #: What the control plane asked for at registration. Its reaper counts missed
+        #: heartbeats against its own interval, not the worker's.
+        self.server_heartbeat_seconds: float | None = None
+        self._sleep: Callable[[float], None] = time.sleep
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -101,6 +134,9 @@ class ControlPlaneClient:
         self._worker_token = body["workerToken"]
         self.worker_id = body["workerId"]
         self.resource_classes = tuple(body.get("resourceClasses") or ())
+        interval = body.get("heartbeatIntervalSeconds")
+        if isinstance(interval, (int, float)) and interval > 0:
+            self.server_heartbeat_seconds = float(interval)
         log.info("registered as worker %s for %s", self.worker_id, ", ".join(self.resource_classes))
 
     def claim(self) -> JobSpec | None:
@@ -124,6 +160,8 @@ class ControlPlaneClient:
             headers=self._auth(),
             json={"progress": {"stage": stage, "fraction": fraction}},
         )
+        if res.status_code in JOB_LOST_STATUSES:
+            raise JobLostError(f"heartbeat refused: HTTP {res.status_code} {res.text[:300]}", res.status_code)
         self._raise_for_status(res, "heartbeat")
 
     def input_url(self, job_id: str, role: str, key: str | None = None) -> str:
@@ -159,7 +197,9 @@ class ControlPlaneClient:
         cost: dict[str, Any],
         model_version_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        res = self._client.post(
+        # Retried: the uploads are already done, and a dropped connection here used to
+        # re-run the whole job. The idempotency key makes a repeat safe.
+        res = self._retrying("complete", lambda: self._client.post(
             f"/jobs/{job_id}/complete",
             headers=self._auth(),
             json={
@@ -174,21 +214,47 @@ class ControlPlaneClient:
                 "modelVersionIds": list(model_version_ids or []),
                 "cost": cost,
             },
-        )
+        ))
         self._raise_for_status(res, "complete")
         return res.json()
 
     def fail(self, job_id: str, reason: str, detail: str = "", retryable: bool = True) -> None:
-        res = self._client.post(
-            f"/jobs/{job_id}/fail",
-            headers=self._auth(),
-            json={"reason": reason[:200], "detail": detail[:8000], "retryable": retryable},
-        )
-        # A failed `fail` must not mask the original error, so log and move on.
+        """Report a failure. Never raises.
+
+        Called from `except` blocks: a network blip here used to escape the loop and
+        exit the worker (docs/vision/50, C). Retried a few times, then logged.
+        """
+        try:
+            res = self._retrying("fail", lambda: self._client.post(
+                f"/jobs/{job_id}/fail",
+                headers=self._auth(),
+                json={"reason": reason[:200], "detail": redact_urls(detail)[:8000], "retryable": retryable},
+            ))
+        except Exception as exc:  # noqa: BLE001 - must not mask the original error
+            log.error("could not report failure for %s: %s", job_id, redact_urls(str(exc)))
+            return
         if res.status_code >= 400:
             log.error("could not report failure for %s: HTTP %s", job_id, res.status_code)
 
     # ── plumbing ─────────────────────────────────────────────────────────────
+
+    def _retrying(
+        self, action: str, send: Callable[[], httpx.Response], attempts: int = 4, base_seconds: float = 1.0
+    ) -> httpx.Response:
+        """Sends, retrying a network error or a 5xx with backoff. A 4xx is an answer."""
+        for attempt in range(1, attempts + 1):
+            try:
+                res = send()
+            except httpx.TransportError as exc:
+                if attempt == attempts:
+                    raise
+                log.warning("%s: network error (%s), retry %s/%s", action, type(exc).__name__, attempt, attempts - 1)
+            else:
+                if res.status_code < 500 or attempt == attempts:
+                    return res
+                log.warning("%s: HTTP %s, retry %s/%s", action, res.status_code, attempt, attempts - 1)
+            self._sleep(base_seconds * 2 ** (attempt - 1))
+        raise AssertionError("unreachable")
 
     def _auth(self) -> dict[str, str]:
         if not self._worker_token:

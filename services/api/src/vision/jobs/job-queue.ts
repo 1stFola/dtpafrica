@@ -1,3 +1,4 @@
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 import type { VisionJobType, VisionResourceClass } from "@dtp/vision-contracts";
 
 /**
@@ -97,16 +98,33 @@ export interface JobQueue {
 
 export const JOB_QUEUE = Symbol("JOB_QUEUE");
 
-export class JobNotClaimableError extends Error {
+/**
+ * The job has moved on: finished, cancelled, or requeued since the caller last looked.
+ * A 409 with the refusal shape, so a worker can tell "you lost this job" from a fault
+ * and stop work on it, instead of reading a 500 and retrying (docs/vision/50, PR-3).
+ */
+export class JobNotClaimableError extends ConflictException {
   constructor(jobId: string, state: string) {
-    super(`Job ${jobId} is ${state} and cannot be acted on.`);
+    super({
+      statusCode: 409,
+      error: "JobNotClaimable",
+      message: `Job ${jobId} is ${state} and cannot be acted on.`,
+      remediation: "Stop work on this job. It is no longer yours to report on.",
+      state,
+    });
     this.name = "JobNotClaimableError";
   }
 }
 
-export class JobNotHeldByWorkerError extends Error {
+/** Another worker holds the job, or none does. A 403 with the refusal shape. */
+export class JobNotHeldByWorkerError extends ForbiddenException {
   constructor(jobId: string, workerId: string) {
-    super(`Worker ${workerId} does not hold job ${jobId}.`);
+    super({
+      statusCode: 403,
+      error: "JobNotHeldByWorker",
+      message: `Worker ${workerId} does not hold job ${jobId}.`,
+      remediation: "Stop work on this job; it was reaped or handed to another worker.",
+    });
     this.name = "JobNotHeldByWorkerError";
   }
 }

@@ -373,6 +373,29 @@ async function main() {
       afterTranscode.variants.filter((v) => v.kind === "thumbnail").length > 0,
       true
     );
+
+    // ── A stage that reads the proxy by role (docs/vision/50, C2) ─────────
+    // Until PR-3 the `proxy` role resolved to a fixed per-asset key nothing writes,
+    // so every stage after transcode was handed a URL to a missing object. Nothing
+    // showed it, because no check ran a stage past transcode. Cuts is the cheapest.
+    section("Cuts (reads the proxy by role)");
+    const cutsJob = await api("/vision/jobs", {
+      method: "POST",
+      body: JSON.stringify({ type: "cuts", videoAssetId: assetId }),
+    });
+    const thirdWorker = await api("/vision/workers/provision", {
+      method: "POST",
+      body: JSON.stringify({ resourceClass: "cpu_small", providerId: "local" }),
+    });
+    const cutsLog = runWorker(thirdWorker.bootstrapToken);
+    const cutsDone = await api(`/vision/jobs/${cutsJob.id}`);
+    for (const artifact of (cutsDone.job.progress?.artifacts ?? []) as { key: string }[]) {
+      wroteKeys.push({ bucket: "derived", key: artifact.key });
+    }
+    if (cutsDone.job.state !== "succeeded") {
+      console.log(cutsLog.trim().split("\n").slice(-6).join("\n").replace(/[?&]X-Amz-[^\s"&]+/g, "").replace(/^/gm, "    "));
+    }
+    check("cuts read the proxy transcode wrote, and succeeded", cutsDone.job.state, "succeeded");
   } finally {
     // ── Cleanup ───────────────────────────────────────────────────────────
     section("Cleanup");
