@@ -144,7 +144,10 @@ export function AdminVisionEventsPage() {
                   {list.candidates.map((c: VisionEventCandidate) => (
                     <tr key={c.id} className={c.supersededBy ? "vision-table__superseded" : ""}>
                       <td>
-                        <strong>{c.type}</strong> <code className="vision-mono vision-sub">{short(c.id)}</code>
+                        <strong>{c.type}</strong> <code className="vision-mono vision-sub">{short(c.id)}</code>{" "}
+                        <Link to={`/admin/vision/workstation/identity/${assetId}?event=${c.id}`} className="vision-sub">
+                          on the video →
+                        </Link>
                         {!c.inPlay && <Pill tone="warn">not play</Pill>}
                         {c.supersededBy && <Pill tone="muted">superseded</Pill>}
                         {c.note && <div className="vision-sub muted">{c.note}</div>}

@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+import type { VisionEventCandidate, VisionReviewTrack } from "../../../api/vision";
+import { allowedActions, candidateAt, describeCandidate, proposalAt, slotAt, stepCandidate, timelineMarks, windowProblem } from "./event-review";
+
+const cand = (over: Partial<VisionEventCandidate>): VisionEventCandidate => ({
+  id: "c", videoAssetId: "a", sbMatchId: "m", type: "shot", taxonomyVersion: "2026.10.0", startMs: 10_000, endMs: 10_000, actorTrackId: "t1", actorPlayerId: null, actorMatchSquadPlayerId: null, sbTeamId: null,
+  confidence: 1, method: "manual", cameraSegmentId: null, inPlay: true, reviewState: "unreviewed", decidedBy: "alice", reviewedBy: null, reviewNote: null, note: null, promotedEventId: null, promotionKind: null, supersededBy: null,
+  createdAt: "2026-10-03T00:00:00Z", matchClock: "0:01", scoreboardType: null, promotable: false, evidence: [], ...over,
+});
+
+describe("the timeline", () => {
+  it("places current candidates on the clip as fractions, with a minimum width, and drops superseded ones", () => {
+    const marks = timelineMarks([cand({ id: "a", startMs: 14_000, endMs: 16_000 }), cand({ id: "s", supersededBy: "x" }), cand({ id: "b", startMs: 9000, endMs: 9000 })], 9000, 10_000);
+    expect(marks.map((m) => m.candidate.id)).toEqual(["a", "b"]);
+    expect(marks[0]).toMatchObject({ left: 0.5, width: 0.2 });
+    expect(marks[1]!.left).toBe(0);
+    expect(marks[1]!.width).toBe(0.004);
+    expect(timelineMarks([cand({})], 0, 0)).toEqual([]);
+  });
+
+  it("finds the candidate under the playhead, nearest start first, and none far away", () => {
+    const list = [cand({ id: "early", startMs: 5000, endMs: 5000 }), cand({ id: "long", startMs: 9000, endMs: 12_000 }), cand({ id: "exact", startMs: 10_000, endMs: 10_000 })];
+    expect(candidateAt(list, 10_100)?.id).toBe("exact");
+    expect(candidateAt(list, 11_500)?.id).toBe("long");
+    expect(candidateAt(list, 20_000)).toBeNull();
+    expect(candidateAt([cand({ supersededBy: "x" })], 10_000)).toBeNull();
+  });
+
+  it("steps to the next and previous candidate by start", () => {
+    const list = [cand({ id: "b", startMs: 20_000 }), cand({ id: "a", startMs: 10_000 }), cand({ id: "c", startMs: 30_000 })];
+    expect(stepCandidate(list, 10_000, 1)?.id).toBe("b");
+    expect(stepCandidate(list, 20_000, -1)?.id).toBe("a");
+    expect(stepCandidate(list, 30_000, -1)?.id).toBe("b");
+    expect(stepCandidate(list, 30_000, 1)).toBeNull();
+    expect(stepCandidate(list, 10_000, -1)).toBeNull();
+  });
+});
+
+describe("a proposal at the playhead", () => {
+  const track = {
+    id: "t1", localTrackId: 1, inferenceJobId: "j", artifactKey: "k", class: "player", startMs: 0, endMs: 60_000, team: null, sbTeamId: "home", matchClock: null,
+    identities: [
+      { id: "i-old", trackId: "t1", playerId: null, matchSquadPlayerId: "slot-old", sbTeamSquadId: null, sbTeamId: "home", confidence: 1, method: "manual", validFromMs: 0, validToMs: 60_000, reviewState: "accepted", decidedBy: "a", reviewedBy: "b", note: null, supersededBy: "i-new", createdAt: "2026-10-01T00:00:00Z" },
+      { id: "i-new", trackId: "t1", playerId: null, matchSquadPlayerId: "slot-9", sbTeamSquadId: null, sbTeamId: "home", confidence: 1, method: "manual", validFromMs: 0, validToMs: 30_000, reviewState: "unreviewed", decidedBy: "a", reviewedBy: null, note: null, supersededBy: null, createdAt: "2026-10-02T00:00:00Z" },
+      { id: "i-unknown", trackId: "t1", playerId: null, matchSquadPlayerId: null, sbTeamSquadId: null, sbTeamId: "home", confidence: 1, method: "manual", validFromMs: 30_001, validToMs: 60_000, reviewState: "unreviewed", decidedBy: "a", reviewedBy: null, note: null, supersededBy: null, createdAt: "2026-10-02T00:00:00Z" },
+    ],
+  } as unknown as VisionReviewTrack;
+
+  it("takes the actor from the selected track and the slot it was said to be at that moment", () => {
+    expect(slotAt(track, 10_000)).toBe("slot-9");
+    expect(slotAt(track, 40_000)).toBeNull();
+    expect(slotAt(null, 10_000)).toBeNull();
+    expect(proposalAt(track, 10_000)).toEqual({ actorTrackId: "t1", actorMatchSquadPlayerId: "slot-9", sbTeamId: "home" });
+    expect(proposalAt(null, 10_000)).toEqual({ actorTrackId: null, actorMatchSquadPlayerId: null, sbTeamId: null });
+  });
+
+  it("mirrors the window rule", () => {
+    expect(windowProblem(0, 0, 1000)).toBeNull();
+    expect(windowProblem(-1, 0, 1000)).toContain("before the footage");
+    expect(windowProblem(5, 4, 1000)).toContain("ends before");
+    expect(windowProblem(5, 1001, 1000)).toContain("past the footage");
+  });
+});
+
+describe("words and actions", () => {
+  it("describes a candidate in one line", () => {
+    expect(describeCandidate(cand({ type: "goal_candidate", matchClock: "12:30" }), () => "#4 Nine")).toBe("goal candidate · 12:30 · #4 Nine · unreviewed");
+    expect(describeCandidate(cand({ promotedEventId: "e", promotionKind: "enriched", inPlay: false, matchClock: null }), () => null)).toBe("shot · in the match record (enriched) · not play");
+  });
+
+  it("offers only what the service would allow this person", () => {
+    const can = { review: true, publish: true };
+    expect(allowedActions(cand({}), "alice", can)).toMatchObject({ correct: true, accept: false, reject: false, promote: false, yours: true });
+    expect(allowedActions(cand({}), "bob", can)).toMatchObject({ accept: true, reject: true, promote: false, yours: false });
+    expect(allowedActions(cand({ reviewState: "accepted", promotable: true }), "bob", can)).toMatchObject({ promote: true, accept: false });
+    expect(allowedActions(cand({ reviewState: "accepted", promotable: true, inPlay: false }), "bob", can).promote).toBe(false);
+    expect(allowedActions(cand({ promotedEventId: "e" }), "bob", can)).toMatchObject({ correct: false, accept: false, promote: false });
+    expect(allowedActions(cand({ supersededBy: "x" }), "bob", can)).toMatchObject({ correct: false, accept: false });
+    expect(allowedActions(cand({ reviewState: "accepted", promotable: true }), "bob", { review: true, publish: false }).promote).toBe(false);
+  });
+});

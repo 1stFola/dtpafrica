@@ -1027,3 +1027,72 @@
   border-color: rgba(248, 113, 113, 0.6);
   color: #f87171;
 }
+
+/* The event review: a timeline under the player, an inspector beside the roster. */
+.vision-timeline {
+  margin-top: 0.6rem;
+}
+
+.vision-timeline__track {
+  background: rgba(2, 6, 23, 0.6);
+  border-radius: 6px;
+  height: 18px;
+  position: relative;
+}
+
+.vision-timeline__mark {
+  background: var(--mark-colour, #facc15);
+  border: 0;
+  border-radius: 3px;
+  bottom: 3px;
+  cursor: pointer;
+  min-width: 4px;
+  opacity: 0.85;
+  padding: 0;
+  position: absolute;
+  top: 3px;
+}
+
+.vision-timeline__mark--unreviewed { --mark-colour: #facc15; }
+.vision-timeline__mark--accepted { --mark-colour: #34d399; }
+.vision-timeline__mark--rejected { --mark-colour: #f87171; }
+.vision-timeline__mark--promoted { --mark-colour: #60a5fa; }
+.vision-timeline__mark--notplay { background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(0, 0, 0, 0.45) 3px 6px); }
+
+.vision-timeline__mark.is-selected {
+  box-shadow: 0 0 0 2px #fff;
+  opacity: 1;
+}
+
+.vision-timeline__playhead {
+  background: #fff;
+  bottom: 0;
+  position: absolute;
+  top: 0;
+  width: 2px;
+}
+
+.vision-inspector__facts {
+  display: grid;
+  gap: 0.25rem 0.8rem;
+  grid-template-columns: max-content 1fr;
+  margin: 0.4rem 0;
+}
+
+.vision-inspector__facts dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
+.vision-inspector__facts dd {
+  margin: 0;
+}
+
+.vision-inspector__correct,
+.vision-inspector__decide {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
