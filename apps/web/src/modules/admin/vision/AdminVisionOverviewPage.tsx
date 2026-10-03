@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminAuth } from "../AdminAuthContext";
 import { useAdminVisionContext } from "./AdminVisionLayout";
 import { VisionConfigurationPanels } from "./AdminVisionStatusPage";
 import { Panel } from "./vision-ui";
@@ -12,12 +13,16 @@ import { Panel } from "./vision-ui";
 export function AdminVisionOverviewPage() {
   usePageTitle("Vision Engine");
   const { overview } = useAdminVisionContext();
+  const { hasPermission } = useAdminAuth();
 
   const tiles = overview
     ? [
         { to: "/admin/vision/sources", label: "Sources & rights", count: overview.sources, note: `${overview.partners} partner(s). Register a partner and its sources, attach rights evidence, grant scopes, authorise acquisition.` },
         { to: "/admin/vision/footage", label: "Footage", count: overview.assets, note: `${overview.assetsReady} ready. Every copy under DTP control, where each is in the pipeline, and the screens that open on it.` },
         { to: "/admin/vision/pipeline", label: "Pipeline", count: overview.jobsQueued + overview.jobsRunning, note: `${overview.jobsQueued} queued, ${overview.jobsRunning} running, ${overview.jobsFailed} failed; ${overview.workersActive} worker(s) alive. Retry, cancel, provision.` },
+        ...(hasPermission("vision.review")
+          ? [{ to: "/admin/vision/review", label: "Review queue", count: overview.reviewQueue, note: `${overview.identitiesUnreviewed} identity window(s) and ${overview.candidatesUnreviewed} event candidate(s) awaiting a second person. Each opens on the video.` }]
+          : []),
         { to: "/admin/vision/annotation", label: "Annotation", count: overview.annotationOpen, note: "Open tasks. Claim a window to label, review submitted work, see the corpus mix." },
         { to: "/admin/vision/datasets", label: "Datasets", count: overview.datasets, note: "Versions, members, splits, the leakage report, freeze and export." },
         { to: "/admin/vision/models", label: "Models", count: overview.models, note: `${overview.modelsInProduction} in production. Register, benchmark, request and approve promotion, roll back.` },

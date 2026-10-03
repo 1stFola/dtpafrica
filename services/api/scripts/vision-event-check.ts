@@ -20,6 +20,11 @@
  *      and the clock; it enriches the recorder's event at the same minute
  *      rather than adding a second; it creates one only on instruction; a
  *      replayed goal is never a second goal (docs/vision/09, the required test).
+ *   4. (Increment 3) The second lands beside the recorder's minute: on a created
+ *      event always; on an enriched one only when the minutes agree and the
+ *      recorder gave none. The minute itself is never rewritten.
+ *   5. (Increment 3) The review queue lists what is not the reader's own,
+ *      oldest first, both kinds, and empties as decisions land.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import * as bcrypt from "bcrypt";
@@ -205,8 +210,33 @@ async function main() {
     check("the proposer cannot accept their own", selfAccept.body.error, "SelfAcceptanceRefused");
     const noReason = await S(`/vision/review/events/${corrected.body.id}/decision`, { decision: "rejected" });
     check("a rejection without a reason: refused", noReason.body.error, "ReasonRequired");
+
+    // ── 5. The review queue ──────────────────────────────────────────────
+    section("5. The queue: what is not yours, oldest first, until it is decided");
+
+    const queueKeyed = await api(`/vision/review/queue?assetId=${fx.assetId}`);
+    check("the operator key has no queue", queueKeyed.body.error, "EventNeedsAPerson");
+    const queueAnnotator = await annotator.as(`/vision/review/queue?assetId=${fx.assetId}`);
+    check("nor does someone without vision.review", queueAnnotator.status, 403);
+    const queueSecond = await second.as(`/vision/review/queue?assetId=${fx.assetId}`);
+    const queued = (queueSecond.body.items as { kind: string; id: string }[]).map((i) => `${i.kind}:${i.id}`);
+    check("the second person's queue on this footage: the identity, then the replayed goal, then the corrected shot, in the order they were made", queued.join(","), `identity:${identity.id},event:${replayed.body.id},event:${corrected.body.id}`);
+    check("…the superseded shot is not in it", queued.some((q) => q.endsWith(shot.body.id)), false);
+    check("…counting what waits", `${queueSecond.body.waiting?.events}/${queueSecond.body.waiting?.identities}`, "2/1");
+    const first = queueSecond.body.items[0];
+    check("…the identity item says the track, the slot, the footage and the clock", `${first.localTrackId}/${first.slot?.name === starter.playerName}/${first.asset?.title?.startsWith("Events gate record")}/${first.matchClock}`, "1/true/true/10:00");
+    check("…the event item says the type and the clock", `${queueSecond.body.items[2].type}/${queueSecond.body.items[2].matchClock}`, "shot/12:00");
+    const queueReviewer = await reviewer.as(`/vision/review/queue?assetId=${fx.assetId}`);
+    check("the proposer's own queue on this footage is empty: nothing here is a second person's to them", `${queueReviewer.body.count}/${queueReviewer.body.waiting?.events}/${queueReviewer.body.waiting?.identities}`, "0/0/0");
+    const queueOne = await second.as(`/vision/review/queue?assetId=${fx.assetId}&limit=1`);
+    check("a limit cuts the list and keeps the count of what waits", `${queueOne.body.count}/${queueOne.body.waiting?.events}`, "1/2");
+    const queueAll = await second.as(`/vision/review/queue`);
+    check("without an asset the queue spans the footage, this one included", (queueAll.body.items as { id: string }[]).some((i) => i.id === corrected.body.id), true);
+
     const accepted = await S(`/vision/review/events/${corrected.body.id}/decision`, { decision: "accepted" });
     check("a second person accepts", `${accepted.status}/${accepted.body.reviewState}/${accepted.body.reviewedBy === second.id}`, "201/accepted/true");
+    const queueAfter = await second.as(`/vision/review/queue?assetId=${fx.assetId}`);
+    check("…and the shot leaves the queue", (queueAfter.body.items as { id: string }[]).map((i) => i.id).includes(corrected.body.id) ? "still there" : `${queueAfter.body.count} left`, "2 left");
 
     const listed = await reviewer.as(`/vision/review/${fx.assetId}/events`);
     check("the asset lists its current candidates", `${listed.body.count}/${listed.body.clock?.anchored}`, "2/true");
@@ -241,6 +271,7 @@ async function main() {
     if (created.body.promotion?.eventId) fx.eventIds.push(created.body.promotion.eventId);
     const written = await prisma.sbMatchEvent.findUnique({ where: { id: created.body.promotion?.eventId ?? "" } });
     check("…for the home side, by the player the slot names, at minute 20", `${written?.teamId === match.homeTeamId}/${written?.playerId === starter.playerId}/${written?.playerLabel === starter.playerName}/${written?.minute}`, "true/true/true/20");
+    check("…and at the fifteenth second of it, on the row and in the reply", `${written?.secondInMinute}/${created.body.promotion?.second}`, "15/15");
     check("…stamped with the candidate", (written?.metadata as any)?.vision?.candidateId === goal.body.id && (written?.metadata as any)?.vision?.contract === "VisionEventPromotionV1", true);
     check("…and the candidate knows", `${created.body.promotedEventId === written?.id}/${created.body.promotionKind}/${created.body.promotedBy === reviewer.id}`, "true/created/true");
     const again = await R(`/vision/review/events/${goal.body.id}/promote`, {});
@@ -258,6 +289,29 @@ async function main() {
     const after = await prisma.sbMatchEvent.findUnique({ where: { id: recorded.id } });
     check("…the recorder's row keeps its own metadata and gains the stamp", `${(after?.metadata as any)?.source}/${(after?.metadata as any)?.vision?.startMs}`, `gate-${RUN}/${minute1(33, 20)}`);
     check("…its minute untouched, and no second goal added", `${after?.minute}/${await prisma.sbMatchEvent.count({ where: { matchId: match.id, type: "goal" } })}`, "33/2");
+    check("…and the whole minute the recorder entered gains Vision's second", `${after?.secondInMinute}/${enriched.body.promotion?.second}`, "20/20");
+
+    // ── 4. The second beside the recorder's minute ───────────────────────
+    section("4. A second only under the recorder's own minute, and never over the recorder's word");
+
+    // The recorder logged a goal at 36'. Vision's candidate at 37:05 is the same goal, a minute apart: no second is written under 36.
+    const nearby = await prisma.sbMatchEvent.create({ data: { matchId: match.id, teamId: match.homeTeamId, type: "goal", minute: 36, detail: `gate-${RUN}` } });
+    fx.eventIds.push(nearby.id);
+    const aMinuteOff = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(37, 5), endMs: minute1(37, 5), sbTeamId: match.homeTeamId });
+    await S(`/vision/review/events/${aMinuteOff.body.id}/decision`, { decision: "accepted" });
+    const offByOne = await R(`/vision/review/events/${aMinuteOff.body.id}/promote`, {});
+    check("a candidate at 37:05 enriches the recorder's goal at 36'", `${offByOne.body.promotion?.kind}/${offByOne.body.promotion?.eventId === nearby.id}/${offByOne.body.promotion?.minutesApart}`, "enriched/true/1");
+    const nearbyAfter = await prisma.sbMatchEvent.findUnique({ where: { id: nearby.id } });
+    check("…but writes no second under a minute that is not its own, and leaves the minute", `${nearbyAfter?.secondInMinute}/${nearbyAfter?.minute}/${offByOne.body.promotion?.second}`, "null/36/null");
+
+    // The recorder entered 25' and its fortieth second by hand. Vision's candidate at 25:10 does not overwrite it.
+    const byHand = await prisma.sbMatchEvent.create({ data: { matchId: match.id, teamId: match.homeTeamId, type: "goal", minute: 25, secondInMinute: 40, detail: `gate-${RUN}` } });
+    fx.eventIds.push(byHand.id);
+    const overHand = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(25, 10), endMs: minute1(25, 10), sbTeamId: match.homeTeamId });
+    await S(`/vision/review/events/${overHand.body.id}/decision`, { decision: "accepted" });
+    const kept = await R(`/vision/review/events/${overHand.body.id}/promote`, {});
+    const byHandAfter = await prisma.sbMatchEvent.findUnique({ where: { id: byHand.id } });
+    check("a second the recorder entered is the recorder's word: enriched, not overwritten", `${kept.body.promotion?.kind}/${byHandAfter?.secondInMinute}/${kept.body.promotion?.second}`, "enriched/40/40");
 
     const two = await prisma.sbMatchEvent.createManyAndReturn({ data: [40, 42].map((minute) => ({ matchId: match.id, teamId: match.homeTeamId, type: "goal", minute, detail: `gate-${RUN}` })) });
     fx.eventIds.push(...two.map((e) => e.id));
@@ -272,7 +326,7 @@ async function main() {
     const noClock = await R(`/vision/review/events/${offClock.body.id}/promote`, { create: true });
     check("…and cannot be promoted: the match record is in match minutes", noClock.body.error, "ClockNotAnchored");
 
-    check("the match record holds exactly the gate's four goals", await prisma.sbMatchEvent.count({ where: { matchId: match.id, type: "goal" } }), 4);
+    check("the match record holds exactly the gate's six goals", await prisma.sbMatchEvent.count({ where: { matchId: match.id, type: "goal" } }), 6);
   } catch (error) {
     failures += 1;
     console.error("\nGate aborted:", error);

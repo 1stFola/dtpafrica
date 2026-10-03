@@ -63,8 +63,12 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * `VISION_EVENT_TAXONOMY_VERSION`, review states, evidence kinds, promotion kinds,
  * and `VisionEventPromotionV1`, what promotion writes under the recorder event's
  * metadata. No stage changes.
+ *
+ * 1.11.0 -- the review queue's kinds (`REVIEW_QUEUE_KINDS`: `event`, `identity`),
+ * what `GET /vision/review/queue` lists. Promotion now also writes
+ * `SbMatchEvent.secondInMinute` beside the recorder's minute. No stage changes.
  */
-export const VISION_CONTRACT_VERSION = "1.10.0";
+export const VISION_CONTRACT_VERSION = "1.11.0";
 
 export const VISION_JOB_TYPES = [
   "probe",

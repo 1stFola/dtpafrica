@@ -44,6 +44,29 @@ export function stepCandidate(candidates: readonly VisionEventCandidate[], sourc
   return [...current].reverse().find((c) => c.startMs < sourceMs - 1) ?? null;
 }
 
+export type Uncertainty = { kind: "event" | "identity"; id: string; trackId: string | null; sourceMs: number };
+
+/**
+ * What a second person has to decide on this footage, by source time: every
+ * current, unreviewed candidate and identity window that is not theirs. The
+ * same list the review queue holds for one asset; `,` and `.` walk it.
+ */
+export function uncertainties(candidates: readonly VisionEventCandidate[], tracks: readonly VisionReviewTrack[], me: string | undefined): Uncertainty[] {
+  const events: Uncertainty[] = candidates
+    .filter((c) => !c.supersededBy && c.reviewState === "unreviewed" && c.decidedBy !== me)
+    .map((c) => ({ kind: "event", id: c.id, trackId: c.actorTrackId, sourceMs: c.startMs }));
+  const identities: Uncertainty[] = tracks.flatMap((t) =>
+    t.identities.filter((a) => a.supersededBy === null && a.reviewState === "unreviewed" && a.decidedBy !== me).map((a) => ({ kind: "identity" as const, id: a.id, trackId: t.id, sourceMs: a.validFromMs }))
+  );
+  return [...events, ...identities].sort((a, b) => a.sourceMs - b.sourceMs || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+}
+
+/** The next uncertainty after the playhead, or the previous before it; null at either end. */
+export function stepUncertainty(items: readonly Uncertainty[], sourceMs: number, direction: 1 | -1): Uncertainty | null {
+  if (direction === 1) return items.find((i) => i.sourceMs > sourceMs + 1) ?? null;
+  return [...items].reverse().find((i) => i.sourceMs < sourceMs - 1) ?? null;
+}
+
 /** The roster slot a track was said to be at a moment: its current identity covering that millisecond, if it names one. */
 export function slotAt(track: VisionReviewTrack | null, sourceMs: number): string | null {
   if (!track) return null;

@@ -65,3 +65,14 @@ describe("which recorder event a candidate is", () => {
     expect(matchRecorderEvent({ scoreboardType: "goal", minute: 23, sbTeamId: null, actorPlayerId: "p9" }, events)).toMatchObject({ kind: "matched", event: { id: "someone" } });
   });
 });
+
+describe("the second beside the recorder's minute", () => {
+  it("is Vision's when the minutes agree and the recorder gave none, and nothing otherwise", async () => {
+    const { secondToWrite } = await import("./event-taxonomy");
+    expect(secondToWrite(20, 0, null)).toBe(20);
+    expect(secondToWrite(0, 0, null)).toBe(0);
+    expect(secondToWrite(20, 1, null)).toBeNull();
+    expect(secondToWrite(20, 0, 40)).toBeNull();
+    expect(secondToWrite(20, 0, 0)).toBeNull();
+  });
+});

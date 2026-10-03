@@ -68,6 +68,19 @@ export function matchRecorderEvent(
   return { kind: "matched", event: best.event, minutesApart: best.minutesApart };
 }
 
+/**
+ * The second to write beside the recorder's minute when a candidate enriches
+ * its event: Vision's own, and only when its minute *is* the recorder's and the
+ * recorder gave none. A second under a different minute would be a lie about
+ * the recorder's row; a second the recorder entered is the recorder's word.
+ * `null` means write nothing.
+ */
+export function secondToWrite(candidateSecond: number, minutesApart: number, existingSecond: number | null): number | null {
+  if (minutesApart !== 0) return null;
+  if (existingSecond !== null) return null;
+  return candidateSecond;
+}
+
 /** A window inside the asset, start no later than end. */
 export function windowProblem(startMs: number, endMs: number, durationMs: number | null): string | null {
   if (startMs < 0) return "The window starts before the footage.";

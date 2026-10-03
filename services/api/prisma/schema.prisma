@@ -798,6 +798,10 @@ model SbMatchEvent {
   assistLabel    String?  @map("assist_label")
   type           String
   minute         Int
+  /// Sub-minute precision, 0–59, beside the recorder's whole minute. Null for every row the
+  /// recorder entered; written by Vision's promotion when its minute is the recorder's
+  /// (docs/vision/02 D10, docs/vision/49). `minute` stays canonical and is never rewritten.
+  secondInMinute Int?     @map("second_in_minute")
   detail         String?
   metadata       Json?
   createdAt      DateTime @default(now()) @map("created_at")

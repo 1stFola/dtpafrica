@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { VisionEventCandidate, VisionReviewTrack } from "../../../api/vision";
-import { allowedActions, candidateAt, describeCandidate, proposalAt, slotAt, stepCandidate, timelineMarks, windowProblem } from "./event-review";
+import { allowedActions, candidateAt, describeCandidate, proposalAt, slotAt, stepCandidate, stepUncertainty, timelineMarks, uncertainties, windowProblem } from "./event-review";
 
 const cand = (over: Partial<VisionEventCandidate>): VisionEventCandidate => ({
   id: "c", videoAssetId: "a", sbMatchId: "m", type: "shot", taxonomyVersion: "2026.10.0", startMs: 10_000, endMs: 10_000, actorTrackId: "t1", actorPlayerId: null, actorMatchSquadPlayerId: null, sbTeamId: null,
@@ -77,5 +77,37 @@ describe("words and actions", () => {
     expect(allowedActions(cand({ promotedEventId: "e" }), "bob", can)).toMatchObject({ correct: false, accept: false, promote: false });
     expect(allowedActions(cand({ supersededBy: "x" }), "bob", can)).toMatchObject({ correct: false, accept: false });
     expect(allowedActions(cand({ reviewState: "accepted", promotable: true }), "bob", { review: true, publish: false }).promote).toBe(false);
+  });
+});
+
+describe("the uncertainty walk", () => {
+  const track = {
+    id: "t1", localTrackId: 1, inferenceJobId: "j", artifactKey: "k", class: "player", startMs: 0, endMs: 60_000, team: null, sbTeamId: "home", matchClock: null,
+    identities: [
+      { id: "i-theirs", trackId: "t1", playerId: null, matchSquadPlayerId: "slot-9", sbTeamSquadId: null, sbTeamId: "home", confidence: 1, method: "manual", validFromMs: 20_000, validToMs: 30_000, reviewState: "unreviewed", decidedBy: "alice", reviewedBy: null, note: null, supersededBy: null, createdAt: "2026-10-02T00:00:00Z" },
+      { id: "i-mine", trackId: "t1", playerId: null, matchSquadPlayerId: "slot-9", sbTeamSquadId: null, sbTeamId: "home", confidence: 1, method: "manual", validFromMs: 2000, validToMs: 3000, reviewState: "unreviewed", decidedBy: "bob", reviewedBy: null, note: null, supersededBy: null, createdAt: "2026-10-02T00:00:00Z" },
+      { id: "i-old", trackId: "t1", playerId: null, matchSquadPlayerId: "slot-9", sbTeamSquadId: null, sbTeamId: "home", confidence: 1, method: "manual", validFromMs: 4000, validToMs: 5000, reviewState: "unreviewed", decidedBy: "alice", reviewedBy: null, note: null, supersededBy: "x", createdAt: "2026-10-01T00:00:00Z" },
+      { id: "i-done", trackId: "t1", playerId: null, matchSquadPlayerId: "slot-9", sbTeamSquadId: null, sbTeamId: "home", confidence: 1, method: "manual", validFromMs: 6000, validToMs: 7000, reviewState: "accepted", decidedBy: "alice", reviewedBy: "bob", note: null, supersededBy: null, createdAt: "2026-10-01T00:00:00Z" },
+    ],
+  } as unknown as VisionReviewTrack;
+
+  it("lists what is not mine, current and undecided, by source time", () => {
+    const list = uncertainties(
+      [cand({ id: "e-late", startMs: 50_000 }), cand({ id: "e-mine", startMs: 1000, decidedBy: "bob" }), cand({ id: "e-gone", startMs: 1500, supersededBy: "x" }), cand({ id: "e-decided", startMs: 1600, reviewState: "rejected" }), cand({ id: "e-early", startMs: 10_000 })],
+      [track],
+      "bob"
+    );
+    expect(list.map((i) => `${i.kind}:${i.id}@${i.sourceMs}`)).toEqual(["event:e-early@10000", "identity:i-theirs@20000", "event:e-late@50000"]);
+    expect(list[1]!.trackId).toBe("t1");
+  });
+
+  it("steps to the next and the previous, and stops at the ends", () => {
+    const list = uncertainties([cand({ id: "e-early", startMs: 10_000 }), cand({ id: "e-late", startMs: 50_000 })], [track], "bob");
+    expect(stepUncertainty(list, 0, 1)?.id).toBe("e-early");
+    expect(stepUncertainty(list, 10_000, 1)?.id).toBe("i-theirs");
+    expect(stepUncertainty(list, 20_000, -1)?.id).toBe("e-early");
+    expect(stepUncertainty(list, 50_000, -1)?.id).toBe("i-theirs");
+    expect(stepUncertainty(list, 50_000, 1)).toBeNull();
+    expect(stepUncertainty(list, 10_000, -1)).toBeNull();
   });
 });

@@ -129,7 +129,7 @@ Poll at 5 s while a job page is open.
 | `PATCH` | `/vision/review/events/:id` | `vision.review` |
 | `POST` | `/vision/review/events/:id/decision` | `vision.review` |
 | `POST` | `/vision/review/events/:id/promote` | `vision.publish` |
-| `GET` | `/vision/review/queue` | `vision.review` |
+| `GET` | `/vision/review/queue` (`?assetId`, `?limit`; as built — [49](./49-PHASE-6-INCREMENT-3.md)) | `vision.review` |
 
 Every write here **creates a superseding row**; none of them update a prediction in place. The
 response returns both the new row and the ID it supersedes, so the UI can show what changed.
@@ -158,6 +158,19 @@ or, with `create: true`, where none matches and the team is known, creates one a
 match minute (`NoMatchingEvent` names the nearest; `AmbiguousRecorderEvent` when two are equally
 near; `TeamUnknown`; `AlreadyPromoted`). The reads return each candidate with its `evidence`,
 `matchClock`, `scoreboardType` and `promotable`.
+
+**The second, and the queue** ([49-PHASE-6-INCREMENT-3.md](./49-PHASE-6-INCREMENT-3.md)).
+Promotion also writes `SbMatchEvent.secondInMinute`, the sub-minute widening D10 planned: on a
+created event always; on an enriched one only when the candidate's minute *is* the recorder's and
+the recorder entered no second. The minute is never rewritten. The reply's `promotion` carries
+`second` (what the row now holds, or null) beside `minute` and `minutesApart`.
+`GET /vision/review/queue` is what a signed-in reviewer should look at next: every current,
+unreviewed identity assignment and event candidate that is *not their own*, oldest first, as
+`items` of `kind: event | identity` (`REVIEW_QUEUE_KINDS`) each with `sourceMs` (the start of its
+window), `matchClock`, `asset: { title, match }`, `decidedBy`, `createdAt` and, for an identity,
+`trackId`, `localTrackId` and the `slot` named; `waiting: { events, identities }` counts the whole
+queue before `limit` (default 100, at most 500) cuts it. The operator key has no queue
+(`EventNeedsAPerson`).
 
 ### Datasets and models
 

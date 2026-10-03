@@ -16,12 +16,12 @@ const HOME = "55555555-5555-4555-8555-555555555555";
 const AWAY = "66666666-6666-4666-8666-666666666666";
 
 const mockPrisma = {
-  visionVideoAsset: { findUnique: vi.fn() },
+  visionVideoAsset: { findUnique: vi.fn(), findMany: vi.fn() },
   visionTrack: { findUnique: vi.fn() },
-  sbMatchSquadPlayer: { findUnique: vi.fn() },
+  sbMatchSquadPlayer: { findUnique: vi.fn(), findMany: vi.fn() },
   sbMatch: { findUnique: vi.fn() },
   visionCameraSegment: { findFirst: vi.fn() },
-  visionIdentityAssignment: { findFirst: vi.fn() },
+  visionIdentityAssignment: { findFirst: vi.fn(), findMany: vi.fn() },
   visionClockAnchor: { findFirst: vi.fn() },
   visionEventCandidate: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   visionEvidenceLink: { createMany: vi.fn() },
@@ -165,12 +165,29 @@ describe("promotion", () => {
     mockPrisma.sbMatchEvent.findMany.mockResolvedValue([{ id: "ev-23", type: "goal", minute: 1, teamId: HOME, playerId: null }]);
     mockPrisma.sbMatchEvent.findUnique.mockResolvedValue({ id: "ev-23", metadata: { playerNumber: 9 } });
     const out = await service.promote("cand-1", {}, bob);
-    expect(out.promotion).toEqual({ kind: "enriched", eventId: "ev-23", minute: 1, minutesApart: 0 });
+    expect(out.promotion).toEqual({ kind: "enriched", eventId: "ev-23", minute: 1, second: 31, minutesApart: 0 });
     const update = mockPrisma.sbMatchEvent.update.mock.calls[0]![0];
     expect(update.where).toEqual({ id: "ev-23" });
     expect(update.data.metadata).toMatchObject({ playerNumber: 9, vision: { contract: "VisionEventPromotionV1", candidateId: "cand-1", type: "goal_candidate", startMs: 100_000 } });
+    expect(update.data.secondInMinute).toBe(31);
     expect(mockPrisma.visionEventCandidate.update).toHaveBeenCalledWith({ where: { id: "cand-1" }, data: expect.objectContaining({ promotedEventId: "ev-23", promotionKind: "enriched", promotedBy: "bob" }) });
     expect(mockPrisma.sbMatchEvent.create).not.toHaveBeenCalled();
+  });
+
+  it("writes the second beside the recorder's minute only when the minutes agree and the recorder gave none", async () => {
+    stored = candidate();
+    mockPrisma.sbMatchEvent.findMany.mockResolvedValue([{ id: "ev-next", type: "goal", minute: 2, teamId: HOME, playerId: null }]);
+    mockPrisma.sbMatchEvent.findUnique.mockResolvedValue({ id: "ev-next", metadata: null, secondInMinute: null });
+    let out = await service.promote("cand-1", {}, bob);
+    expect(out.promotion).toMatchObject({ kind: "enriched", minute: 2, second: null, minutesApart: 1 });
+    expect(mockPrisma.sbMatchEvent.update.mock.calls[0]![0].data).not.toHaveProperty("secondInMinute");
+
+    stored = candidate();
+    mockPrisma.sbMatchEvent.findMany.mockResolvedValue([{ id: "ev-same", type: "goal", minute: 1, teamId: HOME, playerId: null }]);
+    mockPrisma.sbMatchEvent.findUnique.mockResolvedValue({ id: "ev-same", metadata: null, secondInMinute: 7 });
+    out = await service.promote("cand-1", {}, bob);
+    expect(out.promotion).toMatchObject({ kind: "enriched", minute: 1, second: 7, minutesApart: 0 });
+    expect(mockPrisma.sbMatchEvent.update.mock.calls[1]![0].data).not.toHaveProperty("secondInMinute");
   });
 
   it("creates a recorder event only on instruction, with the team known, and refuses an ambiguous match", async () => {
@@ -182,11 +199,34 @@ describe("promotion", () => {
     stored = candidate();
     mockPrisma.sbMatchEvent.create.mockResolvedValue({ id: "ev-new" });
     const out = await service.promote("cand-1", { create: true }, bob);
-    expect(out.promotion).toEqual({ kind: "created", eventId: "ev-new", minute: 1, minutesApart: 0 });
-    expect(mockPrisma.sbMatchEvent.create.mock.calls[0]![0].data).toMatchObject({ matchId: MATCH, teamId: HOME, playerId: "p9", playerLabel: "Nine", type: "goal", minute: 1, metadata: { vision: { candidateId: "cand-1" } } });
+    expect(out.promotion).toEqual({ kind: "created", eventId: "ev-new", minute: 1, second: 31, minutesApart: 0 });
+    expect(mockPrisma.sbMatchEvent.create.mock.calls[0]![0].data).toMatchObject({ matchId: MATCH, teamId: HOME, playerId: "p9", playerLabel: "Nine", type: "goal", minute: 1, secondInMinute: 31, metadata: { vision: { candidateId: "cand-1" } } });
 
     stored = candidate();
     mockPrisma.sbMatchEvent.findMany.mockResolvedValue([{ id: "a", type: "goal", minute: 0, teamId: HOME, playerId: null }, { id: "b", type: "goal", minute: 2, teamId: HOME, playerId: null }]);
     await expect(service.promote("cand-1", { create: true }, bob)).rejects.toMatchObject({ response: { error: "AmbiguousRecorderEvent" } });
+  });
+});
+
+describe("the queue", () => {
+  it("is a person's, lists what is not theirs oldest first, and says the footage, the clock and the slot", async () => {
+    await expect(service.queue({}, keyed)).rejects.toMatchObject({ response: { error: "EventNeedsAPerson" } });
+    mockPrisma.visionEventCandidate.findMany.mockResolvedValue([
+      { id: "ev-a", videoAssetId: ASSET, type: "shot", startMs: 100_000, endMs: 100_000, actorTrackId: TRACK, decidedBy: "alice", createdAt: new Date("2026-10-03T10:00:00Z") },
+      { id: "ev-mine", videoAssetId: ASSET, type: "shot", startMs: 100_000, endMs: 100_000, actorTrackId: null, decidedBy: "bob", createdAt: new Date("2026-10-03T09:00:00Z") },
+    ]);
+    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([
+      { id: "id-a", trackId: TRACK, matchSquadPlayerId: SLOT, validFromMs: 40_000, validToMs: 90_000, decidedBy: "alice", createdAt: new Date("2026-10-03T08:00:00Z"), track: { localTrackId: 4, videoAssetId: ASSET } },
+    ]);
+    mockPrisma.visionVideoAsset.findMany.mockResolvedValue([{ id: ASSET, sbMatchId: MATCH, sourceVideoRecord: { title: "Derby" }, sbMatch: { homeTeam: { name: "Home" }, awayTeam: { name: "Away" } } }]);
+    mockPrisma.sbMatchSquadPlayer.findMany.mockResolvedValue([{ id: SLOT, playerName: "Nine", jerseyNumber: 9 }]);
+    const out = await service.queue({ assetId: ASSET, limit: 10 }, bob);
+    expect(out.me).toBe("bob");
+    expect(out.waiting).toEqual({ events: 1, identities: 1 });
+    expect(out.items.map((i) => `${i.kind}:${i.id}`)).toEqual(["identity:id-a", "event:ev-a"]);
+    expect(out.items[0]).toMatchObject({ localTrackId: 4, sourceMs: 40_000, matchClock: "0:31", slot: { name: "Nine", jerseyNumber: 9 }, asset: { title: "Derby", match: "Home v Away" } });
+    expect(out.items[1]).toMatchObject({ type: "shot", sourceMs: 100_000, matchClock: "1:31", slot: null });
+    expect(mockPrisma.visionEventCandidate.findMany.mock.calls[0]![0].where).toEqual({ supersededBy: null, reviewState: "unreviewed", videoAssetId: ASSET });
+    expect(mockPrisma.visionIdentityAssignment.findMany.mock.calls[0]![0].where).toEqual({ supersededBy: null, reviewState: "unreviewed", track: { videoAssetId: ASSET } });
   });
 });

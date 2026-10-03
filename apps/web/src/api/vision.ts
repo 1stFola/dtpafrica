@@ -755,6 +755,9 @@ export type VisionOverview = {
   workersActive: number;
   annotationOpen: number;
   candidatesUnreviewed: number;
+  identitiesUnreviewed: number;
+  /** Everything undecided, whoever proposed it; the queue itself leaves the reader's own out. */
+  reviewQueue: number;
   datasets: number;
   models: number;
   modelsInProduction: number;
@@ -1046,5 +1049,41 @@ export function decideVisionEvent(id: string, decision: "accepted" | "rejected",
 }
 
 export function promoteVisionEvent(id: string, create = false) {
-  return adminFetch<VisionEventCandidate & { promotion: { kind: string; eventId: string; minute: number } }>(`/vision/review/events/${id}/promote`, { method: "POST", body: JSON.stringify({ create }) });
+  return adminFetch<VisionEventCandidate & { promotion: { kind: string; eventId: string; minute: number; second: number | null; minutesApart: number } }>(`/vision/review/events/${id}/promote`, { method: "POST", body: JSON.stringify({ create }) });
+}
+
+// The review queue: what a second person should look at next (docs/vision/49).
+
+export type VisionReviewQueueItem = {
+  kind: "event" | "identity";
+  id: string;
+  videoAssetId: string;
+  /** The start of the item's window in source time: where the video opens. */
+  sourceMs: number;
+  decidedBy: string;
+  createdAt: string;
+  matchClock: string | null;
+  asset: { title: string | null; match: string | null };
+  slot: { name: string; jerseyNumber: number | null } | null;
+  // event
+  type?: string;
+  startMs?: number;
+  endMs?: number;
+  actorTrackId?: string | null;
+  // identity
+  trackId?: string;
+  localTrackId?: number;
+  matchSquadPlayerId?: string | null;
+  validFromMs?: number;
+  validToMs?: number;
+};
+
+export type VisionReviewQueue = { me: string; waiting: { events: number; identities: number }; count: number; items: VisionReviewQueueItem[] };
+
+export function fetchVisionReviewQueue(opts: { assetId?: string; limit?: number } = {}) {
+  const q = new URLSearchParams();
+  if (opts.assetId) q.set("assetId", opts.assetId);
+  if (opts.limit) q.set("limit", String(opts.limit));
+  const qs = q.toString();
+  return adminFetch<VisionReviewQueue>(`/vision/review/queue${qs ? `?${qs}` : ""}`);
 }
