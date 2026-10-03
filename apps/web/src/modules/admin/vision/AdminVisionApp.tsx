@@ -8,6 +8,7 @@ import { AdminVisionLayout } from "./AdminVisionLayout";
 import { AdminVisionModelsPage } from "./AdminVisionModelsPage";
 import { AdminVisionOverviewPage } from "./AdminVisionOverviewPage";
 import { AdminVisionPipelinePage } from "./AdminVisionPipelinePage";
+import { AdminVisionReviewPage } from "./AdminVisionReviewPage";
 import { AdminVisionSourceDetailPage } from "./AdminVisionSourceDetailPage";
 import { AdminVisionSourcesPage } from "./AdminVisionSourcesPage";
 
@@ -21,6 +22,10 @@ export function AdminVisionApp() {
         <Route path="sources/:id" element={<AdminVisionSourceDetailPage />} />
         <Route path="footage" element={<AdminVisionFootagePage />} />
         <Route path="pipeline" element={<AdminVisionPipelinePage />} />
+        {/* The queue is a second person's; reading it needs `vision.review`, as deciding does. */}
+        <Route element={<AdminRequirePermission permission="vision.review" />}>
+          <Route path="review" element={<AdminVisionReviewPage />} />
+        </Route>
         {/* Claiming and labelling need `vision.annotate`; the workstation itself mounts outside the shell (App.tsx). */}
         <Route element={<AdminRequirePermission permission="vision.annotate" />}>
           <Route path="annotation" element={<AdminVisionAnnotationPage />} />

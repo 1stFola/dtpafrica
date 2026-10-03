@@ -200,6 +200,12 @@ The promotion step is therefore an **enrichment** step: it attaches Vision evide
 existing `SbMatchEvent`, and creates a new one only where the recorder logged nothing and a reviewer
 approves. Re-confirmed by DTP leadership; no ambiguity remains.
 
+**Widened 3 Oct 2026:** `SbMatchEvent.secondInMinute` (nullable; `minute` untouched and still
+canonical) landed in [49](./49-PHASE-6-INCREMENT-3.md). Promotion writes it on an event it
+creates, and on one it enriches only when the candidate's minute is the recorder's and the
+recorder entered no second. The public timeline reads `47'12"` where it is set and `47'` where it
+is not. `SbHighlight.mediaUrl` waits for Phase 7.
+
 ---
 
 ### D11 — Scout access

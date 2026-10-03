@@ -458,6 +458,8 @@ the new roles follow the same pattern and must not reset existing grants.
 - `prisma migrate` from zero must succeed in CI. `db push` is for local iteration only.
 - No Vision migration may alter an existing ScoreBoard or Player table before Phase 6. The two
   planned widenings (`SbMatchEvent` sub-minute precision, `SbHighlight.mediaUrl`) are explicit,
-  backwards-compatible, and land in Phase 6/7 with their own review.
+  backwards-compatible, and land in Phase 6/7 with their own review. The first landed in
+  [49](./49-PHASE-6-INCREMENT-3.md): `SbMatchEvent.secondInMinute`, nullable, null on every row
+  the recorder entered, written by promotion only beside the recorder's own minute.
 - Every `Json` column needs a Zod schema in `packages/vision-contracts` and a documented shape.
   PROMPT rule 19: core domain entities do not live in undocumented JSON blobs.

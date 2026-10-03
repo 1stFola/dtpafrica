@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { EVENT_LABELS, type SbMatchEvent, type SbTeamRef } from "../../../api/scoreboard";
 import { namesAPerson, playerDisplayName } from "../../../lib/player-display-name";
+import { compareEventClock, eventClockLabel } from "../event-clock";
 
 const EVENT_ICONS: Record<string, string> = {
   goal: "⚽",
@@ -171,8 +172,8 @@ function resolveCsvSequence(ev: SbMatchEvent): number {
 }
 
 function compareTimelineEvents(a: SbMatchEvent, b: SbMatchEvent): number {
-  const minuteDiff = a.minute - b.minute;
-  if (minuteDiff !== 0) return minuteDiff;
+  const clockDiff = compareEventClock(a, b);
+  if (clockDiff !== 0) return clockDiff;
 
   const aKickOff = resolveCsvEventType(a) === "kick_off";
   const bKickOff = resolveCsvEventType(b) === "kick_off";
@@ -192,8 +193,8 @@ function compareLatestEvents(a: SbMatchEvent, b: SbMatchEvent): number {
   const sequenceDiff = resolveCsvSequence(b) - resolveCsvSequence(a);
   if (sequenceDiff !== 0 && Number.isFinite(sequenceDiff)) return sequenceDiff;
 
-  const minuteDiff = b.minute - a.minute;
-  if (minuteDiff !== 0) return minuteDiff;
+  const clockDiff = compareEventClock(b, a);
+  if (clockDiff !== 0) return clockDiff;
 
   return -compareTimelineEvents(a, b);
 }
@@ -703,7 +704,7 @@ function NeutralTimelineRow({
     >
       <div className="sbm-timeline__neutral-break">
         <div className="sbm-timeline__neutral-marker">
-          <span className="sbm-timeline__minute">{ev.minute}&apos;</span>
+          <span className="sbm-timeline__minute">{eventClockLabel(ev)}</span>
           <span className="sbm-timeline__marker">
             <span className="sbm-event__icon sbm-timeline__icon" aria-hidden>
               {icon}
@@ -752,7 +753,7 @@ function TeamTimelineRow({
       </div>
 
       <div className="sbm-timeline__axis" aria-hidden="false">
-        <span className="sbm-timeline__minute">{ev.minute}&apos;</span>
+        <span className="sbm-timeline__minute">{eventClockLabel(ev)}</span>
         <span className="sbm-timeline__marker">
           <span className="sbm-event__icon sbm-timeline__icon" aria-hidden>
             {icon}

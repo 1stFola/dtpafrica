@@ -26,7 +26,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
 import { ChunkCache, chunkCovering, explainChunkFailure, loadChunk, rowsNear, rowsOnFrame, type DecodedChunk } from "./game-state";
-import { EVENT_TYPES, candidateAt, describeCandidate, proposalAt, stepCandidate } from "./event-review";
+import { EVENT_TYPES, candidateAt, describeCandidate, proposalAt, stepCandidate, stepUncertainty, uncertainties } from "./event-review";
 import { describeClock } from "./match-clock";
 import { VisionEventInspector } from "./VisionEventInspector";
 import { VisionEventTimeline } from "./VisionEventTimeline";
@@ -108,6 +108,15 @@ export function AdminVisionIdentityPage() {
   const [eventCandidates, setEventCandidates] = useState<VisionEventCandidate[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(params.get("event"));
   const [eventType, setEventType] = useState<string>("shot");
+  /* Where a link lands: `?event=` from the Events page or a colleague, `?track=&at=`
+     from the review queue. The seek waits until the video can take it, once. */
+  /* Where the last `,` `.` walk landed, so a clip that cannot reach the item does not trap the walk on it. */
+  const walked = useRef<{ proxyMs: number; sourceMs: number } | null>(null);
+  const landing = useRef<{ trackId: string | null; eventId: string | null; at: number | null }>({
+    trackId: params.get("track"),
+    eventId: params.get("event"),
+    at: params.get("at") !== null && Number.isFinite(Number(params.get("at"))) ? Number(params.get("at")) : null,
+  });
 
   /* The review rows reload after every action; the media does not, or the video
      element would take a fresh URL and jump back to the start each time. */
@@ -173,6 +182,8 @@ export function AdminVisionIdentityPage() {
   }, [review, positions]);
 
   const selected = useMemo(() => review?.tracks.find((t) => t.id === selectedId) ?? null, [review, selectedId]);
+  /* What a second person has to decide here: the review queue for this asset, walked with `,` and `.`. */
+  const uncertain = useMemo(() => uncertainties(eventCandidates, review?.tracks ?? [], me), [eventCandidates, me, review]);
 
   useEffect(() => {
     setSlotId(null);
@@ -263,6 +274,29 @@ export function AdminVisionIdentityPage() {
     [clipEndMs]
   );
   const step = useCallback((frames: number) => seekTo(stepFrames(proxyMs, frames, media?.fps ?? null, clipWindow)), [clipWindow, media, proxyMs, seekTo]);
+  const land = useCallback(() => {
+    const l = landing.current;
+    if (!l.trackId && !l.eventId && l.at === null) return;
+    const el = videoRef.current;
+    if (!el || el.readyState < 1) return;
+    let at = l.at;
+    if (l.eventId) {
+      const c = eventCandidates.find((x) => x.id === l.eventId);
+      if (!c) return;
+      at = at ?? c.startMs;
+    }
+    if (l.trackId) {
+      const t = review?.tracks.find((x) => x.id === l.trackId);
+      if (!t) return;
+      setSelectedId(t.id);
+      at = at ?? t.startMs;
+    }
+    landing.current = { trackId: null, eventId: null, at: null };
+    if (at !== null) seekTo(at - offsetMs);
+  }, [eventCandidates, offsetMs, review, seekTo]);
+  useEffect(() => {
+    land();
+  }, [land, media]);
   const togglePlay = useCallback(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -310,12 +344,31 @@ export function AdminVisionIdentityPage() {
       } else if (event.key === "e" || event.key === "E") {
         event.preventDefault();
         proposeHere();
+      } else if (event.key === "," || event.key === ".") {
+        event.preventDefault();
+        /* From the playhead, unless the last walk landed where the clip could not take
+           the playhead (a proxy shorter than its source) and it has not moved since: then
+           from the item walked to, so the walk goes on instead of returning to it. */
+        const stuck = walked.current !== null && Math.abs(walked.current.proxyMs - proxyMs) < 100;
+        const from = stuck ? walked.current!.sourceMs : proxyMs + offsetMs;
+        const next = stepUncertainty(uncertain, from, event.key === "." ? 1 : -1);
+        if (next) {
+          if (next.kind === "event") {
+            setSelectedEventId(next.id);
+          } else if (next.trackId) {
+            setSelectedId(next.trackId);
+            setSelectedEventId(null);
+          }
+          const target = next.sourceMs - offsetMs;
+          seekTo(target);
+          walked.current = { proxyMs: Math.min(Math.max(target, 0), clipEndMs || target), sourceMs: next.sourceMs };
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [media, step, togglePlay, eventCandidates, proxyMs, offsetMs, seekTo, selected, eventType]);
+  }, [media, step, togglePlay, eventCandidates, proxyMs, offsetMs, seekTo, selected, eventType, uncertain, clipEndMs]);
 
   /** Every track with a position on this frame, as a percentage box. */
   const boxesHere = useMemo(() => {
@@ -473,7 +526,10 @@ export function AdminVisionIdentityPage() {
               ref={videoRef}
               src={media.url}
               preload="auto"
-              onLoadedMetadata={() => seekTo(0)}
+              onLoadedMetadata={() => {
+                seekTo(0);
+                land();
+              }}
               onPause={() => setPlaying(false)}
               onPlay={() => setPlaying(true)}
             />
@@ -590,7 +646,7 @@ export function AdminVisionIdentityPage() {
               </div>
               <p className="vision-footnote">
                 {selected ? `Actor: track #${selected.localTrackId}${proposalAt(selected, sourceMs).actorMatchSquadPlayerId ? ", the player it was said to be" : ", nobody named yet"}.` : "Select a track first to name the actor."}{" "}
-                {eventCandidates.filter((c) => !c.supersededBy).length} candidate(s) on this footage.
+                {eventCandidates.filter((c) => !c.supersededBy).length} candidate(s) on this footage; {uncertain.length} identity window(s) and candidate(s) for you to decide (<kbd>,</kbd> <kbd>.</kbd> walk them).
               </p>
             </section>
           )}

@@ -16,6 +16,7 @@ const sections = [
   { to: "/admin/vision/sources", label: "Sources & rights", icon: "☰" },
   { to: "/admin/vision/footage", label: "Footage", icon: "▣" },
   { to: "/admin/vision/pipeline", label: "Pipeline", icon: "⚙" },
+  { to: "/admin/vision/review", label: "Review", icon: "☑", permission: "vision.review" },
   { to: "/admin/vision/annotation", label: "Annotation", icon: "✎", permission: "vision.annotate" },
   { to: "/admin/vision/datasets", label: "Datasets", icon: "⛁" },
   { to: "/admin/vision/models", label: "Models", icon: "◉" },

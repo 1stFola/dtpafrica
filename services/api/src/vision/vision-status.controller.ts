@@ -37,7 +37,7 @@ export class VisionStatusController {
   @RequirePermissions("vision.read")
   async overview() {
     const staleWorkerBefore = new Date(Date.now() - 10 * 60 * 1000);
-    const [partners, sources, assets, assetsReady, jobsQueued, jobsRunning, jobsFailed, workersActive, annotationOpen, candidatesUnreviewed, datasets, models, modelsInProduction] = await Promise.all([
+    const [partners, sources, assets, assetsReady, jobsQueued, jobsRunning, jobsFailed, workersActive, annotationOpen, candidatesUnreviewed, identitiesUnreviewed, datasets, models, modelsInProduction] = await Promise.all([
       this.prisma.visionSourcePartner.count(),
       this.prisma.visionSourceVideoRecord.count(),
       this.prisma.visionVideoAsset.count(),
@@ -48,11 +48,13 @@ export class VisionStatusController {
       this.prisma.visionWorker.count({ where: { retiredAt: null, lastSeenAt: { gte: staleWorkerBefore } } }),
       this.prisma.visionAnnotationTask.count({ where: { state: { in: ["open", "claimed"] } } }),
       this.prisma.visionEventCandidate.count({ where: { supersededBy: null, reviewState: "unreviewed" } }),
+      this.prisma.visionIdentityAssignment.count({ where: { supersededBy: null, reviewState: "unreviewed" } }),
       this.prisma.visionDatasetVersion.count(),
       this.prisma.visionModel.count(),
       this.prisma.visionModelVersion.count({ where: { stage: "production" } }),
     ]);
-    return { enabled: this.config.enabled, partners, sources, assets, assetsReady, jobsQueued, jobsRunning, jobsFailed, workersActive, annotationOpen, candidatesUnreviewed, datasets, models, modelsInProduction };
+    /* The review queue's depth is everything undecided, whoever proposed it; the queue itself leaves the reader's own out. */
+    return { enabled: this.config.enabled, partners, sources, assets, assetsReady, jobsQueued, jobsRunning, jobsFailed, workersActive, annotationOpen, candidatesUnreviewed, identitiesUnreviewed, reviewQueue: candidatesUnreviewed + identitiesUnreviewed, datasets, models, modelsInProduction };
   }
 
   @Get("status")

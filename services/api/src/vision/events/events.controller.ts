@@ -31,6 +31,14 @@ export class VisionEventsController {
     return jsonSafe(await this.events.get(id));
   }
 
+  /** What this person should look at next, across the footage or on one asset; their own proposals are not in it. */
+  @Get("queue")
+  @RequirePermissions("vision.review")
+  async queue(@AdminAuth() auth: AdminAuthContext, @Query("assetId") assetId?: string, @Query("limit") limit?: string) {
+    const parsed = limit ? Number(limit) : undefined;
+    return jsonSafe(await this.events.queue({ assetId: assetId || undefined, limit: Number.isFinite(parsed) ? parsed : undefined }, auth));
+  }
+
   @Post("events")
   @RequirePermissions("vision.review")
   async propose(@Body() dto: ProposeEventDto, @AdminAuth() auth: AdminAuthContext) {

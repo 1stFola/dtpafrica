@@ -6,7 +6,8 @@ import { VisionAuditService } from "../audit/vision-audit.service";
 import { VisionClockService } from "../clock/clock.service";
 import { clockAt, type ClockAnchor } from "../clock/match-clock";
 import { RightsPolicyService } from "../rights/rights-policy.service";
-import { isEventType, isPlay, matchRecorderEvent, scoreboardTypeOf, windowProblem } from "./event-taxonomy";
+import { isEventType, isPlay, matchRecorderEvent, scoreboardTypeOf, secondToWrite, windowProblem } from "./event-taxonomy";
+import { buildQueue, type QueueIdentityRow } from "./review-queue";
 
 /**
  * Event candidates: a person's (later, a model's) proposal that something
@@ -218,6 +219,7 @@ export class VisionEventsService {
       });
     }
     const minute = reading.minute;
+    const second = reading.second;
     const recorded = await this.prisma.sbMatchEvent.findMany({
       where: { matchId: current.sbMatchId, type: scoreboardType },
       select: { id: true, type: true, minute: true, teamId: true, playerId: true },
@@ -256,12 +258,19 @@ export class VisionEventsService {
     };
     const result = await this.prisma.$transaction(async (tx) => {
       if (outcome.kind === "matched") {
-        const existing = await tx.sbMatchEvent.findUnique({ where: { id: outcome.event.id }, select: { id: true, metadata: true } });
+        const existing = await tx.sbMatchEvent.findUnique({ where: { id: outcome.event.id }, select: { id: true, metadata: true, secondInMinute: true } });
         if (!existing) throw new NotFoundException(`Recorder event ${outcome.event.id} vanished`);
         const metadata = existing.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata) ? (existing.metadata as Record<string, unknown>) : {};
-        await tx.sbMatchEvent.update({ where: { id: existing.id }, data: { metadata: { ...metadata, vision: stamp } as never } });
+        /* The second lands beside the recorder's minute only when it is the same minute and the
+           recorder gave none; the minute itself is the recorder's and is never rewritten. */
+        const existingSecond = existing.secondInMinute ?? null;
+        const writeSecond = secondToWrite(second, outcome.minutesApart, existingSecond);
+        await tx.sbMatchEvent.update({
+          where: { id: existing.id },
+          data: { metadata: { ...metadata, vision: stamp } as never, ...(writeSecond !== null ? { secondInMinute: writeSecond } : {}) },
+        });
         await tx.visionEventCandidate.update({ where: { id: current.id }, data: { promotedEventId: existing.id, promotionKind: "enriched", promotedBy: person.userId, promotedAt: new Date() } });
-        return { kind: "enriched" as const, eventId: existing.id, minute: outcome.event.minute, minutesApart: outcome.minutesApart };
+        return { kind: "enriched" as const, eventId: existing.id, minute: outcome.event.minute, second: writeSecond ?? existingSecond, minutesApart: outcome.minutesApart };
       }
       const slot = current.actorMatchSquadPlayerId ? await tx.sbMatchSquadPlayer.findUnique({ where: { id: current.actorMatchSquadPlayerId }, select: { playerName: true } }) : null;
       const created = await tx.sbMatchEvent.create({
@@ -272,15 +281,73 @@ export class VisionEventsService {
           playerLabel: slot?.playerName ?? null,
           type: scoreboardType,
           minute,
+          secondInMinute: second,
           detail: "Added from video evidence",
           metadata: { vision: stamp } as never,
         },
       });
       await tx.visionEventCandidate.update({ where: { id: current.id }, data: { promotedEventId: created.id, promotionKind: "created", promotedBy: person.userId, promotedAt: new Date() } });
-      return { kind: "created" as const, eventId: created.id, minute, minutesApart: 0 };
+      return { kind: "created" as const, eventId: created.id, minute, second, minutesApart: 0 };
     });
     await this.audit.record({ action: "event.promoted", targetKind: "vision_event_candidate", targetId: current.id, data: { ...result, scoreboardType } }, actor);
     return { ...(await this.get(current.id)), promotion: result };
+  }
+
+  // ── The queue ────────────────────────────────────────────────────────────
+
+  /**
+   * What this person should look at next: every current, undecided identity
+   * and event candidate that is not their own, oldest first, with the words a
+   * list needs -- the footage, the match clock, the roster slot named.
+   */
+  async queue(opts: { assetId?: string; limit?: number }, actor?: AdminAuthContext) {
+    const person = requirePerson(actor, "read the review queue");
+    const limit = Math.min(Math.max(Math.floor(opts.limit ?? 100), 1), 500);
+    const assetFilter = opts.assetId ? { videoAssetId: opts.assetId } : {};
+    const [events, identities] = await Promise.all([
+      this.prisma.visionEventCandidate.findMany({
+        where: { supersededBy: null, reviewState: "unreviewed", ...assetFilter },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, videoAssetId: true, type: true, startMs: true, endMs: true, actorTrackId: true, decidedBy: true, createdAt: true },
+      }),
+      this.prisma.visionIdentityAssignment.findMany({
+        where: { supersededBy: null, reviewState: "unreviewed", track: assetFilter },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, trackId: true, matchSquadPlayerId: true, validFromMs: true, validToMs: true, decidedBy: true, createdAt: true, track: { select: { localTrackId: true, videoAssetId: true } } },
+      }),
+    ]);
+    const identityRows: QueueIdentityRow[] = identities.map(({ track, ...a }) => ({ ...a, videoAssetId: track.videoAssetId, localTrackId: track.localTrackId }));
+    const built = buildQueue(person.userId, events, identityRows, limit);
+
+    const assetIds = [...new Set(built.items.map((i) => i.videoAssetId))];
+    const slotIds = [...new Set(built.items.flatMap((i) => (i.kind === "identity" && i.matchSquadPlayerId ? [i.matchSquadPlayerId] : [])))];
+    const [assets, slots, anchorsByAsset] = await Promise.all([
+      assetIds.length
+        ? this.prisma.visionVideoAsset.findMany({
+            where: { id: { in: assetIds } },
+            select: { id: true, sbMatchId: true, sourceVideoRecord: { select: { title: true } }, sbMatch: { select: { homeTeam: { select: { name: true } }, awayTeam: { select: { name: true } } } } },
+          })
+        : [],
+      slotIds.length ? this.prisma.sbMatchSquadPlayer.findMany({ where: { id: { in: slotIds } }, select: { id: true, playerName: true, jerseyNumber: true } }) : [],
+      Promise.all(assetIds.map(async (id) => [id, await this.clock.currentAnchors(id)] as const)),
+    ]);
+    const assetOf = new Map(assets.map((a) => [a.id, { title: a.sourceVideoRecord?.title ?? null, match: a.sbMatch ? `${a.sbMatch.homeTeam.name} v ${a.sbMatch.awayTeam.name}` : null }]));
+    const slotOf = new Map(slots.map((s) => [s.id, { name: s.playerName, jerseyNumber: s.jerseyNumber }]));
+    const anchorsOf = new Map<string, ClockAnchor[]>(anchorsByAsset);
+    return {
+      me: person.userId,
+      waiting: built.waiting,
+      count: built.items.length,
+      items: built.items.map((i) => {
+        const anchors = anchorsOf.get(i.videoAssetId) ?? [];
+        return {
+          ...i,
+          asset: assetOf.get(i.videoAssetId) ?? { title: null, match: null },
+          matchClock: anchors.length ? clockAt(anchors, i.sourceMs).display : null,
+          slot: i.kind === "identity" && i.matchSquadPlayerId ? (slotOf.get(i.matchSquadPlayerId) ?? null) : null,
+        };
+      }),
+    };
   }
 
   // ── Reading ──────────────────────────────────────────────────────────────

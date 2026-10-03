@@ -176,6 +176,8 @@ export type SbMatchEvent = {
   id: string;
   type: string;
   minute: number;
+  /** Sub-minute precision beside the minute, 0–59; null on every row the recorder entered. */
+  secondInMinute?: number | null;
   teamId: string | null;
   playerId: string | null;
   playerLabel: string | null;

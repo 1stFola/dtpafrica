@@ -27,6 +27,7 @@ Reuse, do not rebuild: `AdminAuthContext`, `AdminRequirePermission`, `AdminLayou
 | `/admin/vision/review/:assetId/*` | **Analysis & review workstation** | `vision.review` | **Full viewport, outside `AdminLayout`** |
 | `/admin/vision/workstation/identity/:assetId` | Identity review (the roster panel of the above, as built — [36](./36-PHASE-4-INCREMENT-5.md)) | `vision.review` | Full viewport, `VisionWorkstationApp` |
 | `/admin/vision/workstation/calibration/:assetId` | Calibration editor (as built — [40](./40-PHASE-5-INCREMENT-3.md)) | `vision.review` | Full viewport, `VisionWorkstationApp` |
+| `/admin/vision/review` | The review queue: what a second person should look at next, each item opening on the video (as built — [49](./49-PHASE-6-INCREMENT-3.md)) | `vision.review` | `AdminVisionLayout` |
 | `/admin/vision/annotation` | Annotation queue | `vision.annotate` | `AdminLayout` |
 | `/admin/vision/datasets` | Dataset registry | `vision.read` | `AdminLayout` |
 | `/admin/vision/datasets/:id` | Dataset detail, leakage, representation | `vision.read` | `AdminLayout` |
@@ -175,6 +176,13 @@ stage, and a control that queues the next stage in order.
 `,` and `.` matter most: the reviewer's job is to walk the uncertainty queue, not to scrub a
 timeline hunting for problems. The system knows where it is unsure; the UI should take the
 reviewer there.
+
+As built ([49](./49-PHASE-6-INCREMENT-3.md)): on the identity workstation `,` and `.` walk the
+review queue for that footage — every current, unreviewed identity window and event candidate
+that is not the reviewer's own, by source time — selecting the track or the candidate and seeking
+to its start. `[` and `]` walk every current candidate ([48](./48-PHASE-6-INCREMENT-2.md)) and `E`
+proposes at the playhead; the identity panel's `1`–`9` assign a roster slot. Until a model proposes
+with a confidence, *unreviewed* is the only uncertainty the system knows.
 
 ### Overlays
 
