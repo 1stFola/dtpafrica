@@ -31,7 +31,9 @@ directly, the hosted way, skips all of this.
 The operator key is the one extra thing this worker holds, and it holds it for
 provisioning and retiring alone. The stages run on the worker token as before;
 the key never reaches a stage; the store is reached through presigned URLs as
-before. The portability requirement of [17](./17-PHASE-1-INCREMENT-2.md) is
+before. Since [51](./51-QA-FIX-1-SECRETS.md) the key is taken out of the
+process environment before the worker runs, and FFmpeg is started with an
+allow-listed environment, so no child process inherits it. The portability requirement of [17](./17-PHASE-1-INCREMENT-2.md) is
 kept: the same image a hosted CPU pod would run.
 
 ## The stack

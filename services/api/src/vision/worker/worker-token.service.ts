@@ -20,7 +20,14 @@ import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
  * The bootstrap token is what the provider adapter injects into the container's
  * environment. It is short-lived so that a launch spec captured from provider
  * logs is worthless within the hour.
+ *
+ * The two never stand in for each other. `tokenKind` records which one the stored
+ * hash is: `verify` accepts only a worker token, so a bootstrap token sitting in
+ * cloud-init cannot claim a job, and `register` accepts only a bootstrap token, so a
+ * worker token cannot be traded for a fresh one past `workerTokenTtlHours`.
  */
+
+type TokenKind = "bootstrap" | "worker";
 
 export type WorkerIdentity = {
   workerId: string;
@@ -70,6 +77,7 @@ export class WorkerTokenService {
         image: params.image,
         tokenHash: hash(token),
         tokenExpiresAt: expiresAt,
+        tokenKind: "bootstrap",
       },
       select: { id: true },
     });
@@ -81,10 +89,12 @@ export class WorkerTokenService {
    * Exchanges a bootstrap token for a worker token.
    *
    * The bootstrap token stops working the moment this succeeds: the stored hash
-   * is replaced, so it cannot be replayed to register a second worker.
+   * is replaced, so it cannot be replayed to register a second worker. The swap is
+   * conditional on the row still holding that bootstrap hash, so two concurrent
+   * registrations with one token cannot both win.
    */
   async register(bootstrapToken: string): Promise<{ identity: WorkerIdentity; workerToken: string; expiresAt: Date }> {
-    const worker = await this.findByToken(bootstrapToken);
+    const worker = await this.findByToken(bootstrapToken, "bootstrap");
     if (worker.retiredAt) throw new UnauthorizedException("Worker has been retired");
 
     const workerToken = randomBytes(32).toString("hex");
@@ -92,10 +102,11 @@ export class WorkerTokenService {
       Date.now() + this.config.jobs.workerTokenTtlHours * 60 * 60 * 1000
     );
 
-    await this.prisma.visionWorker.update({
-      where: { id: worker.id },
-      data: { tokenHash: hash(workerToken), tokenExpiresAt: expiresAt },
+    const swapped = await this.prisma.visionWorker.updateMany({
+      where: { id: worker.id, tokenHash: worker.tokenHash, tokenKind: "bootstrap", retiredAt: null },
+      data: { tokenHash: hash(workerToken), tokenExpiresAt: expiresAt, tokenKind: "worker" },
     });
+    if (swapped.count !== 1) throw new UnauthorizedException("Invalid worker token");
 
     return {
       identity: {
@@ -110,7 +121,7 @@ export class WorkerTokenService {
 
   /** Verifies a worker token and returns who it belongs to. */
   async verify(token: string): Promise<WorkerIdentity> {
-    const worker = await this.findByToken(token);
+    const worker = await this.findByToken(token, "worker");
     if (worker.retiredAt) throw new UnauthorizedException("Worker has been retired");
     return {
       workerId: worker.id,
@@ -128,7 +139,7 @@ export class WorkerTokenService {
     });
   }
 
-  private async findByToken(token: string) {
+  private async findByToken(token: string, kind: TokenKind) {
     const trimmed = token.trim();
     if (!trimmed) throw new UnauthorizedException("Worker token required");
 
@@ -141,13 +152,14 @@ export class WorkerTokenService {
         resourceClass: true,
         tokenHash: true,
         tokenExpiresAt: true,
+        tokenKind: true,
         retiredAt: true,
       },
     });
 
-    // Unknown token and expired token give the same message: a worker has no
-    // business learning which of the two it was.
-    if (!worker || !hashesMatch(worker.tokenHash, candidate)) {
+    // Unknown, expired and wrong-kind tokens give the same message: a worker has
+    // no business learning which of the three it was.
+    if (!worker || !hashesMatch(worker.tokenHash, candidate) || worker.tokenKind !== kind) {
       throw new UnauthorizedException("Invalid worker token");
     }
     if (worker.tokenExpiresAt <= new Date()) {

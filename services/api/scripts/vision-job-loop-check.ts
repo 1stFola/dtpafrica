@@ -148,6 +148,28 @@ async function main() {
         const verified = await tokens.verify(registered.workerToken);
         check("worker token verifies", verified.workerId, minted.workerId);
 
+        // Neither token stands in for the other (docs/vision/50, C3).
+        let workerTokenReRegistered = true;
+        try {
+          await tokens.register(registered.workerToken);
+        } catch {
+          workerTokenReRegistered = false;
+        }
+        check("a worker token cannot register for a fresh one", workerTokenReRegistered, false);
+
+        const unredeemed = await tokens.mintBootstrap({
+          providerId: "local",
+          resourceClass: "cpu_small",
+          image: config.compute.workerImage,
+        });
+        let bootstrapVerified = true;
+        try {
+          await tokens.verify(unredeemed.bootstrapToken);
+        } catch {
+          bootstrapVerified = false;
+        }
+        check("an unredeemed bootstrap token cannot act as a worker", bootstrapVerified, false);
+
         // ── Claim ─────────────────────────────────────────────────────────
         section("Claim");
         const claimed = await queue.claim(minted.workerId, ["cpu_small"]);

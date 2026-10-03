@@ -113,7 +113,7 @@ POST   /worker/jobs/:id/fail       { reason, detail, retryable }
 
 | Token | Scope | TTL |
 |---|---|---|
-| Bootstrap token | Register only. Injected by the provider adapter at pod launch. | 1 hour |
+| Bootstrap token | Register only, and nothing else: `tokenKind` keeps it out of every job route, and `register` refuses a worker token ([51](./51-QA-FIX-1-SECRETS.md)). Injected by the provider adapter at pod launch. | 1 hour |
 | Worker token | Claim, heartbeat, and act on jobs of its declared resource classes. | 12 hours, refreshable |
 | Job-scoped claim | Encoded in the worker token's active-job binding: a worker may only presign, complete, or fail the job it currently holds. | Life of the job |
 

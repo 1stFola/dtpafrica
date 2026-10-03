@@ -374,8 +374,10 @@
     echo "=== WEB LOGS ==="
     docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --tail=20 web
     echo ""
-    echo "=== .env.staging (masked) ==="
-    cat infra/.env.staging | sed 's/PASSWORD=.*/PASSWORD=***/' | sed 's/API_KEY=.*/API_KEY=***/'
+    # Names only. A deny-list of PASSWORD= and API_KEY= printed both R2 keys in full,
+    # and a manual run has no runner to mask them (docs/vision/50).
+    echo "=== .env.staging (names; values never printed) ==="
+    awk -F= '/^[A-Z][A-Z0-9_]*=/ { v = substr($0, index($0, "=") + 1); print $1 "=" (length(v) ? "(set)" : "(empty)") }' infra/.env.staging
   args:
     chdir: "{{ app_dir }}/repo"
   become: true

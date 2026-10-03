@@ -344,40 +344,78 @@ jobs:
             "cloud-init status --wait || true"
           echo "cloud-init done"
 
+      # ── Secrets never enter a `run:` line ────────────────────────────────────
+      #
+      # Values read from Secrets Manager are not GitHub secrets, so the runner does
+      # not mask them, and `${{ }}` expressions are expanded into the script text the
+      # log prints. Until October 2026 the admin key and the R2 key id were passed to
+      # Ansible that way and sat in plain text in every deploy log (docs/vision/50, C5).
+      #
+      # So: every fetched value is masked the moment it is read, and the playbook gets
+      # them from a vars file written here with mode 0600, never from the command line.
+      # The file lives in RUNNER_TEMP, which the runner discards with the job; the last
+      # step removes it anyway.
       - name: Fetch secrets from AWS Secrets Manager
         id: secrets
+        env:
+          AWS_REGION_NAME: ${{ secrets.AWS_REGION }}
         run: |
+          set -euo pipefail
+          umask 077
           DB_SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id dtp/staging/db \
-            --region ${{ secrets.AWS_REGION }} \
+            --secret-id dtp/staging/db --region "$AWS_REGION_NAME" \
             --query SecretString --output text)
-
           APP_SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id dtp/staging/app \
-            --region ${{ secrets.AWS_REGION }} \
+            --secret-id dtp/staging/app --region "$AWS_REGION_NAME" \
             --query SecretString --output text)
 
-          echo "POSTGRES_USER=$(echo $DB_SECRET  | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_USER"])')"  >> "$GITHUB_OUTPUT"
-          echo "POSTGRES_DB=$(echo $DB_SECRET    | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')"    >> "$GITHUB_OUTPUT"
-          echo "ADMIN_API_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')"  >> "$GITHUB_OUTPUT"
+          DB_SECRET="$DB_SECRET" APP_SECRET="$APP_SECRET" python3 - <<'PY'
+          import json, os
+
+          db = json.loads(os.environ["DB_SECRET"])
+          app = json.loads(os.environ["APP_SECRET"])
+
+          def text(value):
+              # Absent or null is empty. A JSON boolean becomes the lower-case word the
+              # template and the API both read, not Python's "True".
+              if value is None:
+                  return ""
+              if isinstance(value, bool):
+                  return "true" if value else "false"
+              return str(value)
+
+          # Values that grant access. Masked before anything else can print them.
+          secret = {
+              "postgres_password": text(db["POSTGRES_PASSWORD"]),
+              "admin_api_key": text(app["ADMIN_API_KEY"]),
+              "vision_r2_access_key_id": text(app.get("VISION_R2_ACCESS_KEY_ID")),
+              "vision_r2_secret_access_key": text(app.get("VISION_R2_SECRET_ACCESS_KEY")),
+          }
+          for value in secret.values():
+              if value:
+                  print(f"::add-mask::{value}", flush=True)
 
           # Vision Engine keys are optional in the secret: absent means off (docs/vision/15).
-          echo "VISION_ENABLED=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_ENABLED", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_STORAGE_BACKEND=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_STORAGE_BACKEND", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_COMPUTE_PROVIDER=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_COMPUTE_PROVIDER", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_R2_ACCOUNT_ID=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_ACCOUNT_ID", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_R2_ACCESS_KEY_ID=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_ACCESS_KEY_ID", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_R2_BUCKET_MASTER=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_MASTER", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_R2_BUCKET_DERIVED=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_DERIVED", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_R2_BUCKET_MODELS=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_MODELS", ""))')" >> "$GITHUB_OUTPUT"
-          echo "VISION_R2_BUCKET_CLIPS=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_CLIPS", ""))')" >> "$GITHUB_OUTPUT"
-          VISION_R2_SECRET_ACCESS_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_SECRET_ACCESS_KEY", ""))')
-          if [ -n "$VISION_R2_SECRET_ACCESS_KEY" ]; then echo "::add-mask::$VISION_R2_SECRET_ACCESS_KEY"; fi
-          echo "VISION_R2_SECRET_ACCESS_KEY=$VISION_R2_SECRET_ACCESS_KEY" >> "$GITHUB_OUTPUT"
+          plain = {
+              "postgres_user": text(db["POSTGRES_USER"]),
+              "postgres_db": text(db["POSTGRES_DB"]),
+              "vision_enabled": text(app.get("VISION_ENABLED")),
+              "vision_storage_backend": text(app.get("VISION_STORAGE_BACKEND")),
+              "vision_compute_provider": text(app.get("VISION_COMPUTE_PROVIDER")),
+              "vision_r2_account_id": text(app.get("VISION_R2_ACCOUNT_ID")),
+              "vision_r2_bucket_master": text(app.get("VISION_R2_BUCKET_MASTER")),
+              "vision_r2_bucket_derived": text(app.get("VISION_R2_BUCKET_DERIVED")),
+              "vision_r2_bucket_models": text(app.get("VISION_R2_BUCKET_MODELS")),
+              "vision_r2_bucket_clips": text(app.get("VISION_R2_BUCKET_CLIPS")),
+          }
 
-          POSTGRES_PASSWORD=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_PASSWORD"])')
-          echo "::add-mask::$POSTGRES_PASSWORD"
-          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_OUTPUT"
+          path = os.path.join(os.environ["RUNNER_TEMP"], "deploy-secrets.json")
+          fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+          with os.fdopen(fd, "w") as f:
+              json.dump({**plain, **secret}, f)
+          print(f"Wrote {len(plain) + len(secret)} deploy variables to the vars file")
+          PY
+          echo "vars_file=$RUNNER_TEMP/deploy-secrets.json" >> "$GITHUB_OUTPUT"
 
       # ── Build the images here, not on the server ─────────────────────────
       #
@@ -434,11 +472,27 @@ jobs:
 
       # The server needs no AWS CLI and no AWS credentials of its own: the runner
       # mints a registry token here and hands it to Ansible. It is valid 12 hours.
+      #
+      # Minted once. This used to call get-login-password twice, masking the first token
+      # and handing the second, unmasked, to Ansible's command line.
       - name: Mint a registry token for the server
         id: registry_token
+        env:
+          AWS_REGION_NAME: ${{ secrets.AWS_REGION }}
+          VARS_FILE: ${{ steps.secrets.outputs.vars_file }}
         run: |
-          echo "::add-mask::$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})"
-          echo "password=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          TOKEN=$(aws ecr get-login-password --region "$AWS_REGION_NAME")
+          echo "::add-mask::$TOKEN"
+          TOKEN="$TOKEN" python3 - <<'PY'
+          import json, os
+          path = os.environ["VARS_FILE"]
+          with open(path) as f:
+              data = json.load(f)
+          data["registry_password"] = os.environ["TOKEN"]
+          with open(path, "w") as f:
+              json.dump(data, f)
+          PY
 
       # Rollback needs a known-good tag, and the only trustworthy record of what is
       # serving traffic is the box itself. Captured before the playbook runs, because the
@@ -477,32 +531,19 @@ jobs:
           fi
 
           ansible-playbook playbook.yml \
+            -e "@$VARS_FILE" \
             -e "aws_region=${{ secrets.AWS_REGION }}" \
             -e "git_repo_url=$REPO_URL" \
             -e "git_repo_token=${{ github.token }}" \
             -e "git_branch=${{ env.DEPLOY_REF }}" \
-            -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
-            -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
-            -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
-            -e "admin_api_key=${{ steps.secrets.outputs.ADMIN_API_KEY }}" \
-            -e "vision_enabled=${{ steps.secrets.outputs.VISION_ENABLED }}" \
-            -e "vision_storage_backend=${{ steps.secrets.outputs.VISION_STORAGE_BACKEND }}" \
-            -e "vision_compute_provider=${{ steps.secrets.outputs.VISION_COMPUTE_PROVIDER }}" \
-            -e "vision_r2_account_id=${{ steps.secrets.outputs.VISION_R2_ACCOUNT_ID }}" \
-            -e "vision_r2_access_key_id=${{ steps.secrets.outputs.VISION_R2_ACCESS_KEY_ID }}" \
-            -e "vision_r2_secret_access_key=${{ steps.secrets.outputs.VISION_R2_SECRET_ACCESS_KEY }}" \
-            -e "vision_r2_bucket_master=${{ steps.secrets.outputs.VISION_R2_BUCKET_MASTER }}" \
-            -e "vision_r2_bucket_derived=${{ steps.secrets.outputs.VISION_R2_BUCKET_DERIVED }}" \
-            -e "vision_r2_bucket_models=${{ steps.secrets.outputs.VISION_R2_BUCKET_MODELS }}" \
-            -e "vision_r2_bucket_clips=${{ steps.secrets.outputs.VISION_R2_BUCKET_CLIPS }}" \
             -e "image_registry=${{ steps.images.outputs.registry }}" \
-            -e "image_tag=${{ steps.images.outputs.tag }}" \
-            -e "registry_password=${{ steps.registry_token.outputs.password }}"
+            -e "image_tag=${{ steps.images.outputs.tag }}"
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
           ANSIBLE_FORCE_COLOR:   "1"
+          VARS_FILE:             ${{ steps.secrets.outputs.vars_file }}
 
       - name: Verify deployment
         id: verify
@@ -544,32 +585,19 @@ jobs:
           fi
 
           ansible-playbook playbook.yml \
+            -e "@$VARS_FILE" \
             -e "aws_region=${{ secrets.AWS_REGION }}" \
             -e "git_repo_url=$REPO_URL" \
             -e "git_repo_token=${{ github.token }}" \
             -e "git_branch=${{ env.DEPLOY_REF }}" \
-            -e "postgres_user=${{ steps.secrets.outputs.POSTGRES_USER }}" \
-            -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
-            -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
-            -e "admin_api_key=${{ steps.secrets.outputs.ADMIN_API_KEY }}" \
-            -e "vision_enabled=${{ steps.secrets.outputs.VISION_ENABLED }}" \
-            -e "vision_storage_backend=${{ steps.secrets.outputs.VISION_STORAGE_BACKEND }}" \
-            -e "vision_compute_provider=${{ steps.secrets.outputs.VISION_COMPUTE_PROVIDER }}" \
-            -e "vision_r2_account_id=${{ steps.secrets.outputs.VISION_R2_ACCOUNT_ID }}" \
-            -e "vision_r2_access_key_id=${{ steps.secrets.outputs.VISION_R2_ACCESS_KEY_ID }}" \
-            -e "vision_r2_secret_access_key=${{ steps.secrets.outputs.VISION_R2_SECRET_ACCESS_KEY }}" \
-            -e "vision_r2_bucket_master=${{ steps.secrets.outputs.VISION_R2_BUCKET_MASTER }}" \
-            -e "vision_r2_bucket_derived=${{ steps.secrets.outputs.VISION_R2_BUCKET_DERIVED }}" \
-            -e "vision_r2_bucket_models=${{ steps.secrets.outputs.VISION_R2_BUCKET_MODELS }}" \
-            -e "vision_r2_bucket_clips=${{ steps.secrets.outputs.VISION_R2_BUCKET_CLIPS }}" \
             -e "image_registry=${{ steps.images.outputs.registry }}" \
-            -e "image_tag=${{ steps.previous.outputs.tag }}" \
-            -e "registry_password=${{ steps.registry_token.outputs.password }}"
+            -e "image_tag=${{ steps.previous.outputs.tag }}"
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
           ANSIBLE_FORCE_COLOR:   "1"
+          VARS_FILE:             ${{ steps.secrets.outputs.vars_file }}
 
       - name: Verify the rollback
         if: always() && steps.rollback.outcome == 'success'
@@ -601,3 +629,7 @@ jobs:
           echo "  App:    http://$IP"
           echo "  Health: http://$IP/api/v1/health"
           echo "========================================"
+
+      - name: Remove the deploy vars file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/deploy-secrets.json"

@@ -127,3 +127,15 @@ def test_main_retires_even_when_the_worker_fails(monkeypatch: pytest.MonkeyPatch
     with pytest.raises(RuntimeError):
         main(env, run=run)
     assert calls == ["retire:w-6"]
+
+
+def test_main_takes_the_operator_key_out_of_the_environment_before_running(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No stage, and no ffmpeg it starts, can inherit the operator key (docs/vision/50)."""
+    retired_with: list[str] = []
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda *a, **k: {"workerId": "w-7", "bootstrapToken": "t"})
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda cb, key, wid: retired_with.append(key) or True)
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_API_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
+    seen: list[bool] = []
+    assert main(env, run=lambda: seen.append("VISION_PROVISION_API_KEY" in env) or 0) == 0
+    assert seen == [False]
+    assert retired_with == ["k"]
