@@ -164,6 +164,23 @@ Promotion also writes `SbMatchEvent.secondInMinute`, the sub-minute widening D10
 created event always; on an enriched one only when the candidate's minute *is* the recorder's and
 the recorder entered no second. The minute is never rewritten. The reply's `promotion` carries
 `second` (what the row now holds, or null) beside `minute` and `minutesApart`.
+
+**The recorder's minutes** ([55-QA-FIX-5-EVENTS-CLOCK.md](./55-QA-FIX-5-EVENTS-CLOCK.md)).
+The minute promotion matches on and writes is the recorder's, not the stopwatch's: the minute
+being played counted from one, stopped at the match's own half length, with added time beside
+it. The reply's `promotion` is `{ kind, eventId, half, minute, addedMinute, second,
+minutesApart }`; matching is within one half, added time counted on. Promotion's refusals now
+also include `PromotionStale` (promoted once, and that event has left the match record),
+`ClockChangedSinceAcceptance` (the half was anchored or re-anchored after the second person
+accepted; the candidate records `acceptedAnchorId`), `ExtraTimeNotRecorded` (the recorder's
+record has two halves), `HalfEndNotMarked` (added time in a half whose end whistle is not
+marked) and `AlreadyEnriched` (the recorder's event already carries another candidate; 409,
+not a 500). `TeamUnknown` also refuses a team that is not one of the match's two. With
+`create: true` the goal, the score and the scorer's totals change together, and the row is
+marked `metadata.source = "vision"` with `metadata.half` and `metadata.addedMinute`.
+`POST .../decision` works only from `unreviewed` (`AlreadyDecided`, 409), and a correction or
+decision that loses a race is refused rather than applied twice. The reads add
+`promotionStale`; a stale candidate can only be corrected, which starts its review again.
 `GET /vision/review/queue` is what a signed-in reviewer should look at next: every current,
 unreviewed identity assignment and event candidate that is *not their own*, oldest first, as
 `items` of `kind: event | identity` (`REVIEW_QUEUE_KINDS`) each with `sourceMs` (the start of its

@@ -25,12 +25,23 @@
  *      recorder gave none. The minute itself is never rewritten.
  *   5. (Increment 3) The review queue lists what is not the reader's own,
  *      oldest first, both kinds, and empties as decisions land.
+ *   6. (QA fix 5, docs/vision/55) The record is in the recorder's minutes: the
+ *      minute being played, counted from one, stopped at the half's length with
+ *      added time beside it. A created goal moves the scoreline and the scorer's
+ *      totals with it. A decision is not flipped in place; the minute written is
+ *      the one accepted; one recorder event is one candidate's; and when the
+ *      recorder's sheet is rebuilt the stamp follows the event or the candidate
+ *      is left stale and reviewed again.
+ *
+ * The gate restores the match's score and the scorer's totals when it is done.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import * as bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, VISION_EVENT_TAXONOMY_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { recorderHalfLength } from "../src/vision/clock/recorder-minute";
+import { reapplyEnrichment } from "../src/vision/events/reapply-enrichment";
 
 loadApiEnv();
 
@@ -69,7 +80,17 @@ async function call(path: string, headers: Record<string, string>, init?: Reques
 const api = (path: string, init?: RequestInit) => call(path, adminHeaders(), init);
 const post = (path: string, body: unknown) => api(path, { method: "POST", body: JSON.stringify(body) });
 
-type Fixture = { partnerId: string; assetId: string; jobIds: string[]; userIds: string[]; eventIds: string[] };
+type Before = {
+  matchId: string;
+  homeScore: number;
+  awayScore: number;
+  competitionId: string;
+  playerId: string;
+  careerGoals: number;
+  /** The scorer's row in the competition's totals before the run, or null when there was none. */
+  competitionGoals: number | null;
+};
+type Fixture = { partnerId: string; assetId: string; jobIds: string[]; userIds: string[]; eventIds: string[]; before: Before | null };
 
 async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ id: string; token: string; as: (path: string, init?: RequestInit) => Promise<Reply> }> {
   const role = await prisma.adminRole.findUnique({ where: { slug: roleSlug }, select: { id: true } });
@@ -89,17 +110,32 @@ async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ i
 async function matchWithSquadsAndNoGoals() {
   const matches = await prisma.sbMatch.findMany({
     where: { squadPlayers: { some: { playerId: { not: null } } }, events: { none: { type: "goal" } } },
-    select: { id: true, homeTeamId: true, awayTeamId: true, squadPlayers: { select: { id: true, teamId: true, playerId: true, playerName: true, isStarter: true } } },
-    take: 50,
+    select: {
+      id: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, competitionId: true,
+      competition: { select: { formatConfig: true } },
+      statisticsSheet: { select: { clock: true } },
+      squadPlayers: { select: { id: true, teamId: true, playerId: true, playerName: true, isStarter: true } },
+    },
+    take: 200,
   });
-  const match = matches.find((m) => m.squadPlayers.some((s) => s.teamId === m.homeTeamId && s.playerId));
-  if (!match) throw new Error("No ScoreBoard match with a home squad player and no goals; seed one first");
+  // The gate's minutes are written for 45-minute halves, so it takes a match played to them.
+  const match = matches.find((m) => m.squadPlayers.some((s) => s.teamId === m.homeTeamId && s.playerId) && recorderHalfLength(m.statisticsSheet?.clock, m.competition?.formatConfig) === 45);
+  if (!match) throw new Error("No ScoreBoard match of 45-minute halves with a home squad player and no goals; seed one first");
   return match;
 }
 
 async function cleanup(fx: Fixture | null) {
   if (!fx) return;
   await prisma.sbMatchEvent.deleteMany({ where: { id: { in: fx.eventIds } } });
+  // The created goal moved the scoreline and the scorer's totals; both go back to what they were.
+  if (fx.before) {
+    const b = fx.before;
+    await prisma.sbMatch.update({ where: { id: b.matchId }, data: { homeScore: b.homeScore, awayScore: b.awayScore } });
+    await prisma.player.update({ where: { id: b.playerId }, data: { careerGoals: b.careerGoals } });
+    const key = { competitionId_playerId: { competitionId: b.competitionId, playerId: b.playerId } };
+    if (b.competitionGoals === null) await prisma.sbPlayerCompetitionStats.deleteMany({ where: { competitionId: b.competitionId, playerId: b.playerId } });
+    else await prisma.sbPlayerCompetitionStats.update({ where: key, data: { goals: b.competitionGoals } });
+  }
   // Candidates and their evidence cascade with the asset; so do tracks, segments, anchors and jobs.
   await prisma.visionVideoAsset.deleteMany({ where: { id: fx.assetId } });
   await prisma.visionAuditLog.deleteMany({ where: { OR: [{ actorId: { in: fx.userIds } }, { targetId: { in: [...fx.jobIds, fx.assetId] } }] } });
@@ -109,10 +145,13 @@ async function cleanup(fx: Fixture | null) {
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
 }
 
-/* Kick-off nine seconds into the file; the first half ends at 45:00; the second half is never anchored. */
+/* Kick-off nine seconds into the file; the first half ends at 49:00, four minutes of added time in; the second half is never anchored. */
 const KICKOFF_1 = 9000;
-const END_1 = KICKOFF_1 + 45 * 60_000;
+const END_1 = KICKOFF_1 + 49 * 60_000;
+/** A stopwatch reading: `m:ss` after kick-off. */
 const minute1 = (m: number, s = 0) => KICKOFF_1 + m * 60_000 + s * 1000;
+/** The recorder's way: second `s` of the `n`-th minute being played, counted from one. */
+const inMinute = (n: number, s = 0) => minute1(n - 1, s);
 
 async function main() {
   console.log("Vision events — a candidate with its evidence, and one door into the match record");
@@ -124,7 +163,10 @@ async function main() {
     const match = await matchWithSquadsAndNoGoals();
     const starter = match.squadPlayers.find((s) => s.teamId === match.homeTeamId && s.playerId)!;
     const partner = await prisma.visionSourcePartner.create({ data: { name: `Events gate ${RUN}`, contactEmail: "gate@example.test" } });
-    fx = { partnerId: partner.id, assetId: "", jobIds: [], userIds: [], eventIds: [] };
+    fx = { partnerId: partner.id, assetId: "", jobIds: [], userIds: [], eventIds: [], before: null };
+    const scorer = await prisma.player.findUniqueOrThrow({ where: { id: starter.playerId! }, select: { careerGoals: true } });
+    const scorerTotals = await prisma.sbPlayerCompetitionStats.findUnique({ where: { competitionId_playerId: { competitionId: match.competitionId, playerId: starter.playerId! } }, select: { goals: true } });
+    fx.before = { matchId: match.id, homeScore: match.homeScore, awayScore: match.awayScore, competitionId: match.competitionId, playerId: starter.playerId!, careerGoals: scorer.careerGoals, competitionGoals: scorerTotals?.goals ?? null };
     const record = await prisma.visionSourceVideoRecord.create({
       data: { partnerId: partner.id, title: `Events gate record ${RUN}`, sourceQualityRank: "broadcast", originalAvailable: true, acquisitionStatus: "acquired", acquisitionMethod: "partner_direct_upload" },
     });
@@ -253,11 +295,13 @@ async function main() {
     const replayPromote = await R(`/vision/review/events/${replayed.body.id}/promote`, {});
     check("an accepted goal candidate in the replay: refused", replayPromote.body.error, "NotInPlay");
 
-    const goal = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(20, 15), endMs: minute1(20, 15), actorTrackId: track.id, actorMatchSquadPlayerId: starter.id });
+    const goal = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: inMinute(20, 15), endMs: inMinute(20, 15), actorTrackId: track.id, actorMatchSquadPlayerId: starter.id });
     check("a goal candidate in play proposed", `${goal.status}/${goal.body.promotable}`, "201/true");
     const unaccepted = await R(`/vision/review/events/${goal.body.id}/promote`, {});
     check("…not promotable before acceptance", unaccepted.body.error, "NotAccepted");
     await S(`/vision/review/events/${goal.body.id}/decision`, { decision: "accepted" });
+    const flipped = await S(`/vision/review/events/${goal.body.id}/decision`, { decision: "rejected", reason: "changed my mind" });
+    check("…and once accepted, the decision is not flipped in place", flipped.body.error, "AlreadyDecided");
     const noPermission = await postAs(annotator)(`/vision/review/events/${goal.body.id}/promote`, {});
     check("…nor by someone without vision.publish", noPermission.status, 403);
     const noRights = await R(`/vision/review/events/${goal.body.id}/promote`, {});
@@ -272,6 +316,13 @@ async function main() {
     const written = await prisma.sbMatchEvent.findUnique({ where: { id: created.body.promotion?.eventId ?? "" } });
     check("…for the home side, by the player the slot names, at minute 20", `${written?.teamId === match.homeTeamId}/${written?.playerId === starter.playerId}/${written?.playerLabel === starter.playerName}/${written?.minute}`, "true/true/true/20");
     check("…and at the fifteenth second of it, on the row and in the reply", `${written?.secondInMinute}/${created.body.promotion?.second}`, "15/15");
+    check("…marked as from video, in the first half, with no added time", `${(written?.metadata as any)?.source}/${(written?.metadata as any)?.half}/${(written?.metadata as any)?.addedMinute}`, "vision/1/null");
+    const scored = await prisma.sbMatch.findUnique({ where: { id: match.id }, select: { homeScore: true, awayScore: true } });
+    check("…and the scoreline counts it: one more for the home side, the away side untouched", `${scored!.homeScore - match.homeScore}/${scored!.awayScore - match.awayScore}`, "1/0");
+    const credited = await prisma.player.findUnique({ where: { id: starter.playerId! }, select: { careerGoals: true } });
+    const creditedTotals = await prisma.sbPlayerCompetitionStats.findUnique({ where: { competitionId_playerId: { competitionId: match.competitionId, playerId: starter.playerId! } }, select: { goals: true } });
+    check("…and so do the scorer's totals, career and competition", `${credited!.careerGoals - fx.before!.careerGoals}/${(creditedTotals?.goals ?? 0) - (fx.before!.competitionGoals ?? 0)}`, "1/1");
+    check("…the credit recorded on the row, so deleting the goal can take it back", (written?.metadata as any)?.statsApplied, true);
     check("…stamped with the candidate", (written?.metadata as any)?.vision?.candidateId === goal.body.id && (written?.metadata as any)?.vision?.contract === "VisionEventPromotionV1", true);
     check("…and the candidate knows", `${created.body.promotedEventId === written?.id}/${created.body.promotionKind}/${created.body.promotedBy === reviewer.id}`, "true/created/true");
     const again = await R(`/vision/review/events/${goal.body.id}/promote`, {});
@@ -279,35 +330,45 @@ async function main() {
     const lateFix = await reviewer.as(`/vision/review/events/${goal.body.id}`, { method: "PATCH", body: JSON.stringify({ note: "later" }) });
     check("correcting a promoted candidate: refused", lateFix.body.error, "EventPromoted");
 
-    // The recorder logged a goal at 33'. Vision's candidate at 33:20 is the same goal.
+    // The recorder logged a goal at 33'. Vision's candidate twenty seconds into the 33rd minute is the same goal.
     const recorded = await prisma.sbMatchEvent.create({ data: { matchId: match.id, teamId: match.homeTeamId, type: "goal", minute: 33, detail: `gate-${RUN}`, metadata: { source: `gate-${RUN}` } } });
     fx.eventIds.push(recorded.id);
-    const same = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(33, 20), endMs: minute1(33, 20), actorTrackId: track.id, sbTeamId: match.homeTeamId });
+    const same = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: inMinute(33, 20), endMs: inMinute(33, 20), actorTrackId: track.id, sbTeamId: match.homeTeamId });
     await S(`/vision/review/events/${same.body.id}/decision`, { decision: "accepted" });
     const enriched = await R(`/vision/review/events/${same.body.id}/promote`, {});
-    check("a candidate at 33:20 enriches the recorder's goal at 33'", `${enriched.status}/${enriched.body.promotion?.kind}/${enriched.body.promotion?.eventId === recorded.id}`, "201/enriched/true");
+    check("a candidate in the 33rd minute enriches the recorder's goal at 33'", `${enriched.status}/${enriched.body.promotion?.kind}/${enriched.body.promotion?.eventId === recorded.id}`, "201/enriched/true");
     const after = await prisma.sbMatchEvent.findUnique({ where: { id: recorded.id } });
-    check("…the recorder's row keeps its own metadata and gains the stamp", `${(after?.metadata as any)?.source}/${(after?.metadata as any)?.vision?.startMs}`, `gate-${RUN}/${minute1(33, 20)}`);
+    check("…the recorder's row keeps its own metadata and gains the stamp", `${(after?.metadata as any)?.source}/${(after?.metadata as any)?.vision?.startMs}`, `gate-${RUN}/${inMinute(33, 20)}`);
     check("…its minute untouched, and no second goal added", `${after?.minute}/${await prisma.sbMatchEvent.count({ where: { matchId: match.id, type: "goal" } })}`, "33/2");
     check("…and the whole minute the recorder entered gains Vision's second", `${after?.secondInMinute}/${enriched.body.promotion?.second}`, "20/20");
+    const afterEnrich = await prisma.sbMatch.findUnique({ where: { id: match.id }, select: { homeScore: true } });
+    check("…and enriching moves no score: the recorder's goal is the recorder's to count", afterEnrich!.homeScore - match.homeScore, 1);
+
+    // A second candidate for the same goal: the recorder's event already carries one.
+    const twice = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: inMinute(33, 40), endMs: inMinute(33, 40), sbTeamId: match.homeTeamId });
+    await S(`/vision/review/events/${twice.body.id}/decision`, { decision: "accepted" });
+    const taken = await R(`/vision/review/events/${twice.body.id}/promote`, {});
+    check("a second candidate landing on the same recorder goal: refused, not a 500", `${taken.status}/${taken.body.error}`, "409/AlreadyEnriched");
+    const takenCreate = await R(`/vision/review/events/${twice.body.id}/promote`, { create: true });
+    check("…and not turned into a second goal by asking to create", `${takenCreate.body.error}/${await prisma.sbMatchEvent.count({ where: { matchId: match.id, type: "goal" } })}`, "AlreadyEnriched/2");
 
     // ── 4. The second beside the recorder's minute ───────────────────────
     section("4. A second only under the recorder's own minute, and never over the recorder's word");
 
-    // The recorder logged a goal at 36'. Vision's candidate at 37:05 is the same goal, a minute apart: no second is written under 36.
+    // The recorder logged a goal at 36'. Vision's candidate in the 37th minute is the same goal, a minute apart: no second is written under 36.
     const nearby = await prisma.sbMatchEvent.create({ data: { matchId: match.id, teamId: match.homeTeamId, type: "goal", minute: 36, detail: `gate-${RUN}` } });
     fx.eventIds.push(nearby.id);
-    const aMinuteOff = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(37, 5), endMs: minute1(37, 5), sbTeamId: match.homeTeamId });
+    const aMinuteOff = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: inMinute(37, 5), endMs: inMinute(37, 5), sbTeamId: match.homeTeamId });
     await S(`/vision/review/events/${aMinuteOff.body.id}/decision`, { decision: "accepted" });
     const offByOne = await R(`/vision/review/events/${aMinuteOff.body.id}/promote`, {});
-    check("a candidate at 37:05 enriches the recorder's goal at 36'", `${offByOne.body.promotion?.kind}/${offByOne.body.promotion?.eventId === nearby.id}/${offByOne.body.promotion?.minutesApart}`, "enriched/true/1");
+    check("a candidate in the 37th minute enriches the recorder's goal at 36'", `${offByOne.body.promotion?.kind}/${offByOne.body.promotion?.eventId === nearby.id}/${offByOne.body.promotion?.minutesApart}`, "enriched/true/1");
     const nearbyAfter = await prisma.sbMatchEvent.findUnique({ where: { id: nearby.id } });
     check("…but writes no second under a minute that is not its own, and leaves the minute", `${nearbyAfter?.secondInMinute}/${nearbyAfter?.minute}/${offByOne.body.promotion?.second}`, "null/36/null");
 
-    // The recorder entered 25' and its fortieth second by hand. Vision's candidate at 25:10 does not overwrite it.
+    // The recorder entered 25' and its fortieth second by hand. Vision's candidate ten seconds into that minute does not overwrite it.
     const byHand = await prisma.sbMatchEvent.create({ data: { matchId: match.id, teamId: match.homeTeamId, type: "goal", minute: 25, secondInMinute: 40, detail: `gate-${RUN}` } });
     fx.eventIds.push(byHand.id);
-    const overHand = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(25, 10), endMs: minute1(25, 10), sbTeamId: match.homeTeamId });
+    const overHand = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: inMinute(25, 10), endMs: inMinute(25, 10), sbTeamId: match.homeTeamId });
     await S(`/vision/review/events/${overHand.body.id}/decision`, { decision: "accepted" });
     const kept = await R(`/vision/review/events/${overHand.body.id}/promote`, {});
     const byHandAfter = await prisma.sbMatchEvent.findUnique({ where: { id: byHand.id } });
@@ -315,7 +376,7 @@ async function main() {
 
     const two = await prisma.sbMatchEvent.createManyAndReturn({ data: [40, 42].map((minute) => ({ matchId: match.id, teamId: match.homeTeamId, type: "goal", minute, detail: `gate-${RUN}` })) });
     fx.eventIds.push(...two.map((e) => e.id));
-    const between = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(41), endMs: minute1(41), sbTeamId: match.homeTeamId });
+    const between = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: inMinute(41), endMs: inMinute(41), sbTeamId: match.homeTeamId });
     await S(`/vision/review/events/${between.body.id}/decision`, { decision: "accepted" });
     const ambiguous = await R(`/vision/review/events/${between.body.id}/promote`, {});
     check("a candidate equally near two recorder goals: refused, not guessed", ambiguous.body.error, "AmbiguousRecorderEvent");
@@ -327,11 +388,82 @@ async function main() {
     check("…and cannot be promoted: the match record is in match minutes", noClock.body.error, "ClockNotAnchored");
 
     check("the match record holds exactly the gate's six goals", await prisma.sbMatchEvent.count({ where: { matchId: match.id, type: "goal" } }), 6);
+
+    // ── 6. The recorder's minutes ────────────────────────────────────────
+    section("6. The recorder's minutes: added time, the clock that was accepted, and a sheet rebuilt");
+
+    /* As the recorder's console publishes them: a goal two minutes into first-half added time,
+       and one in the 47th minute of the second half. On a stopwatch both read 47. */
+    const sheetRow = (minute: number, half: 1 | 2, addedMinute: number | null) => ({ matchId: match.id, teamId: match.homeTeamId, type: "goal", minute, detail: `gate-${RUN}`, metadata: { source: "match_recorder", sheetId: `gate-${RUN}`, half, addedMinute } });
+    const stoppage = await prisma.sbMatchEvent.create({ data: sheetRow(45, 1, 2) });
+    const secondHalf = await prisma.sbMatchEvent.create({ data: sheetRow(47, 2, null) });
+    fx.eventIds.push(stoppage.id, secondHalf.id);
+    const late = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: minute1(47, 12), endMs: minute1(47, 12), sbTeamId: match.homeTeamId });
+    check("a candidate 47:12 after kick-off reads 47:12 on the footage's stopwatch", late.body.matchClock, "47:12");
+    await S(`/vision/review/events/${late.body.id}/decision`, { decision: "accepted" });
+    const inAdded = await R(`/vision/review/events/${late.body.id}/promote`, {});
+    check("…and is the recorder's 45+2, not the second half's 47th minute", `${inAdded.body.promotion?.kind}/${inAdded.body.promotion?.eventId === stoppage.id}/${inAdded.body.promotion?.minute}+${inAdded.body.promotion?.addedMinute}/${inAdded.body.promotion?.minutesApart}`, "enriched/true/45+2/0");
+    const stoppageAfter = await prisma.sbMatchEvent.findUnique({ where: { id: stoppage.id } });
+    const secondHalfAfter = await prisma.sbMatchEvent.findUnique({ where: { id: secondHalf.id } });
+    check("…its second written under 45+2, the minute and added minute left as the recorder had them", `${stoppageAfter?.secondInMinute}/${stoppageAfter?.minute}/${(stoppageAfter?.metadata as any)?.addedMinute}`, "12/45/2");
+    check("…and the second-half goal untouched", `${(secondHalfAfter?.metadata as any)?.vision === undefined}/${secondHalfAfter?.secondInMinute}`, "true/null");
+
+    /* The sheet is sent back and approved again: the console deletes the rows it published and
+       writes them fresh. Done here as the service does it -- delete, rewrite, put back. */
+    const rebuild = async (rewritten: { minute: number; addedMinute: number | null } | null) => {
+      const live = await prisma.sbMatchEvent.findFirst({ where: { matchId: match.id, detail: `gate-${RUN}`, metadata: { path: ["half"], equals: 1 } }, select: { id: true } });
+      if (live) await prisma.sbMatchEvent.delete({ where: { id: live.id } });
+      const fresh = rewritten ? await prisma.sbMatchEvent.create({ data: sheetRow(rewritten.minute, 1, rewritten.addedMinute) }) : null;
+      if (fresh) fx!.eventIds.push(fresh.id);
+      return { fresh, put: await reapplyEnrichment(prisma, match.id) };
+    };
+    const same1 = await rebuild({ minute: 45, addedMinute: 2 });
+    const backRow = await prisma.sbMatchEvent.findUnique({ where: { id: same1.fresh!.id } });
+    const backCandidate = await reviewer.as(`/vision/review/events/${late.body.id}`);
+    check("the sheet approved again with the same goal: the stamp and the second go back on the new row", `${same1.put.reapplied.includes(late.body.id)}/${(backRow?.metadata as any)?.vision?.candidateId === late.body.id}/${backRow?.secondInMinute}/${(backRow?.metadata as any)?.source}`, "true/true/12/match_recorder");
+    check("…stamped with when the publisher promoted it, not with now", (backRow?.metadata as any)?.vision?.promotedAt === (stoppageAfter?.metadata as any)?.vision?.promotedAt, true);
+    check("…and the candidate points at it, promoted as before", `${backCandidate.body.promotedEventId === same1.fresh!.id}/${backCandidate.body.promotionKind}/${backCandidate.body.promotionStale}`, "true/enriched/false");
+
+    const nudged = await rebuild({ minute: 45, addedMinute: 3 });
+    const nudgedRow = await prisma.sbMatchEvent.findUnique({ where: { id: nudged.fresh!.id } });
+    check("approved again with the goal moved to 45+3: still the same goal, a minute away, and no second under a minute that is not its own", `${nudged.put.reapplied.includes(late.body.id)}/${(nudgedRow?.metadata as any)?.vision?.candidateId === late.body.id}/${nudgedRow?.secondInMinute}`, "true/true/null");
+
+    const removed = await rebuild(null);
+    const orphan = await reviewer.as(`/vision/review/events/${late.body.id}`);
+    check("approved again without the goal: nothing to put it on, and the candidate says its event is gone", `${removed.put.stale.includes(late.body.id)}/${orphan.body.promotedEventId}/${orphan.body.promotionStale}`, "true/null/true");
+    const staleAgain = await R(`/vision/review/events/${late.body.id}/promote`, { create: true });
+    check("…it is not promoted a second time as if nothing had happened", staleAgain.body.error, "PromotionStale");
+    check("…and no goal was added by trying", await prisma.sbMatchEvent.count({ where: { matchId: match.id, type: "goal" } }), 7);
+    const restarted = await reviewer.as(`/vision/review/events/${late.body.id}`, { method: "PATCH", body: JSON.stringify({}) });
+    check("a correction, with nothing changed, starts its review again", `${restarted.status}/${restarted.body.reviewState}/${restarted.body.promotionStale}/${restarted.body.supersedes === late.body.id}`, "200/unreviewed/false/true");
+    await S(`/vision/review/events/${restarted.body.id}/decision`, { decision: "accepted" });
+
+    // The recorder puts the goal back at 45+2. Meanwhile one reviewer re-anchors the half: the minute that was accepted is no longer the minute that would be written.
+    const restored = await prisma.sbMatchEvent.create({ data: sheetRow(45, 1, 2) });
+    fx.eventIds.push(restored.id);
+    const reAnchored = await R(`/vision/review/${fx.assetId}/clock`, { half: 1, sourceMs: KICKOFF_1 + 1000, endMs: END_1 });
+    check("the half re-anchored a second later, after the acceptance", reAnchored.status, 201);
+    const movedClock = await R(`/vision/review/events/${restarted.body.id}/promote`, {});
+    check("…the candidate is not promoted on a clock nobody reviewed it on", movedClock.body.error, "ClockChangedSinceAcceptance");
+    const reviewedAgain = await reviewer.as(`/vision/review/events/${restarted.body.id}`, { method: "PATCH", body: JSON.stringify({}) });
+    await S(`/vision/review/events/${reviewedAgain.body.id}/decision`, { decision: "accepted" });
+    const onNewClock = await R(`/vision/review/events/${reviewedAgain.body.id}/promote`, {});
+    check("…reviewed again on the new clock, it enriches the recorder's 45+2, a second earlier than before", `${onNewClock.body.promotion?.kind}/${onNewClock.body.promotion?.eventId === restored.id}/${onNewClock.body.promotion?.minute}+${onNewClock.body.promotion?.addedMinute}/${onNewClock.body.promotion?.second}`, "enriched/true/45+2/11");
+
+    const finalScore = await prisma.sbMatch.findUnique({ where: { id: match.id }, select: { homeScore: true, awayScore: true } });
+    check("through all of it the scoreline moved once: by the one goal that was created", `${finalScore!.homeScore - match.homeScore}/${finalScore!.awayScore - match.awayScore}`, "1/0");
   } catch (error) {
     failures += 1;
     console.error("\nGate aborted:", error);
   } finally {
     await cleanup(fx).catch((e) => console.error("cleanup failed:", e));
+    if (fx?.before) {
+      const b = fx.before;
+      const m = await prisma.sbMatch.findUnique({ where: { id: b.matchId }, select: { homeScore: true, awayScore: true, _count: { select: { events: { where: { type: "goal" } } } } } });
+      const p = await prisma.player.findUnique({ where: { id: b.playerId }, select: { careerGoals: true } });
+      const t = await prisma.sbPlayerCompetitionStats.findUnique({ where: { competitionId_playerId: { competitionId: b.competitionId, playerId: b.playerId } }, select: { goals: true } });
+      check("after the run the match has its score back, no goals, and the scorer's totals are what they were", `${m?.homeScore}-${m?.awayScore}/${m?._count.events}/${p?.careerGoals}/${t?.goals ?? null}`, `${b.homeScore}-${b.awayScore}/0/${b.careerGoals}/${b.competitionGoals}`);
+    }
     await prisma.$disconnect();
   }
 

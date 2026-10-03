@@ -20,6 +20,7 @@ import { CompetitionEngineService } from "../scoreboard/competition-engine.servi
 import { ScoreboardService } from "../scoreboard/scoreboard.service";
 import { ScoreboardLifecycleService } from "../scoreboard/scoreboard-lifecycle.service";
 import { LiveAudioCommentaryService } from "../scoreboard/live-audio-commentary.service";
+import { videoGoals, withVideoGoals } from "../scoreboard/video-goals";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
 import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
 import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
@@ -1870,6 +1871,8 @@ export class AdminScoreboardService {
       select: {
         id: true,
         status: true,
+        homeTeamId: true,
+        awayTeamId: true,
         homeScore: true,
         awayScore: true,
         minute: true,
@@ -1930,7 +1933,11 @@ export class AdminScoreboardService {
       match.competition.formatType !== "TRAINING_SANDBOX" &&
       readClock(match.statisticsSheet?.clock)?.phase === "finished"
     ) {
-      const score = scoreFromEvents(readEvents(match.statisticsSheet?.events));
+      /* With any goal added from video counted on, as everywhere the sheet sets the score. */
+      const score = withVideoGoals(
+        scoreFromEvents(readEvents(match.statisticsSheet?.events)),
+        await videoGoals(this.prisma, match)
+      );
       await this.prisma.sbMatch.update({
         where: { id: matchId },
         data: {

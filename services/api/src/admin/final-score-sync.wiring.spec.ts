@@ -29,7 +29,13 @@ const threeOne = [
   { id: "d", type: "goal", minute: 80, side: "away", playerNumber: 11, half: 2 },
 ];
 
-function harness(args: { published: [number, number]; timelineFromElsewhere: number }) {
+function harness(args: {
+  published: [number, number];
+  timelineFromElsewhere: number;
+  /** Goals Vision added to the timeline from video, by the team they are logged against. */
+  fromVideo?: ("home-team" | "away-team")[];
+}) {
+  const video = (args.fromVideo ?? []).map((teamId) => ({ type: "goal", teamId }));
   type UpdateArgs = { where: { id: string }; data: Record<string, unknown> };
   const update = vi.fn(async (_args: UpdateArgs) => ({}));
   const prisma = {
@@ -37,8 +43,9 @@ function harness(args: { published: [number, number]; timelineFromElsewhere: num
     sbMatchEvent: {
       count: vi.fn(async (q: { where: Record<string, unknown> }) =>
         /* The scoped count is the one carrying the metadata filter. */
-        "metadata" in q.where ? 2 : 2 + args.timelineFromElsewhere
+        "metadata" in q.where ? 2 : 2 + args.timelineFromElsewhere + video.length
       ),
+      findMany: vi.fn(async () => video),
     },
   };
   const lifecycle = {
@@ -48,6 +55,8 @@ function harness(args: { published: [number, number]; timelineFromElsewhere: num
   const service = new AdminMatchStatsService(prisma as never, lifecycle as never, {} as never);
   const match = {
     id: "match-1",
+    homeTeamId: "home-team",
+    awayTeamId: "away-team",
     status: "scheduled",
     minute: null,
     homeScore: args.published[0],
@@ -119,6 +128,40 @@ describe("a sheet that disagrees with a timeline it does not own", () => {
     const { run, update } = harness({ published: [4, 1], timelineFromElsewhere: 0 });
     await run({ events: threeOne, clock: fullTime });
     expect(update.mock.calls[0]![0]!.data).toMatchObject({ homeScore: 3, awayScore: 1 });
+  });
+});
+
+describe("a goal added to the timeline from video", () => {
+  it("counts in the score the sheet publishes: the row stays on the timeline", async () => {
+    const { run, update } = harness({
+      published: [0, 0],
+      timelineFromElsewhere: 0,
+      fromVideo: ["away-team"],
+    });
+    await run({ events: threeOne, clock: fullTime });
+    expect(update.mock.calls[0]![0]!.data).toMatchObject({ homeScore: 3, awayScore: 2 });
+  });
+
+  it("is not a timeline the sheet disagrees with: the score still follows", async () => {
+    /* Published 3-1 before the goal was added, 3-2 with it. The video row is the only one
+       not from this console, and it is already counted, so nothing is held. */
+    const { run, update } = harness({
+      published: [3, 1],
+      timelineFromElsewhere: 0,
+      fromVideo: ["away-team"],
+    });
+    await run({ events: threeOne, clock: fullTime });
+    expect(update.mock.calls[0]![0]!.data).toMatchObject({ homeScore: 3, awayScore: 2 });
+  });
+
+  it("does not excuse a hand-entered timeline: that still holds the score", async () => {
+    const { run, update } = harness({
+      published: [4, 1],
+      timelineFromElsewhere: 6,
+      fromVideo: ["away-team"],
+    });
+    await run({ events: threeOne, clock: fullTime });
+    expect(update.mock.calls[0]![0]!.data).toEqual({ status: "finished", minute: 90 });
   });
 });
 

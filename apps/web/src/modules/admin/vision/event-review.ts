@@ -93,7 +93,7 @@ export function describeCandidate(c: VisionEventCandidate, trackLabel: (trackId:
   if (c.matchClock) parts.push(c.matchClock);
   const who = trackLabel(c.actorTrackId);
   if (who) parts.push(who);
-  parts.push(c.promotedEventId ? `in the match record (${c.promotionKind})` : c.reviewState);
+  parts.push(c.promotedEventId ? `in the match record (${c.promotionKind})` : c.promotionStale ? "left the match record" : c.reviewState);
   if (!c.inPlay) parts.push("not play");
   return parts.join(" · ");
 }
@@ -101,11 +101,14 @@ export function describeCandidate(c: VisionEventCandidate, trackLabel: (trackId:
 /** The actions a candidate allows this person, mirrored from the service so the buttons match the refusals. */
 export function allowedActions(c: VisionEventCandidate, me: string | undefined, can: { review: boolean; publish: boolean }) {
   const live = !c.supersededBy && !c.promotedEventId;
+  /* Its event left the match record (the sheet was rebuilt). Only a correction moves it on:
+     that starts its review again, against the record as it now stands. */
+  const stale = Boolean(c.promotionStale);
   return {
     correct: live && can.review,
     accept: live && can.review && c.reviewState === "unreviewed" && c.decidedBy !== me,
     reject: live && can.review && c.reviewState === "unreviewed" && c.decidedBy !== me,
-    promote: live && can.publish && c.reviewState === "accepted" && c.promotable && c.inPlay,
+    promote: live && !stale && can.publish && c.reviewState === "accepted" && c.promotable && c.inPlay,
     yours: live && c.reviewState === "unreviewed" && c.decidedBy === me,
   };
 }

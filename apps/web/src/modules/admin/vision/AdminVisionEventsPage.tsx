@@ -165,6 +165,8 @@ export function AdminVisionEventsPage() {
                       <td className="vision-sub">
                         {c.promotedEventId ? (
                           <Pill tone="ok">{c.promotionKind}</Pill>
+                        ) : c.promotionStale ? (
+                          <span className="muted">left the match record; correct it to review again</span>
                         ) : c.promotable ? (
                           <span className="muted">promotable as {c.scoreboardType}</span>
                         ) : (
@@ -187,12 +189,12 @@ export function AdminVisionEventsPage() {
                               </>
                             )}
                             {canReview && c.reviewState === "unreviewed" && c.decidedBy === me && <span className="muted">yours: a second person decides</span>}
-                            {canPublish && c.reviewState === "accepted" && c.promotable && (
+                            {canPublish && c.reviewState === "accepted" && c.promotable && !c.promotionStale && (
                               <>
                                 <button type="button" disabled={busy} onClick={() => run(`${c.type} promoted.`, () => promoteVisionEvent(c.id))}>
                                   Promote
                                 </button>
-                                <button type="button" disabled={busy} onClick={() => run(`${c.type} added to the match record.`, () => promoteVisionEvent(c.id, true))} title="Create a recorder event where none matches">
+                                <button type="button" disabled={busy} onClick={() => run(`${c.type} added to the match record.`, () => promoteVisionEvent(c.id, true))} title="Add a goal to the match record where the recorder has none at this minute: the score and the scorer&apos;s totals change with it">
                                   Promote, creating
                                 </button>
                               </>

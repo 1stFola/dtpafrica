@@ -76,6 +76,9 @@ describe("words and actions", () => {
     expect(allowedActions(cand({ reviewState: "accepted", promotable: true, inPlay: false }), "bob", can).promote).toBe(false);
     expect(allowedActions(cand({ promotedEventId: "e" }), "bob", can)).toMatchObject({ correct: false, accept: false, promote: false });
     expect(allowedActions(cand({ supersededBy: "x" }), "bob", can)).toMatchObject({ correct: false, accept: false });
+    // Its event left the match record: it can be corrected, which starts review again, and nothing else.
+    expect(allowedActions(cand({ reviewState: "accepted", promotable: true, promotionStale: true }), "bob", can)).toMatchObject({ correct: true, accept: false, reject: false, promote: false });
+    expect(describeCandidate(cand({ reviewState: "accepted", promotionStale: true, matchClock: null }), () => null)).toBe("shot · left the match record");
     expect(allowedActions(cand({ reviewState: "accepted", promotable: true }), "bob", { review: true, publish: false }).promote).toBe(false);
   });
 });
