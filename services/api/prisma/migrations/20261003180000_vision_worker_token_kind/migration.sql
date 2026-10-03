@@ -5,5 +5,7 @@
 -- Existing rows are workers that registered long ago or bootstrap tokens past their hour,
 -- so `worker` is the right default for them; `mintBootstrap` writes `bootstrap` explicitly.
 
+-- IF NOT EXISTS: until PR-2 the API image runs `db push` on start, which adds this column
+-- before `migrate deploy` ever sees the migration. Safe either way.
 -- AlterTable
-ALTER TABLE "vision_workers" ADD COLUMN "token_kind" TEXT NOT NULL DEFAULT 'worker';
+ALTER TABLE "vision_workers" ADD COLUMN IF NOT EXISTS "token_kind" TEXT NOT NULL DEFAULT 'worker';
