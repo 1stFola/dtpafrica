@@ -369,6 +369,55 @@ configuration change rather than a migration-writing exercise.
 
 ---
 
+## Turning Vision on
+
+The Vision Engine is off on a fresh box: `VISION_ENABLED` is unset, the object store is
+in-memory and the compute provider is the mock (docs/vision/15). The deploy carries ten
+`VISION_*` keys from the `dtp/staging/app` secret into the API container, every one
+empty until the secret holds it, so a deploy without them changes nothing.
+
+1. Add to the `dtp/staging/app` secret in AWS Secrets Manager (same JSON as `ADMIN_API_KEY`):
+   `VISION_ENABLED` (`true`), `VISION_STORAGE_BACKEND` (`r2`), `VISION_COMPUTE_PROVIDER`
+   (`local` until a hosted provider is credentialed), `VISION_R2_ACCOUNT_ID`,
+   `VISION_R2_ACCESS_KEY_ID`, `VISION_R2_SECRET_ACCESS_KEY`, and the four bucket names
+   `VISION_R2_BUCKET_MASTER`, `VISION_R2_BUCKET_DERIVED`, `VISION_R2_BUCKET_MODELS`,
+   `VISION_R2_BUCKET_CLIPS`. From a machine with the AWS CLI signed in and a
+   `services/api/.env` that already holds the R2 values, this merges them into the secret
+   without printing any of them (Git Bash; the existing keys are kept):
+
+   ```bash
+   cd services/api && CURRENT=$(aws secretsmanager get-secret-value --secret-id dtp/staging/app --region us-east-1 --query SecretString --output text) && MERGED=$(python - "$CURRENT" <<'PY'
+   import json, re, sys
+   secret = json.loads(sys.argv[1])
+   env = dict(re.match(r"([A-Z0-9_]+)=(.*)", line.strip()).groups() for line in open(".env", encoding="utf-8") if re.match(r"[A-Z0-9_]+=", line.strip()))
+   for key in ["VISION_R2_ACCOUNT_ID", "VISION_R2_ACCESS_KEY_ID", "VISION_R2_SECRET_ACCESS_KEY", "VISION_R2_BUCKET_MASTER", "VISION_R2_BUCKET_DERIVED", "VISION_R2_BUCKET_MODELS", "VISION_R2_BUCKET_CLIPS"]:
+       secret[key] = env[key].strip().strip('"')
+   secret["VISION_ENABLED"] = "true"
+   secret["VISION_STORAGE_BACKEND"] = "r2"
+   secret["VISION_COMPUTE_PROVIDER"] = "local"
+   print(json.dumps(secret))
+   PY
+   ) && aws secretsmanager put-secret-value --secret-id dtp/staging/app --region us-east-1 --secret-string "$MERGED" --query VersionId --output text
+   ```
+
+   Check it without printing values:
+
+   ```bash
+   aws secretsmanager get-secret-value --secret-id dtp/staging/app --region us-east-1 --query SecretString --output text | python -c "import sys,json; print(sorted(json.load(sys.stdin)))"
+   ```
+2. Apply the pending migrations in the API container (below) and seed the role catalogue:
+   `sudo docker exec dtp-staging-api-1 pnpm --filter @dtp/api seed:rbac`.
+3. Re-run the deploy (manual trigger). `GET /api/v1/vision/status` then reports `enabled: true`
+   and the storage backend `r2`.
+4. Set the CORS rule on the derived bucket so the review UI can read Parquet from it
+   (docs/vision/43): allowed origins the site's origin, methods `GET` and `HEAD`, headers `*`,
+   exposed headers `Content-Length`.
+5. Footage reaches the box through `pnpm --filter @dtp/api vision:upload -- --source <id>
+   --file <video> --api http://<server>/api/v1 --key <ADMIN_API_KEY>` from any machine; the
+   API opens a resumable session and the bytes go straight to the store. Nothing runs on an
+   upload until a worker claims it: with the `local` provider, start the CPU worker container
+   by hand with a bootstrap token from `POST /vision/workers/provision` (docs/vision/17).
+
 ## Day-2 Operations
 
 ### SSH into the server

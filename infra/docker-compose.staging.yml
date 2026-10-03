@@ -41,6 +41,19 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.5}
       OCR_SPACE_API_KEY: ${OCR_SPACE_API_KEY:-}
       OCR_SPACE_ENGINE: ${OCR_SPACE_ENGINE:-3}
+      # Vision Engine. Every one empty until the dtp/staging/app secret carries it, and
+      # VISION_ENABLED unset keeps the module off (docs/vision/15): a deploy without the
+      # secret changes nothing.
+      VISION_ENABLED: ${VISION_ENABLED:-}
+      VISION_STORAGE_BACKEND: ${VISION_STORAGE_BACKEND:-}
+      VISION_COMPUTE_PROVIDER: ${VISION_COMPUTE_PROVIDER:-}
+      VISION_R2_ACCOUNT_ID: ${VISION_R2_ACCOUNT_ID:-}
+      VISION_R2_ACCESS_KEY_ID: ${VISION_R2_ACCESS_KEY_ID:-}
+      VISION_R2_SECRET_ACCESS_KEY: ${VISION_R2_SECRET_ACCESS_KEY:-}
+      VISION_R2_BUCKET_MASTER: ${VISION_R2_BUCKET_MASTER:-}
+      VISION_R2_BUCKET_DERIVED: ${VISION_R2_BUCKET_DERIVED:-}
+      VISION_R2_BUCKET_MODELS: ${VISION_R2_BUCKET_MODELS:-}
+      VISION_R2_BUCKET_CLIPS: ${VISION_R2_BUCKET_CLIPS:-}
     ports:
       - "127.0.0.1:${API_PORT:-3000}:3000"
 

@@ -361,6 +361,20 @@ jobs:
           echo "POSTGRES_DB=$(echo $DB_SECRET    | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_DB"])')"    >> "$GITHUB_OUTPUT"
           echo "ADMIN_API_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["ADMIN_API_KEY"])')"  >> "$GITHUB_OUTPUT"
 
+          # Vision Engine keys are optional in the secret: absent means off (docs/vision/15).
+          echo "VISION_ENABLED=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_ENABLED", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_STORAGE_BACKEND=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_STORAGE_BACKEND", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_COMPUTE_PROVIDER=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_COMPUTE_PROVIDER", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_R2_ACCOUNT_ID=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_ACCOUNT_ID", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_R2_ACCESS_KEY_ID=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_ACCESS_KEY_ID", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_R2_BUCKET_MASTER=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_MASTER", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_R2_BUCKET_DERIVED=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_DERIVED", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_R2_BUCKET_MODELS=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_MODELS", ""))')" >> "$GITHUB_OUTPUT"
+          echo "VISION_R2_BUCKET_CLIPS=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_BUCKET_CLIPS", ""))')" >> "$GITHUB_OUTPUT"
+          VISION_R2_SECRET_ACCESS_KEY=$(echo $APP_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin).get("VISION_R2_SECRET_ACCESS_KEY", ""))')
+          if [ -n "$VISION_R2_SECRET_ACCESS_KEY" ]; then echo "::add-mask::$VISION_R2_SECRET_ACCESS_KEY"; fi
+          echo "VISION_R2_SECRET_ACCESS_KEY=$VISION_R2_SECRET_ACCESS_KEY" >> "$GITHUB_OUTPUT"
+
           POSTGRES_PASSWORD=$(echo $DB_SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["POSTGRES_PASSWORD"])')
           echo "::add-mask::$POSTGRES_PASSWORD"
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_OUTPUT"
@@ -466,6 +480,16 @@ jobs:
             -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
             -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
             -e "admin_api_key=${{ steps.secrets.outputs.ADMIN_API_KEY }}" \
+            -e "vision_enabled=${{ steps.secrets.outputs.VISION_ENABLED }}" \
+            -e "vision_storage_backend=${{ steps.secrets.outputs.VISION_STORAGE_BACKEND }}" \
+            -e "vision_compute_provider=${{ steps.secrets.outputs.VISION_COMPUTE_PROVIDER }}" \
+            -e "vision_r2_account_id=${{ steps.secrets.outputs.VISION_R2_ACCOUNT_ID }}" \
+            -e "vision_r2_access_key_id=${{ steps.secrets.outputs.VISION_R2_ACCESS_KEY_ID }}" \
+            -e "vision_r2_secret_access_key=${{ steps.secrets.outputs.VISION_R2_SECRET_ACCESS_KEY }}" \
+            -e "vision_r2_bucket_master=${{ steps.secrets.outputs.VISION_R2_BUCKET_MASTER }}" \
+            -e "vision_r2_bucket_derived=${{ steps.secrets.outputs.VISION_R2_BUCKET_DERIVED }}" \
+            -e "vision_r2_bucket_models=${{ steps.secrets.outputs.VISION_R2_BUCKET_MODELS }}" \
+            -e "vision_r2_bucket_clips=${{ steps.secrets.outputs.VISION_R2_BUCKET_CLIPS }}" \
             -e "image_registry=${{ steps.images.outputs.registry }}" \
             -e "image_tag=${{ steps.images.outputs.tag }}" \
             -e "registry_password=${{ steps.registry_token.outputs.password }}"
@@ -523,6 +547,16 @@ jobs:
             -e "postgres_password=${{ steps.secrets.outputs.POSTGRES_PASSWORD }}" \
             -e "postgres_db=${{ steps.secrets.outputs.POSTGRES_DB }}" \
             -e "admin_api_key=${{ steps.secrets.outputs.ADMIN_API_KEY }}" \
+            -e "vision_enabled=${{ steps.secrets.outputs.VISION_ENABLED }}" \
+            -e "vision_storage_backend=${{ steps.secrets.outputs.VISION_STORAGE_BACKEND }}" \
+            -e "vision_compute_provider=${{ steps.secrets.outputs.VISION_COMPUTE_PROVIDER }}" \
+            -e "vision_r2_account_id=${{ steps.secrets.outputs.VISION_R2_ACCOUNT_ID }}" \
+            -e "vision_r2_access_key_id=${{ steps.secrets.outputs.VISION_R2_ACCESS_KEY_ID }}" \
+            -e "vision_r2_secret_access_key=${{ steps.secrets.outputs.VISION_R2_SECRET_ACCESS_KEY }}" \
+            -e "vision_r2_bucket_master=${{ steps.secrets.outputs.VISION_R2_BUCKET_MASTER }}" \
+            -e "vision_r2_bucket_derived=${{ steps.secrets.outputs.VISION_R2_BUCKET_DERIVED }}" \
+            -e "vision_r2_bucket_models=${{ steps.secrets.outputs.VISION_R2_BUCKET_MODELS }}" \
+            -e "vision_r2_bucket_clips=${{ steps.secrets.outputs.VISION_R2_BUCKET_CLIPS }}" \
             -e "image_registry=${{ steps.images.outputs.registry }}" \
             -e "image_tag=${{ steps.previous.outputs.tag }}" \
             -e "registry_password=${{ steps.registry_token.outputs.password }}"

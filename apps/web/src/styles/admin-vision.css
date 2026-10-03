@@ -804,3 +804,60 @@
 .vision-minimap__blocked {
   color: #fca5a5;
 }
+
+/* An asset on the source page: what it is, where it opens, how far its pipeline
+   has run, and the one control that moves it on. */
+.vision-assets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.vision-asset {
+  background: rgba(2, 6, 23, 0.45);
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+}
+
+.vision-asset__head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  justify-content: space-between;
+}
+
+.vision-asset__id {
+  font-size: 0.72rem;
+  opacity: 0.8;
+  user-select: all;
+}
+
+.vision-asset__links {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin-top: 0.5rem;
+}
+
+.vision-link--dim {
+  opacity: 0.55;
+}
+
+.vision-asset__stages {
+  margin-top: 0.6rem;
+}
+
+.vision-asset__stages th {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.vision-asset__queue {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.8rem;
+  margin-top: 0.6rem;
+}

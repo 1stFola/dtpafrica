@@ -449,6 +449,8 @@ export class VisionSourcesService {
             videoCodec: true,
             duplicateClusterId: true,
             createdAt: true,
+            // Whether the review proxy exists: the workstation screens open on it.
+            variants: { where: { kind: "proxy" }, select: { kind: true, durationMs: true }, take: 1 },
           },
         },
         uploadGrants: {
