@@ -50,19 +50,6 @@ const STATE_LABELS: Record<string, string> = {
   abandoned: "Abandoned",
 };
 
-/** Remembered so a returning annotator is not asked again every visit. */
-const ANNOTATOR_KEY = "dtp.vision.annotatorId";
-
-function readStoredAnnotator(): string {
-  try {
-    return window.localStorage.getItem(ANNOTATOR_KEY) ?? "";
-  } catch {
-    // Private windows and blocked site data both throw here. Losing a remembered
-    // name is a nuisance, not a failure, so the page carries on without it.
-    return "";
-  }
-}
-
 export function AdminVisionAnnotationPage() {
   usePageTitle("Annotation queue");
   const navigate = useNavigate();
@@ -70,7 +57,6 @@ export function AdminVisionAnnotationPage() {
   const [mix, setMix] = useState<VisionMixReport | null>(null);
   const [queue, setQueue] = useState<VisionActiveLearningItem[]>([]);
   const [schemas, setSchemas] = useState<VisionLabelSchema[]>([]);
-  const [annotatorId, setAnnotatorId] = useState(readStoredAnnotator);
   const [strategy, setStrategy] = useState<SamplingStrategy | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,21 +88,13 @@ export function AdminVisionAnnotationPage() {
     [schemas]
   );
 
+  /** Claims as the signed-in person: the API takes the annotator from the session. */
   async function claim() {
-    if (!annotatorId.trim()) {
-      setError("Enter who you are first, so two people are not given the same window.");
-      return;
-    }
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      window.localStorage.setItem(ANNOTATOR_KEY, annotatorId.trim());
-    } catch {
-      // Not remembering the name is survivable; failing the claim over it is not.
-    }
-    try {
-      const result = await claimVisionTask(annotatorId.trim(), strategy || undefined);
+      const result = await claimVisionTask(strategy || undefined);
       if (!result.task) {
         setNotice("Nothing waiting. The queue is empty for that filter.");
         return;
@@ -220,15 +198,6 @@ export function AdminVisionAnnotationPage() {
       <section className="vision-panel">
         <h2 className="vision-panel__title">Claim a window</h2>
         <div className="vision-filters">
-          <label>
-            <span>Who are you?</span>
-            <input
-              value={annotatorId}
-              onChange={(event) => setAnnotatorId(event.target.value)}
-              placeholder="your account id"
-              autoComplete="off"
-            />
-          </label>
           <label>
             <span>Only this kind</span>
             <select

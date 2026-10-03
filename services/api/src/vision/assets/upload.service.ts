@@ -15,6 +15,7 @@ import { VisionAuditService } from "../audit/vision-audit.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionJobsService } from "../jobs/vision-jobs.service";
 import { OBJECT_STORE, type ObjectStore, type PartRef } from "../storage/object-store";
+import { partnerHasUploadedEvidence } from "../rights/rights-evidence";
 
 /**
  * Resumable upload of source footage.
@@ -120,11 +121,9 @@ export class VisionUploadService {
       });
     }
 
-    // Rights evidence is what the whole claim rests on. No document, no upload.
-    const evidence = await this.prisma.visionRightsEvidence.count({
-      where: { partnerId: record.partnerId },
-    });
-    if (evidence === 0) {
+    // Rights evidence is what the whole claim rests on. No document, no upload -- and
+    // a document is one that reached the store, not a row whose signed URL was never used.
+    if (!(await partnerHasUploadedEvidence(this.prisma, this.store, record.partnerId))) {
       throw new ForbiddenException({
         statusCode: 403,
         error: "RightsDenied",
@@ -132,6 +131,26 @@ export class VisionUploadService {
         reason: "no_scope",
         remediation: "Upload the signed agreement against the partner, then retry.",
       });
+    }
+
+    // One grant, one upload. `usedAt` is set only at complete, so a link used to open
+    // any number of billed multipart uploads (docs/vision/50, PR-4). A second begin on
+    // a grant resumes the session it already has, the way the resume endpoint does.
+    if (grantId) {
+      const open = await this.prisma.visionUploadSession.findFirst({
+        where: { grantId, state: { in: ["in_progress", "completed"] } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, state: true },
+      });
+      if (open?.state === "completed") {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: "GrantUsed",
+          message: "This upload link has already been used.",
+          remediation: "Ask DTP for a new link.",
+        });
+      }
+      if (open) return this.view(open.id, grantId);
     }
 
     const videoAssetId = randomUUID();
@@ -148,6 +167,12 @@ export class VisionUploadService {
     );
 
     const session = await this.prisma.$transaction(async (tx) => {
+      // The source is now being acquired. Only from `authorized`: a source already
+      // `acquired` by an earlier copy stays so (docs/vision/50, PR-4).
+      await tx.visionSourceVideoRecord.updateMany({
+        where: { id: record.id, acquisitionStatus: "authorized" },
+        data: { acquisitionStatus: "acquiring" },
+      });
       await tx.visionVideoAsset.create({
         data: {
           id: videoAssetId,
@@ -339,6 +364,30 @@ export class VisionUploadService {
 
     const head = await this.store.head(session.bucketId as BucketId, session.objectKey);
     const bytes = head?.bytes ?? Number(session.bytesReceived);
+
+    // A partner link's size limit applies to the bytes stored, not to the figure the
+    // client announced at begin, which is advisory and can be anything.
+    if (session.grantId) {
+      const grant = await this.prisma.visionPartnerUploadGrant.findUnique({
+        where: { id: session.grantId },
+        select: { maxBytes: true },
+      });
+      if (grant && BigInt(bytes) > grant.maxBytes) {
+        await this.store
+          .deleteProtected(session.bucketId as BucketId, session.objectKey, "partner upload over its link's size limit")
+          .catch(() => undefined);
+        await this.prisma.visionUploadSession.update({
+          where: { id: session.id },
+          data: { state: "failed" },
+        });
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: "GrantSizeExceeded",
+          message: `The file is ${bytes} bytes; this link accepts up to ${grant.maxBytes}.`,
+          remediation: "Contact DTP for a link that fits the file.",
+        });
+      }
+    }
 
     if (session.expectedBytes !== null && bytes !== Number(session.expectedBytes)) {
       // Not fatal — the client's figure can be wrong — but a size mismatch is

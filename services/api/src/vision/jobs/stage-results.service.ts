@@ -157,7 +157,7 @@ export class VisionStageResultsService {
 
     const clusterId = await this.resolveDuplicateCluster(videoAssetId, checksum, perceptual);
 
-    await this.prisma.visionVideoAsset.update({
+    const asset = await this.prisma.visionVideoAsset.update({
       where: { id: videoAssetId },
       data: {
         checksumSha256: checksum,
@@ -165,7 +165,18 @@ export class VisionStageResultsService {
         ...(clusterId ? { duplicateClusterId: clusterId } : {}),
         ingestError: null,
       },
+      select: { sourceVideoRecordId: true },
     });
+
+    // "acquired" is, by the contract's definition, an immutable DTP copy with a recorded
+    // checksum, which is what just happened. Nothing set it before docs/vision/50 PR-4,
+    // so every real upload stayed short of it and only seed data could build a dataset.
+    if (asset.sourceVideoRecordId) {
+      await this.prisma.visionSourceVideoRecord.updateMany({
+        where: { id: asset.sourceVideoRecordId, acquisitionStatus: { in: ["authorized", "acquiring"] } },
+        data: { acquisitionStatus: "acquired" },
+      });
+    }
 
     return {
       applied: true,

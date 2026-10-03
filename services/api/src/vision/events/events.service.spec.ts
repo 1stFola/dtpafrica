@@ -152,6 +152,9 @@ describe("promotion", () => {
     expect(mockPrisma.visionEventCandidate.update).toHaveBeenCalledWith({ where: { id: "cand-1" }, data: { inPlay: false, cameraSegmentId: "seg-r" } });
     mockRights.canPublishHighlight.mockResolvedValueOnce({ allowed: false, reason: "scope denies publication" });
     await expect(service.promote("cand-1", {}, bob)).rejects.toMatchObject({ response: { error: "PublicationRightsRefused" } });
+    // The actor is named to the check, so a player- or guardian-level withdrawal applies
+    // (docs/vision/50, PR-4).
+    expect(mockRights.canPublishHighlight).toHaveBeenLastCalledWith({ videoAssetId: expect.any(String), playerId: "p9" });
     mockClock.currentAnchors.mockResolvedValueOnce([]);
     await expect(service.promote("cand-1", {}, bob)).rejects.toMatchObject({ response: { error: "ClockNotAnchored" } });
     stored = candidate({ promotedEventId: "ev-1" });

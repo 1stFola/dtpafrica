@@ -19,6 +19,8 @@ import { VisionDatasetsService } from "../datasets/datasets.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
+import { partnerHasUploadedEvidence } from "../rights/rights-evidence";
+import { JOB_QUEUE, JobNotClaimableError, type JobQueue } from "../jobs/job-queue";
 
 /**
  * The partner source catalog.
@@ -46,7 +48,8 @@ export class VisionSourcesService {
     @Inject(VISION_CONFIG) private readonly config: VisionConfig,
     // Every parameter is explicit: mixing @Inject() with a reflected type makes the
     // reflected ones undefined at runtime. See vision-di.spec.ts.
-    @Inject(VisionDatasetsService) private readonly datasets: VisionDatasetsService
+    @Inject(VisionDatasetsService) private readonly datasets: VisionDatasetsService,
+    @Inject(JOB_QUEUE) private readonly queue: JobQueue
   ) {}
 
   // ── Partners ─────────────────────────────────────────────────────────────
@@ -295,9 +298,12 @@ export class VisionSourcesService {
       datasets = await this.datasets.flagVersionsForRevokedScope(scope, reason, actor);
     }
 
+    const cancelledJobs = await this.cancelJobsNoLongerAnalysable(scope, reason, actor);
+
     return {
       ...updated,
       affectedDatasetVersions: datasets.datasetVersions,
+      cancelledJobs,
       // Surfaced rather than swallowed: a player-level withdrawal needs the identity
       // graph (Phase 4) to resolve to assets, so an operator must know it still has
       // to be actioned by hand.
@@ -308,6 +314,62 @@ export class VisionSourcesService {
           }
         : {}),
     };
+  }
+
+  /**
+   * docs/vision/03 §Revocation, step 1: no further work on footage whose grant is gone.
+   *
+   * Every queued or running job on an asset the scope covered is cancelled -- but only
+   * where the asset can no longer be analysed at all: another grant may still allow
+   * it, and most-specific-wins decides, not this withdrawal alone. A running job's
+   * worker learns at its next heartbeat (a 409) and stops. Claim re-checks rights as
+   * well, so a job queued in the moment between is caught there. A player-level scope
+   * resolves to no assets yet, as for datasets above.
+   */
+  private async cancelJobsNoLongerAnalysable(
+    scope: { partnerId: string | null; sourceVideoRecordId: string | null },
+    reason: string,
+    actor?: AdminAuthContext
+  ): Promise<string[]> {
+    const where = scope.sourceVideoRecordId
+      ? { videoAsset: { sourceVideoRecordId: scope.sourceVideoRecordId } }
+      : scope.partnerId
+        ? { videoAsset: { sourceVideoRecord: { partnerId: scope.partnerId } } }
+        : null;
+    if (!where) return [];
+
+    const open = await this.prisma.visionJob.findMany({
+      where: { ...where, state: { in: ["queued", "claimed", "running"] } },
+      select: { id: true, videoAssetId: true },
+    });
+    const allowed = new Map<string, boolean>();
+    const cancelled: string[] = [];
+    for (const job of open) {
+      if (!job.videoAssetId) continue;
+      if (!allowed.has(job.videoAssetId)) {
+        allowed.set(job.videoAssetId, (await this.rights.canAnalyze({ videoAssetId: job.videoAssetId })).allowed);
+      }
+      if (allowed.get(job.videoAssetId)) continue;
+      try {
+        await this.queue.cancel(job.id, `rights withdrawn: ${reason}`, actor?.userId ?? null);
+        cancelled.push(job.id);
+      } catch (error) {
+        // Finished in the meantime: nothing left to stop.
+        if (!(error instanceof JobNotClaimableError)) throw error;
+      }
+    }
+    if (cancelled.length) {
+      await this.audit.record(
+        {
+          action: "job.cancelled",
+          targetKind: "vision_rights_scope",
+          targetId: null,
+          data: { jobIds: cancelled, reason: "rights withdrawn" },
+        },
+        actor
+      );
+    }
+    return cancelled;
   }
 
   // ── Source records ───────────────────────────────────────────────────────
@@ -546,10 +608,8 @@ export class VisionSourcesService {
       throw new BadRequestException(`${signatory.name} is no longer an active signatory`);
     }
 
-    const evidence = await this.prisma.visionRightsEvidence.count({
-      where: { partnerId: source.partnerId },
-    });
-    if (evidence === 0) {
+    // A document that reached the store, not a row whose signed URL was never used.
+    if (!(await partnerHasUploadedEvidence(this.prisma, this.store, source.partnerId))) {
       throw new ForbiddenException({
         statusCode: 403,
         error: "RightsDenied",

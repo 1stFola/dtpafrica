@@ -302,7 +302,8 @@ async function main() {
       canShareWithScout: false,
       grantedAt: ago(4),
       evidenceId: agreement.id,
-      restrictions: { demo: "Publication limited to this fixture and this season." },
+      // Free text goes under `note`, the one key that restricts nothing (docs/vision/54).
+      restrictions: { note: "Publication limited to this fixture and this season." },
     },
   });
 

@@ -69,6 +69,7 @@ async function main() {
   const suffix = randomUUID().slice(0, 8);
   let partnerId: string | null = null;
   let sessionKey: string | null = null;
+  let evidenceKey: string | null = null;
 
   try {
     // ── An authorised source with rights evidence ─────────────────────────
@@ -78,11 +79,15 @@ async function main() {
     });
     partnerId = partner.id;
 
+    // The document itself, not only its row: since docs/vision/50 PR-4 the upload gate
+    // counts evidence that reached the store.
+    evidenceKey = `rights/${partner.id}/agreement.pdf`;
+    await store.putSmallObject("master", evidenceKey, Buffer.from("%PDF-1.4 gate fixture"), "application/pdf");
     await prisma.visionRightsEvidence.create({
       data: {
         partnerId: partner.id,
         kind: "contract",
-        objectKey: `rights/${partner.id}/agreement.pdf`,
+        objectKey: evidenceKey,
       },
     });
     const record = await prisma.visionSourceVideoRecord.create({
@@ -140,6 +145,11 @@ async function main() {
     check("session opened", session.state, "in_progress");
     check("target is the write-once master bucket", session.bucket, "master");
     check("part size is 16 MiB", session.partSizeBytes, 16 * 1024 * 1024);
+    const acquiring = await prisma.visionSourceVideoRecord.findUniqueOrThrow({
+      where: { id: record.id },
+      select: { acquisitionStatus: true },
+    });
+    check("the source is now being acquired", acquiring.acquisitionStatus, "acquiring");
 
     // ── Upload part 1, then "lose the connection" ────────────────────────
     section("Interruption");
@@ -217,6 +227,10 @@ async function main() {
     check("and does not re-queue ingestion", again.jobsQueued.length, 0);
   } finally {
     section("Cleanup");
+    if (evidenceKey) {
+      await store.deleteProtected("master", evidenceKey, "upload interruption-test fixture evidence").catch(() => undefined);
+      check("evidence fixture removed from master", await store.head("master", evidenceKey), null);
+    }
     if (sessionKey) {
       await store
         .deleteProtected("master", sessionKey, "upload interruption-test fixture")

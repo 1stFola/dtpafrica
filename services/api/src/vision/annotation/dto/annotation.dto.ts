@@ -40,7 +40,8 @@ export class CreateTaskDto {
 }
 
 export class ClaimTaskDto {
-  @IsString() @MinLength(1) @MaxLength(64) annotatorId!: string;
+  /** Only the operator key may name the annotator; a signed-in person is themselves. */
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(64) annotatorId?: string;
   @IsOptional() @IsIn(SAMPLING_STRATEGIES as unknown as string[]) samplingStrategy?: string;
 }
 

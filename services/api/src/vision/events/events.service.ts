@@ -204,7 +204,13 @@ export class VisionEventsService {
         remediation: "Propose the event where it happened in play, or correct the segment if it is wrong.",
       });
     }
-    const rights = await this.rights.canPublishHighlight({ videoAssetId: current.videoAssetId });
+    // With the actor: a player- or guardian-level withdrawal applies only when the
+    // check names the player, and promotion is what names a minor in the match record
+    // (docs/vision/50, PR-4).
+    const rights = await this.rights.canPublishHighlight({
+      videoAssetId: current.videoAssetId,
+      ...(current.actorPlayerId ? { playerId: current.actorPlayerId } : {}),
+    });
     if (!rights.allowed) {
       throw new ForbiddenException({ statusCode: 403, error: "PublicationRightsRefused", message: rights.reason, remediation: "Publication needs a rights scope that allows it." });
     }

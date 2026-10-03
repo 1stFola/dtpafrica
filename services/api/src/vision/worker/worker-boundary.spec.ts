@@ -54,6 +54,10 @@ const mockModels = {
   recordWeightsChecksum: vi.fn(),
 };
 
+/** Rights allow unless a test withdraws them; their rules are rights-policy.spec.ts's. */
+const mockRights = { canAnalyze: vi.fn() };
+const mockAudit = { record: vi.fn() };
+
 let store: InMemoryObjectStore;
 let controller: VisionWorkerController;
 
@@ -84,6 +88,8 @@ beforeEach(() => {
     weights: { outcome: "not_applicable", sha256: null },
   });
   mockModels.recordWeightsChecksum.mockResolvedValue(true);
+  mockRights.canAnalyze.mockResolvedValue({ allowed: true });
+  mockAudit.record.mockResolvedValue(undefined);
   mockPrisma.visionJobEvent.create.mockResolvedValue({});
   store = new InMemoryObjectStore();
   controller = new VisionWorkerController(
@@ -93,7 +99,9 @@ beforeEach(() => {
     mockQueue as never,
     store,
     loadVisionConfig({}),
-    mockModels as never
+    mockModels as never,
+    mockRights as never,
+    mockAudit as never
   );
 });
 
@@ -287,6 +295,59 @@ describe("the proxy role resolves to where transcode wrote the proxy (C2)", () =
     mockPrisma.visionVideoVariant.findFirst.mockResolvedValue(null);
     await expect(controller.inputUrl(request(), JOB, { role: "proxy" })).rejects.toThrow(/no proxy yet/);
     expect(store.issuedUrls).toHaveLength(0);
+  });
+});
+
+describe("rights are re-checked after enqueue (docs/vision/50, PR-4)", () => {
+  const ASSET = "asset-1";
+  const claimed = {
+    id: JOB, type: "transcode", resourceClass: "cpu_small", attemptNumber: 1, inputSpec: {},
+    outputPrefix: PREFIX, budgetSeconds: 600, budgetUsdCents: 50, videoAssetId: ASSET,
+    datasetVersionId: null, modelVersionId: null,
+  };
+
+  it("fails a claimed job for good when its grant was withdrawn while it waited", async () => {
+    mockQueue.claim.mockResolvedValue(claimed);
+    mockRights.canAnalyze.mockResolvedValue({ allowed: false, reason: "revoked", detail: "withdrawn" });
+    const out = await controller.claim(request(), { resourceClasses: ["cpu_small"] });
+    expect(out.job).toBeNull();
+    expect(mockQueue.fail).toHaveBeenCalledWith(JOB, WORKER, expect.objectContaining({ kind: "rights_revoked" }), { retryable: false });
+    expect(mockQueue.markRunning).not.toHaveBeenCalled();
+  });
+
+  it("hands the job over when the grant still stands", async () => {
+    mockQueue.claim.mockResolvedValue(claimed);
+    const out = await controller.claim(request(), { resourceClasses: ["cpu_small"] });
+    expect(out.job?.jobId).toBe(JOB);
+    expect(mockQueue.fail).not.toHaveBeenCalled();
+  });
+
+  describe("the master", () => {
+    beforeEach(() => {
+      mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, objectKey: "originals/a/source.mp4", mimeType: "video/mp4" });
+    });
+
+    it("is read only by an ingest stage, and every read is audited", async () => {
+      mockPrisma.visionJob.findUnique.mockResolvedValue(heldJob({ type: "transcode", videoAssetId: ASSET, inputSpec: {} }));
+      const res = await controller.inputUrl(request(), JOB, { role: "source" });
+      expect(res.bucket).toBe("master");
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "media.raw.read", targetId: ASSET, reason: expect.stringContaining(JOB) })
+      );
+    });
+
+    it("is refused to a stage that reads the proxy", async () => {
+      mockPrisma.visionJob.findUnique.mockResolvedValue(heldJob({ type: "detect", videoAssetId: ASSET, inputSpec: {} }));
+      await expect(controller.inputUrl(request(), JOB, { role: "source" })).rejects.toThrow(/reads the proxy, not the master/);
+      expect(store.issuedUrls).toHaveLength(0);
+    });
+
+    it("is refused once the grant is withdrawn", async () => {
+      mockPrisma.visionJob.findUnique.mockResolvedValue(heldJob({ type: "transcode", videoAssetId: ASSET, inputSpec: {} }));
+      mockRights.canAnalyze.mockResolvedValue({ allowed: false, reason: "revoked", detail: "withdrawn", remediation: "r" });
+      await expect(controller.inputUrl(request(), JOB, { role: "source" })).rejects.toThrow(ForbiddenException);
+      expect(mockAudit.record).not.toHaveBeenCalled();
+    });
   });
 });
 
