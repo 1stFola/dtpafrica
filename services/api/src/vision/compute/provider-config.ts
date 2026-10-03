@@ -64,6 +64,11 @@ function list(raw: string | undefined, fallback: string[]): string[] {
   return parsed.length ? parsed : fallback;
 }
 
+function positiveNumber(raw: string | undefined, fallback: number): number {
+  const value = Number(raw?.trim() || NaN);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export function loadRunPodConfig(env: NodeJS.ProcessEnv = process.env): RunPodConfig {
   return {
     apiKey: env.VISION_RUNPOD_API_KEY?.trim() || null,
@@ -75,7 +80,8 @@ export function loadRunPodConfig(env: NodeJS.ProcessEnv = process.env): RunPodCo
       gpu_48gb: list(env.VISION_RUNPOD_GPUS_48GB, DEFAULT_RUNPOD_GPUS.gpu_48gb),
       gpu_80gb: list(env.VISION_RUNPOD_GPUS_80GB, DEFAULT_RUNPOD_GPUS.gpu_80gb),
     },
-    containerDiskGb: Number(env.VISION_RUNPOD_DISK_GB ?? 60),
+    // Empty is unset (#205's class): `Number("")` is 0, a pod with no disk.
+    containerDiskGb: positiveNumber(env.VISION_RUNPOD_DISK_GB, 60),
     cloudType: env.VISION_RUNPOD_CLOUD_TYPE?.trim() === "COMMUNITY" ? "COMMUNITY" : "SECURE",
   };
 }

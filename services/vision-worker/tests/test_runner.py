@@ -253,3 +253,64 @@ def test_an_ordinary_error_is_still_retried(tmp_path: Path) -> None:
     worker._stages = {"probe": boom}
     worker.run_one(spec())
     assert plane.failures[0]["retryable"] is True
+
+
+def test_sigterm_mid_job_fails_it_as_retryable_and_stops_the_worker(tmp_path: Path) -> None:
+    """A deploy stops the container. The job is handed back, not left to the reaper."""
+    from dtp_vision_worker.runner import WorkerTerminated
+
+    plane = FakeControlPlane()
+
+    def stopped(_ctx: StageContext) -> StageResult:
+        raise WorkerTerminated("SIGTERM")
+
+    worker = make_worker(tmp_path, plane, {"probe": stopped})
+    with pytest.raises(WorkerTerminated):
+        worker.run_one(spec())
+    assert plane.failures == [
+        {"jobId": "job-1", "reason": "worker_terminated",
+         "detail": "the worker was stopped mid-job (deploy or shutdown)", "retryable": True}
+    ]
+    assert not (tmp_path / "job-1" / "1").exists()
+
+
+def test_sigterm_still_stops_the_worker_when_reporting_fails(tmp_path: Path) -> None:
+    from dtp_vision_worker.runner import WorkerTerminated
+
+    class Unreachable(FakeControlPlane):
+        def fail(self, *a: object, **k: object) -> None:
+            raise ConnectionError("api gone")
+
+    def stopped(_ctx: StageContext) -> StageResult:
+        raise WorkerTerminated("SIGTERM")
+
+    worker = make_worker(tmp_path, Unreachable(), {"probe": stopped})
+    with pytest.raises(WorkerTerminated):
+        worker.run_one(spec())
+
+
+def test_main_installs_a_sigterm_handler_and_exits_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    import signal
+
+    from dtp_vision_worker import __main__ as entry
+
+    installed: dict[int, object] = {}
+    monkeypatch.setattr(entry.signal, "signal", lambda sig, handler: installed.__setitem__(sig, handler))
+    monkeypatch.setattr(entry, "load_config", lambda: load_config(ENV))
+
+    class Stopped:
+        jobs_completed = 0
+        jobs_failed = 0
+
+        def __init__(self, _config: object) -> None:
+            pass
+
+        def run_forever(self) -> None:
+            installed[signal.SIGTERM](signal.SIGTERM, None)  # type: ignore[operator]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(entry, "Worker", Stopped)
+    assert entry.main() == 0
+    assert signal.SIGTERM in installed

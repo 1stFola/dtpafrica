@@ -66,6 +66,7 @@ reviewed, reproducible player evidence.
 | — | [49-PHASE-6-INCREMENT-3.md](./49-PHASE-6-INCREMENT-3.md) | The second, and the queue: a widening that never rewrites the recorder's minute, and what a second person should look at next. |
 | — | [50-QA-PHASES-1-6.md](./50-QA-PHASES-1-6.md) | QA of Phases 1–6: seven criticals, the highs by theme, and a twelve-PR fix plan; full per-area lists in [`qa/`](./qa/). |
 | — | [51-QA-FIX-1-SECRETS.md](./51-QA-FIX-1-SECRETS.md) | QA fix 1, secrets: no secret on a deploy `run:` line, the env dump prints names only, bootstrap and worker tokens told apart, the operator key out of FFmpeg's environment. |
+| — | [52-QA-FIX-2-DEPLOY-SAFETY.md](./52-QA-FIX-2-DEPLOY-SAFETY.md) | QA fix 2, deploy safety: migrations by `migrate deploy` once per deploy and never on rollback, the deployed commit checked out, a worker that survives SIGTERM inside memory and CPU limits, and a deploy that checks it provisioned. |
 
 Also: [`docs/licenses/OSS_REGISTER.md`](../licenses/OSS_REGISTER.md) — every third-party
 component, with its code / weights / dataset licence tracked separately. Nothing ships without

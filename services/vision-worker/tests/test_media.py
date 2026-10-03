@@ -93,3 +93,13 @@ def test_subprocesses_inherit_an_allow_list_not_the_worker_environment() -> None
         "AWS_SECRET_ACCESS_KEY": "secret",
     })
     assert env == {"PATH": "/usr/bin", "HOME": "/home/worker"}
+
+
+def test_the_ffmpeg_thread_cap_comes_from_the_environment_or_not_at_all() -> None:
+    from dtp_vision_worker.media import ffmpeg_threads
+
+    assert ffmpeg_threads({}) == []
+    assert ffmpeg_threads({"VISION_FFMPEG_THREADS": ""}) == []
+    assert ffmpeg_threads({"VISION_FFMPEG_THREADS": "2"}) == ["-threads", "2"]
+    assert ffmpeg_threads({"VISION_FFMPEG_THREADS": "two"}) == []
+    assert ffmpeg_threads({"VISION_FFMPEG_THREADS": "0"}) == []

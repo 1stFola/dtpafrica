@@ -23,6 +23,7 @@
     "db:purge:gate-litter": "tsx scripts/purge-vision-gate-litter.ts",
     "db:purge:placeholder-players": "tsx scripts/purge-placeholder-players.ts",
     "db:push": "prisma db push --accept-data-loss",
+    "db:migrate:deploy": "prisma migrate deploy",
     "calibrate": "pnpm --filter @dtp/engines build && tsx scripts/run-calibration.ts",
     "vision:selfcheck": "tsx scripts/vision-phase0-selfcheck.ts",
     "vision:r2check": "tsx scripts/vision-r2-check.ts",

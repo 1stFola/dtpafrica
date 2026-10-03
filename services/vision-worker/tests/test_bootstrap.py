@@ -139,3 +139,12 @@ def test_main_takes_the_operator_key_out_of_the_environment_before_running(monke
     assert main(env, run=lambda: seen.append("VISION_PROVISION_API_KEY" in env) or 0) == 0
     assert seen == [False]
     assert retired_with == ["k"]
+
+
+def test_an_empty_provision_wait_is_the_default_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    waits: list[float] = []
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda *a, **k: waits.append(k["wait_seconds"]) or {"workerId": "w", "bootstrapToken": "t"})
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda *a: True)
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_API_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small", "VISION_PROVISION_WAIT_SECONDS": ""}
+    assert main(env, run=lambda: 0) == 0
+    assert waits == [600.0]

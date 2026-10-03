@@ -40,8 +40,10 @@ concurrency:
   group: deploy-staging
   cancel-in-progress: false
 
+# Read: nothing here pushes. (Write was for the Terraform state branch, which is
+# commented out; the token also lands in the box's clone, so it should grant no more.)
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # # ── Job 1: Terraform ──────────────────────────────────────────────────────
@@ -537,6 +539,7 @@ jobs:
             -e "git_repo_token=${{ github.token }}" \
             -e "git_branch=${{ env.DEPLOY_REF }}" \
             -e "image_registry=${{ steps.images.outputs.registry }}" \
+            -e "git_version=${{ env.DEPLOY_SHA }}" \
             -e "image_tag=${{ steps.images.outputs.tag }}"
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -564,10 +567,11 @@ jobs:
       # lasts. The images from the last ten deploys are still in ECR under the lifecycle
       # policy set earlier in this job, so the previous tag is nearly always pullable.
       #
-      # It restores the **application, not the database**. Migrations are not run by this
-      # deploy -- they are applied by hand through `docker exec` -- so there is normally
-      # nothing to unwind. If a migration was run by hand for this release, the schema
-      # stays migrated and a person has to decide what that means.
+      # It restores the **application, not the database**. The deploy applies migrations
+      # forward only, before the swap (`prisma migrate deploy`); the rollback passes
+      # run_migrations=false and the image no longer runs `db push` on start, so the
+      # schema stays where the newer release put it. Migrations are additive, so the
+      # older image runs against it; a person decides anything more than that.
       - name: Roll back to the previous image
         id: rollback
         # Both ways a deploy goes wrong: the playbook died partway through, or it finished
@@ -591,6 +595,8 @@ jobs:
             -e "git_repo_token=${{ github.token }}" \
             -e "git_branch=${{ env.DEPLOY_REF }}" \
             -e "image_registry=${{ steps.images.outputs.registry }}" \
+            -e "git_version=${{ steps.previous.outputs.tag }}" \
+            -e "run_migrations=false" \
             -e "image_tag=${{ steps.previous.outputs.tag }}"
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}

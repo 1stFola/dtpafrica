@@ -137,7 +137,9 @@ def main(env: dict[str, str] | None = None, run=None) -> int:
         log.error("cannot provision: %s not set", ", ".join(missing))
         return 2
     try:
-        wait = float(env.get("VISION_PROVISION_WAIT_SECONDS", DEFAULT_WAIT_SECONDS))
+        # Empty is unset, as the API treats every key compose passes (#205): float("")
+        # raised, exit 2, and the restart policy looped on it.
+        wait = float(env.get("VISION_PROVISION_WAIT_SECONDS", "").strip() or DEFAULT_WAIT_SECONDS)
         minted = provision(callback, key, resource_class, provider_id, wait_seconds=wait)
     except (BootstrapError, ValueError) as exc:
         log.error("%s", exc)
