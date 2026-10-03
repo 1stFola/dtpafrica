@@ -10,6 +10,7 @@ See docs/vision/06-JOBS-AND-COMPUTE.md.
 from __future__ import annotations
 
 import logging
+import random
 import shutil
 import threading
 import time
@@ -20,7 +21,15 @@ from typing import Any
 import httpx
 
 from .config import WorkerConfig
-from .control_plane import ContractMismatchError, ControlPlaneClient, JobSpec
+from .control_plane import (
+    FATAL_CLAIM_STATUSES,
+    ContractMismatchError,
+    ControlPlaneClient,
+    ControlPlaneError,
+    JobLostError,
+    JobSpec,
+    redact_urls,
+)
 
 log = logging.getLogger(__name__)
 
@@ -91,8 +100,13 @@ class ProgressReporter:
         self._fraction: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        #: Set when a heartbeat is refused because the job is no longer ours.
+        self.lost: JobLostError | None = None
 
     def set(self, stage: str, fraction: float | None = None) -> None:
+        """Records progress, and is where a stage learns its job was taken away."""
+        if self.lost is not None:
+            raise self.lost
         self._stage = stage
         self._fraction = fraction
 
@@ -110,8 +124,14 @@ class ProgressReporter:
         while not self._stop.wait(self._interval):
             try:
                 self._client.heartbeat(self._job_id, self._stage, self._fraction)
+            except JobLostError as exc:
+                # Expired, cancelled, over budget or reassigned: burning compute to the
+                # end of the stage helps nobody. The stage stops at its next `set`.
+                log.warning("job %s is no longer ours: %s", self._job_id, exc)
+                self.lost = exc
+                return
             except Exception as exc:  # noqa: BLE001 - never kill the job over a heartbeat
-                log.warning("heartbeat failed: %s", exc)
+                log.warning("heartbeat failed: %s", redact_urls(str(exc)))
 
 
 class Worker:
@@ -125,31 +145,56 @@ class Worker:
         self.jobs_completed = 0
         self.jobs_failed = 0
 
+    @property
+    def heartbeat_seconds(self) -> float:
+        """The tighter of ours and the control plane's, so its reaper never sees us late."""
+        server = getattr(self._client, "server_heartbeat_seconds", None)
+        return min(self._config.heartbeat_seconds, server) if server else self._config.heartbeat_seconds
+
     def run_forever(self) -> None:
         self._client.register()
         idle_since: float | None = None
+        failures = 0
 
         while True:
             try:
                 job = self._client.claim()
+                failures = 0
             except ContractMismatchError:
                 raise
-            except Exception as exc:  # noqa: BLE001
-                log.warning("claim failed, backing off: %s", exc)
-                time.sleep(self._config.poll_seconds)
-                continue
+            except ControlPlaneError as exc:
+                if exc.status in FATAL_CLAIM_STATUSES:
+                    # An expired or revoked token, or a refused contract: no number of
+                    # retries fixes it. Exit, and let the supervisor provision afresh.
+                    log.error("claim refused (HTTP %s); stopping: %s", exc.status, exc)
+                    return
+                job = None
+                failures += 1
+            except Exception as exc:  # noqa: BLE001 - network
+                log.warning("claim failed: %s", redact_urls(str(exc)))
+                job = None
+                failures += 1
 
             if job is None:
+                # A failed claim counts toward idle shutdown as an empty one does. A GPU
+                # pod whose claims keep failing used to run, and bill, for ever.
                 now = time.monotonic()
                 idle_since = idle_since or now
                 if now - idle_since >= self._config.idle_shutdown_seconds:
-                    log.info("queue drained, shutting down")
+                    log.info("queue drained, shutting down" if not failures else "claims kept failing; shutting down")
                     return
-                time.sleep(self._config.poll_seconds)
+                time.sleep(self._backoff(failures))
                 continue
 
             idle_since = None
             self.run_one(job)
+
+    def _backoff(self, failures: int) -> float:
+        """The poll interval, doubling per consecutive failure up to a minute, with jitter."""
+        if failures == 0:
+            return self._config.poll_seconds
+        delay = min(60.0, self._config.poll_seconds * 2 ** min(failures, 6))
+        return delay * (0.5 + random.random() / 2)
 
     def run_one(self, job: JobSpec) -> bool:
         """Run a single job. Returns True when it completed successfully."""
@@ -174,7 +219,7 @@ class Worker:
         try:
             work_dir.mkdir(parents=True, exist_ok=True)
             with ProgressReporter(
-                self._client, job.job_id, self._config.heartbeat_seconds
+                self._client, job.job_id, self.heartbeat_seconds
             ) as progress:
                 ctx = StageContext(
                     job=job,
@@ -213,6 +258,12 @@ class Worker:
             self.jobs_completed += 1
             return True
 
+        except JobLostError as exc:
+            # Not ours to fail: the control plane already moved the job on.
+            log.warning("abandoned job %s: %s", job.job_id, exc)
+            self.jobs_failed += 1
+            return False
+
         except WorkerTerminated:
             log.warning("terminated during job %s; failing it as retryable", job.job_id)
             try:
@@ -228,11 +279,11 @@ class Worker:
             raise
 
         except Exception as exc:  # noqa: BLE001 - one bad job must not kill the worker
-            log.exception("job %s failed", job.job_id)
+            log.error("job %s failed: %s", job.job_id, redact_urls(f"{type(exc).__name__}: {exc}"))
             self._client.fail(
                 job.job_id,
                 reason=type(exc).__name__,
-                detail=str(exc),
+                detail=redact_urls(str(exc)),
                 # A stage that refused its inputs says so; everything else is assumed
                 # transient, which is the queue's default.
                 retryable=bool(getattr(exc, "retryable", True)),
@@ -255,7 +306,7 @@ def download(ctx: StageContext, url: str, target: Path) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
     total = 0
     with ctx.http.stream("GET", url) as res:
-        res.raise_for_status()
+        _raise_for_status(res)
         with target.open("wb") as handle:
             for chunk in res.iter_bytes(8 * 1024 * 1024):
                 handle.write(chunk)
@@ -272,5 +323,13 @@ def upload(ctx: StageContext, url: str, source: Path, content_type: str) -> int:
             content=handle,
             headers={"Content-Type": content_type, "Content-Length": str(size)},
         )
-    res.raise_for_status()
+    _raise_for_status(res)
     return size
+
+
+def _raise_for_status(res: httpx.Response) -> None:
+    """`raise_for_status` without the presigned URL's signature in the message."""
+    if res.status_code >= 400:
+        raise RuntimeError(
+            f"{res.request.method} {redact_urls(str(res.request.url))} answered HTTP {res.status_code}"
+        )

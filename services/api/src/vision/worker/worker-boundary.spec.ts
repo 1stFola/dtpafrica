@@ -22,6 +22,8 @@ const PREFIX = visionKeys.inferencePrefix(JOB, 1);
 
 const mockPrisma = {
   visionJob: { findUnique: vi.fn() },
+  visionVideoAsset: { findUnique: vi.fn() },
+  visionVideoVariant: { findFirst: vi.fn() },
   visionJobCost: { upsert: vi.fn() },
   visionJobEvent: { create: vi.fn() },
 };
@@ -244,6 +246,47 @@ describe("completion re-validates what the worker claims it wrote", () => {
       cost: { gpuSeconds: 12, cpuSeconds: 30, wallClockSeconds: 40 },
     });
     expect(mockPrisma.visionJobCost.upsert).toHaveBeenCalledOnce();
+  });
+});
+
+describe("completion refuses an artifact in a bucket the job never wrote to", () => {
+  it("refuses a transcode artifact reported in the models bucket", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue({ outputPrefix: PREFIX, type: "transcode" });
+    await expect(
+      controller.complete(request(), JOB, {
+        idempotencyKey: "complete-attempt-1",
+        artifacts: [{ key: `${PREFIX}proxy.mp4`, bucket: "models", bytes: 10, contentType: "video/mp4", role: "proxy" }],
+      })
+    ).rejects.toThrow(/writes only to derived/);
+    expect(mockQueue.succeed).not.toHaveBeenCalled();
+    expect(OUTPUT_BUCKET_BY_JOB_TYPE.transcode).toBe("derived");
+  });
+});
+
+describe("the proxy role resolves to where transcode wrote the proxy (C2)", () => {
+  const ASSET = "asset-1";
+  const WRITTEN = `${visionKeys.inferencePrefix("transcode-job", 2)}proxy.mp4`;
+
+  beforeEach(() => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue(heldJob({ type: "detect", videoAssetId: ASSET, inputSpec: {} }));
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, objectKey: "originals/a/source.mp4", mimeType: "video/mp4" });
+  });
+
+  it("hands out the newest proxy variant's key, not a fixed per-asset key", async () => {
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ objectKey: WRITTEN });
+    const res = await controller.inputUrl(request(), JOB, { role: "proxy" });
+    expect(res).toMatchObject({ bucket: "derived", key: WRITTEN, role: "proxy" });
+    expect(res.key).not.toBe(visionKeys.proxy(ASSET).key);
+    expect(mockPrisma.visionVideoVariant.findFirst.mock.calls[0][0]).toMatchObject({
+      where: { videoAssetId: ASSET, kind: "proxy" },
+      orderBy: { createdAt: "desc" },
+    });
+  });
+
+  it("refuses, with a remedy, when the asset has no proxy yet", async () => {
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue(null);
+    await expect(controller.inputUrl(request(), JOB, { role: "proxy" })).rejects.toThrow(/no proxy yet/);
+    expect(store.issuedUrls).toHaveLength(0);
   });
 });
 

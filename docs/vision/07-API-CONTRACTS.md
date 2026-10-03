@@ -389,9 +389,15 @@ POST /vision/worker/register
 POST /vision/worker/jobs/claim
 POST /vision/worker/jobs/:id/heartbeat
 POST /vision/worker/jobs/:id/presign
+POST /vision/worker/jobs/:id/input-url
 POST /vision/worker/jobs/:id/complete
 POST /vision/worker/jobs/:id/fail
 ```
+
+A job that has moved on answers `409 JobNotClaimable`; one held by another worker,
+`403 JobNotHeldByWorker`. A worker that gets either on a heartbeat stops work on the
+job and does not report on it. `input-url` with `role: "proxy"` resolves to the asset's
+newest proxy variant, or `409 ProxyNotTranscoded` ([53](./53-QA-FIX-3-JOB-PROTOCOL.md)).
 
 Hard rule: **no worker endpoint accepts an admin session, and no admin endpoint accepts a worker
 token.** Enforced by distinct guards and covered by a test asserting cross-use returns 401.

@@ -7,6 +7,7 @@ import {
   type VisionJobType,
   type VisionResourceClass,
 } from "@dtp/vision-contracts";
+import { visionKeys } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { estimateUsdCents } from "../compute/resource-rates";
@@ -116,24 +117,34 @@ export class PostgresJobQueue implements JobQueue {
     };
   }
 
+  /*
+   * Every transition below is one conditional UPDATE: the holder and the state are in
+   * its WHERE, as they are in `claim`. A read followed by an unconditional write let
+   * a stale worker, or the reaper working from a list it read a moment earlier,
+   * overwrite a job that had since moved on -- and a job requeued that way has its
+   * stage results applied twice (docs/vision/50, PR-3). When nothing matched, the row
+   * is read only to say why.
+   */
+
   async markRunning(jobId: string, workerId: string) {
-    await this.assertHeld(jobId, workerId);
-    await this.prisma.visionJob.update({
-      where: { id: jobId },
-      data: { state: "running", startedAt: new Date(), heartbeatAt: new Date() },
+    const now = new Date();
+    const { count } = await this.prisma.visionJob.updateMany({
+      where: this.held(jobId, workerId),
+      data: { state: "running", startedAt: now, heartbeatAt: now },
     });
+    if (count !== 1) await this.refuse(jobId, workerId);
     await this.event(jobId, "running", { workerId });
   }
 
   async heartbeat(jobId: string, workerId: string, progress?: Record<string, unknown>) {
-    await this.assertHeld(jobId, workerId);
-    await this.prisma.visionJob.update({
-      where: { id: jobId },
+    const { count } = await this.prisma.visionJob.updateMany({
+      where: this.held(jobId, workerId),
       data: {
         heartbeatAt: new Date(),
         ...(progress ? { progress: progress as never } : {}),
       },
     });
+    if (count !== 1) await this.refuse(jobId, workerId);
   }
 
   async succeed(
@@ -153,13 +164,8 @@ export class PostgresJobQueue implements JobQueue {
     if (job.state === "succeeded" && job.idempotencyKey === idempotencyKey) {
       return { alreadyApplied: true };
     }
-    if (!ACTIVE_JOB_STATES.includes(job.state as never)) {
-      throw new JobNotClaimableError(jobId, job.state);
-    }
-    if (job.workerId !== workerId) throw new JobNotHeldByWorkerError(jobId, workerId);
-
-    await this.prisma.visionJob.update({
-      where: { id: jobId },
+    const { count } = await this.prisma.visionJob.updateMany({
+      where: this.held(jobId, workerId),
       data: {
         state: "succeeded",
         finishedAt: new Date(),
@@ -169,15 +175,33 @@ export class PostgresJobQueue implements JobQueue {
         error: Prisma.DbNull,
       },
     });
+    if (count !== 1) {
+      // A concurrent retry of this same completion may have landed first.
+      const now = await this.prisma.visionJob.findUnique({
+        where: { id: jobId },
+        select: { state: true, idempotencyKey: true },
+      });
+      if (now?.state === "succeeded" && now.idempotencyKey === idempotencyKey) {
+        return { alreadyApplied: true };
+      }
+      await this.refuse(jobId, workerId);
+    }
     await this.event(jobId, "succeeded", summary);
     return { alreadyApplied: false };
   }
 
+  /**
+   * Fails the job, or requeues it as a new attempt.
+   *
+   * `workerId` null is the reaper, which must pass the claim it judged (`expect`): the
+   * job may have been requeued and claimed by someone else since it read its list, and
+   * that new claim is not the one that went stale.
+   */
   async fail(
     jobId: string,
     workerId: string | null,
     error: Record<string, unknown>,
-    opts: { retryable?: boolean } = {}
+    opts: { retryable?: boolean; expect?: { workerId: string | null; claimedAt: Date | null } } = {}
   ) {
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
@@ -187,19 +211,33 @@ export class PostgresJobQueue implements JobQueue {
     if (workerId !== null && job.workerId !== workerId) {
       throw new JobNotHeldByWorkerError(jobId, workerId);
     }
+    if (!ACTIVE_JOB_STATES.includes(job.state as never)) {
+      // Failing a job that already succeeded, failed or was cancelled would requeue
+      // finished work.
+      throw new JobNotClaimableError(jobId, job.state);
+    }
 
     const retryable = opts.retryable !== false;
     const attemptsLeft = job.attemptNumber < job.maxAttempts;
     const requeue = retryable && attemptsLeft;
 
-    await this.prisma.visionJob.update({
-      where: { id: jobId },
+    const { count } = await this.prisma.visionJob.updateMany({
+      where: {
+        id: jobId,
+        state: { in: [...ACTIVE_JOB_STATES] },
+        // The attempt this decision was made about; a requeue in between changes it.
+        attemptNumber: job.attemptNumber,
+        ...(workerId !== null ? { workerId } : {}),
+        ...(opts.expect ? { workerId: opts.expect.workerId, claimedAt: opts.expect.claimedAt } : {}),
+      },
       data: requeue
         ? {
             // A retry is a new attempt, and writes to a new output prefix, so
-            // nothing from the failed attempt is overwritten.
+            // nothing from the failed attempt is overwritten -- the same prefix
+            // `retry()` gives a manual retry.
             state: "queued",
-            attemptNumber: { increment: 1 },
+            attemptNumber: job.attemptNumber + 1,
+            outputPrefix: visionKeys.inferencePrefix(jobId, job.attemptNumber + 1),
             workerId: null,
             claimedAt: null,
             startedAt: null,
@@ -208,6 +246,7 @@ export class PostgresJobQueue implements JobQueue {
           }
         : { state: "failed", finishedAt: new Date(), workerId: null, error: error as never },
     });
+    if (count !== 1) await this.refuse(jobId, workerId);
 
     await this.event(jobId, requeue ? "requeued" : "failed", error);
     return { requeued: requeue };
@@ -223,8 +262,8 @@ export class PostgresJobQueue implements JobQueue {
       throw new JobNotClaimableError(jobId, job.state);
     }
 
-    await this.prisma.visionJob.update({
-      where: { id: jobId },
+    const { count } = await this.prisma.visionJob.updateMany({
+      where: { id: jobId, state: { notIn: ["succeeded", "failed", "cancelled"] } },
       data: {
         state: "cancelled",
         finishedAt: new Date(),
@@ -232,6 +271,7 @@ export class PostgresJobQueue implements JobQueue {
         error: { kind: "cancelled_by_operator", reason } as never,
       },
     });
+    if (count !== 1) await this.refuse(jobId, null);
     await this.event(jobId, "cancelled", { reason, actorId: actorId ?? null });
   }
 
@@ -253,6 +293,7 @@ export class PostgresJobQueue implements JobQueue {
       where: { state: { in: ["claimed", "running"] } },
       select: {
         id: true,
+        workerId: true,
         heartbeatAt: true,
         claimedAt: true,
         resourceClass: true,
@@ -264,6 +305,7 @@ export class PostgresJobQueue implements JobQueue {
     const result: ReapResult = { requeued: [], failed: [] };
 
     for (const job of candidates) {
+      const expect = { workerId: job.workerId, claimedAt: job.claimedAt };
       const lastBeat = job.heartbeatAt ?? job.claimedAt;
       const elapsedSeconds = job.claimedAt
         ? Math.floor((now.getTime() - job.claimedAt.getTime()) / 1000)
@@ -277,9 +319,8 @@ export class PostgresJobQueue implements JobQueue {
       if (overTime || overCost) {
         // A budget breach is terminal, not retryable: running it again would
         // breach the same budget.
-        const outcome = await this.fail(
+        const outcome = await this.reapOne(
           job.id,
-          null,
           {
             kind: "budget_exceeded",
             elapsedSeconds,
@@ -288,19 +329,23 @@ export class PostgresJobQueue implements JobQueue {
             overTime,
             overCost,
           },
-          { retryable: false }
+          { retryable: false, expect }
         );
-        (outcome.requeued ? result.requeued : result.failed).push(job.id);
+        if (outcome) (outcome.requeued ? result.requeued : result.failed).push(job.id);
         continue;
       }
 
       if (lastBeat && lastBeat < staleBefore) {
-        const outcome = await this.fail(job.id, null, {
-          kind: "heartbeat_lost",
-          lastHeartbeatAt: lastBeat.toISOString(),
-          staleAfterSeconds: heartbeatIntervalSeconds * missedHeartbeatsBeforeExpiry,
-        });
-        (outcome.requeued ? result.requeued : result.failed).push(job.id);
+        const outcome = await this.reapOne(
+          job.id,
+          {
+            kind: "heartbeat_lost",
+            lastHeartbeatAt: lastBeat.toISOString(),
+            staleAfterSeconds: heartbeatIntervalSeconds * missedHeartbeatsBeforeExpiry,
+          },
+          { expect }
+        );
+        if (outcome) (outcome.requeued ? result.requeued : result.failed).push(job.id);
       }
     }
 
@@ -325,7 +370,26 @@ export class PostgresJobQueue implements JobQueue {
     return depth;
   }
 
-  private async assertHeld(jobId: string, workerId: string) {
+  /** A job that moved on while the reaper was looking is left alone, not an error. */
+  private async reapOne(
+    jobId: string,
+    error: Record<string, unknown>,
+    opts: { retryable?: boolean; expect: { workerId: string | null; claimedAt: Date | null } }
+  ) {
+    try {
+      return await this.fail(jobId, null, error, opts);
+    } catch (e) {
+      if (e instanceof JobNotClaimableError || e instanceof JobNotHeldByWorkerError) return null;
+      throw e;
+    }
+  }
+
+  private held(jobId: string, workerId: string) {
+    return { id: jobId, workerId, state: { in: [...ACTIVE_JOB_STATES] } };
+  }
+
+  /** Says why a conditional transition matched nothing. Always throws. */
+  private async refuse(jobId: string, workerId: string | null): Promise<never> {
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
       select: { state: true, workerId: true },
@@ -334,7 +398,11 @@ export class PostgresJobQueue implements JobQueue {
     if (!ACTIVE_JOB_STATES.includes(job.state as never)) {
       throw new JobNotClaimableError(jobId, job.state);
     }
-    if (job.workerId !== workerId) throw new JobNotHeldByWorkerError(jobId, workerId);
+    if (workerId !== null && job.workerId !== workerId) {
+      throw new JobNotHeldByWorkerError(jobId, workerId);
+    }
+    // Active, and held by the caller: the attempt or claim changed underneath it.
+    throw new JobNotClaimableError(jobId, `${job.state} (changed during the update)`);
   }
 
   private async event(jobId: string, kind: string, data?: Record<string, unknown>) {

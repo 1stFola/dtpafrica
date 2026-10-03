@@ -117,6 +117,26 @@ describe("a stage downstream of transcode carries the proxy's clock", () => {
     });
   });
 
+  it("drops a forged read list and asset id on a stage that declares no inputs of its own", async () => {
+    // Before docs/vision/50 PR-3, params.readKeys on a detect job reached the worker as
+    // a declared read list, letting it presign any derived or models object.
+    await service.enqueueForAsset({
+      type: "detect",
+      videoAssetId: ASSET,
+      params: {
+        sampleFps: 1,
+        videoAssetId: "someone-elses-asset",
+        readKeys: [{ bucket: "models", key: "weights/x.pt" }],
+        tracks: { jobId: "forged" },
+      },
+    });
+    expect(enqueued().inputSpec).toEqual({
+      videoAssetId: ASSET,
+      sampleFps: 1,
+      proxy: { fps: 25, sourceOffsetMs: 9000 },
+    });
+  });
+
   it("does so for clip as well, which also reads the proxy", async () => {
     await service.enqueueForAsset({ type: "clip", videoAssetId: ASSET });
     expect(enqueued().inputSpec.proxy).toEqual({ fps: 25, sourceOffsetMs: 9000 });

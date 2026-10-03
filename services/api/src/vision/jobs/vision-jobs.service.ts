@@ -123,10 +123,13 @@ export class VisionJobsService {
       priority: params.priority,
       videoAssetId: asset.id,
       modelVersionId: model?.id ?? null,
-      // The clock and the declared inputs are spread last so a caller cannot forge them.
+      // The caller's params go first and lose every key the control plane owns, and the
+      // asset, clock and declared inputs are spread after them, so a caller cannot forge
+      // any of them -- in particular not `readKeys`, which becomes the list of objects
+      // the worker may presign (docs/vision/50, PR-3).
       inputSpec: {
+        ...withoutReservedInputs(params.params),
         videoAssetId: asset.id,
-        ...(params.params ?? {}),
         ...(proxy ? { proxy } : {}),
         ...(track ?? {}),
         ...(identify ?? {}),
@@ -456,4 +459,23 @@ function dependsOn(type: VisionJobType, ancestor: VisionJobType): boolean {
     stack.push(...JOB_TYPE_PREREQUISITES[next]);
   }
   return false;
+}
+
+/** Keys of a job's inputSpec that only the control plane writes. */
+export const RESERVED_INPUT_KEYS = [
+  "videoAssetId",
+  "proxy",
+  "readKeys",
+  "detections",
+  "tracks",
+  "segments",
+  "anchors",
+] as const;
+
+export function withoutReservedInputs(params: Record<string, unknown> | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (!(RESERVED_INPUT_KEYS as readonly string[]).includes(key)) out[key] = value;
+  }
+  return out;
 }
