@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { AdminAuth } from "../../admin/decorators/admin-auth.decorator";
 import { RequirePermissions } from "../../admin/decorators/require-permissions.decorator";
 import { AdminAuthGuard } from "../../admin/guards/admin-auth.guard";
@@ -65,12 +65,19 @@ export class VisionAnnotationController {
     return jsonSafe(await this.annotation.createTask(dto, auth));
   }
 
-  /** Atomic: two annotators cannot be handed the same window. */
+  /**
+   * Atomic: two annotators cannot be handed the same window.
+   *
+   * The annotator is the signed-in person. It used to come from the body, so anyone
+   * could claim, and then submit, as somebody else, and review their own work past
+   * the two-reviewer gold gate (docs/vision/50, PR-4). Only the operator key, which
+   * has no person, names one -- the gates use that.
+   */
   @Post("tasks/claim")
   @RequirePermissions("vision.annotate")
-  async claim(@Body() dto: ClaimTaskDto) {
+  async claim(@Body() dto: ClaimTaskDto, @AdminAuth() auth: AdminAuthContext) {
     return jsonSafe(
-      await this.annotation.claimNextTask(dto.annotatorId, {
+      await this.annotation.claimNextTask(annotatorFor(auth, dto.annotatorId), {
         samplingStrategy: dto.samplingStrategy,
       })
     );
@@ -150,4 +157,31 @@ export class VisionAnnotationController {
   async mix() {
     return jsonSafe(await this.annotation.mixReport());
   }
+}
+
+/**
+ * Who is annotating: the session's person, whatever the body says. A body naming
+ * someone else is refused rather than quietly overridden, so a stale client finds out.
+ */
+export function annotatorFor(auth: AdminAuthContext, named?: string): string {
+  if (auth.userId) {
+    if (named && named !== auth.userId) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: "AnnotatorIsTheSignedInPerson",
+        message: "You can only claim or submit as yourself.",
+        remediation: "Leave annotatorId out; the signed-in account is used.",
+      });
+    }
+    return auth.userId;
+  }
+  if (!named) {
+    throw new BadRequestException({
+      statusCode: 400,
+      error: "AnnotatorRequired",
+      message: "The operator key has no person behind it, so it must name the annotator.",
+      remediation: "Pass annotatorId, or sign in as the person annotating.",
+    });
+  }
+  return named;
 }

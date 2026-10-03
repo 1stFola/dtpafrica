@@ -356,13 +356,16 @@ export function fetchVisionLabelSchemas() {
   return adminFetch<{ schemas: VisionLabelSchema[] }>("/vision/annotation/schemas");
 }
 
-/** Claims the next task atomically; `task` is null when the queue is empty. */
-export function claimVisionTask(annotatorId: string, samplingStrategy?: SamplingStrategy) {
+/**
+ * Claims the next task atomically, as the signed-in person; `task` is null when the
+ * queue is empty. The API takes the annotator from the session.
+ */
+export function claimVisionTask(samplingStrategy?: SamplingStrategy) {
   return adminFetch<{ task: VisionAnnotationTask | null; media?: VisionTaskMedia }>(
     "/vision/annotation/tasks/claim",
     {
       method: "POST",
-      body: JSON.stringify({ annotatorId, ...(samplingStrategy ? { samplingStrategy } : {}) }),
+      body: JSON.stringify(samplingStrategy ? { samplingStrategy } : {}),
     }
   );
 }

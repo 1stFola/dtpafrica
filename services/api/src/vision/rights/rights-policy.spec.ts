@@ -313,6 +313,29 @@ describe("restrictions", () => {
     expect(decision.allowed).toBe(false);
   });
 
+  // docs/vision/50, PR-4: every object without a `deny` key used to be ignored,
+  // including the docstring's own example.
+  it.each([
+    [{ noIdentifiableMinors: true }],
+    [{ territory: ["NG"] }],
+    [{ demo: "Publication limited to this fixture and this season." }],
+    [{ deny: [], territory: "NG only" }],
+    [{ note: { clause: 4 } }],
+  ])("denies every scope on a flag it does not understand: %j", async (restrictions) => {
+    mockPrisma.visionRightsScope.findMany.mockResolvedValue([scope({ canAnalyze: true, restrictions })]);
+    expect((await makeService().canAnalyze({ videoAssetId: ASSET }, NOW)).allowed).toBe(false);
+  });
+
+  it.each([
+    [{ note: "Clause 4: no publication outside the 2026 season." }],
+    [{ noIdentifiableMinors: false }],
+    [{ territory: [] }],
+    [{ deny: ["canPublishHighlight"], note: "Publication withheld pending guardian consent." }],
+  ])("allows what a note or an empty flag does not restrict: %j", async (restrictions) => {
+    mockPrisma.visionRightsScope.findMany.mockResolvedValue([scope({ canAnalyze: true, restrictions })]);
+    expect((await makeService().canAnalyze({ videoAssetId: ASSET }, NOW)).allowed).toBe(true);
+  });
+
   it("ignores an empty restrictions object", async () => {
     mockPrisma.visionRightsScope.findMany.mockResolvedValue([
       scope({ canAnalyze: true, restrictions: {} }),

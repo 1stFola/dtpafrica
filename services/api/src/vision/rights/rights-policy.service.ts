@@ -293,17 +293,37 @@ function deny(reason: RightsDenialReason, detail: string): RightsDecision {
 }
 
 /**
- * Structured restrictions, e.g. `{ "deny": ["canPublishHighlight"] }` or
- * `{ "noIdentifiableMinors": true }`.
+ * Restrictions are "free text plus structured flags" (docs/vision/03). Two keys are
+ * understood:
  *
- * Unrecognised restriction shapes deny rather than being ignored: a restriction
- * the code does not understand is not a restriction that can be waived.
+ *   deny   a list of scopes this grant does not give, e.g. `{ "deny": ["canPublishHighlight"] }`
+ *   note   free text for a person, e.g. the clause it came from; informational only
+ *
+ * Anything else that says something, `{ "noIdentifiableMinors": true }` or a
+ * territory, denies every scope rather than being ignored: a restriction the code does
+ * not understand is not a restriction that can be waived. Until docs/vision/50 PR-4
+ * every object without a `deny` key was ignored, including this docstring's own
+ * example. A key whose value says nothing (null, false, "", []) is not a restriction.
  */
+const UNDERSTOOD_RESTRICTION_KEYS = new Set(["deny", "note"]);
+
+function says(value: unknown): boolean {
+  if (value === null || value === undefined || value === false || value === "") return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as object).length > 0;
+  return true;
+}
+
 function hasBlockingRestriction(restrictions: unknown, scope: RightsScopeKey): boolean {
   if (restrictions === null || restrictions === undefined) return false;
   if (typeof restrictions !== "object" || Array.isArray(restrictions)) return true;
 
   const record = restrictions as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
+    if (!UNDERSTOOD_RESTRICTION_KEYS.has(key) && says(value)) return true;
+  }
+  if (record.note !== undefined && typeof record.note !== "string") return true;
+
   const deny = record.deny;
   if (Array.isArray(deny)) {
     return deny.includes(scope);

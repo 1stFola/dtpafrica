@@ -320,3 +320,19 @@ describe("a gamestate job is given the tracks, the calibrations and the clock", 
     expect(mockQueue.enqueue).not.toHaveBeenCalled();
   });
 });
+
+describe("retry re-checks rights (docs/vision/50, PR-4)", () => {
+  it("refuses to retry a job on footage whose grant was withdrawn since", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue({ state: "failed", attemptNumber: 1, maxAttempts: 3, videoAssetId: ASSET });
+    mockRights.canAnalyze.mockResolvedValue({ allowed: false, reason: "revoked", detail: "withdrawn", remediation: "r" });
+    await expect(service.retry("job-1")).rejects.toMatchObject({ response: { error: "RightsDenied" } });
+    expect(mockPrisma.visionJob.update).not.toHaveBeenCalled();
+  });
+
+  it("retries when the grant still stands", async () => {
+    mockPrisma.visionJob.findUnique.mockResolvedValue({ state: "failed", attemptNumber: 1, maxAttempts: 3, videoAssetId: ASSET });
+    mockPrisma.visionJob.update.mockResolvedValue({});
+    await service.retry("job-1");
+    expect(mockPrisma.visionJob.update).toHaveBeenCalledOnce();
+  });
+});

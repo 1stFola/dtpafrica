@@ -374,6 +374,9 @@ export class VisionAnnotationService {
             durationMs: true,
             variants: {
               where: { kind: "proxy" },
+              // The newest proxy, the one inference used: after a transcode retry
+              // there are two (docs/vision/50, appendix A).
+              orderBy: { createdAt: "desc" },
               select: { objectKey: true, sourceOffsetMs: true, fps: true },
               take: 1,
             },
@@ -397,8 +400,20 @@ export class VisionAnnotationService {
     id: string;
     startMs: number;
     endMs: number;
-    videoAsset: { variants: { objectKey: string; sourceOffsetMs: number; fps: number | null }[] };
+    videoAsset: { id: string; variants: { objectKey: string; sourceOffsetMs: number; fps: number | null }[] };
   }) {
+    // Checked when the task was created, and again every time the footage is handed
+    // out: a withdrawn grant stops annotation of it from the next request on.
+    const decision = await this.rights.canAnalyze({ videoAssetId: task.videoAsset.id });
+    if (!decision.allowed) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "RightsDenied",
+        message: decision.detail,
+        reason: decision.reason,
+        remediation: decision.remediation,
+      });
+    }
     const proxy = task.videoAsset.variants[0];
     if (!proxy) {
       throw new ConflictException(
@@ -430,6 +445,9 @@ export class VisionAnnotationService {
             durationMs: true,
             variants: {
               where: { kind: "proxy" },
+              // The newest proxy, the one inference used: after a transcode retry
+              // there are two (docs/vision/50, appendix A).
+              orderBy: { createdAt: "desc" },
               select: { objectKey: true, sourceOffsetMs: true, fps: true },
               take: 1,
             },
@@ -495,7 +513,17 @@ export class VisionAnnotationService {
       throw new ConflictException("This task was abandoned.");
     }
 
-    const annotatorId = dto.annotatorId ?? actor?.userId ?? null;
+    // The signed-in person, never the body's say-so; only the operator key (no
+    // person) may name one (docs/vision/50, PR-4).
+    if (actor?.userId && dto.annotatorId && dto.annotatorId !== actor.userId) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: "AnnotatorIsTheSignedInPerson",
+        message: "You can only submit as yourself.",
+        remediation: "Leave annotatorId out; the signed-in account is used.",
+      });
+    }
+    const annotatorId = actor?.userId ?? dto.annotatorId ?? null;
     if (task.assignedTo && annotatorId && task.assignedTo !== annotatorId) {
       throw new ForbiddenException(
         `This task is assigned to someone else. Claim it first, so two people are not labelling the same window unknowingly.`

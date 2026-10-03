@@ -403,8 +403,8 @@ export function AdminVisionTaskPage() {
           // box outside the window or crediting a model that never pre-labelled here.
           boxes: toPayloadBoxes(boxes),
         },
+        // No annotatorId: the API takes the signed-in person (docs/vision/54).
         effortMinutes: minutes,
-        annotatorId: task.assignedTo ?? undefined,
       });
       setNotice("Submitted. The previous attempt is kept, not replaced.");
       await load();

@@ -682,3 +682,24 @@ describe("boxes at the door", () => {
     await expect(service.submit(TASK, { payload: { uncertain: true, notes: "hard" } })).resolves.toBeDefined();
   });
 });
+
+describe("the footage is handed out only while the grant stands (docs/vision/50, PR-4)", () => {
+  const task = {
+    id: "task-1", startMs: 0, endMs: 5_000,
+    videoAsset: { id: ASSET, durationMs: 90_000, variants: [{ objectKey: "inference/t/1/proxy.mp4", sourceOffsetMs: 0, fps: 25 }] },
+    versions: [],
+  };
+
+  it("refuses the task's media once analysis is withdrawn", async () => {
+    mockPrisma.visionAnnotationTask.findUnique.mockResolvedValue(task);
+    mockRights.canAnalyze.mockResolvedValue({ allowed: false, reason: "revoked", detail: "withdrawn", remediation: "r" });
+    await expect(service.getTask("task-1")).rejects.toThrow(ForbiddenException);
+  });
+
+  it("hands it out while the grant stands", async () => {
+    mockPrisma.visionAnnotationTask.findUnique.mockResolvedValue(task);
+    const out = await service.getTask("task-1");
+    expect(out.media.url).toEqual(expect.any(String));
+    expect(mockRights.canAnalyze).toHaveBeenCalledWith({ videoAssetId: ASSET });
+  });
+});

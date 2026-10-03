@@ -17,17 +17,20 @@ import { VisionUploadService } from "./upload.service";
 const RECORD = "rec-1";
 const PARTNER = "partner-1";
 
+const EVIDENCE_KEY = `rights/${PARTNER}/evidence-1.pdf`;
+
 const mockPrisma = {
-  visionSourceVideoRecord: { findUnique: vi.fn() },
-  visionRightsEvidence: { count: vi.fn() },
+  visionSourceVideoRecord: { findUnique: vi.fn(), updateMany: vi.fn() },
+  visionRightsEvidence: { findMany: vi.fn() },
   visionVideoAsset: { create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   visionUploadSession: {
     create: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     update: vi.fn(),
   },
-  visionPartnerUploadGrant: { update: vi.fn() },
+  visionPartnerUploadGrant: { update: vi.fn(), findUnique: vi.fn() },
   $transaction: vi.fn(),
 };
 
@@ -69,9 +72,11 @@ function makeSession(overrides: Record<string, unknown> = {}) {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   store = new InMemoryObjectStore();
+  // The agreement document really is in the store: a row alone is not evidence.
+  await store.putSmallObject("master", EVIDENCE_KEY, Buffer.from("%PDF"), "application/pdf");
   service = new VisionUploadService(
     mockPrisma as never,
     store,
@@ -82,7 +87,10 @@ beforeEach(() => {
 
   session = makeSession();
   mockPrisma.visionSourceVideoRecord.findUnique.mockResolvedValue(authorisedRecord());
-  mockPrisma.visionRightsEvidence.count.mockResolvedValue(1);
+  mockPrisma.visionRightsEvidence.findMany.mockResolvedValue([{ objectKey: EVIDENCE_KEY }]);
+  mockPrisma.visionSourceVideoRecord.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.visionUploadSession.findFirst.mockResolvedValue(null);
+  mockPrisma.visionPartnerUploadGrant.findUnique.mockResolvedValue({ maxBytes: BigInt(5_000_000_000) });
   mockPrisma.visionUploadSession.findUnique.mockImplementation(async () => session);
   mockPrisma.visionUploadSession.create.mockImplementation(async () => session);
   mockPrisma.visionUploadSession.update.mockImplementation(async ({ data }) => {
@@ -132,20 +140,39 @@ describe("rights are checked before a single byte is accepted", () => {
 
   // The document is what the whole claim rests on.
   it("refuses when no rights evidence is attached for the partner", async () => {
-    mockPrisma.visionRightsEvidence.count.mockResolvedValue(0);
+    mockPrisma.visionRightsEvidence.findMany.mockResolvedValue([]);
     await expect(
       service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" })
     ).rejects.toThrow(ForbiddenException);
   });
 
+  // docs/vision/50, PR-4: an evidence row is created before its document is uploaded.
+  it("refuses when the evidence row's document never reached the store", async () => {
+    mockPrisma.visionRightsEvidence.findMany.mockResolvedValue([{ objectKey: `rights/${PARTNER}/never-uploaded.pdf` }]);
+    await expect(
+      service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" })
+    ).rejects.toThrow(/No rights evidence/);
+  });
+
+  it("marks the source as being acquired, and only from authorized", async () => {
+    await service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" });
+    expect(mockPrisma.visionSourceVideoRecord.updateMany).toHaveBeenCalledWith({
+      where: { id: RECORD, acquisitionStatus: "authorized" },
+      data: { acquisitionStatus: "acquiring" },
+    });
+  });
+
   it("names the remediation so an operator knows what to fix", async () => {
-    mockPrisma.visionRightsEvidence.count.mockResolvedValue(0);
-    await service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" }).catch((error) => {
-      expect(error.getResponse()).toMatchObject({
-        error: "RightsDenied",
-        reason: "no_scope",
-        remediation: expect.stringContaining("signed agreement"),
-      });
+    mockPrisma.visionRightsEvidence.findMany.mockResolvedValue([]);
+    // Asserted on the rejection itself: a `.catch` here passed vacuously when begin succeeded.
+    const error = await service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" }).then(
+      () => null,
+      (e: ForbiddenException) => e
+    );
+    expect(error?.getResponse()).toMatchObject({
+      error: "RightsDenied",
+      reason: "no_scope",
+      remediation: expect.stringContaining("signed agreement"),
     });
   });
 
@@ -307,11 +334,40 @@ describe("completion", () => {
     });
   });
 
+  it("refuses, deletes and fails a partner upload larger than its link allows", async () => {
+    session.grantId = "grant-1";
+    mockPrisma.visionPartnerUploadGrant.findUnique.mockResolvedValue({ maxBytes: BigInt(1) });
+    await expect(
+      service.complete("session-1", undefined, undefined, { grantId: "grant-1" })
+    ).rejects.toThrow(/accepts up to 1/);
+    expect(session.state).toBe("failed");
+    expect(await store.head("master", String(session.objectKey))).toBeNull();
+    expect(mockPrisma.visionPartnerUploadGrant.update).not.toHaveBeenCalled();
+  });
+
   it("refuses a session with no parts at all", async () => {
     const empty = await store.createMultipartUpload("master", "originals/other/source.mp4", "video/mp4");
     session.providerUploadId = empty.uploadId;
     session.objectKey = "originals/other/source.mp4";
     await expect(service.complete("session-1", undefined)).rejects.toThrow(/No parts/);
+  });
+});
+
+// One grant, one upload (docs/vision/50, PR-4).
+describe("a grant opens one upload", () => {
+  it("resumes the grant's open session instead of opening another", async () => {
+    mockPrisma.visionUploadSession.findFirst.mockResolvedValue({ id: "session-1", state: "in_progress" });
+    session.grantId = "grant-1";
+    await service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" }, undefined, "grant-1");
+    expect(mockPrisma.visionUploadSession.create).not.toHaveBeenCalled();
+    expect(mockPrisma.visionVideoAsset.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a grant whose upload already completed", async () => {
+    mockPrisma.visionUploadSession.findFirst.mockResolvedValue({ id: "session-1", state: "completed" });
+    await expect(
+      service.begin({ sourceVideoRecordId: RECORD, mimeType: "video/mp4" }, undefined, "grant-1")
+    ).rejects.toThrow(/already been used/);
   });
 });
 

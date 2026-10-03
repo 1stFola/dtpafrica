@@ -387,11 +387,24 @@ export class VisionJobsService {
   async retry(jobId: string, actor?: AdminAuthContext) {
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
-      select: { state: true, attemptNumber: true, maxAttempts: true },
+      select: { state: true, attemptNumber: true, maxAttempts: true, videoAssetId: true },
     });
     if (!job) throw new BadRequestException(`Unknown job ${jobId}`);
     if (!["failed", "cancelled", "expired"].includes(job.state)) {
       throw new BadRequestException(`Job is ${job.state}; only a finished job can be retried.`);
+    }
+    // The grant that allowed the first attempt may have been withdrawn since.
+    if (job.videoAssetId) {
+      const decision = await this.rights.canAnalyze({ videoAssetId: job.videoAssetId });
+      if (!decision.allowed) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: "RightsDenied",
+          message: decision.detail,
+          reason: decision.reason,
+          remediation: decision.remediation,
+        });
+      }
     }
 
     await this.prisma.visionJob.update({

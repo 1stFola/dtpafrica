@@ -24,6 +24,8 @@ import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { JOB_QUEUE, type JobQueue } from "../jobs/job-queue";
 import { VisionStageResultsService } from "../jobs/stage-results.service";
 import { VisionModelsService } from "../models/models.service";
+import { RightsPolicyService } from "../rights/rights-policy.service";
+import { VisionAuditService } from "../audit/vision-audit.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CompleteJobDto } from "./dto/complete-job.dto";
 import { ClaimJobDto } from "./dto/claim-job.dto";
@@ -55,7 +57,9 @@ export class VisionWorkerController {
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
     @Inject(VISION_CONFIG) private readonly config: VisionConfig,
-    @Inject(VisionModelsService) private readonly models: VisionModelsService
+    @Inject(VisionModelsService) private readonly models: VisionModelsService,
+    @Inject(RightsPolicyService) private readonly rights: RightsPolicyService,
+    @Inject(VisionAuditService) private readonly audit: VisionAuditService
   ) {}
 
   @Post("register")
@@ -102,6 +106,22 @@ export class VisionWorkerController {
 
     const job = await this.queue.claim(auth.workerId, allowed);
     if (!job) return { job: null };
+
+    // Rights were checked at enqueue, and a grant can be withdrawn while the job waits.
+    // docs/vision/03 §Revocation, step 1: no new work on footage whose consent is gone.
+    // The job fails for good, and the worker is told there is nothing for it this time.
+    if (job.videoAssetId) {
+      const decision = await this.rights.canAnalyze({ videoAssetId: job.videoAssetId });
+      if (!decision.allowed) {
+        await this.queue.fail(
+          job.id,
+          auth.workerId,
+          { kind: "rights_revoked", reason: decision.reason, detail: decision.detail },
+          { retryable: false }
+        );
+        return { job: null };
+      }
+    }
 
     await this.queue.markRunning(job.id, auth.workerId);
 
@@ -201,7 +221,7 @@ export class VisionWorkerController {
 
     const job = await this.prisma.visionJob.findUnique({
       where: { id: jobId },
-      select: { state: true, workerId: true, videoAssetId: true, inputSpec: true },
+      select: { type: true, state: true, workerId: true, videoAssetId: true, inputSpec: true },
     });
     if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
     if (job.workerId !== auth.workerId) {
@@ -250,7 +270,31 @@ export class VisionWorkerController {
     // identify were given a URL to an object that does not exist (docs/vision/50, C2).
     let ref: { bucket: "master" | "derived"; key: string };
     if (dto.role === "source") {
+      // The master is irreplaceable source media. Only the stages that make the proxy
+      // from it read it, and every read is on the audit trail (docs/vision/50, PR-4).
+      if (!INGEST_STAGES.includes(job.type)) {
+        throw new ForbiddenException(
+          `A ${job.type} job reads the proxy, not the master; only ${INGEST_STAGES.join(", ")} may read the source`
+        );
+      }
+      const decision = await this.rights.canAnalyze({ videoAssetId: asset.id });
+      if (!decision.allowed) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: "RightsDenied",
+          message: decision.detail,
+          reason: decision.reason,
+          remediation: decision.remediation,
+        });
+      }
       ref = { bucket: "master", key: asset.objectKey };
+      await this.audit.record({
+        action: "media.raw.read",
+        targetKind: "vision_video_asset",
+        targetId: asset.id,
+        reason: `${job.type} job ${jobId}, attempt read by worker ${auth.workerId}`,
+        data: { jobId, workerId: auth.workerId, jobType: job.type },
+      });
     } else {
       const proxy = await this.prisma.visionVideoVariant.findFirst({
         where: { videoAssetId: asset.id, kind: "proxy" },
