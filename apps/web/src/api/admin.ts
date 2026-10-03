@@ -129,10 +129,12 @@ export async function adminFetch<T>(
 ): Promise<T> {
   const key = getAdminApiKey();
   const jwt = getAdminJwt();
+  // A FormData body carries its own multipart boundary; setting the type by hand breaks it.
+  const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(`/api/v1${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(multipart ? {} : { "Content-Type": "application/json" }),
       ...(key ? { "x-admin-api-key": key } : {}),
       ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
       ...init?.headers,

@@ -23,6 +23,7 @@ import { VisionCalibrationController } from "./calibration/calibration.controlle
 import { VisionCalibrationService } from "./calibration/calibration.service";
 import { VisionClockController } from "./clock/clock.controller";
 import { VisionClockService } from "./clock/clock.service";
+import { VisionAssetsController } from "./assets/assets.controller";
 import { VisionEventsController } from "./events/events.controller";
 import { VisionEventsService } from "./events/events.service";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
@@ -97,6 +98,7 @@ const CONTROLLERS = [
   VisionCalibrationController,
   VisionClockController,
   VisionEventsController,
+  VisionAssetsController,
 ] as const;
 
 const SERVICES = [

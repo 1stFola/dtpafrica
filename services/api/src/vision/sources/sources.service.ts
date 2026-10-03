@@ -106,6 +106,19 @@ export class VisionSourcesService {
    * The document goes to the master bucket alongside the footage it authorises,
    * because the two must not be separable.
    */
+  /** Begin the evidence row the ordinary way, then put the bytes where its signed URL would have. */
+  async attachEvidenceFile(
+    partnerId: string,
+    dto: { kind: string; extension: string; documentDate?: string; notes?: string },
+    bytes: Buffer,
+    contentType: string,
+    actor?: AdminAuthContext
+  ) {
+    const begun = await this.beginEvidenceUpload(partnerId, dto, actor);
+    await this.store.putSmallObject(begun.bucket, begun.key, bytes, contentType || contentTypeFor(dto.extension));
+    return { evidenceId: begun.evidenceId, bucket: begun.bucket, key: begun.key, bytes: bytes.length };
+  }
+
   async beginEvidenceUpload(
     partnerId: string,
     dto: { kind: string; extension: string; documentDate?: string; notes?: string },

@@ -3,6 +3,7 @@ import { BUCKET_IDS, VISION_CONTRACT_VERSION } from "@dtp/vision-contracts";
 import { RequirePermissions } from "../admin/decorators/require-permissions.decorator";
 import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
 import { PermissionsGuard } from "../admin/guards/permissions.guard";
+import { PrismaService } from "../prisma/prisma.service";
 import {
   COMPUTE_PROVIDER_REGISTRY,
   type ComputeProviderRegistry,
@@ -24,8 +25,35 @@ export class VisionStatusController {
   constructor(
     @Inject(VISION_CONFIG) private readonly config: VisionConfig,
     @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
-    @Inject(COMPUTE_PROVIDER_REGISTRY) private readonly compute: ComputeProviderRegistry
+    @Inject(COMPUTE_PROVIDER_REGISTRY) private readonly compute: ComputeProviderRegistry,
+    @Inject(PrismaService) private readonly prisma: PrismaService
   ) {}
+
+  /**
+   * What the Vision environment has in it, as the counts the layout's badges and
+   * the overview page show. One round trip, each a cheap count.
+   */
+  @Get("overview")
+  @RequirePermissions("vision.read")
+  async overview() {
+    const staleWorkerBefore = new Date(Date.now() - 10 * 60 * 1000);
+    const [partners, sources, assets, assetsReady, jobsQueued, jobsRunning, jobsFailed, workersActive, annotationOpen, candidatesUnreviewed, datasets, models, modelsInProduction] = await Promise.all([
+      this.prisma.visionSourcePartner.count(),
+      this.prisma.visionSourceVideoRecord.count(),
+      this.prisma.visionVideoAsset.count(),
+      this.prisma.visionVideoAsset.count({ where: { ingestState: "ready" } }),
+      this.prisma.visionJob.count({ where: { state: "queued" } }),
+      this.prisma.visionJob.count({ where: { state: { in: ["claimed", "running"] } } }),
+      this.prisma.visionJob.count({ where: { state: "failed" } }),
+      this.prisma.visionWorker.count({ where: { retiredAt: null, lastSeenAt: { gte: staleWorkerBefore } } }),
+      this.prisma.visionAnnotationTask.count({ where: { state: { in: ["open", "claimed"] } } }),
+      this.prisma.visionEventCandidate.count({ where: { supersededBy: null, reviewState: "unreviewed" } }),
+      this.prisma.visionDatasetVersion.count(),
+      this.prisma.visionModel.count(),
+      this.prisma.visionModelVersion.count({ where: { stage: "production" } }),
+    ]);
+    return { enabled: this.config.enabled, partners, sources, assets, assetsReady, jobsQueued, jobsRunning, jobsFailed, workersActive, annotationOpen, candidatesUnreviewed, datasets, models, modelsInProduction };
+  }
 
   @Get("status")
   @RequirePermissions("vision.read")

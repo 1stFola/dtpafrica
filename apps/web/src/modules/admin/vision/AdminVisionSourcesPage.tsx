@@ -9,6 +9,8 @@ import {
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
+import { useAdminAuth } from "../AdminAuthContext";
+import { VisionRegisterPanels } from "./VisionRegisterPanels";
 
 /**
  * The Partner Video Catalog.
@@ -49,7 +51,9 @@ function StatusPill({ status }: { status: string }) {
 export function AdminVisionSourcesPage() {
   usePageTitle("Vision sources");
 
+  const { hasPermission } = useAdminAuth();
   const [partners, setPartners] = useState<VisionPartner[]>([]);
+  const [reloadKey, setReloadKey] = useState(0);
   const [sources, setSources] = useState<VisionSourceRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +66,7 @@ export function AdminVisionSourcesPage() {
     fetchVisionPartners()
       .then((data) => setPartners(data.partners))
       .catch(() => setPartners([]));
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +85,7 @@ export function AdminVisionSourcesPage() {
     return () => {
       cancelled = true;
     };
-  }, [partnerId, status, debouncedSearch]);
+  }, [partnerId, status, debouncedSearch, reloadKey]);
 
   const counts = useMemo(() => {
     const rows = sources ?? [];
@@ -99,6 +103,8 @@ export function AdminVisionSourcesPage() {
         description="Matches DTP knows about. Registering one grants nothing — acquisition is a separate, authorized decision."
         crumbs={[{ label: "Vision", to: "/admin/vision" }, { label: "Sources" }]}
       />
+
+      {hasPermission("vision.sources.write") && <VisionRegisterPanels partners={partners} onChanged={() => setReloadKey((k) => k + 1)} />}
 
       <section className="vision-panel">
         <div className="vision-filters">

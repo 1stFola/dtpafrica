@@ -214,6 +214,18 @@ export class VisionJobsController {
     };
   }
 
+  /** Every worker the control plane has heard from, newest first; retired ones included so a retire can be seen. */
+  @Get("workers")
+  @RequirePermissions("vision.read")
+  async listWorkers() {
+    const workers = await this.prisma.visionWorker.findMany({
+      orderBy: { firstSeenAt: "desc" },
+      take: 50,
+      select: { id: true, providerId: true, providerRef: true, resourceClass: true, image: true, firstSeenAt: true, lastSeenAt: true, jobsCompleted: true, retiredAt: true, tokenExpiresAt: true },
+    });
+    return { workers };
+  }
+
   @Post("workers/:id/retire")
   @RequirePermissions("vision.jobs.run")
   async retireWorker(@Param("id") id: string) {

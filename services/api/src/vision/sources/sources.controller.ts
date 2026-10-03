@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { AdminAuth } from "../../admin/decorators/admin-auth.decorator";
 import { RequirePermissions } from "../../admin/decorators/require-permissions.decorator";
 import { AdminAuthGuard } from "../../admin/guards/admin-auth.guard";
@@ -56,6 +57,27 @@ export class VisionSourcesController {
   }
 
   // ── Rights evidence ──────────────────────────────────────────────────────
+
+  /**
+   * The document itself, through the API, for the browser: the master bucket has
+   * no CORS rule for a browser PUT, and a rights document is a few megabytes,
+   * not video. The route above remains for a client that can PUT directly.
+   */
+  @Post("partners/:id/evidence/file")
+  @RequirePermissions("vision.rights.manage")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024, files: 1 } }))
+  async attachEvidenceFile(
+    @Param("id") id: string,
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string; size: number } | undefined,
+    @Body() body: { kind?: string; documentDate?: string; notes?: string },
+    @AdminAuth() auth: AdminAuthContext
+  ) {
+    if (!file || !file.size) throw new BadRequestException("Attach the document as the `file` field.");
+    const extension = (file.originalname.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+    if (!extension) throw new BadRequestException("The document needs a file extension (pdf, jpg, png).");
+    if (!body.kind) throw new BadRequestException("kind is required.");
+    return jsonSafe(await this.sources.attachEvidenceFile(id, { kind: body.kind, extension, documentDate: body.documentDate, notes: body.notes }, file.buffer, file.mimetype, auth));
+  }
 
   @Get("partners/:id/evidence")
   @RequirePermissions("vision.read")
