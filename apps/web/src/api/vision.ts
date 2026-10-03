@@ -1026,6 +1026,8 @@ export type VisionEventCandidate = {
   note: string | null;
   promotedEventId: string | null;
   promotionKind: string | null;
+  /** Promoted once, and the event it was promoted into has since left the match record. */
+  promotionStale?: boolean;
   supersededBy: string | null;
   createdAt: string;
   matchClock: string | null;

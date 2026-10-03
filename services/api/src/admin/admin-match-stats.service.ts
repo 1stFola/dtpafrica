@@ -19,6 +19,8 @@ import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
 import { planFinalScoreSync } from "./final-score-sync";
 import { linkMatchGoals } from "../scoreboard/link-match-goals";
+import { videoGoals, withVideoGoals } from "../scoreboard/video-goals";
+import { reapplyEnrichment } from "../vision/events/reapply-enrichment";
 import {
   buildNumberLookup,
   squadNumberLabel,
@@ -820,7 +822,10 @@ export class AdminMatchStatsService {
     if (!readLiveFeature(match.stats).enabled) return;
     if (!isFullTime(readClock(sheet.clock))) return;
 
-    const score = scoreFromEvents(readEvents(sheet.events));
+    /* A goal added from video is on the timeline and not on the sheet; the score counts it
+       wherever the sheet sets the score (scoreboard/video-goals.ts). */
+    const fromVideo = await videoGoals(this.prisma, match);
+    const score = withVideoGoals(scoreFromEvents(readEvents(sheet.events)), fromVideo);
     const published = { home: match.homeScore, away: match.awayScore };
     /* Counted rather than assumed, and only here -- full time is reached once per match,
        so this is not on the path of a recorder tapping events. */
@@ -836,7 +841,9 @@ export class AdminMatchStatsService {
     const plan = planFinalScoreSync({
       sheet: score,
       published,
-      eventsFromElsewhere: allEvents - ourEvents,
+      /* Video rows are accounted for in the score above, so they are not a timeline the
+         sheet disagrees with. */
+      eventsFromElsewhere: allEvents - ourEvents - fromVideo.events,
     });
 
     const wasFinished = match.status === "finished";
@@ -1406,7 +1413,9 @@ export class AdminMatchStatsService {
     /* One approval publishes both artefacts, in one transaction. The timeline
        and the figures derived from it now reach the public site together or
        not at all — there is no window where they can disagree. */
-    const score = scoreFromEvents(recorded);
+    /* The approved goal events, and any goal added from video: that row is not this
+       console's, survives the rewrite below, and stays on the public timeline. */
+    const score = withVideoGoals(scoreFromEvents(recorded), await videoGoals(this.prisma, match));
     const penaltyShootout = penaltyShootoutFromEvents(recorded);
     const finished = isFullTime(readClock(sheet.clock));
     const nextMeta = { ...existingMeta };
@@ -1425,7 +1434,6 @@ export class AdminMatchStatsService {
       { matchId, metadata: { path: ["source"], equals: "match_recorder" } },
       match.competitionId
     );
-
     const writes: Prisma.PrismaPromise<unknown>[] = [
       /* Re-approval must not duplicate the timeline, so this sheet's previously
          published events are cleared first. */
@@ -1476,6 +1484,23 @@ export class AdminMatchStatsService {
     await this.log(sheet, WHOLE_SHEET, "approved", ctx, {
       summary: this.summarise(sheet) as Prisma.InputJsonValue,
     });
+
+    try {
+      /* Rows Vision had enriched were deleted with the rest, here or when the sheet was
+         sent back, and their candidates left waiting. Each goes back on the rewritten row
+         that is the same event. Swallowed like the steps below, and for the same reason: a
+         candidate that is not put back stays marked stale, which Vision refuses to promote
+         again until it has been reviewed afresh -- a safe place to be left. */
+      const put = await reapplyEnrichment(this.prisma, matchId);
+      if (put.stale.length) {
+        this.logger.warn(
+          `Match ${matchId}: ${put.stale.length} video-reviewed event(s) no longer match a ` +
+            "row on the approved sheet and were left for review again."
+        );
+      }
+    } catch {
+      /* The candidates stay stale; see reapply-enrichment.ts. */
+    }
 
     /* Anybody the timeline named who is not in their team's squad gets a row, with no
        shirt number for staff to fill in later. Outside the transaction and inside a
@@ -1708,11 +1733,14 @@ export class AdminMatchStatsService {
           : {};
       delete reopenedMeta.penaltyShootout;
       delete reopenedMeta.regulationScore;
+      /* Nil, but for any goal added from video: that row was not withdrawn with the
+         log and is still on the timeline. */
+      const fromVideo = await videoGoals(this.prisma, match);
       await this.prisma.sbMatch.update({
         where: { id: matchId },
         data: {
-          homeScore: 0,
-          awayScore: 0,
+          homeScore: fromVideo.home,
+          awayScore: fromVideo.away,
           meta: reopenedMeta as Prisma.InputJsonValue,
         },
       });

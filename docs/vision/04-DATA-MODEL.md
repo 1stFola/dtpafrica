@@ -461,5 +461,10 @@ the new roles follow the same pattern and must not reset existing grants.
   backwards-compatible, and land in Phase 6/7 with their own review. The first landed in
   [49](./49-PHASE-6-INCREMENT-3.md): `SbMatchEvent.secondInMinute`, nullable, null on every row
   the recorder entered, written by promotion only beside the recorder's own minute.
+- `VisionEventCandidate.acceptedAnchorId` ([55](./55-QA-FIX-5-EVENTS-CLOCK.md)) is the clock
+  anchor a candidate was accepted on; promotion writes a minute only under that anchor. Its
+  migration, `20261005100000_vision_event_accepted_anchor`, is dated after the two
+  future-dated migrations already on live because it alters a table the earlier of them
+  creates. Until a migration no longer depends on those two, date it after them, not today.
 - Every `Json` column needs a Zod schema in `packages/vision-contracts` and a documented shape.
   PROMPT rule 19: core domain entities do not live in undocumented JSON blobs.

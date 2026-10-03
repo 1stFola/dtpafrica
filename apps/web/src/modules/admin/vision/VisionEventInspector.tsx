@@ -69,7 +69,9 @@ export function VisionEventInspector({
         <dd>
           {candidate.promotedEventId
             ? `${candidate.promotionKind} as event ${candidate.promotedEventId.slice(0, 8)}`
-            : candidate.promotable
+            : candidate.promotionStale
+              ? "was promoted, and that event has since left the match record; correct it to start review again"
+              : candidate.promotable
               ? `promotable as ${candidate.scoreboardType}${candidate.inPlay ? "" : ", but inside a replay"}`
               : "stays Vision evidence: the recorder has no row for this type"}
         </dd>
@@ -131,7 +133,7 @@ export function VisionEventInspector({
           <button type="button" disabled={busy} onClick={() => onPromote(false)} title="Enrich the recorder's event at this minute">
             Promote
           </button>
-          <button type="button" disabled={busy} onClick={() => onPromote(true)} title="Add it to the match record if the recorder has nothing at this minute">
+          <button type="button" disabled={busy} onClick={() => onPromote(true)} title="Add it to the match record if the recorder has nothing at this minute: the score and the scorer&apos;s totals change with it">
             Promote, creating
           </button>
         </div>

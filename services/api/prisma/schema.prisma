@@ -2061,6 +2061,9 @@ model VisionEventCandidate {
   promotionKind           String?  @map("promotion_kind")
   promotedBy              String?  @map("promoted_by")
   promotedAt              DateTime? @map("promoted_at")
+  /// The clock anchor governing startMs when the second person accepted: the clock the
+  /// match minute was reviewed on. Promotion refuses under any other. See docs/vision/55.
+  acceptedAnchorId        String?  @map("accepted_anchor_id")
   supersededBy            String?  @map("superseded_by")
   createdAt               DateTime @default(now()) @map("created_at")
 

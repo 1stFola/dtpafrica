@@ -27,6 +27,7 @@ import { VisionIdentityService } from "./identity/identity.service";
 import { VisionCalibrationController } from "./calibration/calibration.controller";
 import { VisionCalibrationService } from "./calibration/calibration.service";
 import { VisionAssetsController } from "./assets/assets.controller";
+import { ScoreboardModule } from "../scoreboard/scoreboard.module";
 import { VisionEventsController } from "./events/events.controller";
 import { VisionEventsService } from "./events/events.service";
 import { VisionClockController } from "./clock/clock.controller";
@@ -98,6 +99,8 @@ const computeRegistryProvider: Provider = {
 @Module({
   imports: [
     PrismaModule,
+    // Promotion adds a goal through ScoreBoard's own lifecycle: the scorer's totals and the table.
+    ScoreboardModule,
     // Same secret and lifetime as AdminModule, so one admin session works across both.
     JwtModule.register({ secret: adminJwtSecret(), signOptions: { expiresIn: "7d" } }),
   ],
