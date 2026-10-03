@@ -79,3 +79,17 @@ def test_a_frame_is_sought_half_a_frame_early_so_rounding_cannot_skip_it() -> No
     assert media.frame_seek_seconds(0, 25) == 0.0
     assert media.frame_seek_seconds(1, 25) == 0.02
     assert media.frame_seek_seconds(29, 25) == 1.14
+
+
+def test_subprocesses_inherit_an_allow_list_not_the_worker_environment() -> None:
+    from dtp_vision_worker.media import subprocess_env
+
+    env = subprocess_env({
+        "PATH": "/usr/bin",
+        "HOME": "/home/worker",
+        "VISION_WORKER_TOKEN": "secret",
+        "VISION_BOOTSTRAP_TOKEN": "secret",
+        "VISION_PROVISION_API_KEY": "secret",
+        "AWS_SECRET_ACCESS_KEY": "secret",
+    })
+    assert env == {"PATH": "/usr/bin", "HOME": "/home/worker"}

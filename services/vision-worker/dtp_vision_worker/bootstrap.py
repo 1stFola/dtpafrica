@@ -13,7 +13,9 @@ a fresh one up.
 
 The operator key is the only extra thing this worker holds, and it holds it for
 provisioning and retiring alone: the stages still run on a worker token, and the
-key never reaches a stage. A worker given `VISION_BOOTSTRAP_TOKEN` directly, the
+key never reaches a stage. It is taken out of the process environment before the
+worker runs, kept only in this function's frame for the retire call, so no child
+process can inherit it (docs/vision/50, PR-1). A worker given `VISION_BOOTSTRAP_TOKEN` directly, the
 hosted way, skips provisioning entirely.
 
     VISION_WORKER_CALLBACK_URL   e.g. http://api:3000/api/v1/vision/worker
@@ -127,7 +129,7 @@ def main(env: dict[str, str] | None = None, run=None) -> int:
         return run()
 
     callback = env.get("VISION_WORKER_CALLBACK_URL", "").strip()
-    key = env.get("VISION_PROVISION_API_KEY", "").strip()
+    key = env.pop("VISION_PROVISION_API_KEY", "").strip()
     resource_class = env.get("VISION_RESOURCE_CLASS", "").strip()
     provider_id = env.get("VISION_PROVIDER_ID", "local").strip() or "local"
     missing = [name for name, value in [("VISION_WORKER_CALLBACK_URL", callback), ("VISION_PROVISION_API_KEY", key), ("VISION_RESOURCE_CLASS", resource_class)] if not value]

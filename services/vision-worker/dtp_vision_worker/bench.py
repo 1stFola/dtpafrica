@@ -54,6 +54,7 @@ from .media import (
     encoder_version,
     probe,
     sample_frames,
+    subprocess_env,
     transcode_proxy,
 )
 from .stages.detect import Detector, detect_frames
@@ -230,6 +231,7 @@ class GpuSampler:
                 capture_output=True,
                 timeout=10,
                 check=True,
+                env=subprocess_env(),
             ).stdout.decode()
         except (OSError, subprocess.SubprocessError):
             return None
@@ -318,7 +320,7 @@ def synthetic_clip(
     ]
     try:
         subprocess.run(
-            cmd, capture_output=True, timeout=max(600.0, seconds * 4), check=True
+            cmd, capture_output=True, timeout=max(600.0, seconds * 4), check=True, env=subprocess_env()
         )
     except FileNotFoundError as exc:
         raise MediaError("ffmpeg is not installed here; no clip can be generated") from exc

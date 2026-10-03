@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -56,10 +57,26 @@ class ProbeResult:
         }
 
 
+#: What a child process may inherit. FFmpeg decodes untrusted media, so it gets the
+#: names it needs to find itself, its libraries and a temp dir, and nothing else: no
+#: worker token, no bootstrap token, no operator key (docs/vision/50, PR-1).
+SUBPROCESS_ENV_KEYS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "TEMP", "TMP",
+    "LD_LIBRARY_PATH", "SYSTEMROOT", "CUDA_VISIBLE_DEVICES",
+    "NVIDIA_VISIBLE_DEVICES", "NVIDIA_DRIVER_CAPABILITIES",
+)
+
+
+def subprocess_env(source: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for ffmpeg, ffprobe and nvidia-smi: an allow-list, never a copy."""
+    source = os.environ if source is None else source
+    return {key: source[key] for key in SUBPROCESS_ENV_KEYS if key in source}
+
+
 def _run(cmd: list[str], timeout: float) -> subprocess.CompletedProcess[bytes]:
     log.debug("running %s", " ".join(cmd[:6]))
     try:
-        return subprocess.run(cmd, capture_output=True, timeout=timeout, check=True)
+        return subprocess.run(cmd, capture_output=True, timeout=timeout, check=True, env=subprocess_env())
     except FileNotFoundError as exc:
         raise MediaError(f"{cmd[0]} is not installed in this image") from exc
     except subprocess.TimeoutExpired as exc:
@@ -264,7 +281,7 @@ def encoder_version() -> str | None:
     """
     try:
         out = subprocess.run(
-            ["ffmpeg", "-version"], capture_output=True, timeout=30, check=True
+            ["ffmpeg", "-version"], capture_output=True, timeout=30, check=True, env=subprocess_env()
         ).stdout.decode("utf-8", "replace")
     except (OSError, subprocess.SubprocessError):
         # Not fatal. A proxy with no recorded encoder is worse than one with it, and far

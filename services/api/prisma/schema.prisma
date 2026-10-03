@@ -1665,6 +1665,9 @@ model VisionWorker {
   /// Hashed. A worker token may only act on the job it currently holds.
   tokenHash      String    @unique @map("token_hash")
   tokenExpiresAt DateTime  @map("token_expires_at")
+  /// Which token `tokenHash` is: `bootstrap` until `register` exchanges it, then
+  /// `worker`. A bootstrap token may only register; a worker token may never.
+  tokenKind      String    @default("worker") @map("token_kind")
   firstSeenAt    DateTime  @default(now()) @map("first_seen_at")
   lastSeenAt     DateTime  @updatedAt @map("last_seen_at")
   jobsCompleted  Int       @default(0) @map("jobs_completed")
