@@ -59,6 +59,15 @@ describe("configuration is validated at boot, not at first use", () => {
     expect(config.storage.endpoint).toBe("https://custom.example");
   });
 
+  it("treats an empty VISION_STORAGE_BACKEND as unset, as the staging compose file passes it", () => {
+    const off = loadVisionConfig({ VISION_STORAGE_BACKEND: "", VISION_ENABLED: "", VISION_COMPUTE_PROVIDER: "" });
+    expect(off.enabled).toBe(false);
+    expect(off.storage.backend).toBe("memory");
+    expect(off.compute.defaultProvider).toBe("mock");
+    const on = loadVisionConfig({ ...R2_ENV, VISION_STORAGE_BACKEND: "" });
+    expect(on.storage.backend).toBe("r2");
+  });
+
   it("rejects an unknown storage backend", () => {
     expect(() => loadVisionConfig({ ...R2_ENV, VISION_STORAGE_BACKEND: "s3" })).toThrow(
       VisionConfigError

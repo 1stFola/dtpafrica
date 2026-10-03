@@ -119,7 +119,10 @@ export function loadVisionConfig(env: NodeJS.ProcessEnv = process.env): VisionCo
   const problems: string[] = [];
   const enabled = boolFromEnv(env, "VISION_ENABLED", false);
 
-  const backendRaw = (env.VISION_STORAGE_BACKEND ?? (enabled ? "r2" : "memory")).trim();
+  // An empty value is "unset": the staging compose file passes every VISION_* key
+  // through as `${VAR:-}`, which yields "" when the secret has no such key, and ""
+  // must mean the same as absent or a deploy without the keys cannot boot.
+  const backendRaw = env.VISION_STORAGE_BACKEND?.trim() || (enabled ? "r2" : "memory");
   if (backendRaw !== "r2" && backendRaw !== "memory") {
     problems.push(`VISION_STORAGE_BACKEND must be "r2" or "memory", got ${JSON.stringify(backendRaw)}`);
   }
