@@ -2,14 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   authorizeVisionAcquisition,
+  fetchVisionJobs,
   fetchVisionSource,
   fetchVisionSourceImpact,
   grantVisionScope,
   issueVisionUploadGrant,
+  queueVisionJob,
   revokeVisionScope,
+  type VisionJobRow,
   type VisionScopeKey,
   type VisionSourceDetail,
 } from "../../../api/vision";
+import { STAGES, canQueue, describeRun, latestByType, missingFor, nextStage, succeededTypes } from "./pipeline";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { useAdminAuth } from "../AdminAuthContext";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -52,6 +56,9 @@ export function AdminVisionSourceDetailPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [issuedToken, setIssuedToken] = useState<{ token: string; expiresAt: string } | null>(null);
   const [impact, setImpact] = useState<Awaited<ReturnType<typeof fetchVisionSourceImpact>> | null>(null);
+  /* The pipeline per asset: its jobs, and the stage picked to queue next. */
+  const [jobsByAsset, setJobsByAsset] = useState<Record<string, VisionJobRow[]>>({});
+  const [stagePick, setStagePick] = useState<Record<string, string>>({});
 
   const [method, setMethod] = useState(ACQUISITION_METHODS[0]!.value);
   const [signatoryId, setSignatoryId] = useState("");
@@ -78,6 +85,26 @@ export function AdminVisionSourceDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* Jobs are fetched per asset after the source loads, and again after every
+     action, so a queued job shows up where it was queued. */
+  const loadJobs = useCallback(async (assetIds: string[]) => {
+    const entries = await Promise.all(
+      assetIds.map(async (assetId) => {
+        try {
+          return [assetId, (await fetchVisionJobs(assetId)).jobs] as const;
+        } catch {
+          return [assetId, []] as const;
+        }
+      })
+    );
+    setJobsByAsset(Object.fromEntries(entries));
+  }, []);
+
+  useEffect(() => {
+    if (!detail) return;
+    void loadJobs(detail.source.videoAssets.map((a) => a.id));
+  }, [detail, loadJobs]);
 
   async function run(label: string, action: () => Promise<unknown>) {
     setBusy(true);
@@ -381,41 +408,93 @@ export function AdminVisionSourceDetailPage() {
         )}
       </section>
 
-      {/* Copies under DTP control */}
+      {/* Copies under DTP control: each asset, its pipeline, and the screens that open on it. */}
       <section className="vision-panel">
         <h2 className="vision-panel__title">Copies under DTP control</h2>
         {source.videoAssets.length === 0 ? (
           <p className="muted">
-            None. This source is a reference only, and cannot enter a dataset.
+            None. This source is a reference only, and cannot enter a dataset. Upload footage with
+            <code className="vision-mono"> pnpm --filter @dtp/api vision:upload -- --source {source.id} --file …</code>
           </p>
         ) : (
-          <table className="vision-table">
-            <thead>
-              <tr>
-                <th scope="col">Ingest state</th>
-                <th scope="col">Codec</th>
-                <th scope="col">Duration</th>
-                <th scope="col">Duplicate cluster</th>
-              </tr>
-            </thead>
-            <tbody>
-              {source.videoAssets.map((asset) => (
-                <tr key={asset.id}>
-                  <td>
-                    {asset.ingestState}
-                    {asset.ingestError && (
-                      <div className="vision-warn vision-sub">{asset.ingestError}</div>
-                    )}
-                  </td>
-                  <td className="muted">{asset.videoCodec ?? "—"}</td>
-                  <td className="muted">{formatDuration(asset.durationMs)}</td>
-                  <td className="muted">
-                    {asset.duplicateClusterId ? "grouped with a re-upload" : "unique so far"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="vision-assets">
+            {source.videoAssets.map((asset) => {
+              const jobs = jobsByAsset[asset.id] ?? [];
+              const latest = latestByType(jobs);
+              const done = succeededTypes(jobs);
+              const next = nextStage(jobs);
+              const picked = stagePick[asset.id] ?? next?.type ?? STAGES[0]!.type;
+              const stage = STAGES.find((s) => s.type === picked) ?? STAGES[0]!;
+              const missing = missingFor(stage, done);
+              const hasProxy = asset.variants.some((v) => v.kind === "proxy") || done.has("transcode");
+              return (
+                <article key={asset.id} className="vision-asset">
+                  <header className="vision-asset__head">
+                    <div>
+                      <strong>{asset.ingestState}</strong>
+                      <span className="muted"> · {asset.videoCodec ?? "codec unknown"} · {formatDuration(asset.durationMs)} · {asset.duplicateClusterId ? "grouped with a re-upload" : "unique so far"}</span>
+                      {asset.ingestError && <div className="vision-warn vision-sub">{asset.ingestError}</div>}
+                    </div>
+                    <code className="vision-mono vision-asset__id" title="Asset id">{asset.id}</code>
+                  </header>
+
+                  <div className="vision-asset__links">
+                    <Link to={`/admin/vision/workstation/identity/${asset.id}`} className={hasProxy ? "" : "vision-link--dim"}>
+                      Identity review →
+                    </Link>
+                    <Link to={`/admin/vision/workstation/calibration/${asset.id}`} className={hasProxy ? "" : "vision-link--dim"}>
+                      Calibration editor →
+                    </Link>
+                    {!hasProxy && <span className="vision-footnote">both screens need the proxy: transcode first</span>}
+                  </div>
+
+                  <table className="vision-table vision-asset__stages">
+                    <tbody>
+                      {STAGES.map((s) => {
+                        const run = latest.get(s.type);
+                        return (
+                          <tr key={s.type}>
+                            <th scope="row">{s.label}</th>
+                            <td className={run?.state === "failed" ? "vision-warn" : run?.state === "succeeded" ? "" : "muted"}>{describeRun(run)}</td>
+                            <td className="muted vision-sub">{s.where === "gpu" ? "GPU" : "CPU"} · {s.note}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  <div className="vision-asset__queue">
+                    <label className="vision-row">
+                      <span className="vision-row__label">Queue</span>
+                      <select value={picked} onChange={(e) => setStagePick((p) => ({ ...p, [asset.id]: e.target.value }))} disabled={busy}>
+                        {STAGES.map((s) => (
+                          <option key={s.type} value={s.type}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={busy || !canQueue(stage, done)}
+                      onClick={() =>
+                        run(`${stage.label} queued on ${asset.id.slice(0, 8)}.`, async () => {
+                          await queueVisionJob({ type: stage.type, videoAssetId: asset.id });
+                          await loadJobs(source.videoAssets.map((a) => a.id));
+                        })
+                      }
+                    >
+                      Queue {stage.label.toLowerCase()}
+                    </button>
+                    <span className="vision-footnote">
+                      {missing ? `needs ${missing.join(", ")} to succeed first` : next?.type === stage.type ? "the next stage in order" : "prerequisites met"}
+                      {" · the API refuses a stage out of order; the worker runs it"}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         )}
       </section>
 

@@ -13,6 +13,16 @@
       POSTGRES_DB:       "{{ postgres_db }}"
     app_creds:
       ADMIN_API_KEY: "{{ admin_api_key }}"
+      VISION_ENABLED: "{{ vision_enabled | default('') }}"
+      VISION_STORAGE_BACKEND: "{{ vision_storage_backend | default('') }}"
+      VISION_COMPUTE_PROVIDER: "{{ vision_compute_provider | default('') }}"
+      VISION_R2_ACCOUNT_ID: "{{ vision_r2_account_id | default('') }}"
+      VISION_R2_ACCESS_KEY_ID: "{{ vision_r2_access_key_id | default('') }}"
+      VISION_R2_SECRET_ACCESS_KEY: "{{ vision_r2_secret_access_key | default('') }}"
+      VISION_R2_BUCKET_MASTER: "{{ vision_r2_bucket_master | default('') }}"
+      VISION_R2_BUCKET_DERIVED: "{{ vision_r2_bucket_derived | default('') }}"
+      VISION_R2_BUCKET_MODELS: "{{ vision_r2_bucket_models | default('') }}"
+      VISION_R2_BUCKET_CLIPS: "{{ vision_r2_bucket_clips | default('') }}"
   no_log: true
 
 # ── 2. Install Node.js (via NodeSource) ───────────────────────────────────────

@@ -131,7 +131,9 @@ clocks. Overlays on both screens are reckoned against the letterboxed picture in
 ([43](./43-PHASE-5-INCREMENT-6.md)) sits under the player on the identity screen: the pitch in
 metres with a labelled dot per track at the playhead, from game-state chunks the browser fetches
 from the bucket and decodes itself; a dot selects its track, and a frame with nothing placed says
-why. The timeline and inspector wait on events.
+why. The timeline and inspector wait on events. The source page ([45](./45-REACHABLE.md)) is
+where an asset is reached: its id, links to both workstation screens, the latest run of every
+stage, and a control that queues the next stage in order.
 
 ### Non-negotiable behaviours
 

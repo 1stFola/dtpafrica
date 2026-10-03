@@ -144,6 +144,8 @@ export type VisionSourceDetail = {
       videoCodec: string | null;
       duplicateClusterId: string | null;
       createdAt: string;
+      /** The review proxy, when transcode has produced one. */
+      variants: { kind: string; durationMs: number | null }[];
     }[];
     uploadGrants: {
       id: string;
@@ -711,6 +713,28 @@ export function previewVisionCalibration(points: VisionCalibrationPoint[], pitch
 
 export function calibrateVisionSegment(segmentId: string, points: VisionCalibrationPoint[], pitch?: VisionPitchDimensions) {
   return adminFetch<VisionCalibrationSummary>(`/vision/review/camera-segments/${segmentId}/calibration`, { method: "POST", body: JSON.stringify({ points, pitch }) });
+}
+
+export type VisionJobRow = {
+  id: string;
+  type: string;
+  resourceClass: string;
+  state: string;
+  priority: number;
+  attemptNumber: number;
+  maxAttempts: number;
+  videoAssetId: string | null;
+  queuedAt: string;
+  claimedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  workerId: string | null;
+  error: string | null;
+};
+
+/** The jobs of one asset, newest first, as the pipeline panel reads them. */
+export function fetchVisionJobs(videoAssetId: string) {
+  return adminFetch<{ jobs: VisionJobRow[] }>(`/vision/jobs?videoAssetId=${encodeURIComponent(videoAssetId)}`);
 }
 
 export function queueVisionJob(body: { type: string; videoAssetId: string; params?: Record<string, unknown> }) {
