@@ -311,12 +311,14 @@ pnpm --filter @dtp/api prisma:generate
 
 success "Prisma client generated"
 
-# ── 12. Push schema to database ───────────────────────────────────────────────
-log "Pushing Prisma schema to PostgreSQL (creating tables)..."
+# ── 12. Apply migrations ──────────────────────────────────────────────────────
+# Forward only. `db push --accept-data-loss` used to run here and in the image's CMD;
+# it reconciles by dropping whatever the schema no longer names (docs/vision/50, C4).
+log "Applying database migrations (prisma migrate deploy)..."
 
-pnpm --filter @dtp/api db:push
+pnpm --filter @dtp/api db:migrate:deploy
 
-success "Database schema synced"
+success "Database migrations applied"
 
 # ── 13. Build and start full stack via Docker Compose ────────────────────────
 log "Building and starting full application stack..."

@@ -46,4 +46,9 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=builder /app /app
 
 EXPOSE 3000
-CMD ["sh", "-c", "pnpm --filter @dtp/api db:repair:squad-duplicates && pnpm --filter @dtp/api db:push && pnpm --filter @dtp/api start"]
+# The schema is NOT touched here. This CMD used to run `prisma db push --accept-data-loss`
+# on every start, including the automatic rollback, so rolling back past a schema change
+# dropped the newer tables and their data (docs/vision/50, C4). Migrations now run once
+# per deploy, forward only, as their own step (`db:migrate:deploy`, from Ansible), and a
+# rollback skips that step.
+CMD ["sh", "-c", "pnpm --filter @dtp/api db:repair:squad-duplicates && pnpm --filter @dtp/api start"]

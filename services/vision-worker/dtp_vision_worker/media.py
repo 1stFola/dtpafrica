@@ -73,6 +73,25 @@ def subprocess_env(source: dict[str, str] | None = None) -> dict[str, str]:
     return {key: source[key] for key in SUBPROCESS_ENV_KEYS if key in source}
 
 
+def ffmpeg_threads(source: dict[str, str] | None = None) -> list[str]:
+    """`-threads N` from VISION_FFMPEG_THREADS, or nothing (FFmpeg's own choice).
+
+    On the 2-vCPU box shared with Postgres an uncapped transcode takes every core and
+    burns the CPU credits the site needs. The cap is a resource choice, not part of the
+    recipe: `settings_hash()` does not cover it, as it does not cover the encoder.
+    """
+    source = os.environ if source is None else source
+    raw = source.get("VISION_FFMPEG_THREADS", "").strip()
+    if not raw:
+        return []
+    try:
+        threads = int(raw)
+    except ValueError:
+        log.warning("VISION_FFMPEG_THREADS=%r is not a whole number; ignoring it", raw)
+        return []
+    return ["-threads", str(threads)] if threads > 0 else []
+
+
 def _run(cmd: list[str], timeout: float) -> subprocess.CompletedProcess[bytes]:
     log.debug("running %s", " ".join(cmd[:6]))
     try:
@@ -146,7 +165,9 @@ def transcode_proxy(source: Path, target: Path, timeout: float = 14_400.0) -> di
             "ffmpeg",
             "-nostdin",
             "-y",
+            *ffmpeg_threads(),
             "-i", str(source),
+            *ffmpeg_threads(),
             # Constant frame rate, and drop anything that is not the main video
             # and audio — subtitle and data streams break some decoders later.
             "-r", str(PROXY_FPS),

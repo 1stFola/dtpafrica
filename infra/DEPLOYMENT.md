@@ -152,9 +152,12 @@ Two things follow from how `workflow_run` works:
 **Rollback is automatic, and it covers the application only.** The tag serving traffic is
 read off the box before the playbook runs, and put back if the deploy dies or fails its
 health check. ECR keeps the last ten images, so the previous tag is nearly always pullable.
-Migrations are not part of a deploy — they are applied by hand through `docker exec` — so
-there is normally nothing to unwind; if you ran one for a release that then rolled back,
-the schema stays migrated and that is a human decision.
+Migrations **are** part of a deploy since October 2026 (docs/vision/52): after the pull
+and before the swap, the new image runs `prisma migrate deploy`, forward only, and a failure
+stops the deploy with the old release still serving. The rollback skips that step
+(`run_migrations=false`) and the image no longer touches the schema on start, so a rollback
+restores the application and leaves the schema where the newer release put it. Migrations
+are additive, so the older image runs against it.
 
 A manual `workflow_dispatch` run skips the gate by design: it is the operator saying they
 know what they are deploying.
@@ -197,15 +200,20 @@ chmod +x deploy.sh && ./deploy.sh
 
 Two mechanisms exist in this repo, and only one of them actually runs in staging:
 
+> **Superseded on 3 October 2026 (docs/vision/52).** The deploy now runs `prisma migrate
+> deploy` as its own step and the API image no longer runs `db push`. The table and the
+> history below are kept for the record; the live ledger was baselined the same day.
+
 | | `prisma db push` | `prisma migrate deploy` |
 |---|---|---|
-| Runs today | **Yes** — `infra/api.Dockerfile` `CMD`, and `deploy.sh` | No |
+| Runs today | No — local iteration only | **Yes** — a deploy step in `infra/ansible/roles/deploy/tasks/main.yml`, and `deploy.sh` |
 | Records history | No `_prisma_migrations` table | Yes |
 | Reviewable SQL | None — Prisma decides at runtime | Yes, committed |
 | Destructive changes | Silently allowed (`--accept-data-loss`) | Fails and stops |
 
 As of this change, `prisma/migrations/` **can** build a database from zero. It
-holds 20 migrations:
+held 20 migrations when this list was written (there are more now; CI checks them, not
+this list):
 
 - `20260528000000_init` — baseline, the schema as it stood before the first
   incremental migration, reconstructed from git history
@@ -323,51 +331,25 @@ Caveats:
   and write a real migration for the difference. Do not paper over it with
   another `resolve`.
 
-### Decision: should deployment switch from `db push` to `migrate deploy`?
+### Decision: deployment switched from `db push` to `migrate deploy`
 
-**Recommendation: yes, but as a separate, deliberate change — not as part of
-this one.** Nothing in the deploy path has been changed here.
+**Done, 3 October 2026** ([docs/vision/52](../docs/vision/52-QA-FIX-2-DEPLOY-SAFETY.md)).
+The QA of Vision Phases 1–6 found the risk this section warned about was real: the image
+ran `db push --accept-data-loss` on every start, **including the automatic rollback**, so
+rolling back past a schema change dropped the newer tables and columns with their data.
 
-Why switch:
+What runs now:
 
-- The container today runs `prisma db push --accept-data-loss` on **every
-  start** (`services/api/package.json` → `db:push`, invoked from the
-  `api.Dockerfile` `CMD`). A schema edit that drops or narrows a column drops
-  production data on the next restart, with no prompt and no diff. That is the
-  single biggest argument, and it is a live risk rather than a theoretical one.
-- `db push` produces no history, so there is no way to tell which schema a given
-  deployed image expects, and no way to review the SQL before it runs.
-- Rolling back is currently "edit the schema and push again", which for a
-  dropped column means restoring from `pg_dump`.
+1. Ansible pulls the new images, then runs
+   `docker compose run --rm --no-deps -T api pnpm --filter @dtp/api db:migrate:deploy`
+   — the new image's migrations, against the live database, before anything is swapped.
+2. Only then does `up -d` start the new release.
+3. The rollback passes `run_migrations=false`. The API `CMD` no longer touches the schema.
 
-Why it has not been switched here:
-
-- `db push` is what works in staging today. Switching provisioning mechanics is
-  a deployment-risk change and deserves its own review, its own deploy window,
-  and a fresh backup.
-- The staging database must be baselined (previous section) **before** the
-  switch, or the first deploy after it fails on `P3005` and the API container
-  restart-loops.
-- `migrate deploy` is stricter by design: it stops on a failed migration rather
-  than reconciling. That is the behaviour we want, but it turns some silent
-  recoveries into hard deploy failures, so the first few deploys need watching.
-
-If and when it is switched, the change is:
-
-1. Baseline the staging database (previous section). Confirm
-   `prisma migrate status` reports up to date.
-2. Add `"db:migrate:deploy": "prisma migrate deploy"` to
-   `services/api/package.json`.
-3. In `infra/api.Dockerfile`, replace `db:push` with `db:migrate:deploy` in the
-   `CMD`. Do the same in `deploy.sh`.
-4. Deploy with a fresh `pg_dump` in hand, and watch the API container logs
-   through the first restart.
-
-Until then, `db push` remains the provisioning mechanism in staging, and
-`prisma/migrations/` is kept correct and verified so that the switch is a
-configuration change rather than a migration-writing exercise.
-
----
+The live ledger was baselined on 3 October 2026 (`migrate status`: up to date), so the
+first deploy under this applies only what is new. A new migration needs nothing by hand:
+no `migrate resolve --applied` after a deploy. Write migrations additive (add, never drop
+or narrow in the same release) so the previous image still runs if a rollback happens.
 
 ## Turning Vision on
 
@@ -405,7 +387,7 @@ empty until the secret holds it, so a deploy without them changes nothing.
    ```bash
    aws secretsmanager get-secret-value --secret-id dtp/staging/app --region us-east-1 --query SecretString --output text | python -c "import sys,json; print(sorted(json.load(sys.stdin)))"
    ```
-2. Apply the pending migrations in the API container (below) and seed the role catalogue:
+2. Seed the role catalogue (migrations are applied by the deploy itself):
    `sudo docker exec dtp-staging-api-1 pnpm --filter @dtp/api seed:rbac`.
 3. Re-run the deploy (manual trigger). `GET /api/v1/vision/status` then reports `enabled: true`
    and the storage backend `r2`.

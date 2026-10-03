@@ -234,6 +234,12 @@ describe("the providers are not identical, and the differences are the finding",
     expect(withKey.capabilities().resourceClasses).toContain("gpu_48gb");
   });
 
+  it("reads an empty disk size as unset, not as a pod with no disk", () => {
+    expect(loadRunPodConfig({ VISION_RUNPOD_DISK_GB: "" }).containerDiskGb).toBe(60);
+    expect(loadRunPodConfig({ VISION_RUNPOD_DISK_GB: "abc" }).containerDiskGb).toBe(60);
+    expect(loadRunPodConfig({ VISION_RUNPOD_DISK_GB: "120" }).containerDiskGb).toBe(120);
+  });
+
   it("advertises only classes with a configured machine type behind them", () => {
     const provider = new RunPodComputeProvider(
       loadRunPodConfig({ VISION_RUNPOD_API_KEY: "k", VISION_RUNPOD_GPUS_24GB: "" }),

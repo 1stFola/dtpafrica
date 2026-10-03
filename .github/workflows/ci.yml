@@ -161,8 +161,9 @@ jobs:
   # Three times in one evening a schema change reached main without a migration, and each
   # time it was invisible until somebody went looking: the recorder idle-lock columns, the
   # competition status default, and the submit-guard timestamps. Staging never noticed --
-  # the API image runs `db:push` on start -- so the only thing that breaks is provisioning
-  # a database from `prisma/migrations`, which is the one thing that directory is for.
+  # the API image ran `db:push` on start then -- so the only thing that broke was provisioning
+  # a database from `prisma/migrations`. Since docs/vision/52 the deploy itself applies
+  # `prisma/migrations` with `migrate deploy`, so a missing migration now fails a deploy.
   #
   # DEPLOYMENT.md asked a human to re-run this check whenever a migration was added. That
   # instruction went stale twice. This is the same check, run by a machine.
@@ -290,8 +291,9 @@ jobs:
       # database and this check can never touch one. Prisma then fails with P1001,
       # which is the expected ending — what matters is everything that happens first.
       #
-      # The CMD is deliberately NOT used: it runs `prisma db push --accept-data-loss`,
-      # which must never run from CI.
+      # The CMD is deliberately NOT used: it runs a data repair script before start, which
+      # must never run from CI. (It used to run `db push --accept-data-loss` as well; the
+      # deploy now applies migrations as its own step, docs/vision/52.)
       - name: The image boots far enough to reach its database
         run: |
           # Credential-shaped values are generated per run, never written into the

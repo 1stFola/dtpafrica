@@ -89,6 +89,16 @@ services:
     depends_on:
       - api
     entrypoint: ["python", "-m", "dtp_vision_worker.bootstrap"]
+    # An init as PID 1 forwards SIGTERM and reaps FFmpeg. The worker handles SIGTERM by
+    # failing its job as retryable and retiring (docs/vision/50, PR-2); the grace period
+    # gives it time to report before Docker's SIGKILL.
+    init: true
+    stop_grace_period: 60s
+    # The box is a t3.small: 2 vCPUs and 2 GB shared with Postgres and the API. Without
+    # a ceiling one transcode could OOM-kill Postgres and burn the CPU credits the site
+    # runs on -- the outage pattern described at the top of this file.
+    mem_limit: 768m
+    cpus: "1.0"
     environment:
       VISION_WORKER_CALLBACK_URL: http://api:3000/api/v1/vision/worker
       VISION_PROVISION_API_KEY: ${ADMIN_API_KEY:?set ADMIN_API_KEY}
@@ -98,9 +108,14 @@ services:
       # A day idle before it exits and the restart policy provisions a fresh one;
       # the hosted default of two minutes is for pods that cost money while idle.
       VISION_IDLE_SHUTDOWN_SECONDS: "86400"
-      VISION_WORK_DIR: /tmp/dtp-vision
-    tmpfs:
-      - /tmp/dtp-vision:size=2g
+      VISION_WORK_DIR: /var/lib/dtp-vision
+      # Matches cpus above: FFmpeg otherwise starts a thread per core it can see.
+      VISION_FFMPEG_THREADS: "2"
+    # On disk, not tmpfs. The 2 GB tmpfs this replaced was RAM on a 2 GB box, and a real
+    # match master does not fit in it anyway. The worker empties it after every job.
+    volumes:
+      - dtp_staging_vision_work:/var/lib/dtp-vision
 
 volumes:
   dtp_staging_pg_data:
+  dtp_staging_vision_work:

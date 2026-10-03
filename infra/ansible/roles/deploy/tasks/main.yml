@@ -25,6 +25,13 @@
       VISION_R2_BUCKET_CLIPS: "{{ vision_r2_bucket_clips | default('') }}"
   no_log: true
 
+# Read the way the API reads it (vision.config.ts boolFromEnv): 1, true or yes, any
+# case. The template compared against 'true' exactly, so a secret holding `True` or
+# `1` turned the API on and left the worker's profile off.
+- name: Decide whether Vision is on
+  ansible.builtin.set_fact:
+    vision_on: "{{ (vision_enabled | default('') | string | trim | lower) in ['1', 'true', 'yes'] }}"
+
 # ── 2. Install Node.js (via NodeSource) ───────────────────────────────────────
 
 - name: Check current Node.js version
@@ -125,7 +132,10 @@
          if (git_repo_token is defined and (git_repo_token | length) > 0 and git_repo_url.startswith('https://'))
          else git_repo_url }}
     dest:    "{{ app_dir }}/repo"
-    version: "{{ git_branch }}"
+    # The commit CI verified and the images were built from (`git_version`, set by CD;
+    # on rollback, the commit of the tag being restored). The branch tip can be newer,
+    # and its compose file would then run against images it was not written for.
+    version: "{{ git_version | default(git_branch) }}"
     force:   true
   become: true
   become_user: ubuntu
@@ -298,6 +308,32 @@
   become_user: root
   changed_when: true
 
+# ── Migrations: once per deploy, forward only, never on rollback ────────────
+#
+# The API image used to run `prisma db push --accept-data-loss` on every start, the
+# rollback included, so restoring an older image dropped every table and column the
+# newer one had added, with their data (docs/vision/50, C4). Now the new image applies
+# its committed migrations here, before anything is swapped, and a failure stops the
+# deploy with the old release still serving. The rollback passes run_migrations=false:
+# it restores the application and never the schema.
+#
+# Live was baselined on 3 October 2026 (all migrations recorded), so `migrate deploy`
+# applies only what is new. A migration added from now on reaches live this way and
+# no other; no more `migrate resolve --applied` by hand after a deploy.
+- name: Apply database migrations (forward only)
+  ansible.builtin.shell: |
+    timeout 600 docker compose \
+      --env-file infra/.env.staging \
+      -f infra/docker-compose.staging.yml \
+      run --rm --no-deps -T api \
+      pnpm --filter @dtp/api db:migrate:deploy
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  changed_when: true
+  when: run_migrations | default(true) | bool
+
 - name: Start the stack
   ansible.builtin.shell: |
     docker compose \
@@ -309,6 +345,23 @@
   become: true
   become_user: root
   changed_when: true
+
+# `up -d --remove-orphans` with the profile inactive does not touch a worker that is
+# already running, so turning Vision off used to leave it polling an API that refuses it.
+- name: Stop the worker when Vision is off
+  ansible.builtin.shell: |
+    docker compose \
+      --env-file infra/.env.staging \
+      -f infra/docker-compose.staging.yml \
+      --profile vision \
+      stop worker
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  changed_when: true
+  failed_when: false
+  when: not (vision_on | bool)
 
 # Pulling a new tag every deploy leaves the previous one behind, and this box only
 # has a 20GB root volume. Images still referenced by a running container are never
@@ -422,6 +475,49 @@
   ansible.builtin.fail:
     msg: "API health check failed after 400s — check logs above for the root cause"
   when: health.status is not defined or health.status != 200
+
+# The API answering is not the whole stack when Vision is on. A worker that cannot
+# provision (wrong key, unknown provider) exits 2 and `restart: unless-stopped` loops
+# it for ever behind a green deploy. It logs `provisioned worker` once it holds a
+# token; until it does, the deploy is not done.
+- name: Wait for the Vision worker to provision (up to 180s)
+  ansible.builtin.shell: |
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml \
+      ps --status running --services | grep -qx worker \
+    && docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml \
+      logs --no-log-prefix worker 2>&1 | grep -q "provisioned worker"
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  register: worker_up
+  until: worker_up.rc == 0
+  retries: 18
+  delay: 10
+  changed_when: false
+  failed_when: false
+  when: vision_on | bool
+
+- name: Show the worker's logs if it did not provision
+  ansible.builtin.shell: |
+    docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml \
+      logs --tail=60 worker
+  args:
+    chdir: "{{ app_dir }}/repo"
+  become: true
+  become_user: root
+  register: worker_logs
+  changed_when: false
+  failed_when: false
+  when: (vision_on | bool) and worker_up.rc != 0
+
+- name: Fail if the Vision worker did not provision
+  ansible.builtin.fail:
+    msg: >-
+      Vision is on but the worker never provisioned a token within 180s (crash loop,
+      wrong VISION_PROVISION_API_KEY, or the API refusing it). Last worker logs:
+      {{ worker_logs.stdout_lines | default([]) | join(' | ') }}
+  when: (vision_on | bool) and worker_up.rc != 0
 
 - name: Deployment smoke test passed
   ansible.builtin.debug:

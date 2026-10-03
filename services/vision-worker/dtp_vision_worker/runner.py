@@ -56,6 +56,15 @@ class StageResult:
     model_version_ids: list[str] = field(default_factory=list)
 
 
+class WorkerTerminated(BaseException):
+    """The container is being stopped (SIGTERM): a deploy, or `docker compose stop`.
+
+    A `BaseException`, so the `except Exception` that keeps one bad job from killing the
+    worker cannot swallow it. The job in hand is failed as retryable, so the reaper does
+    not have to wait out its heartbeat, and the worker unwinds to retire itself.
+    """
+
+
 class StageRefusal(RuntimeError):
     """A stage declining to run because its inputs cannot produce a valid result.
 
@@ -203,6 +212,20 @@ class Worker:
             log.info("completed %s in %.1fs", job.job_id, elapsed)
             self.jobs_completed += 1
             return True
+
+        except WorkerTerminated:
+            log.warning("terminated during job %s; failing it as retryable", job.job_id)
+            try:
+                self._client.fail(
+                    job.job_id,
+                    reason="worker_terminated",
+                    detail="the worker was stopped mid-job (deploy or shutdown)",
+                    retryable=True,
+                )
+            except Exception as exc:  # noqa: BLE001 - shutting down regardless
+                log.warning("could not report the terminated job: %s", exc)
+            self.jobs_failed += 1
+            raise
 
         except Exception as exc:  # noqa: BLE001 - one bad job must not kill the worker
             log.exception("job %s failed", job.job_id)

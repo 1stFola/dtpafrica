@@ -30,8 +30,11 @@ RUN pip install --no-cache-dir .
 # models — that is what the model registry is for.
 
 # Unprivileged: a worker needs its work directory and outbound HTTPS, nothing else.
+# /var/lib/dtp-vision is where the box mounts a named volume; Docker seeds a new volume's
+# ownership from the image's directory, so it must exist and belong to the worker first.
 RUN useradd --create-home --shell /usr/sbin/nologin worker \
- && mkdir -p /tmp/dtp-vision && chown -R worker:worker /tmp/dtp-vision
+ && mkdir -p /tmp/dtp-vision && chown -R worker:worker /tmp/dtp-vision \
+ && mkdir -p /var/lib/dtp-vision && chown -R worker:worker /var/lib/dtp-vision
 USER worker
 
 ENV VISION_WORK_DIR=/tmp/dtp-vision \
