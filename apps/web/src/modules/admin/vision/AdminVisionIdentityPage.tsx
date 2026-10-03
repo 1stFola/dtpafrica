@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   acceptVisionIdentity,
   assignVisionIdentity,
+  correctVisionEvent,
+  decideVisionEvent,
+  fetchVisionEventCandidates,
+  promoteVisionEvent,
+  proposeVisionEvent,
   fetchVisionGameState,
   fetchVisionIdentityReview,
   fetchVisionReviewMedia,
@@ -13,6 +18,7 @@ import {
   type VisionIdentityReview,
   type VisionReviewMedia,
   type VisionReviewTrack,
+  type VisionEventCandidate,
   type VisionGameState,
   type VisionTrackCandidates,
 } from "../../../api/vision";
@@ -20,7 +26,10 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
 import { ChunkCache, chunkCovering, explainChunkFailure, loadChunk, rowsNear, rowsOnFrame, type DecodedChunk } from "./game-state";
+import { EVENT_TYPES, candidateAt, describeCandidate, proposalAt, stepCandidate } from "./event-review";
 import { describeClock } from "./match-clock";
+import { VisionEventInspector } from "./VisionEventInspector";
+import { VisionEventTimeline } from "./VisionEventTimeline";
 import { VisionMinimap, type MinimapStatus } from "./VisionMinimap";
 import { usePictureRect } from "./use-picture-rect";
 import {
@@ -57,8 +66,9 @@ import {
 export function AdminVisionIdentityPage() {
   const { assetId = "" } = useParams();
   usePageTitle("Identity review");
-  const { session } = useAdminAuth();
+  const { session, hasPermission } = useAdminAuth();
   const me = session?.userId;
+  const [params, setParams] = useSearchParams();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -93,6 +103,11 @@ export function AdminVisionIdentityPage() {
   const [chunkStatus, setChunkStatus] = useState<MinimapStatus>({ kind: "loading" });
   const chunkCache = useRef(new ChunkCache(4));
   const chunkInFlight = useRef<string | null>(null);
+  /* The event review: every current candidate on the footage, the one in the
+     inspector, and the type the next proposal at the playhead will carry. */
+  const [eventCandidates, setEventCandidates] = useState<VisionEventCandidate[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(params.get("event"));
+  const [eventType, setEventType] = useState<string>("shot");
 
   /* The review rows reload after every action; the media does not, or the video
      element would take a fresh URL and jump back to the start each time. */
@@ -109,6 +124,8 @@ export function AdminVisionIdentityPage() {
       const decided = Object.fromEntries(r.sidesDecided.map((s) => [s.team, s.sbTeamId]));
       setSideA(decided.A ?? "");
       setSideB(decided.B ?? "");
+      const events = await fetchVisionEventCandidates(assetId);
+      setEventCandidates(events.candidates);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -283,11 +300,22 @@ export function AdminVisionIdentityPage() {
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
         step(event.shiftKey ? Math.round(media?.fps ?? 10) : 1);
+      } else if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        const next = stepCandidate(eventCandidates, proxyMs + offsetMs, event.key === "]" ? 1 : -1);
+        if (next) {
+          setSelectedEventId(next.id);
+          seekTo(next.startMs - offsetMs);
+        }
+      } else if (event.key === "e" || event.key === "E") {
+        event.preventDefault();
+        proposeHere();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [media, step, togglePlay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media, step, togglePlay, eventCandidates, proxyMs, offsetMs, seekTo, selected, eventType]);
 
   /** Every track with a position on this frame, as a percentage box. */
   const boxesHere = useMemo(() => {
@@ -346,6 +374,50 @@ export function AdminVisionIdentityPage() {
   }
 
   const split = selected ? splitAt(selected, sourceMs) : null;
+
+  /* Events: the candidate under the playhead is shown when none is chosen; a
+     proposal at the playhead takes the selected track as the actor and the slot
+     it was said to be at that moment. The URL carries the chosen candidate so
+     the Events page can hand one over. */
+  const trackLabel = useCallback(
+    (trackId: string | null) => {
+      const t = trackId ? review?.tracks.find((x) => x.id === trackId) : null;
+      if (!t) return null;
+      const who = identitySummary(t, nameOfSlot);
+      return who === "nobody has said" ? `#${t.localTrackId}` : `#${t.localTrackId} ${who}`;
+    },
+    [nameOfSlot, review]
+  );
+  const selectedEvent = useMemo(() => eventCandidates.find((c) => c.id === selectedEventId) ?? candidateAt(eventCandidates, sourceMs), [eventCandidates, selectedEventId, sourceMs]);
+  const canReviewEvents = hasPermission("vision.review");
+  const canPublishEvents = hasPermission("vision.publish");
+  const pickEvent = (c: VisionEventCandidate) => {
+    setSelectedEventId(c.id);
+    setParams(c.id ? { event: c.id } : {}, { replace: true });
+    seekTo(c.startMs - offsetMs);
+  };
+  function proposeHere() {
+    if (!canReviewEvents) return;
+    const at = Math.round(sourceMs);
+    const who = proposalAt(selected, at);
+    void run(`${eventType.replace(/_/g, " ")} proposed at ${formatClock(at)}${who.actorTrackId ? ` for track #${selected?.localTrackId}` : ""}; a second person decides.`, async () => {
+      const created = await proposeVisionEvent({ videoAssetId: assetId, type: eventType, startMs: at, endMs: at, actorTrackId: who.actorTrackId ?? undefined, actorMatchSquadPlayerId: who.actorMatchSquadPlayerId ?? undefined });
+      setSelectedEventId(created.id);
+    });
+  }
+  function correctEvent(changes: { type?: string; startMs?: number; endMs?: number; actor?: boolean; note?: string }, label: string) {
+    if (!selectedEvent) return;
+    const body: Parameters<typeof correctVisionEvent>[1] = { type: changes.type, startMs: changes.startMs, endMs: changes.endMs, note: changes.note };
+    if (changes.actor) {
+      const who = proposalAt(selected, selectedEvent.startMs);
+      body.actorTrackId = who.actorTrackId;
+      body.actorMatchSquadPlayerId = who.actorMatchSquadPlayerId;
+    }
+    void run(`${label} A new row supersedes the old; review starts again.`, async () => {
+      const created = await correctVisionEvent(selectedEvent.id, body);
+      setSelectedEventId(created.id);
+    });
+  }
 
   if (error && !review) {
     return (
@@ -475,6 +547,16 @@ export function AdminVisionIdentityPage() {
             play/pause · ← → one frame · Shift + ← → one second · click a box to select its track
           </p>
 
+          <VisionEventTimeline
+            candidates={eventCandidates}
+            offsetMs={offsetMs}
+            clipMs={clipEndMs}
+            proxyMs={proxyMs}
+            selectedId={selectedEvent?.id ?? null}
+            describe={(c) => describeCandidate(c, trackLabel)}
+            onPick={pickEvent}
+          />
+
           <VisionMinimap
             state={gameState}
             status={chunkStatus}
@@ -491,6 +573,48 @@ export function AdminVisionIdentityPage() {
         </div>
 
         <div className="vision-workstation__side">
+          {canReviewEvents && (
+            <section className="vision-panel">
+              <h3 className="vision-panel__title">Events</h3>
+              <div className="vision-inline">
+                <select value={eventType} onChange={(e) => setEventType(e.target.value)} aria-label="Event type to propose">
+                  {EVENT_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" disabled={busy} onClick={proposeHere} title="E">
+                  Propose at {formatClock(sourceMs)}
+                </button>
+              </div>
+              <p className="vision-footnote">
+                {selected ? `Actor: track #${selected.localTrackId}${proposalAt(selected, sourceMs).actorMatchSquadPlayerId ? ", the player it was said to be" : ", nobody named yet"}.` : "Select a track first to name the actor."}{" "}
+                {eventCandidates.filter((c) => !c.supersededBy).length} candidate(s) on this footage.
+              </p>
+            </section>
+          )}
+
+          {selectedEvent && (
+            <VisionEventInspector
+              key={selectedEvent.id}
+              candidate={selectedEvent}
+              me={me}
+              can={{ review: canReviewEvents, publish: canPublishEvents }}
+              sourceMs={sourceMs}
+              selectedTrackLabel={selected ? (trackLabel(selected.id) ?? `#${selected.localTrackId}`) : null}
+              trackLabel={trackLabel}
+              busy={busy}
+              onCorrect={correctEvent}
+              onDecide={(decision, reason) => void run(decision === "accepted" ? "Event accepted." : "Event rejected.", () => decideVisionEvent(selectedEvent.id, decision, reason))}
+              onPromote={(create) => void run(create ? "Added to the match record." : "Promoted into the match record.", () => promoteVisionEvent(selectedEvent.id, create))}
+              onClose={() => {
+                setSelectedEventId(null);
+                setParams({}, { replace: true });
+              }}
+            />
+          )}
+
           <section className="vision-panel">
             <h3 className="vision-panel__title">Which team is which side</h3>
             {!review.match ? (

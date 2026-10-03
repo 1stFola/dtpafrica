@@ -131,7 +131,10 @@ clocks. Overlays on both screens are reckoned against the letterboxed picture in
 ([43](./43-PHASE-5-INCREMENT-6.md)) sits under the player on the identity screen: the pitch in
 metres with a labelled dot per track at the playhead, from game-state chunks the browser fetches
 from the bucket and decodes itself; a dot selects its track, and a frame with nothing placed says
-why. The timeline and inspector wait on events. Vision is an environment of its own under
+why. The event timeline and inspector ([48](./48-PHASE-6-INCREMENT-2.md)) sit under the player and
+beside the roster: candidates on the clip, `[` `]` to walk them, `E` to propose at the playhead with
+the selected track as the actor, and corrections, decisions and promotion in place. Vision is an
+environment of its own under
 `/admin/vision` ([47](./47-THE-VISION-ENVIRONMENT.md)): a shell like ScoreBoard's with a section for
 sources and rights, footage, the pipeline, annotation, datasets, models and events, each carrying
 every action its API offers. The source page ([45](./45-REACHABLE.md)) is

@@ -1036,6 +1036,11 @@ export function proposeVisionEvent(body: { videoAssetId: string; type: string; s
   return adminFetch<VisionEventCandidate>("/vision/review/events", { method: "POST", body: JSON.stringify(body) });
 }
 
+/** A correction: a new row superseding the old, unreviewed again. */
+export function correctVisionEvent(id: string, changes: { type?: string; startMs?: number; endMs?: number; actorTrackId?: string | null; actorMatchSquadPlayerId?: string | null; sbTeamId?: string | null; note?: string }) {
+  return adminFetch<VisionEventCandidate & { supersedes: string }>(`/vision/review/events/${id}`, { method: "PATCH", body: JSON.stringify(changes) });
+}
+
 export function decideVisionEvent(id: string, decision: "accepted" | "rejected", reason?: string) {
   return adminFetch<VisionEventCandidate>(`/vision/review/events/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, reason }) });
 }
