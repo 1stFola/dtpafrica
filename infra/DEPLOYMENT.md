@@ -414,9 +414,14 @@ empty until the secret holds it, so a deploy without them changes nothing.
    exposed headers `Content-Length`.
 5. Footage reaches the box through `pnpm --filter @dtp/api vision:upload -- --source <id>
    --file <video> --api http://<server>/api/v1 --key <ADMIN_API_KEY>` from any machine; the
-   API opens a resumable session and the bytes go straight to the store. Nothing runs on an
-   upload until a worker claims it: with the `local` provider, start the CPU worker container
-   by hand with a bootstrap token from `POST /vision/workers/provision` (docs/vision/17).
+   API opens a resumable session and the bytes go straight to the store.
+6. The CPU worker runs beside the API as the `worker` compose service, under the `vision`
+   profile the env file switches on with `VISION_ENABLED`. It provisions its own bootstrap
+   token through the API with the operator key and claims the CPU stages; `detect` needs a
+   GPU pod. Watch it with `sudo docker compose -f infra/docker-compose.staging.yml
+   --env-file infra/.env.staging logs -f worker` from `/opt/dtp-app/repo`. A full match's
+   transcode needs the file twice over on `/tmp/dtp-vision` (a 2 GB tmpfs) and the box's
+   memory; test with short clips first (docs/vision/46).
 
 ## Day-2 Operations
 

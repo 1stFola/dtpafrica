@@ -82,6 +82,7 @@ export class VisionUploadService {
         partnerId: true,
         acquisitionStatus: true,
         acquisitionMethod: true,
+        sbMatchId: true,
         _count: { select: { videoAssets: true } },
       },
     });
@@ -151,6 +152,10 @@ export class VisionUploadService {
         data: {
           id: videoAssetId,
           sourceVideoRecordId: record.id,
+          // Footage of a catalogued match is footage of that match: every stage
+          // after probe and fingerprint refuses an asset with no match, and the
+          // record already says which one.
+          sbMatchId: record.sbMatchId ?? null,
           corpus: "dtp_owned",
           objectKey: ref.key,
           bytes: BigInt(params.expectedBytes ?? 0),

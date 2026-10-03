@@ -54,6 +54,8 @@ services:
       VISION_R2_BUCKET_DERIVED: ${VISION_R2_BUCKET_DERIVED:-}
       VISION_R2_BUCKET_MODELS: ${VISION_R2_BUCKET_MODELS:-}
       VISION_R2_BUCKET_CLIPS: ${VISION_R2_BUCKET_CLIPS:-}
+      # What a provisioned worker row records as its image: the one this stack runs.
+      VISION_WORKER_IMAGE: ${IMAGE_REGISTRY}/dtp-vision-worker:${IMAGE_TAG}
     ports:
       - "127.0.0.1:${API_PORT:-3000}:3000"
 
@@ -67,6 +69,38 @@ services:
       - api
     ports:
       - "${WEB_PORT:-8080}:80"
+
+  # The CPU worker, beside the API. It runs only under the `vision` profile, which
+  # the env file switches on when VISION_ENABLED is true, so a stack with Vision off
+  # has no worker polling an API that refuses it. It provisions its own bootstrap
+  # token through the API with the operator key (dtp_vision_worker/bootstrap.py),
+  # claims CPU stages -- probe, fingerprint, transcode, cuts, track, identify,
+  # gamestate -- and talks to the store through presigned URLs alone: no R2
+  # credential, no database connection. Detect needs a GPU and stays on a pod.
+  #
+  # One worker, one job at a time, on a t3.small shared with Postgres and the API:
+  # enough for a match's CPU stages, not for a queue of them.
+  worker:
+    image: ${IMAGE_REGISTRY}/dtp-vision-worker:${IMAGE_TAG}
+    build:
+      context: ../services/vision-worker
+    profiles: ["vision"]
+    restart: unless-stopped
+    depends_on:
+      - api
+    entrypoint: ["python", "-m", "dtp_vision_worker.bootstrap"]
+    environment:
+      VISION_WORKER_CALLBACK_URL: http://api:3000/api/v1/vision/worker
+      VISION_PROVISION_API_KEY: ${ADMIN_API_KEY:?set ADMIN_API_KEY}
+      VISION_PROVIDER_ID: local
+      VISION_RESOURCE_CLASS: cpu_small
+      VISION_WORKER_IMAGE: ${IMAGE_REGISTRY}/dtp-vision-worker:${IMAGE_TAG}
+      # A day idle before it exits and the restart policy provisions a fresh one;
+      # the hosted default of two minutes is for pods that cost money while idle.
+      VISION_IDLE_SHUTDOWN_SECONDS: "86400"
+      VISION_WORK_DIR: /tmp/dtp-vision
+    tmpfs:
+      - /tmp/dtp-vision:size=2g
 
 volumes:
   dtp_staging_pg_data:
