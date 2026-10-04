@@ -431,6 +431,7 @@ Add to `services/api/src/admin/rbac/permissions.catalog.ts`:
 { slug: "vision.publish",           resource: "vision", action: "publish" },
 { slug: "vision.media.raw.read",    resource: "vision", action: "media.raw.read" },  // youth-footage gate
 { slug: "vision.evidence.search",   resource: "vision", action: "evidence.search" },
+{ slug: "vision.audit.read",        resource: "vision", action: "audit.read" },       // the audit trail; not opened by vision.read
 ```
 
 Then five role presets alongside the existing ones (`SCOREBOARD_OPS_PERMISSION_SLUGS` and friends)

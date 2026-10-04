@@ -51,6 +51,7 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { slug: "vision.publish", resource: "vision", action: "publish", description: "Publish approved evidence, clips and events" },
   { slug: "vision.media.raw.read", resource: "vision", action: "media.raw.read", description: "Access raw source footage, including youth footage" },
   { slug: "vision.evidence.search", resource: "vision", action: "evidence.search", description: "Search approved evidence" },
+  { slug: "vision.audit.read", resource: "vision", action: "audit.read", description: "Read the Vision audit trail: who did what, including who read raw footage" },
 ];
 
 /**

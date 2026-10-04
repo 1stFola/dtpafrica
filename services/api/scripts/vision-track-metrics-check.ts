@@ -31,7 +31,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, onInterrupt, removeGateWorkers } from "./gate-harness";
+import { assertDevDatabase, closeGate, onInterrupt, removeGateWorkers } from "./gate-harness";
 
 loadApiEnv();
 
@@ -187,7 +187,7 @@ async function main() {
   let fx: Fixture | null = null;
   onInterrupt(async () => {
     await cleanup(fx, store);
-    await prisma.$disconnect();
+    await closeGate(prisma);
   });
   try {
     fx = await seed();
@@ -330,7 +330,7 @@ async function main() {
     console.error("\nGate aborted:", error);
   } finally {
     await cleanup(fx, store).catch((e) => console.error("cleanup failed:", e));
-    await prisma.$disconnect();
+    await closeGate(prisma);
   }
 
   console.log(`\n${checks - failures}/${checks} checks passed${failures ? ` — ${failures} FAILED` : ""}`);

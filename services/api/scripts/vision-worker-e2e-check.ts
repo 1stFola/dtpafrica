@@ -24,7 +24,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, removeGateWorkers, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, closeGate, createGateMatch, onInterrupt, removeGateAuditTrail, removeGateMatch, removeGateWorkers, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -149,7 +149,7 @@ async function main() {
 
   onInterrupt(async () => {
     await tidy();
-    await prisma.$disconnect();
+    await closeGate(prisma);
   });
   try {
     // ── Fixtures, committed so the running API can see them ────────────────
@@ -442,6 +442,12 @@ async function main() {
       where: { name: { startsWith: "E2E worker check " } },
     });
     check("database left clean", strays, 0);
+    /* The footage, its jobs and the workers are gone, and so is what the trail said about them
+       (docs/vision/70). This gate used to leave a row for every job it queued and every read of
+       the master. */
+    const removed = await removeGateAuditTrail(prisma);
+    const about = [assetId, ...(created.jobId ? [created.jobId] : []), ...created.workerIds];
+    check("the audit trail holds nothing about what this run made and removed", `${await prisma.visionAuditLog.count({ where: { targetId: { in: about } } })}/${removed > 0}`, "0/true");
   }
 
   section("Result");
@@ -454,4 +460,4 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => closeGate(prisma));

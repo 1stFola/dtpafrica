@@ -43,6 +43,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { AUDIT_TARGET_MODELS, auditPurgeProblem, orphanedAuditRows } from "./gate-harness";
 import {
   GATE_COMPETITION_SLUGS,
   GATE_EVENT_DETAILS,
@@ -394,19 +395,50 @@ async function purgeWorkers() {
   keep(`${GATE_WORKER_PROVIDER}-provider workers`, workers.filter((w) => busy.has(w.id)).map((w) => w.id), "they hold a job");
   const idle = workers.filter((w) => !busy.has(w.id));
   report(`${GATE_WORKER_PROVIDER}-provider workers holding no job`, idle.map((w) => `${w.id}  ${w.resourceClass}${w.retiredAt ? "  retired" : ""}`));
-  /* A provision and a retire each leave an audit row (docs/vision/68). A row whose worker
-     is gone was a gate's: nothing else deletes a worker. */
-  const trail = await prisma.visionAuditLog.findMany({ where: { targetKind: "vision_worker" }, select: { id: true, targetId: true, action: true } });
-  const living = new Set((await prisma.visionWorker.findMany({ select: { id: true } })).map((w) => w.id));
-  const orphaned = trail.filter((a) => !a.targetId || !living.has(a.targetId));
-  report("audit rows for a worker that no longer exists", orphaned.map((a) => `${a.id}  ${a.action}  ${a.targetId}`));
-  if (!APPLY) return;
+  if (!APPLY || !idle.length) return;
   const ids = idle.map((w) => w.id);
-  const audits = await prisma.visionAuditLog.deleteMany({
-    where: { targetKind: "vision_worker", OR: [{ targetId: { in: ids } }, { id: { in: orphaned.map((a) => a.id) } }] },
-  });
+  /* A provision and a retire each leave an audit row (docs/vision/68); they go with the worker.
+     Rows whose worker went earlier are purgeAuditTrail's. */
+  const audits = await prisma.visionAuditLog.deleteMany({ where: { targetKind: "vision_worker", targetId: { in: ids } } });
   deleted += audits.count;
   deleted += (await prisma.visionWorker.deleteMany({ where: { id: { in: ids } } })).count;
+}
+
+/**
+ * Audit rows about things that no longer exist (docs/vision/70).
+ *
+ * A gate makes things through the API and deletes them; the API's audit rows about them
+ * stayed, because each gate removed rows by a list of ids that missed some kind. The
+ * gates now clear their own trail as they end. This finds what earlier runs left.
+ *
+ * It runs last, after everything above has removed what it removes, and only on a
+ * database on this machine: on live a row is meant to outlive its target, so this step
+ * is skipped there, whatever else the script is asked to do. A row a person who still
+ * exists stands behind is kept: they removed something, and the trail says so.
+ */
+async function purgeAuditTrail() {
+  console.log("\nAudit rows about things that are gone");
+  console.log("-------------------------------------");
+  const problem = auditPurgeProblem(process.env.DATABASE_URL);
+  if (problem) {
+    console.log(`  skipped: ${problem}.`);
+    return;
+  }
+  const rows = await prisma.visionAuditLog.findMany({ select: { id: true, action: true, targetKind: true, targetId: true, actorId: true } });
+  const unknown = [...new Set(rows.filter((r) => r.targetId && !AUDIT_TARGET_MODELS[r.targetKind]).map((r) => r.targetKind))];
+  if (unknown.length) console.log(`  (not looked at: target kinds this script has no table for: ${unknown.join(", ")})`);
+  const gone = await orphanedAuditRows(prisma, rows);
+  const byKind = new Map<string, number>();
+  for (const r of gone) byKind.set(`${r.targetKind}  ${r.action}`, (byKind.get(`${r.targetKind}  ${r.action}`) ?? 0) + 1);
+  /* Counted by row, listed by kind: there can be a thousand, and the kinds are what say whose they were. */
+  if (gone.length) {
+    console.log(`  ${APPLY ? "deleting" : "would delete"} ${gone.length} audit row(s) whose target no longer exists`);
+    for (const [what, n] of [...byKind].sort()) console.log(`      ${String(n).padStart(5)}  ${what}`);
+  }
+  if (!APPLY || !gone.length) return;
+  for (let i = 0; i < gone.length; i += 1000) {
+    deleted += (await prisma.visionAuditLog.deleteMany({ where: { id: { in: gone.slice(i, i + 1000).map((r) => r.id) } } })).count;
+  }
 }
 
 /**
@@ -480,6 +512,7 @@ async function main() {
   await purgeMatchEvents();
   await purgeGateMatches();
   await purgePeople();
+  await purgeAuditTrail();
 
   console.log("\n" + "-".repeat(60));
   if (APPLY) {

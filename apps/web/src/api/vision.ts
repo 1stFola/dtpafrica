@@ -1116,3 +1116,40 @@ export function fetchVisionReviewQueue(opts: { assetId?: string; limit?: number 
   const qs = q.toString();
   return adminFetch<VisionReviewQueue>(`/vision/review/queue${qs ? `?${qs}` : ""}`);
 }
+
+// ── The audit trail (docs/vision/69) ──
+
+export type VisionAuditRow = {
+  id: string;
+  action: string;
+  targetKind: string;
+  targetId: string | null;
+  actorId: string | null;
+  actorEmail: string | null;
+  /** `jwt`, `api_key`, `provision_key`, or null when no actor was recorded. */
+  actorMethod: string | null;
+  reason: string | null;
+  data: unknown;
+  createdAt: string;
+};
+
+export type VisionAuditFacets = { actions: string[]; targetKinds: string[]; methods: string[] };
+
+export type VisionAuditPage = {
+  items: VisionAuditRow[];
+  /** Sent back as `cursor`, it continues from the last row of this page. Null on the last page. */
+  nextCursor: string | null;
+  /** On the first page only: how many rows match, and what the filters may be set to. */
+  matching?: number;
+  facets?: VisionAuditFacets;
+};
+
+/** Newest first. Needs `vision.audit.read`. `from` and `to` are moments, not days. */
+export function fetchVisionAudit(opts: { action?: string; targetKind?: string; targetId?: string; actor?: string; method?: string; from?: string; to?: string; cursor?: string; limit?: number } = {}) {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(opts)) {
+    if (value !== undefined && value !== "") q.set(key, String(value));
+  }
+  const qs = q.toString();
+  return adminFetch<VisionAuditPage>(`/vision/audit${qs ? `?${qs}` : ""}`);
+}

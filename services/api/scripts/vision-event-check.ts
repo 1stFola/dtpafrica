@@ -44,7 +44,7 @@ import { recorderHalfLength } from "../src/vision/clock/recorder-minute";
 import { reapplyEnrichment } from "../src/vision/events/reapply-enrichment";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, closeGate, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -162,7 +162,7 @@ async function main() {
   let fx: Fixture | null = null;
   onInterrupt(async () => {
     await cleanup(fx);
-    await prisma.$disconnect();
+    await closeGate(prisma);
   });
   try {
     const match = await matchWithSquadsAndNoGoals();
@@ -504,7 +504,7 @@ async function main() {
       ];
       check("after the run the gate's match, its goals, its competition, its players and their totals are gone", left.join("/"), "0/0/0/0/0");
     }
-    await prisma.$disconnect();
+    await closeGate(prisma);
   }
 
   console.log(`\n${checks - failures}/${checks} checks passed${failures ? ` — ${failures} FAILED` : ""}`);

@@ -21,7 +21,7 @@ import { WorkerTokenService } from "../src/vision/worker/worker-token.service";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, createGateMatch } from "./gate-harness";
+import { assertDevDatabase, closeGate, createGateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -309,4 +309,4 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => closeGate(prisma));

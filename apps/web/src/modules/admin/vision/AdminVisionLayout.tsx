@@ -21,6 +21,7 @@ const sections = [
   { to: "/admin/vision/datasets", label: "Datasets", icon: "⛁" },
   { to: "/admin/vision/models", label: "Models", icon: "◉" },
   { to: "/admin/vision/events", label: "Events", icon: "⚑" },
+  { to: "/admin/vision/audit", label: "Audit trail", icon: "≡", permission: "vision.audit.read" },
 ];
 
 export type AdminVisionOutletContext = { overview: VisionOverview | null; refreshOverview: () => Promise<void> };

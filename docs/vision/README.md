@@ -83,6 +83,8 @@ reviewed, reproducible player evidence.
 | — | [66-QA-FIX-16-E2E-IN-CI.md](./66-QA-FIX-16-E2E-IN-CI.md) | QA fix 16, the end-to-end gate in CI: the worker image built from the commit and run as a container against the job's API and store, so every gate runs on every pull request. |
 | — | [67-QA-FIX-17-PROVISION-KEY.md](./67-QA-FIX-17-PROVISION-KEY.md) | QA fix 17, a provision-only key: the worker on the box holds a key derived from the operator key that provisions and retires the box's own worker and nothing else. |
 | — | [68-QA-FIX-18-WORKER-AUDIT.md](./68-QA-FIX-18-WORKER-AUDIT.md) | QA fix 18, the worker audit trail: every provision and every retire writes an audit row under who did it, the provision key included, and never the token. |
+| — | [69-AUDIT-TRAIL-SCREEN.md](./69-AUDIT-TRAIL-SCREEN.md) | A screen for the audit trail: `GET /vision/audit` behind its own permission, `vision.audit.read`, and a page that filters the trail by action, person, target and day. |
+| — | [70-GATE-AUDIT-LITTER.md](./70-GATE-AUDIT-LITTER.md) | The audit rows the gates left behind: every gate clears its own trail as it ends, the purge finds what earlier runs left, and the gate guard no longer takes the live database's host name for this machine. |
 
 Also: [`docs/licenses/OSS_REGISTER.md`](../licenses/OSS_REGISTER.md) — every third-party
 component, with its code / weights / dataset licence tracked separately. Nothing ships without

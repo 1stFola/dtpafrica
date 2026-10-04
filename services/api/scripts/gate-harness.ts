@@ -18,8 +18,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { PrismaClient } from "@prisma/client";
 
-/** Hosts that are this machine, or a container beside it. */
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0", "host.docker.internal", "postgres", "db"]);
+/**
+ * Hosts that are this machine.
+ *
+ * `postgres` and `db` were here as "a container beside it". The live API container
+ * reaches the live database as `postgres` (infra/docker-compose.staging.yml), so a gate
+ * run inside it passed this check (docs/vision/70). A compose service name says nothing
+ * about whose database it is; a developer who runs gates inside a compose stack names
+ * the host in the override.
+ */
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0", "host.docker.internal"]);
 
 /** Names the override must be set to: the host itself, so it cannot be a habit. */
 export const ALLOW_DB_HOST = "VISION_GATE_ALLOW_DB_HOST";
@@ -171,4 +179,122 @@ export async function removeGateWorkers(prisma: PrismaClient, workerIds: readonl
   if (!workerIds.length) return;
   await prisma.visionAuditLog.deleteMany({ where: { targetKind: "vision_worker", targetId: { in: [...workerIds] } } });
   await prisma.visionWorker.deleteMany({ where: { id: { in: [...workerIds] } } });
+}
+
+// ── The audit trail a gate leaves ───────────────────────────────────────────
+
+/**
+ * The table each audit target kind points into (docs/vision/70).
+ *
+ * A gate makes things through the API, the API writes an audit row for each, and
+ * the gate then deletes the things. The rows stayed: each gate removed them by a
+ * list of ids it had kept, and every list missed some kind. This map is what lets
+ * the question be asked the other way round, of any row: does its target exist?
+ *
+ * `gate-harness.spec.ts` reads every `targetKind` the Vision module writes and
+ * fails if one is missing here.
+ */
+export const AUDIT_TARGET_MODELS: Readonly<Record<string, string>> = {
+  vision_annotation_task: "visionAnnotationTask",
+  vision_annotation_version: "visionAnnotationVersion",
+  vision_benchmark_run: "visionBenchmarkRun",
+  vision_camera_segment: "visionCameraSegment",
+  vision_dataset_version: "visionDatasetVersion",
+  vision_event_candidate: "visionEventCandidate",
+  vision_identity_assignment: "visionIdentityAssignment",
+  vision_job: "visionJob",
+  vision_label_schema_version: "visionLabelSchemaVersion",
+  vision_model: "visionModel",
+  vision_model_version: "visionModelVersion",
+  vision_partner_upload_grant: "visionPartnerUploadGrant",
+  vision_promotion_request: "visionPromotionRequest",
+  vision_rights_evidence: "visionRightsEvidence",
+  vision_rights_scope: "visionRightsScope",
+  vision_signatory: "visionPartnerAuthorizedSignatory",
+  vision_source_partner: "visionSourcePartner",
+  vision_source_video_record: "visionSourceVideoRecord",
+  vision_track: "visionTrack",
+  vision_upload_session: "visionUploadSession",
+  vision_video_asset: "visionVideoAsset",
+  vision_worker: "visionWorker",
+};
+
+export type AuditRowRef = { id: string; action: string; targetKind: string; targetId: string | null; actorId: string | null };
+
+type IdFinder = { findMany(args: { where: { id: { in: string[] } }; select: { id: true } }): Promise<{ id: string }[]> };
+
+/** Which of `ids` are rows of `model`. Asked a thousand at a time: a trail is long. */
+async function existing(prisma: PrismaClient, model: string, ids: string[]): Promise<Set<string>> {
+  const table = (prisma as unknown as Record<string, IdFinder>)[model];
+  const found = new Set<string>();
+  for (let i = 0; i < ids.length; i += 1000) {
+    for (const row of await table.findMany({ where: { id: { in: ids.slice(i, i + 1000) } }, select: { id: true } })) found.add(row.id);
+  }
+  return found;
+}
+
+/**
+ * Of `rows`, the ones that are a gate's leavings: the target is gone, and no
+ * person who still exists stands behind the row.
+ *
+ * The second half matters. On a developer's database a person removes things too
+ * (a camera segment, an abandoned task), and the row that says they did is the
+ * trail doing its job. A gate's rows are the operator key's, a worker's, or a
+ * scratch sign-in's that the gate has since removed. A kind this map does not
+ * know is left alone: not knowing where a target lives is no reason to say it
+ * is gone.
+ */
+export async function orphanedAuditRows(prisma: PrismaClient, rows: readonly AuditRowRef[]): Promise<AuditRowRef[]> {
+  const byKind = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row.targetId || !AUDIT_TARGET_MODELS[row.targetKind]) continue;
+    if (!byKind.has(row.targetKind)) byKind.set(row.targetKind, new Set());
+    byKind.get(row.targetKind)!.add(row.targetId);
+  }
+  const alive = new Map<string, Set<string>>();
+  for (const [kind, ids] of byKind) alive.set(kind, await existing(prisma, AUDIT_TARGET_MODELS[kind], [...ids]));
+  const people = await existing(prisma, "adminUser", [...new Set(rows.flatMap((r) => (r.actorId ? [r.actorId] : [])))]);
+  return rows.filter((row) => {
+    const targets = alive.get(row.targetKind);
+    if (!row.targetId || !targets || targets.has(row.targetId)) return false;
+    return !(row.actorId && people.has(row.actorId));
+  });
+}
+
+/**
+ * Why the purge may not clear orphaned audit rows from this database, or null
+ * when it may. Only a database on this machine: on a live one a row is meant to
+ * outlive its target, and "the target is gone" is history, not litter. There is
+ * no override. The rest of the purge goes by names only a gate uses and is safe
+ * anywhere; this part goes by absence, which is not.
+ */
+export function auditPurgeProblem(databaseUrl: string | undefined): string | null {
+  const host = hostOf(databaseUrl);
+  if (host && LOCAL_HOSTS.has(host)) return null;
+  return `the database is ${host ? `on ${host}` : "not named"}, not on this machine, and there an audit row is meant to outlive what it is about`;
+}
+
+/** When this gate's process started, less a moment for two clocks to disagree by. */
+export const GATE_STARTED_AT = new Date(Date.now() - 2000);
+
+/**
+ * Removes what this run left on the audit trail: every row written since the
+ * gate started whose target the gate has since removed. Call it after the
+ * gate's own cleanup. Returns how many rows went.
+ */
+export async function removeGateAuditTrail(prisma: PrismaClient, since: Date = GATE_STARTED_AT): Promise<number> {
+  const rows = await prisma.visionAuditLog.findMany({ where: { createdAt: { gte: since } }, select: { id: true, action: true, targetKind: true, targetId: true, actorId: true } });
+  const gone = await orphanedAuditRows(prisma, rows);
+  if (!gone.length) return 0;
+  return (await prisma.visionAuditLog.deleteMany({ where: { id: { in: gone.map((r) => r.id) } } })).count;
+}
+
+/**
+ * How a gate ends, on every path: the trail is cleared of this run, then the
+ * database is let go. It stands where `prisma.$disconnect()` stood, so a gate
+ * cannot clean up its fixtures and forget its trail.
+ */
+export async function closeGate(prisma: PrismaClient): Promise<void> {
+  await removeGateAuditTrail(prisma).catch((e) => console.error("Audit cleanup failed; run `pnpm db:purge:gate-litter`:", e));
+  await prisma.$disconnect();
 }

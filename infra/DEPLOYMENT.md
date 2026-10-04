@@ -402,6 +402,9 @@ empty until the secret holds it, so a deploy without them changes nothing.
    ```
 2. Seed the role catalogue (migrations are applied by the deploy itself):
    `sudo docker exec dtp-staging-api-1 pnpm --filter @dtp/api seed:rbac`.
+   Run it again after a deploy that adds a permission. It tops up `super_admin` only; any
+   other role that already exists is given a new permission by hand in Settings, Roles
+   (for example `vision.audit.read`, docs/vision/69).
 3. Re-run the deploy (manual trigger). `GET /api/v1/vision/status` then reports `enabled: true`
    and the storage backend `r2`.
 4. Set the CORS rule on the derived bucket so the review UI can read Parquet from it
@@ -519,7 +522,7 @@ pnpm passes it through rather than reading it itself:
 | `db:sync:event-player-links` | Links goal and assist labels to player rows, and names the ones it cannot |
 | `db:dedupe:squad-members` | Removes one of two squad rows for the same person so their name resolves to one player again, and goals stop reaching nobody. Not a merge — split history stays split |
 | `db:merge:duplicate-players` | Merges duplicate player records, folding history onto the survivor |
-| `db:purge:gate-litter` | Removes rows the Vision gates left behind |
+| `db:purge:gate-litter` | Removes rows the Vision gates left behind. Its last step, audit rows whose target is gone, runs only on a database on the machine it is run from and is skipped on live (docs/vision/70) |
 | `db:purge:placeholder-players` | Removes records created from placeholder names like `Unknown` |
 
 ```bash

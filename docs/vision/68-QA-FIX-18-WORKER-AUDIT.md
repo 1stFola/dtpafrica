@@ -77,7 +77,7 @@ changed. CI runs all twenty-two.
 
 | Item | Why |
 |---|---|
-| **A screen for the trail** | The rows are in `vision_audit_logs`; nothing in the admin app lists them, for this or any other action. |
+| **A screen for the trail** | Done since, in [69](./69-AUDIT-TRAIL-SCREEN.md). As listed: the rows are in `vision_audit_logs`; nothing in the admin app lists them, for this or any other action. |
 | **A row when a worker registers** | Registering exchanges the bootstrap token for a worker token. It is the worker's act, not a person's, and is on the worker row (`tokenKind`, `firstSeenAt`). |
 | **Workers that expire unretired** | A hosted pod that dies without retiring leaves a provision row and no retire row. That is accurate, and the worker row's `lastSeenAt` says when it went quiet. |
 

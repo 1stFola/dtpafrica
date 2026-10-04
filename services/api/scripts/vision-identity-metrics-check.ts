@@ -26,7 +26,7 @@ import * as bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, closeGate, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -123,7 +123,7 @@ async function main() {
   let fx: Fixture | null = null;
   onInterrupt(async () => {
     await cleanup(fx);
-    await prisma.$disconnect();
+    await closeGate(prisma);
   });
   try {
     const match = await matchWithSquads();
@@ -284,7 +284,7 @@ async function main() {
     console.error("\nGate aborted:", error);
   } finally {
     await cleanup(fx).catch((e) => console.error("cleanup failed:", e));
-    await prisma.$disconnect();
+    await closeGate(prisma);
   }
 
   console.log(`\n${checks - failures}/${checks} checks passed${failures ? ` — ${failures} FAILED` : ""}`);

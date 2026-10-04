@@ -29,7 +29,7 @@ import * as bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, closeGate, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -163,7 +163,7 @@ async function main() {
   let fx: Fixture | null = null;
   onInterrupt(async () => {
     await cleanup(fx);
-    await prisma.$disconnect();
+    await closeGate(prisma);
   });
   try {
     const match = await matchWithSquads();
@@ -302,6 +302,50 @@ async function main() {
     check("…every assignment (six calls; a merge is one)", count("identity.assigned"), 6);
     check("…one acceptance and one rejection", `${count("identity.accepted")}/${count("identity.rejected")}`, "1/1");
 
+    /* The audit screen's route (docs/vision/69). It has its own permission: the trail names who
+       read raw footage and who named a player, and `vision.read` does not open it. */
+    /* The seed gives a role its defaults only when it creates it, so that what an admin granted or
+       revoked survives. A database seeded before this permission existed has to be told. */
+    const held = await prisma.adminRole.count({ where: { slug: "vision_admin", permissions: { some: { permission: { slug: "vision.audit.read" } } } } });
+    check("the Vision admin role holds vision.audit.read (if not: grant it in Settings, Roles, as on any database seeded before docs/vision/69)", held, 1);
+    const closed = await R.get("/vision/audit");
+    check("a reviewer cannot read the audit trail", `${closed.status}`, "403");
+    const noSession = await call("/vision/audit", {});
+    check("…nor can nobody", noSession.status, 401);
+    const reviewerRows = await prisma.visionAuditLog.count({ where: { actorId: reviewer.id } });
+    const theirs = await S.get(`/vision/audit?actor=${reviewer.id}&limit=200`);
+    const theirRows = (theirs.body.items ?? []) as { id: string; actorId: string; actorEmail: string | null; actorMethod: string; action: string; createdAt: string }[];
+    check("a Vision admin reads it: what the reviewer did, by their id", `${theirs.status}/${theirs.body.matching}/${theirRows.length}`, `200/${reviewerRows}/${reviewerRows}`);
+    check("…every row theirs, signed in, with an email", theirRows.every((r) => r.actorId === reviewer.id && r.actorMethod === "jwt" && Boolean(r.actorEmail)), true);
+    check("…newest first", theirRows.map((r) => r.createdAt).join(), [...theirRows.map((r) => r.createdAt)].sort().reverse().join());
+    check("…and it says what the filters may be", `${(theirs.body.facets?.actions ?? []).includes("identity.assigned")}/${(theirs.body.facets?.targetKinds ?? []).includes("vision_track")}`, "true/true");
+    const byEmail = await S.get(`/vision/audit?actor=${encodeURIComponent(String(theirRows[0]?.actorEmail ?? "").toUpperCase())}`);
+    check("found by email too, whatever its case", byEmail.body.matching, theirs.body.matching);
+    const family = await S.get(`/vision/audit?action=identity.&actor=${reviewer.id}`);
+    check("a family of actions: only identity rows", ((family.body.items ?? []) as { action: string }[]).every((r) => r.action.startsWith("identity.")) && family.body.matching > 0 && family.body.matching <= theirs.body.matching, true);
+    const one = await S.get(`/vision/audit?action=identity.accepted&actor=${admin.id}`);
+    check("one action: the one acceptance, which the second person made", `${one.body.matching}/${one.body.items?.[0]?.action}`, "1/identity.accepted");
+    /* Walked a row at a time, the pages are the whole answer once each, in the same order. */
+    const walked: string[] = [];
+    let cursor = "";
+    for (let i = 0; i < 100; i += 1) {
+      const page = await S.get(`/vision/audit?actor=${reviewer.id}&limit=2${cursor ? `&cursor=${cursor}` : ""}`);
+      walked.push(...((page.body.items ?? []) as { id: string }[]).map((r) => r.id));
+      if (i > 0 && page.body.matching !== undefined) throw new Error("a later page counted the table again");
+      if (!page.body.nextCursor) break;
+      cursor = String(page.body.nextCursor);
+    }
+    check("paged two at a time: every row once, in order", walked.join(), theirRows.map((r) => r.id).join());
+    const day = new Date().toISOString().slice(0, 10);
+    const today = await S.get(`/vision/audit?actor=${reviewer.id}&from=${day}T00:00:00Z`);
+    const tomorrow = await S.get(`/vision/audit?actor=${reviewer.id}&from=${new Date(Date.now() + 86_400_000).toISOString()}`);
+    check("by time: all of it since midnight, none of it from tomorrow", `${today.body.matching === theirs.body.matching}/${tomorrow.body.matching}`, "true/0");
+    const badFilter = await S.get("/vision/audit?from=yesterday");
+    check("a filter it cannot read is refused by name, not dropped", `${badFilter.status}/${badFilter.body.error}/${badFilter.body.field}/${typeof badFilter.body.remediation}`, "400/AuditFilterInvalid/from/string");
+    const before = await prisma.visionAuditLog.count();
+    await S.get("/vision/audit?limit=1");
+    check("reading the trail writes nothing to it", await prisma.visionAuditLog.count(), before);
+
     // ── 5. Decided once; sides not swapped quietly; an overlap keeps the rest (docs/vision/57) ──
     section("5. A decision is made once, sides are not swapped quietly, and a partial overlap keeps what it does not cover");
 
@@ -338,7 +382,7 @@ async function main() {
     console.error("\nGate aborted:", error);
   } finally {
     await cleanup(fx).catch((e) => console.error("cleanup failed:", e));
-    await prisma.$disconnect();
+    await closeGate(prisma);
   }
 
   console.log(`\n${checks - failures}/${checks} checks passed${failures ? ` — ${failures} FAILED` : ""}`);

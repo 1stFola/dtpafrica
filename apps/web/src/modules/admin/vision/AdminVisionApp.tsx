@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminRequirePermission } from "../AdminRequirePermission";
 import { AdminVisionAnnotationPage } from "./AdminVisionAnnotationPage";
+import { AdminVisionAuditPage } from "./AdminVisionAuditPage";
 import { AdminVisionDatasetsPage } from "./AdminVisionDatasetsPage";
 import { AdminVisionEventsPage } from "./AdminVisionEventsPage";
 import { AdminVisionFootagePage } from "./AdminVisionFootagePage";
@@ -33,6 +34,10 @@ export function AdminVisionApp() {
         <Route path="datasets" element={<AdminVisionDatasetsPage />} />
         <Route path="models" element={<AdminVisionModelsPage />} />
         <Route path="events" element={<AdminVisionEventsPage />} />
+        {/* The trail names who read raw footage and who named a player; `vision.read` does not open it. */}
+        <Route element={<AdminRequirePermission permission="vision.audit.read" redirectTo="/admin/vision" />}>
+          <Route path="audit" element={<AdminVisionAuditPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/admin/vision" replace />} />
       </Route>
     </Routes>
