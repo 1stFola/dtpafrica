@@ -338,6 +338,20 @@ the anchors and where that millisecond falls, broadcast minutes (`47:12`), or `b
 removed) and a `window` with what the clock removed, substitutions applied from the match record.
 See [41-PHASE-5-INCREMENT-4.md](./41-PHASE-5-INCREMENT-4.md).
 
+**Pipeline maths** ([56-QA-FIX-6-PIPELINE-MATHS.md](./56-QA-FIX-6-PIPELINE-MATHS.md)), contract
+`1.12.0`. A camera segment covers `startMs <= t < endMs` everywhere it is read: the worker's
+game state, the API's `pitch-positions`, and an event candidate's segment. A `track` job is
+also declared `cuts`, the start of every camera segment on the asset but the first, in source
+milliseconds; a caller cannot supply them. The tracker ends every live track at a cut and after
+`maxAgeMs` (1200) unseen, and its artifact carries `trackedFrames`, every frame it was given as
+`[frameIndex, sourceTimeMs]`. A declared homography is oriented, positive `w` for what the
+camera sees, by the calibration's own clicked points; a fit whose clicks straddle its horizon
+is filed `failed` (`pointsAcrossHorizon` in the preview). Game state adds the reason
+`off_pitch` (further than `OFF_PITCH_MARGIN_M`, 5 m, outside the lines), and its coverage
+carries `framesTracked` and `coverageBasis`: `validFrameCoverage` is a share of the frames the
+tracker was given (`frames_tracked`), or, for a track artifact from before this change, of the
+frames with a track on them (`frames_with_tracks`), which reads higher.
+
 **Game state.** `POST /vision/jobs` with `type: "gamestate"` queues the placement stage on
 `cpu_small` after `track`, refusing `TracksMissing` and `NoCalibration` (no camera segment has a
 calibration); optional `params.chunkMs`. The job is handed the track artifact by declared key,

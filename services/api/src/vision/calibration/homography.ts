@@ -43,6 +43,12 @@ export type Fit = {
   /** Root-mean-square distance, in pixels, between each landmark projected to the picture and its click. */
   rmsePx: number;
   points: number;
+  /**
+   * Clicked points the fit puts beyond the horizon. Landmarks a person clicked are
+   * in the picture, so any here means the fit is wrong about where the camera is
+   * looking, however small its error reads: such a calibration is `failed`.
+   */
+  acrossHorizon: number;
 };
 
 export type FitFailure = { reason: "too_few_points" | "degenerate" | "duplicate_points" };
@@ -87,7 +93,10 @@ export function fitHomography(pairs: readonly Correspondence[]): Fit | FitFailur
   if (!undoDst) return { reason: "degenerate" };
   const H = multiply(multiply(undoDst, hn), src.transform);
   if (!Number.isFinite(H[8]) || Math.abs(H[8]) < 1e-12) return { reason: "degenerate" };
-  const scaled = H.map((v) => v / H[8]) as Homography;
+  // Scaled so the last entry is +-1, and signed so the clicked points are in view.
+  const oriented = orientation(H.map((v) => v / H[8]) as Homography, pairs.map((p) => ({ x: p.px, y: p.py })));
+  if (!oriented) return { reason: "degenerate" };
+  const scaled = oriented.homography;
 
   const inverse = invert3(scaled);
   if (!inverse) return { reason: "degenerate" };
@@ -95,7 +104,8 @@ export function fitHomography(pairs: readonly Correspondence[]): Fit | FitFailur
   let maxM = 0;
   let sumPx = 0;
   for (const p of pairs) {
-    const onPitch = project(scaled, { x: p.px, y: p.py });
+    // A click the fit puts beyond the horizon still has an error to report, read without the sign.
+    const onPitch = projectInView(scaled, { x: p.px, y: p.py }) ?? project(scaled, { x: p.px, y: p.py });
     if (!onPitch) return { reason: "degenerate" };
     const dM = Math.hypot(onPitch.x - p.xM, onPitch.y - p.yM);
     sumM += dM * dM;
@@ -110,6 +120,7 @@ export function fitHomography(pairs: readonly Correspondence[]): Fit | FitFailur
     maxErrorM: round(maxM),
     rmsePx: round(Math.sqrt(sumPx / pairs.length)),
     points: pairs.length,
+    acrossHorizon: oriented.across,
   };
 }
 
@@ -127,7 +138,67 @@ export function homogeneousW(H: Homography, p: Point): number {
   return H[6] * p.x + H[7] * p.y + H[8];
 }
 
-/** A point through the homography, or null when it maps to infinity (the horizon). */
+/**
+ * The homography signed so that `w` is positive at the picture points, with how
+ * many of them disagree; null when a point lies on the horizon itself.
+ *
+ * A homography is defined only up to scale: `H` and `-H` send every pixel to the
+ * same point on the pitch. They differ in the sign of `w`, and that sign is how a
+ * reader tells a pixel the camera sees from one beyond the horizon, which
+ * projects to a finite point that means nothing. So the sign has to be fixed by
+ * something known to be in view, and the clicked landmarks are: a person clicked
+ * them on the picture. The fit used to leave the sign to chance (it scaled the
+ * last entry to +1, which is `w` at the top-left pixel, usually sky), and the
+ * worker's `w <= 0` test then suppressed the whole pitch for such a camera
+ * (docs/vision/50, appendix C).
+ *
+ * Points on both sides of the horizon cannot all be on the pitch in view: one of
+ * them was clicked on the wrong thing. The sign then goes with the majority, and
+ * `across` counts the rest so the caller can fail the calibration.
+ */
+export function orientation(H: Homography, picturePoints: readonly Point[]): { homography: Homography; across: number } | null {
+  let positive = 0;
+  let negative = 0;
+  for (const p of picturePoints) {
+    const w = homogeneousW(H, p);
+    if (!Number.isFinite(w) || Math.abs(w) < 1e-9) return null;
+    if (w > 0) positive += 1;
+    else negative += 1;
+  }
+  const flip = negative > positive;
+  return { homography: flip ? (H.map((v) => -v) as Homography) : H, across: flip ? positive : negative };
+}
+
+/**
+ * A stored homography, signed by the points it was fitted from. A row filed
+ * before the fit oriented its result may be either way round, so every reader
+ * that tells the horizon by sign orients what it reads. With no usable points,
+ * or points that disagree, the matrix is returned as it was stored: nothing
+ * better is known.
+ */
+export function orientStored(homography: unknown, points: unknown): Homography {
+  const H = homography as Homography;
+  const clicked = Array.isArray(points)
+    ? points.flatMap((p: unknown) => {
+        const c = p as { px?: unknown; py?: unknown } | null;
+        return c && typeof c.px === "number" && typeof c.py === "number" ? [{ x: c.px, y: c.py }] : [];
+      })
+    : [];
+  return (clicked.length ? orientation(H, clicked)?.homography : null) ?? H;
+}
+
+/** A point through an *oriented* homography, or null at or beyond the horizon. */
+export function projectInView(H: Homography, p: Point): Point | null {
+  const w = homogeneousW(H, p);
+  if (!Number.isFinite(w) || w <= 1e-9) return null;
+  return { x: (H[0] * p.x + H[1] * p.y + H[2]) / w, y: (H[3] * p.x + H[4] * p.y + H[5]) / w };
+}
+
+/**
+ * A point through the homography whichever way it is signed, or null when it maps
+ * to infinity. For the pitch-to-picture direction and for drawing; placing a
+ * detection on the pitch uses `projectInView`, which knows the horizon.
+ */
 export function project(H: Homography, p: Point): Point | null {
   const w = H[6] * p.x + H[7] * p.y + H[8];
   if (!Number.isFinite(w) || Math.abs(w) < 1e-9) return null;

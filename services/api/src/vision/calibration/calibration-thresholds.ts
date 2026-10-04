@@ -35,9 +35,11 @@ export const CALIBRATION_THRESHOLDS: CalibrationThresholds = {
 export type CalibrationQuality = "good" | "usable" | "failed";
 
 export function qualityOf(
-  fit: { rmseM: number; maxErrorM: number; points: number },
+  fit: { rmseM: number; maxErrorM: number; points: number; acrossHorizon?: number },
   thresholds: CalibrationThresholds = CALIBRATION_THRESHOLDS
 ): CalibrationQuality {
+  // A clicked landmark beyond the fit's horizon: the fit has the camera wrong, whatever its error reads.
+  if (fit.acrossHorizon) return "failed";
   if (fit.maxErrorM > thresholds.maxPointErrorM) return "failed";
   if (fit.rmseM <= thresholds.goodRmseM && fit.points >= thresholds.goodMinPoints) return "good";
   if (fit.rmseM <= thresholds.usableRmseM) return "usable";

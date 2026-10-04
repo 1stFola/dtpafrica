@@ -4,25 +4,30 @@ The first thing in the engine that is a coordinate rather than a pixel, and so
 the first thing the suppression rule governs end to end (docs/vision/09
 § Calibration and game state). A position is placed only through the calibration
 of the camera segment covering its moment, and only when that calibration passed
-the bar; under no segment, no calibration, a failed one, or beyond the horizon it
-is written as *suppressed* with the reason, never as a number with a caveat. Each
-position also reads on the match clock when the clock is anchored.
+the bar; under no segment, no calibration, a failed one, beyond the horizon or
+off the pitch it is written as *suppressed* with the reason, never as a number
+with a caveat. Each position also reads on the match clock when the clock is
+anchored.
 
 Output is Parquet in object storage, chunked by source time, with a small JSON
 index naming the chunks and the coverage -- the Phase 5 gate's valid-frame
-coverage is the share of frames a passing calibration covered. Rows are flat so
-any reader, in any language, can filter them without this module.
+coverage is the share of the frames the tracker was given on which a position
+was placed. Rows are flat so any reader, in any language, can filter them
+without this module.
 """
 
 from __future__ import annotations
 
+import bisect
 import json
 import math
 import sys
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .jsonstream import fields, items
 
 Homography = Sequence[float]
 
@@ -32,6 +37,12 @@ Homography = Sequence[float]
 DEFAULT_CHUNK_MS = 60_000
 
 PASSING_QUALITIES = frozenset({"good", "usable"})
+
+#: How far outside the lines a placed point may be and still be a position. Players
+#: take throw-ins and corners from off the pitch and run past the goal line; five
+#: metres covers that. Beyond it the "position" is a pixel near the horizon read
+#: through a homography that stretches a few pixels into a hundred metres.
+OFF_PITCH_MARGIN_M = 5.0
 
 CHUNK_SCHEMA = [
     ("frame_index", "int32"),
@@ -76,11 +87,32 @@ BASE_MINUTE = {1: 0, 2: 45, 3: 90, 4: 105}
 
 
 def project(h: Homography, x: float, y: float) -> tuple[float, float] | None:
-    """A proxy pixel through a pixel-to-pitch homography, or None at or beyond the horizon."""
+    """A proxy pixel through a pixel-to-pitch homography, or None at or beyond the horizon.
+
+    The sign of `w` says which side of the horizon a pixel is on, so the matrix has
+    to arrive oriented: positive `w` for what the camera sees. A homography is only
+    defined up to scale, and one multiplied by -1 maps every pixel to the same
+    point with every `w` negated -- this function would then suppress the whole
+    pitch. The control plane orients each matrix by its clicked points before it
+    declares it (`orientHomography`, docs/vision/56); nothing here can, because
+    the worker is not given a point known to be in view.
+    """
     w = h[6] * x + h[7] * y + h[8]
     if not math.isfinite(w) or w <= 1e-9:
         return None
     return ((h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w)
+
+
+def on_pitch(segment: Segment, x_m: float, y_m: float, margin_m: float = OFF_PITCH_MARGIN_M) -> bool:
+    """Whether a placed point is on the pitch or within the margin around it.
+
+    The pitch runs 0..length by 0..width. Just under the horizon a pixel maps to
+    hundreds of metres, and a number like that is not a position. With no pitch
+    dimensions declared there is nothing to judge by, and the point stands.
+    """
+    if segment.pitch_length_m is None or segment.pitch_width_m is None:
+        return True
+    return -margin_m <= x_m <= segment.pitch_length_m + margin_m and -margin_m <= y_m <= segment.pitch_width_m + margin_m
 
 
 def clock_at(anchors: Sequence[Anchor], source_ms: int) -> tuple[int, float] | None:
@@ -97,11 +129,83 @@ def clock_at(anchors: Sequence[Anchor], source_ms: int) -> tuple[int, float] | N
     return current.half, BASE_MINUTE.get(current.half, 0) + (source_ms - current.source_ms) / 60_000
 
 
+class SegmentIndex:
+    """Camera segments by time, half-open: a segment covers `start <= t < end`.
+
+    Cuts produce adjacent segments -- one ends at the millisecond the next starts
+    -- and that millisecond is the first frame of the new camera. Read inclusively
+    at both ends it belonged to both, the earlier one won, and the first frame
+    after every cut was placed through the previous camera's homography
+    (docs/vision/50, appendix C). Where segments overlap, which they should not,
+    the one that started latest covers the moment.
+    """
+
+    def __init__(self, segments: Sequence[Segment]) -> None:
+        self._segments = sorted(segments, key=lambda s: (s.start_ms, s.end_ms))
+        self._starts = [s.start_ms for s in self._segments]
+
+    def at(self, source_ms: int) -> Segment | None:
+        i = bisect.bisect_right(self._starts, source_ms) - 1
+        while i >= 0:
+            s = self._segments[i]
+            if source_ms < s.end_ms:
+                return s
+            i -= 1
+        return None
+
+
 def segment_at(segments: Sequence[Segment], source_ms: int) -> Segment | None:
-    for s in segments:
-        if s.start_ms <= source_ms <= s.end_ms:
-            return s
-    return None
+    return SegmentIndex(segments).at(source_ms)
+
+
+def place_track(track: dict[str, Any], segments: SegmentIndex, anchors: Sequence[Anchor]) -> list[dict[str, Any]]:
+    """One flat row per position of one track, in the track's own order."""
+    rows: list[dict[str, Any]] = []
+    local_id = int(track["localTrackId"])
+    cls = str(track.get("class", "player"))
+    for p in track.get("positions") or []:
+        frame = int(p["frameIndex"])
+        source_ms = int(p["sourceTimeMs"])
+        box = p["box"]
+        clock = clock_at(anchors, source_ms)
+        row: dict[str, Any] = {
+            "frame_index": frame,
+            "source_ms": source_ms,
+            "half": clock[0] if clock else None,
+            "match_minute": round(clock[1], 4) if clock else None,
+            "local_track_id": local_id,
+            "class": cls,
+            "x_m": None,
+            "y_m": None,
+            "camera_segment_id": None,
+            "quality": None,
+            "reason": None,
+        }
+        seg = segments.at(source_ms)
+        if seg is None:
+            row["reason"] = "no_camera_segment"
+        elif not seg.passing:
+            row["camera_segment_id"] = seg.camera_segment_id
+            row["quality"] = seg.quality
+            row["reason"] = "calibration_failed" if seg.quality == "failed" else "segment_not_calibrated"
+        else:
+            assert seg.homography is not None
+            point = project(seg.homography, float(box["x"]) + float(box["width"]) / 2, float(box["y"]) + float(box["height"]))
+            row["camera_segment_id"] = seg.camera_segment_id
+            row["quality"] = seg.quality
+            if point is None:
+                row["reason"] = "beyond_horizon"
+            elif not on_pitch(seg, point[0], point[1]):
+                row["reason"] = "off_pitch"
+            else:
+                row["x_m"] = round(point[0], 3)
+                row["y_m"] = round(point[1], 3)
+        rows.append(row)
+    return rows
+
+
+def _row_order(r: dict[str, Any]) -> tuple[int, int, int]:
+    return (r["source_ms"], r["frame_index"], r["local_track_id"])
 
 
 def place(
@@ -112,50 +216,16 @@ def place(
     """One flat row per (frame, track) from a track artifact's positions.
 
     The foot point is the bottom centre of the box. A row is placed -- `x_m`,
-    `y_m` set -- only through a passing calibration covering its moment; otherwise
-    `x_m`/`y_m` are None and `reason` says why. Rows are in frame order, then track.
+    `y_m` set -- only through a passing calibration covering its moment, and only
+    onto the pitch; otherwise `x_m`/`y_m` are None and `reason` says why. Rows are
+    in frame order, then track. For a whole match use `build`, which never holds
+    the rows of more than one chunk.
     """
+    index = SegmentIndex(segments)
     rows: list[dict[str, Any]] = []
     for t in tracks:
-        local_id = int(t["localTrackId"])
-        cls = str(t.get("class", "player"))
-        for p in t.get("positions") or []:
-            frame = int(p["frameIndex"])
-            source_ms = int(p["sourceTimeMs"])
-            box = p["box"]
-            clock = clock_at(anchors, source_ms)
-            row: dict[str, Any] = {
-                "frame_index": frame,
-                "source_ms": source_ms,
-                "half": clock[0] if clock else None,
-                "match_minute": round(clock[1], 4) if clock else None,
-                "local_track_id": local_id,
-                "class": cls,
-                "x_m": None,
-                "y_m": None,
-                "camera_segment_id": None,
-                "quality": None,
-                "reason": None,
-            }
-            seg = segment_at(segments, source_ms)
-            if seg is None:
-                row["reason"] = "no_camera_segment"
-            elif not seg.passing:
-                row["camera_segment_id"] = seg.camera_segment_id
-                row["quality"] = seg.quality
-                row["reason"] = "calibration_failed" if seg.quality == "failed" else "segment_not_calibrated"
-            else:
-                assert seg.homography is not None
-                point = project(seg.homography, float(box["x"]) + float(box["width"]) / 2, float(box["y"]) + float(box["height"]))
-                row["camera_segment_id"] = seg.camera_segment_id
-                row["quality"] = seg.quality
-                if point is None:
-                    row["reason"] = "beyond_horizon"
-                else:
-                    row["x_m"] = round(point[0], 3)
-                    row["y_m"] = round(point[1], 3)
-            rows.append(row)
-    rows.sort(key=lambda r: (r["source_ms"], r["frame_index"], r["local_track_id"]))
+        rows.extend(place_track(t, index, anchors))
+    rows.sort(key=_row_order)
     return rows
 
 
@@ -169,30 +239,71 @@ def chunk_rows(rows: Sequence[dict[str, Any]], chunk_ms: int = DEFAULT_CHUNK_MS)
     return sorted(groups.items())
 
 
-def coverage(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    """Frames, placed and suppressed rows, reasons, and valid-frame coverage: the
-    share of distinct frames on which at least one row was placed through a passing
-    calibration -- which, a calibration being per moment, is the share of frames a
-    passing calibration covered."""
+@dataclass
+class Tally:
+    """Counts over rows, added up chunk by chunk so a match's rows are never all held."""
+
+    rows: int = 0
+    placed: int = 0
+    frames: int = 0
+    valid_frames: int = 0
+    reasons: dict[str, int] = field(default_factory=dict)
+
+    def add(self, other: Tally) -> None:
+        self.rows += other.rows
+        self.placed += other.placed
+        self.frames += other.frames
+        self.valid_frames += other.valid_frames
+        for reason, count in other.reasons.items():
+            self.reasons[reason] = self.reasons.get(reason, 0) + count
+
+    def result(self, frames_tracked: int | None = None) -> dict[str, Any]:
+        """The coverage record. `frames_tracked` is how many frames the tracker was
+        given over the same stretch; without it the share is over frames that have
+        at least one row, and `coverageBasis` says so."""
+        denominator = frames_tracked if frames_tracked is not None else self.frames
+        return {
+            "rows": self.rows,
+            "frames": self.frames,
+            "framesTracked": frames_tracked,
+            "placed": self.placed,
+            "suppressed": self.rows - self.placed,
+            "reasons": dict(self.reasons),
+            "validFrameCoverage": round(min(1.0, self.valid_frames / denominator), 4) if denominator else None,
+            "coverageBasis": "frames_tracked" if frames_tracked is not None else "frames_with_tracks",
+        }
+
+
+def tally(rows: Sequence[dict[str, Any]]) -> Tally:
+    """Count rows whose frames are all in one stretch (a chunk, or a small whole)."""
     frames: set[int] = set()
-    valid_frames: set[int] = set()
-    placed = 0
-    reasons: dict[str, int] = {}
+    valid: set[int] = set()
+    out = Tally()
     for r in rows:
+        out.rows += 1
         frames.add(int(r["frame_index"]))
         if r["x_m"] is not None:
-            placed += 1
-            valid_frames.add(int(r["frame_index"]))
+            out.placed += 1
+            valid.add(int(r["frame_index"]))
         else:
-            reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
-    return {
-        "rows": len(rows),
-        "frames": len(frames),
-        "placed": placed,
-        "suppressed": len(rows) - placed,
-        "reasons": reasons,
-        "validFrameCoverage": round(len(valid_frames) / len(frames), 4) if frames else None,
-    }
+            out.reasons[r["reason"]] = out.reasons.get(r["reason"], 0) + 1
+    out.frames = len(frames)
+    out.valid_frames = len(valid)
+    return out
+
+
+def coverage(rows: Sequence[dict[str, Any]], frames_tracked: int | None = None) -> dict[str, Any]:
+    """Frames, placed and suppressed rows, reasons, and valid-frame coverage.
+
+    Valid-frame coverage is the share of the frames the tracker was given
+    (`frames_tracked`) on which at least one row was placed through a passing
+    calibration. It used to be the share of frames *that had a track on them*,
+    which leaves out every frame where nothing was tracked and so overstates the
+    number the Phase 5 gate reads (docs/vision/50, appendix C). That older share
+    is still what comes back when `frames_tracked` is not known, labelled
+    `frames_with_tracks`.
+    """
+    return tally(rows).result(frames_tracked)
 
 
 def write_chunk(rows: Sequence[dict[str, Any]], path: Path) -> int:
@@ -241,21 +352,79 @@ def parse_anchors(raw: Sequence[dict[str, Any]]) -> list[Anchor]:
     return [Anchor(half=int(a["half"]), source_ms=int(a["sourceMs"]), end_ms=(int(a["endMs"]) if a.get("endMs") is not None else None)) for a in raw]
 
 
+def parse_tracked_frames(raw: Any) -> list[tuple[int, int]] | None:
+    """`[[frameIndex, sourceTimeMs], ...]` from a track artifact, or None when it carries none."""
+    if not isinstance(raw, list):
+        return None
+    return [(int(pair[0]), int(pair[1])) for pair in raw]
+
+
+_COLUMNS = [name for name, _ in CHUNK_SCHEMA]
+
+
 def build(
-    tracks: Sequence[dict[str, Any]],
+    tracks: Iterable[dict[str, Any]],
     segments: Sequence[Segment],
     anchors: Sequence[Anchor],
     out_dir: Path,
     chunk_ms: int = DEFAULT_CHUNK_MS,
+    tracked_frames: Sequence[tuple[int, int]] | None = None,
 ) -> dict[str, Any]:
-    """Place, chunk, write, and index. Returns the index, with chunk file names relative to `out_dir`."""
-    rows = place(tracks, segments, anchors)
+    """Place, chunk, write, and index. Returns the index, with chunk file names relative to `out_dir`.
+
+    `tracks` may be an iterator over a streamed artifact. Each track is placed on
+    its own and its rows are spilled to a file per chunk; the chunks are then
+    sorted and written one at a time. A ninety-minute match is three million rows,
+    and held as dicts that is several gigabytes; this holds one track and one
+    chunk (docs/vision/50, appendix C).
+
+    `tracked_frames` is every frame the tracker was given, as `(frameIndex,
+    sourceTimeMs)`: the denominator of valid-frame coverage. See `coverage`.
+    """
+    if chunk_ms <= 0:
+        raise ValueError("chunk_ms must be positive")
+    index = SegmentIndex(segments)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    spill = out_dir / ".spill"
+    spill.mkdir(exist_ok=True)
+
+    track_count = 0
+    touched: set[int] = set()
+    for t in tracks:
+        track_count += 1
+        groups: dict[int, list[list[Any]]] = {}
+        for row in place_track(t, index, anchors):
+            groups.setdefault(int(row["source_ms"]) // chunk_ms, []).append([row[name] for name in _COLUMNS])
+        for chunk_index, batch in groups.items():
+            touched.add(chunk_index)
+            with (spill / f"{chunk_index}.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(batch))
+                handle.write("\n")
+
+    tracked_per_chunk: dict[int, int] | None = None
+    if tracked_frames is not None:
+        tracked_per_chunk = {}
+        for _frame, source_ms in tracked_frames:
+            tracked_per_chunk[source_ms // chunk_ms] = tracked_per_chunk.get(source_ms // chunk_ms, 0) + 1
+
     chunks = []
-    for index, group in chunk_rows(rows, chunk_ms):
-        name = f"chunk-{index:05d}.parquet"
-        size = write_chunk(group, out_dir / name)
-        chunks.append({"index": index, "file": name, "fromMs": index * chunk_ms, "toMs": (index + 1) * chunk_ms, "bytes": size, **coverage(group)})
-    return {"chunkMs": chunk_ms, "chunks": chunks, **coverage(rows), "tracks": len(tracks)}
+    total = Tally()
+    for chunk_index in sorted(touched):
+        path = spill / f"{chunk_index}.jsonl"
+        rows: list[dict[str, Any]] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                rows.extend(dict(zip(_COLUMNS, values, strict=True)) for values in json.loads(line))
+        path.unlink()
+        rows.sort(key=_row_order)
+        name = f"chunk-{chunk_index:05d}.parquet"
+        size = write_chunk(rows, out_dir / name)
+        counted = tally(rows)
+        total.add(counted)
+        in_chunk = tracked_per_chunk.get(chunk_index, 0) if tracked_per_chunk is not None else None
+        chunks.append({"index": chunk_index, "file": name, "fromMs": chunk_index * chunk_ms, "toMs": (chunk_index + 1) * chunk_ms, "bytes": size, **counted.result(in_chunk)})
+    spill.rmdir()
+    return {"chunkMs": chunk_ms, "chunks": chunks, **total.result(len(tracked_frames) if tracked_frames is not None else None), "tracks": track_count}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -269,15 +438,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--chunk-ms", type=int, default=DEFAULT_CHUNK_MS)
     args = parser.parse_args(argv)
-    with open(args.tracks, encoding="utf-8") as handle:
-        tracks = (json.load(handle).get("tracks")) or []
+    header = fields(Path(args.tracks), "tracks")
     with open(args.segments, encoding="utf-8") as handle:
         segments = parse_segments(json.load(handle))
     anchors: list[Anchor] = []
     if args.anchors:
         with open(args.anchors, encoding="utf-8") as handle:
             anchors = parse_anchors(json.load(handle))
-    index = build(tracks, segments, anchors, Path(args.out_dir), args.chunk_ms)
+    index = build(items(Path(args.tracks), "tracks"), segments, anchors, Path(args.out_dir), args.chunk_ms, parse_tracked_frames(header.get("trackedFrames")))
     json.dump(index, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0

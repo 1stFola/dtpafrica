@@ -84,3 +84,35 @@ describe("substitutions and who was on the pitch", () => {
     expect(onPitchFor(bench, twice, { fromMinute: 85, toMinute: 90 })).toBe("no");
   });
 });
+
+describe("who was on the pitch, with the footage and the record on one timeline", () => {
+  // Number 7 off for 14, recorded in the 61st minute: play from 15:00 to 16:00 of the second half.
+  const subs = [{ teamId: "home", minute: 61, offPlayerId: "p-a", offNumber: 7, onNumber: 14, span: { from: 1015, to: 1016 } }];
+  const starter = { isStarter: true, jerseyNumber: 7, playerId: "p-a" };
+  const bench = { isStarter: false, jerseyNumber: 14, playerId: "p-b" };
+
+  it("has the old player before the minute of the change and the new one after it", () => {
+    expect(onPitchFor(starter, subs, { fromMinute: 1010, toMinute: 1015 })).toBe("yes");
+    expect(onPitchFor(bench, subs, { fromMinute: 1010, toMinute: 1015 })).toBe("no");
+    expect(onPitchFor(starter, subs, { fromMinute: 1016, toMinute: 1020 })).toBe("no");
+    expect(onPitchFor(bench, subs, { fromMinute: 1016, toMinute: 1020 })).toBe("yes");
+    // The first half is all before it.
+    expect(onPitchFor(starter, subs, { fromMinute: 40, toMinute: 47 })).toBe("yes");
+    expect(onPitchFor(bench, subs, { fromMinute: 40, toMinute: 47 })).toBe("no");
+  });
+
+  it("is partly for a window inside the minute of the change: the record does not say which second", () => {
+    // Read as a point at 61 on the stopwatch's scale this was "yes" for the starter: 60:10-60:40 is before 61.
+    expect(onPitchFor(starter, subs, { fromMinute: 1015.17, toMinute: 1015.67 })).toBe("partly");
+    expect(onPitchFor(bench, subs, { fromMinute: 1015.17, toMinute: 1015.67 })).toBe("partly");
+    expect(onPitchFor(starter, subs, { fromMinute: 1014, toMinute: 1015.5 })).toBe("partly");
+    expect(onPitchFor(bench, subs, { fromMinute: 1015.5, toMinute: 1030 })).toBe("partly");
+  });
+
+  it("takes a substitute off again at the later change, not the earlier one", () => {
+    const twice = [...subs, { teamId: "home", minute: 80, offPlayerId: "p-b", offNumber: 14, onNumber: 9, span: { from: 1034, to: 1035 } }];
+    expect(onPitchFor(bench, twice, { fromMinute: 1020, toMinute: 1030 })).toBe("yes");
+    expect(onPitchFor(bench, twice, { fromMinute: 1036, toMinute: 1040 })).toBe("no");
+    expect(onPitchFor({ isStarter: false, jerseyNumber: 9, playerId: "p-c" }, twice, { fromMinute: 1036, toMinute: 1040 })).toBe("yes");
+  });
+});

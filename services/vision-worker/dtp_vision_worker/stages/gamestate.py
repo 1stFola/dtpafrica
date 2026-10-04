@@ -14,7 +14,8 @@ import logging
 from typing import Any
 
 from ..config import CONTRACT_VERSION
-from ..gamestate import DEFAULT_CHUNK_MS, build, parse_anchors, parse_segments
+from ..gamestate import DEFAULT_CHUNK_MS, build, parse_anchors, parse_segments, parse_tracked_frames
+from ..jsonstream import JsonStreamError, fields, items
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
 
 log = logging.getLogger(__name__)
@@ -46,7 +47,12 @@ def _gamestate(ctx: StageContext) -> StageResult:
     ctx.progress.set("download")
     tracks_path = ctx.work_dir / "tracks.json"
     bytes_read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=key), tracks_path)
-    artifact = json.loads(tracks_path.read_bytes())
+    # Two passes over the file, neither holding it: the small keys first, wherever the
+    # writer put them, then the tracks one at a time. See jsonstream.
+    try:
+        artifact = fields(tracks_path, "tracks")
+    except JsonStreamError as exc:
+        raise StageRefusal(f"track artifact {key} is not readable: {exc}") from exc
     tracker_version_id = artifact.get("trackerVersionId")
     declared_tracker = source.get("trackerVersionId")
     if isinstance(declared_tracker, str) and declared_tracker != tracker_version_id:
@@ -54,7 +60,7 @@ def _gamestate(ctx: StageContext) -> StageResult:
 
     ctx.progress.set("place")
     out_dir = ctx.work_dir / "gamestate"
-    index = build(artifact.get("tracks") or [], segments, anchors, out_dir, int(chunk_ms))
+    index = build(items(tracks_path, "tracks"), segments, anchors, out_dir, int(chunk_ms), parse_tracked_frames(artifact.get("trackedFrames")))
 
     ctx.progress.set("upload")
     artifacts: list[dict[str, Any]] = []
@@ -96,6 +102,8 @@ def _gamestate(ctx: StageContext) -> StageResult:
             "tracks": index["tracks"],
             "rows": index["rows"],
             "frames": index["frames"],
+            "framesTracked": index["framesTracked"],
+            "coverageBasis": index["coverageBasis"],
             "placed": index["placed"],
             "suppressed": index["suppressed"],
             "reasons": index["reasons"],

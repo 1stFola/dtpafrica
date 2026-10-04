@@ -3,6 +3,7 @@ import {
   ChunkCache,
   chunkCovering,
   decodeChunk,
+  REASON_WORDS,
   describeCoverage,
   describeFrame,
   indexByFrame,
@@ -144,7 +145,11 @@ describe("words", () => {
 
   it("describes the coverage", () => {
     expect(describeCoverage(null, null)).toBe("no game state yet");
-    expect(describeCoverage({ validFrameCoverage: 0.408, frames: 125 }, { segments: 3, calibrations: 2 })).toBe("placed on 41% of frames · 2 of 3 segment(s) calibrated");
+    expect(describeCoverage({ validFrameCoverage: 0.408, frames: 125, coverageBasis: "frames_tracked" }, { segments: 3, calibrations: 2 })).toBe("placed on 41% of frames · 2 of 3 segment(s) calibrated");
+    // A run from before the tracker reported its frames measured against a smaller whole, and says so.
+    expect(describeCoverage({ validFrameCoverage: 0.408, frames: 125 }, null)).toBe("placed on 41% of frames with a track");
+    expect(describeCoverage({ validFrameCoverage: 0.408, frames: 125, coverageBasis: "frames_with_tracks" }, null)).toBe("placed on 41% of frames with a track");
     expect(describeCoverage({ validFrameCoverage: null, frames: 0 }, null)).toBe("placed on no frame");
+    expect(REASON_WORDS.off_pitch).toBe("far off the pitch");
   });
 });

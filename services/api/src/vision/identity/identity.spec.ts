@@ -145,6 +145,35 @@ describe("who a track could be", () => {
     expect(mockPrisma.sbMatchEvent.findMany.mock.calls[0]![0].where).toEqual({ matchId: MATCH, type: "substitution" });
   });
 
+  it("reads the record's minutes on the match's own half length, not on a stopwatch from 45", async () => {
+    /* Thirty-minute halves. Number 7 went off for 14 in the 40th minute: the tenth minute of
+       the second half. The track is five minutes into that half -- before the change. Read
+       as a stopwatch with the second half starting at 45, five minutes in is "50:00", after
+       40, and the starter was dropped from the list for a player still on the bench. */
+    mockPrisma.sbMatch.findUnique.mockResolvedValue({ id: MATCH, homeTeamId: HOME, awayTeamId: AWAY, competition: { formatConfig: { halfLengthMinutes: 30 } }, statisticsSheet: null });
+    mockClock.currentAnchors.mockResolvedValue([{ half: 2, sourceMs: 0, endMs: null }]);
+    mockPrisma.sbMatchSquadPlayer.findMany.mockResolvedValue([
+      { id: SLOT_HOME, playerId: PLAYER, playerName: "A. Player", jerseyNumber: 7, position: "FW", isStarter: true, teamId: HOME, squadId: "sq-1" },
+      { id: "slot-14", playerId: "p-14", playerName: "B. Sub", jerseyNumber: 14, position: "FW", isStarter: false, teamId: HOME, squadId: null },
+    ]);
+    mockPrisma.sbMatchEvent.findMany.mockResolvedValue([{ teamId: HOME, minute: 40, playerId: PLAYER, detail: null, metadata: { source: "match_recorder", half: 2, addedMinute: null, playerNumber: 7, secondaryPlayerNumber: 14 } }]);
+
+    mockPrisma.visionTrack.findUnique.mockResolvedValue(track({ startMs: 5 * 60_000, endMs: 6 * 60_000 }));
+    let out = await service.candidates(TRACK);
+    expect(out.candidates.map((c) => `${c.jerseyNumber}:${c.onPitch}`)).toEqual(["7:yes"]);
+
+    // Inside the minute of the change: both, as partly.
+    mockPrisma.visionTrack.findUnique.mockResolvedValue(track({ startMs: 9 * 60_000 + 10_000, endMs: 9 * 60_000 + 40_000 }));
+    out = await service.candidates(TRACK);
+    expect(out.candidates.map((c) => `${c.jerseyNumber}:${c.onPitch}`)).toEqual(["7:partly", "14:partly"]);
+
+    // After it: the substitute.
+    mockPrisma.visionTrack.findUnique.mockResolvedValue(track({ startMs: 12 * 60_000, endMs: 13 * 60_000 }));
+    out = await service.candidates(TRACK);
+    expect(out.candidates.map((c) => `${c.jerseyNumber}:${c.onPitch}`)).toEqual(["14:yes"]);
+    expect(mockPrisma.sbMatch.findUnique.mock.calls.at(-1)![0].select).toMatchObject({ competition: { select: { formatConfig: true } }, statisticsSheet: { select: { clock: true } } });
+  });
+
   it("lists everyone with the caveat when the clock is not anchored", async () => {
     const out = await service.candidates(TRACK);
     expect(out.window).toBeNull();

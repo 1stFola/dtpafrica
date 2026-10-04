@@ -22,6 +22,7 @@ import {
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
+import { orientStored } from "../calibration/homography";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionModelsService } from "../models/models.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
@@ -202,8 +203,15 @@ export class VisionJobsService {
         remediation: "Queue detect with params.sampleFps at the proxy's rate, then track.",
       });
     }
+    /* Where the camera changes: the start of every camera segment but the first. The
+       tracker ends every live track there, because the box on the far side is another
+       camera's picture. With no segments yet (cuts not run, none declared) there are
+       none, and only the clock ends a track. */
+    const starts = await this.prisma.visionCameraSegment.findMany({ where: { videoAssetId }, orderBy: { startMs: "asc" }, select: { startMs: true } });
+    const cuts = [...new Set(starts.map((s) => s.startMs))].slice(1);
     return {
       detections: { jobId: job.id, key: artifact.key, modelVersionId: job.modelVersionId, sampleFps },
+      ...(cuts.length ? { cuts } : {}),
       readKeys: [{ bucket: "derived", key: artifact.key }],
     };
   }
@@ -223,7 +231,7 @@ export class VisionJobsService {
     const segments = await this.prisma.visionCameraSegment.findMany({
       where: { videoAssetId },
       orderBy: { startMs: "asc" },
-      include: { calibrations: { where: { supersededBy: null }, take: 1 } },
+      include: { calibrations: { where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 } },
     });
     const declared: GameStateJobParams["segments"] = segments.map((s) => {
       const c = s.calibrations[0] ?? null;
@@ -232,7 +240,9 @@ export class VisionJobsService {
         startMs: s.startMs,
         endMs: s.endMs,
         quality: c ? (c.quality as NonNullable<GameStateJobParams["segments"][number]["quality"]>) : null,
-        homography: c ? (c.homography as NonNullable<GameStateJobParams["segments"][number]["homography"]>) : null,
+        // Signed by its own clicked points: the stage tells the horizon by the sign of w,
+        // and a row filed before the fit oriented its result may be either way round.
+        homography: c ? orientStored(c.homography, c.points) : null,
         pitch: c ? { lengthM: c.pitchLengthM, widthM: c.pitchWidthM } : null,
       };
     });
@@ -483,6 +493,7 @@ export const RESERVED_INPUT_KEYS = [
   "tracks",
   "segments",
   "anchors",
+  "cuts",
 ] as const;
 
 export function withoutReservedInputs(params: Record<string, unknown> | undefined): Record<string, unknown> {

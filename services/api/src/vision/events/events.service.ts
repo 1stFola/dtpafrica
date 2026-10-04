@@ -587,12 +587,17 @@ export class VisionEventsService {
     };
   }
 
-  /** The camera segment covering a millisecond, with its current calibration's id. Segments never overlap. */
+  /**
+   * The camera segment covering a millisecond, with its current calibration's id.
+   * Half-open, `start <= t < end`, as the worker reads them: the millisecond a
+   * replay ends on is the first of the play that follows it, and a goal there is
+   * in play.
+   */
   private async segmentAt(videoAssetId: string, sourceMs: number): Promise<{ id: string; kind: string; calibrationId: string | null } | null> {
     const segment = await this.prisma.visionCameraSegment.findFirst({
-      where: { videoAssetId, startMs: { lte: sourceMs }, endMs: { gte: sourceMs } },
-      orderBy: { startMs: "asc" },
-      select: { id: true, kind: true, calibrations: { where: { supersededBy: null }, take: 1, select: { id: true } } },
+      where: { videoAssetId, startMs: { lte: sourceMs }, endMs: { gt: sourceMs } },
+      orderBy: { startMs: "desc" },
+      select: { id: true, kind: true, calibrations: { where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
     });
     if (!segment) return null;
     return { id: segment.id, kind: segment.kind, calibrationId: segment.calibrations[0]?.id ?? null };

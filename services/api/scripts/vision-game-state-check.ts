@@ -109,18 +109,22 @@ function clicks(ids: string[] = SIX) {
 }
 
 /* Five seconds of footage at 25fps from source 9000: 125 frames. Segment A (good) covers
- * frames 0..50, B (declared, never calibrated) 51..87, C (failed) 88..124. */
+ *  frames 0..49, B (declared, never calibrated) 50..87, C (failed) 88..124. */
 const OFFSET = 9000;
 const FRAMES = 125;
+/* Adjacent and half-open, as cuts make them: a segment covers start <= t < end, and the
+   millisecond one ends on is the first of the next (docs/vision/56). */
 const SEG_A = { startMs: 9000, endMs: 11_000 };
-const SEG_B = { startMs: 11_001, endMs: 12_500 };
-const SEG_C = { startMs: 12_501, endMs: 14_000 };
+const SEG_B = { startMs: 11_000, endMs: 12_500 };
+const SEG_C = { startMs: 12_500, endMs: 14_000 };
+/** The tracker was given a second more footage than anyone is tracked on: 25 frames with no track. */
+const TRACKED = FRAMES + 25;
 const CHUNK_MS = 2000;
 const KICKOFF = 9000;
 function frameMs(i: number) {
   return OFFSET + Math.round((i / 25) * 1000);
 }
-const framesIn = (seg: { startMs: number; endMs: number }) => Array.from({ length: FRAMES }, (_, i) => frameMs(i)).filter((ms) => ms >= seg.startMs && ms <= seg.endMs).length;
+const framesIn = (seg: { startMs: number; endMs: number }) => Array.from({ length: FRAMES }, (_, i) => frameMs(i)).filter((ms) => ms >= seg.startMs && ms < seg.endMs).length;
 
 type Fixture = { partnerId: string; assetId: string; modelIds: string[]; jobIds: string[]; workerIds: string[]; userIds: string[]; wrote: { bucket: "derived"; key: string }[]; tmp: string | null };
 
@@ -184,7 +188,8 @@ async function trackJob(fx: Fixture, store: ObjectStore, trackerVersionId: strin
     { localTrackId: 1, class: "player", startFrame: 0, endFrame: FRAMES - 1, startMs: OFFSET, endMs: last, detectionCount: FRAMES, confirmed: true, positions: walker },
     { localTrackId: 2, class: "player", startFrame: 0, endFrame: FRAMES - 1, startMs: OFFSET, endMs: last, detectionCount: FRAMES, confirmed: true, positions: stander },
   ];
-  const artifact = { contractVersion: VISION_CONTRACT_VERSION, role: "tracks", trackerVersionId, proxy: { fps: 25, sourceOffsetMs: OFFSET }, tracks, trackCount: tracks.length };
+  const trackedFrames = Array.from({ length: TRACKED }, (_, i) => [i, frameMs(i)]);
+  const artifact = { contractVersion: VISION_CONTRACT_VERSION, role: "tracks", trackerVersionId, proxy: { fps: 25, sourceOffsetMs: OFFSET }, tracks, trackCount: tracks.length, framesTracked: TRACKED, trackedFrames };
   await store.putSmallObject("derived", key, JSON.stringify(artifact), "application/json");
   fx.wrote.push({ bucket: "derived", key });
   await prisma.visionJob.create({
@@ -338,13 +343,32 @@ async function main() {
     const inB = framesIn(SEG_B);
     const inC = framesIn(SEG_C);
     check("a row per track per frame", index.rows, 2 * FRAMES);
-    check("…over every frame", index.frames, FRAMES);
+    check("…over every frame that has a track", index.frames, FRAMES);
+    check("…of the frames the tracker was given, which are more", `${index.framesTracked}/${index.coverageBasis}`, `${TRACKED}/frames_tracked`);
     check("placed: only the frames under the good segment, both tracks", index.placed, 2 * inA);
     check("suppressed: the rest", index.suppressed, 2 * (inB + inC));
     check("…the uncalibrated segment's rows say so", index.reasons?.segment_not_calibrated, 2 * inB);
     check("…the failed segment's rows say so", index.reasons?.calibration_failed, 2 * inC);
     check("…and no row is placed without a segment or beyond the horizon", `${index.reasons?.no_camera_segment ?? 0}/${index.reasons?.beyond_horizon ?? 0}`, "0/0");
-    near("valid-frame coverage is the share of frames the good segment covered", index.validFrameCoverage, inA / FRAMES, 1e-4);
+    near("valid-frame coverage is the share of the tracked frames a position was placed on", index.validFrameCoverage, inA / TRACKED, 1e-4);
+    check("…lower than the share of frames that have a track, which is what it used to report", index.validFrameCoverage < inA / FRAMES, true);
+    const onCut = JSON.parse(
+      python([
+        "-c",
+        [
+          "import json, sys",
+          "from pathlib import Path",
+          "from dtp_vision_worker.gamestate import read_chunk",
+          "rows = read_chunk(Path(sys.argv[1]) / 'chunk-00005.parquet')",
+          "cut = [r for r in rows if r['source_ms'] == int(sys.argv[2]) and r['local_track_id'] == 1][0]",
+          "before = [r for r in rows if r['source_ms'] < int(sys.argv[2]) and r['local_track_id'] == 1][-1]",
+          "print(json.dumps({'cut': [cut['camera_segment_id'], cut['reason']], 'before': [before['camera_segment_id'], before['reason']]}))",
+        ].join("\n"),
+        outDir,
+        String(SEG_B.startMs),
+      ])
+    );
+    check("the frame on the cut is the second segment's, and the one before it the first's", `${onCut.before[0] === segA.body.id}/${onCut.before[1]}/${onCut.cut[0] === segB.body.id}/${onCut.cut[1]}`, "true/null/true/segment_not_calibrated");
     check("chunks: one per two seconds of source time", index.chunks?.map((c: any) => c.index).join(","), "4,5,6");
     check("…each named and sized", index.chunks?.every((c: any) => /^chunk-\d{5}\.parquet$/.test(c.file) && c.bytes > 0), true);
     check("…the first chunk fully placed, the last fully suppressed", `${index.chunks?.[0]?.validFrameCoverage}/${index.chunks?.[2]?.validFrameCoverage}`, "1/0");
@@ -395,14 +419,14 @@ async function main() {
     await store.putSmallObject("derived", indexKey, JSON.stringify({ contractVersion: VISION_CONTRACT_VERSION, role: "gamestate", videoAssetId: fx.assetId, trackJobId: tracked.jobId, trackerVersionId: trackerId, ...index }), "application/json");
     fx.wrote.push({ bucket: "derived", key: indexKey });
     artifacts.push({ key: indexKey, bucket: "derived", bytes: 1, contentType: "application/json", role: "gamestate" });
-    const summary = { trackJobId: tracked.jobId, trackerVersionId: trackerId, chunkMs: index.chunkMs, chunks: index.chunks.length, tracks: index.tracks, rows: index.rows, frames: index.frames, placed: index.placed, suppressed: index.suppressed, reasons: index.reasons, validFrameCoverage: index.validFrameCoverage };
+    const summary = { trackJobId: tracked.jobId, trackerVersionId: trackerId, chunkMs: index.chunkMs, chunks: index.chunks.length, tracks: index.tracks, rows: index.rows, frames: index.frames, placed: index.placed, suppressed: index.suppressed, reasons: index.reasons, validFrameCoverage: index.validFrameCoverage, framesTracked: index.framesTracked, coverageBasis: index.coverageBasis };
     const completion = { idempotencyKey: `gate-${RUN}-gamestate`, artifacts, summary };
 
     // A completion short of the chunks it promised is not applied (stage-results.spec covers it);
     // the job still succeeds, as every stage's does, so it is not tried here on the one job.
     const completed = await call(`/vision/worker/jobs/${jobId}/complete`, wh, { method: "POST", body: JSON.stringify(completion) });
     check("the full completion is accepted and applied", `${completed.status}/${completed.body.applied?.applied}`, "201/true");
-    check("…and says what the coverage was", String(completed.body.applied?.detail).includes(`3 chunk(s), ${2 * inA} placed and ${2 * (inB + inC)} suppressed row(s) over ${FRAMES} frame(s); valid-frame coverage ${(inA / FRAMES).toFixed(3)}`), true);
+    check("…and says what the coverage was", String(completed.body.applied?.detail).includes(`3 chunk(s), ${2 * inA} placed and ${2 * (inB + inC)} suppressed row(s) over ${FRAMES} frame(s); valid-frame coverage ${(inA / TRACKED).toFixed(3)}`), true);
     check("nothing but the job row changed in Postgres: no new tracks, segments or assignments", `${await prisma.visionTrack.count({ where: { videoAssetId: fx.assetId } })}/${await prisma.visionCameraSegment.count({ where: { videoAssetId: fx.assetId } })}`, "2/3");
     const retried = await call(`/vision/worker/jobs/${jobId}/complete`, wh, { method: "POST", body: JSON.stringify(completion) });
     check("a retried completion is recognised", retried.body.alreadyApplied, true);
@@ -410,6 +434,7 @@ async function main() {
     const state = await R.get(`/vision/review/${fx.assetId}/game-state`);
     check("the review route names the job", state.body.job?.id, jobId);
     check("…its coverage", `${state.body.coverage?.placed}/${state.body.coverage?.suppressed}/${state.body.coverage?.validFrameCoverage}`, `${2 * inA}/${2 * (inB + inC)}/${index.validFrameCoverage}`);
+    check("…and what that coverage is a share of", `${state.body.coverage?.framesTracked}/${state.body.coverage?.coverageBasis}`, `${TRACKED}/frames_tracked`);
     check("…what it was placed with: three segments, two calibrations, one anchor", `${state.body.placedWith?.segments}/${state.body.placedWith?.calibrations}/${state.body.placedWith?.anchors}`, "3/2/1");
     check("…a URL per chunk, in order", state.body.chunks?.map((c: any) => c.key === `${prefix}gamestate/${c.key.split("/").pop()}` && typeof c.url === "string" && c.url.length > 0).join(","), "true,true,true");
     check("…and the index", `${state.body.index?.key === indexKey}/${typeof state.body.index?.url}`, "true/string");

@@ -14,17 +14,39 @@ from dtp_vision_worker.cuts import main, parse_showinfo, propose, segments_from_
 from dtp_vision_worker.runner import StageContext, StageRefusal
 from dtp_vision_worker.stages import cuts as cuts_stage
 
-# As FFmpeg prints it: a showinfo line per selected frame, a metadata line with the score.
+# As FFmpeg 5.1 prints it for `select='gt(scene,T)',metadata=print,showinfo`, in its order:
+# the filter's two config lines, then for each kept frame the `metadata` pair (the frame, its
+# score) *before* that frame's `showinfo` line and its colour line. A progress line can share
+# a line with the next `metadata` line. The line order was taken from a real run in the worker
+# image (FFmpeg 5.1.9); the times and scores are this fixture's own.
 LOG = """
-[Parsed_showinfo_1 @ 0x1] n:   0 pts:   1530 pts_time:61.2     pos:  1 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:0 plane_checksum:[0]
-[Parsed_metadata_2 @ 0x2] frame:0    pts:1530    pts_time:61.2
-[Parsed_metadata_2 @ 0x2] lavfi.scene_score=0.731
-[Parsed_showinfo_1 @ 0x1] n:   1 pts:   1533 pts_time:61.32    pos:  2 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:0 type:P checksum:0 plane_checksum:[0]
-[Parsed_metadata_2 @ 0x2] lavfi.scene_score=0.512
-[Parsed_showinfo_1 @ 0x1] n:   2 pts:   4500 pts_time:180      pos:  3 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:0 plane_checksum:[0]
-[Parsed_metadata_2 @ 0x2] lavfi.scene_score=0.904
-frame=  3 fps=0.0 q=-0.0 Lsize=N/A time=00:10:00.00 bitrate=N/A speed= 600x
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] config in time_base: 1/25, frame_rate: 25/1
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] config out time_base: 0/0, frame_rate: 0/0
+[Parsed_metadata_1 @ 0x5fbb02fce740] frame:0    pts:1530    pts_time:61.2
+[Parsed_metadata_1 @ 0x5fbb02fce740] lavfi.scene_score=0.731000
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] n:   0 pts:   1530 pts_time:61.2     pos:  1624 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:7EEB9ECA plane_checksum:[699A0ED0 B1DB541A F17B3BE0] mean:[41 240 110] stdev:[0.0 0.0 0.0]
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] color_range:unknown color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_metadata_1 @ 0x5fbb02fce740] frame:1    pts:1533    pts_time:61.32
+[Parsed_metadata_1 @ 0x5fbb02fce740] lavfi.scene_score=0.512000
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] n:   1 pts:   1533 pts_time:61.32    pos:  2011 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:0 type:P checksum:0 plane_checksum:[0 0 0] mean:[41 240 110] stdev:[0.0 0.0 0.0]
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] color_range:unknown color_space:unknown color_primaries:unknown color_trc:unknown
+frame=    2 fps=0.0 q=-0.0 size=N/A time=00:01:01.36 bitrate=N/A speed= 179x    [Parsed_metadata_1 @ 0x5fbb02fce740] frame:2    pts:4500   pts_time:180
+[Parsed_metadata_1 @ 0x5fbb02fce740] lavfi.scene_score=0.904000
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] n:   2 pts:   4500 pts_time:180      pos:  2511 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:B248C31F plane_checksum:[1A5EBB4D C5699A7E B4CD6D45] mean:[126 128 124] stdev:[71.5 70.6 71.6]
+[Parsed_showinfo_2 @ 0x5fbb02fcf140] color_range:unknown color_space:unknown color_primaries:unknown color_trc:unknown
+frame=    3 fps=0.0 q=-0.0 Lsize=N/A time=00:10:00.00 bitrate=N/A speed= 600x
 """
+
+
+def test_a_score_belongs_to_the_cut_printed_after_it() -> None:
+    # The first cut has a score and the last cut has its own: nothing is shifted by one.
+    cuts = parse_showinfo(LOG)
+    assert [c["score"] for c in cuts] == [0.731, 0.512, 0.904]
+    # A cut with no score printed for it reads 0, and does not take the next cut's.
+    partial = "\n".join(line for line in LOG.splitlines() if "scene_score=0.512" not in line)
+    assert [c["score"] for c in parse_showinfo(partial)] == [0.731, 0.0, 0.904]
+    # The filter's own config lines and the colour lines are not cuts.
+    assert len(cuts) == 3
 
 
 def test_cuts_are_read_off_showinfo_lines_with_their_scores() -> None:

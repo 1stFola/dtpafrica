@@ -140,3 +140,79 @@ def test_refuses_a_misdispatched_job_before_reading(ctx, inputs) -> None:
     with pytest.raises(StageRefusal):
         track_stage.run_track(ctx)
     assert ctx.client.asked == []
+
+
+# ── streaming, cuts and the tracked frames (docs/vision/56) ──────────────────
+
+
+def long_artifact() -> dict[str, Any]:
+    """Three players: one throughout, one who leaves early, one who arrives late."""
+    frames = []
+    for i in range(80):
+        ms = i * 40
+        dets = [{"class": "player", "confidence": 0.9, "box": {"x": 100, "y": 100, "width": 40, "height": 80}}]
+        if i < 10:
+            dets.append({"class": "player", "confidence": 0.9, "box": {"x": 400, "y": 100, "width": 40, "height": 80}})
+        if i >= 60:
+            dets.append({"class": "ball", "confidence": 0.9, "box": {"x": 700, "y": 300, "width": 10, "height": 10}})
+        frames.append({"frameIndex": i, "proxyTimeMs": ms, "sourceTimeMs": ms + 9000, "detections": dets})
+    # The small keys after the frames, where a writer may well put them.
+    return {"frames": frames, "modelVersionId": DETECTOR, "sampleFps": 25, "proxy": {"fps": 25, "sourceOffsetMs": 9000}}
+
+
+def test_the_artifact_is_written_track_by_track_and_is_what_the_whole_tracker_gives(ctx) -> None:
+    from dtp_vision_worker.tracking import record, track
+
+    ctx.objects[DET_KEY] = long_artifact()
+    result = track_stage.run_track(ctx)
+    payload = ctx.uploaded["payload"]
+    whole, stats = track(long_artifact()["frames"])
+    # Valid JSON, the tracks in id order though the second ended first, and identical to the list-based tracker's.
+    assert [t["localTrackId"] for t in payload["tracks"]] == [1, 2, 3]
+    assert payload["tracks"] == [record(t) for t in whole]
+    assert [r["localTrackId"] for r in result.summary["trackRows"]] == [1, 2, 3]
+    assert payload["trackCount"] == 3 and result.summary["tracks"] == 3
+    assert {k: payload[k] for k in ("framesTracked", "detectionsLinked", "detectionsUnlinked", "meanTrackFrames", "tracksByClass")} == {k: stats[k] for k in ("framesTracked", "detectionsLinked", "detectionsUnlinked", "meanTrackFrames", "tracksByClass")}
+    # Every frame the tracker was given, for game state's coverage.
+    assert payload["trackedFrames"] == [[i, 9000 + i * 40] for i in range(80)]
+    assert payload["params"]["maxAgeMs"] == 1200
+    # Nothing left in the work dir but the two files that were always there.
+    assert sorted(p.name for p in ctx.work_dir.iterdir()) == ["detections.json", "tracks.json"]
+
+
+def test_declared_cuts_end_tracks(ctx) -> None:
+    ctx.objects[DET_KEY] = long_artifact()
+    params = dict(ctx.job.inputs["params"], cuts=[9000 + 40 * 40])
+    ctx.job = spec({**ctx.job.inputs, "params": params})
+    result = track_stage.run_track(ctx)
+    payload = ctx.uploaded["payload"]
+    assert payload["cuts"] == 1 and payload["tracksEndedAtCuts"] == 1
+    assert [(t["startFrame"], t["endFrame"]) for t in payload["tracks"]] == [(0, 39), (0, 9), (40, 79), (60, 79)]
+    assert result.summary["tracksEndedAtCuts"] == 1
+
+
+@pytest.mark.parametrize("cuts", ["9000", [1.5], [-1], [True], {"at": 1}], ids=["string", "float", "negative", "bool", "object"])
+def test_refuses_cuts_that_are_not_source_milliseconds(ctx, cuts) -> None:
+    ctx.job = spec({**ctx.job.inputs, "params": dict(ctx.job.inputs["params"], cuts=cuts)})
+    with pytest.raises(StageRefusal, match="cuts"):
+        track_stage.run_track(ctx)
+    assert ctx.client.asked == []
+
+
+def test_refuses_an_artifact_that_is_not_json_or_whose_frames_run_backwards(ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(_c: object, _url: str, target: Path) -> int:
+        target.write_text('{"modelVersionId": "x", "frames": [{"frameIndex": 0', encoding="utf-8")
+        return 1
+
+    monkeypatch.setattr(track_stage, "download", broken)
+    with pytest.raises(StageRefusal, match="not readable"):
+        track_stage.run_track(ctx)
+    monkeypatch.undo()
+
+
+def test_refuses_frames_that_run_backwards(ctx) -> None:
+    a = artifact()
+    a["frames"] = list(reversed(a["frames"]))
+    ctx.objects[DET_KEY] = a
+    with pytest.raises(StageRefusal, match="frame order"):
+        track_stage.run_track(ctx)

@@ -151,6 +151,39 @@ def probe(path: Path, timeout: float = 300.0) -> ProbeResult:
     )
 
 
+def proxy_command(source: Path, target: Path) -> list[str]:
+    """The FFmpeg command that makes a proxy. Apart, so the recipe can be read and tested."""
+    return [
+        "ffmpeg",
+        "-nostdin",
+        "-y",
+        *ffmpeg_threads(),
+        "-i", str(source),
+        *ffmpeg_threads(),
+        # The first video stream and, if there is one, the first audio stream; nothing
+        # else. Which streams FFmpeg picks by itself depends on the build and the
+        # container, and a broadcast capture carries subtitle and data streams an mp4
+        # cannot hold, so the choice is stated rather than left to it. `-sn -dn` say it
+        # again, so a later change to the maps cannot let one in.
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+        "-sn",
+        "-dn",
+        # Constant frame rate.
+        "-r", str(PROXY_FPS),
+        "-vsync", "cfr",
+        "-vf", f"scale=-2:{PROXY_HEIGHT}",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", str(PROXY_CRF),
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        str(target),
+    ]
+
+
 def transcode_proxy(source: Path, target: Path, timeout: float = 14_400.0) -> dict:
     """Normalise to a constant-frame-rate H.264 proxy.
 
@@ -160,30 +193,7 @@ def transcode_proxy(source: Path, target: Path, timeout: float = 14_400.0) -> di
     both cheaper and better.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    _run(
-        [
-            "ffmpeg",
-            "-nostdin",
-            "-y",
-            *ffmpeg_threads(),
-            "-i", str(source),
-            *ffmpeg_threads(),
-            # Constant frame rate, and drop anything that is not the main video
-            # and audio — subtitle and data streams break some decoders later.
-            "-r", str(PROXY_FPS),
-            "-vsync", "cfr",
-            "-vf", f"scale=-2:{PROXY_HEIGHT}",
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", str(PROXY_CRF),
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            str(target),
-        ],
-        timeout,
-    )
+    _run(proxy_command(source, target), timeout)
     if not target.exists() or target.stat().st_size == 0:
         raise MediaError("ffmpeg reported success but produced no output")
 

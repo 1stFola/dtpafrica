@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRecorderMinute, isPastHalfLength, positionInHalf, recordedMinuteOf, recorderHalfLength, recorderMinuteAt } from "./recorder-minute";
+import { HALF_SPAN, formatRecorderMinute, isPastHalfLength, positionInHalf, recordedMinuteOf, recorderHalfLength, recorderMinuteAt, timelineOfReading, timelineSpanOfRecorded } from "./recorder-minute";
 
 const at = (half: 1 | 2 | 3 | 4, minutes: number, seconds = 0) => ({ half, elapsedMs: (minutes * 60 + seconds) * 1000 });
 
@@ -97,5 +97,44 @@ describe("an event already in the record", () => {
     // With 30-minute halves the 31st minute is the second half.
     expect(recordedMinuteOf({ minute: 31, metadata: undefined }, 30)).toMatchObject({ half: 2 });
     expect(recordedMinuteOf({ minute: 30, metadata: { addedMinute: 0 } }, 30)).toEqual({ half: 1, minute: 30, addedMinute: null });
+  });
+});
+
+describe("one timeline for the footage and the record", () => {
+  it("puts a moment of the footage at its minutes of play, each half apart", () => {
+    expect(timelineOfReading(at(1, 12, 30))).toBe(12.5);
+    expect(timelineOfReading(at(2, 0))).toBe(HALF_SPAN);
+    expect(timelineOfReading(at(2, 15, 30))).toBe(HALF_SPAN + 15.5);
+    // First-half added time is still the first half: nowhere near the second.
+    expect(timelineOfReading(at(1, 47))).toBe(47);
+    expect(timelineOfReading(at(3, 1))).toBe(2 * HALF_SPAN + 1);
+  });
+
+  it("reads a recorded minute as the stretch of play it stands for", () => {
+    // The 23rd minute is play from 22:00 to 23:00.
+    expect(timelineSpanOfRecorded({ half: 1, minute: 23, addedMinute: null }, 45)).toEqual({ from: 22, to: 23 });
+    expect(timelineSpanOfRecorded({ half: 1, minute: 1, addedMinute: null }, 45)).toEqual({ from: 0, to: 1 });
+    // 61' in the second half of a 45-minute game is the 16th minute of that half.
+    expect(timelineSpanOfRecorded({ half: 2, minute: 61, addedMinute: null }, 45)).toEqual({ from: HALF_SPAN + 15, to: HALF_SPAN + 16 });
+    // With 30-minute halves, 40' is the 10th minute of the second half, not the 40th of anything.
+    expect(timelineSpanOfRecorded({ half: 2, minute: 40, addedMinute: null }, 30)).toEqual({ from: HALF_SPAN + 9, to: HALF_SPAN + 10 });
+    // 45+2 is the minute from 47:00.
+    expect(timelineSpanOfRecorded({ half: 1, minute: 45, addedMinute: 2 }, 45)).toEqual({ from: 47, to: 48 });
+    // The capped minute with nothing added is two minutes of play: the console logs 44:xx and 45:xx both as 45.
+    expect(timelineSpanOfRecorded({ half: 1, minute: 45, addedMinute: null }, 45)).toEqual({ from: 44, to: 46 });
+    expect(timelineSpanOfRecorded({ half: 2, minute: 90, addedMinute: null }, 45)).toEqual({ from: HALF_SPAN + 44, to: HALF_SPAN + 46 });
+  });
+
+  it("holds every moment inside the span of the minute the console would have logged for it", () => {
+    for (const halfLength of [30, 45]) {
+      for (const half of [1, 2] as const) {
+        for (let elapsed = 0; elapsed <= (halfLength + 8) * 60; elapsed += 7) {
+          const reading = { half, elapsedMs: elapsed * 1000 };
+          const span = timelineSpanOfRecorded(recorderMinuteAt(reading, halfLength)!, halfLength);
+          const t = timelineOfReading(reading);
+          expect(t >= span.from && t < span.to, `half ${half}, ${halfLength}-minute halves, ${elapsed}s`).toBe(true);
+        }
+      }
+    }
   });
 });

@@ -11,8 +11,10 @@ import pytest
 from dtp_vision_worker.config import CONTRACT_VERSION
 from dtp_vision_worker.control_plane import JobSpec
 from dtp_vision_worker.gamestate import (
+    OFF_PITCH_MARGIN_M,
     Anchor,
     Segment,
+    SegmentIndex,
     build,
     chunk_rows,
     clock_at,
@@ -21,6 +23,7 @@ from dtp_vision_worker.gamestate import (
     place,
     project,
     read_chunk,
+    segment_at,
 )
 from dtp_vision_worker.runner import StageContext, StageRefusal
 from dtp_vision_worker.stages import gamestate as gamestate_stage
@@ -133,13 +136,77 @@ def test_rows_are_in_time_order_across_tracks_and_chunked_by_source_time() -> No
         chunk_rows(rows, 0)
 
 
-def test_a_segment_covers_both_of_its_ends() -> None:
-    # The walk runs 9000..10600. One segment ends exactly on the first frame, another starts
-    # exactly on the last: both frames are placed, through their own segment.
+def test_a_segment_covers_its_start_and_not_its_end() -> None:
+    # The walk runs 9000..10600. One segment ends exactly on the first frame and another starts
+    # exactly on the last. Half-open: the first frame is past the first segment, and the last
+    # frame is the first of the last segment.
     rows = place([walk()], [cal("good", 0, 9000, "first"), cal("good", 10_600, 60_000, "last")], [])
-    assert rows[0]["camera_segment_id"] == "first" and rows[0]["x_m"] is not None
+    assert rows[0]["camera_segment_id"] is None and rows[0]["reason"] == "no_camera_segment"
     assert rows[-1]["camera_segment_id"] == "last" and rows[-1]["x_m"] is not None
-    assert all(r["reason"] == "no_camera_segment" for r in rows[1:-1])
+    assert all(r["reason"] == "no_camera_segment" for r in rows[:-1])
+
+
+def test_the_first_frame_after_a_cut_is_the_new_cameras() -> None:
+    """The case the audit found: cuts make adjacent segments, and the boundary millisecond
+    is the first frame of the second. It must be placed through the second camera."""
+    # Two cameras over the walk, cut at 9800. The second camera is the first shifted ten metres.
+    shifted = tuple(v + (10 * PIXEL_TO_PITCH[6 + i] if i < 3 else 0) for i, v in enumerate(PIXEL_TO_PITCH))
+    before = Segment("before", 0, 9800, "good", PIXEL_TO_PITCH, 105.0, 68.0)
+    after = Segment("after", 9800, 60_000, "good", shifted, 105.0, 68.0)
+    for order in ([before, after], [after, before]):
+        rows = place([walk()], order, [])
+        on_cut = next(r for r in rows if r["source_ms"] == 9800)
+        just_before = next(r for r in rows if r["source_ms"] == 9760)
+        assert just_before["camera_segment_id"] == "before"
+        assert on_cut["camera_segment_id"] == "after"
+        # ...and through its homography: ten metres along from where the first camera would put it.
+        assert on_cut["x_m"] == pytest.approx(just_before["x_m"] + 0.5 + 10, abs=0.02)
+    assert segment_at([before, after], 9799).camera_segment_id == "before"  # type: ignore[union-attr]
+    assert segment_at([before, after], 9800).camera_segment_id == "after"  # type: ignore[union-attr]
+    assert segment_at([before, after], 60_000) is None
+    assert segment_at([], 5) is None
+
+
+def test_overlapping_segments_give_the_moment_to_the_one_that_started_latest() -> None:
+    index = SegmentIndex([cal("good", 0, 10_000, "long"), cal("good", 4000, 6000, "inset"), cal("good", 20_000, 30_000, "later")])
+    assert index.at(3999).camera_segment_id == "long"  # type: ignore[union-attr]
+    assert index.at(5000).camera_segment_id == "inset"  # type: ignore[union-attr]
+    # Past the inset's end the long one still covers.
+    assert index.at(6000).camera_segment_id == "long"  # type: ignore[union-attr]
+    assert index.at(15_000) is None
+
+
+def test_a_point_far_off_the_pitch_is_suppressed_and_says_so() -> None:
+    # A camera looking along the pitch: just under the horizon a pixel is hundreds of metres away.
+    low = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -0.01, 1.0)
+    seg = Segment("seg", 0, 60_000, "good", low, 105.0, 68.0)
+
+    def foot(x: float, y: float) -> list[dict[str, Any]]:
+        return [{"frameIndex": 0, "sourceTimeMs": 100, "box": {"x": x - 5, "y": y - 50, "width": 10, "height": 50}}]
+
+    def one(x: float, y: float, segment: Segment = seg) -> dict[str, Any]:
+        return place([{"localTrackId": 1, "class": "player", "positions": foot(x, y)}], [segment], [])[0]
+
+    # (20, 30) -> w = 0.7 -> (28.6, 42.9): on the pitch.
+    assert one(20, 30)["reason"] is None and one(20, 30)["x_m"] == pytest.approx(28.571, abs=1e-3)
+    # (20, 95) -> w = 0.05 -> (400, 1900): a number, and not a position.
+    far = one(20, 95)
+    assert far["reason"] == "off_pitch" and far["x_m"] is None and far["y_m"] is None
+    assert far["camera_segment_id"] == "seg" and far["quality"] == "good"
+    # Beyond the horizon is still its own reason.
+    assert one(20, 150)["reason"] == "beyond_horizon"
+    # The margin: a throw-in taken from just outside the line is a position; further is not.
+    ident = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    flat = Segment("flat", 0, 60_000, "good", ident, 105.0, 68.0)
+    assert one(50, -OFF_PITCH_MARGIN_M, flat)["reason"] is None
+    assert one(50, -OFF_PITCH_MARGIN_M - 0.01, flat)["reason"] == "off_pitch"
+    assert one(105 + OFF_PITCH_MARGIN_M, 30, flat)["reason"] is None
+    assert one(105 + OFF_PITCH_MARGIN_M + 0.01, 30, flat)["reason"] == "off_pitch"
+    assert one(50, 68 + OFF_PITCH_MARGIN_M + 0.01, flat)["reason"] == "off_pitch"
+    assert one(-OFF_PITCH_MARGIN_M - 0.01, 30, flat)["reason"] == "off_pitch"
+    # With no pitch dimensions declared there is nothing to judge by.
+    unsized = Segment("unsized", 0, 60_000, "good", ident, None, None)
+    assert one(900, 900, unsized)["reason"] is None
 
 
 def test_coverage_is_the_share_of_frames_a_passing_calibration_covered() -> None:
@@ -156,10 +223,62 @@ def test_coverage_is_over_frames_not_rows() -> None:
     # Two tracks on the same frames under a low camera: one on the grass, one beyond the horizon.
     low = Segment("seg", 0, 60_000, "good", (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -0.01, 1.0), 105, 68)
     at = lambda y: [{"frameIndex": i, "sourceTimeMs": 100 + i * 40, "box": {"x": 0, "y": y - 50, "width": 10, "height": 50}} for i in range(5)]
-    rows = place([{"localTrackId": 1, "class": "player", "positions": at(50)}, {"localTrackId": 2, "class": "player", "positions": at(150)}], [low], [])
+    rows = place([{"localTrackId": 1, "class": "player", "positions": at(30)}, {"localTrackId": 2, "class": "player", "positions": at(150)}], [low], [])
     c = coverage(rows)
     assert c["rows"] == 10 and c["placed"] == 5 and c["suppressed"] == 5 and c["frames"] == 5
+    assert c["reasons"] == {"beyond_horizon": 5}
     assert c["validFrameCoverage"] == 1.0  # every frame had a placed row; half the rows did not
+
+
+def test_coverage_is_over_the_frames_the_tracker_was_given() -> None:
+    """Forty-one frames carry a track; the tracker was given a hundred. A frame with nobody
+    tracked on it is a frame nothing was placed on, and it counts."""
+    rows = place([walk()], [cal("good", 0, 60_000)], [])
+    over_rows = coverage(rows)
+    assert over_rows["validFrameCoverage"] == 1.0 and over_rows["coverageBasis"] == "frames_with_tracks" and over_rows["framesTracked"] is None
+    over_tracked = coverage(rows, 100)
+    assert over_tracked["validFrameCoverage"] == 0.41 and over_tracked["coverageBasis"] == "frames_tracked" and over_tracked["framesTracked"] == 100
+    assert over_tracked["frames"] == 41
+    assert coverage([], 0)["validFrameCoverage"] is None
+    assert coverage([], 10)["validFrameCoverage"] == 0.0
+
+
+def test_build_counts_coverage_per_chunk_and_in_all_against_tracked_frames(tmp_path: Path) -> None:
+    # The tracker was given frames every 40 ms from 9000 to 12960 (100 frames, four seconds);
+    # the walk is on the first 41 of them, and nobody is tracked in the last two seconds.
+    tracked = [(i, 9000 + i * 40) for i in range(100)]
+    index = build([walk()], [cal()], [], tmp_path, chunk_ms=1000, tracked_frames=tracked)
+    assert index["framesTracked"] == 100 and index["frames"] == 41 and index["coverageBasis"] == "frames_tracked"
+    assert index["validFrameCoverage"] == 0.41
+    # Chunk 9 holds frames 9000..9960: 25 tracked, 25 with the walk. Chunk 10: 25 tracked, 16 with it.
+    assert [(c["index"], c["framesTracked"], c["frames"], c["validFrameCoverage"]) for c in index["chunks"]] == [(9, 25, 25, 1.0), (10, 25, 16, 0.64)]
+    # Chunks 11 and 12 have tracked frames and no rows: no file, and they still count in the whole.
+    assert not (tmp_path / "chunk-00011.parquet").exists()
+    # Without the tracker's frames the old share is what there is, and it says which it is.
+    older = build([walk()], [cal()], [], tmp_path / "older", chunk_ms=1000)
+    assert older["validFrameCoverage"] == 1.0 and older["coverageBasis"] == "frames_with_tracks" and older["framesTracked"] is None
+
+
+def test_build_from_an_iterator_matches_build_from_a_list_and_leaves_no_spill(tmp_path: Path) -> None:
+    tracks = [walk(1), walk(2, start_ms=9020, first_frame=0), walk(3, start_ms=70_000, first_frame=1525)]
+    segments = [cal("good", 0, 9800, "a"), cal("failed", 9800, 10_200, "b"), cal("usable", 10_200, 60_000, "c")]
+    anchors = [Anchor(1, 9000, None)]
+    listed = build(tracks, segments, anchors, tmp_path / "listed", chunk_ms=500)
+    streamed = build(iter(tracks), segments, anchors, tmp_path / "streamed", chunk_ms=500)
+    assert listed == streamed and streamed["tracks"] == 3
+    whole = place(tracks, segments, anchors)
+    assert coverage(whole)["rows"] == streamed["rows"] and coverage(whole)["placed"] == streamed["placed"] and coverage(whole)["reasons"] == streamed["reasons"]
+    # Every chunk reads back as exactly the rows `place` puts in it, in order.
+    read: list[dict[str, Any]] = []
+    for chunk in streamed["chunks"]:
+        rows = read_chunk(tmp_path / "streamed" / chunk["file"])
+        assert all(chunk["fromMs"] <= r["source_ms"] < chunk["toMs"] for r in rows)
+        read.extend(rows)
+    assert read == whole
+    assert not (tmp_path / "streamed" / ".spill").exists()
+    assert sorted(p.name for p in (tmp_path / "streamed").iterdir()) == sorted(c["file"] for c in streamed["chunks"])
+    with pytest.raises(ValueError):
+        build([], segments, anchors, tmp_path / "bad", chunk_ms=0)
 
 
 def test_build_writes_parquet_chunks_that_read_back_and_an_index(tmp_path: Path) -> None:
@@ -286,3 +405,23 @@ def test_refuses_a_misdispatched_job_before_reading(ctx, params) -> None:
     with pytest.raises(StageRefusal):
         gamestate_stage._gamestate(ctx)
     assert ctx.client.asked == []
+
+
+
+def test_the_stage_takes_the_tracked_frames_from_the_artifact_wherever_the_key_sits(ctx) -> None:
+    # Written after the tracks, as the track stage writes it. 200 frames given to the tracker.
+    ctx.objects[TRK_KEY] = {"trackerVersionId": "trk", "tracks": [walk()], "trackedFrames": [[i, 9000 + i * 40] for i in range(200)]}
+    result = gamestate_stage._gamestate(ctx)
+    assert result.summary["framesTracked"] == 200 and result.summary["coverageBasis"] == "frames_tracked"
+    assert result.summary["frames"] == 41 and result.summary["validFrameCoverage"] == 0.205
+    assert not (ctx.work_dir / "gamestate" / ".spill").exists()
+
+
+def test_the_stage_refuses_an_artifact_that_is_not_json(ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(_c: object, _url: str, target: Path) -> int:
+        target.write_text('{"trackerVersionId": "trk", "tracks": [', encoding="utf-8")
+        return 1
+
+    monkeypatch.setattr(gamestate_stage, "download", broken)
+    with pytest.raises(StageRefusal, match="not readable"):
+        gamestate_stage._gamestate(ctx)

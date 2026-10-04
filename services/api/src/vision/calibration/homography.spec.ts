@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CALIBRATION_THRESHOLDS, qualityOf } from "./calibration-thresholds";
-import { fitHomography, invert3, isFit, multiply, normalise, project, type Correspondence, type Homography } from "./homography";
+import { fitHomography, homogeneousW, invert3, isFit, multiply, normalise, orientStored, orientation, project, projectInView, type Correspondence, type Homography } from "./homography";
 import { DEFAULT_PITCH, PENALTY_SPOT_M, landmarkById, pitchLandmarks, pitchLines, pitchProblem } from "./pitch-model";
 
 /**
@@ -171,5 +171,84 @@ describe("how much to trust it", () => {
     expect(qualityOf({ rmseM: 2.1, maxErrorM: 3, points: 8 })).toBe("failed");
     expect(qualityOf({ rmseM: 0.3, maxErrorM: 5.5, points: 8 })).toBe("failed");
     expect(CALIBRATION_THRESHOLDS.version).toContain("provisional");
+  });
+});
+
+/**
+ * A camera in a stand, thirty metres behind the near touchline, looking across
+ * the pitch with the horizon a quarter of the way down the picture: the far
+ * touchline at about y = 353, the near one at y = 700, sky above y = 200. The
+ * top-left pixel is sky. Scaling the fitted matrix so its last entry is +1 makes
+ * `w` positive *there*, and so negative everywhere on the pitch
+ * (docs/vision/50, appendix C; docs/vision/56).
+ */
+const SKY_CAMERA: Homography = [1000, 640, -33300, 0, 200, 21000, 0, 1, 30];
+
+function skyClicks(ids: string[]): Correspondence[] {
+  const by = landmarkById(DEFAULT_PITCH);
+  return ids.map((id) => {
+    const l = by.get(id)!;
+    const p = project(SKY_CAMERA, { x: l.xM, y: l.yM })!;
+    return { px: p.x, py: p.y, xM: l.xM, yM: l.yM };
+  });
+}
+
+describe("which way round a homography is", () => {
+  it("is fitted with the clicked points in view, whatever the top-left pixel is", () => {
+    const pairs = skyClicks(SIX);
+    const fit = fitHomography(pairs);
+    if (!isFit(fit)) throw new Error(fit.reason);
+    expect(fit.acrossHorizon).toBe(0);
+    expect(fit.rmseM).toBeLessThan(0.01);
+    for (const p of pairs) expect(homogeneousW(fit.homography, { x: p.px, y: p.py })).toBeGreaterThan(0);
+    // The sky is on the other side: negative w at the top-left pixel, which is the last entry.
+    expect(fit.homography[8]).toBe(-1);
+    // A pixel on the grass lands where it should, read by the sign.
+    const spot = project(SKY_CAMERA, { x: 52.5, y: 34 })!;
+    const back = projectInView(fit.homography, spot)!;
+    expect(back.x).toBeCloseTo(52.5, 2);
+    expect(back.y).toBeCloseTo(34, 2);
+    // A pixel in the sky is beyond the horizon. Read without the sign it is a point on the pitch that is not there.
+    expect(projectInView(fit.homography, { x: 640, y: 100 })).toBeNull();
+    expect(project(fit.homography, { x: 640, y: 100 })).not.toBeNull();
+    expect(projectInView(fit.homography, { x: 640, y: 200 })).toBeNull();
+  });
+
+  it("leaves a camera whose whole picture is pitch as it was", () => {
+    const fit = fitHomography(clicks(SIX));
+    if (!isFit(fit)) throw new Error(fit.reason);
+    expect(fit.homography[8]).toBe(1);
+    expect(fit.acrossHorizon).toBe(0);
+  });
+
+  it("orients a stored matrix by the points it was fitted from", () => {
+    const pairs = skyClicks(SIX);
+    const fit = fitHomography(pairs);
+    if (!isFit(fit)) throw new Error(fit.reason);
+    const stored = pairs.map((p, i) => ({ landmark: SIX[i], px: p.px, py: p.py }));
+    // As rows filed before this fix hold it: last entry +1, the pitch on the negative side.
+    const older = fit.homography.map((v) => -v) as Homography;
+    expect(older[8]).toBe(1);
+    expect(orientStored(older, stored)).toEqual(fit.homography);
+    expect(orientStored(fit.homography, stored)).toEqual(fit.homography);
+    // Nothing to orient by: returned as stored.
+    expect(orientStored(older, [])).toEqual(older);
+    expect(orientStored(older, null)).toEqual(older);
+    expect(orientStored(older, [{ landmark: "x" }, "nonsense"])).toEqual(older);
+  });
+
+  it("counts the points on the wrong side, signs by the majority, and has no answer on the horizon itself", () => {
+    const H: Homography = [1, 0, 0, 0, 1, 0, 0, -0.01, 1]; // w = 1 - y/100
+    expect(orientation(H, [{ x: 0, y: 10 }, { x: 0, y: 20 }])).toEqual({ homography: H, across: 0 });
+    expect(orientation(H, [{ x: 0, y: 150 }, { x: 0, y: 300 }])).toEqual({ homography: H.map((v) => -v), across: 0 });
+    expect(orientation(H, [{ x: 0, y: 10 }, { x: 0, y: 20 }, { x: 0, y: 300 }])).toEqual({ homography: H, across: 1 });
+    expect(orientation(H, [{ x: 0, y: 10 }, { x: 0, y: 200 }, { x: 0, y: 300 }])).toMatchObject({ across: 1 });
+    expect(orientation(H, [{ x: 0, y: 100 }])).toBeNull();
+  });
+
+  it("fails a calibration whose clicks straddle the horizon, however small its error reads", () => {
+    expect(qualityOf({ rmseM: 0.1, maxErrorM: 0.2, points: 8, acrossHorizon: 0 })).toBe("good");
+    expect(qualityOf({ rmseM: 0.1, maxErrorM: 0.2, points: 8, acrossHorizon: 1 })).toBe("failed");
+    expect(qualityOf({ rmseM: 0.1, maxErrorM: 0.2, points: 8 })).toBe("good");
   });
 });

@@ -183,3 +183,39 @@ def test_predicted_tracks_are_normalised_and_renumbered() -> None:
         {"frameIndex": 25, "box": {"x": 128, "y": 72, "width": 128, "height": 144}},
     ]}]}, 1280, 720)
     assert out == {26: [TrackedBox("3", "player", (0.1, 0.1, 0.1, 0.2))]}
+
+
+# ── more than one asset (docs/vision/56) ─────────────────────────────────────
+
+
+def test_idf1_does_not_merge_tracks_across_assets() -> None:
+    """A local track id is unique inside one artifact. Two assets each have a gold "A" and a
+    predicted "1", and they are four different things.
+
+    On the first asset the tracker follows A as track 1 and B as track 2. On the second it
+    has them the other way round: A is track 2, B is track 1. Each asset alone is perfect.
+    Keyed by bare id, gold A coincides with pred 1 on one asset and pred 2 on the other, so
+    the best one-to-one assignment can only credit half the frames: IDF1 0.5 for a tracker
+    that made no mistake."""
+    def sample(asset: str) -> GoldTracks:
+        g = GoldTracks(asset_id=asset, slices=())
+        for f in range(1, 11):
+            g.frames[f] = [TrackedBox("A", "player", A), TrackedBox("B", "player", B)]
+        return g
+
+    predictions = {
+        "a1": {f: [TrackedBox("1", "player", A), TrackedBox("2", "player", B)] for f in range(1, 11)},
+        "a2": {f: [TrackedBox("2", "player", A), TrackedBox("1", "player", B)] for f in range(1, 11)},
+    }
+    report = score_tracks([sample("a1"), sample("a2")], predictions, CLASSES, 0.5)
+    assert metric(report, "idf1:player") == 1.0
+    assert metric(report, "idf1:all") == 1.0
+    assert metric(report, "mota:player") == 1.0
+    # Four gold tracks, not two.
+    assert metric(report, "tracks:player") == 4.0
+    assert report["assets"] == 2
+
+
+def test_one_asset_scores_as_it_did() -> None:
+    whole = score_tracks([gold()], preds({f: [("1", A), ("2", B)] for f in range(1, 11)}), CLASSES, 0.5)
+    assert metric(whole, "idf1:player") == 1.0 and metric(whole, "tracks:player") == 2.0
