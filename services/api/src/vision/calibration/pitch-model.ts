@@ -13,9 +13,12 @@
  * what they are on any pitch.
  */
 
+import { DEFAULT_PITCH_DIMENSIONS } from "@dtp/vision-contracts";
+
 export type PitchDimensions = { lengthM: number; widthM: number };
 
-export const DEFAULT_PITCH: PitchDimensions = { lengthM: 105, widthM: 68 };
+/** The contract's default: the same object the worker's job params and the screens use. */
+export const DEFAULT_PITCH: PitchDimensions = DEFAULT_PITCH_DIMENSIONS;
 
 /** Laws of the Game, in metres. These do not scale with the pitch. */
 export const PENALTY_AREA_DEPTH_M = 16.5;

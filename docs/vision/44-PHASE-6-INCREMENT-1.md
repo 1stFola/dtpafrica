@@ -119,4 +119,4 @@ named there now.
 | **The event review screen** | Candidates are filed through the API. The workstation's timeline and inspector — boundary and actor correction with the video under it — is the next increment. |
 | **Sub-minute precision on the recorder's row** | D10 plans a `secondInMinute` or millisecond column on `SbMatchEvent`. The stamp carries the milliseconds today; the widening is its own backwards-compatible migration, done when the public product reads it. |
 | **Staleness** | Correcting what was promoted, and marking what depended on it stale, is Phase 7. The evidence links are written now so that walk is possible then. |
-| **The review queue** | `GET /vision/review/queue` is still in the contract and still not built; it belongs with the screen. |
+| **The review queue** | Not built in this increment. Built since, in [49](./49-PHASE-6-INCREMENT-3.md): `GET /vision/review/queue`. |

@@ -7,6 +7,12 @@ Conventions follow the existing API: NestJS controllers, `class-validator` DTOs,
 `ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true })`, and
 `@RequirePermissions(...)` on every route.
 
+**Which routes exist.** The tables in the sections below were written as the design and
+edited by hand as routes landed; they explain what a route is for. The list of what the
+code has is [Every route, as built](#every-route-as-built) at the end, which is generated
+from the controllers and checked by a test. A route a table below names that was never
+built says *not built* in its row ([62](./62-QA-FIX-12-DOCS.md)).
+
 ---
 
 ## Admin surface
@@ -17,12 +23,18 @@ Conventions follow the existing API: NestJS controllers, `class-validator` DTOs,
 |---|---|---|
 | `GET` | `/vision/sources` | `vision.read` |
 | `POST` | `/vision/sources` | `vision.sources.write` |
-| `PATCH` | `/vision/sources/:id` | `vision.sources.write` |
+| `PATCH` | `/vision/sources/:id` | not built: a source record is not edited after it is filed |
 | `GET` | `/vision/sources/:id` | `vision.read` |
 | `POST` | `/vision/sources/import` | `vision.sources.write` |
-| `POST` | `/vision/sources/:id/rights-evidence` | `vision.rights.manage` |
-| `POST` | `/vision/sources/:id/rights-scopes` | `vision.rights.manage` |
-| `POST` | `/vision/sources/:id/revoke` | `vision.rights.manage` |
+| `GET` | `/vision/partners` | `vision.read` |
+| `POST` | `/vision/partners` | `vision.sources.write` |
+| `GET` | `/vision/partners/:id/evidence` | `vision.read` |
+| `POST` | `/vision/partners/:id/evidence` | `vision.rights.manage` |
+| `POST` | `/vision/partners/:id/signatories` | `vision.rights.manage` |
+| `POST` | `/vision/rights/scopes` | `vision.rights.manage` |
+| `POST` | `/vision/rights/scopes/:id/revoke` | `vision.rights.manage` |
+| `POST` | `/vision/sources/:id/refuse-acquisition` | `vision.rights.manage` |
+| `POST` | `/vision/upload-grants/:id/revoke` | `vision.rights.manage` |
 | `POST` | `/vision/sources/:id/authorize-acquisition` | `vision.rights.manage` |
 | `POST` | `/vision/sources/:id/upload-grant` | `vision.rights.manage` |
 | `GET` | `/vision/sources/:id/impact` | `vision.read` |
@@ -30,6 +42,11 @@ Conventions follow the existing API: NestJS controllers, `class-validator` DTOs,
 `POST /vision/sources/import` accepts CSV or JSON of catalog metadata only — partner, channel,
 external ID, title, duration, published date. **It never fetches a video.** A row created this way
 has `acquisitionStatus = catalogued` and cannot reach a dataset.
+
+Evidence and signatories belong to the partner, and a rights scope is its own thing with a
+level (partner, source or player), so their routes are `/vision/partners/:id/…` and
+`/vision/rights/scopes`. This table had them under `/vision/sources/:id/…`, where they were
+never built.
 
 `GET /vision/sources/:id/impact` answers "what breaks if I revoke this?" — the lineage query from
 [03-RIGHTS-AND-GOVERNANCE.md](./03-RIGHTS-AND-GOVERNANCE.md#revocation-and-deletion-lineage).
@@ -73,20 +90,21 @@ session, and nothing else.
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/vision/assets` | `vision.read` |
-| `GET` | `/vision/assets/:id` | `vision.read` |
-| `PATCH` | `/vision/assets/:id/match-link` | `vision.sources.write` |
-| `GET` | `/vision/assets/:id/playback` | `vision.read` + rights `canAnalyze` |
-| `GET` | `/vision/assets/:id/duplicates` | `vision.read` |
+| `GET` | `/vision/assets/:id` | not built: the list carries what the Footage page shows |
+| `PATCH` | `/vision/assets/:id/match-link` | not built: an asset takes its match from its source record ([46](./46-WORKER-ON-THE-BOX.md)) |
+| `GET` | `/vision/assets/:id/playback` | not built: `GET /vision/review/:assetId/media` serves the proxy |
+| `GET` | `/vision/assets/:id/duplicates` | not built |
 | `GET` | `/vision/assets/:id/tracks` | `vision.read` |
-| `POST` | `/vision/assets/:id/segments` | `vision.annotate` |
-| `POST` | `/vision/assets/:id/jobs` | `vision.jobs.run` |
+| `GET` | `/vision/assets/:id/identity` (`?public=1`) | `vision.read` |
+| `POST` | `/vision/review/:assetId/camera-segments` | `vision.review` |
+| `POST` | `/vision/jobs` | `vision.jobs.run` |
 
-`/playback` returns a short-lived signed URL for the **proxy**, never the master, and is
-rights-checked at issue. Raw master playback requires `vision.media.raw.read` and writes an audit
-entry — that is the youth-footage gate.
+Playback is `GET /vision/review/:assetId/media`: a short-lived signed URL for the **proxy**,
+never the master. A worker's read of the master is the only path to it, audited as
+`media.raw.read` ([54](./54-QA-FIX-4-RIGHTS.md)).
 
-`PATCH /match-link` binds the asset to `SbMatch`, teams, and rosters. Required before any
-inference job may be queued.
+An asset is bound to its `SbMatch` through its source record, at upload. The planned
+`PATCH /match-link` was replaced by that inheritance and never built.
 
 ### Jobs — `vision/jobs`
 
@@ -106,7 +124,7 @@ Poll at 5 s while a job page is open.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/vision/review/:assetId/timeline` | `vision.read` |
+| `GET` | `/vision/review/:assetId/timeline` | not built: the screen reads `/tracks`, `/events` and `/camera-segments` |
 | `GET` | `/vision/review/:assetId/tracks` (`?job=latest\|all\|<id>`, `?limit=`, `?offset=`) | `vision.read` |
 | `GET` | `/vision/review/:assetId/media` | `vision.read` |
 | `GET` | `/vision/review/:assetId/positions` (every track of the latest track run) | `vision.read` |
@@ -197,8 +215,8 @@ queue before `limit` (default 100, at most 500) cuts it. The operator key has no
 | `GET` | `/vision/datasets` | `vision.read` |
 | `POST` | `/vision/datasets` | `vision.datasets.manage` |
 | `POST` | `/vision/datasets/:id/members` | `vision.datasets.manage` |
-| `POST` | `/vision/datasets/:id/split` | `vision.datasets.manage` |
-| `GET` | `/vision/datasets/:id/leakage-report` | `vision.read` |
+| `POST` | `/vision/datasets/:id/splits` | `vision.datasets.manage` |
+| `GET` | `/vision/datasets/:id/leakage` | `vision.read` |
 | `GET` | `/vision/datasets/:id/representation` | `vision.read` |
 | `POST` | `/vision/datasets/:id/freeze` | `vision.datasets.manage` |
 | `POST` | `/vision/datasets/:id/export` | `vision.datasets.manage` |
@@ -408,17 +426,19 @@ caller's own `params.proxy` is overwritten, not trusted.
 pinned to. The first accepted completion that reports a checksum pins the version to it. See
 [28-PHASE-3-INCREMENT-1.md](./28-PHASE-3-INCREMENT-1.md).
 
-### Highlights, metrics, scout search
+### Highlights, metrics, scout search — Phase 7 and later, not built
+
+The design for the phases after 6. None of these routes exists.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/vision/highlights` | `vision.read` |
-| `POST` | `/vision/highlights/:id/regenerate` | `vision.publish` |
-| `POST` | `/vision/highlights/:id/publish` | `vision.publish` + rights |
-| `POST` | `/vision/highlights/:id/unpublish` | `vision.publish` |
-| `GET` | `/vision/players/:playerId/evidence` | `vision.read` |
-| `GET` | `/vision/players/:playerId/metrics` | `vision.read` |
-| `POST` | `/vision/search` | `vision.evidence.search` |
+| `GET` | `/vision/highlights` | not built · `vision.read` |
+| `POST` | `/vision/highlights/:id/regenerate` | not built · `vision.publish` |
+| `POST` | `/vision/highlights/:id/publish` | not built · `vision.publish` + rights |
+| `POST` | `/vision/highlights/:id/unpublish` | not built · `vision.publish` |
+| `GET` | `/vision/players/:playerId/evidence` | not built · `vision.read` |
+| `GET` | `/vision/players/:playerId/metrics` | not built · `vision.read` |
+| `POST` | `/vision/search` | not built · `vision.evidence.search` |
 
 `POST /vision/search` returns clip IDs, timestamps, and evidence references — never a free-text
 answer. Results are rights-filtered per row at query time, not filtered in the UI.
@@ -554,3 +574,139 @@ paging and answers for every run. `GET /vision/review/queue` and `GET /vision/as
 unchanged in shape; the first filters and limits in SQL, the second reads the latest job of
 each stage. A job's `idempotencyKey` is no longer unique across jobs: two jobs may complete
 with the same key, and each job's own retry is still recognised.
+
+---
+
+## Every route, as built
+
+Read from the controllers under `services/api/src/vision`. *Access* is the permission the
+route requires of an admin session, or the token it takes when it is not an admin route.
+Every admin route also passes `AdminAuthGuard`. To regenerate after adding a route:
+
+```
+pnpm --filter @dtp/api vision:routes --write
+```
+
+`services/api/scripts/vision-routes.spec.ts` fails when this table and the controllers
+disagree, when a table above names a route the code does not have without saying so, and
+when a route has neither a permission nor a token guard.
+
+<!-- routes:begin (generated by `pnpm --filter @dtp/api vision:routes --write`; do not edit by hand) -->
+| Method | Path | Access | Controller |
+|---|---|---|---|
+| `GET` | `/vision/annotation/mix` | `vision.read` | `annotation/annotation.controller.ts` |
+| `GET` | `/vision/annotation/queue` | `vision.read` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/queue` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/queue/:id/convert` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
+| `GET` | `/vision/annotation/schemas` | `vision.read` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/schemas` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/schemas/:id/supersede` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/tasks` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
+| `GET` | `/vision/annotation/tasks/:id` | `vision.read` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/tasks/:id/abandon` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/tasks/:id/submit` | `vision.annotate` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/tasks/claim` | `vision.annotate` | `annotation/annotation.controller.ts` |
+| `GET` | `/vision/annotation/versions/:id` | `vision.read` | `annotation/annotation.controller.ts` |
+| `POST` | `/vision/annotation/versions/:id/review` | `vision.review` | `annotation/annotation.controller.ts` |
+| `GET` | `/vision/assets` | `vision.read` | `assets/assets.controller.ts` |
+| `GET` | `/vision/assets/:id/identity` | `vision.read` | `identity/identity.controller.ts` |
+| `GET` | `/vision/assets/:id/tracks` | `vision.read` | `jobs/tracks.controller.ts` |
+| `GET` | `/vision/calibration/landmarks` | `vision.read` | `calibration/calibration.controller.ts` |
+| `POST` | `/vision/calibration/preview` | `vision.read` | `calibration/calibration.controller.ts` |
+| `GET` | `/vision/datasets` | `vision.read` | `datasets/datasets.controller.ts` |
+| `POST` | `/vision/datasets` | `vision.datasets.manage` | `datasets/datasets.controller.ts` |
+| `GET` | `/vision/datasets/:id` | `vision.read` | `datasets/datasets.controller.ts` |
+| `POST` | `/vision/datasets/:id/export` | `vision.datasets.manage` | `datasets/datasets.controller.ts` |
+| `POST` | `/vision/datasets/:id/freeze` | `vision.datasets.manage` | `datasets/datasets.controller.ts` |
+| `GET` | `/vision/datasets/:id/gold` | `vision.read` | `datasets/datasets.controller.ts` |
+| `GET` | `/vision/datasets/:id/leakage` | `vision.read` | `datasets/datasets.controller.ts` |
+| `POST` | `/vision/datasets/:id/members` | `vision.datasets.manage` | `datasets/datasets.controller.ts` |
+| `GET` | `/vision/datasets/:id/representation` | `vision.read` | `datasets/datasets.controller.ts` |
+| `POST` | `/vision/datasets/:id/splits` | `vision.datasets.manage` | `datasets/datasets.controller.ts` |
+| `GET` | `/vision/jobs` | `vision.read` | `jobs/jobs.controller.ts` |
+| `POST` | `/vision/jobs` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
+| `GET` | `/vision/jobs-meta/resource-classes` | `vision.read` | `jobs/jobs.controller.ts` |
+| `GET` | `/vision/jobs/:id` | `vision.read` | `jobs/jobs.controller.ts` |
+| `POST` | `/vision/jobs/:id/cancel` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
+| `GET` | `/vision/jobs/:id/events` | `vision.read` | `jobs/jobs.controller.ts` |
+| `POST` | `/vision/jobs/:id/retry` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
+| `GET` | `/vision/jobs/dispatcher` | `vision.read` | `jobs/jobs.controller.ts` |
+| `POST` | `/vision/jobs/dispatcher/tick` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
+| `GET` | `/vision/jobs/queue-depth` | `vision.read` | `jobs/jobs.controller.ts` |
+| `GET` | `/vision/models` | `vision.read` | `models/models.controller.ts` |
+| `POST` | `/vision/models` | `vision.models.train` | `models/models.controller.ts` |
+| `POST` | `/vision/models/:id/versions` | `vision.models.train` | `models/models.controller.ts` |
+| `GET` | `/vision/models/benchmarks/:id` | `vision.read` | `models/models.controller.ts` |
+| `GET` | `/vision/models/promotions/:id` | `vision.read` | `models/models.controller.ts` |
+| `POST` | `/vision/models/promotions/:id/reject` | `vision.models.promote` | `models/models.controller.ts` |
+| `GET` | `/vision/models/versions/:id` | `vision.read` | `models/models.controller.ts` |
+| `POST` | `/vision/models/versions/:id/benchmark` | `vision.models.train` | `models/models.controller.ts` |
+| `GET` | `/vision/models/versions/:id/benchmarks` | `vision.read` | `models/models.controller.ts` |
+| `POST` | `/vision/models/versions/:id/promote` | `vision.models.promote` | `models/models.controller.ts` |
+| `POST` | `/vision/models/versions/:id/promotion-request` | `vision.models.train` | `models/models.controller.ts` |
+| `GET` | `/vision/models/versions/:id/promotions` | `vision.read` | `models/models.controller.ts` |
+| `POST` | `/vision/models/versions/:id/rollback` | `vision.models.promote` | `models/models.controller.ts` |
+| `GET` | `/vision/overview` | `vision.read` | `vision-status.controller.ts` |
+| `POST` | `/vision/partner-uploads` | upload-grant token | `assets/partner-uploads.controller.ts` |
+| `GET` | `/vision/partner-uploads/:id` | upload-grant token | `assets/partner-uploads.controller.ts` |
+| `POST` | `/vision/partner-uploads/:id/complete` | upload-grant token | `assets/partner-uploads.controller.ts` |
+| `POST` | `/vision/partner-uploads/:id/parts` | upload-grant token | `assets/partner-uploads.controller.ts` |
+| `GET` | `/vision/partner-uploads/grant` | upload-grant token | `assets/partner-uploads.controller.ts` |
+| `GET` | `/vision/partners` | `vision.read` | `sources/sources.controller.ts` |
+| `POST` | `/vision/partners` | `vision.sources.write` | `sources/sources.controller.ts` |
+| `GET` | `/vision/partners/:id/evidence` | `vision.read` | `sources/sources.controller.ts` |
+| `POST` | `/vision/partners/:id/evidence` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `POST` | `/vision/partners/:id/evidence/file` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `POST` | `/vision/partners/:id/signatories` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `GET` | `/vision/review/:assetId/camera-segments` | `vision.read` | `calibration/calibration.controller.ts` |
+| `POST` | `/vision/review/:assetId/camera-segments` | `vision.review` | `calibration/calibration.controller.ts` |
+| `GET` | `/vision/review/:assetId/clock` | `vision.read` | `clock/clock.controller.ts` |
+| `POST` | `/vision/review/:assetId/clock` | `vision.review` | `clock/clock.controller.ts` |
+| `GET` | `/vision/review/:assetId/events` | `vision.read` | `events/events.controller.ts` |
+| `GET` | `/vision/review/:assetId/game-state` | `vision.read` | `calibration/calibration.controller.ts` |
+| `GET` | `/vision/review/:assetId/media` | `vision.read` | `identity/identity.controller.ts` |
+| `GET` | `/vision/review/:assetId/positions` | `vision.read` | `identity/identity.controller.ts` |
+| `GET` | `/vision/review/:assetId/tracks` | `vision.read` | `identity/identity.controller.ts` |
+| `DELETE` | `/vision/review/camera-segments/:id` | `vision.review` | `calibration/calibration.controller.ts` |
+| `POST` | `/vision/review/camera-segments/:id/calibration` | `vision.review` | `calibration/calibration.controller.ts` |
+| `POST` | `/vision/review/events` | `vision.review` | `events/events.controller.ts` |
+| `GET` | `/vision/review/events/:id` | `vision.read` | `events/events.controller.ts` |
+| `PATCH` | `/vision/review/events/:id` | `vision.review` | `events/events.controller.ts` |
+| `POST` | `/vision/review/events/:id/decision` | `vision.review` | `events/events.controller.ts` |
+| `POST` | `/vision/review/events/:id/promote` | `vision.publish` | `events/events.controller.ts` |
+| `POST` | `/vision/review/identity/:id/accept` | `vision.review` | `identity/identity.controller.ts` |
+| `POST` | `/vision/review/identity/:id/reject` | `vision.review` | `identity/identity.controller.ts` |
+| `POST` | `/vision/review/jobs/:jobId/sides` | `vision.review` | `identity/identity.controller.ts` |
+| `GET` | `/vision/review/queue` | `vision.review` | `events/events.controller.ts` |
+| `GET` | `/vision/review/tracks/:trackId/candidates` | `vision.read` | `identity/identity.controller.ts` |
+| `POST` | `/vision/review/tracks/:trackId/identity` | `vision.review` | `identity/identity.controller.ts` |
+| `GET` | `/vision/review/tracks/:trackId/pitch-positions` | `vision.read` | `calibration/calibration.controller.ts` |
+| `GET` | `/vision/review/tracks/:trackId/positions` | `vision.read` | `identity/identity.controller.ts` |
+| `POST` | `/vision/rights/scopes` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `POST` | `/vision/rights/scopes/:id/revoke` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `GET` | `/vision/sources` | `vision.read` | `sources/sources.controller.ts` |
+| `POST` | `/vision/sources` | `vision.sources.write` | `sources/sources.controller.ts` |
+| `GET` | `/vision/sources/:id` | `vision.read` | `sources/sources.controller.ts` |
+| `POST` | `/vision/sources/:id/authorize-acquisition` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `GET` | `/vision/sources/:id/impact` | `vision.read` | `sources/sources.controller.ts` |
+| `POST` | `/vision/sources/:id/refuse-acquisition` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `POST` | `/vision/sources/:id/upload-grant` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `POST` | `/vision/sources/import` | `vision.sources.write` | `sources/sources.controller.ts` |
+| `GET` | `/vision/status` | `vision.read` | `vision-status.controller.ts` |
+| `POST` | `/vision/upload-grants/:id/revoke` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `POST` | `/vision/uploads` | `vision.assets.upload` | `assets/uploads.controller.ts` |
+| `DELETE` | `/vision/uploads/:id` | `vision.assets.upload` | `assets/uploads.controller.ts` |
+| `GET` | `/vision/uploads/:id` | `vision.assets.upload` | `assets/uploads.controller.ts` |
+| `POST` | `/vision/uploads/:id/complete` | `vision.assets.upload` | `assets/uploads.controller.ts` |
+| `POST` | `/vision/uploads/:id/parts` | `vision.assets.upload` | `assets/uploads.controller.ts` |
+| `POST` | `/vision/worker/jobs/:id/complete` | worker token | `worker/worker.controller.ts` |
+| `POST` | `/vision/worker/jobs/:id/fail` | worker token | `worker/worker.controller.ts` |
+| `POST` | `/vision/worker/jobs/:id/heartbeat` | worker token | `worker/worker.controller.ts` |
+| `POST` | `/vision/worker/jobs/:id/input-url` | worker token | `worker/worker.controller.ts` |
+| `POST` | `/vision/worker/jobs/:id/presign` | worker token | `worker/worker.controller.ts` |
+| `POST` | `/vision/worker/jobs/claim` | worker token | `worker/worker.controller.ts` |
+| `POST` | `/vision/worker/register` | bootstrap token | `worker/worker.controller.ts` |
+| `GET` | `/vision/workers` | `vision.read` | `jobs/jobs.controller.ts` |
+| `POST` | `/vision/workers/:id/retire` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
+| `POST` | `/vision/workers/provision` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
+<!-- routes:end -->

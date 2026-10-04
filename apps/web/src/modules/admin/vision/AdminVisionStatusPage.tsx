@@ -100,7 +100,6 @@ export function VisionConfigurationPanels() {
               }
               note="Off by default, so deploying the module changes nothing until someone enables it."
             />
-            <Row label="Phase" value={`Phase ${status.phase}`} />
             <Row label="Contract version" value={status.contractVersion} />
           </Panel>
 

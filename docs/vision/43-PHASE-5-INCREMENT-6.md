@@ -55,6 +55,15 @@ the stage's output and the control plane's record of it are
 
 ## The bucket's door
 
+> **Since:** the rule below was set on the derived bucket on 2 October 2026. Checked on
+> 4 October 2026 with a preflight against a presigned URL: `GET` and `HEAD` are allowed
+> from `http://localhost:5173` and from the staging site's origin, and from nowhere else;
+> `PUT` is not allowed; the master bucket has no rule. Two things follow. The minimap
+> reads chunks from the bucket today. And the rule names the site's origin, so the day the
+> site moves to a domain or to HTTPS, the new origin has to be added or the minimap goes
+> back to the message described here. The rest of this section is as it was written,
+> before the rule existed.
+
 A browser cannot read the bucket until the bucket says it may. The derived
 bucket's CORS rule is unset, as it was when [36](./36-PHASE-4-INCREMENT-5.md)
 routed track positions through the control plane rather than wait on it; the
@@ -111,7 +120,7 @@ copies and the reviewer were removed.
 
 | | |
 |---|---|
-| **The CORS rule** | Set in the Cloudflare dashboard, as above. The one thing between this screen and a reviewer. |
+| **The CORS rule** | Set in the Cloudflare dashboard, as above. The one thing between this screen and a reviewer. Done on 2 October 2026. |
 | **The ball** | Drawn when a track of class `ball` has rows; no detector in the register finds one yet. |
 | **Trails and speed** | A trail is the last second of rows for one track; a speed is their difference. Both are a window over rows this screen already has, and both wait for the metrics phase so that the calculation is versioned where it is computed. |
 | **Which way each side attacks** | The pitch has a left and a right; nothing yet says which goal is whose. A per-half flag belongs beside the clock anchor. |
