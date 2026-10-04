@@ -152,7 +152,8 @@ lost. **Done since, in [63](./63-QA-FIX-13-LOW-FINDINGS.md).** As listed:
 
 **Engineering follow-ups**
 
-- CI runs eight of twenty-two gates. The rest need a bucket two processes share, for
+- **Done since, in [65](./65-QA-FIX-15-GATES-IN-CI.md):** CI runs twenty-one. As listed:
+  CI runs eight of twenty-two gates. The rest need a bucket two processes share, for
   which a MinIO service in the job would do.
 - A provision-only key for the worker; it still holds the admin key.
 - The identity workstation shows the first 2,000 tracks of a run and says when there are

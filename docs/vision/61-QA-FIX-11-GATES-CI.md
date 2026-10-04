@@ -155,10 +155,10 @@ could get; this PR's own CI run is the first real one.
 
 | Item | Why | Where |
 |---|---|---|
-| The twelve gates that need the object store or the worker, in CI | They need a bucket two processes share. A MinIO service in the job would do it; it is a larger change than this PR | a follow-up |
+| The twelve gates that need the object store or the worker, in CI | **Done since, in [65](./65-QA-FIX-15-GATES-IN-CI.md).** As written then: they need a bucket two processes share. A MinIO service in the job would do it; it is a larger change than this PR | a follow-up |
 | A real SIGINT against a real gate | Windows delivers Ctrl-C to a console only. The hook is tested with a child process that raises the signal itself | run one on Linux |
 | `vision:r2check` held to the host rule | It has no database | PR-12, with the per-environment buckets |
-| The six gates that link footage to an existing match | They write nothing to it. Giving each a gate match is mechanical | a follow-up |
+| The six gates that link footage to an existing match | **Done since, in [65](./65-QA-FIX-15-GATES-IN-CI.md).** As written then: they write nothing to it. Giving each a gate match is mechanical | a follow-up |
 | Worker rows from the `local` provider | The e2e gate removes its own; the purge matches the `mock` provider only, because `local` is what the staging box really uses | not planned |
 
 ## After merge

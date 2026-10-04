@@ -24,7 +24,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, onInterrupt } from "./gate-harness";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -111,6 +111,8 @@ function probeDimensions(mediaPath: string): string {
   return value;
 }
 
+let gateMatch: GateMatch | null = null;
+
 async function main() {
   assertDevDatabase({ api: API });
   const mediaPath = process.argv[2];
@@ -152,8 +154,9 @@ async function main() {
   try {
     // ── Fixtures, committed so the running API can see them ────────────────
     section("Setup");
-    const sbMatch = await prisma.sbMatch.findFirst({ select: { id: true } });
-    if (!sbMatch) throw new Error("No SbMatch to link the asset to");
+    /* A match of the gate's own; it took whichever came first (docs/vision/65). */
+    gateMatch = await createGateMatch(prisma, randomUUID().slice(0, 8));
+    const sbMatch = gateMatch;
 
     const partner = await prisma.visionSourcePartner.create({
       data: { name: `E2E worker check ${assetId.slice(0, 8)}` },
@@ -431,6 +434,7 @@ async function main() {
     }
     // Both provisioned workers, not just the first.
     await prisma.visionWorker.deleteMany({ where: { providerId: "local", retiredAt: null } });
+    await removeGateMatch(prisma, gateMatch);
     const strays = await prisma.visionSourcePartner.count({
       where: { name: { startsWith: "E2E worker check " } },
     });

@@ -42,7 +42,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, onInterrupt } from "./gate-harness";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -53,6 +53,10 @@ const PYTHON =
   (process.platform === "win32" ? join(WORKER_DIR, ".venv/Scripts/python.exe") : join(WORKER_DIR, ".venv/bin/python"));
 const prisma = new PrismaClient();
 const RUN = randomUUID().slice(0, 8);
+
+/* The gate's own match, for its footage to belong to. It took whichever match came first,
+   so it could not run on an empty database (docs/vision/65). */
+let gateMatch: GateMatch | null = null;
 
 let checks = 0;
 let failures = 0;
@@ -144,8 +148,8 @@ async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ i
 }
 
 async function seed(): Promise<Fixture> {
-  const sbMatch = await prisma.sbMatch.findFirst({ select: { id: true } });
-  if (!sbMatch) throw new Error("No SbMatch in the database to link an asset to");
+  gateMatch = await createGateMatch(prisma, RUN);
+  const sbMatch = gateMatch;
   const partner = await prisma.visionSourcePartner.create({ data: { name: `Game state gate ${RUN}`, contactEmail: "gate@example.test" } });
   const record = await prisma.visionSourceVideoRecord.create({
     data: { partnerId: partner.id, title: `Game state gate record ${RUN}`, sourceQualityRank: "broadcast", originalAvailable: true, acquisitionStatus: "acquired", acquisitionMethod: "partner_direct_upload" },
@@ -216,7 +220,10 @@ async function trackJob(fx: Fixture, store: ObjectStore, trackerVersionId: strin
 }
 
 async function cleanup(fx: Fixture | null, store: ObjectStore) {
-  if (!fx) return;
+  if (!fx) {
+    await removeGateMatch(prisma, gateMatch);
+    return;
+  }
   for (const w of fx.wrote) await store.delete(w.bucket, w.key).catch(() => undefined);
   for (const jobId of fx.jobIds) {
     const page = await store.list("derived", `inference/${jobId}/`).catch(() => null);
@@ -232,6 +239,7 @@ async function cleanup(fx: Fixture | null, store: ObjectStore) {
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
+  await removeGateMatch(prisma, gateMatch);
 }
 
 function python(args: string[]) {

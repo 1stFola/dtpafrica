@@ -306,23 +306,35 @@ jobs:
   # machine, and three had been failing on expectations nobody had brought along
   # (docs/vision/61).
   #
-  # It runs the ones that need a database and an API and nothing else. A gate that
-  # puts an artifact in the bucket for the API to read needs a bucket both
-  # processes can see; storage here is in memory, per process, so those still run
-  # by hand. The list is `DB_GATES` in services/api/scripts/run-db-gates.ts.
+  # It runs twenty-one of the twenty-two (docs/vision/65). Thirteen of them put an
+  # object in the store for the API to read, or read one the API wrote, so the gate
+  # and the API have to see one store. That is the `s3mock` service below: the API's
+  # R2 backend speaks S3, and is pointed at it. The mock checks no signature and
+  # keeps nothing; what it proves is the control plane's own logic about keys,
+  # prefixes, write-once masters and presigned URLs, not Cloudflare's behaviour.
+  # The lists are `DB_GATES` and `STORE_GATES` in services/api/scripts/run-db-gates.ts.
+  #
+  # The one gate not here is `vision:e2echeck`, which runs the worker's container.
   #
   # The database starts empty: the migrations and the RBAC seed are all it has.
-  # Every gate here makes its own partner, footage, people and match, so it does
-  # not depend on what a developer happens to have seeded.
+  # Every gate makes its own partner, footage, people and match, so none depends
+  # on what a developer happens to have seeded.
   vision-gates:
     name: Vision gates against a real database
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://gates:gates@localhost:5432/gates
       VISION_ENABLED: "true"
-      VISION_STORAGE_BACKEND: memory
       PORT: "3000"
       VISION_E2E_API: http://localhost:3000/api/v1
+      # The object store: the R2 backend, pointed at the mock. Bucket names only; the
+      # two credential-shaped values are generated below.
+      VISION_STORAGE_BACKEND: r2
+      VISION_R2_ENDPOINT: http://localhost:9090
+      VISION_R2_BUCKET_MASTER: gates-master
+      VISION_R2_BUCKET_DERIVED: gates-derived
+      VISION_R2_BUCKET_MODELS: gates-models
+      VISION_R2_BUCKET_CLIPS: gates-clips
 
     services:
       postgres:
@@ -338,6 +350,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      # An S3 server for tests: no credentials to manage, the four buckets made at
+      # start. Pinned to a version, because the answer to "does this gate pass" must
+      # not change when somebody else publishes an image.
+      s3mock:
+        image: adobe/s3mock:5.2.3
+        env:
+          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: gates-master,gates-derived,gates-models,gates-clips
+        ports:
+          - 9090:9090
 
     steps:
       - name: Checkout
@@ -358,10 +379,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Generated per run and masked, never written into the repository: a literal
-      # secret-shaped value in a workflow is indistinguishable from a real one.
+      # secret-shaped value in a workflow is indistinguishable from a real one. The
+      # mock accepts any pair; the API's configuration only requires that there is one.
       - name: Throwaway credentials for this run
         run: |
-          for name in ADMIN_API_KEY ADMIN_JWT_SECRET ACADEMY_JWT_SECRET; do
+          for name in ADMIN_API_KEY ADMIN_JWT_SECRET ACADEMY_JWT_SECRET VISION_R2_ACCESS_KEY_ID VISION_R2_SECRET_ACCESS_KEY; do
             value=$(openssl rand -hex 24)
             echo "::add-mask::$value"
             echo "$name=$value" >> "$GITHUB_ENV"
@@ -403,9 +425,8 @@ jobs:
           tail -60 "$RUNNER_TEMP/api.log"
           exit 1
 
-      - name: Run the gates
-        run: pnpm --filter @dtp/api vision:gates:db
-
+      # Seven gates run the worker's own Python for the arithmetic they check: the
+      # tracker, the metrics, the kit clustering, the cut proposals, the game state.
       # 3.12 to match the worker image.
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -416,7 +437,26 @@ jobs:
 
       - name: Install vision worker
         working-directory: services/vision-worker
-        run: pip install -e .
+        run: |
+          pip install -e .
+          echo "VISION_WORKER_PYTHON=$(which python)" >> "$GITHUB_ENV"
+
+      # The service has no health check of its own; it takes some seconds to start.
+      - name: Wait for the object store
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS "http://localhost:9090/" 2> /dev/null | grep -q "gates-master"; then
+              echo "The object store answered after $attempt attempt(s), with its buckets."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::The object store did not answer with its buckets in two minutes."
+          curl -sS "http://localhost:9090/" | head -c 600 || true
+          exit 1
+
+      - name: Run the gates
+        run: pnpm --filter @dtp/api vision:gates:ci
 
       # The path the staging box takes: the bootstrap entrypoint provisions itself with
       # the admin key, registers, asks for work, finds none, and retires. Every step of

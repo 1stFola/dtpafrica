@@ -50,6 +50,7 @@
     "vision:gamestatecheck": "tsx scripts/vision-game-state-check.ts",
     "vision:eventcheck": "tsx scripts/vision-event-check.ts",
     "vision:gates:db": "tsx scripts/run-db-gates.ts",
+    "vision:gates:ci": "tsx scripts/run-db-gates.ts --store",
     "vision:routes": "tsx scripts/vision-routes.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
