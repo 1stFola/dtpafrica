@@ -341,6 +341,12 @@ async function main() {
     check("…the ball's fifty among them", boxes.body.positions?.[ballRow?.id]?.length, 50);
     const noAsset = await api(`/vision/review/${randomUUID()}/positions`);
     check("an asset that does not exist: not found", noAsset.status, 404);
+    /* Over HTTP, the shape every Vision refusal has (docs/vision/64): a name, and what to do next.
+       An admin route, and the worker's door, which answers before any guard has a worker to name. */
+    const noTracks = await api(`/vision/assets/${randomUUID()}/tracks`);
+    check("…and a refusal says which refusal it is and what to do", `${noTracks.status}/${noTracks.body.error}/${typeof noTracks.body.remediation}`, "404/NotFound/string");
+    const noToken = await call("/vision/worker/jobs/claim", {}, { method: "POST", body: JSON.stringify({}) });
+    check("…at the worker's door too", `${noToken.status}/${noToken.body.error}/${typeof noToken.body.remediation}`, "401/WorkerTokenRequired/string");
 
     /* The footage list: the latest job of each stage, picked by the database (docs/vision/60).
        This is the only run of that query against Postgres; the unit tests cannot see raw SQL. */

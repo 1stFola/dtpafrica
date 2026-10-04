@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -27,6 +26,7 @@ import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionModelsService } from "../models/models.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { JOB_QUEUE, type JobQueue } from "./job-queue";
+import { refusal } from "../shared/refusals";
 
 /**
  * Job orchestration.
@@ -79,15 +79,13 @@ export class VisionJobsService {
       where: { id: params.videoAssetId },
       select: { id: true, sbMatchId: true, ingestState: true },
     });
-    if (!asset) throw new BadRequestException(`Unknown video asset ${params.videoAssetId}`);
+    if (!asset) throw refusal(400, "AssetUnknown", `Unknown video asset ${params.videoAssetId}`, "Check the asset id; list footage with GET /vision/assets.");
 
     // Inference against footage nobody has linked to a fixture produces evidence
     // that cannot be attributed to anything.
     const needsMatch = params.type !== "probe" && params.type !== "fingerprint";
     if (needsMatch && !asset.sbMatchId) {
-      throw new BadRequestException(
-        `Asset ${asset.id} is not linked to a match yet. Link it before queueing ${params.type}.`
-      );
+      throw refusal(400, "AssetNotLinked", `Asset ${asset.id} is not linked to a match yet. Link it before queueing ${params.type}.`, "Link the asset's source record to its match, then queue the stage.");
     }
 
     const decision = await this.rights.canAnalyze({ videoAssetId: asset.id });
@@ -358,9 +356,7 @@ export class VisionJobsService {
     actor?: AdminAuthContext
   ): Promise<{ id: string }> {
     if (JOB_TYPE_PREREQUISITES[params.type].length) {
-      throw new BadRequestException(
-        `${params.type} depends on other stages for an asset; queue it with POST /vision/jobs instead.`
-      );
+      throw refusal(400, "StageNeedsAnAsset", `${params.type} depends on other stages for an asset; queue it with POST /vision/jobs instead.`, "Queue it for an asset with POST /vision/jobs.");
     }
     const id = randomUUID();
     const created = await this.queue.enqueue({
@@ -399,9 +395,9 @@ export class VisionJobsService {
       where: { id: jobId },
       select: { state: true, attemptNumber: true, maxAttempts: true, videoAssetId: true },
     });
-    if (!job) throw new BadRequestException(`Unknown job ${jobId}`);
+    if (!job) throw refusal(400, "JobUnknown", `Unknown job ${jobId}`, "Check the job id; list jobs with GET /vision/jobs.");
     if (!["failed", "cancelled", "expired"].includes(job.state)) {
-      throw new BadRequestException(`Job is ${job.state}; only a finished job can be retried.`);
+      throw refusal(400, "JobNotFinished", `Job is ${job.state}; only a finished job can be retried.`, "Wait for the job to finish, or cancel it, then retry.");
     }
     // The grant that allowed the first attempt may have been withdrawn since.
     if (job.videoAssetId) {
@@ -463,9 +459,7 @@ export class VisionJobsService {
     const missing = required.filter((r) => !done.has(r));
 
     if (missing.length) {
-      throw new BadRequestException(
-        `${type} needs ${missing.join(" and ")} to have succeeded for this asset first.`
-      );
+      throw refusal(400, "PrerequisiteMissing", `${type} needs ${missing.join(" and ")} to have succeeded for this asset first.`, "Run the stages it names for this asset first.");
     }
   }
 }

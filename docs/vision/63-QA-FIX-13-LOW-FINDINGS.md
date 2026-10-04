@@ -124,7 +124,7 @@ against. [57](./57-QA-FIX-7-MODELS.md) added `comparedWithAll`, the list, and ke
 
 | Item | Why | Where |
 |---|---|---|
-| Bare-string refusals in the rest of the module | About 125 remain in the annotation, sources, upload, worker, dataset, identity, calibration and jobs code. The finding named four services; those are done, and the test covers them. The helper is there for the rest | service by service |
+| Bare-string refusals in the rest of the module | **Done since, in [64](./64-QA-FIX-14-REFUSAL-SHAPES.md).** As written then: about 125 remain in the annotation, sources, upload, worker, dataset, identity, calibration and jobs code. The finding named four services; those are done, and the test covers them. The helper is there for the rest | service by service |
 | The same proposer rule for identity assignments | An identity has no correction chain: a new assignment supersedes by window, and acceptance already refuses its author | not planned |
 | A corrector in the middle of a chain | Not refused; the column is the first proposer | if it is ever wanted, walk the chain at decision time |
 | The inspector's new line, in a browser | The rule is a tested function and the line is one string. The page was not opened | next UI pass |

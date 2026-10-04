@@ -3,7 +3,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { OFF_PITCH_MARGIN_M } from "@dtp/vision-contracts";
@@ -16,7 +15,7 @@ import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CALIBRATION_THRESHOLDS, qualityOf, type CalibrationQuality, type CalibrationThresholds } from "./calibration-thresholds";
 import { fitHomography, homogeneousW, invert3, isFit, orientStored, project, projectInView, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
 import { DEFAULT_PITCH, landmarkById, pitchLines, pitchProblem, type PitchDimensions } from "./pitch-model";
-import { personFor } from "../shared/refusals";
+import { notFound, personFor } from "../shared/refusals";
 
 /**
  * Calibration: a homography per camera segment, and what may be derived from it.
@@ -78,7 +77,7 @@ export class VisionCalibrationService {
   async declareSegment(videoAssetId: string, input: { startMs: number; endMs: number; kind: string }, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "declare a camera segment");
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, durationMs: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     if (input.endMs <= input.startMs) {
       throw new ConflictException({ statusCode: 409, error: "SegmentEmpty", message: `A segment from ${input.startMs} to ${input.endMs}ms is empty.`, remediation: "endMs must be after startMs." });
     }
@@ -115,7 +114,7 @@ export class VisionCalibrationService {
       where: { id: cameraSegmentId },
       select: { id: true, videoAssetId: true, source: true, startMs: true, endMs: true, _count: { select: { calibrations: true } } },
     });
-    if (!segment) throw new NotFoundException(`Unknown camera segment ${cameraSegmentId}`);
+    if (!segment) throw notFound("camera segment", cameraSegmentId);
     if (segment._count.calibrations > 0) {
       throw new ConflictException({
         statusCode: 409,
@@ -147,7 +146,7 @@ export class VisionCalibrationService {
   /** The asset's segments with each one's current calibration, as a reviewer reads them. */
   async segments(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, durationMs: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     const segments = await this.prisma.visionCameraSegment.findMany({
       where: { videoAssetId },
       orderBy: { startMs: "asc" },
@@ -215,7 +214,7 @@ export class VisionCalibrationService {
   async calibrate(cameraSegmentId: string, input: { points: CalibrationPointInput[]; pitch?: PitchDimensions }, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "calibrate a camera segment");
     const segment = await this.prisma.visionCameraSegment.findUnique({ where: { id: cameraSegmentId }, select: { id: true, videoAssetId: true } });
-    if (!segment) throw new NotFoundException(`Unknown camera segment ${cameraSegmentId}`);
+    if (!segment) throw notFound("camera segment", cameraSegmentId);
     const pitch = input.pitch ?? DEFAULT_PITCH;
     const result = this.preview(input.points, pitch);
     if (!result.ok) {
@@ -269,7 +268,7 @@ export class VisionCalibrationService {
    */
   async gameState(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     const job = await this.prisma.visionJob.findFirst({
       where: { videoAssetId, type: "gamestate", state: "succeeded" },
       orderBy: { finishedAt: "desc" },
@@ -333,7 +332,7 @@ export class VisionCalibrationService {
    */
   async pitchPositions(trackId: string) {
     const track = await this.prisma.visionTrack.findUnique({ where: { id: trackId }, select: { id: true, videoAssetId: true } });
-    if (!track) throw new NotFoundException(`Unknown track ${trackId}`);
+    if (!track) throw notFound("track", trackId);
     const [{ positions }, segments] = await Promise.all([
       this.identity.positions(trackId),
       this.prisma.visionCameraSegment.findMany({

@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   Inject,
-  NotFoundException,
   Param,
   Post,
   Query,
@@ -27,6 +26,7 @@ import { VisionJobDispatcher } from "./job-dispatcher.service";
 import { CancelJobDto, EnqueueJobDto, ProvisionWorkerDto } from "./dto/enqueue-job.dto";
 import { JOB_QUEUE, type JobQueue } from "./job-queue";
 import { VisionJobsService } from "./vision-jobs.service";
+import { notFound, refusal } from "../shared/refusals";
 
 /**
  * Operator-facing job endpoints.
@@ -110,7 +110,7 @@ export class VisionJobsController {
       where: { id },
       include: { cost: true },
     });
-    if (!job) throw new NotFoundException(`Unknown job ${id}`);
+    if (!job) throw notFound("job", id);
     // The cost row carries BigInt byte counters, which JSON.stringify refuses.
     return { job: jsonSafe(job) };
   }
@@ -169,9 +169,7 @@ export class VisionJobsController {
 
     const capabilities = provider.capabilities();
     if (!capabilities.resourceClasses.includes(dto.resourceClass)) {
-      throw new NotFoundException(
-        `Provider ${providerId} does not offer ${dto.resourceClass}. It offers ${capabilities.resourceClasses.join(", ")}.`
-      );
+      throw refusal(404, "ResourceClassNotOffered", `Provider ${providerId} does not offer ${dto.resourceClass}. It offers ${capabilities.resourceClasses.join(", ")}.`, "Ask for a resource class the provider offers, or use another provider.");
     }
 
     const image = this.config.compute.workerImage;

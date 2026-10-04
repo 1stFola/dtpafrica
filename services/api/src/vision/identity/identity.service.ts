@@ -3,7 +3,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
@@ -14,7 +13,7 @@ import { clockAt, onPitchFor, parseSubstitution, windowOnClock, type OnPitch, ty
 import { recordedMinuteOf, recorderHalfLength, timelineOfReading, timelineSpanOfRecorded } from "../clock/recorder-minute";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
-import { personFor } from "../shared/refusals";
+import { notFound, personFor } from "../shared/refusals";
 
 /**
  * Who a track is: roster-assisted, time-aware, and never a machine's word.
@@ -104,7 +103,7 @@ export class VisionIdentityService {
       where: { id: inferenceJobId },
       select: { id: true, type: true, state: true, videoAsset: { select: { id: true, sbMatchId: true } } },
     });
-    if (!job) throw new NotFoundException(`Unknown job ${inferenceJobId}`);
+    if (!job) throw notFound("job", inferenceJobId);
     if (job.type !== "identify" || job.state !== "succeeded") {
       throw new ConflictException({
         statusCode: 409,
@@ -392,7 +391,7 @@ export class VisionIdentityService {
         variants: { where: { kind: "proxy" }, orderBy: { createdAt: "desc" }, take: 1, select: { fps: true, sourceOffsetMs: true, durationMs: true, width: true, height: true } },
       },
     });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     /* Which tracks. A reviewer sees the latest track run unless they ask for another, or
        for all of them: after a re-run the footage has two sets of tracks for the same
        players. The public view is every run, because an accepted identity is a person's
@@ -502,7 +501,7 @@ export class VisionIdentityService {
       where: { id: videoAssetId },
       select: { id: true, variants: { where: { kind: "proxy" }, orderBy: { createdAt: "desc" }, take: 1 } },
     });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     const proxy = asset.variants[0];
     if (!proxy) {
       throw new ConflictException({
@@ -536,7 +535,7 @@ export class VisionIdentityService {
    */
   async positions(trackId: string) {
     const track = await this.prisma.visionTrack.findUnique({ where: { id: trackId }, select: { id: true, artifactKey: true, localTrackId: true } });
-    if (!track) throw new NotFoundException(`Unknown track ${trackId}`);
+    if (!track) throw notFound("track", trackId);
     const artifact = await this.loadArtifact(track.artifactKey);
     const found = artifact.tracks.find((t) => t.localTrackId === track.localTrackId);
     return {
@@ -562,7 +561,7 @@ export class VisionIdentityService {
    */
   async positionsForAsset(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     const runs = await this.trackRuns(videoAssetId);
     if (!runs.latest) return { videoAssetId, trackJobId: null, trackJobs: 0, positions: {} as Record<string, unknown[]> };
     const mine = await this.prisma.visionTrack.findMany({
@@ -620,7 +619,7 @@ export class VisionIdentityService {
       where: { id: trackId },
       select: { id: true, videoAssetId: true, startMs: true, endMs: true, class: true, videoAsset: { select: { sbMatchId: true } } },
     });
-    if (!track) throw new NotFoundException(`Unknown track ${trackId}`);
+    if (!track) throw notFound("track", trackId);
     return track;
   }
 
@@ -647,7 +646,7 @@ export class VisionIdentityService {
 
   private async loadAssignment(id: string) {
     const row = await this.prisma.visionIdentityAssignment.findUnique({ where: { id } });
-    if (!row) throw new NotFoundException(`Unknown identity assignment ${id}`);
+    if (!row) throw notFound("identity assignment", id);
     if (row.supersededBy) {
       throw new ConflictException({
         statusCode: 409,
@@ -672,7 +671,7 @@ export class VisionIdentityService {
       where: { id: sbMatchId },
       select: { id: true, homeTeamId: true, awayTeamId: true, competition: { select: { formatConfig: true } }, statisticsSheet: { select: { clock: true } } },
     });
-    if (!match) throw new NotFoundException(`Unknown match ${sbMatchId}`);
+    if (!match) throw notFound("match", sbMatchId);
     return match;
   }
 

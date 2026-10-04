@@ -1,8 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { VisionResourceClass } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
+import { refusal } from "../shared/refusals";
 
 /**
  * Worker credentials.
@@ -95,7 +96,7 @@ export class WorkerTokenService {
    */
   async register(bootstrapToken: string): Promise<{ identity: WorkerIdentity; workerToken: string; expiresAt: Date }> {
     const worker = await this.findByToken(bootstrapToken, "bootstrap");
-    if (worker.retiredAt) throw new UnauthorizedException("Worker has been retired");
+    if (worker.retiredAt) throw refusal(401, "WorkerRetired", "Worker has been retired", "Provision a new worker.");
 
     const workerToken = randomBytes(32).toString("hex");
     const expiresAt = new Date(
@@ -106,7 +107,7 @@ export class WorkerTokenService {
       where: { id: worker.id, tokenHash: worker.tokenHash, tokenKind: "bootstrap", retiredAt: null },
       data: { tokenHash: hash(workerToken), tokenExpiresAt: expiresAt, tokenKind: "worker" },
     });
-    if (swapped.count !== 1) throw new UnauthorizedException("Invalid worker token");
+    if (swapped.count !== 1) throw refusal(401, "WorkerTokenInvalid", "Invalid worker token", "Provision a new worker; a token is not renewed.");
 
     return {
       identity: {
@@ -122,7 +123,7 @@ export class WorkerTokenService {
   /** Verifies a worker token and returns who it belongs to. */
   async verify(token: string): Promise<WorkerIdentity> {
     const worker = await this.findByToken(token, "worker");
-    if (worker.retiredAt) throw new UnauthorizedException("Worker has been retired");
+    if (worker.retiredAt) throw refusal(401, "WorkerRetired", "Worker has been retired", "Provision a new worker.");
     return {
       workerId: worker.id,
       resourceClasses: [worker.resourceClass as VisionResourceClass],
@@ -141,7 +142,7 @@ export class WorkerTokenService {
 
   private async findByToken(token: string, kind: TokenKind) {
     const trimmed = token.trim();
-    if (!trimmed) throw new UnauthorizedException("Worker token required");
+    if (!trimmed) throw refusal(401, "WorkerTokenRequired", "Worker token required", "Send the worker token.");
 
     const candidate = hash(trimmed);
     const worker = await this.prisma.visionWorker.findUnique({
@@ -160,10 +161,10 @@ export class WorkerTokenService {
     // Unknown, expired and wrong-kind tokens give the same message: a worker has
     // no business learning which of the three it was.
     if (!worker || !hashesMatch(worker.tokenHash, candidate) || worker.tokenKind !== kind) {
-      throw new UnauthorizedException("Invalid worker token");
+      throw refusal(401, "WorkerTokenInvalid", "Invalid worker token", "Provision a new worker; a token is not renewed.");
     }
     if (worker.tokenExpiresAt <= new Date()) {
-      throw new UnauthorizedException("Invalid worker token");
+      throw refusal(401, "WorkerTokenInvalid", "Invalid worker token", "Provision a new worker; a token is not renewed.");
     }
     return worker;
   }

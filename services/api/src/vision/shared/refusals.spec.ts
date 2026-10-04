@@ -1,6 +1,6 @@
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { notFound, personFor, refusal } from "./refusals";
@@ -9,6 +9,7 @@ describe("a refusal", () => {
   it("is the exception of its status, carrying every part of the shape", () => {
     const cases = [
       [400, BadRequestException],
+      [401, UnauthorizedException],
       [403, ForbiddenException],
       [404, NotFoundException],
       [409, ConflictException],
@@ -65,14 +66,22 @@ describe("requiring a person", () => {
 });
 
 /**
- * The four services appendix B named for uneven refusals. Read as text: a
- * refusal thrown with a bare string, or as an object with no `remediation`,
- * fails here. The rest of the module still has bare strings (docs/vision/63);
- * a service is added to this list when it is brought to the shape.
+ * Every refusal in the Vision module, read as text. One thrown with a bare
+ * string, or as an object with no `remediation`, fails here, and so does a
+ * service that grows its own person check. This began as four services
+ * (docs/vision/63) and is the whole module since docs/vision/64.
  */
-describe("the services the QA named", () => {
-  const files = ["events/events.service.ts", "models/promotions.service.ts", "models/benchmarks.service.ts", "models/models.service.ts"];
-  const source = (file: string) => readFileSync(join(__dirname, "..", file), "utf8");
+describe("every refusal in the module", () => {
+  const root = join(__dirname, "..");
+  const sources = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) return sources(full);
+      return name.endsWith(".ts") && !name.endsWith(".spec.ts") ? [full] : [];
+    });
+  const files = sources(root);
+  const label = (file: string) => relative(root, file).replace(/\\/g, "/");
+  const KINDS = "(NotFound|BadRequest|Conflict|Forbidden|Unauthorized)";
 
   /** The object literal starting at `from`, to its matching brace. */
   function literal(text: string, from: number): string {
@@ -84,29 +93,39 @@ describe("the services the QA named", () => {
     return text.slice(from);
   }
 
-  it("throw no refusal as a bare string", () => {
-    for (const file of files) {
-      const bare = [...source(file).matchAll(/new (NotFound|BadRequest|Conflict|Forbidden)Exception\(\s*[`"']/g)].map((m) => m[0]);
-      expect(bare, file).toEqual([]);
-    }
+  it("is in a file this test found", () => {
+    // A walk that finds nothing would make the checks below pass.
+    expect(files.length).toBeGreaterThan(60);
+    expect(files.map(label)).toContain("annotation/annotation.service.ts");
   });
 
-  it("give every refusal a remediation", () => {
-    for (const file of files) {
-      const text = source(file);
-      const without = [...text.matchAll(/new (NotFound|BadRequest|Conflict|Forbidden)Exception\(\s*\{/g)]
+  it("is not thrown as a bare string", () => {
+    const bare = files.flatMap((file) => [...readFileSync(file, "utf8").matchAll(new RegExp(`new ${KINDS}Exception\\(\\s*[\`"']`, "g"))].map((m) => `${label(file)}: ${m[0]}`));
+    expect(bare).toEqual([]);
+  });
+
+  it("has a remediation", () => {
+    const without = files.flatMap((file) => {
+      const text = readFileSync(file, "utf8");
+      return [...text.matchAll(new RegExp(`new ${KINDS}Exception\\(\\s*\\{`, "g"))]
         .map((m) => literal(text, text.indexOf("{", m.index)))
         .filter((body) => !body.includes("remediation"))
-        .map((body) => /error:\s*"([^"]+)"/.exec(body)?.[1] ?? body.slice(0, 60));
-      expect(without, file).toEqual([]);
-    }
+        .map((body) => `${label(file)}: ${/error:\s*"([^"]+)"/.exec(body)?.[1] ?? body.slice(0, 60)}`);
+    });
+    expect(without).toEqual([]);
   });
 
-  it("keep one copy of the person check", () => {
-    for (const file of ["events/events.service.ts", "identity/identity.service.ts", "clock/clock.service.ts", "calibration/calibration.service.ts", "models/promotions.service.ts"]) {
-      const text = source(file);
-      expect(text, file).not.toMatch(/function requirePerson\(/);
-      expect(text, file).toMatch(/const requirePerson = personFor\(/);
+  it("is named: a refusal built with the helper says which refusal it is", () => {
+    const unnamed = files.flatMap((file) => [...readFileSync(file, "utf8").matchAll(/refusal\(\s*\d{3},\s*""/g)].map(() => label(file)));
+    expect(unnamed).toEqual([]);
+  });
+
+  it("keeps one copy of the person check", () => {
+    for (const file of files) {
+      expect(readFileSync(file, "utf8"), label(file)).not.toMatch(/function requirePerson\(/);
+    }
+    for (const name of ["events/events.service.ts", "identity/identity.service.ts", "clock/clock.service.ts", "calibration/calibration.service.ts", "models/promotions.service.ts"]) {
+      expect(readFileSync(join(root, name), "utf8"), name).toMatch(/const requirePerson = personFor\(/);
     }
   });
 });

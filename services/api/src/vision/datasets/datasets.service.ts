@@ -5,7 +5,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import { ACQUIRED_STATUS, TRAINABLE_CORPUS, visionKeys } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
@@ -28,6 +27,7 @@ import {
   type DatasetSplit,
   type SplitPolicy,
 } from "./split-policy";
+import { notFound, refusal } from "../shared/refusals";
 
 /**
  * The dataset factory.
@@ -86,7 +86,7 @@ export class VisionDatasetsService {
         where: { id: dto.labelSchemaVersionId },
         select: { id: true },
       });
-      if (!schema) throw new NotFoundException(`Unknown label schema ${dto.labelSchemaVersionId}`);
+      if (!schema) throw notFound("label schema", dto.labelSchemaVersionId);
     }
 
     const version = await this.prisma.visionDatasetVersion.create({
@@ -126,7 +126,7 @@ export class VisionDatasetsService {
         _count: { select: { members: true, modelVersions: true } },
       },
     });
-    if (!version) throw new NotFoundException(`Unknown dataset version ${id}`);
+    if (!version) throw notFound("dataset version", id);
 
     const bySplit = await this.prisma.visionDatasetMember.groupBy({
       by: ["split"],
@@ -319,7 +319,7 @@ export class VisionDatasetsService {
       select: { id: true, groupKey: true },
     });
     if (!members.length) {
-      throw new BadRequestException("This version has no members to split");
+      throw refusal(400, "DatasetEmpty", "This version has no members to split", "Add members to the version, then generate the splits.");
     }
 
     const groups = [...new Set(members.map((m) => m.groupKey))].sort();
@@ -425,7 +425,7 @@ export class VisionDatasetsService {
       where: { id: datasetVersionId },
       select: { id: true, label: true, frozenAt: true },
     });
-    if (!version) throw new NotFoundException(`Unknown dataset version ${datasetVersionId}`);
+    if (!version) throw notFound("dataset version", datasetVersionId);
 
     const [readiness, contamination] = await Promise.all([
       goldReadiness(this.prisma, version.id),
@@ -467,7 +467,7 @@ export class VisionDatasetsService {
         containsRevokedMembers: true,
       },
     });
-    if (!version) throw new NotFoundException(`Unknown dataset version ${datasetVersionId}`);
+    if (!version) throw notFound("dataset version", datasetVersionId);
 
     if (!version.frozenAt) {
       throw new ConflictException({
@@ -792,7 +792,7 @@ export class VisionDatasetsService {
       where: { datasetVersionId: version.id },
       select: { videoAssetId: true, checksumSha256: true, split: true, groupKey: true, sbMatchId: true },
     });
-    if (!members.length) throw new BadRequestException("Cannot freeze an empty dataset version");
+    if (!members.length) throw refusal(400, "DatasetEmpty", "Cannot freeze an empty dataset version", "Add members and generate the splits before freezing.");
 
     // 1. Splits must have been generated for *this* membership.
     //
@@ -838,9 +838,7 @@ export class VisionDatasetsService {
     // 3. Checksums, still real.
     const missingChecksum = members.filter((m) => m.checksumSha256.length !== 64);
     if (missingChecksum.length) {
-      throw new BadRequestException(
-        `${missingChecksum.length} member(s) have no usable checksum; a frozen dataset must prove which bytes it holds`
-      );
+      throw refusal(400, "ChecksumMissing", `${missingChecksum.length} member(s) have no usable checksum; a frozen dataset must prove which bytes it holds`, "Run the fingerprint stage for those assets, or remove them from the version.");
     }
 
     // 4. Leakage, re-run rather than trusted from the stored report.
@@ -1038,11 +1036,9 @@ export class VisionDatasetsService {
 
   private async requireUnfrozen(id: string) {
     const version = await this.prisma.visionDatasetVersion.findUnique({ where: { id } });
-    if (!version) throw new NotFoundException(`Unknown dataset version ${id}`);
+    if (!version) throw notFound("dataset version", id);
     if (version.frozenAt) {
-      throw new ConflictException(
-        `Dataset version ${version.label} was frozen on ${version.frozenAt.toISOString()} and is immutable. Create a new version.`
-      );
+      throw refusal(409, "DatasetFrozen", `Dataset version ${version.label} was frozen on ${version.frozenAt.toISOString()} and is immutable. Create a new version.`, "Create a new dataset version and make the change there.");
     }
     return version;
   }

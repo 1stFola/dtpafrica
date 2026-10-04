@@ -7,12 +7,12 @@
  * copied into five services (docs/vision/50, appendix B). These builders are
  * the shape, so a new refusal cannot leave part of it out.
  */
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, type HttpException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, type HttpException } from "@nestjs/common";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 
 export type RefusalBody = { statusCode: number; error: string; message: string; remediation: string } & Record<string, unknown>;
 
-const BY_STATUS = { 400: BadRequestException, 403: ForbiddenException, 404: NotFoundException, 409: ConflictException } as const;
+const BY_STATUS = { 400: BadRequestException, 401: UnauthorizedException, 403: ForbiddenException, 404: NotFoundException, 409: ConflictException } as const;
 export type RefusalStatus = keyof typeof BY_STATUS;
 
 /** A refusal with every part of the shape. `extra` adds fields a screen reads, such as `problems`. */

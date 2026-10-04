@@ -1,8 +1,6 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   Inject,
   Param,
@@ -14,6 +12,7 @@ import { CompleteUploadDto, SignPartsDto } from "./dto/upload.dto";
 import { PartnerUploadGuard, type PartnerUploadRequest } from "./partner-upload.guard";
 import { PartnerBeginUploadDto } from "./dto/partner-upload.dto";
 import { VisionUploadService } from "./upload.service";
+import { refusal } from "../shared/refusals";
 
 /**
  * Partner-facing upload, authenticated by a one-use link.
@@ -48,14 +47,10 @@ export class VisionPartnerUploadsController {
     // Constrained by the grant, not by the request: a partner cannot widen its own
     // permission by asking for a different type or a larger file.
     if (!ctx.allowedMimeTypes.includes(dto.mimeType)) {
-      throw new BadRequestException(
-        `This link accepts ${ctx.allowedMimeTypes.join(", ")}. Got ${dto.mimeType}.`
-      );
+      throw refusal(400, "FileTypeNotAccepted", `This link accepts ${ctx.allowedMimeTypes.join(", ")}. Got ${dto.mimeType}.`, "Upload the footage as one of the accepted types.");
     }
     if (dto.expectedBytes !== undefined && dto.expectedBytes > ctx.maxBytes) {
-      throw new BadRequestException(
-        `This link accepts up to ${ctx.maxBytes} bytes. Contact DTP if the file is larger.`
-      );
+      throw refusal(400, "FileTooLarge", `This link accepts up to ${ctx.maxBytes} bytes. Contact DTP if the file is larger.`, "Contact DTP for a link that accepts a larger file.");
     }
 
     return this.uploads.begin(
@@ -101,7 +96,7 @@ export class VisionPartnerUploadsController {
   }
 
   private ctx(req: PartnerUploadRequest) {
-    if (!req.partnerUpload) throw new ForbiddenException("Upload link context missing");
+    if (!req.partnerUpload) throw refusal(403, "UploadLinkContextMissing", "Upload link context missing", "Open the upload link again. If it keeps happening, tell DTP.");
     return req.partnerUpload;
   }
 }
