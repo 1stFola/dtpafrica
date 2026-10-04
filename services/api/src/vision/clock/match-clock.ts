@@ -14,12 +14,10 @@
  * the next kick-off is *between halves*, and a track there is nobody's minute.
  */
 
-export const HALVES = [
-  { half: 1, baseMinute: 0, name: "1st half" },
-  { half: 2, baseMinute: 45, name: "2nd half" },
-  { half: 3, baseMinute: 90, name: "1st half of extra time" },
-  { half: 4, baseMinute: 105, name: "2nd half of extra time" },
-] as const;
+import { MATCH_HALVES } from "@dtp/vision-contracts";
+
+/** The contract's table, so the review screens read the same minutes this does. */
+export const HALVES = MATCH_HALVES;
 export type Half = (typeof HALVES)[number]["half"];
 
 export type ClockAnchor = {

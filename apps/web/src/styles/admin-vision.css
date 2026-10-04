@@ -455,14 +455,31 @@
 
 /* ── Boxes on the stage ──────────────────────────────────────────────────── */
 
-/* The stage is the positioning context for the boxes, which are laid out in
-   percentages of the picture so they follow it at any size. The video keeps its own
-   aspect ratio (width 100%, height auto), so there is no letterbox to correct for. */
+/* The stage is the positioning context. The video is as wide as its column and no
+   taller than 62vh, so on a wide window it is letterboxed: the picture sits in the
+   middle with a bar either side. Boxes are fractions of the picture, so they are laid
+   out inside `.vision-stage__picture`, which the page sizes to exactly the picture. */
 .vision-stage {
   cursor: crosshair;
   position: relative;
   touch-action: none;
   user-select: none;
+}
+
+/* Exactly the picture. It takes no pointer events itself, so a drag starts on the stage
+   beneath it; the boxes inside it do. */
+.vision-stage__picture {
+  pointer-events: none;
+  position: absolute;
+}
+
+.vision-stage__picture > .vision-box:not(.vision-box--draft) {
+  pointer-events: auto;
+}
+
+.vision-box:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 .vision-stage--playing {
@@ -1046,10 +1063,16 @@
   border-radius: 3px;
   bottom: 3px;
   cursor: pointer;
-  min-width: 4px;
+  color: #0b1220;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  min-width: 10px;
   opacity: 0.85;
+  overflow: hidden;
   padding: 0;
   position: absolute;
+  text-align: center;
   top: 3px;
 }
 
@@ -1095,4 +1118,39 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin-top: 0.6rem;
   padding-top: 0.6rem;
+}
+
+/* The identity workstation's key list, and the number beside each candidate. */
+.vision-keys {
+  display: grid;
+  gap: 0.25rem 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin: 0;
+}
+
+.vision-keys > div {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.vision-keys dt {
+  flex: 0 0 4.5rem;
+}
+
+.vision-keys dd {
+  margin: 0;
+}
+
+.vision-candidates__key {
+  margin-right: 0.4rem;
+  opacity: 0.8;
+}
+
+.vision-visually-hidden {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }

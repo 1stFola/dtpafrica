@@ -118,9 +118,13 @@ export function AdminVisionFootagePage() {
                         <div className="vision-stage-dots">
                           {STAGES.map((s) => {
                             const r = latest.get(s.type);
+                            /* The state was the label's colour and a hover title. */
+                            const tone = r ? toneOfState(r.state) : "none";
+                            const glyph = { ok: "✓", warn: "…", bad: "✕", muted: "–", none: "–" }[tone];
                             return (
                               <span key={s.type} className={`vision-stage-dot vision-stage-dot--${r ? toneOfState(r.state) : "none"}`} title={`${s.label}: ${r?.state ?? "not run"}${r?.error ? ` — ${r.error}` : ""}`}>
-                                {s.label}
+                                {s.label} <span aria-hidden="true">{glyph}</span>
+                                <span className="vision-visually-hidden">: {r?.state ?? "not run"}</span>
                               </span>
                             );
                           })}

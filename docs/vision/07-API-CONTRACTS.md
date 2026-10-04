@@ -109,6 +109,7 @@ Poll at 5 s while a job page is open.
 | `GET` | `/vision/review/:assetId/timeline` | `vision.read` |
 | `GET` | `/vision/review/:assetId/tracks` | `vision.read` |
 | `GET` | `/vision/review/:assetId/media` | `vision.read` |
+| `GET` | `/vision/review/:assetId/positions` (every track of the latest track run) | `vision.read` |
 | `GET` | `/vision/review/tracks/:trackId/positions` | `vision.read` |
 | `POST` | `/vision/review/jobs/:jobId/sides` | `vision.review` |
 | `GET` | `/vision/review/tracks/:trackId/candidates` (`?all=1` for the whole match squad) | `vision.read` |
@@ -534,3 +535,12 @@ it hands over only jobs of the stages that worker can serve (`STAGE_CONTRACT_SIN
 segment refuses `409 SegmentReferenced` while a current event candidate rests on it. Granting
 a rights scope refuses `400 RestrictionsInvalid` for a `deny` entry that is not a scope, and
 returns `restrictionsWarning` when the grant carries a flag the policy does not understand.
+
+**The workstations** ([59-QA-FIX-9-WORKSTATION.md](./59-QA-FIX-9-WORKSTATION.md)).
+`GET /vision/review/:assetId/positions` returns `{ videoAssetId, trackJobId, trackJobs,
+positions }`: the positions of every track of the asset's latest track run, keyed by track id,
+from one read of the run's artifact. `trackJobs` is how many track runs the asset has, so a
+screen can say it is showing the latest. A track the artifact does not hold has an empty list.
+The review screen draws from this; the per-track route stays. `GET /vision/overview` counts
+`annotationOpen` by the contract's `OPEN_ANNOTATION_TASK_STATES`; it counted two states no
+task has and always answered 0.

@@ -18,6 +18,20 @@ describe("the timeline", () => {
     expect(timelineMarks([cand({})], 0, 0)).toEqual([]);
   });
 
+  it("leaves out a candidate that ended before the clip began, or starts after it ends", () => {
+    // A clip cut from the second half: every first-half event was stacked on its first pixel.
+    const before = cand({ id: "before", startMs: 1000, endMs: 2000 });
+    const across = cand({ id: "across", startMs: 8000, endMs: 10_000 });
+    const edge = cand({ id: "edge", startMs: 9000, endMs: 9000 });
+    const last = cand({ id: "last", startMs: 19_000, endMs: 19_000 });
+    const after = cand({ id: "after", startMs: 19_001, endMs: 25_000 });
+    const marks = timelineMarks([before, across, edge, last, after], 9000, 10_000);
+    expect(marks.map((m) => m.candidate.id)).toEqual(["across", "edge", "last"]);
+    // One that began before the clip and runs into it is drawn from the clip's start.
+    expect(marks[0]).toMatchObject({ left: 0, width: 0.1 });
+    expect(marks[2]!.left).toBe(1);
+  });
+
   it("finds the candidate under the playhead, nearest start first, and none far away", () => {
     const list = [cand({ id: "early", startMs: 5000, endMs: 5000 }), cand({ id: "long", startMs: 9000, endMs: 12_000 }), cand({ id: "exact", startMs: 10_000, endMs: 10_000 })];
     expect(candidateAt(list, 10_100)?.id).toBe("exact");

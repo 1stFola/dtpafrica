@@ -500,6 +500,39 @@ export class VisionIdentityService {
     };
   }
 
+  /**
+   * Every track's positions for the asset's latest track run, in one answer.
+   *
+   * The review screen asked for positions one track at a time, in sequence, for
+   * up to two thousand tracks, and started again after every action; on a real
+   * match the boxes might never finish loading (docs/vision/50, appendix D). The
+   * tracks of one run share one artifact, so this reads it once.
+   *
+   * Only the latest run: after a re-run the asset has two sets of tracks for the
+   * same players, and drawing both puts two boxes on everyone. `trackJobs` says
+   * how many runs there are, so the screen can say it is showing the latest.
+   */
+  async positionsForAsset(videoAssetId: string) {
+    const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true } });
+    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    const tracks = await this.prisma.visionTrack.findMany({
+      where: { videoAssetId },
+      select: { id: true, localTrackId: true, artifactKey: true, inferenceJobId: true, inferenceJob: { select: { finishedAt: true, queuedAt: true } } },
+    });
+    const when = (t: (typeof tracks)[number]) => (t.inferenceJob.finishedAt ?? t.inferenceJob.queuedAt ?? new Date(0)).getTime();
+    const latest = tracks.reduce<(typeof tracks)[number] | null>((best, t) => (best === null || when(t) > when(best) ? t : best), null);
+    const jobs = new Set(tracks.map((t) => t.inferenceJobId));
+    if (!latest) return { videoAssetId, trackJobId: null, trackJobs: 0, positions: {} as Record<string, unknown[]> };
+    const mine = tracks.filter((t) => t.inferenceJobId === latest.inferenceJobId);
+    const positions: Record<string, unknown[]> = {};
+    for (const key of new Set(mine.map((t) => t.artifactKey))) {
+      const artifact = await this.loadArtifact(key);
+      const byLocalId = new Map(artifact.tracks.map((t) => [t.localTrackId, t.positions]));
+      for (const t of mine) if (t.artifactKey === key) positions[t.id] = byLocalId.get(t.localTrackId) ?? [];
+    }
+    return { videoAssetId, trackJobId: latest.inferenceJobId, trackJobs: jobs.size, positions };
+  }
+
   private readonly artifactCache = new Map<string, ParsedArtifact>();
 
   private async loadArtifact(key: string): Promise<ParsedArtifact> {

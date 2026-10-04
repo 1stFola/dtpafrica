@@ -5,9 +5,12 @@
  * to agree with it for display.
  */
 
+import { MATCH_HALVES } from "@dtp/vision-contracts";
+
 export type ClockAnchor = { half: number; sourceMs: number; endMs: number | null };
 
-const BASE_MINUTE: Record<number, number> = { 1: 0, 2: 45, 3: 90, 4: 105 };
+/* From the contract: the table the API reads the clock with. This was a second copy of the numbers. */
+const BASE_MINUTE: Record<number, number> = Object.fromEntries(MATCH_HALVES.map((h) => [h.half, h.baseMinute]));
 export const HALF_NAMES: Record<number, string> = { 1: "1st half", 2: "2nd half", 3: "ET 1st half", 4: "ET 2nd half" };
 
 export type ClockReading =

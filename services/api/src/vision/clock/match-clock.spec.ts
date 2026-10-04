@@ -16,6 +16,19 @@ describe("where a millisecond falls on the match clock", () => {
     expect(clockAt(ANCHORS, 3_000_000 + 46 * 60_000)).toMatchObject({ half: 2, minute: 91, display: "91:00" });
   });
 
+  it("starts extra time at 90 and at 105, both ways", () => {
+    // The table is the contract's now; nothing here pinned the two extra-time rows.
+    const extra: ClockAnchor[] = [
+      { half: 3, sourceMs: 6_000_000, endMs: 6_900_000 },
+      { half: 4, sourceMs: 7_000_000, endMs: null },
+    ];
+    expect(clockAt(extra, 6_000_000)).toMatchObject({ status: "on", half: 3, minute: 90, display: "90:00" });
+    expect(clockAt(extra, 6_000_000 + 4 * 60_000 + 5000)).toMatchObject({ half: 3, minute: 94, second: 5 });
+    expect(clockAt(extra, 7_000_000)).toMatchObject({ status: "on", half: 4, minute: 105, display: "105:00" });
+    expect(sourceMsAt(extra, 3, 92)).toBe(6_000_000 + 2 * 60_000);
+    expect(sourceMsAt(extra, 4, 106, 30)).toBe(7_000_000 + 90_000);
+  });
+
   it("knows before kick-off, between halves, after the final whistle, and unanchored", () => {
     expect(clockAt(ANCHORS, 5000)).toMatchObject({ status: "before_kickoff" });
     expect(clockAt(ANCHORS, 2_800_000)).toMatchObject({ status: "between_halves" });

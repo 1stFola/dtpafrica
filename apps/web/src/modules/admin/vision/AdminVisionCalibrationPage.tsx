@@ -25,6 +25,8 @@ import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
 import { HALF_NAMES, describeClock, nextHalfToAnchor } from "./match-clock";
 import { usePictureRect } from "./use-picture-rect";
+import { snapSourceTimeMs } from "./annotation-boxes";
+import { shortcutOf } from "./identity-shortcuts";
 import {
   SEGMENT_KIND_WORDS,
   clickToProxyPixel,
@@ -73,6 +75,8 @@ export function AdminVisionCalibrationPage() {
   const [playing, setPlaying] = useState(false);
   const [markStart, setMarkStart] = useState<number | null>(null);
   const [markEnd, setMarkEnd] = useState<number | null>(null);
+  /** The clip's length as the video element reports it, for a proxy whose probe recorded none. */
+  const [videoMs, setVideoMs] = useState(0);
   const [kind, setKind] = useState<string>(CAMERA_SEGMENT_KINDS[0]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -129,7 +133,10 @@ export function AdminVisionCalibrationPage() {
 
   const offsetMs = media?.sourceOffsetMs ?? 0;
   const sourceMs = proxyMs + offsetMs;
-  const clipEndMs = media?.durationMs ?? 0;
+  /* What a mark or an anchor at the playhead is stored at: the start of the frame shown, a
+     whole millisecond. A segment's edge was stored as the scrubber's fraction of a millisecond. */
+  const atMs = snapSourceTimeMs(proxyMs, media?.fps ?? null, offsetMs);
+  const clipEndMs = media?.durationMs ?? videoMs;
   const proxySize = useMemo(() => ({ width: media?.width ?? 0, height: media?.height ?? 0 }), [media]);
   const picture = usePictureRect(stageRef, proxySize, Boolean(media && segments));
   const clipWindow = useMemo(() => ({ windowStartMs: 0, windowEndMs: clipEndMs, fps: media?.fps ?? null }), [clipEndMs, media]);
@@ -157,9 +164,12 @@ export function AdminVisionCalibrationPage() {
     else el.pause();
   }, []);
 
+  /* The video element exists once the media and the segments have both arrived; keyed on
+     the media alone this could run before the element was there, and never again. */
+  const ready = Boolean(media && segments);
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !media) return;
+    if (!el || !ready) return;
     let raf = 0;
     let last = -1;
     const tick = () => {
@@ -172,23 +182,23 @@ export function AdminVisionCalibrationPage() {
     };
     raf = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(raf);
-  }, [media]);
+  }, [ready]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const el = event.target as HTMLElement | null;
-      if (el && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) return;
-      if (event.key === " ") {
+      if (event.key === "Escape") {
+        setActiveLandmark(null);
+        return;
+      }
+      /* The identity workstation's reading of a key: not while typing, not under Ctrl, Cmd
+         or Alt, and Space on a focused button presses the button. Only the playhead keys apply here. */
+      const shortcut = shortcutOf({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey, repeat: event.repeat, target: event.target as HTMLElement | null });
+      if (shortcut?.kind === "play") {
         event.preventDefault();
         togglePlay();
-      } else if (event.key === "ArrowLeft") {
+      } else if (shortcut?.kind === "step") {
         event.preventDefault();
-        step(event.shiftKey ? -Math.round(media?.fps ?? 10) : -1);
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        step(event.shiftKey ? Math.round(media?.fps ?? 10) : 1);
-      } else if (event.key === "Escape") {
-        setActiveLandmark(null);
+        step(shortcut.unit === "second" ? shortcut.frames * Math.round(media?.fps ?? 10) : shortcut.frames);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -281,7 +291,11 @@ export function AdminVisionCalibrationPage() {
       <div className="vision-workstation__body">
         <div className="vision-workstation__video">
           <div ref={stageRef} className={`vision-stage vision-stage--calibrate${playing ? " vision-stage--playing" : ""}`} onClick={onStageClick}>
-            <video ref={videoRef} src={media.url} preload="auto" onLoadedMetadata={() => seekTo(0)} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
+            <video ref={videoRef} src={media.url} preload="auto" onLoadedMetadata={(event) => {
+                const seconds = event.currentTarget.duration;
+                if (Number.isFinite(seconds)) setVideoMs(seconds * 1000);
+                seekTo(0);
+              }} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
             <div className="vision-picture" style={{ left: picture.x, top: picture.y, width: picture.width, height: picture.height }}>
             {paths.length > 0 && (
               <svg className="vision-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="The fitted pitch">
@@ -302,7 +316,14 @@ export function AdminVisionCalibrationPage() {
                   type="button"
                   className={`vision-landmark${p.landmark === target ? " is-target" : ""}`}
                   style={{ left: `${f.x * 100}%`, top: `${f.y * 100}%` }}
-                  title={`${landmarkName(p.landmark)} · click to move, right-click to remove`}
+                  title={`${landmarkName(p.landmark)} · click to move, right-click or Delete to remove`}
+                  onKeyDown={(e) => {
+                    /* Removing was a right-click and nothing else, which a keyboard cannot do. */
+                    if (e.key !== "Delete" && e.key !== "Backspace") return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setPoints((prev) => removePoint(prev, p.landmark));
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveLandmark(p.landmark);
@@ -346,11 +367,11 @@ export function AdminVisionCalibrationPage() {
             <button type="button" onClick={togglePlay}>{playing ? "Pause" : "Play"}</button>
             <button type="button" onClick={() => step(1)}>+1 frame</button>
             <button type="button" onClick={() => step(Math.round(media.fps ?? 10))}>+1s</button>
-            <button type="button" onClick={() => setMarkStart(sourceMs)}>Mark start</button>
-            <button type="button" onClick={() => setMarkEnd(sourceMs)}>Mark end</button>
+            <button type="button" onClick={() => setMarkStart(atMs)}>Mark start</button>
+            <button type="button" onClick={() => setMarkEnd(atMs)}>Mark end</button>
           </div>
           <p className="vision-footnote">
-            {playing ? "Pause to place landmarks." : target ? `Click the frame where the ${landmarkName(target).toLowerCase()} is.` : "Every landmark is placed."} Click a placed landmark to move it; right-click removes it. Space play/pause · ← → one frame · Shift + ← → one second · Esc clears the pick.
+            {playing ? "Pause to place landmarks." : target ? `Click the frame where the ${landmarkName(target).toLowerCase()} is.` : "Every landmark is placed."} Click a placed landmark to move it; right-click, or Delete with it focused, removes it. Space play/pause · ← → one frame · Shift + ← → one second · Esc clears the pick.
           </p>
         </div>
 
@@ -439,7 +460,7 @@ export function AdminVisionCalibrationPage() {
               </span>
             </div>
             <div className="vision-actions">
-              <button type="button" disabled={busy} onClick={() => void run(`${HALF_NAMES[half]} kicks off at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: Math.round(sourceMs) }))}>
+              <button type="button" disabled={busy} onClick={() => void run(`${HALF_NAMES[half]} kicks off at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: atMs }))}>
                 Kick-off is here
               </button>
               <button
@@ -447,7 +468,7 @@ export function AdminVisionCalibrationPage() {
                 disabled={busy || !anchors.some((a) => a.half === half)}
                 onClick={() => {
                   const a = anchors.find((x) => x.half === half)!;
-                  void run(`${HALF_NAMES[half]} ends at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: a.sourceMs, endMs: Math.round(sourceMs) }));
+                  void run(`${HALF_NAMES[half]} ends at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: a.sourceMs, endMs: atMs }));
                 }}
               >
                 Half ends here

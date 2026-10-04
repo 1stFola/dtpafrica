@@ -1,19 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  boxIou,
-  boxesOnFrame,
-  countByClass,
-  countTracks,
-  inheritTrackId,
-  nextTrackId,
-  frameOfBox,
-  framesWithBoxes,
-  parseStoredBoxes,
-  rectFromDrag,
-  snapSourceTimeMs,
-  toPayloadBoxes,
-  type DraftBox,
-} from "./annotation-boxes";
+import { boxIou, boxesOnFrame, countByClass, countTracks, frameOfBox, framesWithBoxes, inheritTrackId, nextTrackId, parseStoredBoxes, pointOnPicture, rectFromDrag, snapSourceTimeMs, toPayloadBoxes, type DraftBox } from "./annotation-boxes";
+import { pictureRect } from "./calibration-editor";
 
 /**
  * The arithmetic that decides whether a box means what it says.
@@ -213,5 +200,42 @@ describe("linking a new box to a track", () => {
     const parsed = parseStoredBoxes({ boxes: [{ sourceTimeMs: 10_500, class: "player", x: 0.1, y: 0.1, width: 0.1, height: 0.2, trackId: 4 }] });
     expect(parsed[0]!.trackId).toBe("4");
     expect(toPayloadBoxes(parsed)[0]).toMatchObject({ trackId: "4" });
+  });
+});
+
+describe("a drag on a letterboxed stage", () => {
+  // A 16:9 clip in a column 1600 px wide whose video may be no taller than 558 px: the
+  // picture is 992 x 558 in the middle, with a 304 px bar either side.
+  const stage = { width: 1600, height: 558 };
+  const picture = pictureRect(stage, { width: 1280, height: 720 });
+  const drag = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    const end = pointOnPicture(to, picture);
+    return rectFromDrag(pointOnPicture(from, picture), end, end);
+  };
+
+  it("has the picture in the middle, with a bar either side", () => {
+    expect(picture).toEqual({ x: 304, y: 0, width: 992, height: 558 });
+  });
+
+  it("stores a box as a fraction of the picture, not of the element", () => {
+    // The left half of the picture, full height.
+    expect(drag({ x: 304, y: 0 }, { x: 800, y: 558 })).toEqual({ x: 0, y: 0, width: 0.5, height: 1 });
+    // Measured against the element, bars included, the same drag was x 0.19, width 0.31.
+    expect(rectFromDrag({ x: 304, y: 0 }, { x: 800, y: 558 }, stage)).toEqual({ x: 0.19, y: 0, width: 0.31, height: 1 });
+    // A box in the middle of the picture.
+    expect(drag({ x: 304 + 248, y: 139.5 }, { x: 304 + 744, y: 418.5 })).toEqual({ x: 0.25, y: 0.25, width: 0.5, height: 0.5 });
+  });
+
+  it("clamps a drag that starts or ends on a bar to the picture's edge", () => {
+    expect(drag({ x: 100, y: 100 }, { x: 800, y: 300 })).toMatchObject({ x: 0, width: 0.5 });
+    expect(drag({ x: 800, y: 100 }, { x: 1590, y: 300 })).toMatchObject({ x: 0.5, width: 0.5 });
+    // Wholly on a bar: no box.
+    expect(drag({ x: 10, y: 100 }, { x: 200, y: 300 })).toBeNull();
+  });
+
+  it("is the element itself when the picture fills it", () => {
+    const exact = pictureRect({ width: 1280, height: 720 }, { width: 1280, height: 720 });
+    const end = pointOnPicture({ x: 640, y: 360 }, exact);
+    expect(rectFromDrag(pointOnPicture({ x: 0, y: 0 }, exact), end, end)).toEqual({ x: 0, y: 0, width: 0.5, height: 0.5 });
   });
 });

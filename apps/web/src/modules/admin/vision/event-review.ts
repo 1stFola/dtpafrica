@@ -18,11 +18,16 @@ export const EVENT_TYPES = VISION_EVENT_TYPES;
 
 export type TimelineMark = { candidate: VisionEventCandidate; left: number; width: number };
 
-/** Where each current candidate sits on the clip, as fractions of its width; a candidate outside the clip is dropped. */
+/**
+ * Where each current candidate sits on the clip, as fractions of its width; a
+ * candidate outside the clip is dropped. One that ended before the clip began was
+ * clamped to its first pixel instead, so a clip cut from the second half showed
+ * every first-half event stacked at its start.
+ */
 export function timelineMarks(candidates: readonly VisionEventCandidate[], offsetMs: number, clipMs: number): TimelineMark[] {
   if (clipMs <= 0) return [];
   return candidates
-    .filter((c) => !c.supersededBy)
+    .filter((c) => !c.supersededBy && Math.max(c.endMs, c.startMs) - offsetMs >= 0 && c.startMs - offsetMs <= clipMs)
     .map((c) => {
       const from = Math.max(0, c.startMs - offsetMs);
       const to = Math.min(clipMs, Math.max(c.endMs, c.startMs) - offsetMs);

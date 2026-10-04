@@ -11,6 +11,7 @@ import {
   type VisionTaskMedia,
 } from "../../../api/vision";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { usePictureRect } from "./use-picture-rect";
 import {
   clampToWindow,
   describePosition,
@@ -30,6 +31,7 @@ import {
   newBoxId,
   nextTrackId,
   parseStoredBoxes,
+  pointOnPicture,
   rectFromDrag,
   snapSourceTimeMs,
   toPayloadBoxes,
@@ -98,6 +100,8 @@ export function AdminVisionTaskPage() {
   /** The track the last selected box belonged to, so L can link the next one to it. */
   const [lastTrackId, setLastTrackId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  /** The clip's own pixel size, from its metadata: what the picture's aspect ratio is. */
+  const [natural, setNatural] = useState({ width: 0, height: 0 });
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
   /**
@@ -164,19 +168,37 @@ export function AdminVisionTaskPage() {
   const classCounts = useMemo(() => countByClass(boxes), [boxes]);
   const trackCount = useMemo(() => countTracks(boxes), [boxes]);
 
+  const selectBox = useCallback(
+    (id: string) => {
+      setSelectedBoxId((current) => {
+        const previous = current ? boxes.find((b) => b.id === current) : undefined;
+        if (previous?.trackId) setLastTrackId(previous.trackId);
+        return id;
+      });
+    },
+    [boxes]
+  );
+
   const removeSelectedBox = useCallback(() => {
     if (!selectedBoxId) return;
     setBoxes((current) => current.filter((b) => b.id !== selectedBoxId));
     setSelectedBoxId(null);
   }, [selectedBoxId]);
 
-  /** Pointer position inside the stage, in pixels. */
-  const stagePoint = useCallback((event: { clientX: number; clientY: number }) => {
-    const el = stageRef.current;
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width, height: rect.height };
-  }, []);
+  /* Where the picture sits inside the stage. On a wide window the video is letterboxed, and
+     a box is a fraction of the picture, not of the element (docs/vision/50 C6). */
+  const picture = usePictureRect(stageRef, natural, Boolean(media));
+
+  /** Pointer position on the picture, in the picture's own pixels, with the picture's size. */
+  const stagePoint = useCallback(
+    (event: { clientX: number; clientY: number }) => {
+      const el = stageRef.current;
+      if (!el || picture.width <= 0 || picture.height <= 0) return null;
+      const rect = el.getBoundingClientRect();
+      return pointOnPicture({ x: event.clientX - rect.left, y: event.clientY - rect.top }, picture);
+    },
+    [picture]
+  );
 
   const onStagePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -505,10 +527,16 @@ export function AdminVisionTaskPage() {
               ref={videoRef}
               src={media.url}
               preload="auto"
-              onLoadedMetadata={() => seekTo(media.windowStartMs)}
+              onLoadedMetadata={(event) => {
+                setNatural({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight });
+                seekTo(media.windowStartMs);
+              }}
               onPause={() => setPlaying(false)}
               onPlay={() => setPlaying(true)}
             />
+            {/* The boxes are fractions of the picture, so they are laid out inside an element
+                that is exactly the picture: not the stage, which has bars on a wide window. */}
+            <div className="vision-stage__picture" style={{ left: picture.x, top: picture.y, width: picture.width, height: picture.height }}>
             {boxesHere.map((box) => (
               <div
                 key={box.id}
@@ -533,11 +561,17 @@ export function AdminVisionTaskPage() {
                 onPointerDown={(event) => {
                   // Selecting, not drawing: the stage must not start a drag.
                   event.stopPropagation();
-                  setSelectedBoxId((current) => {
-                    const previous = current ? boxes.find((b) => b.id === current) : undefined;
-                    if (previous?.trackId) setLastTrackId(previous.trackId);
-                    return box.id;
-                  });
+                  selectBox(box.id);
+                }}
+                onKeyDown={(event) => {
+                  /* A box is a button: Enter or Space selects it, as a click does. Stopped here
+                     so Space does not also play the clip. Delete on the selected box is the
+                     page's own shortcut. */
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    selectBox(box.id);
+                  }
                 }}
               >
                 <span className="vision-box__tag">
@@ -559,6 +593,7 @@ export function AdminVisionTaskPage() {
                 }}
               />
             )}
+            </div>
           </div>
 
           <div className="vision-clocks">
