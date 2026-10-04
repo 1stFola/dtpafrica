@@ -50,15 +50,32 @@ describe("every gate", () => {
 });
 
 describe("the gates CI runs", () => {
-  /** The one gate CI does not run: it starts the worker's container. */
-  const NOT_IN_CI = ["vision-worker-e2e-check.ts"];
+  /** Not in either list: it needs the worker's image, so the workflow builds that and runs it in a step of its own. */
+  const OWN_STEP = ["vision-worker-e2e-check.ts"];
   const listed = [...DB_GATES, ...STORE_GATES];
+  const workflow = readFileSync(join(dir, "../../../.github/workflows/ci.yml"), "utf8");
+  const scriptsByName = JSON.parse(readFileSync(join(dir, "..", "package.json"), "utf8")).scripts as Record<string, string>;
 
-  it("are every gate there is, bar the one that needs the worker's container", () => {
-    // A new gate is in one list or the other, or it is named here with its reason.
+  it("are every gate there is: each in a list, or run by the workflow in a step of its own", () => {
+    // A new gate is in one list or the other, or it is named here and the workflow runs it.
     const names = listed.map((g) => g.script);
     expect(new Set(names).size).toBe(names.length);
-    expect([...names, ...NOT_IN_CI].sort()).toEqual(gates);
+    expect([...names, ...OWN_STEP].sort()).toEqual(gates);
+    for (const script of OWN_STEP) {
+      const command = Object.keys(scriptsByName).find((name) => scriptsByName[name]!.endsWith(`scripts/${script}`));
+      expect(command, script).toBeDefined();
+      // Named as the exception is not enough: it was, for a while, the gate nothing ran.
+      expect(workflow, `${script} is run by no step in ci.yml`).toMatch(new RegExp(`run: pnpm --filter @dtp/api ${command}\\b`));
+    }
+    expect(workflow).toContain("run: pnpm --filter @dtp/api vision:gates:ci");
+  });
+
+  it("gives the worker's container and the host one name for the store", () => {
+    // A presigned URL is made out here and used in there. `localhost` in there is the container.
+    const endpoint = /VISION_R2_ENDPOINT: (\S+)/.exec(workflow)?.[1];
+    expect(endpoint).toBe("http://host.docker.internal:9090");
+    expect(workflow).toContain('echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts');
+    expect(readFileSync(join(dir, "vision-worker-e2e-check.ts"), "utf8")).toContain('"--add-host", "host.docker.internal:host-gateway"');
   });
 
   it("exist, and have a script in package.json each, so a person can run one alone", () => {

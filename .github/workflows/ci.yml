@@ -314,7 +314,11 @@ jobs:
   # prefixes, write-once masters and presigned URLs, not Cloudflare's behaviour.
   # The lists are `DB_GATES` and `STORE_GATES` in services/api/scripts/run-db-gates.ts.
   #
-  # The one gate not here is `vision:e2echeck`, which runs the worker's container.
+  # The twenty-second, `vision:e2echeck`, runs last, in a step of its own: it builds
+  # the worker's image and runs the container against this API and this store
+  # (docs/vision/66). That is why the store's endpoint is `host.docker.internal` and
+  # not `localhost`: a presigned URL is handed to the worker inside its container,
+  # and it has to mean the same place there as it does out here.
   #
   # The database starts empty: the migrations and the RBAC seed are all it has.
   # Every gate makes its own partner, footage, people and match, so none depends
@@ -330,7 +334,7 @@ jobs:
       # The object store: the R2 backend, pointed at the mock. Bucket names only; the
       # two credential-shaped values are generated below.
       VISION_STORAGE_BACKEND: r2
-      VISION_R2_ENDPOINT: http://localhost:9090
+      VISION_R2_ENDPOINT: http://host.docker.internal:9090
       VISION_R2_BUCKET_MASTER: gates-master
       VISION_R2_BUCKET_DERIVED: gates-derived
       VISION_R2_BUCKET_MODELS: gates-models
@@ -361,6 +365,12 @@ jobs:
           - 9090:9090
 
     steps:
+      # A Linux runner does not know this name; Docker Desktop on a laptop does. The
+      # worker's container is given it with --add-host, pointing at the host. Here it
+      # points at the host from the host, so one URL works on both sides.
+      - name: Name the host as the worker's container will
+        run: echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -445,14 +455,14 @@ jobs:
       - name: Wait for the object store
         run: |
           for attempt in $(seq 1 60); do
-            if curl -fsS "http://localhost:9090/" 2> /dev/null | grep -q "gates-master"; then
+            if curl -fsS "$VISION_R2_ENDPOINT/" 2> /dev/null | grep -q "gates-master"; then
               echo "The object store answered after $attempt attempt(s), with its buckets."
               exit 0
             fi
             sleep 2
           done
           echo "::error::The object store did not answer with its buckets in two minutes."
-          curl -sS "http://localhost:9090/" | head -c 600 || true
+          curl -sS "$VISION_R2_ENDPOINT/" | head -c 600 || true
           exit 1
 
       - name: Run the gates
@@ -482,6 +492,35 @@ jobs:
             grep -q -- "$step" <<< "$output" || { echo "::error::The bootstrap never reached: $step"; exit 1; }
           done
           echo "The worker provisioned itself, registered, found no work and retired."
+
+      # ── The end-to-end gate ───────────────────────────────────────────────
+      #
+      # Everything above runs the control plane with the worker's part played by the
+      # gate. This runs the worker: the image built from this commit, as a container,
+      # registering, claiming a probe and a transcode and a cuts job for a real clip,
+      # reading the master and writing the proxy through presigned URLs, with FFmpeg.
+      # It is the only check that the image and the API of one commit work together.
+      #
+      # After the gates, so a failing gate does not wait for an image to build. The
+      # layers are cached; nearly all the build is `apt-get install ffmpeg`, which
+      # changes only when the Dockerfile does.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/vision-worker
+          tags: dtp-vision-worker:ci
+          # Into the local image store: the gate runs it with `docker run`.
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run the end-to-end gate with the worker's container
+        env:
+          VISION_E2E_IMAGE: dtp-vision-worker:ci
+        run: pnpm --filter @dtp/api vision:e2echeck test-media/sample-360p.mp4
 
       - name: The API's log, if anything failed
         if: failure()

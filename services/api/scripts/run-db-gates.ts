@@ -19,7 +19,8 @@
  *
  * Every gate makes what it needs, its match included, so the database can be
  * empty: the migrations and the RBAC seed are enough. The one gate in neither
- * list is `vision:e2echeck`, which runs the worker's container.
+ * list is `vision:e2echeck`, which runs the worker's container: it needs the
+ * image built first, so CI runs it in a step of its own (docs/vision/66).
  */
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
