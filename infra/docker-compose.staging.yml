@@ -101,7 +101,9 @@ services:
     cpus: "1.0"
     environment:
       VISION_WORKER_CALLBACK_URL: http://api:3000/api/v1/vision/worker
-      VISION_PROVISION_API_KEY: ${ADMIN_API_KEY:?set ADMIN_API_KEY}
+      # Not the operator key. A key the deploy derives from it, which the API lets
+      # provision and retire the local worker and nothing else (docs/vision/67).
+      VISION_PROVISION_KEY: ${VISION_PROVISION_KEY:?set VISION_PROVISION_KEY}
       VISION_PROVIDER_ID: local
       VISION_RESOURCE_CLASS: cpu_small
       VISION_WORKER_IMAGE: ${IMAGE_REGISTRY}/dtp-vision-worker:${IMAGE_TAG}

@@ -37,6 +37,7 @@ import { OBJECT_STORE } from "./storage/object-store";
 import { VisionModule } from "./vision.module";
 import { VisionStatusController } from "./vision-status.controller";
 import { VisionWorkerController } from "./worker/worker.controller";
+import { WorkerProvisionController } from "./worker/worker-provision.controller";
 import { WorkerTokenService } from "./worker/worker-token.service";
 
 /**
@@ -87,6 +88,7 @@ const CONTROLLERS = [
   VisionStatusController,
   VisionJobsController,
   VisionWorkerController,
+  WorkerProvisionController,
   VisionUploadsController,
   VisionPartnerUploadsController,
   VisionSourcesController,
@@ -185,6 +187,7 @@ describe("VisionModule resolves through the container", () => {
       "PartnerUploadGuard",
       "VisionWorkerGuard",
       "VisionWorkerBootstrapGuard",
+      "WorkerProvisionGuard",
     ]);
     expect(classes.map((c) => c.name).filter((n) => !covered.has(n))).toEqual([]);
   });

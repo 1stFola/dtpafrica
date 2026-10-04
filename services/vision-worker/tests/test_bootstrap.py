@@ -38,13 +38,15 @@ class Api:
         return httpx.MockTransport(self.handler)
 
 
-def test_provision_asks_with_the_operator_key_and_returns_the_token() -> None:
+def test_provision_asks_with_the_provision_key_and_returns_the_token() -> None:
     api = Api([("json", 201, {"workerId": "w-9", "bootstrapToken": "tok-9", "providerId": "local"})])
-    out = provision(CALLBACK, "operator-key", "cpu_small", transport=api.transport, sleep=lambda s: None)
+    out = provision(CALLBACK, "provision-key", "cpu_small", transport=api.transport, sleep=lambda s: None)
     assert out["workerId"] == "w-9" and out["bootstrapToken"] == "tok-9"
     req = api.requests[0]
     assert str(req.url) == "http://api:3000/api/v1/vision/workers/provision"
-    assert req.headers["x-admin-api-key"] == "operator-key"
+    assert req.headers["x-vision-provision-key"] == "provision-key"
+    # The operator key's header is not sent: this worker does not hold the operator key.
+    assert "x-admin-api-key" not in req.headers
     assert json.loads(req.content) == {"resourceClass": "cpu_small", "providerId": "local"}
 
 
@@ -105,7 +107,7 @@ def test_main_provisions_sets_the_token_runs_and_retires(monkeypatch: pytest.Mon
     calls: list[str] = []
     monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda *a, **k: calls.append("provision") or {"workerId": "w-5", "bootstrapToken": "tok-5"})
     monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda cb, key, wid: calls.append(f"retire:{wid}") or True)
-    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_API_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
 
     def run() -> int:
         calls.append(f"run:{env['VISION_BOOTSTRAP_TOKEN']}")
@@ -119,7 +121,7 @@ def test_main_retires_even_when_the_worker_fails(monkeypatch: pytest.MonkeyPatch
     calls: list[str] = []
     monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda *a, **k: {"workerId": "w-6", "bootstrapToken": "t"})
     monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda cb, key, wid: calls.append(f"retire:{wid}") or True)
-    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_API_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
 
     def run() -> int:
         raise RuntimeError("boom")
@@ -134,7 +136,7 @@ def test_main_takes_the_operator_key_out_of_the_environment_before_running(monke
     retired_with: list[str] = []
     monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda *a, **k: {"workerId": "w-7", "bootstrapToken": "t"})
     monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda cb, key, wid: retired_with.append(key) or True)
-    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_API_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
     seen: list[bool] = []
     assert main(env, run=lambda: seen.append("VISION_PROVISION_API_KEY" in env) or 0) == 0
     assert seen == [False]
@@ -145,6 +147,44 @@ def test_an_empty_provision_wait_is_the_default_not_a_crash(monkeypatch: pytest.
     waits: list[float] = []
     monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda *a, **k: waits.append(k["wait_seconds"]) or {"workerId": "w", "bootstrapToken": "t"})
     monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda *a: True)
-    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_API_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small", "VISION_PROVISION_WAIT_SECONDS": ""}
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small", "VISION_PROVISION_WAIT_SECONDS": ""}
     assert main(env, run=lambda: 0) == 0
     assert waits == [600.0]
+
+
+def test_retire_presents_the_provision_key() -> None:
+    api = Api([("json", 201, {"ok": True})])
+    assert retire(CALLBACK, "provision-key", "w-9", transport=api.transport) is True
+    assert api.requests[0].headers["x-vision-provision-key"] == "provision-key"
+    assert "x-admin-api-key" not in api.requests[0].headers
+
+
+def test_main_takes_the_provision_key_out_of_the_environment_before_the_worker_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda *a, **k: {"workerId": "w-7", "bootstrapToken": "t"})
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda cb, key, wid: True)
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_KEY": "k", "VISION_RESOURCE_CLASS": "cpu_small"}
+    seen: list[dict] = []
+    assert main(env, run=lambda: seen.append(dict(env)) or 0) == 0
+    # What a stage's child process would inherit: the worker's token, and no key that provisions.
+    assert "VISION_PROVISION_KEY" not in seen[0]
+    assert seen[0]["VISION_BOOTSTRAP_TOKEN"] == "t"
+
+
+def test_main_refuses_the_operator_key_it_used_to_be_given(caplog: pytest.LogCaptureFixture) -> None:
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_API_KEY": "the-operator-key", "VISION_RESOURCE_CLASS": "cpu_small"}
+    with caplog.at_level("ERROR"):
+        assert main(env, run=lambda: 0) == 2
+    assert "VISION_PROVISION_KEY" in caplog.text
+    # Not read, not logged, and not left for anything to inherit.
+    assert "the-operator-key" not in caplog.text
+    assert "VISION_PROVISION_API_KEY" not in env
+
+
+def test_main_ignores_the_old_variable_when_the_new_one_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    used: list[str] = []
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.provision", lambda cb, key, *a, **k: used.append(key) or {"workerId": "w-8", "bootstrapToken": "t"})
+    monkeypatch.setattr("dtp_vision_worker.bootstrap.retire", lambda cb, key, wid: used.append(key) or True)
+    env = {"VISION_WORKER_CALLBACK_URL": CALLBACK, "VISION_PROVISION_KEY": "new", "VISION_PROVISION_API_KEY": "old-operator-key", "VISION_RESOURCE_CLASS": "cpu_small"}
+    assert main(env, run=lambda: 0) == 0
+    assert used == ["new", "new"]
+    assert "VISION_PROVISION_API_KEY" not in env

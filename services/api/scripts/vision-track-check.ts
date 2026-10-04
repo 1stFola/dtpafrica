@@ -31,6 +31,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { PROVISION_KEY_HEADER, provisionKeyFor } from "../src/vision/worker/provision-key";
 import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
@@ -353,6 +354,30 @@ async function main() {
        An admin route, and the worker's door, which answers before any guard has a worker to name. */
     const noTracks = await api(`/vision/assets/${randomUUID()}/tracks`);
     check("…and a refusal says which refusal it is and what to do", `${noTracks.status}/${noTracks.body.error}/${typeof noTracks.body.remediation}`, "404/NotFound/string");
+    /* The provision key (docs/vision/67): what the worker on the box holds in place of the
+       operator key. It provisions and retires the local worker, and does nothing else. */
+    const provisionKey = provisionKeyFor(process.env.ADMIN_API_KEY) ?? "";
+    const withKey = (path: string, body: unknown, key = provisionKey) => call(path, { [PROVISION_KEY_HEADER]: key }, { method: "POST", body: JSON.stringify(body) });
+    const ownWorker = await withKey("/vision/workers/provision", { resourceClass: "cpu_small", providerId: "local" });
+    check("the provision key provisions the box's own worker", `${ownWorker.status}/${typeof ownWorker.body.bootstrapToken}/${ownWorker.body.requestedBy}`, "201/string/provision_key");
+    if (ownWorker.body.workerId) fx.workerIds.push(String(ownWorker.body.workerId));
+    const hosted = await withKey("/vision/workers/provision", { resourceClass: "cpu_small", providerId: "mock" });
+    check("…and no other provider's", `${hosted.status}/${hosted.body.error}`, "403/ProvisionKeyScope");
+    const wrongKey = await withKey("/vision/workers/provision", { resourceClass: "cpu_small", providerId: "local" }, "0".repeat(64));
+    check("a wrong provision key: refused", `${wrongKey.status}/${wrongKey.body.error}`, "401/ProvisionKeyInvalid");
+    const operatorAsProvision = await withKey("/vision/workers/provision", { resourceClass: "cpu_small", providerId: "local" }, process.env.ADMIN_API_KEY ?? "");
+    check("the operator key is not the provision key", operatorAsProvision.status, 401);
+    const elsewhere = await call("/vision/overview", { [PROVISION_KEY_HEADER]: provisionKey });
+    check("the provision key opens no other route", elsewhere.status, 401);
+    const asAdminKey = await call("/vision/overview", { "x-admin-api-key": provisionKey });
+    check("…and is not an operator key under the operator's header", asAdminKey.status, 401);
+    const retireMock = await withKey(`/vision/workers/${provisioned.body.workerId}/retire`, {});
+    check("the provision key cannot retire another provider's worker", `${retireMock.status}/${retireMock.body.error}`, "403/ProvisionKeyScope");
+    const retireOwn = await withKey(`/vision/workers/${ownWorker.body.workerId}/retire`, {});
+    check("…and retires its own", `${retireOwn.status}/${retireOwn.body.ok}`, "201/true");
+    const retireGone = await withKey(`/vision/workers/${randomUUID()}/retire`, {});
+    check("a worker that does not exist: not found, not a 500", `${retireGone.status}/${retireGone.body.error}`, "404/NotFound");
+
     const noToken = await call("/vision/worker/jobs/claim", {}, { method: "POST", body: JSON.stringify({}) });
     check("…at the worker's door too", `${noToken.status}/${noToken.body.error}/${typeof noToken.body.remediation}`, "401/WorkerTokenRequired/string");
 

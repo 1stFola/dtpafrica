@@ -468,6 +468,21 @@ newest proxy variant, or `409 ProxyNotTranscoded` ([53](./53-QA-FIX-3-JOB-PROTOC
 Hard rule: **no worker endpoint accepts an admin session, and no admin endpoint accepts a worker
 token.** Enforced by distinct guards and covered by a test asserting cross-use returns 401.
 
+### Provisioning and retiring — `vision/workers`
+
+```
+POST /vision/workers/provision
+POST /vision/workers/:id/retire
+```
+
+An admin with `vision.jobs.run` may call either for any provider. So may the **provision
+key**, sent as `x-vision-provision-key`, for the `local` provider only: it is what the
+worker on the box holds, the SHA-256 of `vision-worker-provision-v1:` and the operator key
+([67](./67-QA-FIX-17-PROVISION-KEY.md)). A wrong key is `401 ProvisionKeyInvalid` and is
+not tried as anything else; the key used for another provider, or to retire another
+provider's worker, is `403 ProvisionKeyScope`. No other route accepts it. Retiring a
+worker that does not exist is `404 NotFound`.
+
 ---
 
 ## The prediction envelope
@@ -725,6 +740,6 @@ when a route has neither a permission nor a token guard.
 | `POST` | `/vision/worker/jobs/claim` | worker token | `worker/worker.controller.ts` |
 | `POST` | `/vision/worker/register` | bootstrap token | `worker/worker.controller.ts` |
 | `GET` | `/vision/workers` | `vision.read` | `jobs/jobs.controller.ts` |
-| `POST` | `/vision/workers/:id/retire` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
-| `POST` | `/vision/workers/provision` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
+| `POST` | `/vision/workers/:id/retire` | `vision.jobs.run` or the provision key | `worker/worker-provision.controller.ts` |
+| `POST` | `/vision/workers/provision` | `vision.jobs.run` or the provision key | `worker/worker-provision.controller.ts` |
 <!-- routes:end -->

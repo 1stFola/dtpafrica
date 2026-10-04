@@ -163,7 +163,7 @@ jobs:
         working-directory: services/vision-worker
         run: |
           set +e
-          output=$(env -u VISION_BOOTSTRAP_TOKEN -u VISION_WORKER_CALLBACK_URL -u VISION_PROVISION_API_KEY -u VISION_RESOURCE_CLASS python -m dtp_vision_worker.bootstrap 2>&1)
+          output=$(env -u VISION_BOOTSTRAP_TOKEN -u VISION_WORKER_CALLBACK_URL -u VISION_PROVISION_KEY -u VISION_PROVISION_API_KEY -u VISION_RESOURCE_CLASS python -m dtp_vision_worker.bootstrap 2>&1)
           status=$?
           set -e
           echo "$output"
@@ -171,7 +171,7 @@ jobs:
             echo "::error::Expected exit 2 from an unconfigured bootstrap, got $status"
             exit 1
           fi
-          for setting in VISION_WORKER_CALLBACK_URL VISION_PROVISION_API_KEY VISION_RESOURCE_CLASS; do
+          for setting in VISION_WORKER_CALLBACK_URL VISION_PROVISION_KEY VISION_RESOURCE_CLASS; do
             grep -q "$setting" <<< "$output" || { echo "::error::The bootstrap no longer names $setting"; exit 1; }
           done
 
@@ -185,6 +185,28 @@ jobs:
           pip install --quiet ansible-core
           ansible-galaxy collection install community.general
           ansible-playbook infra/ansible/playbook.yml --syntax-check -i 'localhost,'
+
+      # The worker is given a key derived from the operator key, and the API derives the
+      # same key to recognise it (docs/vision/67). Three places compute it: the API, the
+      # deploy's env template, and a shell line in this workflow. The API's is pinned by a
+      # test with a known answer. This renders the template's own line with Ansible and
+      # holds it to the shell's answer for a key made up on the spot, so the three cannot
+      # drift apart and leave the worker on the box unable to provision itself.
+      - name: The deploy derives the provision key as the API does
+        run: |
+          set -euo pipefail
+          key=$(openssl rand -hex 16)
+          want=$(printf 'vision-worker-provision-v1:%s' "$key" | sha256sum | cut -d' ' -f1)
+          line=$(grep '^VISION_PROVISION_KEY=' infra/ansible/roles/deploy/templates/staging.env.j2)
+          printf -- '- hosts: localhost\n  gather_facts: false\n  tasks:\n    - debug:\n        msg: "%s"\n' "$line" > "$RUNNER_TEMP/derive.yml"
+          rendered=$(ansible-playbook "$RUNNER_TEMP/derive.yml" -i 'localhost,' -c local -e "{\"app_creds\": {\"ADMIN_API_KEY\": \" $key \"}}")
+          got=$(grep -o 'VISION_PROVISION_KEY=[0-9a-f]*' <<< "$rendered" | head -1)
+          if [ "$got" != "VISION_PROVISION_KEY=$want" ]; then
+            echo "::error::The deploy template and the shell derive different provision keys."
+            echo "template line: $line"
+            exit 1
+          fi
+          echo "The deploy template derives the key the API expects."
   # ── API image ─────────────────────────────────────────────────────────────
   #
   # **This job exists because of an outage.** The API's compiled output requires
@@ -469,7 +491,8 @@ jobs:
         run: pnpm --filter @dtp/api vision:gates:ci
 
       # The path the staging box takes: the bootstrap entrypoint provisions itself with
-      # the admin key, registers, asks for work, finds none, and retires. Every step of
+      # the provision key, derived here as the deploy derives it and never the admin
+      # key itself, registers, asks for work, finds none, and retires. Every step of
       # that is a request to the API above; nothing else in CI makes them.
       - name: The worker bootstrap provisions, registers and retires against the API
         working-directory: services/vision-worker
@@ -480,7 +503,9 @@ jobs:
           VISION_IDLE_SHUTDOWN_SECONDS: "5"
         run: |
           set +e
-          output=$(VISION_PROVISION_API_KEY="$ADMIN_API_KEY" VISION_WORK_DIR="$RUNNER_TEMP/dtp-vision" timeout 180 python -m dtp_vision_worker.bootstrap 2>&1)
+          provision_key=$(printf 'vision-worker-provision-v1:%s' "$ADMIN_API_KEY" | sha256sum | cut -d' ' -f1)
+          echo "::add-mask::$provision_key"
+          output=$(env -u ADMIN_API_KEY VISION_PROVISION_KEY="$provision_key" VISION_WORK_DIR="$RUNNER_TEMP/dtp-vision" timeout 180 python -m dtp_vision_worker.bootstrap 2>&1)
           status=$?
           set -e
           tail -30 <<< "$output"
@@ -674,7 +699,7 @@ jobs:
             echo "::error::Expected exit 2 from an unconfigured bootstrap, got $status"
             exit 1
           fi
-          grep -q "VISION_PROVISION_API_KEY" <<< "$output" || { echo "::error::The bootstrap no longer names VISION_PROVISION_API_KEY"; exit 1; }
+          grep -q "VISION_PROVISION_KEY" <<< "$output" || { echo "::error::The bootstrap no longer names VISION_PROVISION_KEY"; exit 1; }
 
       # ffmpeg is the reason this image is as large as it is. If an apt-get line is
       # ever dropped the stages break at runtime and nowhere else.

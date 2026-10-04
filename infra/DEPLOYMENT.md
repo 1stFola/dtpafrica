@@ -416,7 +416,8 @@ empty until the secret holds it, so a deploy without them changes nothing.
    API opens a resumable session and the bytes go straight to the store.
 6. The CPU worker runs beside the API as the `worker` compose service, under the `vision`
    profile the env file switches on with `VISION_ENABLED`. It provisions its own bootstrap
-   token through the API with the operator key and claims the CPU stages; `detect` needs a
+   token through the API with `VISION_PROVISION_KEY`, which the deploy derives from the
+   operator key and which can do nothing else (docs/vision/67), and claims the CPU stages; `detect` needs a
    GPU pod. Watch it with `sudo docker compose -f infra/docker-compose.staging.yml
    --env-file infra/.env.staging logs -f worker` from `/opt/dtp-app/repo`. A full match's
    transcode needs the file twice over in the worker's work directory, `/var/lib/dtp-vision`,

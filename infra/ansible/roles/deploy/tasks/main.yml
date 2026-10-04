@@ -536,7 +536,7 @@
   ansible.builtin.fail:
     msg: >-
       Vision is on but the worker never provisioned a token within 180s (crash loop,
-      wrong VISION_PROVISION_API_KEY, or the API refusing it). Last worker logs:
+      wrong VISION_PROVISION_KEY, or the API refusing it). Last worker logs:
       {{ worker_logs.stdout_lines | default([]) | join(' | ') }}
   when: (vision_on | bool) and worker_up.rc != 0
 

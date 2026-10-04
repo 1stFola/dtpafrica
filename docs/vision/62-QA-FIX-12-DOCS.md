@@ -155,7 +155,8 @@ lost. **Done since, in [63](./63-QA-FIX-13-LOW-FINDINGS.md).** As listed:
 - **Done since, in [65](./65-QA-FIX-15-GATES-IN-CI.md):** CI runs twenty-one. As listed:
   CI runs eight of twenty-two gates. The rest need a bucket two processes share, for
   which a MinIO service in the job would do.
-- A provision-only key for the worker; it still holds the admin key.
+- **Done since, in [67](./67-QA-FIX-17-PROVISION-KEY.md).** As listed: a provision-only
+  key for the worker; it still holds the admin key.
 - The identity workstation shows the first 2,000 tracks of a run and says when there are
   more; it does not fetch the next page. Its boxes are still drawn through React.
 - The expired-playback-URL refresh is on the identity page only, and has not been seen to
