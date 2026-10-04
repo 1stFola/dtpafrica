@@ -483,6 +483,11 @@ not tried as anything else; the key used for another provider, or to retire anot
 provider's worker, is `403 ProvisionKeyScope`. No other route accepts it. Retiring a
 worker that does not exist is `404 NotFound`.
 
+Each provision and each retire that happens writes an audit row, `worker.provisioned` or
+`worker.retired`, under whoever did it; the provision key's `actorMethod` is
+`provision_key`. The bootstrap token is never in it
+([68](./68-QA-FIX-18-WORKER-AUDIT.md)).
+
 ---
 
 ## The prediction envelope

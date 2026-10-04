@@ -394,8 +394,19 @@ async function purgeWorkers() {
   keep(`${GATE_WORKER_PROVIDER}-provider workers`, workers.filter((w) => busy.has(w.id)).map((w) => w.id), "they hold a job");
   const idle = workers.filter((w) => !busy.has(w.id));
   report(`${GATE_WORKER_PROVIDER}-provider workers holding no job`, idle.map((w) => `${w.id}  ${w.resourceClass}${w.retiredAt ? "  retired" : ""}`));
-  if (!APPLY || !idle.length) return;
-  deleted += (await prisma.visionWorker.deleteMany({ where: { id: { in: idle.map((w) => w.id) } } })).count;
+  /* A provision and a retire each leave an audit row (docs/vision/68). A row whose worker
+     is gone was a gate's: nothing else deletes a worker. */
+  const trail = await prisma.visionAuditLog.findMany({ where: { targetKind: "vision_worker" }, select: { id: true, targetId: true, action: true } });
+  const living = new Set((await prisma.visionWorker.findMany({ select: { id: true } })).map((w) => w.id));
+  const orphaned = trail.filter((a) => !a.targetId || !living.has(a.targetId));
+  report("audit rows for a worker that no longer exists", orphaned.map((a) => `${a.id}  ${a.action}  ${a.targetId}`));
+  if (!APPLY) return;
+  const ids = idle.map((w) => w.id);
+  const audits = await prisma.visionAuditLog.deleteMany({
+    where: { targetKind: "vision_worker", OR: [{ targetId: { in: ids } }, { id: { in: orphaned.map((a) => a.id) } }] },
+  });
+  deleted += audits.count;
+  deleted += (await prisma.visionWorker.deleteMany({ where: { id: { in: ids } } })).count;
 }
 
 /**

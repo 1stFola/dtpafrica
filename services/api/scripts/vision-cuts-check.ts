@@ -35,7 +35,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, removeGateWorkers, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -156,7 +156,7 @@ async function cleanup(fx: Fixture | null, store: ObjectStore) {
   for (const w of fx.wrote) await store.delete(w.bucket, w.key).catch(() => undefined);
   if (fx.tmp) rmSync(fx.tmp, { recursive: true, force: true });
   await prisma.visionVideoAsset.deleteMany({ where: { id: fx.assetId } });
-  await prisma.visionWorker.deleteMany({ where: { id: { in: fx.workerIds } } });
+  await removeGateWorkers(prisma, fx.workerIds);
   await prisma.visionAuditLog.deleteMany({ where: { OR: [{ actorId: { in: fx.userIds } }, { targetId: { in: [...fx.jobIds, fx.assetId] } }] } });
   await prisma.adminUser.deleteMany({ where: { id: { in: fx.userIds } } });
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });

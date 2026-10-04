@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { VISION_AUDIT_ACTIONS, VisionAuditService } from "../audit/vision-audit.service";
 import { PROVISION_KEY_HEADER, PROVISION_KEY_PROVIDERS, isProvisionKey, provisionKeyFor } from "./provision-key";
 import { WorkerProvisionController } from "./worker-provision.controller";
 import { WorkerProvisionGuard } from "./worker-provision.guard";
@@ -117,7 +118,8 @@ describe("what the provision key may do past the door", () => {
   const launch = vi.fn();
   const compute = { get: vi.fn(() => ({ capabilities: () => ({ resourceClasses: ["cpu_small", "gpu_24gb"] }), launch })) };
   const config = { compute: { defaultProvider: "runpod", workerImage: "img:1" }, jobs: { defaultBudgetSeconds: 600, defaultBudgetUsdCents: 100 } };
-  const controller = new WorkerProvisionController(prisma as never, tokens as never, compute as never, config as never);
+  const audit = { record: vi.fn() };
+  const controller = new WorkerProvisionController(prisma as never, tokens as never, compute as never, config as never, audit as never);
   const withKey = { headers: {}, provisionKey: true };
   const asAdmin = { headers: {}, adminAuth: { method: "jwt", userId: "u-1", roleSlug: "vision_admin", roleName: null, permissions: [] } };
 
@@ -132,6 +134,14 @@ describe("what the provision key may do past the door", () => {
     const out = await controller.provisionWorker({ resourceClass: "cpu_small", providerId: "local" } as never, withKey as never);
     expect(out).toMatchObject({ workerId: "w-1", providerId: "local", bootstrapToken: "boot", requestedBy: "provision_key" });
     expect(tokens.mintBootstrap).toHaveBeenCalledWith({ providerId: "local", resourceClass: "cpu_small", image: "img:1" });
+    // On the audit trail as what it was: the provision key, not a person and not the operator key.
+    expect(audit.record).toHaveBeenCalledTimes(1);
+    expect(audit.record).toHaveBeenCalledWith(
+      { action: "worker.provisioned", targetKind: "vision_worker", targetId: "w-1", data: { providerId: "local", providerRef: "ref-1", resourceClass: "cpu_small", image: "img:1", bootstrapExpiresAt: "2026-10-05T00:00:00.000Z" } },
+      { method: "provision_key" }
+    );
+    // The token is shown to the caller once and written nowhere, the audit row included.
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain('"boot"');
   });
 
   it("cannot start a hosted worker, named or by default: nothing is minted and nothing launched", async () => {
@@ -142,25 +152,45 @@ describe("what the provision key may do past the door", () => {
     await expect(controller.provisionWorker({ resourceClass: "cpu_small" } as never, withKey as never)).rejects.toMatchObject({ status: 403, response: { error: "ProvisionKeyScope" } });
     expect(tokens.mintBootstrap).not.toHaveBeenCalled();
     expect(launch).not.toHaveBeenCalled();
+    // Nothing happened, so nothing is recorded as having happened.
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it("leaves an admin free to provision any provider", async () => {
     const out = await controller.provisionWorker({ resourceClass: "gpu_24gb", providerId: "runpod" } as never, asAdmin as never);
     expect(out).toMatchObject({ providerId: "runpod", requestedBy: "u-1" });
     expect(launch).toHaveBeenCalledTimes(1);
+    // The admin is the actor, whole: the audit service reads the id, email and method from it.
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "worker.provisioned", targetId: "w-1" }), asAdmin.adminAuth);
+  });
+
+  it("records nothing for a worker that was never started", async () => {
+    // A class the provider does not offer: refused before a token is minted.
+    await expect(controller.provisionWorker({ resourceClass: "gpu_48gb", providerId: "runpod" } as never, asAdmin as never)).rejects.toMatchObject({ status: 404 });
+    // A launch that fails: no worker runs, and the row does not claim one does.
+    launch.mockRejectedValueOnce(new Error("the provider is down"));
+    await expect(controller.provisionWorker({ resourceClass: "gpu_24gb", providerId: "runpod" } as never, asAdmin as never)).rejects.toThrow("the provider is down");
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it("retires the box's own worker, and not a hosted one", async () => {
-    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-1", providerId: "local" });
+    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-1", providerId: "local", resourceClass: "cpu_small", retiredAt: null });
     await expect(controller.retireWorker("w-1", withKey as never)).resolves.toEqual({ ok: true });
     expect(tokens.retire).toHaveBeenCalledWith("w-1");
+    expect(audit.record).toHaveBeenCalledWith(
+      { action: "worker.retired", targetKind: "vision_worker", targetId: "w-1", data: { providerId: "local", resourceClass: "cpu_small", alreadyRetired: false } },
+      { method: "provision_key" }
+    );
 
     tokens.retire.mockClear();
-    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-2", providerId: "runpod" });
+    audit.record.mockClear();
+    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-2", providerId: "runpod", resourceClass: "gpu_24gb", retiredAt: new Date("2026-10-04T00:00:00Z") });
     await expect(controller.retireWorker("w-2", withKey as never)).rejects.toMatchObject({ status: 403, response: { error: "ProvisionKeyScope" } });
     expect(tokens.retire).not.toHaveBeenCalled();
-    // An admin may.
+    expect(audit.record).not.toHaveBeenCalled();
+    // An admin may. Retiring a retired worker rotates its token again, and the row says it was a repeat.
     await expect(controller.retireWorker("w-2", asAdmin as never)).resolves.toEqual({ ok: true });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "worker.retired", targetId: "w-2", data: expect.objectContaining({ alreadyRetired: true }) }), asAdmin.adminAuth);
   });
 
   it("answers 404 for a worker that does not exist, whoever asks", async () => {
@@ -169,5 +199,14 @@ describe("what the provision key may do past the door", () => {
       await expect(controller.retireWorker("gone", who as never)).rejects.toMatchObject({ status: 404, response: { error: "NotFound" } });
     }
     expect(tokens.retire).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it("writes the row with the provision key as the method and nobody as the person", async () => {
+    const create = vi.fn();
+    const real = new VisionAuditService({ visionAuditLog: { create } } as never);
+    await real.record({ action: "worker.provisioned", targetKind: "vision_worker", targetId: "w-1" }, { method: "provision_key" });
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ action: "worker.provisioned", targetKind: "vision_worker", targetId: "w-1", actorId: null, actorEmail: null, actorMethod: "provision_key" }) });
+    expect(VISION_AUDIT_ACTIONS).toEqual(expect.arrayContaining(["worker.provisioned", "worker.retired"]));
   });
 });

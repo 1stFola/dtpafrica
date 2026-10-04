@@ -82,6 +82,7 @@ reviewed, reproducible player evidence.
 | — | [65-QA-FIX-15-GATES-IN-CI.md](./65-QA-FIX-15-GATES-IN-CI.md) | QA fix 15, the rest of the gates in CI: an S3 mock beside Postgres so the gate and the API see one store, every gate making its own match, and twenty-one of the twenty-two gates run on every pull request. |
 | — | [66-QA-FIX-16-E2E-IN-CI.md](./66-QA-FIX-16-E2E-IN-CI.md) | QA fix 16, the end-to-end gate in CI: the worker image built from the commit and run as a container against the job's API and store, so every gate runs on every pull request. |
 | — | [67-QA-FIX-17-PROVISION-KEY.md](./67-QA-FIX-17-PROVISION-KEY.md) | QA fix 17, a provision-only key: the worker on the box holds a key derived from the operator key that provisions and retires the box's own worker and nothing else. |
+| — | [68-QA-FIX-18-WORKER-AUDIT.md](./68-QA-FIX-18-WORKER-AUDIT.md) | QA fix 18, the worker audit trail: every provision and every retire writes an audit row under who did it, the provision key included, and never the token. |
 
 Also: [`docs/licenses/OSS_REGISTER.md`](../licenses/OSS_REGISTER.md) — every third-party
 component, with its code / weights / dataset licence tracked separately. Nothing ships without

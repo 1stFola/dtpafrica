@@ -2,6 +2,7 @@ import { Body, Controller, Inject, Param, Post, Req, UseGuards } from "@nestjs/c
 import { RequirePermissions } from "../../admin/decorators/require-permissions.decorator";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
+import { VisionAuditService, type VisionAuditActor } from "../audit/vision-audit.service";
 import { COMPUTE_PROVIDER_REGISTRY, type ComputeProviderRegistry } from "../compute/compute-provider";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { ProvisionWorkerDto } from "../jobs/dto/enqueue-job.dto";
@@ -11,6 +12,11 @@ import { WorkerProvisionGuard, type ProvisionRequest } from "./worker-provision.
 import { WorkerTokenService } from "./worker-token.service";
 
 type Caller = ProvisionRequest & { adminAuth?: AdminAuthContext };
+
+/** The provision key is its own kind of caller; anyone else is the admin the guards let in. */
+function actorOf(req: Caller): VisionAuditActor | null {
+  return req.provisionKey ? { method: "provision_key" } : (req.adminAuth ?? null);
+}
 
 /**
  * Starting a worker and ending one.
@@ -27,7 +33,8 @@ export class WorkerProvisionController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(WorkerTokenService) private readonly workerTokens: WorkerTokenService,
     @Inject(COMPUTE_PROVIDER_REGISTRY) private readonly compute: ComputeProviderRegistry,
-    @Inject(VISION_CONFIG) private readonly config: VisionConfig
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig,
+    @Inject(VisionAuditService) private readonly audit: VisionAuditService
   ) {}
 
   /**
@@ -77,6 +84,18 @@ export class WorkerProvisionController {
       data: { providerRef: launch.providerRef },
     });
 
+    // Who started a worker, and with what. Never the token: the row says a token
+    // was minted, and only the caller ever saw it.
+    await this.audit.record(
+      {
+        action: "worker.provisioned",
+        targetKind: "vision_worker",
+        targetId: minted.workerId,
+        data: { providerId, providerRef: launch.providerRef ?? null, resourceClass: dto.resourceClass, image, bootstrapExpiresAt: minted.expiresAt.toISOString() },
+      },
+      actorOf(req)
+    );
+
     return {
       workerId: minted.workerId,
       providerId,
@@ -93,11 +112,22 @@ export class WorkerProvisionController {
   @Post(":id/retire")
   @RequirePermissions("vision.jobs.run")
   async retireWorker(@Param("id") id: string, @Req() req: Caller) {
-    const worker = await this.prisma.visionWorker.findUnique({ where: { id }, select: { id: true, providerId: true } });
+    const worker = await this.prisma.visionWorker.findUnique({ where: { id }, select: { id: true, providerId: true, resourceClass: true, retiredAt: true } });
     // It was an update on a row that might not exist, which answered 500.
     if (!worker) throw notFound("worker", id);
     if (req.provisionKey) this.keyMayActFor(worker.providerId, "retire this worker");
     await this.workerTokens.retire(id);
+    // A retire rotates the token whether or not the worker was already retired, so
+    // each one is on the trail; `alreadyRetired` tells the first from a repeat.
+    await this.audit.record(
+      {
+        action: "worker.retired",
+        targetKind: "vision_worker",
+        targetId: id,
+        data: { providerId: worker.providerId, resourceClass: worker.resourceClass, alreadyRetired: worker.retiredAt !== null },
+      },
+      actorOf(req)
+    );
     return { ok: true };
   }
 

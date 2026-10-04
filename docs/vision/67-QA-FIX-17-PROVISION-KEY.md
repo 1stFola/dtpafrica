@@ -95,7 +95,7 @@ box cannot start. So:
 |---|---|
 | **Rotating the operator key** | Still Fola's ([51](./51-QA-FIX-1-SECRETS.md)). It now rotates the provision key with it. |
 | **A key per worker** | One box, one worker. If there are ever several boxes, each wants its own. |
-| **An audit row per provision** | The response names `provision_key` as the requester; nothing is written to the audit log for either caller. |
+| **An audit row per provision** | Done since, in [68](./68-QA-FIX-18-WORKER-AUDIT.md). As listed: the response names `provision_key` as the requester; nothing is written to the audit log for either caller. |
 | **Hosted workers** | Unchanged. A provider hands them a bootstrap token; they never held either key. |
 
 ## After merge
