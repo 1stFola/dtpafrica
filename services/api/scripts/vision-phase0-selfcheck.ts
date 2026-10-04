@@ -27,6 +27,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { RightsPolicyService } from "../src/vision/rights/rights-policy.service";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { WriteOnceViolationError } from "../src/vision/storage/object-store";
+import { assertDevDatabase } from "./gate-harness";
 
 const prisma = new PrismaClient();
 
@@ -53,6 +54,7 @@ function section(title: string) {
 }
 
 async function main() {
+  assertDevDatabase();
   console.log("DTP Vision Engine — Phase 0 self-check");
   console.log(`contract version ${VISION_CONTRACT_VERSION}\n`);
 

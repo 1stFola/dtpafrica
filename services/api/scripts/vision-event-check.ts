@@ -42,6 +42,7 @@ import { VISION_CONTRACT_VERSION, VISION_EVENT_TAXONOMY_VERSION, visionKeys } fr
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import { recorderHalfLength } from "../src/vision/clock/recorder-minute";
 import { reapplyEnrichment } from "../src/vision/events/reapply-enrichment";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -107,25 +108,21 @@ async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ i
   return { id: user.id, token, as: (path, init) => call(path, { Authorization: `Bearer ${token}` }, init) };
 }
 
+/* The gate's own match: a competition, two teams, squads of real `Player` rows, 45-minute
+   halves and no events. It used to pick a match somebody had recorded and write into it
+   (docs/vision/50, appendix E). Held here, not on the fixture, so it is removed even when
+   the run fails before the fixture exists. */
+let gateMatch: GateMatch | null = null;
 async function matchWithSquadsAndNoGoals() {
-  const matches = await prisma.sbMatch.findMany({
-    where: { squadPlayers: { some: { playerId: { not: null } } }, events: { none: { type: "goal" } } },
-    select: {
-      id: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, competitionId: true,
-      competition: { select: { formatConfig: true } },
-      statisticsSheet: { select: { clock: true } },
-      squadPlayers: { select: { id: true, teamId: true, playerId: true, playerName: true, isStarter: true } },
-    },
-    take: 200,
-  });
-  // The gate's minutes are written for 45-minute halves, so it takes a match played to them.
-  const match = matches.find((m) => m.squadPlayers.some((s) => s.teamId === m.homeTeamId && s.playerId) && recorderHalfLength(m.statisticsSheet?.clock, m.competition?.formatConfig) === 45);
-  if (!match) throw new Error("No ScoreBoard match of 45-minute halves with a home squad player and no goals; seed one first");
-  return match;
+  gateMatch = await createGateMatch(prisma, RUN);
+  return gateMatch;
 }
 
 async function cleanup(fx: Fixture | null) {
-  if (!fx) return;
+  if (!fx) {
+    await removeGateMatch(prisma, gateMatch);
+    return;
+  }
   await prisma.sbMatchEvent.deleteMany({ where: { id: { in: fx.eventIds } } });
   // The created goal moved the scoreline and the scorer's totals; both go back to what they were.
   if (fx.before) {
@@ -143,6 +140,7 @@ async function cleanup(fx: Fixture | null) {
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
+  await removeGateMatch(prisma, gateMatch);
 }
 
 /* Kick-off nine seconds into the file; the first half ends at 49:00, four minutes of added time in; the second half is never anchored. */
@@ -154,11 +152,16 @@ const minute1 = (m: number, s = 0) => KICKOFF_1 + m * 60_000 + s * 1000;
 const inMinute = (n: number, s = 0) => minute1(n - 1, s);
 
 async function main() {
+  assertDevDatabase({ api: API });
   console.log("Vision events — a candidate with its evidence, and one door into the match record");
   console.log(`  api ${API}`);
   console.log(`  run ${RUN}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx);
+    await prisma.$disconnect();
+  });
   try {
     const match = await matchWithSquadsAndNoGoals();
     const starter = match.squadPlayers.find((s) => s.teamId === match.homeTeamId && s.playerId)!;
@@ -215,7 +218,7 @@ async function main() {
     check("a window past the footage: refused", past.body.error, "EventOutsideAsset");
     const stranger = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "shot", startMs: minute1(12), endMs: minute1(12), actorTrackId: randomUUID() });
     check("an actor track not of this footage: refused", stranger.body.error, "ActorNotOnThisAsset");
-    const otherSlot = await prisma.sbMatchSquadPlayer.findFirst({ where: { matchId: { not: match.id } }, select: { id: true } });
+    const otherSlot = { id: match.otherMatchSlotId };
     if (otherSlot) {
       const wrongMatch = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "shot", startMs: minute1(12), endMs: minute1(12), actorMatchSquadPlayerId: otherSlot.id });
       check("a roster slot of another match: refused", wrongMatch.body.error, "NotOnThisMatchSquad");
@@ -457,12 +460,18 @@ async function main() {
     console.error("\nGate aborted:", error);
   } finally {
     await cleanup(fx).catch((e) => console.error("cleanup failed:", e));
-    if (fx?.before) {
-      const b = fx.before;
-      const m = await prisma.sbMatch.findUnique({ where: { id: b.matchId }, select: { homeScore: true, awayScore: true, _count: { select: { events: { where: { type: "goal" } } } } } });
-      const p = await prisma.player.findUnique({ where: { id: b.playerId }, select: { careerGoals: true } });
-      const t = await prisma.sbPlayerCompetitionStats.findUnique({ where: { competitionId_playerId: { competitionId: b.competitionId, playerId: b.playerId } }, select: { goals: true } });
-      check("after the run the match has its score back, no goals, and the scorer's totals are what they were", `${m?.homeScore}-${m?.awayScore}/${m?._count.events}/${p?.careerGoals}/${t?.goals ?? null}`, `${b.homeScore}-${b.awayScore}/0/${b.careerGoals}/${b.competitionGoals}`);
+    if (gateMatch) {
+      /* The match was the gate's own, so there is no score to put back: it is gone, with the
+         goals written into it, its players and the totals they were credited with. */
+      const gm = gateMatch;
+      const left = [
+        await prisma.sbMatch.count({ where: { id: { in: gm.matchIds } } }),
+        await prisma.sbMatchEvent.count({ where: { matchId: { in: gm.matchIds } } }),
+        await prisma.sbCompetition.count({ where: { id: gm.competitionId } }),
+        await prisma.player.count({ where: { id: { in: gm.playerIds } } }),
+        await prisma.sbPlayerCompetitionStats.count({ where: { OR: [{ competitionId: gm.competitionId }, { playerId: { in: gm.playerIds } }] } }),
+      ];
+      check("after the run the gate's match, its goals, its competition, its players and their totals are gone", left.join("/"), "0/0/0/0/0");
     }
     await prisma.$disconnect();
   }

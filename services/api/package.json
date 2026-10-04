@@ -49,6 +49,7 @@
     "vision:clockcheck": "tsx scripts/vision-clock-check.ts",
     "vision:gamestatecheck": "tsx scripts/vision-game-state-check.ts",
     "vision:eventcheck": "tsx scripts/vision-event-check.ts",
+    "vision:gates:db": "tsx scripts/run-db-gates.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
     "db:sync:timeline-squad-numbers": "tsx scripts/sync-timeline-squad-numbers.ts",

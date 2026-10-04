@@ -45,15 +45,49 @@ export const REVIEWER_IDS: NamePattern[] = [
  *
  * Matched on the placeholder contact address **and** a run-id name. Either alone is
  * too broad: a real partner can be called anything, and an address is not a name.
- * Only `vision:datasetcheck`, `vision:annotationcheck`, `vision:modelcheck`,
- * `vision:boxcheck`, `vision:benchcheck` and `vision:promotioncheck` use this
- * address; the other gates name their partners after real-looking clubs and clean
- * up after themselves.
+ * Sixteen gates build their fixture under this address, one name each in the
+ * pattern below. `vision:catalogcheck`, `vision:uploadcheck` and `vision:e2echeck`
+ * name their partner another way and count their own strays.
  */
 export const GATE_PARTNER = {
   contactEmail: "gate@example.test",
   pattern: new RegExp(`^(Dataset|Annotation|Model registry|Boxes|Benchmark|Promotion|Tracks|Track metrics|Teams|Identity|Identity metrics|Calibration|Cuts|Clock|Game state|Events) gate ${RUN}$`),
 };
+
+/**
+ * The people a gate signs in as: `gate-<label>-<run>@example.test`, an active admin
+ * account with every competition. The domain is reserved and cannot receive mail, and
+ * the label is lowercase letters, digits and hyphens.
+ */
+export const GATE_USER_EMAILS: NamePattern[] = [
+  { prefix: "gate-", pattern: new RegExp(`^gate-[a-z0-9]+(-[a-z0-9]+)*-${RUN}@example\\.test$`) },
+];
+
+/** Model keys a gate registers: one per task, named after the run. */
+export const GATE_MODEL_KEYS: NamePattern[] = [
+  { prefix: "detector/gate-", pattern: new RegExp(`^detector/gate-${RUN}$`) },
+  { prefix: "tracker/gate-", pattern: new RegExp(`^tracker/gate-${RUN}$`) },
+  { prefix: "identify/gate-", pattern: new RegExp(`^identify/gate-${RUN}$`) },
+];
+
+/**
+ * A goal or a substitution a gate wrote into a match: its `detail` is exactly
+ * `gate-<run>`. Since docs/vision/61 a gate writes only into a match of its own, which
+ * is removed whole; this is for what earlier runs left in matches somebody recorded.
+ */
+export const GATE_EVENT_DETAILS: NamePattern[] = [{ prefix: "gate-", pattern: new RegExp(`^gate-${RUN}$`) }];
+
+/** The competition a gate's own match is played in (`createGateMatch`), by slug. */
+export const GATE_COMPETITION_SLUGS: NamePattern[] = [{ prefix: "gate-", pattern: new RegExp(`^gate-${RUN}$`) }];
+
+/** The players in a gate's own match, by slug: home, away and the other match's. */
+export const GATE_PLAYER_SLUGS: NamePattern[] = [{ prefix: "gate-", pattern: new RegExp(`^gate-${RUN}-(h|a|o)[0-9]{1,2}$`) }];
+
+/**
+ * The compute provider a gate provisions its workers from. No machine stands behind
+ * it, so a worker of this provider that holds no job is nobody's.
+ */
+export const GATE_WORKER_PROVIDER = "mock";
 
 /** Whether a name is one a gate generated, rather than one a person chose. */
 export function isGateName(name: string | null | undefined, patterns: NamePattern[]): boolean {

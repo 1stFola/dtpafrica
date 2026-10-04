@@ -42,6 +42,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -240,6 +241,7 @@ function python(args: string[]) {
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   const config = loadVisionConfig();
   const store: ObjectStore = config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
   console.log("Vision game state — metres per frame, placed only through a calibration that passed");
@@ -249,6 +251,10 @@ async function main() {
   if (!existsSync(PYTHON)) throw new Error(`No worker Python at ${PYTHON}; set VISION_WORKER_PYTHON`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx, store);
+    await prisma.$disconnect();
+  });
   try {
     fx = await seed();
     const reviewer = await person(fx, "vision_reviewer", "reviewer");

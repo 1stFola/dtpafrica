@@ -24,6 +24,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -111,6 +112,7 @@ function probeDimensions(mediaPath: string): string {
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   const mediaPath = process.argv[2];
   if (!mediaPath) {
     // No `--`: pnpm forwards it through as a literal argument, and the script
@@ -143,6 +145,10 @@ async function main() {
   const created: { partnerId?: string; jobId?: string; workerId?: string } = {};
   const wroteKeys: { bucket: "derived"; key: string }[] = [];
 
+  onInterrupt(async () => {
+    await tidy();
+    await prisma.$disconnect();
+  });
   try {
     // ── Fixtures, committed so the running API can see them ────────────────
     section("Setup");
@@ -397,6 +403,11 @@ async function main() {
     }
     check("cuts read the proxy transcode wrote, and succeeded", cutsDone.job.state, "succeeded");
   } finally {
+    await tidy();
+  }
+
+  /** Everything this run created, taken out. Also what Ctrl-C runs. */
+  async function tidy() {
     // ── Cleanup ───────────────────────────────────────────────────────────
     section("Cleanup");
     for (const ref of wroteKeys) {

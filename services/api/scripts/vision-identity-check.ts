@@ -29,6 +29,7 @@ import * as bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -87,19 +88,14 @@ async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ i
   return { id: user.id, token: String(login.body.token) };
 }
 
+/* The gate's own match: a competition, two teams, squads of real `Player` rows, 45-minute
+   halves and no events. It used to pick a match somebody had recorded and write into it
+   (docs/vision/50, appendix E). Held here, not on the fixture, so it is removed even when
+   the run fails before the fixture exists. */
+let gateMatch: GateMatch | null = null;
 async function matchWithSquads() {
-  const matches = await prisma.sbMatch.findMany({
-    where: { squadPlayers: { some: { playerId: { not: null } } } },
-    select: { id: true, homeTeamId: true, awayTeamId: true, squadPlayers: { select: { id: true, teamId: true, playerId: true, playerName: true } } },
-    take: 50,
-  });
-  const match = matches.find((m) => {
-    const home = m.squadPlayers.filter((s) => s.teamId === m.homeTeamId && s.playerId);
-    const away = m.squadPlayers.filter((s) => s.teamId === m.awayTeamId && s.playerId);
-    return home.length >= 2 && away.length >= 1;
-  });
-  if (!match) throw new Error("No ScoreBoard match with squad players (linked to Player rows) on both teams; seed one first");
-  return match;
+  gateMatch = await createGateMatch(prisma, RUN);
+  return gateMatch;
 }
 
 async function seed(match: Awaited<ReturnType<typeof matchWithSquads>>): Promise<Fixture> {
@@ -144,7 +140,10 @@ async function seed(match: Awaited<ReturnType<typeof matchWithSquads>>): Promise
 }
 
 async function cleanup(fx: Fixture | null) {
-  if (!fx) return;
+  if (!fx) {
+    await removeGateMatch(prisma, gateMatch);
+    return;
+  }
   // Identities and sides cascade with tracks and jobs, which cascade with the asset.
   await prisma.visionVideoAsset.deleteMany({ where: { id: fx.assetId } });
   await prisma.visionAuditLog.deleteMany({ where: { OR: [{ actorId: { in: fx.userIds } }, { targetId: { in: [...fx.jobIds, ...fx.trackIds, fx.assetId] } }] } });
@@ -152,14 +151,20 @@ async function cleanup(fx: Fixture | null) {
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
+  await removeGateMatch(prisma, gateMatch);
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   console.log("Vision identity — a roster, a window, two people");
   console.log(`  api ${API}`);
   console.log(`  run ${RUN}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx);
+    await prisma.$disconnect();
+  });
   try {
     const match = await matchWithSquads();
     fx = await seed(match);

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  GATE_COMPETITION_SLUGS,
+  GATE_EVENT_DETAILS,
+  GATE_MODEL_KEYS,
   GATE_PARTNER,
+  GATE_PLAYER_SLUGS,
+  GATE_USER_EMAILS,
   REVIEWER_IDS,
   SCHEMA_VERSIONS,
   VERSION_LABELS,
@@ -143,5 +148,64 @@ describe("what the database gets asked for", () => {
         `${name} would not be returned by any prefix query`
       ).toBe(true);
     }
+  });
+});
+
+describe("what a gate creates outside its partner", () => {
+  const RUN = "0a1b2c3d";
+
+  it("matches the accounts it signs in as", () => {
+    for (const label of ["reviewer", "admin", "second", "annotator", "ml-engineer", "reviewer2"]) {
+      expect(isGateName(`gate-${label}-${RUN}@example.test`, GATE_USER_EMAILS), label).toBe(true);
+    }
+  });
+
+  it("never matches a person's account", () => {
+    for (const email of [
+      "gate-keeper@dtp.africa",
+      // The right shape at a domain that receives mail.
+      `gate-reviewer-${RUN}@dtp.africa`,
+      `gate-reviewer-${RUN}@example.test.evil.com`,
+      `gate-reviewer-${RUN}@exampleXtest`,
+      // No label, a run id that is not one, something in front.
+      `gate-${RUN}@example.test`,
+      "gate-reviewer-0A1B2C3D@example.test",
+      "gate-reviewer-12345@example.test",
+      `x-gate-reviewer-${RUN}@example.test`,
+      `gate-Reviewer-${RUN}@example.test`,
+      `gate-reviewer--${RUN}@example.test`,
+      "fola@example.test",
+    ]) {
+      expect(isGateName(email, GATE_USER_EMAILS), email).toBe(false);
+    }
+  });
+
+  it("matches the models it registers, and no model a person named", () => {
+    for (const key of [`detector/gate-${RUN}`, `tracker/gate-${RUN}`, `identify/gate-${RUN}`]) expect(isGateName(key, GATE_MODEL_KEYS), key).toBe(true);
+    for (const key of ["detector/rtdetr-l", "detector/gate-v2", `detector/gate-${RUN}-b`, `events/gate-${RUN}`, `detector/gate-${RUN.toUpperCase()}`, `my/detector/gate-${RUN}`]) {
+      expect(isGateName(key, GATE_MODEL_KEYS), key).toBe(false);
+    }
+  });
+
+  it("matches a match event only when its detail is exactly a gate's", () => {
+    expect(isGateName(`gate-${RUN}`, GATE_EVENT_DETAILS)).toBe(true);
+    for (const detail of ["gate-crashed by fans", `gate-${RUN} header`, "#3 off, #12 on", `scored at the gate-${RUN}`, "gate-12345678x", ""]) {
+      expect(isGateName(detail, GATE_EVENT_DETAILS), detail).toBe(false);
+    }
+  });
+
+  it("matches its own competition and players, and nothing a person entered", () => {
+    expect(isGateName(`gate-${RUN}`, GATE_COMPETITION_SLUGS)).toBe(true);
+    for (const slug of ["gate-city-cup", "gate-2026", `gate-${RUN}-cup`, `the-gate-${RUN}`]) expect(isGateName(slug, GATE_COMPETITION_SLUGS), slug).toBe(false);
+    for (const slug of [`gate-${RUN}-h1`, `gate-${RUN}-h12`, `gate-${RUN}-a2`, `gate-${RUN}-o1`]) expect(isGateName(slug, GATE_PLAYER_SLUGS), slug).toBe(true);
+    for (const slug of ["gate-okafor", `gate-${RUN}`, `gate-${RUN}-x1`, `gate-${RUN}-h`, `gate-${RUN}-h123`, `gate-${RUN}-h1-jr`, "samuel-gate-h1"]) {
+      expect(isGateName(slug, GATE_PLAYER_SLUGS), slug).toBe(false);
+    }
+  });
+
+  it("asks for each by a prefix that returns what it accepts", () => {
+    expect(`gate-reviewer-${RUN}@example.test`.startsWith(prefixesOf(GATE_USER_EMAILS)[0]!)).toBe(true);
+    expect(prefixesOf(GATE_MODEL_KEYS).sort()).toEqual(["detector/gate-", "identify/gate-", "tracker/gate-"]);
+    expect(prefixesOf(GATE_PLAYER_SLUGS)).toEqual(["gate-"]);
   });
 });

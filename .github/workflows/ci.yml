@@ -137,6 +137,40 @@ jobs:
       - name: Validate staging compose
         run: docker compose --env-file infra/.env.staging.example -f infra/docker-compose.staging.yml config
 
+      # The worker sits behind the `vision` profile, so the step above never read its
+      # block: a typo there was found by a deploy, on the server. This reads it, and
+      # holds it to the three things the deploy depends on -- the bootstrap
+      # entrypoint, an init as PID 1, and a memory ceiling on a 2 GB box.
+      - name: Validate staging compose with the vision worker
+        run: |
+          set -euo pipefail
+          compose() { docker compose --profile vision --env-file infra/.env.staging.example -f infra/docker-compose.staging.yml "$@"; }
+          compose config --services | grep -qx worker || { echo "::error::The vision profile does not define a worker service."; exit 1; }
+          rendered=$(compose config)
+          for needle in "dtp_vision_worker.bootstrap" "init: true" "mem_limit:"; do
+            grep -q -- "$needle" <<< "$rendered" || { echo "::error::The worker service lost \"$needle\"."; exit 1; }
+          done
+          echo "The worker service is defined, with its entrypoint, an init and a memory limit."
+
+      # The entrypoint compose runs is `dtp_vision_worker.bootstrap`, not the package's
+      # default. With nothing configured it must refuse and say what is missing, exit 2:
+      # under `restart: unless-stopped` anything else is a silent crash loop.
+      - name: The worker bootstrap refuses an empty configuration
+        working-directory: services/vision-worker
+        run: |
+          set +e
+          output=$(env -u VISION_BOOTSTRAP_TOKEN -u VISION_WORKER_CALLBACK_URL -u VISION_PROVISION_API_KEY -u VISION_RESOURCE_CLASS python -m dtp_vision_worker.bootstrap 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -ne 2 ]; then
+            echo "::error::Expected exit 2 from an unconfigured bootstrap, got $status"
+            exit 1
+          fi
+          for setting in VISION_WORKER_CALLBACK_URL VISION_PROVISION_API_KEY VISION_RESOURCE_CLASS; do
+            grep -q "$setting" <<< "$output" || { echo "::error::The bootstrap no longer names $setting"; exit 1; }
+          done
+
       # The deploy playbook was the one thing here nothing checked, and it is the
       # thing whose failures cost the most: a typo in it is found by a deploy going
       # red after the images are already built and pushed, against the live server.
@@ -260,6 +294,154 @@ jobs:
           set -euo pipefail
           psql -h localhost -U shadow -d shadow -c "CREATE DATABASE fromzero;"
           DATABASE_URL="postgresql://shadow:shadow@localhost:5432/fromzero" pnpm exec prisma migrate deploy
+
+  # ── Vision gates ──────────────────────────────────────────────────────────
+  #
+  # The gates are the tests that run the control plane for real: a database, a
+  # booted API, HTTP. Until this job none of them ran anywhere but a developer's
+  # machine, and three had been failing on expectations nobody had brought along
+  # (docs/vision/61).
+  #
+  # It runs the ones that need a database and an API and nothing else. A gate that
+  # puts an artifact in the bucket for the API to read needs a bucket both
+  # processes can see; storage here is in memory, per process, so those still run
+  # by hand. The list is `DB_GATES` in services/api/scripts/run-db-gates.ts.
+  #
+  # The database starts empty: the migrations and the RBAC seed are all it has.
+  # Every gate here makes its own partner, footage, people and match, so it does
+  # not depend on what a developer happens to have seeded.
+  vision-gates:
+    name: Vision gates against a real database
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://gates:gates@localhost:5432/gates
+      VISION_ENABLED: "true"
+      VISION_STORAGE_BACKEND: memory
+      PORT: "3000"
+      VISION_E2E_API: http://localhost:3000/api/v1
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gates
+          POSTGRES_PASSWORD: gates
+          POSTGRES_DB: gates
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gates"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Generated per run and masked, never written into the repository: a literal
+      # secret-shaped value in a workflow is indistinguishable from a real one.
+      - name: Throwaway credentials for this run
+        run: |
+          for name in ADMIN_API_KEY ADMIN_JWT_SECRET ACADEMY_JWT_SECRET; do
+            value=$(openssl rand -hex 24)
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+
+      - name: Build the database from the migrations
+        working-directory: services/api
+        run: |
+          pnpm exec prisma generate
+          pnpm exec prisma migrate deploy
+
+      - name: Seed the roles
+        run: pnpm --filter @dtp/api seed:rbac
+
+      # The API resolves these two from their build output.
+      - name: Build the packages the API imports
+        run: |
+          pnpm --filter @dtp/vision-contracts build
+          pnpm --filter @dtp/engines build
+
+      - name: Start the API
+        working-directory: services/api
+        run: |
+          nohup node -r @swc-node/register src/main.ts > "$RUNNER_TEMP/api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/api.pid"
+          for attempt in $(seq 1 60); do
+            if curl -fsS "http://localhost:3000/api/v1/health" > /dev/null 2>&1; then
+              echo "The API answered after $attempt attempt(s)."
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/api.pid")" 2> /dev/null; then
+              echo "::error::The API exited while starting."
+              tail -60 "$RUNNER_TEMP/api.log"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::The API did not answer its health check in two minutes."
+          tail -60 "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: Run the gates
+        run: pnpm --filter @dtp/api vision:gates:db
+
+      # 3.12 to match the worker image.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/vision-worker/pyproject.toml
+
+      - name: Install vision worker
+        working-directory: services/vision-worker
+        run: pip install -e .
+
+      # The path the staging box takes: the bootstrap entrypoint provisions itself with
+      # the admin key, registers, asks for work, finds none, and retires. Every step of
+      # that is a request to the API above; nothing else in CI makes them.
+      - name: The worker bootstrap provisions, registers and retires against the API
+        working-directory: services/vision-worker
+        env:
+          VISION_WORKER_CALLBACK_URL: http://localhost:3000/api/v1/vision/worker
+          VISION_PROVIDER_ID: local
+          VISION_RESOURCE_CLASS: cpu_small
+          VISION_IDLE_SHUTDOWN_SECONDS: "5"
+        run: |
+          set +e
+          output=$(VISION_PROVISION_API_KEY="$ADMIN_API_KEY" VISION_WORK_DIR="$RUNNER_TEMP/dtp-vision" timeout 180 python -m dtp_vision_worker.bootstrap 2>&1)
+          status=$?
+          set -e
+          tail -30 <<< "$output"
+          if [ "$status" -ne 0 ]; then
+            echo "::error::The bootstrap exited $status; a worker on the box would be restarting in a loop."
+            exit 1
+          fi
+          for step in "provisioned worker" "registered as worker" "queue drained" "/retire"; do
+            grep -q -- "$step" <<< "$output" || { echo "::error::The bootstrap never reached: $step"; exit 1; }
+          done
+          echo "The worker provisioned itself, registered, found no work and retired."
+
+      - name: The API's log, if anything failed
+        if: failure()
+        run: tail -200 "$RUNNER_TEMP/api.log" || true
 
   api-image:
     name: Build and boot the API image
@@ -395,6 +577,21 @@ jobs:
               exit 1
             }
           done
+
+      # Compose overrides the entrypoint with `python -m dtp_vision_worker.bootstrap`.
+      # The step above proves the default one; this proves the one the box runs.
+      - name: The bootstrap entrypoint starts in the image and refuses an empty configuration
+        run: |
+          set +e
+          output=$(docker run --rm --entrypoint python dtp-vision-worker:ci -m dtp_vision_worker.bootstrap 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -ne 2 ]; then
+            echo "::error::Expected exit 2 from an unconfigured bootstrap, got $status"
+            exit 1
+          fi
+          grep -q "VISION_PROVISION_API_KEY" <<< "$output" || { echo "::error::The bootstrap no longer names VISION_PROVISION_API_KEY"; exit 1; }
 
       # ffmpeg is the reason this image is as large as it is. If an apt-get line is
       # ever dropped the stages break at runtime and nowhere else.

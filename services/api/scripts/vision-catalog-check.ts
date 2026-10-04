@@ -18,6 +18,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -62,6 +63,7 @@ const asPartner = (token: string) => (path: string, init?: RequestInit) =>
   call(path, init ?? {}, { "x-vision-upload-token": token, "Content-Type": "application/json" });
 
 async function main() {
+  assertDevDatabase({ api: API });
   const config = loadVisionConfig();
   const store: ObjectStore =
     config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
@@ -73,6 +75,10 @@ async function main() {
   let partnerId: string | null = null;
   let uploadedKey: string | null = null;
 
+  onInterrupt(async () => {
+    await tidy();
+    await prisma.$disconnect();
+  });
   try {
     // ── Partner and evidence ──────────────────────────────────────────────
     /**
@@ -306,6 +312,11 @@ async function main() {
     check("impact counts the acquired asset", impact.assets, 1);
     check("and the live grants", impact.liveScopes >= 0, true);
   } finally {
+    await tidy();
+  }
+
+  /** Everything this run created, taken out. Also what Ctrl-C runs. */
+  async function tidy() {
     section("Cleanup");
     if (uploadedKey) {
       await store
