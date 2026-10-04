@@ -336,6 +336,22 @@ async function main() {
     const noAsset = await api(`/vision/review/${randomUUID()}/positions`);
     check("an asset that does not exist: not found", noAsset.status, 404);
 
+    /* The footage list: the latest job of each stage, picked by the database (docs/vision/60).
+       This is the only run of that query against Postgres; the unit tests cannot see raw SQL. */
+    const footageAssetId = fx.assetId;
+    const footage = await api(`/vision/assets?q=${encodeURIComponent(`Tracks gate record ${RUN}`)}`);
+    const listedAsset = (footage.body.assets as { id: string; stages: { type: string; state: string }[]; counts: { tracks: number } }[] | undefined)?.find((a) => a.id === footageAssetId);
+    check("the footage list names the asset's stages, one row a stage", listedAsset?.stages.map((s) => `${s.type}:${s.state}`).sort().join(","), "detect:succeeded,track:succeeded,transcode:succeeded");
+    check("…and counts its tracks", listedAsset?.counts.tracks, 3);
+    const rerun = randomUUID();
+    await prisma.visionJob.create({
+      data: { id: rerun, type: "track", resourceClass: "cpu_small", state: "failed", videoAssetId: fx.assetId, inputSpec: {}, outputPrefix: visionKeys.inferencePrefix(rerun, 1), budgetSeconds: 600, budgetUsdCents: 100, contractVersion: VISION_CONTRACT_VERSION, queuedAt: new Date(Date.now() + 60_000), error: { kind: "gate" } },
+    });
+    fx.jobIds.push(rerun);
+    const footageAfter = await api(`/vision/assets?q=${encodeURIComponent(`Tracks gate record ${RUN}`)}`);
+    const rowAfter = (footageAfter.body.assets as { id: string; stages: { type: string; state: string }[] }[] | undefined)?.find((a) => a.id === footageAssetId);
+    check("a later run of a stage replaces the earlier one in the list, and adds no row", rowAfter?.stages.map((s) => `${s.type}:${s.state}`).sort().join(","), "detect:succeeded,track:failed,transcode:succeeded");
+
     const filtered = await api(`/vision/assets/${fx.assetId}/tracks?class=ball`);
     check("rows filter by class", filtered.body.count, 1);
 

@@ -21,16 +21,16 @@ const mockPrisma = {
   sbMatchSquadPlayer: { findUnique: vi.fn(), findMany: vi.fn() },
   sbMatch: { findUnique: vi.fn(), update: vi.fn() },
   visionCameraSegment: { findFirst: vi.fn() },
-  visionIdentityAssignment: { findFirst: vi.fn(), findMany: vi.fn() },
+  visionIdentityAssignment: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   visionClockAnchor: { findFirst: vi.fn() },
-  visionEventCandidate: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
+  visionEventCandidate: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   visionEvidenceLink: { createMany: vi.fn() },
   sbMatchEvent: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
   $transaction: vi.fn(),
 };
 const mockAudit = { record: vi.fn() };
 const mockRights = { canPublishHighlight: vi.fn() };
-const mockClock = { currentAnchors: vi.fn() };
+const mockClock = { currentAnchors: vi.fn(), currentAnchorsFor: vi.fn() };
 const mockLifecycle = { applyMatchEventToPlayerStats: vi.fn(), refreshStandingsForFinishedMatch: vi.fn() };
 
 const alice = { userId: "alice", method: "session" } as never;
@@ -388,24 +388,80 @@ describe("promotion", () => {
 });
 
 describe("the queue", () => {
-  it("is a person's, lists what is not theirs oldest first, and says the footage, the clock and the slot", async () => {
-    await expect(service.queue({}, keyed)).rejects.toMatchObject({ response: { error: "EventNeedsAPerson" } });
-    mockPrisma.visionEventCandidate.findMany.mockResolvedValue([
-      { id: "ev-a", videoAssetId: ASSET, type: "shot", startMs: 100_000, endMs: 100_000, actorTrackId: TRACK, decidedBy: "alice", createdAt: new Date("2026-10-03T10:00:00Z") },
-      { id: "ev-mine", videoAssetId: ASSET, type: "shot", startMs: 100_000, endMs: 100_000, actorTrackId: null, decidedBy: "bob", createdAt: new Date("2026-10-03T09:00:00Z") },
-    ]);
-    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([
-      { id: "id-a", trackId: TRACK, matchSquadPlayerId: SLOT, validFromMs: 40_000, validToMs: 90_000, decidedBy: "alice", createdAt: new Date("2026-10-03T08:00:00Z"), track: { localTrackId: 4, videoAssetId: ASSET } },
-    ]);
+  /* Rows the fake holds and filters as the query asks: by who decided, by the footage, in
+     the order and up to the number asked for. The queue used to do all of that in memory,
+     after reading every undecided row there was. */
+  type Row = { id: string; decidedBy: string; createdAt: Date; videoAssetId?: string; track?: { localTrackId: number; videoAssetId: string } } & Record<string, unknown>;
+  type Where = { decidedBy?: { not: string }; videoAssetId?: string; track?: { videoAssetId?: string }; supersededBy?: null; reviewState?: string };
+  const at = (minute: number) => new Date(Date.UTC(2026, 9, 3, 8, minute));
+  const event = (id: string, decidedBy: string, minute: number, asset = ASSET): Row => ({ id, videoAssetId: asset, type: "shot", startMs: 100_000, endMs: 100_000, actorTrackId: null, decidedBy, createdAt: at(minute) });
+  const identity = (id: string, decidedBy: string, minute: number, asset = ASSET): Row => ({ id, trackId: TRACK, matchSquadPlayerId: SLOT, validFromMs: 40_000, validToMs: 90_000, decidedBy, createdAt: at(minute), track: { localTrackId: 4, videoAssetId: asset } });
+  const holding = (rows: Row[]) => {
+    const matching = (where: Where) =>
+      rows.filter((r) => (!where.decidedBy || r.decidedBy !== where.decidedBy.not) && (!where.videoAssetId || r.videoAssetId === where.videoAssetId) && (!where.track?.videoAssetId || r.track?.videoAssetId === where.track.videoAssetId));
+    return {
+      findMany: async ({ where, take }: { where: Where; take?: number }) => matching(where).sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime() || x.id.localeCompare(y.id)).slice(0, take),
+      count: async ({ where }: { where: Where }) => matching(where).length,
+    };
+  };
+  const hold = (events: Row[], identities: Row[]) => {
+    const e = holding(events);
+    const i = holding(identities);
+    mockPrisma.visionEventCandidate.findMany.mockImplementation(e.findMany as never);
+    mockPrisma.visionEventCandidate.count.mockImplementation(e.count as never);
+    mockPrisma.visionIdentityAssignment.findMany.mockImplementation(i.findMany as never);
+    mockPrisma.visionIdentityAssignment.count.mockImplementation(i.count as never);
+  };
+  beforeEach(() => {
     mockPrisma.visionVideoAsset.findMany.mockResolvedValue([{ id: ASSET, sbMatchId: MATCH, sourceVideoRecord: { title: "Derby" }, sbMatch: { homeTeam: { name: "Home" }, awayTeam: { name: "Away" } } }]);
     mockPrisma.sbMatchSquadPlayer.findMany.mockResolvedValue([{ id: SLOT, playerName: "Nine", jerseyNumber: 9 }]);
+    mockClock.currentAnchorsFor.mockImplementation(async (ids: string[]) => new Map(ids.map((id) => [id, id === ASSET ? [{ half: 1, sourceMs: 9000, endMs: null }] : []])));
+  });
+
+  it("is a person's, lists what is not theirs oldest first, and says the footage, the clock and the slot", async () => {
+    await expect(service.queue({}, keyed)).rejects.toMatchObject({ response: { error: "EventNeedsAPerson" } });
+    hold([event("ev-a", "alice", 120), event("ev-mine", "bob", 60)], [identity("id-a", "alice", 0)]);
     const out = await service.queue({ assetId: ASSET, limit: 10 }, bob);
     expect(out.me).toBe("bob");
     expect(out.waiting).toEqual({ events: 1, identities: 1 });
     expect(out.items.map((i) => `${i.kind}:${i.id}`)).toEqual(["identity:id-a", "event:ev-a"]);
     expect(out.items[0]).toMatchObject({ localTrackId: 4, sourceMs: 40_000, matchClock: "0:31", slot: { name: "Nine", jerseyNumber: 9 }, asset: { title: "Derby", match: "Home v Away" } });
     expect(out.items[1]).toMatchObject({ type: "shot", sourceMs: 100_000, matchClock: "1:31", slot: null });
-    expect(mockPrisma.visionEventCandidate.findMany.mock.calls[0]![0].where).toEqual({ supersededBy: null, reviewState: "unreviewed", videoAssetId: ASSET });
-    expect(mockPrisma.visionIdentityAssignment.findMany.mock.calls[0]![0].where).toEqual({ supersededBy: null, reviewState: "unreviewed", track: { videoAssetId: ASSET } });
+    expect(mockPrisma.visionEventCandidate.findMany.mock.calls[0]![0].where).toEqual({ supersededBy: null, reviewState: "unreviewed", decidedBy: { not: "bob" }, videoAssetId: ASSET });
+    expect(mockPrisma.visionIdentityAssignment.findMany.mock.calls[0]![0].where).toEqual({ supersededBy: null, reviewState: "unreviewed", decidedBy: { not: "bob" }, track: { videoAssetId: ASSET } });
+  });
+
+  it("asks the database for no more than the limit of each kind, and counts the depth instead of reading it", async () => {
+    const events = Array.from({ length: 40 }, (_, n) => event(`ev-${String(n).padStart(2, "0")}`, n % 4 === 0 ? "bob" : "alice", 2 * n));
+    const identities = Array.from({ length: 30 }, (_, n) => identity(`id-${String(n).padStart(2, "0")}`, "alice", 2 * n + 1));
+    hold(events, identities);
+    const out = await service.queue({ limit: 5 }, bob);
+    expect(mockPrisma.visionEventCandidate.findMany.mock.calls[0]![0].take).toBe(5);
+    expect(mockPrisma.visionIdentityAssignment.findMany.mock.calls[0]![0].take).toBe(5);
+    // The oldest five of both kinds together, none of them bob's own (ev-00 and ev-04 are).
+    expect(out.items.map((i) => i.id)).toEqual(["id-00", "ev-01", "id-01", "ev-02", "id-02"]);
+    expect(out.count).toBe(5);
+    // How deep the queue is, before the cut: 30 of the 40 events are not bob's.
+    expect(out.waiting).toEqual({ events: 30, identities: 30 });
+    // With no footage named, the identity query carries no relation filter to join on.
+    expect(mockPrisma.visionIdentityAssignment.findMany.mock.calls[0]![0].where).toEqual({ supersededBy: null, reviewState: "unreviewed", decidedBy: { not: "bob" } });
+  });
+
+  it("reads the clock of every asset in the page with one question", async () => {
+    hold([event("ev-a", "alice", 1, ASSET), event("ev-b", "alice", 2, "asset-2"), event("ev-c", "alice", 3, "asset-3")], []);
+    const out = await service.queue({}, bob);
+    expect(mockClock.currentAnchorsFor).toHaveBeenCalledTimes(1);
+    expect([...mockClock.currentAnchorsFor.mock.calls[0]![0]].sort()).toEqual([ASSET, "asset-2", "asset-3"].sort());
+    expect(mockClock.currentAnchors).not.toHaveBeenCalled();
+    // Footage with no anchor has no clock to show; it is not an error.
+    expect(out.items.map((i) => i.matchClock)).toEqual(["1:31", null, null]);
+  });
+
+  it("clamps the limit", async () => {
+    hold([], []);
+    await service.queue({ limit: 100_000 }, bob);
+    expect(mockPrisma.visionEventCandidate.findMany.mock.calls[0]![0].take).toBe(500);
+    await service.queue({ limit: 0 }, bob);
+    expect(mockPrisma.visionEventCandidate.findMany.mock.calls[1]![0].take).toBe(1);
   });
 });

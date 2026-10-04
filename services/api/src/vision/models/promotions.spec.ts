@@ -34,7 +34,18 @@ const mockPrisma = {
   $queryRaw: vi.fn(),
 };
 const mockAudit = { record: vi.fn() };
-const mockRights = { canTrain: vi.fn() };
+const mockRights = {
+  canTrain: vi.fn(),
+  /* The batch, answered by asking the single mock about each asset: the tests below set
+     what one asset's answer is, and the service now asks about all of them at once. */
+  canTrainMany: vi.fn(),
+};
+const answerMany = () =>
+  mockRights.canTrainMany.mockImplementation(async (ids: string[]) => {
+    const out = new Map<string, unknown>();
+    for (const id of [...new Set(ids)]) out.set(id, await mockRights.canTrain({ videoAssetId: id }));
+    return out;
+  });
 const mockDatasets = { checkLeakage: vi.fn() };
 
 const thresholds: BenchmarkThresholds = {
@@ -102,6 +113,7 @@ beforeEach(async () => {
   mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma));
   mockAudit.record.mockResolvedValue(undefined);
   mockRights.canTrain.mockResolvedValue({ allowed: true });
+  answerMany();
   mockDatasets.checkLeakage.mockResolvedValue({ ok: true, offendingGroups: [] });
 });
 
@@ -280,6 +292,9 @@ describe("the promotion gate", () => {
       expect(gateOf(request).passed.map((p) => p.name)).toContain("rights");
       expect(gateOf(request).passed.map((p) => p.name)).toContain("leakage");
       expect(mockRights.canTrain).toHaveBeenCalledTimes(2);
+      // Asked once, about both members: it was a three-query check per member, in sequence.
+      expect(mockRights.canTrainMany).toHaveBeenCalledTimes(1);
+      expect(mockRights.canTrainMany.mock.calls[0]![0]).toHaveLength(2);
     });
 
     it("fails when a member lost its training right since the freeze", async () => {

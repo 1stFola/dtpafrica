@@ -223,6 +223,10 @@ model VisionWorker   { /* workerId, provider, resourceClass, firstSeen, lastSeen
 `providerRef` is deliberately opaque and deliberately named without a provider in it. Nothing
 outside the provider adapter may parse it.
 
+`idempotencyKey` (on the built table) is the worker's proof that this job's completion
+landed, compared on the job's own row. It is not unique: it was, across every job, until
+[60](./60-QA-FIX-10-PERFORMANCE.md), and a key two jobs shared was a 500.
+
 ### 4. CV outputs — Phases 3–5
 
 Row-level storage in Postgres is only for things a human reviews or a query filters on. **Dense
@@ -466,6 +470,10 @@ the new roles follow the same pattern and must not reset existing grants.
   migration, `20261005100000_vision_event_accepted_anchor`, is dated after the two
   future-dated migrations already on live because it alters a table the earlier of them
   creates. Until a migration no longer depends on those two, date it after them, not today.
+- A foreign key gets an index on the referencing side, and a list that is filtered and
+  ordered gets a composite index in that order. Migration
+  `20261005120000_vision_performance_indexes` added the ones Phases 1 to 6 had missed
+  ([60](./60-QA-FIX-10-PERFORMANCE.md)); a new table brings its own.
 - A `Json` column that a worker or a person writes into is validated at the door, by a
   DTO or by a reader in `packages/vision-contracts`. A `Json` column the control plane
   writes for itself has a documented TypeScript shape. This replaces "every `Json` column

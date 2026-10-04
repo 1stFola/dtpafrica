@@ -71,6 +71,19 @@ export class VisionClockService {
     return sortAnchors(rows.map((r) => ({ half: r.half as Half, sourceMs: r.sourceMs, endMs: r.endMs })));
   }
 
+  /** `currentAnchors` for many assets in one query; an asset with none has an empty list. */
+  async currentAnchorsFor(videoAssetIds: readonly string[]): Promise<Map<string, ClockAnchor[]>> {
+    const out = new Map<string, ClockAnchor[]>(videoAssetIds.map((id) => [id, []]));
+    if (!videoAssetIds.length) return out;
+    const rows = await this.prisma.visionClockAnchor.findMany({
+      where: { videoAssetId: { in: [...new Set(videoAssetIds)] }, supersededBy: null },
+      select: { videoAssetId: true, half: true, sourceMs: true, endMs: true },
+    });
+    for (const r of rows) out.get(r.videoAssetId)?.push({ half: r.half as Half, sourceMs: r.sourceMs, endMs: r.endMs });
+    for (const [id, anchors] of out) out.set(id, sortAnchors(anchors));
+    return out;
+  }
+
   /** The anchors, and where a given source millisecond falls on the clock. */
   async read(videoAssetId: string, sourceMs?: number) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true } });

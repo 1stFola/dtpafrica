@@ -174,24 +174,33 @@ export class VisionDatasetsService {
     const rejected: EligibilityFailure[] = [];
     const eligible: { videoAssetId: string; checksum: string; groupKey: string; sbMatchId: string | null }[] = [];
 
+    /* One read of the assets and one of their rights, however many were asked for. It was a
+       read and a three-query rights check per asset, in sequence (docs/vision/50, appendix A). */
+    const wanted = [...new Set(videoAssetIds)].filter((id) => !existing.has(id));
+    const assetRows = wanted.length
+      ? await this.prisma.visionVideoAsset.findMany({
+          where: { id: { in: wanted } },
+          select: {
+            id: true,
+            corpus: true,
+            checksumSha256: true,
+            duplicateClusterId: true,
+            sbMatchId: true,
+            sbMatch: { select: { competitionId: true } },
+            sourceVideoRecord: { select: { acquisitionStatus: true } },
+          },
+        })
+      : [];
+    const assetOf = new Map(assetRows.map((a) => [a.id, a]));
+    const decisions = await this.rights.canTrainMany(assetRows.map((a) => a.id));
+
     for (const videoAssetId of [...new Set(videoAssetIds)]) {
       if (existing.has(videoAssetId)) {
         rejected.push({ videoAssetId, reason: "already_member", detail: "already in this version" });
         continue;
       }
 
-      const asset = await this.prisma.visionVideoAsset.findUnique({
-        where: { id: videoAssetId },
-        select: {
-          id: true,
-          corpus: true,
-          checksumSha256: true,
-          duplicateClusterId: true,
-          sbMatchId: true,
-          sbMatch: { select: { competitionId: true } },
-          sourceVideoRecord: { select: { acquisitionStatus: true } },
-        },
-      });
+      const asset = assetOf.get(videoAssetId);
 
       if (!asset) {
         rejected.push({ videoAssetId, reason: "unknown_asset", detail: "no such asset" });
@@ -224,7 +233,8 @@ export class VisionDatasetsService {
         continue;
       }
 
-      const decision = await this.rights.canTrain({ videoAssetId });
+      const decision = decisions.get(videoAssetId);
+      if (!decision) throw new Error(`No rights decision for ${videoAssetId}`);
       if (!decision.allowed) {
         rejected.push({
           videoAssetId,
@@ -516,6 +526,8 @@ export class VisionDatasetsService {
             sourceVideoRecord: { select: { sourceQualityRank: true, partnerId: true } },
             variants: {
               where: { kind: "proxy" },
+              // The newest proxy, the one inference and annotation used (docs/vision/50, appendix A).
+              orderBy: { createdAt: "desc" },
               select: {
                 objectKey: true,
                 fps: true,
@@ -803,8 +815,10 @@ export class VisionDatasetsService {
 
     // 2. Rights, re-checked now.
     const lostRights: { videoAssetId: string; reason: string }[] = [];
+    const decisions = await this.rights.canTrainMany(members.map((m) => m.videoAssetId));
     for (const member of members) {
-      const decision = await this.rights.canTrain({ videoAssetId: member.videoAssetId });
+      const decision = decisions.get(member.videoAssetId);
+      if (!decision) throw new Error(`No rights decision for ${member.videoAssetId}`);
       if (!decision.allowed) {
         lostRights.push({ videoAssetId: member.videoAssetId, reason: decision.reason });
       }

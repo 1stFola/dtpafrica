@@ -129,6 +129,10 @@ export function AdminVisionIdentityPage() {
   const walked = useRef<{ proxyMs: number; sourceMs: number } | null>(null);
   /* The same for `[` and `]`. */
   const walkedEvents = useRef<{ proxyMs: number; sourceMs: number } | null>(null);
+  /* The API answers with the latest track run. A link from the review queue can name a
+     track of an earlier run; then every run is asked for, once, and the page says so. */
+  const [allRuns, setAllRuns] = useState(false);
+  const allRunsRef = useRef(false);
   const landing = useRef<{ trackId: string | null; eventId: string | null; at: number | null }>({
     trackId: params.get("track"),
     eventId: params.get("event"),
@@ -140,7 +144,7 @@ export function AdminVisionIdentityPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const r = await fetchVisionIdentityReview(assetId);
+      const r = await fetchVisionIdentityReview(assetId, false, allRunsRef.current ? "all" : undefined);
       setReview(r);
       setSlotNames((prev) => {
         const next = new Map(prev);
@@ -194,8 +198,9 @@ export function AdminVisionIdentityPage() {
      the same players; showing both put two boxes on everyone and listed every player twice. */
   const tracks = useMemo(() => {
     if (!review) return [];
+    if (allRuns) return review.tracks;
     return trackRun.jobId ? review.tracks.filter((t) => t.inferenceJobId === trackRun.jobId) : review.tracks;
-  }, [review, trackRun]);
+  }, [allRuns, review, trackRun]);
   const selected = useMemo(() => review?.tracks.find((t) => t.id === selectedId) ?? null, [review, selectedId]);
   /* What a second person has to decide here: the review queue for this asset, walked with `,` and `.`. */
   const uncertain = useMemo(() => uncertainties(eventCandidates, tracks, me), [eventCandidates, me, tracks]);
@@ -317,13 +322,22 @@ export function AdminVisionIdentityPage() {
     }
     if (l.trackId) {
       const t = review?.tracks.find((x) => x.id === l.trackId);
-      if (!t) return;
+      if (!t) {
+        /* Not in the latest run: the link is to a track of an earlier one. Ask for every
+           run, once; the landing stays pending and is taken when the rows arrive. */
+        if (review && !allRunsRef.current && review.trackJobs > 1) {
+          allRunsRef.current = true;
+          setAllRuns(true);
+          void load();
+        }
+        return;
+      }
       setSelectedId(t.id);
       at = at ?? t.startMs;
     }
     landing.current = { trackId: null, eventId: null, at: null };
     if (at !== null) seekTo(at - offsetMs);
-  }, [eventCandidates, offsetMs, review, seekTo]);
+  }, [eventCandidates, load, offsetMs, review, seekTo]);
   useEffect(() => {
     land();
   }, [land, media]);
@@ -651,7 +665,8 @@ export function AdminVisionIdentityPage() {
           <span className="vision-pill vision-pill--warn">no match linked: no roster</span>
         )}
         <span>{tracks.length} track(s)</span>
-        {trackRun.runs > 1 && <span className="vision-pill vision-pill--warn">the latest of {trackRun.runs} track runs</span>}
+        {trackRun.runs > 1 && <span className="vision-pill vision-pill--warn">{allRuns ? `every one of ${trackRun.runs} track runs; boxes are the latest run's` : `the latest of ${trackRun.runs} track runs`}</span>}
+        {review.truncated && <span className="vision-pill vision-pill--warn">the first {review.count} of {review.total} tracks</span>}
         <span className="vision-filters__grow" />
         <button type="button" aria-expanded={showHelp} onClick={() => setShowHelp((shown) => !shown)} title="?">
           Keys

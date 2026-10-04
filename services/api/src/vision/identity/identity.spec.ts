@@ -23,14 +23,14 @@ const SLOT_AWAY = "ffff1111-2222-4333-8444-555566660002";
 const PLAYER = "99991111-2222-4333-8444-555566660001";
 
 const mockPrisma = {
-  visionJob: { findUnique: vi.fn() },
+  visionJob: { findUnique: vi.fn(), findMany: vi.fn() },
   visionVideoAsset: { findUnique: vi.fn() },
   sbMatch: { findUnique: vi.fn() },
   sbMatchSquadPlayer: { findMany: vi.fn(), findUnique: vi.fn() },
   sbMatchEvent: { findMany: vi.fn() },
   visionTeamSide: { upsert: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   visionTeamAssignment: { findFirst: vi.fn(), updateMany: vi.fn() },
-  visionTrack: { findUnique: vi.fn(), findMany: vi.fn() },
+  visionTrack: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
   visionIdentityAssignment: { create: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   $transaction: vi.fn(),
 };
@@ -65,6 +65,9 @@ beforeEach(() => {
   mockPrisma.sbMatch.findUnique.mockResolvedValue({ id: MATCH, homeTeamId: HOME, awayTeamId: AWAY });
   mockPrisma.visionTrack.findUnique.mockResolvedValue(track());
   mockPrisma.visionTrack.findMany.mockResolvedValue([]);
+  mockPrisma.visionTrack.count.mockResolvedValue(0);
+  mockPrisma.visionTrack.groupBy.mockResolvedValue([]);
+  mockPrisma.visionJob.findMany.mockResolvedValue([]);
   mockPrisma.visionTeamAssignment.findFirst.mockResolvedValue(sideA());
   mockPrisma.visionTeamAssignment.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.visionTeamSide.findUnique.mockResolvedValue({ inferenceJobId: JOB, team: "A", sbTeamId: HOME });
@@ -396,7 +399,7 @@ describe("what the public may read", () => {
 
   it("names the match's teams and the proxy clock beside the tracks, for the screen", async () => {
     mockPrisma.visionTrack.findMany.mockResolvedValue([]);
-    const out = await service.forAsset(ASSET, false);
+    const out = await service.forAsset(ASSET);
     expect(out.match).toEqual({ id: MATCH, homeTeam: { id: HOME, name: "Home FC" }, awayTeam: { id: AWAY, name: "Away FC" } });
     expect(out.proxy).toMatchObject({ fps: 25, sourceOffsetMs: 5000, width: 1280 });
     expect(out.clock).toEqual({ anchored: false, anchors: [] });
@@ -408,11 +411,14 @@ describe("what the public may read", () => {
       { id: OTHER, localTrackId: 2, class: "player", startMs: 9000, endMs: 19000, teamAssignments: [], identities: [] },
     ]);
     mockPrisma.sbMatchSquadPlayer.findMany.mockResolvedValue([{ id: SLOT_HOME, playerName: "A. Player", jerseyNumber: 7 }]);
-    const out = await service.forAsset(ASSET, true);
+    const out = await service.forAsset(ASSET, { publicOnly: true });
     expect(out.tracks[0]!.identities[0]).toMatchObject({ id: "ia-1", slot: { name: "A. Player", jerseyNumber: 7 } });
     const where = mockPrisma.visionTrack.findMany.mock.calls[0]![0].include.identities.where;
     expect(where).toEqual({ supersededBy: null, reviewState: "accepted", playerId: { not: null } });
+    // The row with nothing public is still dropped here, whatever the query returned.
     expect(out.count).toBe(1);
+    // ...and the query itself asks only for tracks that have something public, in every run.
+    expect(mockPrisma.visionTrack.findMany.mock.calls[0]![0].where).toEqual({ videoAssetId: ASSET, identities: { some: { supersededBy: null, reviewState: "accepted", playerId: { not: null } } } });
     expect(out.tracks[0]).toMatchObject({ id: TRACK, sbTeamId: HOME, team: { team: "A", kitDescription: "red" } });
   });
 
@@ -421,7 +427,7 @@ describe("what the public may read", () => {
       { id: OTHER, localTrackId: 2, class: "player", startMs: 9000, endMs: 19000, teamAssignments: [], identities: [] },
     ]);
     mockClock.currentAnchors.mockResolvedValue([{ half: 1, sourceMs: 9000, endMs: null }]);
-    const out = await service.forAsset(ASSET, false);
+    const out = await service.forAsset(ASSET);
     expect(mockPrisma.visionTrack.findMany.mock.calls[0]![0].include.identities.where).toEqual({ supersededBy: null });
     expect(out.count).toBe(1);
     expect(out.tracks[0]).toMatchObject({ team: null, sbTeamId: null, matchClock: "0:00–0:10" });
@@ -448,14 +454,20 @@ describe("what the screen plays and draws", () => {
 
   it("reads every track of the latest run in one answer, from one read of the artifact, and leaves an earlier run out", async () => {
     mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET });
-    const old = { finishedAt: new Date("2026-10-01T10:00:00Z"), queuedAt: new Date("2026-10-01T09:00:00Z") };
-    const now = { finishedAt: new Date("2026-10-03T10:00:00Z"), queuedAt: new Date("2026-10-03T09:00:00Z") };
-    mockPrisma.visionTrack.findMany.mockResolvedValue([
-      { id: "old-1", localTrackId: 1, artifactKey: "inference/old/1/tracks.json", inferenceJobId: "job-old", inferenceJob: old },
-      { id: "new-1", localTrackId: 1, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new", inferenceJob: now },
-      { id: "new-2", localTrackId: 2, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new", inferenceJob: now },
-      { id: "new-9", localTrackId: 9, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new", inferenceJob: now },
+    const rows = [
+      { id: "old-1", localTrackId: 1, artifactKey: "inference/old/1/tracks.json", inferenceJobId: "job-old" },
+      { id: "new-1", localTrackId: 1, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new" },
+      { id: "new-2", localTrackId: 2, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new" },
+      { id: "new-9", localTrackId: 9, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new" },
+    ];
+    mockPrisma.visionTrack.groupBy.mockResolvedValue([{ inferenceJobId: "job-old" }, { inferenceJobId: "job-new" }]);
+    // The older run sorts later by id: the latest is the one that finished last, not the larger id.
+    mockPrisma.visionJob.findMany.mockResolvedValue([
+      { id: "job-old", finishedAt: new Date("2026-10-01T10:00:00Z"), queuedAt: new Date("2026-10-01T09:00:00Z") },
+      { id: "job-new", finishedAt: new Date("2026-10-03T10:00:00Z"), queuedAt: new Date("2026-10-03T09:00:00Z") },
     ]);
+    // It honours the run it is asked for: asked for nothing, it would hand back both runs.
+    mockPrisma.visionTrack.findMany.mockImplementation(async ({ where }: { where: { inferenceJobId?: string } }) => rows.filter((r) => !where.inferenceJobId || r.inferenceJobId === where.inferenceJobId));
     await store.putSmallObject("derived", "inference/new/1/tracks.json", JSON.stringify({ tracks: [{ localTrackId: 1, positions: [{ frameIndex: 0 }] }, { localTrackId: 2, positions: [{ frameIndex: 0 }, { frameIndex: 1 }] }] }), "application/json");
     const read = vi.spyOn(store, "getSmallObject");
     const out = await service.positionsForAsset(ASSET);
@@ -466,7 +478,7 @@ describe("what the screen plays and draws", () => {
     expect(out.positions["new-9"]).toEqual([]);
     expect(read).toHaveBeenCalledTimes(1);
 
-    mockPrisma.visionTrack.findMany.mockResolvedValue([]);
+    mockPrisma.visionTrack.groupBy.mockResolvedValue([]);
     expect(await service.positionsForAsset(ASSET)).toEqual({ videoAssetId: ASSET, trackJobId: null, trackJobs: 0, positions: {} });
     mockPrisma.visionVideoAsset.findUnique.mockResolvedValue(null);
     await expect(service.positionsForAsset(ASSET)).rejects.toBeInstanceOf(NotFoundException);

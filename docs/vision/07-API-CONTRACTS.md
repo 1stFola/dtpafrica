@@ -107,7 +107,7 @@ Poll at 5 s while a job page is open.
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/vision/review/:assetId/timeline` | `vision.read` |
-| `GET` | `/vision/review/:assetId/tracks` | `vision.read` |
+| `GET` | `/vision/review/:assetId/tracks` (`?job=latest\|all\|<id>`, `?limit=`, `?offset=`) | `vision.read` |
 | `GET` | `/vision/review/:assetId/media` | `vision.read` |
 | `GET` | `/vision/review/:assetId/positions` (every track of the latest track run) | `vision.read` |
 | `GET` | `/vision/review/tracks/:trackId/positions` | `vision.read` |
@@ -544,3 +544,13 @@ screen can say it is showing the latest. A track the artifact does not hold has 
 The review screen draws from this; the per-track route stays. `GET /vision/overview` counts
 `annotationOpen` by the contract's `OPEN_ANNOTATION_TASK_STATES`; it counted two states no
 task has and always answered 0.
+
+**Performance** ([60-QA-FIX-10-PERFORMANCE.md](./60-QA-FIX-10-PERFORMANCE.md)).
+`GET /vision/review/:assetId/tracks` answers for the asset's latest track run unless `job`
+names another (`all`, or a job id), a page at a time (`limit`, default 2,000 and at most
+5,000; `offset`), and adds `trackJobId`, `trackJobs`, `total`, `offset`, `limit` and
+`truncated` to its response. `GET /vision/assets/:id/identity?public=1` takes the same
+paging and answers for every run. `GET /vision/review/queue` and `GET /vision/assets` are
+unchanged in shape; the first filters and limits in SQL, the second reads the latest job of
+each stage. A job's `idempotencyKey` is no longer unique across jobs: two jobs may complete
+with the same key, and each job's own retry is still recognised.

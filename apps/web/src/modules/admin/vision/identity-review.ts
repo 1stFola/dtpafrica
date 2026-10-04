@@ -36,10 +36,30 @@ export function sortPositions(positions: TrackPosition[]): TrackPosition[] {
 }
 
 /**
+ * The position on one frame, from positions in frame order (`sortPositions`), by
+ * halving. The screen asks this of every track on every tick of playback; a scan
+ * from the start of each track's list was most of the work of drawing a frame
+ * late in a long clip (docs/vision/50, appendix D).
+ */
+export function positionOnFrame(sorted: TrackPosition[], frame: number): TrackPosition | null {
+  let low = 0;
+  let high = sorted.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const at = sorted[mid]!.frameIndex;
+    if (at === frame) return sorted[mid]!;
+    if (at < frame) low = mid + 1;
+    else high = mid - 1;
+  }
+  return null;
+}
+
+/**
  * The track's position on the frame at `proxyMs`, or null when it was not seen
  * there. Exact frame match when the proxy has a rate; within 50ms when it does
  * not. A track that was hidden for a gap has no position in the gap, and nothing
- * is interpolated here either: the box shown is a box the tracker saw.
+ * is interpolated here either: the box shown is a box the tracker saw. The
+ * positions are in frame order, as `sortPositions` leaves them.
  */
 export function positionAt(
   positions: TrackPosition[],
@@ -47,9 +67,7 @@ export function positionAt(
   fps: number | null
 ): TrackPosition | null {
   const frame = frameIndexAt(proxyMs, fps);
-  if (frame !== null) {
-    return positions.find((p) => p.frameIndex === frame) ?? null;
-  }
+  if (frame !== null) return positionOnFrame(positions, frame);
   let best: TrackPosition | null = null;
   for (const p of positions) {
     const d = Math.abs(p.proxyTimeMs - proxyMs);
