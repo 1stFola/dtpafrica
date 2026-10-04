@@ -79,6 +79,7 @@ reviewed, reproducible player evidence.
 | — | [62-QA-FIX-12-DOCS.md](./62-QA-FIX-12-DOCS.md) | QA fix 12, the docs: doc 07's route tables corrected and a generated table of every route with a test that keeps it true, the bucket's CORS rule recorded as set, the runbook brought up to date, stale comments removed, and everything the twelve fixes left open gathered in one place. |
 | — | [63-QA-FIX-13-LOW-FINDINGS.md](./63-QA-FIX-13-LOW-FINDINGS.md) | QA fix 13, the low findings left over: the person who proposed an event does not accept it whoever corrected it, a correction is a person's row, a refused promotion does not rewrite the accepted row, and one shape for a refusal with one check that the caller is a person. |
 | — | [64-QA-FIX-14-REFUSAL-SHAPES.md](./64-QA-FIX-14-REFUSAL-SHAPES.md) | QA fix 14, refusal shapes: the 126 refusals the rest of the module threw as bare strings each given a name and a next step, with every message and status left as it was, and the test that checks the shape widened to the whole module. |
+| — | [65-QA-FIX-15-GATES-IN-CI.md](./65-QA-FIX-15-GATES-IN-CI.md) | QA fix 15, the rest of the gates in CI: an S3 mock beside Postgres so the gate and the API see one store, every gate making its own match, and twenty-one of the twenty-two gates run on every pull request. |
 
 Also: [`docs/licenses/OSS_REGISTER.md`](../licenses/OSS_REGISTER.md) — every third-party
 component, with its code / weights / dataset licence tracked separately. Nothing ships without

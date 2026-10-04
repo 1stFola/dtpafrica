@@ -164,7 +164,8 @@ All twelve batches were built between 3 and 4 October 2026, one pull request eac
 | PR-11 | Gates and CI | #221 | [61](./61-QA-FIX-11-GATES-CI.md) |
 | PR-12 | Docs | #222 | [62](./62-QA-FIX-12-DOCS.md) |
 | after | Five low findings from appendix B | #223 | [63](./63-QA-FIX-13-LOW-FINDINGS.md) |
-| after | Refusal shapes across the module | this one | [64](./64-QA-FIX-14-REFUSAL-SHAPES.md) |
+| after | Refusal shapes across the module | #224 | [64](./64-QA-FIX-14-REFUSAL-SHAPES.md) |
+| after | The rest of the gates in CI | this one | [65](./65-QA-FIX-15-GATES-IN-CI.md) |
 
 Each report ends with what it did not do. Those lists, not this document, are what is
 still open; [62](./62-QA-FIX-12-DOCS.md) gathers them in one place. The findings above are
