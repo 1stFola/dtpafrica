@@ -142,3 +142,28 @@ promised for Phases 1–6 that no report shows built. Examples include the inges
 operations-dashboard panels, the quality dashboard, overlay toggles, `GET
 /vision/review/:assetId/timeline` and `GET /vision/assets/:id`. Treat that list as product
 backlog, not defects.
+
+---
+
+## 4. Where the plan ended
+
+All twelve batches were built between 3 and 4 October 2026, one pull request each.
+
+| PR | Batch | Pull request | Report |
+|---|---|---|---|
+| PR-1 | Secrets | #210 | [51](./51-QA-FIX-1-SECRETS.md) |
+| PR-2 | Deploy safety | #211, hotfix #213 | [52](./52-QA-FIX-2-DEPLOY-SAFETY.md) |
+| PR-3 | Job protocol | #212 | [53](./53-QA-FIX-3-JOB-PROTOCOL.md) |
+| PR-4 | Rights | #214 | [54](./54-QA-FIX-4-RIGHTS.md) |
+| PR-5 | Events and the clock | #215 | [55](./55-QA-FIX-5-EVENTS-CLOCK.md) |
+| PR-6 | Pipeline maths | #216 | [56](./56-QA-FIX-6-PIPELINE-MATHS.md) |
+| PR-7 | Models and benchmarks | #217 | [57](./57-QA-FIX-7-MODELS.md) |
+| PR-8 | Contract parity | #218 | [58](./58-QA-FIX-8-CONTRACT-PARITY.md) |
+| PR-9 | Workstation UI | #219 | [59](./59-QA-FIX-9-WORKSTATION.md) |
+| PR-10 | Performance and indexes | #220 | [60](./60-QA-FIX-10-PERFORMANCE.md) |
+| PR-11 | Gates and CI | #221 | [61](./61-QA-FIX-11-GATES-CI.md) |
+| PR-12 | Docs | this one | [62](./62-QA-FIX-12-DOCS.md) |
+
+Each report ends with what it did not do. Those lists, not this document, are what is
+still open; [62](./62-QA-FIX-12-DOCS.md) gathers them in one place. The findings above are
+left as they were found, so the reports can be read against them.

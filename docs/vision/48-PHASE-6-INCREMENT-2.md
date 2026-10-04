@@ -97,5 +97,5 @@ that moves it there. On a visible tab both agree.
 |---|---|
 | **Dragging a boundary** | The boundary moves to the playhead, which is frame-accurate and keyboard-driven; dragging the mark's edge is a mouse nicety for later. |
 | **Previous and next uncertainty** | `[` and `]` walk candidates by start; the frontend doc's `,` `.` over low-confidence objects of every kind waits on model-proposed candidates with a confidence to sort by. |
-| **A number key for the actor** | The roster's `1`–`9` is the identity panel's; the event takes the selected track. |
+| **A number key for the actor** | The roster's `1`–`9` is the identity panel's; the event takes the selected track. (The identity panel had no digit keys when this was written. They were built in [59](./59-QA-FIX-9-WORKSTATION.md).) |
 | **The gate** | Per-event precision and actor attribution need gold events on real footage; the screen is the tool that will produce them. |

@@ -62,7 +62,6 @@ export class VisionStatusController {
   @RequirePermissions("vision.read")
   status() {
     return {
-      phase: "0",
       enabled: this.config.enabled,
       contractVersion: VISION_CONTRACT_VERSION,
       storage: {

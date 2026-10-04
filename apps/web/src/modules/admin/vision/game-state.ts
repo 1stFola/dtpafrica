@@ -14,7 +14,7 @@
  */
 
 import { parquetReadObjects } from "hyparquet";
-import type { GAMESTATE_SUPPRESSION_REASONS } from "@dtp/vision-contracts";
+import { DEFAULT_PITCH_DIMENSIONS, type GAMESTATE_SUPPRESSION_REASONS } from "@dtp/vision-contracts";
 
 export type GameStateRow = {
   frameIndex: number;
@@ -35,7 +35,7 @@ export type ChunkRef = { key: string; url: string; bytes: number | null; index: 
 export type DecodedChunk = { ref: ChunkRef; rows: GameStateRow[]; byFrame: Map<number, GameStateRow[]> };
 
 export type PitchDims = { lengthM: number; widthM: number };
-export const DEFAULT_PITCH: PitchDims = { lengthM: 105, widthM: 68 };
+export const DEFAULT_PITCH: PitchDims = DEFAULT_PITCH_DIMENSIONS;
 
 /** The chunk whose source-time range holds this millisecond, or null between or beyond them. */
 export function chunkCovering(chunks: readonly ChunkRef[], sourceMs: number): ChunkRef | null {

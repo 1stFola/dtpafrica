@@ -20,7 +20,7 @@
 - [P4/34, P5/39] FFmpeg never run on a real proxy for identify's frame decoder or the cuts filter graph; cuts threshold 0.4 unvalidated. 34:138, 39:86, 39:88.
 - [P3/31] Canary (both versions on selected matches). 31:97; 10 § canary.
 - [P1/46] More than one worker; a worker that survives a deploy (a deploy re-queues a job mid-run). 46:94–95.
-- NOTE: doc 43/42/45 list the R2 CORS rule as unset. It is now SET (verified 2 Oct 2026 for http://54.225.155.75 and http://localhost:5173); the docs are stale on this point.
+- NOTE: doc 43/42/45 list the R2 CORS rule as unset. It is now SET (verified 2 Oct 2026 for http://54.225.155.75 and http://localhost:5173); the docs are stale on this point. **Resolved in [62](../62-QA-FIX-12-DOCS.md):** checked again on 4 Oct 2026 and the docs say so.
 
 ### A2. Still open — buildable now
 - [P1/15] Grow root EBS 20 → 100 GiB "before Phase 3"; `infra/terraform/variables.tf` still `default = 20`. 15:254, 13:156.
@@ -40,7 +40,7 @@
 - [P3/30] `params.frames` detect sampling only labelled frames. 30:131.
 - [P4/33] HOTA; tracker covered-frame accounting (`framesScored`). 33:116, 33:119.
 - [P4/36] Per-track artifacts — positions route refuses > 32 MB (`identity.service.ts:497`); track crop thumbnail strip. 36:111–112.
-- [P5/39,40] Segment kinds: proposals stay `unknown`, editor does not ask; drag/nudge a landmark; letterboxed picture rect on the annotation workstation (`AdminVisionTaskPage` lacks `usePictureRect`). 39:87, 40:97–100.
+- [P5/39,40] Segment kinds: proposals stay `unknown`; drag/nudge a landmark. 39:87, 40:97–100. (**Resolved:** the editor asks for the contract's kinds since [58](../58-QA-FIX-8-CONTRACT-PARITY.md), and the annotation workstation uses the picture rect since [59](../59-QA-FIX-9-WORKSTATION.md).)
 - [P5/41–43] Kit changes in the substitution window; which goal each side attacks per half; chunks/segments on the match clock; speed/distance/trails/smoothing (metrics phase). 41:109, 41:112, 42:141–143, 43:116–117.
 - [P6/47,48,49] Drag an event boundary; recorder console offers no second; leakage/representation/benchmark/promotion reports shown as raw JSON `<pre>` (`AdminVisionDatasetsPage.tsx:178`, `AdminVisionModelsPage.tsx:281`). 48:98, 49:139, 47:75.
 
@@ -51,7 +51,7 @@
 - `GET /vision/assets/:id/playback` (rights canAnalyze) — `GET /vision/review/:assetId/media` serves the proxy instead. 07:78.
 - `GET /vision/assets/:id/duplicates`. 07:79.
 - `PATCH /vision/sources/:id`. 07:20.
-- Contract table drift — 07 still lists old paths: `/vision/sources/:id/rights-evidence|rights-scopes|revoke` (07:23–25) are really `/vision/partners/:id/evidence`, `/vision/rights/scopes`, `/vision/rights/scopes/:id/revoke`; `POST /vision/assets/:id/segments|jobs` (07:81–82) are `/vision/review/:assetId/camera-segments` and `POST /vision/jobs`; datasets `/split`, `/leakage-report` (07:182–183) are `/splits`, `/leakage`.
+- **Resolved in [62](../62-QA-FIX-12-DOCS.md):** 07's tables are corrected, the routes below that were never built say so in their rows, and 07 ends with a generated table of every route. As found: Contract table drift — 07 still lists old paths: `/vision/sources/:id/rights-evidence|rights-scopes|revoke` (07:23–25) are really `/vision/partners/:id/evidence`, `/vision/rights/scopes`, `/vision/rights/scopes/:id/revoke`; `POST /vision/assets/:id/segments|jobs` (07:81–82) are `/vision/review/:assetId/camera-segments` and `POST /vision/jobs`; datasets `/split`, `/leakage-report` (07:182–183) are `/splits`, `/leakage`.
 - Match ingestion wizard `/admin/vision/ingest`. 08:25, 08:66–84, 11:113.
 - HLS preview. 11:111.
 - Asset processing workspace `/admin/vision/assets/:id`. 08:26.
@@ -61,7 +61,7 @@
 - Workstation disagreement queue. 11:126.
 - Provenance drawer on every object (partial, 24:155; data only 44:33). 08:156.
 - Overlay toggles persisted per reviewer. 08:189–190.
-- Keyboard map on the identity workstation: no `?` help, no `A`/`R`, no `U` (exists only on the annotation task page), no `M` merge, no `S` split, no `1`–`9` roster digits (docs 48:100 and 08:184 claim the digits exist — doc error). `AdminVisionIdentityPage.tsx:328–366`; 08:163–174.
+- **Resolved in [59](../59-QA-FIX-9-WORKSTATION.md)**, all of it. As found: Keyboard map on the identity workstation: no `?` help, no `A`/`R`, no `U` (exists only on the annotation task page), no `M` merge, no `S` split, no `1`–`9` roster digits (docs 48:100 and 08:184 claim the digits exist — doc error). `AdminVisionIdentityPage.tsx:328–366`; 08:163–174.
 - Single workstation `/admin/vision/review/:assetId/*` — built as separate identity and calibration screens. 08:27.
 
 Resolved later (~37): reaper/dispatcher, worker container, stage findings on the asset, resumable upload, catalog/rights screens, partner upload routes, second compute provider, media.py tests, camera segments, annotation UI, gold disagreement, FiftyOne export (boxes and tracks), box drawing, benchmark ledger, promotion/rollback, optimal assignment, split/merge review, sides, identity metrics, match clock, calibration editor, cuts, valid-frame coverage, minimap, timeline/inspector, events page, secondInMinute, review queue, model/benchmark screens, worker on the box.

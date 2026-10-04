@@ -8,7 +8,7 @@
  * nothing that tells it whose hardware it is running on.
  */
 
-import type { BoundingBox, DetectionClass } from "./prediction";
+import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type DetectionClass } from "./prediction";
 
 /** Bumped on any change to VisionJobSpec or the prediction envelope. */
 /**
@@ -630,7 +630,8 @@ export type TeamAssignmentRow = {
 
 /** The pitch in metres. 105 × 68 unless the actual dimensions are known. */
 export type PitchDimensions = { lengthM: number; widthM: number };
-export const DEFAULT_PITCH_DIMENSIONS: PitchDimensions = { lengthM: 105, widthM: 68 };
+/** The one default, built from the two numbers in `prediction.ts`; the API and the screens take it from here. */
+export const DEFAULT_PITCH_DIMENSIONS: PitchDimensions = { lengthM: DEFAULT_PITCH_LENGTH_M, widthM: DEFAULT_PITCH_WIDTH_M };
 
 /** Row-major 3 × 3, mapping homogeneous proxy pixel [x, y, 1] to homogeneous pitch [X, Y, W] in metres. */
 export type Homography = [number, number, number, number, number, number, number, number, number];

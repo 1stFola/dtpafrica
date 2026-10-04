@@ -17,9 +17,10 @@ import { Field, Panel, Pill, formatDuration, short, toneOfState, useAction } fro
 
 
 /**
- * Event candidates per asset: propose one by time, a second person's decision,
- * and promotion into the match record. The timeline-and-inspector screen with
- * the video under it is the next increment; this is every action reachable now.
+ * Event candidates per asset, as a table: propose one by time, a second person's
+ * decision, and promotion into the match record. The same actions with the video
+ * under them are on the identity workstation (its timeline and inspector,
+ * docs/vision/48), which each row links to.
  */
 export function AdminVisionEventsPage() {
   usePageTitle("Events");
@@ -117,7 +118,7 @@ export function AdminVisionEventsPage() {
               Propose
             </button>
           </form>
-          <p className="vision-footnote muted">The actor track and roster slot are set from the identity screen's context in the next increment; a candidate proposed here carries the segment, calibration and clock evidence the service finds itself.</p>
+          <p className="vision-footnote muted">The actor track and roster slot are set on the identity screen, where a track can be selected; a candidate proposed here carries the segment, calibration and clock evidence the service finds itself.</p>
         </Panel>
       )}
 

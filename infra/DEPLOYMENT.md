@@ -212,8 +212,9 @@ Two mechanisms exist in this repo, and only one of them actually runs in staging
 | Destructive changes | Silently allowed (`--accept-data-loss`) | Fails and stops |
 
 As of this change, `prisma/migrations/` **can** build a database from zero. It
-held 20 migrations when this list was written (there are more now; CI checks them, not
-this list):
+held 20 migrations when this list was written and 35 on 4 October 2026. The list below is
+the first 20 and is not kept up; `ls services/api/prisma/migrations` is the list, and CI's
+`schema-migrations` job is what checks it:
 
 - `20260528000000_init` — baseline, the schema as it stood before the first
   incremental migration, reconstructed from git history
@@ -275,10 +276,11 @@ Prisma creates and drops the schema inside it.
 
 ### Baselining a database that already has tables but no `_prisma_migrations`
 
-This is the situation for **every existing DTP database** — the local dev
-database and the staging volume both have a full schema that `db push` built,
-and no migration history at all. Running `migrate deploy` against one of them
-fails with `P3005 The database schema is not empty`.
+This was the situation for every DTP database until 3 October 2026. **Staging has been
+baselined since** (docs/vision/52) and needs none of this: its deploys run `migrate
+deploy`. It still describes a local dev database, which `db push` built and which has no
+migration history. Running `migrate deploy` against one fails with
+`P3005 The database schema is not empty`. The steps are kept for a database in that state.
 
 The fix is to tell Prisma these migrations are already applied, without
 executing their SQL. Nothing is written to the tables; only `_prisma_migrations`
@@ -365,7 +367,18 @@ empty until the secret holds it, so a deploy without them changes nothing.
    `VISION_R2_BUCKET_MASTER`, `VISION_R2_BUCKET_DERIVED`, `VISION_R2_BUCKET_MODELS`,
    `VISION_R2_BUCKET_CLIPS`. From a machine with the AWS CLI signed in and a
    `services/api/.env` that already holds the R2 values, this merges them into the secret
-   without printing any of them (Git Bash; the existing keys are kept):
+   without printing any of them (Git Bash; the existing keys are kept).
+
+   > **This copies a developer's buckets and token to the server.** If the `.env` it reads
+   > is the one a developer runs gates with, the server and that developer's machine then
+   > share buckets and credentials, and a gate run on the laptop writes and deletes objects
+   > in the buckets the server serves from (docs/vision/50, appendix E). Give the server
+   > its own four buckets and its own R2 token, put those in a separate env file, and point
+   > this command at that file. Until that is done, do not run a storage-writing gate
+   > (`vision:r2check`, `vision:e2echeck`, `vision:datasetcheck` and the others that take a
+   > store) against buckets the server uses: `assertDevDatabase` checks the database and
+   > the API host, not the bucket.
+
 
    ```bash
    cd services/api && CURRENT=$(aws secretsmanager get-secret-value --secret-id dtp/staging/app --region us-east-1 --query SecretString --output text) && MERGED=$(python - "$CURRENT" <<'PY'
@@ -393,7 +406,11 @@ empty until the secret holds it, so a deploy without them changes nothing.
    and the storage backend `r2`.
 4. Set the CORS rule on the derived bucket so the review UI can read Parquet from it
    (docs/vision/43): allowed origins the site's origin, methods `GET` and `HEAD`, headers `*`,
-   exposed headers `Content-Length`.
+   exposed headers `Content-Length`. **Done for staging on 2 October 2026**, for
+   `http://localhost:5173` and the server's `http://<ip>` origin, and checked again on
+   4 October. The rule names origins, so add the new one when the site gets a domain or
+   HTTPS. The master bucket has no rule, which is right until there is a browser upload
+   page: that would need `PUT` allowed there.
 5. Footage reaches the box through `pnpm --filter @dtp/api vision:upload -- --source <id>
    --file <video> --api http://<server>/api/v1 --key <ADMIN_API_KEY>` from any machine; the
    API opens a resumable session and the bytes go straight to the store.
@@ -402,8 +419,10 @@ empty until the secret holds it, so a deploy without them changes nothing.
    token through the API with the operator key and claims the CPU stages; `detect` needs a
    GPU pod. Watch it with `sudo docker compose -f infra/docker-compose.staging.yml
    --env-file infra/.env.staging logs -f worker` from `/opt/dtp-app/repo`. A full match's
-   transcode needs the file twice over on `/tmp/dtp-vision` (a 2 GB tmpfs) and the box's
-   memory; test with short clips first (docs/vision/46).
+   transcode needs the file twice over in the worker's work directory, `/var/lib/dtp-vision`,
+   which is a volume on the box's disk since docs/vision/52 (it was a 2 GB tmpfs, which is
+   RAM). The worker is held to 768 MB and one CPU. Check the disk has room for twice the
+   file, and test with short clips first (docs/vision/46).
 
 ## Day-2 Operations
 

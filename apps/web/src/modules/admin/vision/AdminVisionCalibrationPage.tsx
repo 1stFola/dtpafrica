@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CAMERA_SEGMENT_KINDS } from "@dtp/vision-contracts";
+import { CAMERA_SEGMENT_KINDS, DEFAULT_PITCH_DIMENSIONS } from "@dtp/vision-contracts";
 import {
   anchorVisionClock,
   calibrateVisionSegment,
@@ -67,7 +67,7 @@ export function AdminVisionCalibrationPage() {
      moved on to the next half by the kick-off they just filed. */
   const halfPicked = useRef(false);
   const [landmarks, setLandmarks] = useState<VisionPitchLandmark[]>([]);
-  const [pitch, setPitch] = useState<VisionPitchDimensions>({ lengthM: 105, widthM: 68 });
+  const [pitch, setPitch] = useState<VisionPitchDimensions>({ ...DEFAULT_PITCH_DIMENSIONS });
   const [points, setPoints] = useState<VisionCalibrationPoint[]>([]);
   const [preview, setPreview] = useState<VisionCalibrationPreview | null>(null);
   const [activeLandmark, setActiveLandmark] = useState<string | null>(null);

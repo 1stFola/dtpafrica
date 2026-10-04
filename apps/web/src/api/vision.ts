@@ -2,10 +2,12 @@ import { adminFetch } from "./admin";
 import type { CalibrationQuality } from "@dtp/vision-contracts";
 
 /**
- * Vision Engine API client.
+ * Vision Engine API client: one function per route the screens call, and the
+ * types of what comes back.
  *
- * Phase 0 exposes one read-only endpoint. Ingestion, jobs and review arrive in
- * Phase 1 — see docs/vision/07-API-CONTRACTS.md.
+ * The routes are listed, as built, at the end of docs/vision/07-API-CONTRACTS.md.
+ * That table is generated from the controllers; this file is written by hand, so
+ * a route here that is not in the table is a typo.
  */
 
 export type VisionResourceClass = "cpu_small" | "gpu_24gb" | "gpu_48gb" | "gpu_80gb";
@@ -19,7 +21,6 @@ export type VisionProviderCapabilities = {
 };
 
 export type VisionStatus = {
-  phase: string;
   enabled: boolean;
   contractVersion: string;
   storage: {

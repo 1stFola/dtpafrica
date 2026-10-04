@@ -137,7 +137,7 @@ where.
 
 | | |
 |---|---|
-| **The minimap** | Next. It fetches chunks straight from the bucket, which needs the R2 CORS rule the identity screen worked around ([36](./36-PHASE-4-INCREMENT-5.md)); that is infrastructure, not code. |
+| **The minimap** | Next. It fetches chunks straight from the bucket, which needs the R2 CORS rule the identity screen worked around ([36](./36-PHASE-4-INCREMENT-5.md)); that is infrastructure, not code. The rule was set on 2 October 2026; see [43](./43-PHASE-5-INCREMENT-6.md). |
 | **Speed and distance** | A speed is a difference of placed rows; a distance over a window is their sum. Both belong to the metrics phase with the suppression rule already enforced row by row here. |
 | **Smoothing** | Rows are the tracker's boxes projected, frame by frame, unsmoothed. A foot point jitters; a filter over it is a calculation version of its own, not a change to the data. |
 | **Chunks on the match clock** | Chunks are by source time, the footage's own unit. A half is findable from the index's anchors; a chunk per minute of the match would move when the clock is re-anchored. |
