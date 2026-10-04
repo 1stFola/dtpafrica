@@ -31,7 +31,7 @@ const mockPrisma = {
   visionTeamSide: { upsert: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   visionTeamAssignment: { findFirst: vi.fn(), updateMany: vi.fn() },
   visionTrack: { findUnique: vi.fn(), findMany: vi.fn() },
-  visionIdentityAssignment: { create: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+  visionIdentityAssignment: { create: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   $transaction: vi.fn(),
 };
 const mockAudit = { record: vi.fn() };
@@ -68,6 +68,9 @@ beforeEach(() => {
   mockPrisma.visionTeamAssignment.findFirst.mockResolvedValue(sideA());
   mockPrisma.visionTeamAssignment.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.visionTeamSide.findUnique.mockResolvedValue({ inferenceJobId: JOB, team: "A", sbTeamId: HOME });
+  mockPrisma.visionTeamSide.findMany.mockResolvedValue([]);
+  mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([]);
+  mockPrisma.visionIdentityAssignment.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.sbMatchSquadPlayer.findUnique.mockResolvedValue(slot());
   mockPrisma.visionIdentityAssignment.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => {
     const row = { id: `ia-${created.length + 1}`, supersededBy: null, reviewState: "unreviewed", ...data };
@@ -100,6 +103,25 @@ describe("which team a side is", () => {
     expect(mockPrisma.visionTeamSide.upsert).toHaveBeenCalledTimes(2);
     expect(mockPrisma.visionTeamSide.upsert.mock.calls[0]![0].create).toMatchObject({ inferenceJobId: JOB, team: "A", sbTeamId: AWAY, decidedBy: "u-reviewer" });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "identity.sides.decided", targetId: JOB }), reviewer);
+  });
+
+  it("does not quietly swap sides already decided: a different answer needs override, and the audit keeps the old one", async () => {
+    mockPrisma.visionTeamSide.findMany.mockResolvedValue([{ team: "A", sbTeamId: HOME, decidedBy: "u-first" }, { team: "B", sbTeamId: AWAY, decidedBy: "u-first" }]);
+    const refused = await service.setSides(JOB, { A: AWAY, B: HOME }, reviewer).catch((e) => e.getResponse());
+    expect(refused).toMatchObject({ error: "SidesAlreadyDecided", current: { A: HOME, B: AWAY } });
+    expect(mockPrisma.visionTeamSide.upsert).not.toHaveBeenCalled();
+    expect(mockAudit.record).not.toHaveBeenCalled();
+
+    const out = await service.setSides(JOB, { A: AWAY, B: HOME, override: true }, reviewer);
+    expect(out.sides).toEqual({ A: AWAY, B: HOME });
+    expect(mockPrisma.visionTeamSide.upsert).toHaveBeenCalledTimes(2);
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "identity.sides.changed", data: { A: AWAY, B: HOME, previous: { A: HOME, B: AWAY } } }), reviewer);
+  });
+
+  it("takes the same answer again without asking for override", async () => {
+    mockPrisma.visionTeamSide.findMany.mockResolvedValue([{ team: "A", sbTeamId: HOME, decidedBy: "u-first" }, { team: "B", sbTeamId: AWAY, decidedBy: "u-first" }]);
+    await service.setSides(JOB, { A: HOME, B: AWAY }, reviewer);
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "identity.sides.decided", data: { A: HOME, B: AWAY } }), reviewer);
   });
 
   it("belongs to a succeeded identify job", async () => {
@@ -228,11 +250,49 @@ describe("saying who a track is", () => {
   it("writes the window and supersedes every current assignment it overlaps", async () => {
     const out = await service.assign(TRACK, { matchSquadPlayerId: SLOT_HOME, validFromMs: 12000, validToMs: 15000 }, reviewer);
     expect(out.assignment).toMatchObject({ trackId: TRACK, playerId: PLAYER, matchSquadPlayerId: SLOT_HOME, sbTeamId: HOME, method: "manual", validFromMs: 12000, validToMs: 15000, decidedBy: "u-reviewer", confidence: 1 });
-    expect(mockPrisma.visionIdentityAssignment.updateMany).toHaveBeenCalledWith({
+    // What it overlaps is looked for; with nothing there, nothing is superseded.
+    expect(mockPrisma.visionIdentityAssignment.findMany).toHaveBeenCalledWith({
       where: { trackId: TRACK, supersededBy: null, id: { not: "ia-1" }, validFromMs: { lt: 15000 }, validToMs: { gt: 12000 } },
-      data: { supersededBy: "ia-1" },
     });
+    expect(mockPrisma.visionIdentityAssignment.updateMany).not.toHaveBeenCalled();
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "identity.assigned", targetId: TRACK }), reviewer);
+  });
+
+  it("supersedes what it overlaps and keeps the part it does not cover, with its decision and its review", async () => {
+    /* An accepted, public identity over the whole track, 10000-19000. A reviewer now says who
+       the track was for 12000-15000 only. The stretches either side were not spoken about:
+       they stay who they were, accepted, as rows of their own. */
+    const whole = { id: "ia-old", trackId: TRACK, playerId: "p-old", matchSquadPlayerId: "slot-old", sbTeamSquadId: null, sbTeamId: HOME, confidence: 1, method: "manual", validFromMs: 10000, validToMs: 19000, reviewState: "accepted", decidedBy: "u-first", reviewedBy: "u-second", note: "seen clearly", supersededBy: null, createdAt: new Date("2026-10-01") };
+    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([whole]);
+    await service.assign(TRACK, { matchSquadPlayerId: SLOT_HOME, validFromMs: 12000, validToMs: 15000 }, reviewer);
+    const made = mockPrisma.visionIdentityAssignment.create.mock.calls.map((c) => c[0].data);
+    expect(made).toHaveLength(3);
+    const carried = { trackId: TRACK, playerId: "p-old", matchSquadPlayerId: "slot-old", sbTeamId: HOME, method: "manual", reviewState: "accepted", decidedBy: "u-first", reviewedBy: "u-second", note: "seen clearly" };
+    expect(made[1]).toMatchObject({ ...carried, validFromMs: 10000, validToMs: 12000 });
+    expect(made[2]).toMatchObject({ ...carried, validFromMs: 15000, validToMs: 19000 });
+    // A remainder is a new row: it does not take the old one's id, its date, or its superseded mark.
+    for (const part of made.slice(1)) {
+      expect(part).not.toHaveProperty("id");
+      expect(part).not.toHaveProperty("createdAt");
+      expect(part).not.toHaveProperty("supersededBy");
+    }
+    expect(mockPrisma.visionIdentityAssignment.updateMany).toHaveBeenCalledWith({ where: { id: { in: ["ia-old"] }, supersededBy: null }, data: { supersededBy: "ia-1" } });
+  });
+
+  it("files only the side that is left: a new window from the track's start leaves one remainder, one over all of it leaves none", async () => {
+    const old = (from: number, to: number) => ({ id: "ia-old", trackId: TRACK, playerId: "p-old", matchSquadPlayerId: "slot-old", sbTeamSquadId: null, sbTeamId: HOME, confidence: 1, method: "manual", validFromMs: from, validToMs: to, reviewState: "accepted", decidedBy: "u-first", reviewedBy: "u-second", note: null, supersededBy: null, createdAt: new Date() });
+    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([old(10000, 19000)]);
+    await service.assign(TRACK, { matchSquadPlayerId: SLOT_HOME, validFromMs: 10000, validToMs: 15000 }, reviewer);
+    let made = mockPrisma.visionIdentityAssignment.create.mock.calls.map((c) => c[0].data);
+    expect(made.slice(1).map((m) => `${m.validFromMs}-${m.validToMs}`)).toEqual(["15000-19000"]);
+
+    mockPrisma.visionIdentityAssignment.create.mockClear();
+    created = [];
+    mockPrisma.visionIdentityAssignment.findMany.mockResolvedValue([old(12000, 14000)]);
+    await service.assign(TRACK, { matchSquadPlayerId: SLOT_HOME, validFromMs: 10000, validToMs: 19000 }, reviewer);
+    made = mockPrisma.visionIdentityAssignment.create.mock.calls.map((c) => c[0].data);
+    expect(made).toHaveLength(1);
+    expect(mockPrisma.visionIdentityAssignment.updateMany).toHaveBeenLastCalledWith({ where: { id: { in: ["ia-old"] }, supersededBy: null }, data: { supersededBy: expect.any(String) } });
   });
 
   it("defaults the window to the whole track", async () => {
@@ -253,7 +313,7 @@ describe("saying who a track is", () => {
     const out = await service.assign(TRACK, { matchSquadPlayerId: SLOT_HOME, propagateTo: [OTHER, OTHER, TRACK] }, reviewer);
     expect(out.propagated).toHaveLength(1);
     expect(out.propagated[0]).toMatchObject({ trackId: OTHER, playerId: PLAYER, method: "propagated", validFromMs: 30000, validToMs: 40000, note: "propagated from ia-1" });
-    expect(mockPrisma.visionIdentityAssignment.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ trackId: OTHER, validFromMs: { lt: 40000 }, validToMs: { gt: 30000 } }) }));
+    expect(mockPrisma.visionIdentityAssignment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ trackId: OTHER, validFromMs: { lt: 40000 }, validToMs: { gt: 30000 } }) }));
   });
 
   it("holds the roster rule on every propagated track too", async () => {
@@ -276,8 +336,13 @@ describe("a second person", () => {
   const row = (over: Record<string, unknown> = {}) => ({ id: "ia-9", trackId: TRACK, decidedBy: "u-reviewer", reviewState: "unreviewed", supersededBy: null, note: null, ...over });
 
   beforeEach(() => {
-    mockPrisma.visionIdentityAssignment.findUnique.mockResolvedValue(row());
-    mockPrisma.visionIdentityAssignment.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => Promise.resolve({ ...row(), ...data }));
+    // The row as loaded, then the row as it is after the decision.
+    let decided: Record<string, unknown> = {};
+    mockPrisma.visionIdentityAssignment.findUnique.mockImplementation(async () => ({ ...row(), ...decided }));
+    mockPrisma.visionIdentityAssignment.updateMany.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+      decided = data;
+      return { count: 1 };
+    });
   });
 
   it("accepts; the person who assigned cannot", async () => {
@@ -285,6 +350,8 @@ describe("a second person", () => {
     await expect(service.accept("ia-9", apiKey)).rejects.toMatchObject({ response: { error: "IdentityNeedsAPerson" } });
     const out = await service.accept("ia-9", second);
     expect(out).toMatchObject({ reviewState: "accepted", reviewedBy: "u-second" });
+    // Only while it is still the current, undecided row.
+    expect(mockPrisma.visionIdentityAssignment.updateMany).toHaveBeenCalledWith({ where: { id: "ia-9", supersededBy: null, reviewState: "unreviewed" }, data: { reviewState: "accepted", reviewedBy: "u-second" } });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "identity.accepted", targetId: "ia-9" }), second);
   });
 
@@ -292,6 +359,22 @@ describe("a second person", () => {
     const out = await service.reject("ia-9", "back turned, cannot tell", second);
     expect(out).toMatchObject({ reviewState: "rejected", reviewedBy: "u-second", note: "rejected: back turned, cannot tell" });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "identity.rejected", reason: "back turned, cannot tell" }), second);
+  });
+
+  it("decides once: an accepted identity is not flipped to rejected in place, nor a rejected one accepted", async () => {
+    mockPrisma.visionIdentityAssignment.findUnique.mockResolvedValue(row({ reviewState: "accepted", reviewedBy: "u-second" }));
+    await expect(service.reject("ia-9", "changed my mind", second)).rejects.toMatchObject({ response: { error: "AlreadyDecided" } });
+    mockPrisma.visionIdentityAssignment.findUnique.mockResolvedValue(row({ reviewState: "rejected", reviewedBy: "u-second" }));
+    await expect(service.accept("ia-9", second)).rejects.toMatchObject({ response: { error: "AlreadyDecided" } });
+    expect(mockPrisma.visionIdentityAssignment.updateMany).not.toHaveBeenCalled();
+    expect(mockAudit.record).not.toHaveBeenCalled();
+  });
+
+  it("leaves one decision when two people decide at once", async () => {
+    mockPrisma.visionIdentityAssignment.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.accept("ia-9", second)).rejects.toMatchObject({ response: { error: "AlreadyDecided" } });
+    await expect(service.reject("ia-9", "no", second)).rejects.toMatchObject({ response: { error: "AlreadyDecided" } });
+    expect(mockAudit.record).not.toHaveBeenCalled();
   });
 
   it("reviews only a current assignment", async () => {

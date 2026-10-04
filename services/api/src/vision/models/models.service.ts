@@ -28,9 +28,9 @@ import { goldContamination } from "../datasets/gold-benchmark";
  * accepted unless it names the version the job was dispatched with and the weights
  * it loaded match the ones recorded.
  *
- * Promotion, canary and rollback are not here yet. A version's `stage` moves only by
- * hand until the benchmark ledger exists to justify moving it -- see
- * docs/vision/10-EVALUATION-AND-GATES.md § Promotion gate.
+ * A version's `stage` moves through the benchmark ledger (`benchmarks.service.ts`)
+ * and the two-person promotion gate (`promotions.service.ts`), never by hand -- see
+ * docs/vision/10-EVALUATION-AND-GATES.md § Promotion gate. Canary is not built.
  *
  * See docs/vision/09-ML-PIPELINE.md § Model registry and reproducibility, and
  * docs/vision/28-PHASE-3-INCREMENT-1.md.
@@ -93,11 +93,24 @@ export class VisionModelsService {
             promotedAt: true,
             createdAt: true,
             _count: { select: { jobs: true } },
+            // The request waiting on a second person, if any: what the registry screen
+            // needs to offer Approve and Reject, and to whom.
+            promotionRequests: {
+              where: { state: "pending" },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: { id: true, fromStage: true, toStage: true, requestedBy: true, requestedByEmail: true, createdAt: true },
+            },
           },
         },
       },
     });
-    return { models };
+    return {
+      models: models.map((model) => ({
+        ...model,
+        versions: model.versions.map(({ promotionRequests, ...version }) => ({ ...version, pendingPromotion: promotionRequests[0] ?? null })),
+      })),
+    };
   }
 
   async getVersion(id: string) {
@@ -351,8 +364,8 @@ export class VisionModelsService {
       });
     }
     if (production.length > 1) {
-      // Promotion will enforce one production version per task. Until it exists,
-      // the stage is set by hand, and a hand can set it twice.
+      // Promotion keeps one production version per task (it demotes the others under
+      // a lock). This is for a registry whose stages were set some other way.
       throw new ConflictException({
         statusCode: 409,
         error: "AmbiguousProductionModel",

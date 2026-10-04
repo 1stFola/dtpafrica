@@ -17,6 +17,7 @@ import {
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { useAdminVisionContext } from "./AdminVisionLayout";
+import { promotionActions } from "./model-promotion";
 import { Field, Panel, Pill, formatWhen, short, toneOfState, useAction } from "./vision-ui";
 
 const TASKS = ["detect", "track", "identify", "calibrate", "event", "vlm"];
@@ -29,7 +30,7 @@ const TASKS = ["detect", "track", "identify", "calibrate", "event", "vlm"];
  */
 export function AdminVisionModelsPage() {
   usePageTitle("Models");
-  const { hasPermission } = useAdminAuth();
+  const { hasPermission, session } = useAdminAuth();
   const { refreshOverview } = useAdminVisionContext();
   const [models, setModels] = useState<VisionModelRow[] | null>(null);
   const [datasets, setDatasets] = useState<VisionDatasetVersionRow[]>([]);
@@ -38,7 +39,9 @@ export function AdminVisionModelsPage() {
   const [versionFor, setVersionFor] = useState<string | null>(null);
   const [newVersion, setNewVersion] = useState({ version: "", gitCommit: "", configKey: "", workerImage: "", licenceNote: "", datasetVersionId: "", weightsKey: "", weightsChecksum: "" });
   const [benchDataset, setBenchDataset] = useState("");
-  const [rejectReason, setRejectReason] = useState("");
+  /* One reason per request, keyed by its id: a single shared field put the reason typed for
+     one version on whichever version's Reject was pressed. */
+  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const [m, d] = await Promise.all([fetchVisionModels(), fetchVisionDatasets()]);
@@ -54,6 +57,7 @@ export function AdminVisionModelsPage() {
 
   const canTrain = hasPermission("vision.models.train");
   const canPromote = hasPermission("vision.models.promote");
+  const me = session?.userId;
 
   async function show(title: string, fetcher: () => Promise<unknown>) {
     try {
@@ -194,7 +198,10 @@ export function AdminVisionModelsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {m.versions.map((v) => (
+                      {m.versions.map((v) => {
+                        const actions = promotionActions(v, me, { train: canTrain, promote: canPromote });
+                        const pending = v.pendingPromotion ?? null;
+                        return (
                         <tr key={v.id}>
                           <td>
                             <strong>{v.version}</strong> <code className="vision-mono vision-sub">{short(v.id)}</code>
@@ -228,29 +235,32 @@ export function AdminVisionModelsPage() {
                                   <button type="button" disabled={busy || !benchDataset} onClick={() => run(`Benchmark of ${v.version} queued.`, () => requestVisionBenchmark(v.id, benchDataset))}>
                                     Benchmark
                                   </button>
-                                  {v.stage === "benchmarked" && (
-                                    <button type="button" disabled={busy} onClick={() => run(`Promotion of ${v.version} requested; a different person approves.`, () => requestVisionPromotion(v.id))}>
-                                      Request promotion
+                                  {actions.request && (
+                                    <button type="button" disabled={busy} onClick={() => run(`Promotion of ${v.version} to ${actions.request} requested; a different person approves.`, () => requestVisionPromotion(v.id))}>
+                                      Request promotion to {actions.request}
                                     </button>
                                   )}
                                 </>
                               )}
-                              {canPromote && v.stage === "promotion_requested" && (
+                              {actions.waiting && <span className="vision-sub muted">{actions.waiting}</span>}
+                              {actions.decide && pending && (
                                 <>
-                                  <button type="button" disabled={busy} onClick={() => run(`${v.version} promoted to production.`, () => approveVisionPromotion(v.id))}>
+                                  <button type="button" disabled={busy} onClick={() => run(`${v.version} promoted to ${pending.toStage}.`, () => approveVisionPromotion(v.id))}>
                                     Approve
                                   </button>
-                                  <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="reason" aria-label="Rejection reason" />
+                                  <input
+                                    value={rejectReason[pending.id] ?? ""}
+                                    onChange={(e) => setRejectReason({ ...rejectReason, [pending.id]: e.target.value })}
+                                    placeholder="reason"
+                                    aria-label={`Reason for rejecting the promotion of ${v.version}`}
+                                  />
                                   <button
                                     type="button"
-                                    disabled={busy || rejectReason.trim().length < 3}
+                                    disabled={busy || (rejectReason[pending.id] ?? "").trim().length < 3}
                                     onClick={() =>
                                       run(`Promotion of ${v.version} rejected.`, async () => {
-                                        const p = (await fetchVisionPromotions(v.id)) as { promotions?: { id: string; state: string }[] };
-                                        const pending = p.promotions?.find((x) => x.state === "requested" || x.state === "pending");
-                                        if (!pending) throw new Error("No pending promotion request found for this version.");
-                                        await rejectVisionPromotion(pending.id, rejectReason.trim());
-                                        setRejectReason("");
+                                        await rejectVisionPromotion(pending.id, (rejectReason[pending.id] ?? "").trim());
+                                        setRejectReason(({ [pending.id]: _done, ...rest }) => rest);
                                       })
                                     }
                                   >
@@ -258,7 +268,7 @@ export function AdminVisionModelsPage() {
                                   </button>
                                 </>
                               )}
-                              {canPromote && v.stage === "production" && (
+                              {actions.rollback && (
                                 <button type="button" disabled={busy} onClick={() => run(`${v.version} rolled back; what it replaced is production again.`, () => rollbackVisionModel(v.id))}>
                                   Roll back
                                 </button>
@@ -266,7 +276,8 @@ export function AdminVisionModelsPage() {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

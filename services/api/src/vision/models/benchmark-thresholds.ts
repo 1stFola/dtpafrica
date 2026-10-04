@@ -18,8 +18,13 @@ export type BenchmarkThresholds = {
   version: string;
   /** IoU at which a prediction counts as matching a box. */
   iou: number;
-  /** Metric id (`"<name>:<class|all>"`) -> the minimum it must reach on `all` and on every critical slice. */
-  minimums: Record<string, number>;
+  /**
+   * Per model task, metric id (`"<name>:<class|all>"`) -> the minimum it must reach
+   * on `all` and on every critical slice. Keyed by task because each task measures
+   * different things: a detector's `ap:all` is not something a tracker's run has,
+   * and a bar a run cannot measure is a bar it fails (docs/vision/50, appendix B).
+   */
+  minimums: Readonly<Record<string, Readonly<Record<string, number>>>>;
   /** Slices a regression on which blocks promotion regardless of the headline. */
   criticalSlices: readonly string[];
   /** Metrics compared candidate-against-production at promotion, per model task, on `all` and every critical slice. */
@@ -63,16 +68,17 @@ export type BenchmarkVerdict = {
 };
 
 /**
- * Judge a run's metrics against the thresholds.
+ * Judge a run's metrics against the thresholds set for its model's task.
  *
+ * A task with no minimums is `unthresholded`, whatever is set for other tasks.
  * Every minimum is checked on `all` and on every critical slice. On `all`, a
  * missing metric is a failure: a run that did not measure what the bar is set on
  * has not cleared it. On a critical slice, a metric with no boxes to measure
  * (support 0) is skipped -- a gold set with no platform copies cannot regress on
  * them -- but a metric that had boxes and still produced no value is a failure.
  */
-export function judge(metrics: readonly BenchmarkMetric[], thresholds: BenchmarkThresholds): BenchmarkVerdict {
-  const entries = Object.entries(thresholds.minimums);
+export function judge(metrics: readonly BenchmarkMetric[], thresholds: BenchmarkThresholds, task: string): BenchmarkVerdict {
+  const entries = Object.entries(thresholds.minimums[task] ?? {});
   if (!entries.length) {
     return { verdict: "unthresholded", judgedUnder: thresholds.version, failures: [] };
   }

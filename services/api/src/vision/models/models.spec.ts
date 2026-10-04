@@ -373,3 +373,17 @@ describe("the conflict shapes reach the client", () => {
     }
   });
 });
+
+describe("the registry list", () => {
+  it("says which versions have a promotion waiting on a second person, and who asked", async () => {
+    const waiting = { id: "pr-1", fromStage: "staging", toStage: "production", requestedBy: "u-trainer", requestedByEmail: "t@dtp.test", createdAt: new Date() };
+    (mockPrisma.visionModel as unknown as { findMany: ReturnType<typeof vi.fn> }).findMany = vi.fn().mockResolvedValue([
+      { id: "m-1", key: "detector/x", task: "detect", versions: [{ id: "v-2", version: "0.2", stage: "staging", promotionRequests: [waiting] }, { id: "v-1", version: "0.1", stage: "production", promotionRequests: [] }] },
+    ]);
+    const { models } = await service.listModels();
+    expect(models[0]!.versions[0]).toEqual({ id: "v-2", version: "0.2", stage: "staging", pendingPromotion: waiting });
+    expect(models[0]!.versions[1]).toEqual({ id: "v-1", version: "0.1", stage: "production", pendingPromotion: null });
+    const query = (mockPrisma.visionModel as unknown as { findMany: ReturnType<typeof vi.fn> }).findMany.mock.calls[0]![0];
+    expect(query.include.versions.select.promotionRequests).toMatchObject({ where: { state: "pending" }, take: 1 });
+  });
+});
