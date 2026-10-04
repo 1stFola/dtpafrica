@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { EVIDENCE_KINDS, VISION_EVENT_TAXONOMY_VERSION, type VisionEventPromotionV1, type VisionEventType } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
@@ -12,6 +12,7 @@ import { formatRecorderMinute, isPastHalfLength, recordedMinuteOf, recorderHalfL
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { isEventType, isPlay, matchRecorderEvent, scoreboardTypeOf, secondToWrite, windowProblem, type RecorderEvent } from "./event-taxonomy";
 import { buildQueue, type QueueIdentityRow } from "./review-queue";
+import { notFound, personFor, refusal } from "../shared/refusals";
 
 /**
  * Event candidates: a person's (later, a model's) proposal that something
@@ -95,6 +96,7 @@ export class VisionEventsService {
           cameraSegmentId: resolved.cameraSegmentId,
           inPlay: resolved.inPlay,
           decidedBy: person.userId,
+          proposedBy: person.userId,
           note: input.note ?? null,
         },
       });
@@ -140,11 +142,16 @@ export class VisionEventsService {
           actorMatchSquadPlayerId: resolved.actorMatchSquadPlayerId,
           sbTeamId: resolved.sbTeamId,
           confidence: merged.confidence ?? 1,
-          method: current.method,
-          modelVersionId: current.modelVersionId,
+          /* A correction is a person's row. It kept the method and the model of the row it
+             replaced, so a candidate a person had rewritten still said a model proposed it.
+             The row it supersedes keeps both, and that is where the model's part is read. */
+          method: "manual",
+          modelVersionId: null,
           cameraSegmentId: resolved.cameraSegmentId,
           inPlay: resolved.inPlay,
           decidedBy: person.userId,
+          /* Whoever proposed the event first stays its proposer through every correction. */
+          proposedBy: current.proposedBy ?? current.decidedBy,
           note: merged.note ?? null,
         },
       });
@@ -169,15 +176,24 @@ export class VisionEventsService {
     this.refuseIfStale(current);
     if (current.reviewState !== "unreviewed") throw alreadyDecided(current.id, current.reviewState);
     if (decision === "accepted" && current.decidedBy === person.userId) {
-      throw new ForbiddenException({
-        statusCode: 403,
-        error: "SelfAcceptanceRefused",
-        message: "You cannot accept an event you proposed.",
-        remediation: "A second person with vision.review accepts. That is the whole control before an event can reach the match record.",
-      });
+      throw refusal(403, "SelfAcceptanceRefused", "You cannot accept an event you proposed.", "A second person with vision.review accepts. That is the whole control before an event can reach the match record.");
     }
+    /* The check above reads the latest row. After someone else's correction the latest row
+       is theirs, and the person who proposed the event could accept it: their own claim,
+       confirmed by themselves, with a second name on it only because the note was edited
+       (docs/vision/50, appendix B). The first proposer does not accept at any point in
+       the chain. */
+    if (decision === "accepted" && (current.proposedBy ?? current.decidedBy) === person.userId) {
+      throw refusal(
+        403,
+        "SelfAcceptanceRefused",
+        "You proposed this event. Someone else has corrected it since, and it is still yours to have checked, not to check.",
+        "A person who neither proposed the event nor wrote this correction accepts it. You may still reject it, or correct it."
+      );
+    }
+    // 400, not 409: nothing about the candidate's state is in the way. The request is missing a field.
     if (decision === "rejected" && !reason?.trim()) {
-      throw new ConflictException({ statusCode: 409, error: "ReasonRequired", message: "A rejection says why.", remediation: "Give a reason: wrong window, wrong actor, not an event, a replay." });
+      throw refusal(400, "ReasonRequired", "A rejection says why.", "Give a reason: wrong window, wrong actor, not an event, a replay.");
     }
     // The clock the second person saw it on. Promotion holds the record to this one (see `promote`).
     const acceptedAnchorId = decision === "accepted" ? ((await this.anchorAt(current.videoAssetId, current.startMs))?.id ?? null) : null;
@@ -225,7 +241,13 @@ export class VisionEventsService {
     }
     const segment = await this.segmentAt(current.videoAssetId, current.startMs);
     if (!isPlay(segment?.kind ?? null)) {
-      if (current.inPlay) await this.prisma.visionEventCandidate.update({ where: { id: current.id }, data: { inPlay: false, cameraSegmentId: segment?.id ?? null } });
+      /* Said in the audit log, not written onto the row. This used to set `inPlay` and the
+         segment on a candidate a second person had already accepted, so the row in the
+         database was no longer the row they accepted. */
+      await this.audit.record(
+        { action: "event.promotion.refused", targetKind: "vision_event_candidate", targetId: current.id, data: { error: "NotInPlay", segmentId: segment?.id ?? null, segmentKind: segment?.kind ?? null, inPlayWhenAccepted: current.inPlay } },
+        actor
+      );
       throw new ConflictException({
         statusCode: 409,
         error: "NotInPlay",
@@ -270,7 +292,7 @@ export class VisionEventsService {
       where: { id: current.sbMatchId },
       select: { id: true, homeTeamId: true, awayTeamId: true, competitionId: true, competition: { select: { formatConfig: true } }, statisticsSheet: { select: { clock: true } } },
     });
-    if (!match) throw new NotFoundException(`Match ${current.sbMatchId} vanished`);
+    if (!match) throw notFound("match", current.sbMatchId, "The match this footage was linked to is gone. Link the footage to its match again.");
     const halfLength = recorderHalfLength(match.statisticsSheet?.clock, match.competition?.formatConfig);
     const at = recorderMinuteAt(reading, halfLength);
     if (!at) {
@@ -348,7 +370,7 @@ export class VisionEventsService {
         }
         if (outcome.kind === "matched") {
           const existing = await tx.sbMatchEvent.findUnique({ where: { id: outcome.event.id }, select: { id: true, metadata: true, secondInMinute: true } });
-          if (!existing) throw new NotFoundException(`Recorder event ${outcome.event.id} vanished`);
+          if (!existing) throw notFound("recorder event", outcome.event.id, "The recorder's sheet changed while this was being promoted. Reload and promote again.");
           const metadata = existing.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata) ? (existing.metadata as Record<string, unknown>) : {};
           /* The second lands beside the recorder's minute only when it is the same minute and the
              recorder gave none; the minute itself is the recorder's and is never rewritten. */
@@ -477,7 +499,7 @@ export class VisionEventsService {
 
   async forAsset(videoAssetId: string, includeSuperseded = false) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, sbMatchId: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     const [rows, anchors] = await Promise.all([
       this.prisma.visionEventCandidate.findMany({
         where: { videoAssetId, ...(includeSuperseded ? {} : { supersededBy: null }) },
@@ -498,7 +520,7 @@ export class VisionEventsService {
 
   async get(candidateId: string) {
     const row = await this.prisma.visionEventCandidate.findUnique({ where: { id: candidateId }, include: { evidence: { orderBy: { createdAt: "asc" } } } });
-    if (!row) throw new NotFoundException(`Unknown event candidate ${candidateId}`);
+    if (!row) throw notFound("event candidate", candidateId);
     const anchors = await this.clock.currentAnchors(row.videoAssetId);
     return this.view(row, anchors);
   }
@@ -520,7 +542,7 @@ export class VisionEventsService {
 
   private async resolve(videoAssetId: string, input: ProposeInput) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, durationMs: true, sbMatchId: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     if (!isEventType(input.type)) {
       throw new ConflictException({ statusCode: 409, error: "UnknownEventType", message: `"${input.type}" is not in taxonomy ${VISION_EVENT_TAXONOMY_VERSION}.`, remediation: "Use one of the taxonomy's types." });
     }
@@ -615,7 +637,7 @@ export class VisionEventsService {
 
   private async loadCurrent(candidateId: string) {
     const row = await this.prisma.visionEventCandidate.findUnique({ where: { id: candidateId }, include: { evidence: true } });
-    if (!row) throw new NotFoundException(`Unknown event candidate ${candidateId}`);
+    if (!row) throw notFound("event candidate", candidateId);
     if (row.supersededBy) {
       throw new ConflictException({ statusCode: 409, error: "EventSuperseded", message: `Candidate ${candidateId} was superseded by ${row.supersededBy}.`, remediation: "Act on the current candidate instead." });
     }
@@ -679,6 +701,8 @@ type CandidateRow = {
   inPlay: boolean;
   reviewState: string;
   decidedBy: string;
+  /** Who first proposed the event this row is a version of. Null on rows from before the column. */
+  proposedBy: string | null;
   reviewedBy: string | null;
   reviewNote: string | null;
   note: string | null;
@@ -714,15 +738,8 @@ function alreadyEnriched(eventId: string, byCandidateId: string | null) {
   });
 }
 
-function requirePerson(actor: AdminAuthContext | undefined, what: string): { userId: string } {
-  if (!actor?.userId) {
-    throw new ForbiddenException({
-      statusCode: 403,
-      error: "EventNeedsAPerson",
-      message: `Only a signed-in person may ${what}.`,
-      detail: "An event is a claim about what happened with a name on it; the shared operator key has none.",
-      remediation: "Sign in as yourself.",
-    });
-  }
-  return { userId: actor.userId };
-}
+/** The shared check (`shared/refusals.ts`), with this service's error and its reason. */
+const requirePerson = personFor(
+  "EventNeedsAPerson",
+  "An event is a claim about what happened with a name on it; the shared operator key has none."
+);

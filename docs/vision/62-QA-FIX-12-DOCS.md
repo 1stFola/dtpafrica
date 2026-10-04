@@ -140,7 +140,7 @@ did. Nothing here is new.
 
 **Low findings in appendix B, not done.** Earlier reports pointed these at this PR. They
 change behaviour, so they are not in a docs PR, and they are listed here so they are not
-lost:
+lost. **Done since, in [63](./63-QA-FIX-13-LOW-FINDINGS.md).** As listed:
 
 - The proposer of an event can accept it after someone else's correction: self-acceptance
   checks the latest row's author, not the chain's first. A second person has to have

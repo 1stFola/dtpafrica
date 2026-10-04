@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
@@ -17,6 +16,7 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { goldContamination } from "../datasets/gold-benchmark";
+import { notFound, refusal } from "../shared/refusals";
 
 /**
  * The model registry.
@@ -122,7 +122,7 @@ export class VisionModelsService {
         _count: { select: { jobs: true } },
       },
     });
-    if (!version) throw new NotFoundException(`Unknown model version ${id}`);
+    if (!version) throw notFound("model version", id);
     return { version };
   }
 
@@ -190,7 +190,7 @@ export class VisionModelsService {
       where: { id: modelId },
       select: { id: true, key: true, task: true },
     });
-    if (!model) throw new NotFoundException(`Unknown model ${modelId}`);
+    if (!model) throw notFound("model", modelId);
 
     // The DTO already refuses a blank note over HTTP. Checked again here because a
     // programmatic caller gets no DTO, and the rule is the register's, not the API's.
@@ -257,7 +257,7 @@ export class VisionModelsService {
       where: { id: datasetVersionId },
       select: { id: true, label: true, frozenAt: true, containsRevokedMembers: true },
     });
-    if (!dataset) throw new NotFoundException(`Unknown dataset version ${datasetVersionId}`);
+    if (!dataset) throw notFound("dataset version", datasetVersionId);
 
     if (!dataset.frozenAt) {
       throw new ConflictException({
@@ -316,9 +316,7 @@ export class VisionModelsService {
     const task = MODEL_TASK_BY_JOB_TYPE[jobType];
     if (!task) {
       if (explicitVersionId) {
-        throw new BadRequestException(
-          `${jobType} runs no model; do not pass modelVersionId for it.`
-        );
+        throw refusal(400, "ModelNotApplicable", `${jobType} runs no model; do not pass modelVersionId for it.`, "Queue the job without a modelVersionId.");
       }
       return null;
     }
@@ -328,12 +326,13 @@ export class VisionModelsService {
         where: { id: explicitVersionId },
         include: { model: { select: { id: true, key: true, task: true } } },
       });
-      if (!version) throw new BadRequestException(`Unknown model version ${explicitVersionId}`);
+      if (!version) throw refusal(400, "ModelVersionUnknown", `Unknown model version ${explicitVersionId}`, "Name a registered version of a model for this stage, or leave it out to use the one in production.");
       if (version.model.task !== task) {
         throw new BadRequestException({
           statusCode: 400,
           error: "ModelTaskMismatch",
           message: `${version.model.key} is a ${version.model.task} model; ${jobType} needs a ${task} model.`,
+          remediation: `Name a version of a ${task} model, or leave it out to use the one in production.`,
         });
       }
       if (version.stage === "archived") {

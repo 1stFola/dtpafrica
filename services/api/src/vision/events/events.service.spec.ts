@@ -35,6 +35,7 @@ const mockLifecycle = { applyMatchEventToPlayerStats: vi.fn(), refreshStandingsF
 
 const alice = { userId: "alice", method: "session" } as never;
 const bob = { userId: "bob", method: "session" } as never;
+const carol = { userId: "carol", method: "session" } as never;
 const keyed = { userId: null, method: "api-key" } as never;
 
 let service: VisionEventsService;
@@ -44,7 +45,7 @@ function candidate(over: Record<string, unknown> = {}) {
   return {
     id: "cand-1", videoAssetId: ASSET, sbMatchId: MATCH, type: "goal_candidate", taxonomyVersion: "2026.10.0", startMs: 100_000, endMs: 100_000,
     actorTrackId: TRACK, actorPlayerId: "p9", actorMatchSquadPlayerId: SLOT, sbTeamId: HOME, confidence: 1, method: "manual", modelVersionId: null,
-    cameraSegmentId: "seg-1", inPlay: true, reviewState: "accepted", decidedBy: "alice", reviewedBy: "bob", reviewNote: null, note: null,
+    cameraSegmentId: "seg-1", inPlay: true, reviewState: "accepted", decidedBy: "alice", proposedBy: "alice", reviewedBy: "bob", reviewNote: null, note: null,
     promotedEventId: null, promotionKind: null, promotedBy: null, promotedAt: null, acceptedAnchorId: "anchor-1", supersededBy: null, createdAt: new Date(), evidence: [],
     ...over,
   };
@@ -140,6 +141,50 @@ describe("correcting and deciding", () => {
     await expect(service.correct("cand-1", { note: "late" }, bob)).rejects.toMatchObject({ response: { error: "EventSuperseded" } });
   });
 
+  it("names the first proposer on the row, and keeps that name through a correction", async () => {
+    await service.propose({ videoAssetId: ASSET, type: "shot", startMs: 100_000, endMs: 100_000 }, alice);
+    expect(mockPrisma.visionEventCandidate.create.mock.calls[0]![0].data).toMatchObject({ decidedBy: "alice", proposedBy: "alice", method: "manual" });
+
+    stored = candidate({ reviewState: "unreviewed", decidedBy: "alice", proposedBy: "alice" });
+    await service.correct("cand-1", { note: "the window was late" }, bob);
+    expect(mockPrisma.visionEventCandidate.create.mock.calls[1]![0].data).toMatchObject({ decidedBy: "bob", proposedBy: "alice" });
+
+    // A row from before the column has no proposer recorded; its author is the best there is.
+    stored = candidate({ reviewState: "unreviewed", decidedBy: "alice", proposedBy: null });
+    await service.correct("cand-1", { note: "again" }, bob);
+    expect(mockPrisma.visionEventCandidate.create.mock.calls[2]![0].data).toMatchObject({ decidedBy: "bob", proposedBy: "alice" });
+  });
+
+  it("files a correction as a person's row, whatever proposed the row it replaces", async () => {
+    // A model's proposal, corrected: the new row said `model` and named the version, though a person wrote it.
+    stored = candidate({ reviewState: "unreviewed", method: "model", modelVersionId: "mv-7", decidedBy: "alice", proposedBy: "alice" });
+    await service.correct("cand-1", { startMs: 101_000, endMs: 101_000 }, bob);
+    expect(mockPrisma.visionEventCandidate.create.mock.calls[0]![0].data).toMatchObject({ method: "manual", modelVersionId: null });
+  });
+
+  it("is not accepted by the person who proposed it, even after someone else corrected it", async () => {
+    // alice proposed; bob corrected, so the latest row is bob's.
+    stored = candidate({ reviewState: "unreviewed", reviewedBy: null, acceptedAnchorId: null, decidedBy: "bob", proposedBy: "alice" });
+    await expect(service.decide("cand-1", "accepted", undefined, alice)).rejects.toMatchObject({ status: 403, response: { error: "SelfAcceptanceRefused" } });
+    // ...nor by the person who wrote the correction.
+    await expect(service.decide("cand-1", "accepted", undefined, bob)).rejects.toMatchObject({ response: { error: "SelfAcceptanceRefused" } });
+    expect(mockPrisma.visionEventCandidate.updateMany).not.toHaveBeenCalled();
+    // A third person accepts.
+    await service.decide("cand-1", "accepted", undefined, carol);
+    expect(mockPrisma.visionEventCandidate.updateMany.mock.calls[0]![0].data).toMatchObject({ reviewState: "accepted", reviewedBy: "carol" });
+    // The proposer may still say it is wrong.
+    mockPrisma.visionEventCandidate.updateMany.mockClear();
+    await service.decide("cand-1", "rejected", "bob moved it to the replay", alice);
+    expect(mockPrisma.visionEventCandidate.updateMany.mock.calls[0]![0].data).toMatchObject({ reviewState: "rejected", reviewedBy: "alice" });
+  });
+
+  it("holds a row from before the column to its author alone", async () => {
+    stored = candidate({ reviewState: "unreviewed", reviewedBy: null, acceptedAnchorId: null, decidedBy: "alice", proposedBy: null });
+    await expect(service.decide("cand-1", "accepted", undefined, alice)).rejects.toMatchObject({ response: { error: "SelfAcceptanceRefused" } });
+    await service.decide("cand-1", "accepted", undefined, bob);
+    expect(mockPrisma.visionEventCandidate.updateMany).toHaveBeenCalledTimes(1);
+  });
+
   it("lets one of two corrections at once win: the other finds the row already superseded", async () => {
     stored = candidate({ reviewState: "unreviewed" });
     mockPrisma.visionEventCandidate.updateMany.mockResolvedValueOnce({ count: 0 });
@@ -150,7 +195,9 @@ describe("correcting and deciding", () => {
   it("is accepted by a second person and rejected with a reason", async () => {
     stored = candidate({ reviewState: "unreviewed", reviewedBy: null, acceptedAnchorId: null });
     await expect(service.decide("cand-1", "accepted", undefined, alice)).rejects.toMatchObject({ response: { error: "SelfAcceptanceRefused" } });
-    await expect(service.decide("cand-1", "rejected", "", bob)).rejects.toMatchObject({ response: { error: "ReasonRequired" } });
+    // A missing field is a bad request, not a conflict with the candidate's state; and whitespace is not a reason.
+    await expect(service.decide("cand-1", "rejected", "", bob)).rejects.toMatchObject({ status: 400, response: { error: "ReasonRequired", remediation: expect.any(String) } });
+    await expect(service.decide("cand-1", "rejected", "   ", bob)).rejects.toMatchObject({ status: 400, response: { error: "ReasonRequired" } });
     await service.decide("cand-1", "accepted", undefined, bob);
     // Conditional on still being the current, undecided row; and the clock it was accepted on is kept.
     expect(mockPrisma.visionEventCandidate.updateMany).toHaveBeenCalledWith({
@@ -194,7 +241,12 @@ describe("promotion", () => {
     stored = candidate();
     mockPrisma.visionCameraSegment.findFirst.mockResolvedValueOnce({ id: "seg-r", kind: "replay", calibrations: [] });
     await expect(service.promote("cand-1", {}, bob)).rejects.toMatchObject({ response: { error: "NotInPlay" } });
-    expect(mockPrisma.visionEventCandidate.update).toHaveBeenCalledWith({ where: { id: "cand-1" }, data: { inPlay: false, cameraSegmentId: "seg-r" } });
+    // The row a second person accepted is left as they accepted it; the refusal is in the audit log.
+    expect(mockPrisma.visionEventCandidate.update).not.toHaveBeenCalled();
+    expect(mockAudit.record).toHaveBeenCalledWith(
+      { action: "event.promotion.refused", targetKind: "vision_event_candidate", targetId: "cand-1", data: { error: "NotInPlay", segmentId: "seg-r", segmentKind: "replay", inPlayWhenAccepted: true } },
+      bob
+    );
     mockRights.canPublishHighlight.mockResolvedValueOnce({ allowed: false, reason: "scope denies publication" });
     await expect(service.promote("cand-1", {}, bob)).rejects.toMatchObject({ response: { error: "PublicationRightsRefused" } });
     // The actor is named to the check, so a player- or guardian-level withdrawal applies

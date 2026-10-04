@@ -65,6 +65,7 @@ export function VisionEventInspector({
           {candidate.reviewState}
           {candidate.reviewNote ? ` — ${candidate.reviewNote}` : ""}
           {allowed.yours ? " · yours; a second person decides" : ""}
+          {allowed.proposedByYou ? " · you proposed this and someone else corrected it; a third person accepts" : ""}
         </dd>
         <dt>Match record</dt>
         <dd>

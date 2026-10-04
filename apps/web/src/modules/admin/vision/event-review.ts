@@ -113,9 +113,14 @@ export function allowedActions(c: VisionEventCandidate, me: string | undefined, 
   const stale = Boolean(c.promotionStale);
   return {
     correct: live && can.review,
-    accept: live && can.review && c.reviewState === "unreviewed" && c.decidedBy !== me,
+    /* Not by the row's author, and not by whoever first proposed the event: after someone
+       else's correction the latest row is theirs, and the proposer is still not a second
+       person (docs/vision/63). The proposer may still reject it. */
+    accept: live && can.review && c.reviewState === "unreviewed" && c.decidedBy !== me && (c.proposedBy ?? c.decidedBy) !== me,
     reject: live && can.review && c.reviewState === "unreviewed" && c.decidedBy !== me,
     promote: live && !stale && can.publish && c.reviewState === "accepted" && c.promotable && c.inPlay,
     yours: live && c.reviewState === "unreviewed" && c.decidedBy === me,
+    /** You proposed it and someone else has corrected it since: yours to reject or correct, not to accept. */
+    proposedByYou: live && c.reviewState === "unreviewed" && c.decidedBy !== me && c.proposedBy === me,
   };
 }

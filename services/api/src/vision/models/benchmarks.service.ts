@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
   Optional,
 } from "@nestjs/common";
 import {
@@ -22,6 +21,7 @@ import { VisionJobsService } from "../jobs/vision-jobs.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { BENCHMARK_THRESHOLDS, judge, type BenchmarkThresholds } from "./benchmark-thresholds";
 import { scoreTeams, type TeamEvidence } from "./identity-metrics";
+import { notFound } from "../shared/refusals";
 
 /**
  * The benchmark ledger.
@@ -67,7 +67,7 @@ export class VisionBenchmarksService {
         datasetVersion: { select: { id: true, label: true } },
       },
     });
-    if (!run) throw new NotFoundException(`Unknown benchmark run ${runId}`);
+    if (!run) throw notFound("benchmark run", runId);
     return { run };
   }
 
@@ -97,13 +97,14 @@ export class VisionBenchmarksService {
       where: { id: modelVersionId },
       include: { model: { select: { key: true, task: true } } },
     });
-    if (!version) throw new NotFoundException(`Unknown model version ${modelVersionId}`);
+    if (!version) throw notFound("model version", modelVersionId);
     const task = version.model.task;
     if (task !== "detect" && task !== "track" && task !== "identify") {
       throw new BadRequestException({
         statusCode: 400,
         error: "ModelTaskUnsupported",
         message: `${version.model.key} is a ${task} model; only detection, tracking and identity are benchmarked yet.`,
+        remediation: "Benchmark a detect, track or identify model. A model of another task has no gold set to be scored against yet.",
       });
     }
     if (version.stage === "archived") {
@@ -111,6 +112,7 @@ export class VisionBenchmarksService {
         statusCode: 409,
         error: "ModelVersionArchived",
         message: `${version.model.key}@${version.version} is archived.`,
+        remediation: "Benchmark a live version, or register a new one.",
       });
     }
 
@@ -118,7 +120,7 @@ export class VisionBenchmarksService {
       where: { id: datasetVersionId },
       select: { id: true, label: true, frozenAt: true, containsRevokedMembers: true },
     });
-    if (!dataset) throw new NotFoundException(`Unknown dataset version ${datasetVersionId}`);
+    if (!dataset) throw notFound("dataset version", datasetVersionId);
     if (!dataset.frozenAt) {
       throw new ConflictException({
         statusCode: 409,
@@ -361,7 +363,7 @@ export class VisionBenchmarksService {
     const applied = await this.complete(run.id, summary as unknown as Record<string, unknown>, []);
     if (!applied.applied) {
       await this.fail(run.id, applied.detail);
-      throw new ConflictException({ statusCode: 409, error: "BenchmarkNotApplied", message: applied.detail });
+      throw new ConflictException({ statusCode: 409, error: "BenchmarkNotApplied", message: applied.detail, remediation: "The run is recorded as failed with this reason. Fix what it names and request the benchmark again." });
     }
     return { ...run, state: "completed", jobId: null, goldMembers: goldAssetIds.length, scored: { tracks: score.tracks, sided: score.sided, abstained: score.abstained, outOfScope: score.outOfScope, withoutTruth: score.withoutTruth } };
   }

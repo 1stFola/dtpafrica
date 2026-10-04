@@ -1,8 +1,9 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { clockAt, halfInfo, sortAnchors, type ClockAnchor, type Half } from "./match-clock";
+import { personFor } from "../shared/refusals";
 
 /**
  * Anchoring the match clock to the footage.
@@ -98,15 +99,8 @@ export class VisionClockService {
   }
 }
 
-function requirePerson(actor: AdminAuthContext | undefined, what: string): { userId: string } {
-  if (!actor?.userId) {
-    throw new ForbiddenException({
-      statusCode: 403,
-      error: "ClockNeedsAPerson",
-      message: `Only a signed-in person may ${what}.`,
-      detail: "Which whistle was kick-off is a judgement about the footage with a name on it; the shared operator key has none.",
-      remediation: "Sign in as yourself.",
-    });
-  }
-  return { userId: actor.userId };
-}
+/** The shared check (`shared/refusals.ts`), with this service's error and its reason. */
+const requirePerson = personFor(
+  "ClockNeedsAPerson",
+  "Which whistle was kick-off is a judgement about the footage with a name on it; the shared operator key has none."
+);

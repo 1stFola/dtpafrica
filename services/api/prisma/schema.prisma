@@ -2066,6 +2066,9 @@ model VisionEventCandidate {
   /// unreviewed | accepted | rejected
   reviewState             String   @default("unreviewed") @map("review_state")
   decidedBy               String   @map("decided_by")
+  /// Who first proposed the event this row is a version of. A correction carries it on, so the
+  /// first proposer can be refused acceptance whoever wrote the latest row. See docs/vision/63.
+  proposedBy              String?  @map("proposed_by")
   reviewedBy              String?  @map("reviewed_by")
   reviewNote              String?  @map("review_note")
   note                    String?

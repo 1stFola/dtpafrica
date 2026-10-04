@@ -39,6 +39,7 @@ export const VISION_AUDIT_ACTIONS = [
   "event.accepted",
   "event.rejected",
   "event.promoted",
+  "event.promotion.refused",
   "annotation.schema.published",
   "annotation.task.created",
   "annotation.task.abandoned",

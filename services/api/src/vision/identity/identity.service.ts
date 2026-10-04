@@ -14,6 +14,7 @@ import { clockAt, onPitchFor, parseSubstitution, windowOnClock, type OnPitch, ty
 import { recordedMinuteOf, recorderHalfLength, timelineOfReading, timelineSpanOfRecorded } from "../clock/recorder-minute";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
+import { personFor } from "../shared/refusals";
 
 /**
  * Who a track is: roster-assisted, time-aware, and never a machine's word.
@@ -757,15 +758,8 @@ function windowWithin(track: { startMs: number; endMs: number }, from?: number, 
   return { from: f, to: t };
 }
 
-function requirePerson(actor: AdminAuthContext | undefined, what: string): { userId: string; email?: string } {
-  if (!actor?.userId) {
-    throw new ForbiddenException({
-      statusCode: 403,
-      error: "IdentityNeedsAPerson",
-      message: `Only a signed-in person may ${what}.`,
-      detail: "These are mostly minors. A name is attached by a person, accepted by a second person, and the shared operator key is neither.",
-      remediation: "Sign in as yourself.",
-    });
-  }
-  return { userId: actor.userId, email: actor.email };
-}
+/** The shared check (`shared/refusals.ts`), with this service's error and its reason. */
+const requirePerson = personFor(
+  "IdentityNeedsAPerson",
+  "These are mostly minors. A name is attached by a person, accepted by a second person, and the shared operator key is neither."
+);

@@ -4,7 +4,7 @@ import { allowedActions, candidateAt, describeCandidate, proposalAt, slotAt, ste
 
 const cand = (over: Partial<VisionEventCandidate>): VisionEventCandidate => ({
   id: "c", videoAssetId: "a", sbMatchId: "m", type: "shot", taxonomyVersion: "2026.10.0", startMs: 10_000, endMs: 10_000, actorTrackId: "t1", actorPlayerId: null, actorMatchSquadPlayerId: null, sbTeamId: null,
-  confidence: 1, method: "manual", cameraSegmentId: null, inPlay: true, reviewState: "unreviewed", decidedBy: "alice", reviewedBy: null, reviewNote: null, note: null, promotedEventId: null, promotionKind: null, supersededBy: null,
+  confidence: 1, method: "manual", cameraSegmentId: null, inPlay: true, reviewState: "unreviewed", decidedBy: "alice", proposedBy: "alice", reviewedBy: null, reviewNote: null, note: null, promotedEventId: null, promotionKind: null, supersededBy: null,
   createdAt: "2026-10-03T00:00:00Z", matchClock: "0:01", scoreboardType: null, promotable: false, evidence: [], ...over,
 });
 
@@ -94,6 +94,18 @@ describe("words and actions", () => {
     expect(allowedActions(cand({ reviewState: "accepted", promotable: true, promotionStale: true }), "bob", can)).toMatchObject({ correct: true, accept: false, reject: false, promote: false });
     expect(describeCandidate(cand({ reviewState: "accepted", promotionStale: true, matchClock: null }), () => null)).toBe("shot · left the match record");
     expect(allowedActions(cand({ reviewState: "accepted", promotable: true }), "bob", { review: true, publish: false }).promote).toBe(false);
+  });
+
+  it("does not offer Accept to the person who proposed it, even after someone else's correction", () => {
+    const can = { review: true, publish: true };
+    // alice proposed; bob corrected, so the latest row is bob's.
+    const corrected = cand({ decidedBy: "bob", proposedBy: "alice" });
+    expect(allowedActions(corrected, "alice", can)).toMatchObject({ accept: false, reject: true, correct: true, yours: false, proposedByYou: true });
+    expect(allowedActions(corrected, "bob", can)).toMatchObject({ accept: false, reject: false, yours: true, proposedByYou: false });
+    expect(allowedActions(corrected, "carol", can)).toMatchObject({ accept: true, reject: true, yours: false, proposedByYou: false });
+    // A row from before the column: its author is the only proposer known.
+    expect(allowedActions(cand({ decidedBy: "bob", proposedBy: null }), "alice", can)).toMatchObject({ accept: true, proposedByYou: false });
+    expect(allowedActions(cand({ decidedBy: "alice", proposedBy: null }), "alice", can)).toMatchObject({ accept: false, yours: true });
   });
 });
 

@@ -1043,6 +1043,8 @@ export type VisionEventCandidate = {
   inPlay: boolean;
   reviewState: string;
   decidedBy: string;
+  /** Who first proposed the event this row is a version of; null on rows from before the column. */
+  proposedBy: string | null;
   reviewedBy: string | null;
   reviewNote: string | null;
   note: string | null;

@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -17,6 +16,7 @@ import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CALIBRATION_THRESHOLDS, qualityOf, type CalibrationQuality, type CalibrationThresholds } from "./calibration-thresholds";
 import { fitHomography, homogeneousW, invert3, isFit, orientStored, project, projectInView, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
 import { DEFAULT_PITCH, landmarkById, pitchLines, pitchProblem, type PitchDimensions } from "./pitch-model";
+import { personFor } from "../shared/refusals";
 
 /**
  * Calibration: a homography per camera segment, and what may be derived from it.
@@ -183,7 +183,7 @@ export class VisionCalibrationService {
   /** The fit and its quality, saved nowhere: the editor's live readout. */
   preview(points: CalibrationPointInput[], pitch: PitchDimensions = DEFAULT_PITCH): PreviewResult {
     const problem = pitchProblem(pitch);
-    if (problem) throw new BadRequestException({ statusCode: 400, error: "PitchDimensionsInvalid", message: problem });
+    if (problem) throw new BadRequestException({ statusCode: 400, error: "PitchDimensionsInvalid", message: problem, remediation: "Give the pitch's real length and width in metres, or leave them out for 105 by 68." });
     const by = landmarkById(pitch);
     const pairs: Correspondence[] = [];
     for (const p of points) {
@@ -507,15 +507,8 @@ function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-function requirePerson(actor: AdminAuthContext | undefined, what: string): { userId: string } {
-  if (!actor?.userId) {
-    throw new ForbiddenException({
-      statusCode: 403,
-      error: "CalibrationNeedsAPerson",
-      message: `Only a signed-in person may ${what}.`,
-      detail: "A calibration is a judgement about the footage with a name on it; the shared operator key has none.",
-      remediation: "Sign in as yourself.",
-    });
-  }
-  return { userId: actor.userId };
-}
+/** The shared check (`shared/refusals.ts`), with this service's error and its reason. */
+const requirePerson = personFor(
+  "CalibrationNeedsAPerson",
+  "A calibration is a judgement about the footage with a name on it; the shared operator key has none."
+);
