@@ -170,7 +170,7 @@ describe("the suppression rule", () => {
     }
     return positions;
   }
-  const calibration = (quality: string) => ({ quality, homography: PIXEL_TO_PITCH, pitchLengthM: 105, pitchWidthM: 68 });
+  const calibration = (quality: string, over: Record<string, unknown> = {}) => ({ quality, homography: PIXEL_TO_PITCH, points: clicks(SIX), pitchLengthM: 105, pitchWidthM: 68, ...over });
 
   beforeEach(() => {
     mockIdentity.positions.mockResolvedValue({ positions: walk() });
@@ -199,12 +199,48 @@ describe("the suppression rule", () => {
   it("suppresses the distance when any position has no segment or no calibration, and says which", async () => {
     mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
       { id: SEGMENT, startMs: 0, endMs: 9800, calibrations: [calibration("usable")] },
-      { id: "s-2", startMs: 9801, endMs: 10_000, calibrations: [] },
+      { id: "s-2", startMs: 9800, endMs: 10_000, calibrations: [] },
     ]);
     const out = await service.pitchPositions(TRACK);
-    expect(out.summary.placed).toBe(21);
-    expect(out.summary.reasons).toEqual({ segment_not_calibrated: 5, no_camera_segment: 15 });
-    expect(out.distance).toMatchObject({ suppressed: true, reason: expect.stringContaining("20 of 41") });
+    // Half-open: the position at 9800 is the second segment's, which has no calibration.
+    expect(out.summary.placed).toBe(20);
+    expect(out.positions.at(-1)).toMatchObject({ sourceTimeMs: 9760, cameraSegmentId: SEGMENT });
+    expect(out.summary.reasons).toEqual({ segment_not_calibrated: 5, no_camera_segment: 16 });
+    expect(out.distance).toMatchObject({ suppressed: true, reason: expect.stringContaining("21 of 41") });
+  });
+
+  it("gives the millisecond two segments meet on to the one that starts there", async () => {
+    // The same camera either side of 9800, the second shifted ten metres: which one placed a position shows in its x.
+    const shifted = PIXEL_TO_PITCH.map((v, i) => (i < 3 ? v + 10 * PIXEL_TO_PITCH[6 + i]! : v)) as Homography;
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "before", startMs: 0, endMs: 9800, calibrations: [calibration("good")] },
+      { id: "after", startMs: 9800, endMs: 60_000, calibrations: [calibration("good", { homography: shifted })] },
+    ]);
+    const out = await service.pitchPositions(TRACK);
+    const onCut = out.positions.find((p) => p.sourceTimeMs === 9800)!;
+    const justBefore = out.positions.find((p) => p.sourceTimeMs === 9760)!;
+    expect(justBefore.cameraSegmentId).toBe("before");
+    expect(onCut.cameraSegmentId).toBe("after");
+    expect(onCut.xM).toBeCloseTo(justBefore.xM + 0.5 + 10, 1);
+    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toMatchObject({ where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 });
+  });
+
+  it("places through a matrix stored the other way round, by orienting it with its own points", async () => {
+    // Rows filed before the fit oriented its result: every entry negated, the same map.
+    const older = PIXEL_TO_PITCH.map((v) => -v) as Homography;
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, startMs: 0, endMs: 60_000, calibrations: [calibration("good", { homography: older })] }]);
+    const out = await service.pitchPositions(TRACK);
+    expect(out.summary).toEqual({ positions: 41, placed: 41, suppressed: 0, reasons: {} });
+    expect(out.positions[0]).toMatchObject({ xM: 10, yM: 34 });
+  });
+
+  it("does not call a point hundreds of metres away a position", async () => {
+    // A camera that maps the walk a hundred metres past the far touchline.
+    const far = PIXEL_TO_PITCH.map((v, i) => (i >= 3 && i < 6 ? v + 100 * PIXEL_TO_PITCH[3 + i]! : v)) as Homography;
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, startMs: 0, endMs: 60_000, calibrations: [calibration("good", { homography: far })] }]);
+    const out = await service.pitchPositions(TRACK);
+    expect(out.summary).toEqual({ positions: 41, placed: 0, suppressed: 41, reasons: { off_pitch: 41 } });
+    expect(out.distance).toMatchObject({ suppressed: true });
   });
 
   it("has nothing to say about a track with no positions", async () => {

@@ -85,7 +85,19 @@ export function halfOfMinute(minute: number): Half {
   return found;
 }
 
-export type Substitution = { teamId: string; minute: number; offPlayerId: string | null; offNumber: number | null; onNumber: number | null };
+export type Substitution = {
+  teamId: string;
+  minute: number;
+  offPlayerId: string | null;
+  offNumber: number | null;
+  onNumber: number | null;
+  /**
+   * The stretch of play the recorded minute stands for, on the timeline of
+   * `recorder-minute.ts`. Without it the minute is read as a point on the same
+   * scale as the window, which is only right when both are in the same units.
+   */
+  span?: { from: number; to: number };
+};
 
 /**
  * A substitution event as ScoreBoard stores it: the outgoing player by id (or
@@ -110,18 +122,27 @@ export function parseSubstitution(event: { teamId: string | null; minute: number
 export type OnPitch = "yes" | "no" | "partly";
 
 /**
- * Whether a roster slot was on the pitch for a window of match minutes: a starter
- * from kick-off until taken off, a substitute from the minute they came on, and
- * either until taken off again. `partly` is a window that crosses the change.
+ * Whether a roster slot was on the pitch for a window: a starter from kick-off
+ * until taken off, a substitute from when they came on, and either until taken
+ * off again. `partly` is a window that crosses the change.
+ *
+ * The window and the substitutions must be on one scale. The footage is read on
+ * a stopwatch and the record is in the recorder's minutes, which differ by one
+ * and by more in a second half or a short one (docs/vision/55); the identity
+ * service puts both on the timeline of `recorder-minute.ts` and gives each
+ * substitution the `span` of play its minute stands for. A change is then
+ * somewhere in its span: a window wholly before it has the old player, one
+ * wholly after has the new, and one that touches it is `partly`.
  */
 export function onPitchFor(slot: { isStarter: boolean; jerseyNumber: number | null; playerId: string | null }, subs: readonly Substitution[], window: { fromMinute: number; toMinute: number }): OnPitch {
-  const cameOn = subs.filter((s) => s.onNumber !== null && s.onNumber === slot.jerseyNumber).map((s) => s.minute);
-  const wentOff = subs.filter((s) => (s.offPlayerId !== null && s.offPlayerId === slot.playerId) || (s.offPlayerId === null && s.offNumber !== null && s.offNumber === slot.jerseyNumber)).map((s) => s.minute);
-  const from = slot.isStarter ? 0 : cameOn.length ? Math.min(...cameOn) : null;
-  if (from === null) return "no";
-  const offAfter = wentOff.filter((m) => m >= from);
-  const to = offAfter.length ? Math.min(...offAfter) : Number.POSITIVE_INFINITY;
-  if (window.toMinute <= from || window.fromMinute >= to) return "no";
-  if (window.fromMinute >= from && window.toMinute <= to) return "yes";
+  const spanOf = (s: Substitution) => s.span ?? { from: s.minute, to: s.minute };
+  const cameOn = subs.filter((s) => s.onNumber !== null && s.onNumber === slot.jerseyNumber).map(spanOf);
+  const wentOff = subs.filter((s) => (s.offPlayerId !== null && s.offPlayerId === slot.playerId) || (s.offPlayerId === null && s.offNumber !== null && s.offNumber === slot.jerseyNumber)).map(spanOf);
+  const earliest = (spans: { from: number; to: number }[]) => spans.reduce<{ from: number; to: number } | null>((best, s) => (best === null || s.from < best.from ? s : best), null);
+  const on = slot.isStarter ? { from: Number.NEGATIVE_INFINITY, to: Number.NEGATIVE_INFINITY } : earliest(cameOn);
+  if (on === null) return "no";
+  const off = earliest(wentOff.filter((s) => s.from >= on.from)) ?? { from: Number.POSITIVE_INFINITY, to: Number.POSITIVE_INFINITY };
+  if (window.toMinute <= on.from || window.fromMinute >= off.to) return "no";
+  if (window.fromMinute >= on.to && window.toMinute <= off.from) return "yes";
   return "partly";
 }

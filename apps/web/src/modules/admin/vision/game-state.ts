@@ -212,6 +212,7 @@ export const REASON_WORDS: Record<string, string> = {
   segment_not_calibrated: "segment not calibrated",
   calibration_failed: "calibration failed",
   beyond_horizon: "beyond the horizon",
+  off_pitch: "far off the pitch",
 };
 
 /** `11 placed · 2 not placed: calibration failed`, or why nothing is. */
@@ -228,9 +229,14 @@ export function describeFrame(rows: readonly GameStateRow[]): string {
 }
 
 /** `placed on 41% of frames · 2 of 3 segments calibrated`. */
-export function describeCoverage(coverage: { validFrameCoverage: number | null; frames: number | null } | null, placedWith: { segments: number; calibrations: number } | null): string {
+export function describeCoverage(
+  coverage: { validFrameCoverage: number | null; frames: number | null; coverageBasis?: string | null } | null,
+  placedWith: { segments: number; calibrations: number } | null
+): string {
   if (!coverage) return "no game state yet";
-  const share = coverage.validFrameCoverage === null ? "no frame" : `${Math.round(coverage.validFrameCoverage * 100)}% of frames`;
+  // An older run measured against the frames that had a track on them, which reads higher; say which.
+  const of = coverage.coverageBasis === "frames_tracked" ? "frames" : "frames with a track";
+  const share = coverage.validFrameCoverage === null ? "no frame" : `${Math.round(coverage.validFrameCoverage * 100)}% of ${of}`;
   const segs = placedWith ? ` · ${placedWith.calibrations} of ${placedWith.segments} segment(s) calibrated` : "";
   return `placed on ${share}${segs}`;
 }

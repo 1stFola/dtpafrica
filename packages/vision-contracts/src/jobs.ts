@@ -67,8 +67,15 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  * 1.11.0 -- the review queue's kinds (`REVIEW_QUEUE_KINDS`: `event`, `identity`),
  * what `GET /vision/review/queue` lists. Promotion now also writes
  * `SbMatchEvent.secondInMinute` beside the recorder's minute. No stage changes.
+ *
+ * 1.12.0 -- pipeline maths (docs/vision/56). `track` may be given `cuts`, ends
+ * tracks at them, ages a track by the clock (`maxAgeMs`, not `maxAge` frames) and
+ * writes `trackedFrames`. `gamestate` reads segments half-open, suppresses
+ * `off_pitch`, and reports coverage against the tracked frames
+ * (`framesTracked`, `coverageBasis`). A declared homography is oriented: positive
+ * `w` for what the camera sees.
  */
-export const VISION_CONTRACT_VERSION = "1.11.0";
+export const VISION_CONTRACT_VERSION = "1.12.0";
 
 export const VISION_JOB_TYPES = [
   "probe",
@@ -468,8 +475,21 @@ export const MIN_TRACK_SAMPLE_FPS = 10;
 /** What a `track` job is given under `inputs.params`, beside the proxy clock. */
 export type TrackJobParams = {
   detections: { jobId: string; key: string; modelVersionId: string; sampleFps: number };
+  /**
+   * Camera cuts in source milliseconds: the start of every camera segment on the
+   * asset but the first. Every live track ends at one. Absent or empty when the
+   * asset has no segments yet, and then only the clock ends a track.
+   */
+  cuts?: number[];
   readKeys: { bucket: "derived" | "models"; key: string }[];
 };
+
+/**
+ * Every frame a tracker was given, as `[frameIndex, sourceTimeMs]`, with or
+ * without a track on it. A track artifact carries it as `trackedFrames`; game
+ * state measures valid-frame coverage against it.
+ */
+export type TrackedFrame = [number, number];
 
 /** One observed position of a track. Never interpolated: a gap is a gap. */
 export type TrackPosition = {
@@ -606,6 +626,10 @@ export const DEFAULT_GAMESTATE_CHUNK_MS = 60_000;
  * the asset, with its current calibration where a person filed one. A segment
  * without one is still declared, so the stage can say `segment_not_calibrated`
  * rather than `no_camera_segment` for the rows under it.
+ *
+ * A segment covers `startMs <= t < endMs`. The homography is oriented: `w` is
+ * positive for a pixel the camera sees, so the stage can tell the horizon by its
+ * sign.
  */
 export type DeclaredSegment = {
   cameraSegmentId: string;
@@ -628,7 +652,17 @@ export type GameStateJobParams = {
 };
 
 /** Why a row was not placed. */
-export const GAMESTATE_SUPPRESSION_REASONS = ["no_camera_segment", "segment_not_calibrated", "calibration_failed", "beyond_horizon"] as const;
+export const GAMESTATE_SUPPRESSION_REASONS = ["no_camera_segment", "segment_not_calibrated", "calibration_failed", "beyond_horizon", "off_pitch"] as const;
+
+/** How far outside the lines, in metres, a placed point may be and still be a position. */
+export const OFF_PITCH_MARGIN_M = 5;
+
+/**
+ * What `validFrameCoverage` is a share of: the frames the tracker was given, or,
+ * for a track artifact that does not carry them, only the frames with a track.
+ */
+export const GAMESTATE_COVERAGE_BASES = ["frames_tracked", "frames_with_tracks"] as const;
+export type GameStateCoverageBasis = (typeof GAMESTATE_COVERAGE_BASES)[number];
 
 export type GameStateCoverage = {
   rows: number;
@@ -638,6 +672,9 @@ export type GameStateCoverage = {
   reasons: Partial<Record<(typeof GAMESTATE_SUPPRESSION_REASONS)[number], number>>;
   /** Share of frames at least one row was placed on through a passing calibration; null with no frames. */
   validFrameCoverage: number | null;
+  /** Frames the tracker was given over the same stretch, when the track artifact says. */
+  framesTracked?: number | null;
+  coverageBasis?: GameStateCoverageBasis;
 };
 
 export type GameStateChunk = GameStateCoverage & { index: number; file: string; key: string; fromMs: number; toMs: number; bytes: number };

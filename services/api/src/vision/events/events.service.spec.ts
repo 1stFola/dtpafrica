@@ -101,6 +101,15 @@ describe("proposing", () => {
     expect(mockAudit.record.mock.calls[0]![0]).toMatchObject({ action: "event.proposed", targetKind: "vision_event_candidate" });
   });
 
+  it("reads segments half-open: the millisecond a replay ends on is the play that follows", async () => {
+    await service.propose({ videoAssetId: ASSET, type: "goal_candidate", startMs: 100_000, endMs: 100_000 }, alice);
+    const query = mockPrisma.visionCameraSegment.findFirst.mock.calls[0]![0];
+    expect(query.where).toEqual({ videoAssetId: ASSET, startMs: { lte: 100_000 }, endMs: { gt: 100_000 } });
+    // Of two that overlap, the one that started latest; and the newest current calibration.
+    expect(query.orderBy).toEqual({ startMs: "desc" });
+    expect(query.select.calibrations).toMatchObject({ where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 });
+  });
+
   it("flags a candidate inside a replay as not play, and one under no segment as play", async () => {
     mockPrisma.visionCameraSegment.findFirst.mockResolvedValueOnce({ id: "seg-r", kind: "replay", calibrations: [] });
     await service.propose({ videoAssetId: ASSET, type: "goal_candidate", startMs: 100_000, endMs: 100_000 }, alice);

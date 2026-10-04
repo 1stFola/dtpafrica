@@ -17,7 +17,8 @@ from typing import Any
 
 from ..config import CONTRACT_VERSION
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
-from ..tracking import MIN_TRACK_SAMPLE_FPS, Params, record, summary_row, track
+from ..jsonstream import JsonStreamError, fields, items
+from ..tracking import MIN_TRACK_SAMPLE_FPS, Linker, Params, Track, record, summary_row
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +27,15 @@ ARTIFACT_ROLE = "tracks"
 
 def run_track(ctx: StageContext) -> StageResult:
     return _track(ctx)
+
+
+def _cuts(raw: Any) -> list[int]:
+    """`params.cuts`: camera cuts in source milliseconds, as the control plane declares them."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or any(not isinstance(c, int) or isinstance(c, bool) or c < 0 for c in raw):
+        raise StageRefusal(f"track params.cuts must be a list of source milliseconds; got {raw!r}")
+    return raw
 
 
 def _track(ctx: StageContext, params: Params = Params()) -> StageResult:
@@ -40,11 +50,18 @@ def _track(ctx: StageContext, params: Params = Params()) -> StageResult:
     key = source.get("key")
     if not isinstance(key, str) or not key:
         raise StageRefusal("track needs params.detections.key, the detect artifact to link")
+    cuts = _cuts(job_params.get("cuts"))
 
     ctx.progress.set("download")
     path = ctx.work_dir / "detections.json"
     bytes_read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=key), path)
-    artifact = json.loads(path.read_bytes())
+    # A match's detections are a hundred and forty thousand frames. The file is walked
+    # twice and never held: once for the small keys, which decide whether to link at
+    # all, then frame by frame. See jsonstream.
+    try:
+        artifact = fields(path, "frames")
+    except JsonStreamError as exc:
+        raise StageRefusal(f"detect artifact {key} is not readable: {exc}") from exc
 
     detector_version_id = artifact.get("modelVersionId")
     if not isinstance(detector_version_id, str) or not detector_version_id:
@@ -62,7 +79,28 @@ def _track(ctx: StageContext, params: Params = Params()) -> StageResult:
         )
 
     ctx.progress.set("link")
-    tracks, stats = track(artifact.get("frames") or [], params)
+    linker = Linker(params, cuts)
+    # Each track is written to a spill file as it ends, so only the live ones are held.
+    spill = ctx.work_dir / "tracks.spill.jsonl"
+    where: list[tuple[int, int, int]] = []  # (local id, offset, length)
+    rows: dict[int, dict[str, Any]] = {}
+
+    def keep(finished: list[Track], handle: Any) -> None:
+        for t in finished:
+            line = json.dumps(record(t)).encode()
+            where.append((t.local_id, handle.tell(), len(line)))
+            handle.write(line)
+            rows[t.local_id] = summary_row(t)
+
+    with spill.open("wb") as handle:
+        try:
+            for frame in items(path, "frames"):
+                keep(linker.feed(frame), handle)
+        except ValueError as exc:  # frames out of order, or JSON that stops being JSON
+            raise StageRefusal(f"detect artifact {key} cannot be linked: {exc}") from exc
+        keep(linker.close(), handle)
+    stats = linker.stats()
+    where.sort()
 
     ctx.progress.set("upload")
     out_key = f"{ctx.job.output_prefix}tracks.json"
@@ -76,12 +114,25 @@ def _track(ctx: StageContext, params: Params = Params()) -> StageResult:
         "detectionsKey": key,
         "sampleFps": fps,
         "proxy": artifact.get("proxy"),
-        "tracks": [record(t) for t in tracks],
         **{k: v for k, v in stats.items() if k != "tracks"},
         "trackCount": stats["tracks"],
+        # Every frame the tracker was given, with or without a track on it: what a
+        # reader needs to say what share of the footage anything covers.
+        "trackedFrames": [list(f) for f in linker.frames],
     }
     out_path = ctx.work_dir / "tracks.json"
-    out_path.write_bytes(json.dumps(payload).encode())
+    # The small keys first, then the tracks in id order, copied from the spill one at a time.
+    head = json.dumps(payload).encode()
+    with out_path.open("wb") as out, spill.open("rb") as spilled:
+        out.write(head[:-1])
+        out.write(b', "tracks": [')
+        for n, (_local_id, offset, length) in enumerate(where):
+            if n:
+                out.write(b", ")
+            spilled.seek(offset)
+            out.write(spilled.read(length))
+        out.write(b"]}")
+    spill.unlink()
     put_url = ctx.client.presign_output(ctx.job.job_id, out_key, "application/json")
     written = upload(ctx, put_url, out_path, "application/json")
 
@@ -96,7 +147,7 @@ def _track(ctx: StageContext, params: Params = Params()) -> StageResult:
             "sampleFps": fps,
             **stats,
             # The compact index the control plane turns into rows; positions stay in the artifact.
-            "trackRows": [summary_row(t) for t in tracks],
+            "trackRows": [rows[local_id] for local_id, _o, _l in where],
         },
         model_version_ids=[tracker_version_id],
         bytes_read=bytes_read,

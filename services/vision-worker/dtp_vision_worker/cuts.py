@@ -39,18 +39,24 @@ def parse_showinfo(log: str) -> list[dict[str, float]]:
     `metadata` line carrying its scene score when one was asked for.
 
     `select='gt(scene,T)'` keeps only frames above the threshold, so every
-    `showinfo` line is a cut; its `pts_time` is the moment in the proxy. The score,
-    when printed by `metadata=print`, is attached to the nearest preceding cut.
+    `showinfo` line with a `pts_time` is a cut; that is the moment in the proxy.
+    In the chain `select,metadata=print,showinfo` a frame passes `metadata` first,
+    so FFmpeg prints a frame's score *before* its `showinfo` line. The score read
+    is held for the cut that follows it. It used to be given to the cut before,
+    which put every score on the wrong cut and dropped the first
+    (docs/vision/50, appendix C).
     """
     cuts: list[dict[str, float]] = []
+    pending: float | None = None
     for line in log.splitlines():
         pts = _PTS.search(line)
         if pts and "showinfo" in line:
-            cuts.append({"proxyMs": round(float(pts.group(1)) * 1000), "score": 0.0})
+            cuts.append({"proxyMs": round(float(pts.group(1)) * 1000), "score": pending if pending is not None else 0.0})
+            pending = None
             continue
         score = _SCENE.search(line)
-        if score and cuts:
-            cuts[-1]["score"] = round(float(score.group(1)), 4)
+        if score:
+            pending = round(float(score.group(1)), 4)
     return cuts
 
 

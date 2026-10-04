@@ -93,7 +93,7 @@ def test_a_gap_longer_than_max_age_ends_the_track_and_starts_another() -> None:
     seen = [frame(i, ("ball", 0.8, (300, 200, 10, 10))) for i in range(10)]
     gap = [frame(i) for i in range(10, 50)]
     again = [frame(i, ("ball", 0.8, (300, 200, 10, 10))) for i in range(50, 60)]
-    tracks, _ = track(seen + gap + again, Params(max_age=30))
+    tracks, _ = track(seen + gap + again, Params(max_age_ms=1200))
     assert [t.local_id for t in tracks] == [1, 2]
 
 
@@ -185,3 +185,130 @@ def test_the_cli_refuses_sparse_detections_and_links_dense_ones(tmp_path: Path, 
     assert written["tracks"][0]["detectionCount"] == 5
     assert written["summaryRows"][0]["localTrackId"] == 1
     assert "positions" not in written["summaryRows"][0]
+
+
+# ── ageing by time, and camera cuts (docs/vision/56) ─────────────────────────
+
+
+def test_a_track_ages_by_the_clock_not_by_a_count_of_frames() -> None:
+    """The same player lost for the same two seconds is the same outcome at 25 fps and at 10.
+    Counted in frames, thirty frames was 1.2 s at one rate and three seconds at the other."""
+    from dtp_vision_worker.tracking import Linker
+
+    def run(fps: int, gap_seconds: float) -> int:
+        seen_for = fps  # one second of sightings
+        gap = round(gap_seconds * fps)
+        frames = [frame(i, ("player", 0.9, (100, 100, 40, 80)), fps=fps) for i in range(seen_for)]
+        frames += [frame(i, fps=fps) for i in range(seen_for, seen_for + gap)]
+        frames += [frame(i, ("player", 0.9, (100, 100, 40, 80)), fps=fps) for i in range(seen_for + gap, seen_for + gap + fps)]
+        return len(track(frames)[0])
+
+    assert Params().max_age_ms == 1200 and Params().as_dict()["maxAgeMs"] == 1200
+    # Half a second unseen: one track, at either rate.
+    assert run(25, 0.5) == 1 and run(10, 0.5) == 1
+    # Two seconds unseen: the track has ended and another begins, at either rate.
+    assert run(25, 2.0) == 2 and run(10, 2.0) == 2
+    # At ten frames a second, two seconds is twenty frames: fewer than the old thirty, which kept it alive.
+    assert round(2.0 * 10) < 30
+    assert isinstance(Linker().stats()["params"]["maxAgeMs"], int)
+
+
+def test_the_boundary_of_the_age_is_the_millisecond() -> None:
+    def gap_of(ms: int) -> int:
+        frames = [
+            {"frameIndex": i, "proxyTimeMs": i * 40, "sourceTimeMs": i * 40, "detections": [{"class": "player", "confidence": 0.9, "box": {"x": 100, "y": 100, "width": 40, "height": 80}}]}
+            for i in range(5)
+        ]
+        resume = 4 * 40 + ms
+        frames += [
+            {"frameIndex": 100 + i, "proxyTimeMs": resume + i * 40, "sourceTimeMs": resume + i * 40, "detections": [{"class": "player", "confidence": 0.9, "box": {"x": 100, "y": 100, "width": 40, "height": 80}}]}
+            for i in range(5)
+        ]
+        return len(track(frames)[0])
+
+    assert gap_of(1200) == 1
+    assert gap_of(1201) == 2
+
+
+def test_tracks_end_at_a_camera_cut_however_well_the_boxes_overlap() -> None:
+    """A player in the same place on both sides of a cut is two tracks: the second box is
+    another camera's picture."""
+    frames = [frame(i, ("player", 0.9, (100, 100, 40, 80))) for i in range(20)]
+    cut_ms = frames[10]["sourceTimeMs"]
+    uncut, _ = track(frames)
+    assert len(uncut) == 1
+    tracks, stats = track(frames, cuts_ms=[cut_ms])
+    assert [(t.observations[0].frame, t.last.frame) for t in tracks] == [(0, 9), (10, 19)]
+    assert stats["cuts"] == 1 and stats["tracksEndedAtCuts"] == 1
+    # The frame on the cut is the new camera's: half-open, like the segments.
+    assert tracks[1].observations[0].source_ms == cut_ms
+
+
+def test_a_cut_between_frames_before_the_first_or_after_the_last_ends_nothing_it_should_not() -> None:
+    frames = [frame(i, ("player", 0.9, (100, 100, 40, 80))) for i in range(20)]
+    first, last = frames[0]["sourceTimeMs"], frames[-1]["sourceTimeMs"]
+    # Before or on the first frame: nothing is alive to end.
+    assert len(track(frames, cuts_ms=[0, first])[0]) == 1
+    # After the last frame: never reached.
+    assert len(track(frames, cuts_ms=[last + 1])[0]) == 1
+    # Between two frames: the next frame is the new camera's.
+    between = frames[5]["sourceTimeMs"] + 1
+    tracks, stats = track(frames, cuts_ms=[between])
+    assert [(t.observations[0].frame, t.last.frame) for t in tracks] == [(0, 5), (6, 19)]
+    # Two cuts crossed between the same two frames end the tracks once.
+    twice, stats = track(frames, cuts_ms=[between, between + 2, between])
+    assert len(twice) == 2 and stats["tracksEndedAtCuts"] == 1 and stats["cuts"] == 2
+
+
+def test_a_track_too_short_to_keep_that_ends_at_a_cut_is_noise() -> None:
+    frames = [frame(i, ("player", 0.9, (100, 100, 40, 80))) for i in range(12)]
+    # Two sightings, then the cut: under min_hits, so dropped and counted.
+    tracks, stats = track(frames, cuts_ms=[frames[2]["sourceTimeMs"]])
+    assert [(t.observations[0].frame, t.last.frame) for t in tracks] == [(2, 11)]
+    assert stats["detectionsUnlinked"] == 2 and stats["detectionsLinked"] == 10
+    assert [t.local_id for t in tracks] == [2]
+
+
+def test_the_linker_yields_each_track_when_it_ends_and_agrees_with_track() -> None:
+    from dtp_vision_worker.tracking import Linker
+
+    frames = [frame(i, ("player", 0.9, (100, 100, 40, 80)), ("ball", 0.8, (300, 200, 10, 10))) for i in range(10)]
+    frames += [frame(i, ("player", 0.9, (100, 100, 40, 80))) for i in range(10, 60)]  # the ball is gone
+    linker = Linker()
+    ended_on: dict[int, int] = {}
+    streamed = []
+    for f in frames:
+        for t in linker.feed(f):
+            ended_on[t.local_id] = f["frameIndex"]
+            streamed.append(t)
+    # The ball was last seen on frame 9 (360 ms). It is given back on the first frame more than 1.2 s later.
+    assert ended_on == {2: 40}
+    streamed += linker.close()
+    whole, stats = track(frames)
+    assert sorted(record(t)["localTrackId"] for t in streamed) == [record(t)["localTrackId"] for t in whole]
+    assert sorted((record(t) for t in streamed), key=lambda r: r["localTrackId"]) == [record(t) for t in whole]
+    assert linker.stats() == stats
+    assert linker.frames == [(f["frameIndex"], f["sourceTimeMs"]) for f in frames]
+    assert stats["framesTracked"] == 60
+
+
+def test_the_linker_refuses_frames_out_of_order() -> None:
+    from dtp_vision_worker.tracking import Linker
+
+    linker = Linker()
+    linker.feed(frame(3))
+    with pytest.raises(ValueError, match="frame order"):
+        linker.feed(frame(3))
+    with pytest.raises(ValueError, match="frame order"):
+        linker.feed(frame(1))
+
+
+def test_the_cli_takes_cuts_and_writes_the_tracked_frames(tmp_path: Path) -> None:
+    frames = [frame(i, ("player", 0.9, (100, 100, 40, 80))) for i in range(12)]
+    dense = tmp_path / "dense.json"
+    dense.write_text(json.dumps({"sampleFps": 25, "frames": frames}), encoding="utf-8")
+    out = tmp_path / "tracks.json"
+    assert main(["--detections", str(dense), "--out", str(out), "--cuts", str(frames[6]["sourceTimeMs"])]) == 0
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["trackCount"] == 2 and written["tracksEndedAtCuts"] == 1
+    assert written["trackedFrames"] == [[f["frameIndex"], f["sourceTimeMs"]] for f in frames]

@@ -10,7 +10,8 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { VisionClockService } from "../clock/clock.service";
-import { clockAt, onPitchFor, parseSubstitution, windowOnClock, type OnPitch } from "../clock/match-clock";
+import { clockAt, onPitchFor, parseSubstitution, windowOnClock, type OnPitch, type Substitution } from "../clock/match-clock";
+import { recordedMinuteOf, recorderHalfLength, timelineOfReading, timelineSpanOfRecorded } from "../clock/recorder-minute";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 
@@ -164,7 +165,17 @@ export class VisionIdentityService {
       this.prisma.sbMatchEvent.findMany({ where: { matchId: match.id, type: "substitution" }, select: { teamId: true, minute: true, playerId: true, detail: true, metadata: true } }),
     ]);
     const window = windowOnClock(anchors, track.startMs, track.endMs);
-    const subs = events.map(parseSubstitution).filter((s): s is NonNullable<typeof s> => s !== null);
+    /* The track is read off the footage on a stopwatch; the substitutions are in the
+       recorder's minutes, on this match's half length. Both go onto one timeline before
+       they are compared (docs/vision/56). */
+    const halfLength = recorderHalfLength(match.statisticsSheet?.clock, match.competition?.formatConfig);
+    const from = clockAt(anchors, track.startMs);
+    const to = clockAt(anchors, track.endMs);
+    const played = from.status === "on" && to.status === "on" ? { fromMinute: timelineOfReading(from), toMinute: timelineOfReading(to) } : null;
+    const subs = events.flatMap((event): Substitution[] => {
+      const sub = parseSubstitution(event);
+      return sub ? [{ ...sub, span: timelineSpanOfRecorded(recordedMinuteOf(event, halfLength), halfLength) }] : [];
+    });
     const all: RosterCandidate[] = slots.map((s) => ({
       matchSquadPlayerId: s.id,
       playerId: s.playerId,
@@ -174,7 +185,7 @@ export class VisionIdentityService {
       isStarter: s.isStarter,
       sbTeamId: s.teamId,
       sbTeamSquadId: s.squadId,
-      onPitch: window ? onPitchFor(s, subs.filter((sub) => sub.teamId === s.teamId), window) : null,
+      onPitch: played ? onPitchFor(s, subs.filter((sub) => sub.teamId === s.teamId), played) : null,
     }));
     const candidates = window ? all.filter((c) => c.onPitch !== "no") : all;
     return {
@@ -545,7 +556,10 @@ export class VisionIdentityService {
         remediation: "Link the asset's source record to its fixture first.",
       });
     }
-    const match = await this.prisma.sbMatch.findUnique({ where: { id: sbMatchId }, select: { id: true, homeTeamId: true, awayTeamId: true } });
+    const match = await this.prisma.sbMatch.findUnique({
+      where: { id: sbMatchId },
+      select: { id: true, homeTeamId: true, awayTeamId: true, competition: { select: { formatConfig: true } }, statisticsSheet: { select: { clock: true } } },
+    });
     if (!match) throw new NotFoundException(`Unknown match ${sbMatchId}`);
     return match;
   }

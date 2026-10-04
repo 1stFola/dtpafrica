@@ -203,6 +203,22 @@ describe("a track job is given the detect artifact it will link", () => {
     mockPrisma.visionJob.findMany.mockResolvedValue([{ type: "probe" }, { type: "fingerprint" }, { type: "transcode" }, { type: "detect" }]);
     mockModels.resolveForJob.mockResolvedValue({ id: TRACKER, task: "track" });
     mockPrisma.visionJob.findFirst.mockResolvedValue(succeededDetect());
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([]);
+  });
+
+  it("declares the camera cuts: the start of every segment but the first", async () => {
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ startMs: 9000 }, { startMs: 70_200 }, { startMs: 70_200 }, { startMs: 189_000 }]);
+    await service.enqueueForAsset({ type: "track", videoAssetId: ASSET });
+    expect(enqueued().inputSpec.cuts).toEqual([70_200, 189_000]);
+    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0]).toMatchObject({ where: { videoAssetId: ASSET }, orderBy: { startMs: "asc" } });
+  });
+
+  it("declares no cuts for footage with one segment or none, and takes none from the caller", async () => {
+    await service.enqueueForAsset({ type: "track", videoAssetId: ASSET, params: { cuts: [1, 2, 3] } });
+    expect(enqueued().inputSpec).not.toHaveProperty("cuts");
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ startMs: 0 }]);
+    await service.enqueueForAsset({ type: "track", videoAssetId: ASSET, params: { cuts: [1, 2, 3] } });
+    expect(enqueued().inputSpec).not.toHaveProperty("cuts");
   });
 
   it("declares the latest succeeded detect artifact and the proxy clock", async () => {
@@ -306,10 +322,24 @@ describe("a gamestate job is given the tracks, the calibrations and the clock", 
       { cameraSegmentId: "seg-3", startMs: 120001, endMs: 180000, quality: "failed", homography: H, pitch: { lengthM: 100, widthM: 64 } },
     ]);
     expect(spec.anchors).toEqual([{ half: 1, sourceMs: 9000, endMs: null }]);
+    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toMatchObject({ where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 });
     expect(spec.chunkMs).toBe(30000);
     expect(spec.proxy).toEqual({ fps: 25, sourceOffsetMs: 9000 });
     expect(enqueued().modelVersionId).toBeNull();
     expect(mockPrisma.visionClockAnchor.findMany.mock.calls[0]![0].where).toEqual({ videoAssetId: ASSET, supersededBy: null });
+  });
+
+  it("declares each homography signed by its own clicked points, so the stage can tell the horizon", async () => {
+    // w = 1 - y/100 at a pixel. The clicks are at y = 300 and 400: on the negative side as stored.
+    const stored = [1, 0, 0, 0, 1, 0, 0, -0.01, 1];
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "seg-1", startMs: 0, endMs: 60000, calibrations: [{ quality: "good", homography: stored, points: [{ landmark: "a", px: 10, py: 300 }, { landmark: "b", px: 50, py: 400 }], pitchLengthM: 105, pitchWidthM: 68 }] },
+      { id: "seg-2", startMs: 60000, endMs: 90000, calibrations: [{ quality: "good", homography: stored, points: [{ landmark: "a", px: 10, py: 30 }, { landmark: "b", px: 50, py: 40 }], pitchLengthM: 105, pitchWidthM: 68 }] },
+    ]);
+    await service.enqueueForAsset({ type: "gamestate", videoAssetId: ASSET });
+    const [first, second] = enqueued().inputSpec.segments;
+    expect(first.homography).toEqual(stored.map((v) => -v));
+    expect(second.homography).toEqual(stored);
   });
 
   it("refuses when no segment is calibrated, and when there are no tracks", async () => {

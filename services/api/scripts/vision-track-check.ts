@@ -211,7 +211,12 @@ async function main() {
     check("detections at 2fps: refused as too sparse", tooSparse.body.error, "DetectionsTooSparse");
 
     const dense = await detectJob(fx, store, detectorId, 25);
-    const queued = await post("/vision/jobs", { type: "track", videoAssetId: fx.assetId });
+    // Two camera segments on the footage, as the cuts stage leaves them: the second starts where the camera changes.
+    await prisma.visionCameraSegment.createMany({ data: [
+      { videoAssetId: fx.assetId, startMs: 9000, endMs: 10_200, kind: "unknown", source: "scene_detect" },
+      { videoAssetId: fx.assetId, startMs: 10_200, endMs: 11_400, kind: "unknown", source: "scene_detect" },
+    ] });
+    const queued = await post("/vision/jobs", { type: "track", videoAssetId: fx.assetId, params: { cuts: [1, 2, 3] } });
     check("track queued on dense detections", queued.status, 201);
     const jobId = String(queued.body.id);
     fx.jobIds.push(jobId);
@@ -222,6 +227,7 @@ async function main() {
     check("…declaring the dense detect artifact, not the sparse one", spec.detections?.key, dense.key);
     check("…with the detector version", spec.detections?.modelVersionId, detectorId);
     check("…and the proxy clock", spec.proxy?.sourceOffsetMs, 9000);
+    check("…and the camera cut: the start of the second segment, not what the caller sent", JSON.stringify(spec.cuts), "[10200]");
     const named = await post("/vision/jobs", { type: "track", videoAssetId: fx.assetId, params: { detectJobId: sparse.id } });
     check("naming the sparse detect job explicitly: refused too", named.body.error, "DetectionsTooSparse");
 
@@ -263,6 +269,20 @@ async function main() {
     check("the walking player is one track", walker?.detectionCount, 60);
     check("…ending where he walked to", walker?.positions.at(-1)?.box.x, 395);
     check("times are source time (offset 9s applied)", ball?.startMs, 9000);
+
+    check("…and every frame the tracker was given, with or without a track on it", `${result.trackedFrames?.length}/${JSON.stringify(result.trackedFrames?.[0])}/${result.framesTracked}`, "60/[0,9000]/60");
+    check("…aged by the clock, not by a count of frames", `${result.params?.maxAgeMs}/${result.params?.maxAge}`, "1200/undefined");
+    check("with no cut declared, no track ended at one", `${result.cuts}/${result.tracksEndedAtCuts}`, "0/0");
+
+    // The same detections with the declared cut: the frame at 10,200 ms is another camera's picture.
+    const cutPath = join(fx.tmp, "tracks-cut.json");
+    const cutRun = spawnSync(PYTHON, ["-m", "dtp_vision_worker.tracking", "--detections", detPath, "--out", cutPath, "--cuts", (spec.cuts ?? []).join(",")], { cwd: WORKER_DIR, encoding: "utf8" });
+    if (cutRun.status !== 0) throw new Error(`tracker with cuts failed: ${cutRun.stderr}`);
+    const cut = JSON.parse(readFileSync(cutPath, "utf8"));
+    const walkerParts = cut.tracks.filter((t: any) => t.class === "player" && [100, 250].includes(t.positions[0].box.x)).map((t: any) => `${t.startMs}-${t.endMs}`).sort();
+    check("at the cut the walking player's track ends and another begins on the frame of the cut", walkerParts.join(","), "10200-11360,9000-10160");
+    check("…as every track alive there does", `${cut.cuts}/${cut.tracksEndedAtCuts >= 2}/${cut.tracks.length > result.tracks.length}`, "1/true/true");
+    check("…and no detection is lost by it", cut.detectionsLinked + cut.detectionsUnlinked, result.detectionsLinked + result.detectionsUnlinked);
 
     const sparseCheck = spawnSync(PYTHON, ["-m", "dtp_vision_worker.tracking", "--detections", detPath.replace("detections.json", "sparse.json")], { cwd: WORKER_DIR, encoding: "utf8" });
     writeFileSync(detPath.replace("detections.json", "sparse.json"), JSON.stringify(sparse.artifact));

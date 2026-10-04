@@ -20,6 +20,13 @@ def hungarian(cost: Sequence[Sequence[float]]) -> list[tuple[int, int]]:
     Returns `(row, column)` pairs; every row and column appears at most once, and
     rows beyond the number of columns (or the reverse) are left unassigned. A cost
     of `inf` means the pair is forbidden; such pairs are never returned.
+
+    With forbidden pairs the answer is the one with the most allowed pairs, and
+    among those the cheapest. A forbidden pair is given a finite cost larger than
+    any sum of allowed ones, so one more forbidden pair always costs more than any
+    rearrangement of allowed pairs can save. It used to be 1e18, and against that
+    the potentials grew until costs between 0 and 1 rounded away: the result was
+    an assignment, and not the cheapest (docs/vision/50, appendix C).
     """
     n = len(cost)
     if n == 0:
@@ -27,6 +34,8 @@ def hungarian(cost: Sequence[Sequence[float]]) -> list[tuple[int, int]]:
     m = len(cost[0])
     if m == 0:
         return []
+    finite = [abs(c) for row in cost for c in row if c != INF]
+    forbidden = 1.0 + sum(finite)
     transpose = n > m
     if transpose:
         cost = [[cost[r][c] for r in range(n)] for c in range(m)]
@@ -37,7 +46,8 @@ def hungarian(cost: Sequence[Sequence[float]]) -> list[tuple[int, int]]:
     v = [0.0] * (m + 1)
     p = [0] * (m + 1)  # p[j] = row assigned to column j
     way = [0] * (m + 1)
-    big = 1e18
+    # Above any path cost the search can see: at most n pairs, each at most `forbidden`.
+    big = (n + 1) * forbidden * 2.0 + 1.0
     for i in range(1, n + 1):
         p[0] = i
         j0 = 0
@@ -52,7 +62,7 @@ def hungarian(cost: Sequence[Sequence[float]]) -> list[tuple[int, int]]:
                 if used[j]:
                     continue
                 c = cost[i0 - 1][j - 1]
-                cur = (big if c == INF else c) - u[i0] - v[j]
+                cur = (forbidden if c == INF else c) - u[i0] - v[j]
                 if cur < minv[j]:
                     minv[j] = cur
                     way[j] = j0

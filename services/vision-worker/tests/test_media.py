@@ -103,3 +103,23 @@ def test_the_ffmpeg_thread_cap_comes_from_the_environment_or_not_at_all() -> Non
     assert ffmpeg_threads({"VISION_FFMPEG_THREADS": "2"}) == ["-threads", "2"]
     assert ffmpeg_threads({"VISION_FFMPEG_THREADS": "two"}) == []
     assert ffmpeg_threads({"VISION_FFMPEG_THREADS": "0"}) == []
+
+
+def test_the_proxy_takes_one_video_and_one_optional_audio_stream_and_nothing_else() -> None:
+    """A broadcast capture carries subtitle and data streams an mp4 cannot hold."""
+    from pathlib import Path
+
+    cmd = media.proxy_command(Path("in.ts"), Path("out.mp4"))
+    maps = [cmd[i + 1] for i, a in enumerate(cmd) if a == "-map"]
+    # The audio map is optional (`?`): a silent source still transcodes.
+    assert maps == ["0:v:0", "0:a:0?"]
+    assert "-sn" in cmd and "-dn" in cmd
+    # Output options, so after the input and before the output file.
+    assert cmd.index("-i") < cmd.index("-map") < cmd.index("-sn") < len(cmd) - 1
+    assert cmd[-1] == "out.mp4" and "-nostdin" in cmd
+
+
+def test_choosing_streams_is_not_a_change_of_recipe() -> None:
+    """The maps decide what goes in, not how it is encoded: existing proxies keep their hash."""
+    assert media.settings_hash() == media.settings_hash()
+    assert "map" not in str(media.settings_hash())

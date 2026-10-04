@@ -92,14 +92,6 @@ def tracks_from_artifact(artifact: dict[str, Any], frame_width: float, frame_hei
     return dict(out)
 
 
-def covered_frames(artifact: dict[str, Any]) -> set[int] | None:
-    """The 1-based frames the tracker's input covered, if the artifact says; else None (all)."""
-    frames = artifact.get("framesTracked")
-    if isinstance(frames, int):
-        return None  # a count, not a list: treat every gold frame as covered
-    return None
-
-
 @dataclass
 class _Tally:
     gt: int = 0
@@ -108,7 +100,9 @@ class _Tally:
     switches: int = 0
     frags: int = 0
     gold_tracks: set[str] = field(default_factory=set)
-    #: (gold id, pred id) -> frames they coincided on, for IDF1
+    #: (gold id, pred id) -> frames they coincided on, for IDF1. Ids here are
+    #: `asset/track`: a local track id is only unique inside one artifact, and two
+    #: assets' track 1 are two people.
     coincide: dict[tuple[str, str], int] = field(default_factory=dict)
     gold_frames: dict[str, int] = field(default_factory=dict)
     pred_frames: dict[str, int] = field(default_factory=dict)
@@ -151,6 +145,11 @@ def score_tracks(
         # Per (slice, class): the predicted id each gold track last matched, and whether it is currently matched.
         last: dict[tuple[str, str], dict[str, str]] = defaultdict(dict)
         active: dict[tuple[str, str], set[str]] = defaultdict(set)
+        asset = sample.asset_id
+
+        def gid(track_id: str, asset: str = asset) -> str:
+            return f"{asset}/{track_id}"
+
         for frame_number in sorted(sample.frames):
             golds_all = sample.frames[frame_number]
             frames_labelled += 1
@@ -165,10 +164,10 @@ def score_tracks(
                     golds = [g for g in golds_all if g.cls == cls]
                     preds = [p for p in preds_all if p.cls == cls]
                     for g in golds:
-                        tally.gold_tracks.add(g.track_id)
-                        tally.gold_frames[g.track_id] = tally.gold_frames.get(g.track_id, 0) + 1
+                        tally.gold_tracks.add(gid(g.track_id))
+                        tally.gold_frames[gid(g.track_id)] = tally.gold_frames.get(gid(g.track_id), 0) + 1
                     for p in preds:
-                        tally.pred_frames[p.track_id] = tally.pred_frames.get(p.track_id, 0) + 1
+                        tally.pred_frames[gid(p.track_id)] = tally.pred_frames.get(gid(p.track_id), 0) + 1
                     tally.gt += len(golds)
                     pairs = _match_frame(preds, golds, last[key], threshold)
                     matched_g = set()
@@ -182,7 +181,7 @@ def score_tracks(
                             tally.frags += 1
                         last[key][g.track_id] = p.track_id
                         active[key].add(g.track_id)
-                        pair = (g.track_id, p.track_id)
+                        pair = (gid(g.track_id), gid(p.track_id))
                         tally.coincide[pair] = tally.coincide.get(pair, 0) + 1
                     tally.misses += len(golds) - len(pairs)
                     tally.fps += len(preds) - len(pairs)

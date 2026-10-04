@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import { OFF_PITCH_MARGIN_M } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
@@ -14,7 +15,7 @@ import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionIdentityService } from "../identity/identity.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CALIBRATION_THRESHOLDS, qualityOf, type CalibrationQuality, type CalibrationThresholds } from "./calibration-thresholds";
-import { fitHomography, homogeneousW, invert3, isFit, project, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
+import { fitHomography, homogeneousW, invert3, isFit, orientStored, project, projectInView, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
 import { DEFAULT_PITCH, landmarkById, pitchLines, pitchProblem, type PitchDimensions } from "./pitch-model";
 
 /**
@@ -181,7 +182,7 @@ export class VisionCalibrationService {
     const reprojected = back
       ? points.map((p, i) => {
           const l = pairs[i]!;
-          const onPitch = project(fit.homography, { x: p.px, y: p.py });
+          const onPitch = projectInView(fit.homography, { x: p.px, y: p.py }) ?? project(fit.homography, { x: p.px, y: p.py });
           const onPicture = project(back, { x: l.xM, y: l.yM });
           return { landmark: p.landmark, px: onPicture ? round(onPicture.x) : p.px, py: onPicture ? round(onPicture.y) : p.py, errorM: onPitch ? round(Math.hypot(onPitch.x - l.xM, onPitch.y - l.yM)) : 0 };
         })
@@ -293,6 +294,9 @@ export class VisionCalibrationService {
         suppressed: summary.suppressed ?? null,
         reasons: summary.reasons ?? {},
         validFrameCoverage: summary.validFrameCoverage ?? null,
+        // What that share is of: the frames the tracker was given, or (older runs) only those with a track.
+        framesTracked: summary.framesTracked ?? null,
+        coverageBasis: summary.coverageBasis ?? "frames_with_tracks",
         chunkMs,
       },
       placedWith: { segments: segments.length, calibrations: segments.filter((s) => s.quality).length, anchors: Array.isArray(spec.anchors) ? spec.anchors.length : 0 },
@@ -320,7 +324,7 @@ export class VisionCalibrationService {
       this.prisma.visionCameraSegment.findMany({
         where: { videoAssetId: track.videoAssetId },
         orderBy: { startMs: "asc" },
-        include: { calibrations: { where: { supersededBy: null }, take: 1 } },
+        include: { calibrations: { where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 } },
       }),
     ]);
 
@@ -339,7 +343,9 @@ export class VisionCalibrationService {
         fail("position_malformed");
         continue;
       }
-      const segment = segments.find((s) => s.startMs <= t && t <= s.endMs);
+      // Half-open, as the worker reads them: the millisecond a segment ends on is the next one's.
+      // Segments are in start order; where two overlap, the one that started latest covers.
+      const segment = segments.filter((s) => s.startMs <= t && t < s.endMs).at(-1);
       if (!segment) {
         fail("no_camera_segment");
         continue;
@@ -353,9 +359,19 @@ export class VisionCalibrationService {
         fail("calibration_failed");
         continue;
       }
-      const point = project(calibration.homography as Homography, { x: box.x + box.width / 2, y: box.y + box.height });
+      const point = projectInView(orientStored(calibration.homography, calibration.points), { x: box.x + box.width / 2, y: box.y + box.height });
       if (!point) {
         fail("beyond_horizon");
+        continue;
+      }
+      // A pixel just under the horizon maps to hundreds of metres. That is a number, not a position.
+      if (
+        point.x < -OFF_PITCH_MARGIN_M ||
+        point.x > calibration.pitchLengthM + OFF_PITCH_MARGIN_M ||
+        point.y < -OFF_PITCH_MARGIN_M ||
+        point.y > calibration.pitchWidthM + OFF_PITCH_MARGIN_M
+      ) {
+        fail("off_pitch");
         continue;
       }
       pitch = pitch ?? { lengthM: calibration.pitchLengthM, widthM: calibration.pitchWidthM };
@@ -427,6 +443,7 @@ function describeFit(fit: Fit, thresholds: CalibrationThresholds) {
     maxPointErrorM: fit.maxErrorM,
     reprojectionErrorPx: fit.rmsePx,
     points: fit.points,
+    pointsAcrossHorizon: fit.acrossHorizon,
     quality: qualityOf(fit, thresholds),
     thresholdsVersion: thresholds.version,
   };

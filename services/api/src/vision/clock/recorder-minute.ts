@@ -90,3 +90,36 @@ export function recordedMinuteOf(event: { minute: number; metadata: unknown }, h
   const added = typeof meta.addedMinute === "number" && Number.isFinite(meta.addedMinute) && meta.addedMinute > 0 ? Math.floor(meta.addedMinute) : null;
   return { half, minute: event.minute, addedMinute: added };
 }
+
+// ── One line for the footage and the record ─────────────────────────────────
+
+/**
+ * A place on the match's own timeline: minutes of play into a half, with each
+ * half kept apart from the others (`half * HALF_SPAN`), so first-half added
+ * time is never the second half's opening minutes. The footage reads onto it
+ * exactly; a minute in the record reads onto it as the stretch of play that
+ * minute stands for.
+ */
+export const HALF_SPAN = 1000;
+
+/** Where a moment of the footage is on the timeline. */
+export function timelineOfReading(reading: { half: Half; elapsedMs: number }): number {
+  return (reading.half - 1) * HALF_SPAN + Math.max(0, reading.elapsedMs) / 60_000;
+}
+
+/**
+ * The stretch of play a recorded minute stands for, `[from, to)`.
+ *
+ * The recorder's minute `m` of a half is the minute being played: play from
+ * `m - 1` to `m` minutes in. Added time `+a` is the minute from `halfLength + a`.
+ * The half's last minute with nothing added is two minutes of play, because the
+ * console logs the first minute past the length as that same capped minute (see
+ * `recorderMinuteAt`), and nothing in the record says which it was.
+ */
+export function timelineSpanOfRecorded(recorded: { half: 1 | 2; minute: number; addedMinute: number | null }, halfLength: number): { from: number; to: number } {
+  const base = (recorded.half - 1) * HALF_SPAN;
+  const inHalf = recorded.half === 1 ? recorded.minute : recorded.minute - halfLength;
+  if (recorded.addedMinute) return { from: base + halfLength + recorded.addedMinute, to: base + halfLength + recorded.addedMinute + 1 };
+  const from = Math.max(0, inHalf - 1);
+  return { from: base + from, to: base + (inHalf >= halfLength ? halfLength + 1 : Math.max(inHalf, from + 1)) };
+}
