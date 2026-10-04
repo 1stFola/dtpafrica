@@ -19,7 +19,7 @@ accounts and goals on live.
 
 Every gate's `main` now begins with `assertDevDatabase` (`scripts/gate-harness.ts`). It
 refuses, with exit 2, unless the database host is this machine (`localhost`, `127.0.0.1`,
-`::1`, `host.docker.internal`, or a compose service called `postgres` or `db`). A gate
+`::1`, `host.docker.internal`; since [70](./70-GATE-AUDIT-LITTER.md) no longer a compose service called `postgres` or `db`, which is how the live API reaches the live database). A gate
 that calls the API holds the API's host to the same rule, because the API writes to
 whatever database *it* was given.
 

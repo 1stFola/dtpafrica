@@ -18,7 +18,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, onInterrupt } from "./gate-harness";
+import { assertDevDatabase, closeGate, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -77,7 +77,7 @@ async function main() {
 
   onInterrupt(async () => {
     await tidy();
-    await prisma.$disconnect();
+    await closeGate(prisma);
   });
   try {
     // ── Partner and evidence ──────────────────────────────────────────────
@@ -362,4 +362,4 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => closeGate(prisma));

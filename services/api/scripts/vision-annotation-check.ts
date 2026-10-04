@@ -20,7 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
-import { assertDevDatabase, onInterrupt } from "./gate-harness";
+import { assertDevDatabase, closeGate, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -173,7 +173,7 @@ async function main() {
   let fx: Fixture | null = null;
   onInterrupt(async () => {
     await cleanup(fx);
-    await prisma.$disconnect();
+    await closeGate(prisma);
   });
   try {
     fx = await seed();
@@ -473,11 +473,11 @@ async function main() {
     console.log(`\n${failures} check(s) failed.`);
     process.exitCode = 1;
   }
-  await prisma.$disconnect();
+  await closeGate(prisma);
 }
 
 main().catch(async (error) => {
   console.error("\nGate aborted:", error instanceof Error ? error.message : error);
-  await prisma.$disconnect();
+  await closeGate(prisma);
   process.exitCode = 1;
 });
