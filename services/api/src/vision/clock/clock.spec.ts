@@ -63,3 +63,24 @@ describe("reading the clock", () => {
     expect(await service.read(ASSET, 5)).toMatchObject({ anchored: false, at: { status: "unanchored" } });
   });
 });
+
+describe("the anchors of several assets", () => {
+  it("come from one query, each asset's own, in half order, and none is an empty list", async () => {
+    mockPrisma.visionClockAnchor.findMany.mockResolvedValue([
+      { videoAssetId: "a", half: 2, sourceMs: 3_000_000, endMs: null },
+      { videoAssetId: "b", half: 1, sourceMs: 500, endMs: 2_700_500 },
+      { videoAssetId: "a", half: 1, sourceMs: 9000, endMs: null },
+    ]);
+    const out = await service.currentAnchorsFor(["a", "b", "c", "a"]);
+    expect(mockPrisma.visionClockAnchor.findMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.visionClockAnchor.findMany.mock.calls[0]![0].where).toEqual({ videoAssetId: { in: ["a", "b", "c"] }, supersededBy: null });
+    expect(out.get("a")).toEqual([{ half: 1, sourceMs: 9000, endMs: null }, { half: 2, sourceMs: 3_000_000, endMs: null }]);
+    expect(out.get("b")).toEqual([{ half: 1, sourceMs: 500, endMs: 2_700_500 }]);
+    expect(out.get("c")).toEqual([]);
+  });
+
+  it("asks nothing when no asset is named", async () => {
+    expect((await service.currentAnchorsFor([])).size).toBe(0);
+    expect(mockPrisma.visionClockAnchor.findMany).not.toHaveBeenCalled();
+  });
+});

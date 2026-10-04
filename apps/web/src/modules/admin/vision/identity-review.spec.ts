@@ -9,6 +9,7 @@ import {
   isPublic,
   mayAccept,
   positionAt,
+  positionOnFrame,
   sideLabel,
   sortPositions,
   splitAt,
@@ -132,5 +133,35 @@ describe("how things are described", () => {
   it("picks the identify job most tracks were sided by", () => {
     expect(identifyJobOf([track(), track({ team: { team: "B", confidence: 1, method: "kit_cluster", kitDescription: null, reviewState: "unreviewed", inferenceJobId: "job-old" } }), track()])).toBe("job-i");
     expect(identifyJobOf([track({ team: null })])).toBeNull();
+  });
+});
+
+describe("finding a frame among a track's positions", () => {
+  // Every third frame from 30: a track seen on some frames and hidden on the rest.
+  const sorted = sortPositions(Array.from({ length: 2001 }, (_, n) => pos(30 + 3 * n)).reverse());
+
+  it("finds every frame the track was seen on, and none it was not", () => {
+    for (const p of sorted) expect(positionOnFrame(sorted, p.frameIndex)).toBe(p);
+    for (const frame of [0, 29, 31, 32, 34, 6029, 6031, 9999]) expect(positionOnFrame(sorted, frame), String(frame)).toBeNull();
+    expect(positionOnFrame(sorted, 30)?.frameIndex).toBe(30);
+    expect(positionOnFrame(sorted, 6030)?.frameIndex).toBe(6030);
+  });
+
+  it("has nothing for a track with no positions, and finds the only one of a track with one", () => {
+    expect(positionOnFrame([], 4)).toBeNull();
+    expect(positionOnFrame([pos(4)], 4)?.frameIndex).toBe(4);
+    expect(positionOnFrame([pos(4)], 5)).toBeNull();
+  });
+
+  it("looks at a handful of positions, not all of them", () => {
+    let reads = 0;
+    const counted = sorted.map((p) => ({ ...p, get frameIndex() { reads += 1; return p.frameIndex; } }));
+    positionOnFrame(counted, 6030);
+    // Twelve halvings cover 2,001 positions; a scan to the last one read all of them.
+    expect(reads).toBeLessThanOrEqual(12);
+    // The same for a frame the track was not seen on, which is most frames for most tracks.
+    reads = 0;
+    expect(positionOnFrame(counted, 6031)).toBeNull();
+    expect(reads).toBeLessThanOrEqual(12);
   });
 });

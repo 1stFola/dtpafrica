@@ -467,11 +467,9 @@ export class VisionPromotionsService {
       } else {
         if (!dataset.frozenAt) add("failures", "lineage", `${dataset.label} is not frozen.`);
         if (dataset.containsRevokedMembers) add("failures", "rights", `${dataset.label} holds footage whose training right was withdrawn.`);
-        const lost: string[] = [];
-        for (const member of dataset.members) {
-          const decision = await this.rights.canTrain({ videoAssetId: member.videoAssetId });
-          if (!decision.allowed) lost.push(member.videoAssetId);
-        }
+        /* One batched check; it was three queries per member, and the gate runs twice. */
+        const decisions = await this.rights.canTrainMany(dataset.members.map((m) => m.videoAssetId));
+        const lost = dataset.members.filter((m) => !decisions.get(m.videoAssetId)?.allowed).map((m) => m.videoAssetId);
         if (lost.length) {
           add("failures", "rights", `${lost.length} member(s) of ${dataset.label} no longer carry training rights: ${lost.slice(0, 5).join(", ")}.`);
         } else if (!dataset.containsRevokedMembers) {

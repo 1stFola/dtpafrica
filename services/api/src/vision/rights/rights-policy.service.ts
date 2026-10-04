@@ -76,6 +76,24 @@ export class RightsPolicyService {
     return this.decide("canTrain", subject, now, { requireTrainableAsset: true });
   }
 
+  /**
+   * `canTrain` for many assets, in three queries however many there are.
+   *
+   * Adding members to a dataset, freezing it and the promotion gate each asked
+   * about one asset at a time: three queries apiece, in sequence, so a dataset of
+   * 500 matches was about 1,500 round trips inside one request (docs/vision/50,
+   * appendices A and B). The decision is the same function `canTrain` uses, given
+   * the same context; only the loading is batched. An asset that does not exist is
+   * denied, as it is one at a time.
+   */
+  async canTrainMany(videoAssetIds: readonly string[], now = new Date()): Promise<Map<string, RightsDecision>> {
+    const ids = [...new Set(videoAssetIds)];
+    const contexts = await this.loadContexts(ids);
+    const out = new Map<string, RightsDecision>();
+    for (const id of ids) out.set(id, this.decideFrom("canTrain", { videoAssetId: id }, contexts.get(id) ?? null, now, { requireTrainableAsset: true }));
+    return out;
+  }
+
   canPublishHighlight(subject: RightsSubject, now = new Date()): Promise<RightsDecision> {
     return this.decide("canPublishHighlight", subject, now);
   }
@@ -112,8 +130,17 @@ export class RightsPolicyService {
     if (!subject.videoAssetId && !subject.sourceVideoRecordId) {
       return deny("no_scope", "No asset or source record was supplied.");
     }
+    return this.decideFrom(scope, subject, await this.loadContext(subject), now, opts);
+  }
 
-    const context = await this.loadContext(subject);
+  /** The decision itself, from a context already loaded. Reads nothing. */
+  private decideFrom(
+    scope: RightsScopeKey,
+    subject: RightsSubject,
+    context: ResolvedContext | null,
+    now: Date,
+    opts: { requireTrainableAsset?: boolean } = {}
+  ): RightsDecision {
     if (!context) {
       return deny("no_scope", "The asset or source record does not exist.");
     }
@@ -252,6 +279,44 @@ export class RightsPolicyService {
     })) as unknown as ScopeRow[];
 
     return { partnerId, sourceVideoRecordId, corpus, acquisitionStatus, scopes };
+  }
+
+  /** `loadContext` for many assets: the assets, then every scope of their partners and source records. */
+  private async loadContexts(videoAssetIds: readonly string[]): Promise<Map<string, ResolvedContext>> {
+    const out = new Map<string, ResolvedContext>();
+    if (!videoAssetIds.length) return out;
+    const assets = await this.prisma.visionVideoAsset.findMany({
+      where: { id: { in: [...videoAssetIds] } },
+      select: {
+        id: true,
+        corpus: true,
+        sourceVideoRecordId: true,
+        sourceVideoRecord: { select: { partnerId: true, acquisitionStatus: true } },
+      },
+    });
+    const partnerIds = [...new Set(assets.map((a) => a.sourceVideoRecord?.partnerId).filter((x): x is string => !!x))];
+    const recordIds = [...new Set(assets.map((a) => a.sourceVideoRecordId).filter((x): x is string => !!x))];
+    const scopes =
+      partnerIds.length || recordIds.length
+        ? ((await this.prisma.visionRightsScope.findMany({
+            where: {
+              OR: [...(partnerIds.length ? [{ partnerId: { in: partnerIds } }] : []), ...(recordIds.length ? [{ sourceVideoRecordId: { in: recordIds } }] : [])],
+            },
+          })) as unknown as ScopeRow[])
+        : [];
+    for (const asset of assets) {
+      const partnerId = asset.sourceVideoRecord?.partnerId ?? null;
+      const sourceVideoRecordId = asset.sourceVideoRecordId ?? null;
+      out.set(asset.id, {
+        partnerId,
+        sourceVideoRecordId,
+        corpus: asset.corpus,
+        acquisitionStatus: asset.sourceVideoRecord?.acquisitionStatus ?? null,
+        /* The rows one asset's own query would have returned: its partner's and its record's. */
+        scopes: scopes.filter((row) => (partnerId !== null && row.partnerId === partnerId) || (sourceVideoRecordId !== null && row.sourceVideoRecordId === sourceVideoRecordId)),
+      });
+    }
+    return out;
   }
 
   private appliesTo(row: ScopeRow, subject: RightsSubject, context: ResolvedContext): boolean {

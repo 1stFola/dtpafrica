@@ -279,6 +279,15 @@ async function main() {
     check("the public view lists only tracks with an accepted, named identity", pub.body.count, 1);
     check("…the accepted window", `${pub.body.tracks?.[0]?.identities?.[0]?.validFromMs}-${pub.body.tracks?.[0]?.identities?.[0]?.validToMs}`, "9000-14000");
     check("…and nothing unreviewed, propagated, rejected or unknown", (pub.body.tracks ?? []).flatMap((t: any) => t.identities).length, 1);
+    check("…and says how many there are in all, and that this is all of them", `${pub.body.total}/${pub.body.truncated}/${pub.body.trackJobId}`, "1/false/null");
+    /* The review view: one track run, a page at a time (docs/vision/60). */
+    const paged = await R.get(`/vision/review/${fx.assetId}/tracks?limit=3`);
+    check("a page of the review view says it is short", `${paged.body.count}/${paged.body.total}/${paged.body.truncated}`, "3/4/true");
+    const rest = await R.get(`/vision/review/${fx.assetId}/tracks?limit=3&offset=3`);
+    check("…and the next page is the rest", `${rest.body.count}/${rest.body.truncated}`, "1/false");
+    check("…of the one track run the footage has", `${paged.body.trackJobs}/${typeof paged.body.trackJobId}`, "1/string");
+    const otherRun = await R.get(`/vision/review/${fx.assetId}/tracks?job=${randomUUID()}`);
+    check("a run that is not this footage's has no tracks", `${otherRun.status}/${otherRun.body.count}/${otherRun.body.total}`, "200/0/0");
     const all = await R.get(`/vision/review/${fx.assetId}/tracks`);
     check("the review view shows every current assignment", (all.body.tracks ?? []).flatMap((t: any) => t.identities).length, 5);
 

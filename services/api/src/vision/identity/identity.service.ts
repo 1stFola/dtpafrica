@@ -65,6 +65,9 @@ export type AssignIdentityInput = {
 /** A 90-minute match at 25fps is far more than this; see `positions`. */
 const MAX_ARTIFACT_BYTES = 32 * 1_048_576;
 const ARTIFACT_CACHE_ENTRIES = 4;
+/** Tracks in one answer of the review view: a full match is a few thousand. */
+const DEFAULT_TRACK_PAGE = 2000;
+const MAX_TRACK_PAGE = 5000;
 
 type ParsedArtifact = { trackerVersionId?: string; tracks: { localTrackId: number; positions: unknown[] }[] };
 
@@ -375,7 +378,10 @@ export class VisionIdentityService {
    * identity windows. `publicOnly` is what anything public may read: accepted by a
    * second person, naming a player, not superseded.
    */
-  async forAsset(videoAssetId: string, publicOnly = false) {
+  async forAsset(videoAssetId: string, opts: { publicOnly?: boolean; job?: string; limit?: number; offset?: number } = {}) {
+    const publicOnly = opts.publicOnly === true;
+    const limit = Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_TRACK_PAGE), 1), MAX_TRACK_PAGE);
+    const offset = Math.max(Math.floor(opts.offset ?? 0), 0);
     const asset = await this.prisma.visionVideoAsset.findUnique({
       where: { id: videoAssetId },
       select: {
@@ -386,10 +392,28 @@ export class VisionIdentityService {
       },
     });
     if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    /* Which tracks. A reviewer sees the latest track run unless they ask for another, or
+       for all of them: after a re-run the footage has two sets of tracks for the same
+       players. The public view is every run, because an accepted identity is a person's
+       decision and a re-run does not withdraw it. It stopped silently at 2,000 rows of
+       every run mixed together and called that the count (docs/vision/50, appendix B). */
+    const runs = await this.trackRuns(videoAssetId);
+    const wanted = opts.job ?? (publicOnly ? "all" : "latest");
+    const trackJobId = wanted === "all" ? null : wanted === "latest" ? runs.latest : wanted;
+    const publicIdentity = { supersededBy: null, reviewState: "accepted", playerId: { not: null } };
+    const where = {
+      videoAssetId,
+      ...(trackJobId ? { inferenceJobId: trackJobId } : {}),
+      /* In the query, so a page of the public view is a page of tracks that have something
+         public. It was filtered after the cut, which could drop names past the first 2,000. */
+      ...(publicOnly ? { identities: { some: publicIdentity } } : {}),
+    };
+    const total = await this.prisma.visionTrack.count({ where });
     const tracks = await this.prisma.visionTrack.findMany({
-      where: { videoAssetId },
-      orderBy: [{ inferenceJobId: "desc" }, { startMs: "asc" }, { localTrackId: "asc" }],
-      take: 2000,
+      where,
+      orderBy: [{ startMs: "asc" }, { localTrackId: "asc" }, { id: "asc" }],
+      skip: offset,
+      take: limit,
       include: {
         teamAssignments: { orderBy: { createdAt: "desc" }, take: 1 },
         identities: {
@@ -441,7 +465,30 @@ export class VisionIdentityService {
       sidesDecided: sides.map((s) => ({ inferenceJobId: s.inferenceJobId, team: s.team, sbTeamId: s.sbTeamId })),
       tracks: rows,
       count: rows.length,
+      /** The track run shown, or null for every run; and how many runs the footage has. */
+      trackJobId,
+      trackJobs: runs.count,
+      /** Every track the filter matches, and whether this page is short of them. */
+      total,
+      offset,
+      limit,
+      truncated: offset + tracks.length < total,
     };
+  }
+
+  /**
+   * The asset's track runs: how many there are, and the latest, by when the job
+   * finished (or was queued, if it never said). Two grouped reads, whatever the
+   * number of tracks.
+   */
+  private async trackRuns(videoAssetId: string): Promise<{ latest: string | null; count: number }> {
+    const groups = await this.prisma.visionTrack.groupBy({ by: ["inferenceJobId"], where: { videoAssetId } });
+    const ids = groups.map((g) => g.inferenceJobId);
+    if (!ids.length) return { latest: null, count: 0 };
+    const jobs = await this.prisma.visionJob.findMany({ where: { id: { in: ids } }, select: { id: true, finishedAt: true, queuedAt: true } });
+    const when = (j: (typeof jobs)[number]) => (j.finishedAt ?? j.queuedAt ?? new Date(0)).getTime();
+    const latest = jobs.reduce<(typeof jobs)[number] | null>((best, j) => (best === null || when(j) > when(best) || (when(j) === when(best) && j.id > best.id) ? j : best), null);
+    return { latest: latest?.id ?? ids.sort().at(-1) ?? null, count: ids.length };
   }
 
   /**
@@ -515,22 +562,19 @@ export class VisionIdentityService {
   async positionsForAsset(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true } });
     if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
-    const tracks = await this.prisma.visionTrack.findMany({
-      where: { videoAssetId },
-      select: { id: true, localTrackId: true, artifactKey: true, inferenceJobId: true, inferenceJob: { select: { finishedAt: true, queuedAt: true } } },
+    const runs = await this.trackRuns(videoAssetId);
+    if (!runs.latest) return { videoAssetId, trackJobId: null, trackJobs: 0, positions: {} as Record<string, unknown[]> };
+    const mine = await this.prisma.visionTrack.findMany({
+      where: { videoAssetId, inferenceJobId: runs.latest },
+      select: { id: true, localTrackId: true, artifactKey: true },
     });
-    const when = (t: (typeof tracks)[number]) => (t.inferenceJob.finishedAt ?? t.inferenceJob.queuedAt ?? new Date(0)).getTime();
-    const latest = tracks.reduce<(typeof tracks)[number] | null>((best, t) => (best === null || when(t) > when(best) ? t : best), null);
-    const jobs = new Set(tracks.map((t) => t.inferenceJobId));
-    if (!latest) return { videoAssetId, trackJobId: null, trackJobs: 0, positions: {} as Record<string, unknown[]> };
-    const mine = tracks.filter((t) => t.inferenceJobId === latest.inferenceJobId);
     const positions: Record<string, unknown[]> = {};
     for (const key of new Set(mine.map((t) => t.artifactKey))) {
       const artifact = await this.loadArtifact(key);
       const byLocalId = new Map(artifact.tracks.map((t) => [t.localTrackId, t.positions]));
       for (const t of mine) if (t.artifactKey === key) positions[t.id] = byLocalId.get(t.localTrackId) ?? [];
     }
-    return { videoAssetId, trackJobId: latest.inferenceJobId, trackJobs: jobs.size, positions };
+    return { videoAssetId, trackJobId: runs.latest, trackJobs: runs.count, positions };
   }
 
   private readonly artifactCache = new Map<string, ParsedArtifact>();

@@ -22,14 +22,14 @@ export class VisionIdentityController {
 
   @Get("review/:assetId/tracks")
   @RequirePermissions("vision.read")
-  async reviewTracks(@Param("assetId") assetId: string) {
-    return jsonSafe(await this.identity.forAsset(assetId, false));
+  async reviewTracks(@Param("assetId") assetId: string, @Query("job") job?: string, @Query("limit") limit?: string, @Query("offset") offset?: string) {
+    return jsonSafe(await this.identity.forAsset(assetId, { job: job || undefined, limit: wholeNumber(limit), offset: wholeNumber(offset) }));
   }
 
   @Get("assets/:id/identity")
   @RequirePermissions("vision.read")
-  async identityFor(@Param("id") assetId: string, @Query("public") pub?: string) {
-    return jsonSafe(await this.identity.forAsset(assetId, pub === "1" || pub === "true"));
+  async identityFor(@Param("id") assetId: string, @Query("public") pub?: string, @Query("job") job?: string, @Query("limit") limit?: string, @Query("offset") offset?: string) {
+    return jsonSafe(await this.identity.forAsset(assetId, { publicOnly: pub === "1" || pub === "true", job: job || undefined, limit: wholeNumber(limit), offset: wholeNumber(offset) }));
   }
 
   @Get("review/:assetId/media")
@@ -93,4 +93,11 @@ export class VisionIdentityController {
   async reject(@Param("id") id: string, @Body() dto: RejectIdentityDto, @AdminAuth() auth: AdminAuthContext) {
     return jsonSafe(await this.identity.reject(id, dto.reason, auth));
   }
+}
+
+/** A query number, or nothing when it is absent or not a number; the service clamps it. */
+function wholeNumber(value: string | undefined): number | undefined {
+  if (value === undefined || value === "") return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
 }

@@ -1280,6 +1280,7 @@ model VisionVideoAsset {
   @@index([duplicateClusterId])
   @@index([sbMatchId])
   @@index([corpus, ingestState])
+  @@index([sourceVideoRecordId])
   @@map("vision_video_assets")
 }
 
@@ -1423,6 +1424,8 @@ model VisionUploadSession {
 
   @@unique([bucketId, objectKey, providerUploadId])
   @@index([state, expiresAt])
+  @@index([videoAssetId])
+  @@index([grantId])
   @@map("vision_upload_sessions")
 }
 
@@ -1470,7 +1473,9 @@ model VisionJob {
 
   progress        Json?
   error           Json?
-  idempotencyKey  String? @unique @map("idempotency_key")
+  /// The worker's proof that this job's completion already landed. Compared on this row only.
+  /// It was unique across every job, so two jobs sending the same key made the second a 500.
+  idempotencyKey  String? @map("idempotency_key")
   contractVersion String  @map("contract_version")
 
   createdBy String?  @map("created_by")
@@ -1489,6 +1494,8 @@ model VisionJob {
   @@index([state, resourceClass, priority, queuedAt])
   @@index([videoAssetId, type])
   @@index([heartbeatAt])
+  /// "Is this version being benchmarked", and the model's side of its foreign key.
+  @@index([modelVersionId, type, state])
   @@map("vision_jobs")
 }
 
@@ -1610,8 +1617,11 @@ model VisionIdentityAssignment {
   track  VisionTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
   player Player?     @relation(fields: [playerId], references: [id], onDelete: SetNull)
 
-  @@index([trackId])
+  /// A track's current windows in order; it leads with trackId, so it serves the foreign key too.
+  @@index([trackId, supersededBy, validFromMs])
   @@index([playerId])
+  /// The review queue and the overview: current, undecided, oldest first.
+  @@index([reviewState, supersededBy, createdAt])
   @@map("vision_identity_assignments")
 }
 
@@ -1731,6 +1741,8 @@ model VisionDatasetMember {
   @@unique([datasetVersionId, videoAssetId])
   @@index([datasetVersionId, split])
   @@index([datasetVersionId, groupKey])
+  /// The asset's side of a Restrict foreign key: without it every asset delete scans the table.
+  @@index([videoAssetId])
   @@map("vision_dataset_members")
 }
 
@@ -2019,6 +2031,7 @@ model VisionActiveLearningItem {
   videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
 
   @@index([state, score])
+  @@index([videoAssetId])
   @@map("vision_active_learning_items")
 }
 
@@ -2076,6 +2089,8 @@ model VisionEventCandidate {
   @@index([videoAssetId, startMs])
   @@index([sbMatchId])
   @@index([actorTrackId])
+  /// The review queue and the overview: current, undecided, oldest first.
+  @@index([reviewState, supersededBy, createdAt])
   @@map("vision_event_candidates")
 }
 

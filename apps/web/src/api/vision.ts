@@ -502,6 +502,14 @@ export type VisionIdentityReview = {
   sidesDecided: { inferenceJobId: string; team: "A" | "B"; sbTeamId: string }[];
   tracks: VisionReviewTrack[];
   count: number;
+  /** The track run shown, or null for every run; and how many runs the footage has. */
+  trackJobId: string | null;
+  trackJobs: number;
+  /** Every track the filter matches; `truncated` when this answer is short of them. */
+  total: number;
+  offset: number;
+  limit: number;
+  truncated: boolean;
 };
 
 export type VisionClockAnchor = { half: number; sourceMs: number; endMs: number | null; name?: string };
@@ -555,9 +563,14 @@ export type VisionTrackCandidates = {
   window: { fromMinute: number; toMinute: number; display: string; substitutions: number; offPitch: number } | null;
 };
 
-export function fetchVisionIdentityReview(assetId: string, publicOnly = false) {
+/**
+ * The asset's tracks for review: the latest track run unless `job` names another, or "all".
+ * The public view is every run's accepted, named identities.
+ */
+export function fetchVisionIdentityReview(assetId: string, publicOnly = false, job?: string) {
+  const which = job ? `job=${encodeURIComponent(job)}` : "";
   return adminFetch<VisionIdentityReview>(
-    publicOnly ? `/vision/assets/${assetId}/identity?public=1` : `/vision/review/${assetId}/tracks`
+    publicOnly ? `/vision/assets/${assetId}/identity?public=1` : `/vision/review/${assetId}/tracks${which ? `?${which}` : ""}`
   );
 }
 

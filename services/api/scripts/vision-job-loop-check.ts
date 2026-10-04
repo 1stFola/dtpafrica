@@ -266,6 +266,17 @@ async function main() {
           true
         );
 
+        /* The key is this job's, not the system's (docs/vision/60). It was unique across every
+           job, so a second job sending a key another had used was a constraint error, a 500. */
+        section("A completion key is the job's own");
+        await queue.claim(minted.workerId, ["cpu_small"]);
+        const sameKey = await queue.succeed(retryJobId, minted.workerId, idempotencyKey, {});
+        check("a second job completes with a key another job used", sameKey.alreadyApplied, false);
+        const both = await tx.visionJob.count({ where: { idempotencyKey, state: "succeeded" } });
+        check("…and both jobs hold it", both, 2);
+        const again = await queue.succeed(retryJobId, minted.workerId, idempotencyKey, {});
+        check("…and its own retry is still recognised", again.alreadyApplied, true);
+
         throw new Rollback();
       },
       { timeout: 60_000 }

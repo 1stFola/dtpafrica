@@ -417,20 +417,30 @@ export class VisionEventsService {
     const person = requirePerson(actor, "read the review queue");
     const limit = Math.min(Math.max(Math.floor(opts.limit ?? 100), 1), 500);
     const assetFilter = opts.assetId ? { videoAssetId: opts.assetId } : {};
-    const [events, identities] = await Promise.all([
+    /* "Not mine" and the limit are in the queries. This read every undecided row of both
+       kinds, filtered them in memory and then cut to the limit (docs/vision/50, appendix B).
+       The oldest `limit` of the two kinds together are among the oldest `limit` of each, so
+       taking that many of each loses nothing; the depth is a count, not a list. */
+    const eventWhere = { supersededBy: null, reviewState: "unreviewed", decidedBy: { not: person.userId }, ...assetFilter };
+    const identityWhere = { supersededBy: null, reviewState: "unreviewed", decidedBy: { not: person.userId }, ...(opts.assetId ? { track: assetFilter } : {}) };
+    const [events, identities, eventsWaiting, identitiesWaiting] = await Promise.all([
       this.prisma.visionEventCandidate.findMany({
-        where: { supersededBy: null, reviewState: "unreviewed", ...assetFilter },
-        orderBy: { createdAt: "asc" },
+        where: eventWhere,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: limit,
         select: { id: true, videoAssetId: true, type: true, startMs: true, endMs: true, actorTrackId: true, decidedBy: true, createdAt: true },
       }),
       this.prisma.visionIdentityAssignment.findMany({
-        where: { supersededBy: null, reviewState: "unreviewed", track: assetFilter },
-        orderBy: { createdAt: "asc" },
+        where: identityWhere,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: limit,
         select: { id: true, trackId: true, matchSquadPlayerId: true, validFromMs: true, validToMs: true, decidedBy: true, createdAt: true, track: { select: { localTrackId: true, videoAssetId: true } } },
       }),
+      this.prisma.visionEventCandidate.count({ where: eventWhere }),
+      this.prisma.visionIdentityAssignment.count({ where: identityWhere }),
     ]);
     const identityRows: QueueIdentityRow[] = identities.map(({ track, ...a }) => ({ ...a, videoAssetId: track.videoAssetId, localTrackId: track.localTrackId }));
-    const built = buildQueue(person.userId, events, identityRows, limit);
+    const built = { items: buildQueue(person.userId, events, identityRows, limit).items, waiting: { events: eventsWaiting, identities: identitiesWaiting } };
 
     const assetIds = [...new Set(built.items.map((i) => i.videoAssetId))];
     const slotIds = [...new Set(built.items.flatMap((i) => (i.kind === "identity" && i.matchSquadPlayerId ? [i.matchSquadPlayerId] : [])))];
@@ -442,11 +452,11 @@ export class VisionEventsService {
           })
         : [],
       slotIds.length ? this.prisma.sbMatchSquadPlayer.findMany({ where: { id: { in: slotIds } }, select: { id: true, playerName: true, jerseyNumber: true } }) : [],
-      Promise.all(assetIds.map(async (id) => [id, await this.clock.currentAnchors(id)] as const)),
+      this.clock.currentAnchorsFor(assetIds),
     ]);
     const assetOf = new Map(assets.map((a) => [a.id, { title: a.sourceVideoRecord?.title ?? null, match: a.sbMatch ? `${a.sbMatch.homeTeam.name} v ${a.sbMatch.awayTeam.name}` : null }]));
     const slotOf = new Map(slots.map((s) => [s.id, { name: s.playerName, jerseyNumber: s.jerseyNumber }]));
-    const anchorsOf = new Map<string, ClockAnchor[]>(anchorsByAsset);
+    const anchorsOf = anchorsByAsset;
     return {
       me: person.userId,
       waiting: built.waiting,

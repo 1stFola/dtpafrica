@@ -36,7 +36,18 @@ const mockPrisma = {
 };
 
 const mockAudit = { record: vi.fn() };
-const mockRights = { canTrain: vi.fn() };
+const mockRights = {
+  canTrain: vi.fn(),
+  /* The batch, answered by asking the single mock about each asset: the tests below set
+     what one asset's answer is, and the service now asks about all of them at once. */
+  canTrainMany: vi.fn(),
+};
+const answerMany = () =>
+  mockRights.canTrainMany.mockImplementation(async (ids: string[]) => {
+    const out = new Map<string, unknown>();
+    for (const id of [...new Set(ids)]) out.set(id, await mockRights.canTrain({ videoAssetId: id }));
+    return out;
+  });
 
 let store: InMemoryObjectStore;
 let service: VisionDatasetsService;
@@ -136,7 +147,15 @@ beforeEach(() => {
   mockPrisma.visionDatasetMember.groupBy.mockResolvedValue([]);
   mockPrisma.visionAnnotationVersion.findMany.mockResolvedValue([]);
   mockPrisma.visionVideoAsset.findUnique.mockResolvedValue(eligibleAsset());
+  /* Adding members reads the assets in one query. It answers from what a test set for one
+     asset, under the id that was asked for, and leaves out an asset that does not exist. */
+  mockPrisma.visionVideoAsset.findMany.mockImplementation(async ({ where }: never) => {
+    const ids = ((where as { id?: { in?: string[] } }).id?.in ?? []) as string[];
+    const rows = await Promise.all(ids.map(async (id) => [id, await mockPrisma.visionVideoAsset.findUnique({ where: { id } })] as const));
+    return rows.filter(([, row]) => row).map(([id, row]) => ({ ...(row as object), id }));
+  });
   mockRights.canTrain.mockResolvedValue({ allowed: true, reason: "granted", remediation: "" });
+  answerMany();
   mockPrisma.$transaction.mockResolvedValue([]);
 });
 
@@ -218,6 +237,20 @@ describe("dataset membership eligibility", () => {
     mockPrisma.visionVideoAsset.findUnique.mockResolvedValue(null);
     const result = await service.addMembers(VERSION, ["asset-1"]);
     expect(result.rejected[0]?.reason).toBe("unknown_asset");
+  });
+
+  it("reads the assets once and asks about their rights once, however many are added", async () => {
+    mockPrisma.visionVideoAsset.findUnique.mockImplementation(({ where }: never) => Promise.resolve((where as { id: string }).id === "gone" ? null : eligibleAsset({ id: (where as { id: string }).id })));
+    mockPrisma.visionDatasetMember.findMany.mockResolvedValue([{ videoAssetId: "in-already" }]);
+    const result = await service.addMembers(VERSION, ["a-1", "a-2", "a-3", "gone", "in-already", "a-1"]);
+    expect(result.added).toBe(3);
+    expect(result.rejected.map((r) => `${r.videoAssetId}:${r.reason}`).sort()).toEqual(["gone:unknown_asset", "in-already:already_member"]);
+    expect(mockPrisma.visionVideoAsset.findMany).toHaveBeenCalledTimes(1);
+    // Not the one already a member, and no asset twice.
+    expect(mockPrisma.visionVideoAsset.findMany.mock.calls[0]![0].where).toEqual({ id: { in: ["a-1", "a-2", "a-3", "gone"] } });
+    expect(mockRights.canTrainMany).toHaveBeenCalledTimes(1);
+    // Rights are asked about the assets that exist.
+    expect(mockRights.canTrainMany.mock.calls[0]![0]).toEqual(["a-1", "a-2", "a-3"]);
   });
 
   it("admits the eligible and reports the rest, rather than failing the batch", async () => {
@@ -394,6 +427,13 @@ describe("freeze", () => {
     mockPrisma.visionDatasetVersion.findUnique.mockResolvedValue(
       unfrozenVersion({ leakageReport: splitsGenerated() })
     );
+  });
+
+  it("re-checks every member's rights with one question", async () => {
+    // It asked about one member at a time, three queries each, in sequence.
+    await service.freeze(VERSION);
+    expect(mockRights.canTrainMany).toHaveBeenCalledTimes(1);
+    expect(mockRights.canTrainMany.mock.calls[0]![0]).toHaveLength(cleanMembers.length);
   });
 
   it("freezes a clean version and writes a manifest", async () => {
