@@ -426,6 +426,20 @@ caller's own `params.proxy` is overwritten, not trusted.
 pinned to. The first accepted completion that reports a checksum pins the version to it. See
 [28-PHASE-3-INCREMENT-1.md](./28-PHASE-3-INCREMENT-1.md).
 
+### The audit trail — `vision/audit`
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/vision/audit` | `vision.audit.read` |
+
+Newest first. Filters: `action` (one, or a family ending in a dot such as `identity.`),
+`targetKind`, `targetId`, `actor` (an admin id, or part of an email), `method` (`jwt`,
+`api_key`, `provision_key`, `none`), `from`, `to`. `limit` is 1 to 200, default 50, and
+`cursor` is the `nextCursor` of the page before. The first page also carries `matching` and
+`facets`. A filter that cannot be read is `400 AuditFilterInvalid` with the `field`; it is
+never dropped. `vision.read` does not open this route, and nothing here writes
+([69](./69-AUDIT-TRAIL-SCREEN.md)).
+
 ### Highlights, metrics, scout search — Phase 7 and later, not built
 
 The design for the phases after 6. None of these routes exists.
@@ -649,6 +663,7 @@ when a route has neither a permission nor a token guard.
 | `GET` | `/vision/assets` | `vision.read` | `assets/assets.controller.ts` |
 | `GET` | `/vision/assets/:id/identity` | `vision.read` | `identity/identity.controller.ts` |
 | `GET` | `/vision/assets/:id/tracks` | `vision.read` | `jobs/tracks.controller.ts` |
+| `GET` | `/vision/audit` | `vision.audit.read` | `audit/audit.controller.ts` |
 | `GET` | `/vision/calibration/landmarks` | `vision.read` | `calibration/calibration.controller.ts` |
 | `POST` | `/vision/calibration/preview` | `vision.read` | `calibration/calibration.controller.ts` |
 | `GET` | `/vision/datasets` | `vision.read` | `datasets/datasets.controller.ts` |

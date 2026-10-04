@@ -8,7 +8,9 @@
  * a new role. This runs the one idempotent step it begins with: every permission
  * and default role in `permissions.catalog.ts` is upserted, existing users and
  * their role assignments are untouched, and a role that already exists keeps
- * its name and gains any permission the catalogue added since.
+ * its name and its grants exactly as an admin left them. Only `super_admin` is
+ * topped up with a permission the catalogue added since; any other existing
+ * role is given a new permission by hand, in Settings, Roles.
  *
  * On the live box, inside the API container:
  *

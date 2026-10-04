@@ -1154,3 +1154,46 @@
   white-space: nowrap;
   width: 1px;
 }
+
+/* The audit trail (docs/vision/69) */
+.vision-audit__buttons {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.vision-audit__quiet {
+  background: none;
+  border: 0;
+  color: #93c5fd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.vision-audit__quiet:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.vision-audit__reason {
+  max-width: 22rem;
+  overflow-wrap: anywhere;
+}
+
+.vision-audit__data {
+  background: rgba(2, 6, 23, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  margin: 0 0 0.4rem;
+  max-height: 20rem;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

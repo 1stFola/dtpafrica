@@ -5,6 +5,7 @@ import { AdminAuthService } from "../admin/auth/admin-auth.service";
 import { adminJwtSecret } from "../admin/auth/admin-auth.util";
 import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
 import { PermissionsGuard } from "../admin/guards/permissions.guard";
+import { VisionAuditController } from "./audit/audit.controller";
 import { VisionAuditService } from "./audit/vision-audit.service";
 import { VisionAnnotationController } from "./annotation/annotation.controller";
 import { VisionAnnotationService } from "./annotation/annotation.service";
@@ -111,6 +112,7 @@ const computeRegistryProvider: Provider = {
     VisionJobsController,
     VisionWorkerController,
     WorkerProvisionController,
+    VisionAuditController,
     VisionUploadsController,
     VisionPartnerUploadsController,
     VisionSourcesController,

@@ -34,6 +34,7 @@ Reuse, do not rebuild: `AdminAuthContext`, `AdminRequirePermission`, `AdminLayou
 | `/admin/vision/models` | Model registry | `vision.read` | `AdminLayout` |
 | `/admin/vision/benchmarks` | Quality dashboard | `vision.read` | `AdminLayout` |
 | `/admin/vision/highlights` | Highlight review and publish | `vision.publish` | `AdminLayout` |
+| `/admin/vision/audit` | The audit trail: who did what, filtered by action, person, target and day (as built — [69](./69-AUDIT-TRAIL-SCREEN.md)) | `vision.audit.read` | `AdminVisionLayout` |
 | `/scouting/vision/search` | Scout semantic search | `vision.evidence.search` | `ScoutingLayout` |
 | `/players/:slugOrId` → Analysis tab | Player evidence | public, approved only | `MarketingLayout` |
 

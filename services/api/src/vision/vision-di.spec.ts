@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
+import { VisionAuditController } from "./audit/audit.controller";
 import { VisionAuditService } from "./audit/vision-audit.service";
 import { VisionDatasetsController } from "./datasets/datasets.controller";
 import { VisionDatasetsService } from "./datasets/datasets.service";
@@ -89,6 +90,7 @@ const CONTROLLERS = [
   VisionJobsController,
   VisionWorkerController,
   WorkerProvisionController,
+  VisionAuditController,
   VisionUploadsController,
   VisionPartnerUploadsController,
   VisionSourcesController,
