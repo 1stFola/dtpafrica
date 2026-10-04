@@ -91,7 +91,7 @@ Linux. The previous version of the job passed first time on the same footing.
 
 | Item | Why | Where |
 |---|---|---|
-| `vision:e2echeck` in CI | It needs the worker image built in the job and the store reachable from inside the container | a job of its own, on `main` pushes, beside the worker-image job |
+| `vision:e2echeck` in CI | **Done since, in [66](./66-QA-FIX-16-E2E-IN-CI.md).** As written then: it needs the worker image built in the job and the store reachable from inside the container | a job of its own, on `main` pushes, beside the worker-image job |
 | The gates against real R2, on a schedule | The mock proves the control plane, not the provider. A nightly run with real buckets would need per-environment buckets first ([62](./62-QA-FIX-12-DOCS.md)) | after the buckets are separated |
 | A health check on the mock's service container | The image has no shell tool to probe with; a step waits for it to list its buckets | fine as it is |
 | The job's time | About twenty gates in sequence; the rehearsal took a few minutes locally | split into two jobs if it grows |
