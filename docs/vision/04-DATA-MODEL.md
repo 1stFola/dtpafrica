@@ -465,6 +465,10 @@ the new roles follow the same pattern and must not reset existing grants.
   backwards-compatible, and land in Phase 6/7 with their own review. The first landed in
   [49](./49-PHASE-6-INCREMENT-3.md): `SbMatchEvent.secondInMinute`, nullable, null on every row
   the recorder entered, written by promotion only beside the recorder's own minute.
+- `VisionEventCandidate.proposedBy` ([63](./63-QA-FIX-13-LOW-FINDINGS.md)) is the author of
+  the first row in a candidate's correction chain, carried onto every later row, so the
+  first proposer can be refused acceptance whoever wrote the latest one. Migration
+  `20261005130000_vision_event_proposed_by` adds it and fills it for existing rows.
 - `VisionEventCandidate.acceptedAnchorId` ([55](./55-QA-FIX-5-EVENTS-CLOCK.md)) is the clock
   anchor a candidate was accepted on; promotion writes a minute only under that anchor. Its
   migration, `20261005100000_vision_event_accepted_anchor`, is dated after the two

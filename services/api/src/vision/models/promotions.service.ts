@@ -16,6 +16,7 @@ import { RightsPolicyService } from "../rights/rights-policy.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { BENCHMARK_THRESHOLDS, type BenchmarkThresholds } from "./benchmark-thresholds";
 import { BENCHMARK_THRESHOLDS_TOKEN } from "./benchmarks.service";
+import { notFound, personFor, refusal } from "../shared/refusals";
 
 /**
  * Promotion: the two-person act that moves a model version towards production.
@@ -94,7 +95,7 @@ export class VisionPromotionsService {
         modelVersion: { select: { id: true, version: true, stage: true, model: { select: { key: true, task: true } } } },
       },
     });
-    if (!request) throw new NotFoundException(`Unknown promotion request ${id}`);
+    if (!request) throw notFound("promotion request", id);
     return { request };
   }
 
@@ -264,7 +265,7 @@ export class VisionPromotionsService {
   async reject(requestId: string, reason: string, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "reject a promotion");
     const request = await this.prisma.visionPromotionRequest.findUnique({ where: { id: requestId } });
-    if (!request) throw new NotFoundException(`Unknown promotion request ${requestId}`);
+    if (!request) throw notFound("promotion request", requestId);
     if (request.state !== "pending") throw promotionDecided(request.state);
     // Only while it is still pending: a rejection does not overwrite an approval made a moment before.
     const rejected = await this.prisma.visionPromotionRequest.updateMany({
@@ -561,7 +562,7 @@ export class VisionPromotionsService {
       where: { id },
       include: { model: { select: { key: true, task: true } } },
     });
-    if (!version) throw new NotFoundException(`Unknown model version ${id}`);
+    if (!version) throw notFound("model version", id);
     return version;
   }
 }
@@ -623,20 +624,11 @@ function stageChanged(from: string, now: string, remediation = "Reject this requ
   });
 }
 
-function requirePerson(actor: AdminAuthContext | undefined, what: string): { userId: string; email?: string } {
-  if (!actor?.userId) {
-    throw new ForbiddenException({
-      statusCode: 403,
-      error: "PromotionNeedsAPerson",
-      message: `Only a signed-in person may ${what}.`,
-      detail:
-        "The shared operator key has no user id, so a request and an approval made with it cannot be told apart -- " +
-        "and a two-person control that cannot tell two people apart is not a control.",
-      remediation: "Sign in as yourself.",
-    });
-  }
-  return { userId: actor.userId, email: actor.email };
-}
+/** The shared check (`shared/refusals.ts`), with this service's error and its reason. */
+const requirePerson = personFor(
+  "PromotionNeedsAPerson",
+  "The shared operator key has no user id, so a request and an approval made with it cannot be told apart -- and a two-person control that cannot tell two people apart is not a control."
+);
 
 function gateFailed(gate: PromotionGate, remediation = "Fix the failures, then request again."): ConflictException {
   return new ConflictException({

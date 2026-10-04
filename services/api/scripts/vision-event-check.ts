@@ -42,6 +42,8 @@ import { VISION_CONTRACT_VERSION, VISION_EVENT_TAXONOMY_VERSION, visionKeys } fr
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import { recorderHalfLength } from "../src/vision/clock/recorder-minute";
 import { reapplyEnrichment } from "../src/vision/events/reapply-enrichment";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
@@ -254,7 +256,7 @@ async function main() {
     const selfAccept = await R(`/vision/review/events/${corrected.body.id}/decision`, { decision: "accepted" });
     check("the proposer cannot accept their own", selfAccept.body.error, "SelfAcceptanceRefused");
     const noReason = await S(`/vision/review/events/${corrected.body.id}/decision`, { decision: "rejected" });
-    check("a rejection without a reason: refused", noReason.body.error, "ReasonRequired");
+    check("a rejection without a reason: refused, as a bad request with what to do", `${noReason.status}/${noReason.body.error}/${typeof noReason.body.remediation}`, "400/ReasonRequired/string");
 
     // ── 5. The review queue ──────────────────────────────────────────────
     section("5. The queue: what is not yours, oldest first, until it is decided");
@@ -288,6 +290,33 @@ async function main() {
     const everything = await reviewer.as(`/vision/review/${fx.assetId}/events?all=1`);
     check("…and the superseded one on request", everything.body.count, 3);
 
+    // ── 2b. The first proposer does not accept, whoever corrected it ─────
+    section("2b. A correction does not make the proposer a second person");
+
+    const third = await person(fx, "vision_reviewer", "third");
+    const pass = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "pass", startMs: minute1(14), endMs: minute1(14, 1), actorTrackId: track.id });
+    check("the reviewer proposes a pass, and the row names them as its proposer", `${pass.status}/${pass.body.proposedBy === reviewer.id}/${pass.body.method}`, "201/true/manual");
+    const passFixed = await second.as(`/vision/review/events/${pass.body.id}`, { method: "PATCH", body: JSON.stringify({ note: "window checked" }) });
+    check("the second person corrects it: their row, a person's, still the reviewer's event", `${passFixed.status}/${passFixed.body.decidedBy === second.id}/${passFixed.body.proposedBy === reviewer.id}/${passFixed.body.method}`, "200/true/true/manual");
+    const proposerAccepts = await R(`/vision/review/events/${passFixed.body.id}/decision`, { decision: "accepted" });
+    check("the proposer accepting after someone else's correction: refused", `${proposerAccepts.status}/${proposerAccepts.body.error}`, "403/SelfAcceptanceRefused");
+    const correctorAccepts = await S(`/vision/review/events/${passFixed.body.id}/decision`, { decision: "accepted" });
+    check("the corrector accepting their own row: refused", `${correctorAccepts.status}/${correctorAccepts.body.error}`, "403/SelfAcceptanceRefused");
+    check("…and it is still undecided", (await reviewer.as(`/vision/review/events/${passFixed.body.id}`)).body.reviewState, "unreviewed");
+
+    /* The migration's backfill, on these two rows: with the column emptied it has to find the
+       first row of the chain and give its author to both. The same SQL the deploy runs. */
+    await prisma.visionEventCandidate.updateMany({ where: { id: { in: [pass.body.id, passFixed.body.id] } }, data: { proposedBy: null } });
+    const migration = readFileSync(resolve(__dirname, "../prisma/migrations/20261005130000_vision_event_proposed_by/migration.sql"), "utf8");
+    await prisma.$executeRawUnsafe(migration.slice(migration.indexOf("WITH RECURSIVE")));
+    const backfilled = await prisma.visionEventCandidate.findMany({ where: { id: { in: [pass.body.id, passFixed.body.id] } }, select: { proposedBy: true } });
+    check("the migration's backfill names the first row's author on every row of the chain", backfilled.map((r) => r.proposedBy === reviewer.id).join(","), "true,true");
+    const stillRefused = await R(`/vision/review/events/${passFixed.body.id}/decision`, { decision: "accepted" });
+    check("…so the proposer is refused on rows from before the column too", stillRefused.body.error, "SelfAcceptanceRefused");
+
+    const thirdAccepts = await third.as(`/vision/review/events/${passFixed.body.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted" }) });
+    check("a person who wrote no part of it accepts", `${thirdAccepts.status}/${thirdAccepts.body.reviewState}/${thirdAccepts.body.reviewedBy === third.id}`, "201/accepted/true");
+
     // ── 3. Promotion ─────────────────────────────────────────────────────
     section("3. One door into the match record, and a replay is never a second goal");
 
@@ -297,6 +326,8 @@ async function main() {
     await S(`/vision/review/events/${replayed.body.id}/decision`, { decision: "accepted" });
     const replayPromote = await R(`/vision/review/events/${replayed.body.id}/promote`, {});
     check("an accepted goal candidate in the replay: refused", replayPromote.body.error, "NotInPlay");
+    const refusedLog = await prisma.visionAuditLog.findFirst({ where: { action: "event.promotion.refused", targetId: replayed.body.id }, select: { actorId: true, data: true } });
+    check("…and the refusal is in the audit log, by whom and why", `${refusedLog?.actorId === reviewer.id}/${(refusedLog?.data as { error?: string } | null)?.error}`, "true/NotInPlay");
 
     const goal = await R(`/vision/review/events`, { videoAssetId: fx.assetId, type: "goal_candidate", startMs: inMinute(20, 15), endMs: inMinute(20, 15), actorTrackId: track.id, actorMatchSquadPlayerId: starter.id });
     check("a goal candidate in play proposed", `${goal.status}/${goal.body.promotable}`, "201/true");

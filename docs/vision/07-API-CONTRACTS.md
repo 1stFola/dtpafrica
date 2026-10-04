@@ -565,6 +565,17 @@ The review screen draws from this; the per-track route stays. `GET /vision/overv
 `annotationOpen` by the contract's `OPEN_ANNOTATION_TASK_STATES`; it counted two states no
 task has and always answered 0.
 
+**Events and refusals** ([63-QA-FIX-13-LOW-FINDINGS.md](./63-QA-FIX-13-LOW-FINDINGS.md)).
+An event candidate carries `proposedBy`, the author of the first row in its correction
+chain. `POST /vision/review/events/:id/decision` refuses an acceptance with
+`403 SelfAcceptanceRefused` from the current row's author and from the first proposer; a
+rejection without a reason is `400 ReasonRequired` (it was 409). A correction is
+`method: "manual"` with no `modelVersionId`. A promotion refused as `NotInPlay` leaves the
+candidate as it was accepted and records `event.promotion.refused` in the audit log. In
+the events, promotions, benchmarks and models services an unknown id answers
+`404 { error: "NotFound", remediation }`, and `POST /vision/jobs` answers
+`400 ModelNotApplicable` or `400 ModelVersionUnknown` where it sent a bare message.
+
 **Performance** ([60-QA-FIX-10-PERFORMANCE.md](./60-QA-FIX-10-PERFORMANCE.md)).
 `GET /vision/review/:assetId/tracks` answers for the asset's latest track run unless `job`
 names another (`all`, or a job id), a page at a time (`limit`, default 2,000 and at most
