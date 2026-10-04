@@ -28,6 +28,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -196,6 +197,7 @@ const BALL_AT_10500 = { sourceTimeMs: 10_500, class: "ball", x: 0.5, y: 0.5, wid
 const PLAYER_AT_10540 = { sourceTimeMs: 10_540, class: "player", x: 0.7, y: 0.1, width: 0.06, height: 0.12 };
 
 async function main() {
+  assertDevDatabase({ api: API });
   const config = loadVisionConfig();
   const store: ObjectStore =
     config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
@@ -206,6 +208,10 @@ async function main() {
   console.log(`  run ${RUN}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx, store);
+    await prisma.$disconnect();
+  });
   try {
     fx = await seed();
 

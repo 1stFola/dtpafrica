@@ -44,7 +44,13 @@
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import {
+  GATE_COMPETITION_SLUGS,
+  GATE_EVENT_DETAILS,
+  GATE_MODEL_KEYS,
   GATE_PARTNER,
+  GATE_PLAYER_SLUGS,
+  GATE_USER_EMAILS,
+  GATE_WORKER_PROVIDER,
   REVIEWER_IDS,
   SCHEMA_VERSIONS,
   VERSION_LABELS,
@@ -129,10 +135,12 @@ async function purgeDatasetVersions(): Promise<Set<string>> {
 /**
  * A whole fixture from a run that never finished cleaning up.
  *
- * Assets go last of the things that point at them, because only some relations
- * cascade: variants, camera segments, active-learning items and annotation tasks do,
- * while jobs, upload sessions and deletion requests do not, and dataset membership is
- * `Restrict` on purpose.
+ * Assets go last of the things that point at them. Most relations cascade (variants,
+ * camera segments, tracks, jobs, annotation tasks); upload sessions and deletion
+ * requests are set null and would be left pointing at nothing, and dataset membership
+ * is `Restrict` on purpose. Each partner's fixture goes in one transaction: a purge
+ * that died halfway used to leave a partner with no assets, which the next run then
+ * could not tell from a real one being set up.
  */
 async function purgeFixtures(): Promise<Set<string>> {
   console.log("\nFixtures from runs that never finished");
@@ -190,24 +198,19 @@ async function purgeFixtures(): Promise<Set<string>> {
 
     if (!APPLY) continue;
 
-    // The relations that do not cascade, before the assets they point at.
-    await prisma.visionJobEvent.deleteMany({ where: { job: { videoAssetId: { in: ids } } } });
-    await prisma.visionJobCost.deleteMany({ where: { job: { videoAssetId: { in: ids } } } });
-    await prisma.visionJob.deleteMany({ where: { videoAssetId: { in: ids } } });
-    await prisma.visionUploadSession.deleteMany({ where: { videoAssetId: { in: ids } } });
-    await prisma.visionDeletionRequest.deleteMany({ where: { videoAssetId: { in: ids } } });
-    await prisma.visionAuditLog.deleteMany({
-      where: { targetKind: "vision_video_asset", targetId: { in: ids } },
-    });
-
-    const assetsGone = await prisma.visionVideoAsset.deleteMany({ where: { id: { in: ids } } });
-    const scopes = await prisma.visionRightsScope.deleteMany({
-      where: { partnerId: partner.id },
-    });
-    const records = await prisma.visionSourceVideoRecord.deleteMany({
-      where: { partnerId: partner.id },
-    });
-    await prisma.visionSourcePartner.delete({ where: { id: partner.id } });
+    // All of one fixture or none of it.
+    const [, , , , , , assetsGone, scopes, records] = await prisma.$transaction([
+      prisma.visionJobEvent.deleteMany({ where: { job: { videoAssetId: { in: ids } } } }),
+      prisma.visionJobCost.deleteMany({ where: { job: { videoAssetId: { in: ids } } } }),
+      prisma.visionJob.deleteMany({ where: { videoAssetId: { in: ids } } }),
+      prisma.visionUploadSession.deleteMany({ where: { videoAssetId: { in: ids } } }),
+      prisma.visionDeletionRequest.deleteMany({ where: { videoAssetId: { in: ids } } }),
+      prisma.visionAuditLog.deleteMany({ where: { targetKind: "vision_video_asset", targetId: { in: ids } } }),
+      prisma.visionVideoAsset.deleteMany({ where: { id: { in: ids } } }),
+      prisma.visionRightsScope.deleteMany({ where: { partnerId: partner.id } }),
+      prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: partner.id } }),
+      prisma.visionSourcePartner.deleteMany({ where: { id: partner.id } }),
+    ]);
     deleted += assetsGone.count + scopes.count + records.count + 1;
     console.log(
       `      deleted ${assetsGone.count} asset(s), ${records.count} record(s), ${scopes.count} scope(s) and the partner`
@@ -331,6 +334,119 @@ async function purgeLabelSchemas(doomedVersions: Set<string>, doomedAssets: Set<
   deleted += done.count;
 }
 
+/** Rows of one model whose name a gate generated, fetched by prefix and held against the pattern. */
+async function gateNamed<T>(patterns: Parameters<typeof prefixesOf>[0], fetch: (prefix: string) => Promise<T[]>, nameOf: (row: T) => string | null, idOf: (row: T) => string): Promise<{ matched: T[]; others: T[] }> {
+  const seen = new Set<string>();
+  const rows: T[] = [];
+  for (const prefix of prefixesOf(patterns)) for (const row of await fetch(prefix)) if (!seen.has(idOf(row)) && seen.add(idOf(row))) rows.push(row);
+  const matched = rows.filter((r) => isGateName(nameOf(r), patterns));
+  return { matched, others: rows.filter((r) => !matched.includes(r)) };
+}
+
+/** The admin accounts a gate signs in as. An interrupted gate left them active, with every competition. */
+async function purgePeople() {
+  console.log("\nGate sign-ins");
+  console.log("-------------");
+  const { matched, others } = await gateNamed(
+    GATE_USER_EMAILS,
+    (prefix) => prisma.adminUser.findMany({ where: { email: { startsWith: prefix } }, select: { id: true, email: true, isActive: true } }),
+    (u) => u.email,
+    (u) => u.id
+  );
+  keep("accounts sharing the gate prefix", others.map((u) => u.email), "the address is not a gate's");
+  report("gate accounts", matched.map((u) => `${u.email}${u.isActive ? "  ACTIVE" : ""}`));
+  if (!APPLY || !matched.length) return;
+  const ids = matched.map((u) => u.id);
+  const [, gone] = await prisma.$transaction([prisma.visionAuditLog.deleteMany({ where: { actorId: { in: ids } } }), prisma.adminUser.deleteMany({ where: { id: { in: ids } } })]);
+  deleted += gone.count;
+}
+
+/** Models a gate registered. Their versions, benchmark runs and promotion requests go with them. */
+async function purgeModels() {
+  console.log("\nGate models");
+  console.log("-----------");
+  const { matched, others } = await gateNamed(
+    GATE_MODEL_KEYS,
+    (prefix) => prisma.visionModel.findMany({ where: { key: { startsWith: prefix } }, select: { id: true, key: true, versions: { select: { id: true, stage: true } } } }),
+    (m) => m.key,
+    (m) => m.id
+  );
+  keep("models sharing a gate prefix", others.map((m) => m.key), "the key does not end in a gate run id");
+  report("gate models", matched.map((m) => `${m.key}  (${m.versions.length} version(s)${m.versions.some((v) => v.stage === "production") ? ", one IN PRODUCTION" : ""})`));
+  if (!APPLY || !matched.length) return;
+  const ids = matched.map((m) => m.id);
+  const versionIds = matched.flatMap((m) => m.versions.map((v) => v.id));
+  const [, , , gone] = await prisma.$transaction([
+    prisma.visionBenchmarkRun.deleteMany({ where: { modelVersionId: { in: versionIds } } }),
+    prisma.visionAuditLog.deleteMany({ where: { targetId: { in: [...ids, ...versionIds] } } }),
+    prisma.visionModelVersion.deleteMany({ where: { id: { in: versionIds } } }),
+    prisma.visionModel.deleteMany({ where: { id: { in: ids } } }),
+  ]);
+  deleted += gone.count;
+}
+
+/** Workers of the mock provider that hold no job. No machine stands behind one. */
+async function purgeWorkers() {
+  console.log("\nGate workers");
+  console.log("------------");
+  const workers = await prisma.visionWorker.findMany({ where: { providerId: GATE_WORKER_PROVIDER }, select: { id: true, resourceClass: true, retiredAt: true } });
+  const busy = new Set((await prisma.visionJob.findMany({ where: { workerId: { in: workers.map((w) => w.id) }, state: { in: ["claimed", "running"] } }, select: { workerId: true } })).map((j) => j.workerId));
+  keep(`${GATE_WORKER_PROVIDER}-provider workers`, workers.filter((w) => busy.has(w.id)).map((w) => w.id), "they hold a job");
+  const idle = workers.filter((w) => !busy.has(w.id));
+  report(`${GATE_WORKER_PROVIDER}-provider workers holding no job`, idle.map((w) => `${w.id}  ${w.resourceClass}${w.retiredAt ? "  retired" : ""}`));
+  if (!APPLY || !idle.length) return;
+  deleted += (await prisma.visionWorker.deleteMany({ where: { id: { in: idle.map((w) => w.id) } } })).count;
+}
+
+/**
+ * What an earlier gate run wrote into a match somebody recorded. The row goes; the
+ * score it may have moved does not come back by itself, so the matches are named.
+ */
+async function purgeMatchEvents() {
+  console.log("\nGate rows in real matches");
+  console.log("-------------------------");
+  const { matched } = await gateNamed(
+    GATE_EVENT_DETAILS,
+    (prefix) => prisma.sbMatchEvent.findMany({ where: { detail: { startsWith: prefix }, match: { NOT: { slug: { startsWith: "gate-" } } } }, select: { id: true, detail: true, type: true, minute: true, matchId: true } }),
+    (e) => e.detail,
+    (e) => e.id
+  );
+  report("match events a gate wrote", matched.map((e) => `${e.type} at ${e.minute}'  ${e.detail}  match ${e.matchId}`));
+  if (matched.length) console.log(`      Check the score of: ${[...new Set(matched.map((e) => e.matchId))].join(", ")}. A goal created by promotion moved it.`);
+  if (!APPLY || !matched.length) return;
+  deleted += (await prisma.sbMatchEvent.deleteMany({ where: { id: { in: matched.map((e) => e.id) } } })).count;
+}
+
+/** A gate's own competition, with its teams, matches, squads and events, and its players. */
+async function purgeGateMatches() {
+  console.log("\nGate matches");
+  console.log("------------");
+  const competitions = await gateNamed(
+    GATE_COMPETITION_SLUGS,
+    (prefix) => prisma.sbCompetition.findMany({ where: { slug: { startsWith: prefix } }, select: { id: true, slug: true, name: true, _count: { select: { matches: true } } } }),
+    (c) => c.slug,
+    (c) => c.id
+  );
+  /* The slug and the name both, as with partners: a slug alone is a short thing to trust. */
+  const ours = competitions.matched.filter((c) => c.name === `Vision ${c.slug.replace("-", " ")}`);
+  keep("competitions sharing the gate prefix", [...competitions.others, ...competitions.matched.filter((c) => !ours.includes(c))].map((c) => `${c.slug}  "${c.name}"`), "the slug or the name is not a gate's");
+  report("gate competitions", ours.map((c) => `${c.slug}  (${c._count.matches} match(es))`));
+  const players = await gateNamed(
+    GATE_PLAYER_SLUGS,
+    (prefix) => prisma.player.findMany({ where: { slug: { startsWith: prefix }, firstName: "Gate" }, select: { id: true, slug: true } }),
+    (p) => p.slug,
+    (p) => p.id
+  );
+  report("gate players", players.matched.map((p) => p.slug));
+  if (!APPLY) return;
+  if (ours.length) {
+    const ids = ours.map((c) => c.id);
+    const [, gone] = await prisma.$transaction([prisma.sbMatch.deleteMany({ where: { competitionId: { in: ids } } }), prisma.sbCompetition.deleteMany({ where: { id: { in: ids } } })]);
+    deleted += gone.count;
+  }
+  if (players.matched.length) deleted += (await prisma.player.deleteMany({ where: { id: { in: players.matched.map((p) => p.id) } } })).count;
+}
+
 async function main() {
   console.log(
     `Vision gate litter — ${APPLY ? "APPLYING" : "dry run, pass --apply to delete"}\n` +
@@ -346,6 +462,13 @@ async function main() {
   const doomedAssets = await purgeFixtures();
   await purgeReviews();
   await purgeLabelSchemas(doomedVersions, doomedAssets);
+  /* What a gate creates outside its partner: the people it signs in as, the models it
+     registers, the workers it provisions, and what it wrote into a match. */
+  await purgeModels();
+  await purgeWorkers();
+  await purgeMatchEvents();
+  await purgeGateMatches();
+  await purgePeople();
 
   console.log("\n" + "-".repeat(60));
   if (APPLY) {

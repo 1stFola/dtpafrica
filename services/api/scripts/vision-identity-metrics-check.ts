@@ -26,6 +26,7 @@ import * as bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -83,19 +84,21 @@ async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ i
   return { id: user.id, token: String(login.body.token) };
 }
 
+/* The gate's own match: a competition, two teams, squads of real `Player` rows, 45-minute
+   halves and no events. It used to pick a match somebody had recorded and write into it
+   (docs/vision/50, appendix E). Held here, not on the fixture, so it is removed even when
+   the run fails before the fixture exists. */
+let gateMatch: GateMatch | null = null;
 async function matchWithSquads() {
-  const matches = await prisma.sbMatch.findMany({
-    where: { squadPlayers: { some: { playerId: { not: null } } } },
-    select: { id: true, homeTeamId: true, awayTeamId: true, squadPlayers: { select: { id: true, teamId: true, playerId: true } } },
-    take: 50,
-  });
-  const match = matches.find((m) => m.squadPlayers.filter((s) => s.teamId === m.homeTeamId && s.playerId).length >= 3 && m.squadPlayers.filter((s) => s.teamId === m.awayTeamId && s.playerId).length >= 2);
-  if (!match) throw new Error("No ScoreBoard match with enough squad players on both teams; seed one first");
-  return match;
+  gateMatch = await createGateMatch(prisma, RUN);
+  return gateMatch;
 }
 
 async function cleanup(fx: Fixture | null) {
-  if (!fx) return;
+  if (!fx) {
+    await removeGateMatch(prisma, gateMatch);
+    return;
+  }
   await prisma.visionBenchmarkRun.deleteMany({ where: { modelVersion: { modelId: { in: fx.modelIds } } } });
   if (fx.datasetId) {
     await prisma.visionDatasetMember.deleteMany({ where: { datasetVersionId: fx.datasetId } });
@@ -108,14 +111,20 @@ async function cleanup(fx: Fixture | null) {
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
+  await removeGateMatch(prisma, gateMatch);
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   console.log("Vision identity metrics — team accuracy and unknown precision, by hand");
   console.log(`  api ${API}`);
   console.log(`  run ${RUN}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx);
+    await prisma.$disconnect();
+  });
   try {
     const match = await matchWithSquads();
     const home = match.squadPlayers.filter((s) => s.teamId === match.homeTeamId && s.playerId);

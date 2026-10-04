@@ -20,6 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -165,10 +166,15 @@ async function cleanup(fx: Fixture | null) {
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   console.log("Vision annotation — corrections, review and the claim race");
   console.log(`  api ${API}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx);
+    await prisma.$disconnect();
+  });
   try {
     fx = await seed();
     const a = fx.assetIds;
@@ -321,7 +327,8 @@ async function main() {
     const first = await api(`/vision/annotation/tasks/${claimedId}/submit`, {
       method: "POST",
       body: JSON.stringify({
-        payload: { attempt: 1, boxes: [{ x: 1, y: 2 }] },
+        // Real boxes inside the task's window (60s-120s): a submission's boxes are validated.
+        payload: { attempt: 1, boxes: [{ sourceTimeMs: 60_000, class: "player", x: 0.1, y: 0.2, width: 0.05, height: 0.1 }] },
         effortMinutes: 12,
         annotatorId: annotator,
       }),
@@ -333,7 +340,7 @@ async function main() {
     const second = await api(`/vision/annotation/tasks/${claimedId}/submit`, {
       method: "POST",
       body: JSON.stringify({
-        payload: { attempt: 2, boxes: [{ x: 3, y: 4 }] },
+        payload: { attempt: 2, boxes: [{ sourceTimeMs: 61_000, class: "player", x: 0.3, y: 0.4, width: 0.05, height: 0.1 }] },
         effortMinutes: 7,
         annotatorId: annotator,
       }),

@@ -27,6 +27,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -107,9 +108,13 @@ type Fixture = {
   workerIds: string[];
 };
 
+/* The gate's own match, for its assets to belong to. It took whichever match came first,
+   so it could not run on an empty database. */
+let gateMatch: GateMatch | null = null;
+
 async function seed(): Promise<Fixture> {
-  const sbMatch = await prisma.sbMatch.findFirst({ select: { id: true } });
-  if (!sbMatch) throw new Error("No SbMatch in the database to link an asset to");
+  gateMatch = await createGateMatch(prisma, RUN);
+  const sbMatch = gateMatch;
 
   const partner = await prisma.visionSourcePartner.create({
     data: { name: `Model registry gate ${RUN}`, contactEmail: "gate@example.test" },
@@ -209,7 +214,10 @@ async function frozenDataset(label: string, members: { videoAssetId: string; spl
 }
 
 async function cleanup(fx: Fixture | null) {
-  if (!fx) return;
+  if (!fx) {
+    await removeGateMatch(prisma, gateMatch);
+    return;
+  }
   const ids = Object.values(fx.assetIds);
   // Jobs cascade with their asset; model versions are SetNull on the job side.
   await prisma.visionDatasetMember.deleteMany({ where: { videoAssetId: { in: ids } } });
@@ -227,14 +235,20 @@ async function cleanup(fx: Fixture | null) {
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
+  await removeGateMatch(prisma, gateMatch);
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   console.log("Vision model registry — lineage, dispatch and provenance");
   console.log(`  api ${API}`);
   console.log(`  run ${RUN}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx);
+    await prisma.$disconnect();
+  });
   try {
     fx = await seed();
     const a = fx.assetIds;

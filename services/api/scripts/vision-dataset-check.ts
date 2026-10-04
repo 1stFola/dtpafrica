@@ -35,6 +35,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -231,6 +232,7 @@ async function cleanup(fx: Fixture | null, store: ObjectStore, wrote: string[]) 
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   const config = loadVisionConfig();
   const store: ObjectStore =
     config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
@@ -240,6 +242,10 @@ async function main() {
   console.log(`  object store ${store.backendId}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx, store, wrote);
+    await prisma.$disconnect();
+  });
   /** Objects this script wrote directly, so cleanup can take them back out. */
   const wrote: string[] = [];
   try {

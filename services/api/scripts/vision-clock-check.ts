@@ -25,6 +25,7 @@ import * as bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -79,23 +80,21 @@ async function person(fx: Fixture, roleSlug: string, label: string): Promise<{ i
   return { id: user.id, token: String(login.body.token) };
 }
 
+/* The gate's own match: a competition, two teams, squads of real `Player` rows, 45-minute
+   halves and no events. It used to pick a match somebody had recorded and write into it
+   (docs/vision/50, appendix E). Held here, not on the fixture, so it is removed even when
+   the run fails before the fixture exists. */
+let gateMatch: GateMatch | null = null;
 async function matchWithSquads() {
-  // A match with no substitutions of its own, so the one this gate writes is the only change.
-  const matches = await prisma.sbMatch.findMany({
-    where: { squadPlayers: { some: { playerId: { not: null } } }, events: { none: { type: "substitution" } } },
-    select: { id: true, homeTeamId: true, awayTeamId: true, squadPlayers: { select: { id: true, teamId: true, playerId: true, playerName: true, jerseyNumber: true, isStarter: true } } },
-    take: 50,
-  });
-  const match = matches.find((m) => {
-    const home = m.squadPlayers.filter((s) => s.teamId === m.homeTeamId && s.playerId && s.jerseyNumber !== null);
-    return home.filter((s) => s.isStarter).length >= 2 && home.filter((s) => !s.isStarter).length >= 1;
-  });
-  if (!match) throw new Error("No ScoreBoard match without substitutions that has a home starter and a home substitute carrying jersey numbers; seed one first");
-  return match;
+  gateMatch = await createGateMatch(prisma, RUN);
+  return gateMatch;
 }
 
 async function cleanup(fx: Fixture | null) {
-  if (!fx) return;
+  if (!fx) {
+    await removeGateMatch(prisma, gateMatch);
+    return;
+  }
   await prisma.sbMatchEvent.deleteMany({ where: { id: { in: fx.eventIds } } });
   await prisma.visionVideoAsset.deleteMany({ where: { id: fx.assetId } });
   await prisma.visionAuditLog.deleteMany({ where: { OR: [{ actorId: { in: fx.userIds } }, { targetId: { in: [...fx.jobIds, fx.assetId] } }] } });
@@ -103,6 +102,7 @@ async function cleanup(fx: Fixture | null) {
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
+  await removeGateMatch(prisma, gateMatch);
 }
 
 /* Kick-off nine seconds into the file; the first half ends at 45:00; the second kicks off at 50:00 of file time. */
@@ -113,11 +113,16 @@ const minute1 = (m: number) => KICKOFF_1 + m * 60_000;
 const minute2 = (m: number) => KICKOFF_2 + (m - 45) * 60_000;
 
 async function main() {
+  assertDevDatabase({ api: API });
   console.log("Vision clock — the match clock anchored to the footage");
   console.log(`  api ${API}`);
   console.log(`  run ${RUN}`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx);
+    await prisma.$disconnect();
+  });
   try {
     const match = await matchWithSquads();
     const home = match.squadPlayers.filter((s) => s.teamId === match.homeTeamId && s.playerId && s.jerseyNumber !== null);

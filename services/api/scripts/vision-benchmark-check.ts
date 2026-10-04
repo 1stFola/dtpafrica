@@ -33,6 +33,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -221,6 +222,7 @@ async function cleanup(fx: Fixture | null, store: ObjectStore) {
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   const config = loadVisionConfig();
   const store: ObjectStore = config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
 
@@ -232,6 +234,10 @@ async function main() {
   if (!existsSync(PYTHON)) throw new Error(`No worker Python at ${PYTHON}; set VISION_WORKER_PYTHON`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx, store);
+    await prisma.$disconnect();
+  });
   try {
     fx = await seed();
 
@@ -311,7 +317,7 @@ async function main() {
       version: "0.1", gitCommit: "3eeec6e0", configKey: "c", workerImage: "i", licenceNote: "Gate fixture: nothing shipped.",
     });
     const notDetector = await post(`/vision/models/versions/${trackerVersion.body.id}/benchmark`, { datasetVersionId: goldId });
-    check("a tracker cannot be benchmarked as a detector", notDetector.body.error, "ModelTaskUnsupported");
+    check("a tracker with no track run on the gold footage has nothing to be scored on", notDetector.body.error, "TracksMissing");
 
     // A succeeded detect job by this version, with its artifact really in the store.
     const detectJobId = randomUUID();
@@ -354,7 +360,7 @@ async function main() {
     const params = claimed.body.job?.inputs?.params ?? {};
     const goldKey = visionKeys.datasetExport(goldId, "samples.json").key;
     check("the job names the gold export", params.goldLabelsKey, goldKey);
-    check("…and the one detect artifact", params.detections?.[0]?.key, detectKey);
+    check("…and the one detect artifact, as a detector's predictions", `${params.task}/${params.predictions?.length}/${params.predictions?.[0]?.key}`, `detect/1/${detectKey}`);
     check("…and declares exactly those two keys", claimed.body.job?.inputs?.readKeys?.length, 2);
 
     const allowed = await worker.inputUrl(jobId, { role: "declared", key: goldKey });

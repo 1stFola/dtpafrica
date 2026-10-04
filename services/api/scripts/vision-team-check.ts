@@ -35,6 +35,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -205,6 +206,7 @@ async function cleanup(fx: Fixture | null, store: ObjectStore) {
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   const config = loadVisionConfig();
   const store: ObjectStore = config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
 
@@ -215,6 +217,10 @@ async function main() {
   if (!existsSync(PYTHON)) throw new Error(`No worker Python at ${PYTHON}; set VISION_WORKER_PYTHON`);
 
   let fx: Fixture | null = null;
+  onInterrupt(async () => {
+    await cleanup(fx, store);
+    await prisma.$disconnect();
+  });
   try {
     fx = await seed();
     const figs = figures();
@@ -346,7 +352,9 @@ async function main() {
     check("a red track's assignment names its kit", onTrack.get(1)?.kitDescription, "red");
     check("a blue track's names the other", onTrack.get(5)?.kitDescription, "blue");
     check("…on different sides", onTrack.get(1)?.team !== onTrack.get(5)?.team && !!onTrack.get(1)?.team, true);
-    check("purple is unknown, with no kit named", `${onTrack.get(9)?.team}/${onTrack.get(9)?.kitDescription}`, "null/null");
+    const purple = onTrack.get(9);
+    check("purple is on no side", purple?.team, null);
+    check("…and carries the side it was nearest and that side's kit, for slicing", `${purple?.nearestTeam === "A" || purple?.nearestTeam === "B"}/${purple?.kitDescription === onTrack.get(purple?.nearestTeam === onTrack.get(1)?.team ? 1 : 5)?.kitDescription}`, "true/true");
     check("the goalkeeper's row says it was not clustered", onTrack.get(10)?.method, "not_clustered");
     check("every assignment names the identify version", [...onTrack.values()].every((a) => a?.identifyVersionId === identifyId), true);
     check("…and starts unreviewed", [...onTrack.values()].every((a) => a?.reviewState === "unreviewed"), true);

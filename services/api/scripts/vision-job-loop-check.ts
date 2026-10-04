@@ -21,6 +21,7 @@ import { WorkerTokenService } from "../src/vision/worker/worker-token.service";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, createGateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -45,6 +46,7 @@ function section(t: string) {
 }
 
 async function main() {
+  assertDevDatabase();
   console.log(`Vision job spine — end-to-end check (contract ${VISION_CONTRACT_VERSION})`);
 
   const config = loadVisionConfig();
@@ -67,8 +69,9 @@ async function main() {
 
         // ── Fixtures: a rights-cleared, match-linked asset ────────────────
         section("Setup");
-        const sbMatch = await tx.sbMatch.findFirst({ select: { id: true } });
-        if (!sbMatch) throw new Error("No SbMatch in the database to link an asset to");
+        /* A match of the gate's own, made inside this transaction and rolled back with it.
+           It took whichever match came first, so the gate could not run on an empty database. */
+        const sbMatch = await createGateMatch(tx as unknown as PrismaClient, randomUUID().slice(0, 8));
 
         const partner = await tx.visionSourcePartner.create({
           data: { name: `Job-loop check ${randomUUID().slice(0, 8)}` },

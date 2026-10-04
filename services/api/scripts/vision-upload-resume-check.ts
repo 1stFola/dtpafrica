@@ -18,6 +18,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
+import { assertDevDatabase, onInterrupt } from "./gate-harness";
 
 loadApiEnv();
 
@@ -59,6 +60,7 @@ async function api(path: string, init?: RequestInit) {
 }
 
 async function main() {
+  assertDevDatabase({ api: API });
   const config = loadVisionConfig();
   const store: ObjectStore =
     config.storage.backend === "r2" ? new R2ObjectStore(config.storage) : new InMemoryObjectStore();
@@ -71,6 +73,10 @@ async function main() {
   let sessionKey: string | null = null;
   let evidenceKey: string | null = null;
 
+  onInterrupt(async () => {
+    await tidy();
+    await prisma.$disconnect();
+  });
   try {
     // ── An authorised source with rights evidence ─────────────────────────
     section("Setup");
@@ -226,6 +232,11 @@ async function main() {
     check("completing twice is safe", again.state, "completed");
     check("and does not re-queue ingestion", again.jobsQueued.length, 0);
   } finally {
+    await tidy();
+  }
+
+  /** Everything this run created, taken out. Also what Ctrl-C runs. */
+  async function tidy() {
     section("Cleanup");
     if (evidenceKey) {
       await store.deleteProtected("master", evidenceKey, "upload interruption-test fixture evidence").catch(() => undefined);
