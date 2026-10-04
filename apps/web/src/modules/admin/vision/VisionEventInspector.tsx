@@ -38,6 +38,7 @@ export function VisionEventInspector({
   const [reason, setReason] = useState("");
   const [type, setType] = useState(candidate.type);
   const allowed = allowedActions(candidate, me, can);
+  /* Already the start of the frame being shown: the page snaps it. */
   const at = Math.round(sourceMs);
 
   return (
@@ -124,7 +125,7 @@ export function VisionEventInspector({
               Reject
             </button>
           </div>
-          <input type="text" placeholder="Why is it wrong? (needed to reject)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason for rejecting" />
+          <input type="text" data-reject-reason="event" placeholder="Why is it wrong? (needed to reject)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason for rejecting" />
         </div>
       )}
 

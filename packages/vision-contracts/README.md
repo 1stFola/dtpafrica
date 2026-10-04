@@ -78,3 +78,10 @@ check that an image built from this commit is at or past every stage's entry.
 
 `readRestrictions` (`rights.ts`) reads the restrictions on a grant before they are stored.
 It is a plain function, not a schema library; see "Why no Zod" above.
+
+## The match halves
+
+`MATCH_HALVES` (`clock.ts`) is the four halves and the minute each starts at: 0, 45, 90 and 105.
+The control plane reads the match clock with it and the review screens show the playhead's
+minute with it. The screens had their own copy of the numbers
+([59](../../docs/vision/59-QA-FIX-9-WORKSTATION.md)). No stage reads it, so it moved no version.

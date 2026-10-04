@@ -327,6 +327,15 @@ async function main() {
     check("a retried completion is recognised", retried.body.alreadyApplied, true);
     check("…and adds no rows", await prisma.visionTrack.count({ where: { inferenceJobId: jobId } }), 3);
 
+    /* The review screen's boxes: every track of the latest run in one answer (docs/vision/59). */
+    const boxes = await api(`/vision/review/${fx.assetId}/positions`);
+    check("every track's positions come in one answer", boxes.status, 200);
+    check("…for this track run, the only one", `${boxes.body.trackJobId === jobId}/${boxes.body.trackJobs}`, "true/1");
+    check("…keyed by the three rows", Object.keys(boxes.body.positions ?? {}).sort().join(","), (listed.body.tracks as { id: string }[]).map((t) => t.id).sort().join(","));
+    check("…the ball's fifty among them", boxes.body.positions?.[ballRow?.id]?.length, 50);
+    const noAsset = await api(`/vision/review/${randomUUID()}/positions`);
+    check("an asset that does not exist: not found", noAsset.status, 404);
+
     const filtered = await api(`/vision/assets/${fx.assetId}/tracks?class=ball`);
     check("rows filter by class", filtered.body.count, 1);
 

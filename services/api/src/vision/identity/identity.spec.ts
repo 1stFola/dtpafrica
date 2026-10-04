@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { InMemoryObjectStore } from "../storage/in-memory-object-store";
@@ -444,6 +444,32 @@ describe("what the screen plays and draws", () => {
   it("refuses an asset with no proxy rather than offering the master", async () => {
     mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, variants: [] });
     await expect(service.media(ASSET)).rejects.toMatchObject({ response: { error: "ProxyMissing" } });
+  });
+
+  it("reads every track of the latest run in one answer, from one read of the artifact, and leaves an earlier run out", async () => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET });
+    const old = { finishedAt: new Date("2026-10-01T10:00:00Z"), queuedAt: new Date("2026-10-01T09:00:00Z") };
+    const now = { finishedAt: new Date("2026-10-03T10:00:00Z"), queuedAt: new Date("2026-10-03T09:00:00Z") };
+    mockPrisma.visionTrack.findMany.mockResolvedValue([
+      { id: "old-1", localTrackId: 1, artifactKey: "inference/old/1/tracks.json", inferenceJobId: "job-old", inferenceJob: old },
+      { id: "new-1", localTrackId: 1, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new", inferenceJob: now },
+      { id: "new-2", localTrackId: 2, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new", inferenceJob: now },
+      { id: "new-9", localTrackId: 9, artifactKey: "inference/new/1/tracks.json", inferenceJobId: "job-new", inferenceJob: now },
+    ]);
+    await store.putSmallObject("derived", "inference/new/1/tracks.json", JSON.stringify({ tracks: [{ localTrackId: 1, positions: [{ frameIndex: 0 }] }, { localTrackId: 2, positions: [{ frameIndex: 0 }, { frameIndex: 1 }] }] }), "application/json");
+    const read = vi.spyOn(store, "getSmallObject");
+    const out = await service.positionsForAsset(ASSET);
+    expect(out).toMatchObject({ videoAssetId: ASSET, trackJobId: "job-new", trackJobs: 2 });
+    expect(Object.keys(out.positions).sort()).toEqual(["new-1", "new-2", "new-9"]);
+    expect(out.positions["new-2"]).toHaveLength(2);
+    // A row whose track is not in the artifact draws nothing; it is not an error.
+    expect(out.positions["new-9"]).toEqual([]);
+    expect(read).toHaveBeenCalledTimes(1);
+
+    mockPrisma.visionTrack.findMany.mockResolvedValue([]);
+    expect(await service.positionsForAsset(ASSET)).toEqual({ videoAssetId: ASSET, trackJobId: null, trackJobs: 0, positions: {} });
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue(null);
+    await expect(service.positionsForAsset(ASSET)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("reads one track's positions out of the artifact, through the control plane", async () => {

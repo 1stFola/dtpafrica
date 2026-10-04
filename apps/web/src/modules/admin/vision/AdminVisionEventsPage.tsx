@@ -11,7 +11,7 @@ import {
 } from "../../../api/vision";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
-import { EVENT_TYPES } from "./event-review";
+import { EVENT_TYPES, allowedActions } from "./event-review";
 import { useAdminVisionContext } from "./AdminVisionLayout";
 import { Field, Panel, Pill, formatDuration, short, toneOfState, useAction } from "./vision-ui";
 
@@ -175,21 +175,26 @@ export function AdminVisionEventsPage() {
                       </td>
                       <td className="vision-sub muted">{c.evidence.map((e) => e.kind).join(", ") || "—"}</td>
                       <td>
-                        {!c.supersededBy && !c.promotedEventId && (
+                        {(() => {
+                          /* One rule for what a candidate allows, shared with the workstation. This page had
+                             its own copy, which offered Promote on a candidate that is not in play. */
+                          const allowed = allowedActions(c, me, { review: canReview, publish: canPublish });
+                          const why = (reason[c.id] ?? "").trim();
+                          return (
                           <div className="vision-inline">
-                            {canReview && c.reviewState === "unreviewed" && c.decidedBy !== me && (
+                            {allowed.accept && (
                               <>
                                 <button type="button" disabled={busy} onClick={() => run(`${c.type} accepted.`, () => decideVisionEvent(c.id, "accepted"))}>
                                   Accept
                                 </button>
                                 <input value={reason[c.id] ?? ""} onChange={(e) => setReason({ ...reason, [c.id]: e.target.value })} placeholder="reason" aria-label="Rejection reason" />
-                                <button type="button" disabled={busy || (reason[c.id] ?? "").trim().length < 3} onClick={() => run(`${c.type} rejected.`, () => decideVisionEvent(c.id, "rejected", reason[c.id]))}>
+                                <button type="button" disabled={busy || why.length < 3} onClick={() => run(`${c.type} rejected.`, () => decideVisionEvent(c.id, "rejected", why))}>
                                   Reject
                                 </button>
                               </>
                             )}
-                            {canReview && c.reviewState === "unreviewed" && c.decidedBy === me && <span className="muted">yours: a second person decides</span>}
-                            {canPublish && c.reviewState === "accepted" && c.promotable && !c.promotionStale && (
+                            {allowed.yours && canReview && <span className="muted">yours: a second person decides</span>}
+                            {allowed.promote && (
                               <>
                                 <button type="button" disabled={busy} onClick={() => run(`${c.type} promoted.`, () => promoteVisionEvent(c.id))}>
                                   Promote
@@ -200,7 +205,8 @@ export function AdminVisionEventsPage() {
                               </>
                             )}
                           </div>
-                        )}
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}

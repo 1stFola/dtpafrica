@@ -1,5 +1,5 @@
 import { Controller, Get, Inject, UseGuards } from "@nestjs/common";
-import { BUCKET_IDS, VISION_CONTRACT_VERSION } from "@dtp/vision-contracts";
+import { BUCKET_IDS, OPEN_ANNOTATION_TASK_STATES, VISION_CONTRACT_VERSION } from "@dtp/vision-contracts";
 import { RequirePermissions } from "../admin/decorators/require-permissions.decorator";
 import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
 import { PermissionsGuard } from "../admin/guards/permissions.guard";
@@ -46,7 +46,8 @@ export class VisionStatusController {
       this.prisma.visionJob.count({ where: { state: { in: ["claimed", "running"] } } }),
       this.prisma.visionJob.count({ where: { state: "failed" } }),
       this.prisma.visionWorker.count({ where: { retiredAt: null, lastSeenAt: { gte: staleWorkerBefore } } }),
-      this.prisma.visionAnnotationTask.count({ where: { state: { in: ["open", "claimed"] } } }),
+      // The contract's open states. It counted `open` and `claimed`, which no task ever has, so the tile always read 0.
+      this.prisma.visionAnnotationTask.count({ where: { state: { in: [...OPEN_ANNOTATION_TASK_STATES] } } }),
       this.prisma.visionEventCandidate.count({ where: { supersededBy: null, reviewState: "unreviewed" } }),
       this.prisma.visionIdentityAssignment.count({ where: { supersededBy: null, reviewState: "unreviewed" } }),
       this.prisma.visionDatasetVersion.count(),

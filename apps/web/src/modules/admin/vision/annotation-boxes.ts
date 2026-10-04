@@ -224,3 +224,22 @@ export function countTracks(boxes: readonly AnnotationBox[]): number {
 export function toPayloadBoxes(boxes: readonly DraftBox[]): AnnotationBox[] {
   return boxes.map(({ id: _id, ...box }) => box);
 }
+
+/**
+ * A pointer position on the stage, as a position on the picture.
+ *
+ * The video is as wide as its column and no taller than 62% of the window, so on
+ * a wide window it is letterboxed: the picture sits in the middle of the element
+ * with a bar either side. A box is stored as fractions of the *picture*. Dragging
+ * was measured against the whole element, bars included, so on a wide window
+ * every stored x and width was wrong, and the benchmark scores models against
+ * those boxes (docs/vision/50 C6).
+ *
+ * `picture` is where the picture sits inside the stage (`pictureRect`). The
+ * result is in the picture's own pixels, with the picture's size, which is what
+ * `rectFromDrag` divides by; a point on a bar comes out negative or past the
+ * width, and `rectFromDrag` clamps it to the picture's edge.
+ */
+export function pointOnPicture(pointer: Point, picture: { x: number; y: number; width: number; height: number }): Point & Size {
+  return { x: pointer.x - picture.x, y: pointer.y - picture.y, width: picture.width, height: picture.height };
+}

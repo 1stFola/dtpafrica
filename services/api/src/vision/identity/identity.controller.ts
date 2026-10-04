@@ -38,6 +38,13 @@ export class VisionIdentityController {
     return jsonSafe(await this.identity.media(assetId));
   }
 
+  /** Every track's positions for the asset's latest track run, in one answer. */
+  @Get("review/:assetId/positions")
+  @RequirePermissions("vision.read")
+  async positionsForAsset(@Param("assetId") assetId: string) {
+    return jsonSafe(await this.identity.positionsForAsset(assetId));
+  }
+
   @Get("review/tracks/:trackId/positions")
   @RequirePermissions("vision.read")
   async positions(@Param("trackId") trackId: string) {

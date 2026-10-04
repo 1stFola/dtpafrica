@@ -50,6 +50,9 @@ export function VisionMinimap({ state, status, rows, tracksByLocalId, selectedId
           const track = tracksByLocalId.get(row.localTrackId);
           const selected = track ? track.id === selectedId : false;
           const team = track?.team?.team ?? null;
+          /* Side and class were the dot's colour and nothing else. */
+          const kind = row.class === "goalkeeper" ? "GK" : row.class === "referee" ? "ref" : row.class === "ball" ? "ball" : "";
+          const mark = [team, kind].filter(Boolean).join(" ");
           return (
             <g
               key={row.localTrackId}
@@ -70,7 +73,7 @@ export function VisionMinimap({ state, status, rows, tracksByLocalId, selectedId
               }}
             >
               <circle r={row.class === "ball" ? 0.8 : 1.3} />
-              <text y={-2} textAnchor="middle">{labelOf(track, row)}</text>
+              <text y={-2} textAnchor="middle">{row.class === "ball" ? "ball" : [mark, labelOf(track, row)].filter(Boolean).join(" ")}</text>
             </g>
           );
         })}

@@ -573,6 +573,11 @@ export type VisionTrackPosition = {
   confidence?: number;
 };
 
+/** Every track's positions for the asset's latest track run, by track id, in one request. */
+export function fetchVisionAssetPositions(assetId: string) {
+  return adminFetch<{ videoAssetId: string; trackJobId: string | null; trackJobs: number; positions: Record<string, VisionTrackPosition[]> }>(`/vision/review/${assetId}/positions`);
+}
+
 export function fetchVisionTrackPositions(trackId: string) {
   return adminFetch<{ trackId: string; localTrackId: number; key: string; trackerVersionId: string | null; positions: VisionTrackPosition[] }>(
     `/vision/review/tracks/${trackId}/positions`

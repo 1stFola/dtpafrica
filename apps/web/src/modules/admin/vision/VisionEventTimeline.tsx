@@ -4,9 +4,12 @@ import { timelineMarks } from "./event-review";
 /**
  * The timeline strip under the player: one mark per current candidate at its
  * place in the clip, the playhead over them, and a click that seeks to a
- * candidate and selects it. Colour follows review state, never alone: the
- * mark's title carries the words, and the inspector repeats them.
+ * candidate and selects it. Colour follows review state, never alone: each mark
+ * carries the state's letter, and the key under the strip says what the letters
+ * are. (It said "never alone" before and relied on a hover title, which a
+ * keyboard, a touch screen and a colour-blind reader do not get.)
  */
+const LETTER: Record<string, string> = { unreviewed: "U", accepted: "A", rejected: "R", promoted: "P" };
 export function VisionEventTimeline({
   candidates,
   offsetMs,
@@ -45,12 +48,15 @@ export function VisionEventTimeline({
             title={describe(m.candidate)}
             aria-label={describe(m.candidate)}
             onClick={() => onPick(m.candidate)}
-          />
+          >
+            {LETTER[m.candidate.promotedEventId ? "promoted" : m.candidate.reviewState] ?? "?"}
+          </button>
         ))}
         <div className="vision-timeline__playhead" style={{ left: `${clipMs > 0 ? Math.min(100, Math.max(0, (proxyMs / clipMs) * 100)) : 0}%` }} aria-hidden="true" />
       </div>
       <div className="vision-footnote">
-        {marks.length} candidate(s) on this clip · click a mark to go there · [ and ] previous and next · E proposes at the playhead
+        {marks.length} candidate(s) on this clip · U unreviewed · A accepted · R rejected · P in the match record · striped: not play · click a mark to go
+        there · [ and ] previous and next · E proposes at the playhead
       </div>
     </div>
   );

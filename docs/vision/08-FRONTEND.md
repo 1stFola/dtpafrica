@@ -168,9 +168,10 @@ stage, and a control that queues the next stage in order.
 | `R` | Reject current object |
 | `U` | **Mark unknown** |
 | `1`–`9` | Assign roster slot from the identity panel |
-| `M` | Merge selected tracks |
+| `M` | Open Merge for the selected track (the other tracks are ticked there) |
 | `S` | Split track at playhead |
-| `[` `]` | Set event start / end |
+| `[` `]` | Previous / next event candidate (the inspector sets an event's start and end) |
+| `E` | Propose an event at the playhead |
 | `?` | Shortcut help |
 
 `,` and `.` matter most: the reviewer's job is to walk the uncertainty queue, not to scrub a
@@ -181,8 +182,14 @@ As built ([49](./49-PHASE-6-INCREMENT-3.md)): on the identity workstation `,` an
 review queue for that footage — every current, unreviewed identity window and event candidate
 that is not the reviewer's own, by source time — selecting the track or the candidate and seeking
 to its start. `[` and `]` walk every current candidate ([48](./48-PHASE-6-INCREMENT-2.md)) and `E`
-proposes at the playhead; the identity panel's `1`–`9` assign a roster slot. Until a model proposes
-with a confidence, *unreviewed* is the only uncertainty the system knows.
+proposes at the playhead. Until a model proposes with a confidence, *unreviewed* is the only
+uncertainty the system knows.
+
+This section said the identity panel's `1`–`9` assigned a roster slot before they did. They do
+since [59](./59-QA-FIX-9-WORKSTATION.md), which built `U`, `1`–`9`, `A`, `R`, `M`, `S` and `?`:
+the map is `identity-shortcuts.ts`, a tested function, and the `?` panel prints from it. A key
+under Ctrl, Cmd or Alt is the browser's; a key that writes fires once per press; nothing fires
+while the reviewer is typing.
 
 ### Overlays
 
