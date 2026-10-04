@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * The web app's first tests.
@@ -12,6 +16,8 @@ import { defineConfig } from "vitest/config";
  * the React tree so it needs no DOM.
  */
 export default defineConfig({
+  // The same source alias the app is built with (vite.config.ts).
+  resolve: { alias: { "@dtp/vision-contracts": path.resolve(here, "../../packages/vision-contracts/src/index.ts") } },
   test: {
     globals: true,
     environment: "node",

@@ -143,3 +143,39 @@ def test_every_model_bound_job_type_the_contract_names_is_a_stage_here() -> None
     bound = set(re.findall(r'(\w+):\s*"[a-z]+"', block.group(1)))
     assert bound, "the contract binds no job type to a model"
     assert bound <= set(STAGES), f"bound to a model but not implemented here: {bound - set(STAGES)}"
+
+
+# ── which control plane this image serves (docs/vision/58) ──────────────────
+
+
+def test_this_image_serves_a_control_plane_of_its_major_at_or_after_its_own_version() -> None:
+    from dtp_vision_worker.config import contract_compatible
+
+    assert contract_compatible("1.12.0", "1.12.0")
+    # The control plane moved on and this image did not: it still serves, and the control
+    # plane does not hand it the stages that changed.
+    assert contract_compatible("1.13.0", "1.12.0")
+    assert contract_compatible("1.12.1", "1.12.0")
+    # As numbers: 1.9.0 is older than 1.12.0.
+    assert not contract_compatible("1.9.0", "1.12.0")
+    # A control plane behind this image has never heard of what it may send.
+    assert not contract_compatible("1.11.0", "1.12.0")
+    # Another major is another protocol.
+    assert not contract_compatible("2.0.0", "1.12.0")
+    assert not contract_compatible("0.12.0", "1.12.0")
+    for unreadable in (None, "", "latest", "1.12", "1.12.0-rc1", 1.12, "v1.12.0"):
+        assert not contract_compatible(unreadable, "1.12.0")
+    assert contract_compatible(CONTRACT_VERSION)
+
+
+def test_every_stage_in_the_compatibility_table_is_served_by_this_image() -> None:
+    """The table says which version each stage last changed in. An image built from this
+    commit must be at or past every entry, or the control plane would refuse it a stage."""
+    source = _read("jobs.ts")
+    block = re.search(r"STAGE_CONTRACT_SINCE[^=]*=\s*\{(.*?)\};", source, re.S)
+    assert block, "STAGE_CONTRACT_SINCE not found in jobs.ts"
+    entries = dict(re.findall(r'(\w+):\s*"(\d+\.\d+\.\d+)"', block.group(1)))
+    assert entries, "no entries read from STAGE_CONTRACT_SINCE"
+    mine = tuple(int(p) for p in CONTRACT_VERSION.split("."))
+    for stage, since in entries.items():
+        assert tuple(int(p) for p in since.split(".")) <= mine, f"{stage} changed in {since}; this image speaks {CONTRACT_VERSION}"

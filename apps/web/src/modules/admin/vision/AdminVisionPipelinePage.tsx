@@ -17,10 +17,11 @@ import {
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { useAdminVisionContext } from "./AdminVisionLayout";
-import { STAGES } from "./pipeline";
+import { VISION_JOB_STATES } from "@dtp/vision-contracts";
+import { STAGES, UNFINISHED_JOB_STATES } from "./pipeline";
 import { Field, Panel, Pill, Row, formatWhen, short, toneOfState, useAction } from "./vision-ui";
 
-const JOB_STATES = ["queued", "claimed", "running", "succeeded", "failed", "cancelled"];
+const JOB_STATES: readonly string[] = VISION_JOB_STATES;
 
 /**
  * The pipeline as a whole: every job with retry and cancel, the dispatcher's
@@ -255,7 +256,7 @@ export function AdminVisionPipelinePage() {
                             Retry
                           </button>
                         )}
-                        {canRun && ["queued", "claimed", "running"].includes(j.state) && (
+                        {canRun && UNFINISHED_JOB_STATES.includes(j.state) && (
                           <button type="button" disabled={busy} onClick={() => run(`Job ${short(j.id)} cancelled.`, () => cancelVisionJob(j.id, "cancelled from the pipeline page"))}>
                             Cancel
                           </button>

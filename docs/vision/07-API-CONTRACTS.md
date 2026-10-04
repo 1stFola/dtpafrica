@@ -523,3 +523,14 @@ distinctly:
 
 A rights denial always tells the operator what to do next. "Forbidden" with no reason produces a
 support ticket; this produces an action.
+
+**Contract parity** ([58-QA-FIX-8-CONTRACT-PARITY.md](./58-QA-FIX-8-CONTRACT-PARITY.md)).
+`POST /vision/worker/jobs/claim` no longer needs the worker's `contractVersion` to equal the
+control plane's. It refuses `400 Contract mismatch` for another major version, a worker newer
+than the control plane, a version it cannot read, or a worker behind every stage; otherwise
+it hands over only jobs of the stages that worker can serve (`STAGE_CONTRACT_SINCE`).
+`POST /vision/review/:assetId/camera-segments` takes `kind` from `CAMERA_SEGMENT_KINDS`
+(`live_play`, `replay`, `intro`, `halftime`, `camera_cut`, `unknown`). `DELETE` of a camera
+segment refuses `409 SegmentReferenced` while a current event candidate rests on it. Granting
+a rights scope refuses `400 RestrictionsInvalid` for a `deny` entry that is not a scope, and
+returns `restrictionsWarning` when the grant carries a flag the policy does not understand.

@@ -10,9 +10,11 @@
  * are mirrored so a reviewer is told before the round trip.
  */
 
+import { VISION_EVENT_TYPES } from "@dtp/vision-contracts";
 import type { VisionEventCandidate, VisionReviewTrack } from "../../../api/vision";
 
-export const EVENT_TYPES = ["pass", "carry", "shot", "cross", "header", "tackle", "interception", "recovery", "clearance", "throw_in", "corner", "free_kick", "save", "goal_candidate"] as const;
+/** The taxonomy's types, from the contract: the same list the API validates against. */
+export const EVENT_TYPES = VISION_EVENT_TYPES;
 
 export type TimelineMark = { candidate: VisionEventCandidate; left: number; width: number };
 

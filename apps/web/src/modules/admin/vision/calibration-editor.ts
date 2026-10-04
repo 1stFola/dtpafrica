@@ -8,6 +8,7 @@
  */
 
 import type { VisionCalibrationPoint, VisionCalibrationQuality, VisionCameraSegment, VisionOverlay, VisionPitchLandmark } from "../../../api/vision";
+import type { CameraSegmentKind } from "@dtp/vision-contracts";
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -97,6 +98,19 @@ export function segmentAt(segments: VisionCameraSegment[], sourceMs: number): Vi
   return segments.find((s) => s.startMs <= sourceMs && sourceMs <= s.endMs) ?? null;
 }
 
+/**
+ * A camera segment's kind, in words. Keyed by the contract's kinds, so a kind added
+ * there without words here does not compile.
+ */
+export const SEGMENT_KIND_WORDS: Record<CameraSegmentKind, string> = {
+  live_play: "live play",
+  replay: "replay",
+  intro: "intro",
+  halftime: "half-time",
+  camera_cut: "camera cut",
+  unknown: "unknown",
+};
+
 /** `good · 0.42 m over 6 landmarks`, or why not. */
 export function describeQuality(q: { quality: VisionCalibrationQuality; reprojectionErrorM: number; points: number }): string {
   return `${q.quality} · ${q.reprojectionErrorM.toFixed(2)} m over ${q.points} landmark(s)`;
@@ -119,7 +133,7 @@ export function fitReason(reason: string, detail?: string): string {
 
 /** A segment's label: `wide · 0:09–1:00 · good 0.42 m`, or `proposed`. */
 export function describeSegment(s: VisionCameraSegment, formatClock: (ms: number) => string): string {
-  const who = s.source === "scene_detect" ? "proposed" : s.kind;
+  const who = s.source === "scene_detect" ? "proposed" : ((SEGMENT_KIND_WORDS as Record<string, string>)[s.kind] ?? s.kind);
   const cal = s.calibration ? `${s.calibration.quality} ${s.calibration.reprojectionErrorM.toFixed(2)} m` : "not calibrated";
   return `${who} · ${formatClock(s.startMs)}–${formatClock(s.endMs)} · ${cal}`;
 }

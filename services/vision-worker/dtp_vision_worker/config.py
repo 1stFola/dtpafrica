@@ -92,3 +92,31 @@ def load_config(env: dict[str, str] | None = None) -> WorkerConfig:
     if problems:
         raise ConfigError("Invalid worker configuration:\n  - " + "\n  - ".join(problems))
     return config
+
+
+def _parse_version(version: object) -> tuple[int, int, int] | None:
+    if not isinstance(version, str):
+        return None
+    parts = version.split(".")
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        return None
+    return int(parts[0]), int(parts[1]), int(parts[2])
+
+
+def contract_compatible(control_version: object, worker_version: str = CONTRACT_VERSION) -> bool:
+    """Whether a control plane speaking `control_version` can be served by this image.
+
+    The worker's half of the rule in `packages/vision-contracts` (`workerCompatibility`,
+    docs/vision/58): the same major version, and the control plane no older than this
+    image. It used to be exact equality, which retired every image at every bump,
+    including the bumps that changed no stage.
+
+    A control plane *ahead* of this image is fine: it knows which stages have changed
+    since this image was built and does not hand them over. A control plane *behind* it
+    is not, because this image may send what that control plane has never heard of.
+    """
+    control = _parse_version(control_version)
+    worker = _parse_version(worker_version)
+    if control is None or worker is None:
+        return False
+    return control[0] == worker[0] and control >= worker

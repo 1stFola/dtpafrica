@@ -21,7 +21,7 @@ describe("the taxonomy", () => {
     expect(isPlay("replay")).toBe(false);
     expect(isPlay("intro")).toBe(false);
     expect(isPlay("halftime")).toBe(false);
-    expect(isPlay("wide")).toBe(true);
+    expect(isPlay("live_play")).toBe(true);
     expect(isPlay("unknown")).toBe(true);
     expect(isPlay(null)).toBe(true);
   });

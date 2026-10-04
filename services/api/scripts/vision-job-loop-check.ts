@@ -13,12 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
-import {
-  OUTPUT_BUCKET_BY_JOB_TYPE,
-  VISION_CONTRACT_VERSION,
-  isKeyUnderPrefix,
-  visionKeys,
-} from "@dtp/vision-contracts";
+import { OUTPUT_BUCKET_BY_JOB_TYPE, VISION_CONTRACT_VERSION, isKeyUnderPrefix, visionKeys, VISION_JOB_TYPES, type VisionJobType } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { PostgresJobQueue } from "../src/vision/jobs/postgres-job-queue";
@@ -172,7 +167,14 @@ async function main() {
 
         // ── Claim ─────────────────────────────────────────────────────────
         section("Claim");
-        const claimed = await queue.claim(minted.workerId, ["cpu_small"]);
+        // A worker whose contract version cannot serve this job's stage is not handed it (docs/vision/58).
+        const queuedType: VisionJobType = "transcode";
+        const otherTypes = VISION_JOB_TYPES.filter((t) => t !== queuedType);
+        const notServed = await queue.claim(minted.workerId, ["cpu_small"], otherTypes);
+        check("a worker that cannot serve the job's stage is not handed it", notServed?.id === jobId, false);
+        check("a worker that can serve no stage is handed nothing", await queue.claim(minted.workerId, ["cpu_small"], []), null);
+        // The job is still there for a worker that can serve it: the claim below gets it.
+        const claimed = await queue.claim(minted.workerId, ["cpu_small"], [queuedType]);
         check("worker claimed the job", claimed?.id, jobId);
         check("claim carried the output prefix", claimed?.outputPrefix, outputPrefix);
 

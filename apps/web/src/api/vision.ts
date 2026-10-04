@@ -1,4 +1,5 @@
 import { adminFetch } from "./admin";
+import type { CalibrationQuality } from "@dtp/vision-contracts";
 
 /**
  * Vision Engine API client.
@@ -640,7 +641,7 @@ export function rejectVisionIdentity(id: string, reason: string) {
 export type VisionPitchDimensions = { lengthM: number; widthM: number };
 export type VisionPitchLandmark = { id: string; name: string; xM: number; yM: number };
 export type VisionCalibrationPoint = { landmark: string; px: number; py: number; frameIndex?: number };
-export type VisionCalibrationQuality = "good" | "usable" | "failed";
+export type VisionCalibrationQuality = CalibrationQuality;
 export type VisionOverlay = { id: string; points: { px: number; py: number }[] }[];
 
 export type VisionCalibrationPreview =

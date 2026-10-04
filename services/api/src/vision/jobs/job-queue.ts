@@ -67,7 +67,12 @@ export interface JobQueue {
    * Never blocks: a long poll on a 2 vCPU box holding a database connection open
    * is a worse trade than a short sleep on the worker.
    */
-  claim(workerId: string, resourceClasses: VisionResourceClass[]): Promise<ClaimedJob | null>;
+  /**
+   * The next queued job of one of these resource classes, and, when `jobTypes` is
+   * given, of one of those types: the stages the claiming worker's contract version
+   * can serve. A job of another type stays queued for a worker that can.
+   */
+  claim(workerId: string, resourceClasses: VisionResourceClass[], jobTypes?: readonly VisionJobType[]): Promise<ClaimedJob | null>;
 
   heartbeat(jobId: string, workerId: string, progress?: Record<string, unknown>): Promise<void>;
 

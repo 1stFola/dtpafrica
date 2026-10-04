@@ -10,6 +10,7 @@ import {
   ACQUISITION_METHODS,
   RIGHTS_SCOPE_KEYS,
   SOURCE_QUALITY_PREFERENCE,
+  readRestrictions,
   visionKeys,
 } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
@@ -196,6 +197,13 @@ export class VisionSourcesService {
     },
     actor?: AdminAuthContext
   ) {
+    /* Restrictions are read before they are stored. A `deny` entry that is not a scope
+       would look like a restriction and restrict nothing, so it is refused here; a flag
+       the policy does not understand is stored, and the reply says it denies everything. */
+    const restrictions = readRestrictions(dto.restrictions);
+    if (!restrictions.ok) {
+      throw new BadRequestException({ statusCode: 400, error: "RestrictionsInvalid", message: restrictions.problem, remediation: "Use `deny` with scope names, and `note` for anything a person should read." });
+    }
     const targets = [dto.partnerId, dto.sourceVideoRecordId, dto.playerId].filter(Boolean);
     if (targets.length !== 1) {
       throw new BadRequestException(
@@ -243,11 +251,16 @@ export class VisionSourcesService {
         action: "rights.scope.granted",
         targetKind: "vision_rights_scope",
         targetId: scope.id,
-        data: { grantLevel, scopes: RIGHTS_SCOPE_KEYS.filter((k) => dto[k]) },
+        data: { grantLevel, scopes: RIGHTS_SCOPE_KEYS.filter((k) => dto[k]), ...(restrictions.unrecognised.length ? { unrecognisedRestrictions: restrictions.unrecognised } : {}) },
       },
       actor
     );
-    return scope;
+    return restrictions.unrecognised.length
+      ? {
+          ...scope,
+          restrictionsWarning: `The policy does not understand ${restrictions.unrecognised.map((k) => `"${k}"`).join(", ")}, so this grant denies every scope. Use \`deny\` to restrict a scope and \`note\` for text.`,
+        }
+      : scope;
   }
 
   /**

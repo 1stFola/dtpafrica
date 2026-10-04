@@ -20,6 +20,10 @@ export default defineConfig({
         "../../packages/engines/src/scoreboard/placeholder-names.ts"
       ),
       "@dtp/engines": path.resolve(__dirname, "../../packages/engines/src/media-url.ts"),
+      /* The Vision contracts, from source: constants and types with no imports of their own,
+         so the browser takes them as they are and nothing has to be built first. The screens
+         used to keep hand copies, and the copies drifted (docs/vision/58). */
+      "@dtp/vision-contracts": path.resolve(__dirname, "../../packages/vision-contracts/src/index.ts"),
     },
   },
   server: {

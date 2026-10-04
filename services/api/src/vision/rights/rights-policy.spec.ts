@@ -321,6 +321,9 @@ describe("restrictions", () => {
     [{ demo: "Publication limited to this fixture and this season." }],
     [{ deny: [], territory: "NG only" }],
     [{ note: { clause: 4 } }],
+    // A deny entry that is not a scope: somebody meant a restriction the code cannot read.
+    [{ deny: ["canPublish"] }],
+    [{ deny: ["canPublishHighlight", "everything"] }],
   ])("denies every scope on a flag it does not understand: %j", async (restrictions) => {
     mockPrisma.visionRightsScope.findMany.mockResolvedValue([scope({ canAnalyze: true, restrictions })]);
     expect((await makeService().canAnalyze({ videoAssetId: ASSET }, NOW)).allowed).toBe(false);

@@ -14,6 +14,7 @@
  */
 
 import { parquetReadObjects } from "hyparquet";
+import type { GAMESTATE_SUPPRESSION_REASONS } from "@dtp/vision-contracts";
 
 export type GameStateRow = {
   frameIndex: number;
@@ -207,13 +208,16 @@ export function onMinimap(xM: number, yM: number, dims: PitchDims = DEFAULT_PITC
 
 // ── Words ───────────────────────────────────────────────────────────────────
 
-export const REASON_WORDS: Record<string, string> = {
+/** Keyed by the contract's reasons, so a reason added there without words here does not compile. */
+const SUPPRESSION_WORDS: Record<(typeof GAMESTATE_SUPPRESSION_REASONS)[number], string> = {
   no_camera_segment: "no camera segment",
   segment_not_calibrated: "segment not calibrated",
   calibration_failed: "calibration failed",
   beyond_horizon: "beyond the horizon",
   off_pitch: "far off the pitch",
 };
+
+export const REASON_WORDS: Record<string, string> = SUPPRESSION_WORDS;
 
 /** `11 placed · 2 not placed: calibration failed`, or why nothing is. */
 export function describeFrame(rows: readonly GameStateRow[]): string {

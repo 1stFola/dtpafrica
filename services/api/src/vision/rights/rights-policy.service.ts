@@ -3,6 +3,8 @@ import {
   ACQUIRED_STATUS,
   RIGHTS_DENIAL_REMEDIATION,
   RIGHTS_GRANT_LEVEL_SPECIFICITY,
+  RIGHTS_SCOPE_KEYS,
+  UNDERSTOOD_RESTRICTION_KEYS,
   TRAINABLE_CORPUS,
   type RightsDecision,
   type RightsDenialReason,
@@ -305,7 +307,7 @@ function deny(reason: RightsDenialReason, detail: string): RightsDecision {
  * every object without a `deny` key was ignored, including this docstring's own
  * example. A key whose value says nothing (null, false, "", []) is not a restriction.
  */
-const UNDERSTOOD_RESTRICTION_KEYS = new Set(["deny", "note"]);
+const UNDERSTOOD = new Set<string>(UNDERSTOOD_RESTRICTION_KEYS);
 
 function says(value: unknown): boolean {
   if (value === null || value === undefined || value === false || value === "") return false;
@@ -320,12 +322,17 @@ function hasBlockingRestriction(restrictions: unknown, scope: RightsScopeKey): b
 
   const record = restrictions as Record<string, unknown>;
   for (const [key, value] of Object.entries(record)) {
-    if (!UNDERSTOOD_RESTRICTION_KEYS.has(key) && says(value)) return true;
+    if (!UNDERSTOOD.has(key) && says(value)) return true;
   }
   if (record.note !== undefined && typeof record.note !== "string") return true;
 
   const deny = record.deny;
   if (Array.isArray(deny)) {
+    /* An entry that is not a scope -- "canPublish" for canPublishHighlight -- is a
+       restriction somebody meant and the code cannot read. It used to restrict nothing.
+       New rows cannot carry one (`readRestrictions` refuses it at the door); a stored one
+       denies, like any other restriction the code does not understand. */
+    if (deny.some((entry) => !(RIGHTS_SCOPE_KEYS as readonly unknown[]).includes(entry))) return true;
     return deny.includes(scope);
   }
   if (deny !== undefined) return true;

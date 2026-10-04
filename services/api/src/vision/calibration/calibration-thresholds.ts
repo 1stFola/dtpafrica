@@ -32,7 +32,9 @@ export const CALIBRATION_THRESHOLDS: CalibrationThresholds = {
   maxPointErrorM: 5,
 };
 
-export type CalibrationQuality = "good" | "usable" | "failed";
+import type { CalibrationQuality } from "@dtp/vision-contracts";
+
+export type { CalibrationQuality };
 
 export function qualityOf(
   fit: { rmseM: number; maxErrorM: number; points: number; acrossHorizon?: number },

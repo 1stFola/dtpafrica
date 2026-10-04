@@ -1,19 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { VisionCameraSegment, VisionPitchLandmark } from "../../../api/vision";
-import {
-  clickToProxyPixel,
-  describeQuality,
-  describeSegment,
-  fitReason,
-  nextLandmark,
-  overlayPaths,
-  pictureRect,
-  placePoint,
-  removePoint,
-  segmentAt,
-  segmentFromMarks,
-  toFraction,
-} from "./calibration-editor";
+import { CAMERA_SEGMENT_KINDS } from "@dtp/vision-contracts";
+import { SEGMENT_KIND_WORDS, clickToProxyPixel, describeQuality, describeSegment, fitReason, nextLandmark, overlayPaths, pictureRect, placePoint, removePoint, segmentAt, segmentFromMarks, toFraction } from "./calibration-editor";
 
 const PROXY = { width: 1280, height: 720 };
 
@@ -81,7 +69,7 @@ describe("placing landmarks", () => {
 
 describe("segments and words", () => {
   const seg = (over: Partial<VisionCameraSegment> = {}): VisionCameraSegment => ({
-    id: "s1", kind: "wide", source: "manual", startMs: 9000, endMs: 60000, calibration: null, superseded: 0, ...over,
+    id: "s1", kind: "live_play", source: "manual", startMs: 9000, endMs: 60000, calibration: null, superseded: 0, ...over,
   });
   const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
 
@@ -95,7 +83,11 @@ describe("segments and words", () => {
 
   it("describes a fit and a segment in words a reviewer reads", () => {
     expect(describeQuality({ quality: "good", reprojectionErrorM: 0.4219, points: 6 })).toBe("good · 0.42 m over 6 landmark(s)");
-    expect(describeSegment(seg(), clock)).toBe("wide · 0:09–1:00 · not calibrated");
+    expect(describeSegment(seg(), clock)).toBe("live play · 0:09–1:00 · not calibrated");
+    // A row from before the kinds were the contract's keeps its own word until it is migrated.
+    expect(describeSegment({ ...seg(), kind: "wide" }, clock)).toBe("wide · 0:09–1:00 · not calibrated");
+    // Every kind the contract has, has words here.
+    expect(Object.keys(SEGMENT_KIND_WORDS).sort()).toEqual([...CAMERA_SEGMENT_KINDS].sort());
     expect(describeSegment(seg({ source: "scene_detect", kind: "unknown", calibration: { quality: "usable", reprojectionErrorM: 1.5 } as never }), clock)).toBe("proposed · 0:09–1:00 · usable 1.50 m");
     expect(fitReason("too_few_points")).toContain("four");
     expect(fitReason("degenerate")).toContain("line");

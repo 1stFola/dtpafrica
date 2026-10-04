@@ -15,6 +15,7 @@ import {
 import {
   OUTPUT_BUCKET_BY_JOB_TYPE,
   VISION_CONTRACT_VERSION,
+  workerCompatibility,
   isKeyUnderPrefix,
   type VisionJobSpec,
   type VisionJobType,
@@ -98,13 +99,25 @@ export class VisionWorkerController {
       );
     }
 
-    if (dto.contractVersion && dto.contractVersion !== VISION_CONTRACT_VERSION) {
-      throw new BadRequestException(
-        `Contract mismatch: worker speaks ${dto.contractVersion}, control plane speaks ${VISION_CONTRACT_VERSION}`
-      );
+    /* Which stages this worker may be handed (docs/vision/58). Same major, no newer than
+       this control plane, and per stage at or past the version that stage last changed in.
+       It used to be an exact match, which retired every older image at every bump. A worker
+       that names no version is served everything, as before. */
+    let stages: VisionJobType[] | undefined;
+    if (dto.contractVersion) {
+      const served = workerCompatibility(dto.contractVersion);
+      if (!served.compatible) {
+        throw new BadRequestException(`Contract mismatch: ${served.detail}. The control plane speaks ${VISION_CONTRACT_VERSION}.`);
+      }
+      if (!served.stages.length) {
+        throw new BadRequestException(
+          `Contract mismatch: every stage has changed since ${dto.contractVersion}. The control plane speaks ${VISION_CONTRACT_VERSION}; rebuild the worker image.`
+        );
+      }
+      stages = served.stages;
     }
 
-    const job = await this.queue.claim(auth.workerId, allowed);
+    const job = await this.queue.claim(auth.workerId, allowed, stages);
     if (!job) return { job: null };
 
     // Rights were checked at enqueue, and a grant can be withdrawn while the job waits.
