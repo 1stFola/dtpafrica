@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { CAMERA_SEGMENT_KINDS } from "@dtp/vision-contracts";
 import {
   anchorVisionClock,
   calibrateVisionSegment,
@@ -25,6 +26,7 @@ import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotatio
 import { HALF_NAMES, describeClock, nextHalfToAnchor } from "./match-clock";
 import { usePictureRect } from "./use-picture-rect";
 import {
+  SEGMENT_KIND_WORDS,
   clickToProxyPixel,
   describeQuality,
   describeSegment,
@@ -71,7 +73,7 @@ export function AdminVisionCalibrationPage() {
   const [playing, setPlaying] = useState(false);
   const [markStart, setMarkStart] = useState<number | null>(null);
   const [markEnd, setMarkEnd] = useState<number | null>(null);
-  const [kind, setKind] = useState("wide");
+  const [kind, setKind] = useState<string>(CAMERA_SEGMENT_KINDS[0]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -478,10 +480,12 @@ export function AdminVisionCalibrationPage() {
               <span className="vision-row__value">
                 {markStart === null ? "start —" : `start ${formatClock(markStart)}`} · {markEnd === null ? "end —" : `end ${formatClock(markEnd)}`} ·{" "}
                 <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Segment kind">
-                  <option value="wide">wide</option>
-                  <option value="close">close</option>
-                  <option value="replay">replay</option>
-                  <option value="other">other</option>
+                  {/* The contract's kinds: the ones the API accepts, and the ones the in-play rule reads. */}
+                  {CAMERA_SEGMENT_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {SEGMENT_KIND_WORDS[k]}
+                    </option>
+                  ))}
                 </select>
               </span>
             </div>

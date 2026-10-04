@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 import httpx
 
-from .config import CONTRACT_VERSION, WorkerConfig
+from .config import CONTRACT_VERSION, WorkerConfig, contract_compatible
 
 log = logging.getLogger(__name__)
 
@@ -78,9 +78,10 @@ class JobSpec:
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> JobSpec:
         version = payload.get("contractVersion")
-        if version != CONTRACT_VERSION:
+        if not contract_compatible(version):
             raise ContractMismatchError(
-                f"Control plane sent contract {version!r}; this image speaks {CONTRACT_VERSION!r}"
+                f"Control plane sent contract {version!r}; this image speaks {CONTRACT_VERSION!r} "
+                "and serves the same major version at or after its own"
             )
         budget = payload.get("budget") or {}
         return cls(
@@ -126,9 +127,10 @@ class ControlPlaneClient:
         body = res.json()
 
         version = body.get("contractVersion")
-        if version != CONTRACT_VERSION:
+        if not contract_compatible(version):
             raise ContractMismatchError(
-                f"Control plane speaks contract {version!r}; this image speaks {CONTRACT_VERSION!r}"
+                f"Control plane speaks contract {version!r}; this image speaks {CONTRACT_VERSION!r} "
+                "and serves the same major version at or after its own"
             )
 
         self._worker_token = body["workerToken"]

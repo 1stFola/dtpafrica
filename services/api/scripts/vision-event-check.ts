@@ -197,7 +197,7 @@ async function main() {
     // What the candidate will rest on: the half anchored, a wide segment and a replay, and who track 1 was said to be.
     const anchored = await R(`/vision/review/${fx.assetId}/clock`, { half: 1, sourceMs: KICKOFF_1, endMs: END_1 });
     check("the first half anchored", anchored.status, 201);
-    const wide = await R(`/vision/review/${fx.assetId}/camera-segments`, { startMs: KICKOFF_1, endMs: minute1(29), kind: "wide" });
+    const wide = await R(`/vision/review/${fx.assetId}/camera-segments`, { startMs: KICKOFF_1, endMs: minute1(29), kind: "live_play" });
     const replay = await R(`/vision/review/${fx.assetId}/camera-segments`, { startMs: minute1(30), endMs: minute1(31), kind: "replay" });
     check("a wide segment and a replay declared", `${wide.status}/${replay.status}`, "201/201");
     const identity = await prisma.visionIdentityAssignment.create({

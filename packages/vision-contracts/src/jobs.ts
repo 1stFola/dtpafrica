@@ -77,6 +77,79 @@ import type { BoundingBox, DetectionClass } from "./prediction";
  */
 export const VISION_CONTRACT_VERSION = "1.12.0";
 
+/**
+ * Which worker may serve which stage (docs/vision/58).
+ *
+ * The version used to have to match exactly. Every bump, including the ones that
+ * changed no stage, made every worker image built before it unusable until it
+ * was rebuilt -- 1.10.0 and 1.11.0 did that to the GPU image for nothing.
+ *
+ * The rule now: same major version, the worker no newer than the control plane,
+ * and per stage the worker at or past the version in which that stage's inputs
+ * or outputs last changed. A bump that touches no stage leaves every worker
+ * serving what it served. A bump that changes a stage moves that stage's entry
+ * here, and an older worker goes on serving the others.
+ *
+ * Every entry starts at 1.12.0, the version this rule arrived in: under exact
+ * matching no older worker was being served anyway.
+ */
+export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
+  probe: "1.12.0",
+  fingerprint: "1.12.0",
+  transcode: "1.12.0",
+  cuts: "1.12.0",
+  detect: "1.12.0",
+  track: "1.12.0",
+  identify: "1.12.0",
+  calibrate: "1.12.0",
+  gamestate: "1.12.0",
+  events: "1.12.0",
+  clip: "1.12.0",
+  vlm: "1.12.0",
+  train: "1.12.0",
+  benchmark: "1.12.0",
+};
+
+/** `1.12.0` as numbers, or null when it is not three of them. */
+export function parseContractVersion(version: unknown): [number, number, number] | null {
+  if (typeof version !== "string") return null;
+  const m = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** Negative when `a` is older than `b`, zero when the same, positive when newer. */
+export function compareContractVersions(a: [number, number, number], b: [number, number, number]): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+
+export type WorkerCompatibility =
+  | { compatible: true; stages: VisionJobType[] }
+  | { compatible: false; reason: "unreadable" | "major" | "worker_newer"; detail: string };
+
+/**
+ * What a worker speaking `workerVersion` may be handed by a control plane
+ * speaking `controlVersion`: the stages it can serve, or why none.
+ */
+export function workerCompatibility(workerVersion: unknown, controlVersion: string = VISION_CONTRACT_VERSION): WorkerCompatibility {
+  const worker = parseContractVersion(workerVersion);
+  const control = parseContractVersion(controlVersion);
+  if (!worker || !control) {
+    return { compatible: false, reason: "unreadable", detail: `"${String(workerVersion)}" is not a contract version` };
+  }
+  if (worker[0] !== control[0]) {
+    return { compatible: false, reason: "major", detail: `worker speaks major ${worker[0]}, control plane major ${control[0]}` };
+  }
+  if (compareContractVersions(worker, control) > 0) {
+    // A worker ahead of the control plane may send what this control plane has never heard of.
+    return { compatible: false, reason: "worker_newer", detail: `worker speaks ${String(workerVersion)}, newer than the control plane's ${controlVersion}` };
+  }
+  const stages = VISION_JOB_TYPES.filter((type) => {
+    const since = parseContractVersion(STAGE_CONTRACT_SINCE[type]);
+    return since !== null && compareContractVersions(worker, since) >= 0;
+  });
+  return { compatible: true, stages: [...stages] };
+}
+
 export const VISION_JOB_TYPES = [
   "probe",
   "fingerprint",

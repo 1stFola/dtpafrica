@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { OUTPUT_BUCKET_BY_JOB_TYPE, visionKeys } from "@dtp/vision-contracts";
+import { OUTPUT_BUCKET_BY_JOB_TYPE, visionKeys, STAGE_CONTRACT_SINCE, VISION_CONTRACT_VERSION, VISION_JOB_TYPES } from "@dtp/vision-contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadVisionConfig } from "../config/vision.config";
 import { InMemoryObjectStore } from "../storage/in-memory-object-store";
@@ -362,7 +362,8 @@ describe("a worker may only claim what it registered for", () => {
   it("defaults to the classes it registered for", async () => {
     mockQueue.claim.mockResolvedValue(null);
     await controller.claim(request(WORKER, ["cpu_small"]), {});
-    expect(mockQueue.claim).toHaveBeenCalledWith(WORKER, ["cpu_small"]);
+    // A worker that names no contract version is served every stage, as before.
+    expect(mockQueue.claim).toHaveBeenCalledWith(WORKER, ["cpu_small"], undefined);
   });
 
   it("returns no job rather than an error when the queue is empty", async () => {
@@ -375,6 +376,27 @@ describe("a worker may only claim what it registered for", () => {
     await expect(
       controller.claim(request(), { contractVersion: "0.0.1" })
     ).rejects.toThrow(/Contract mismatch/);
+    const [major, minor] = VISION_CONTRACT_VERSION.split(".").map(Number) as [number, number];
+    // Another major, a worker ahead of this control plane, and a version nobody can read.
+    for (const version of [`${major + 1}.0.0`, `${major}.${minor + 1}.0`, "latest"]) {
+      await expect(controller.claim(request(), { contractVersion: version })).rejects.toThrow(/Contract mismatch/);
+    }
+    expect(mockQueue.claim).not.toHaveBeenCalled();
+  });
+
+  it("serves a worker on its own version every stage, and names them to the queue", async () => {
+    mockQueue.claim.mockResolvedValue(null);
+    await controller.claim(request(WORKER, ["cpu_small"]), { contractVersion: VISION_CONTRACT_VERSION });
+    const [, , stages] = mockQueue.claim.mock.calls[0]!;
+    expect([...stages].sort()).toEqual([...VISION_JOB_TYPES].sort());
+  });
+
+  it("refuses a worker of the right major that is behind every stage, and says to rebuild", async () => {
+    // Every stage's entry in the table is at the version the rule arrived in, so the
+    // version before it can serve none of them.
+    const [major, minor] = Object.values(STAGE_CONTRACT_SINCE)[0]!.split(".").map(Number) as [number, number];
+    await expect(controller.claim(request(), { contractVersion: `${major}.${minor - 1}.0` })).rejects.toThrow(/every stage has changed.*rebuild the worker image/);
+    expect(mockQueue.claim).not.toHaveBeenCalled();
   });
 
   it("hands over a provider-neutral job spec", async () => {

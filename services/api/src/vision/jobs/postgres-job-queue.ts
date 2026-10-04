@@ -75,8 +75,12 @@ export class PostgresJobQueue implements JobQueue {
    * Ordered by priority then age, so a hand-raised job jumps the queue but two
    * jobs of equal priority stay first-in-first-out.
    */
-  async claim(workerId: string, resourceClasses: VisionResourceClass[]): Promise<ClaimedJob | null> {
+  async claim(workerId: string, resourceClasses: VisionResourceClass[], jobTypes?: readonly VisionJobType[]): Promise<ClaimedJob | null> {
     if (!resourceClasses.length) return null;
+    if (jobTypes && !jobTypes.length) return null;
+    // No list means every type. An empty array cannot be given a type by Postgres, so the
+    // unfiltered case passes a null the query reads as "any".
+    const types = jobTypes ? [...jobTypes] : null;
 
     const rows = await this.prisma.$queryRaw<JobRow[]>`
       UPDATE vision_jobs SET
@@ -88,6 +92,7 @@ export class PostgresJobQueue implements JobQueue {
         SELECT id FROM vision_jobs
         WHERE state = 'queued'
           AND resource_class = ANY(${resourceClasses}::text[])
+          AND (${types}::text[] IS NULL OR type = ANY(${types}::text[]))
         ORDER BY priority DESC, queued_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1

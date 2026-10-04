@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { STAGES, canQueue, describeRun, latestByType, missingFor, nextStage, succeededTypes, type JobRow } from "./pipeline";
+import { JOB_TYPE_PREREQUISITES } from "@dtp/vision-contracts";
+import { STAGES, UNFINISHED_JOB_STATES, canQueue, describeRun, latestByType, missingFor, nextStage, succeededTypes, type JobRow } from "./pipeline";
 
 const job = (type: string, state: string, queuedAt: string, over: Partial<JobRow> = {}): JobRow => ({ id: `${type}-${queuedAt}`, type, state, queuedAt, finishedAt: state === "succeeded" ? queuedAt : null, error: null, ...over });
 
@@ -9,6 +10,15 @@ describe("the stage order", () => {
     expect(STAGES.find((s) => s.type === "detect")?.where).toBe("gpu");
     expect(STAGES.find((s) => s.type === "gamestate")?.needs).toEqual(["track"]);
     expect(STAGES.find((s) => s.type === "probe")?.needs).toEqual([]);
+  });
+
+  it("takes what each stage needs from the contract, not from a copy", () => {
+    for (const stage of STAGES) expect(stage.needs, stage.type).toEqual(JOB_TYPE_PREREQUISITES[stage.type]);
+    // The copy said fingerprint needs probe. The contract and the API say it needs nothing,
+    // so the button was greyed on footage that had not been probed, for no reason.
+    expect(STAGES.find((s) => s.type === "fingerprint")?.needs).toEqual([]);
+    expect(canQueue(STAGES.find((s) => s.type === "fingerprint")!, new Set())).toBe(true);
+    expect(UNFINISHED_JOB_STATES).toEqual(["queued", "claimed", "running"]);
   });
 
   it("queues a stage only when every prerequisite succeeded", () => {

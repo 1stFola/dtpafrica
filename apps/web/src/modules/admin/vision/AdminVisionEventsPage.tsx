@@ -11,10 +11,10 @@ import {
 } from "../../../api/vision";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
+import { EVENT_TYPES } from "./event-review";
 import { useAdminVisionContext } from "./AdminVisionLayout";
 import { Field, Panel, Pill, formatDuration, short, toneOfState, useAction } from "./vision-ui";
 
-const EVENT_TYPES = ["pass", "carry", "shot", "cross", "header", "tackle", "interception", "recovery", "clearance", "throw_in", "corner", "free_kick", "save", "goal_candidate"];
 
 /**
  * Event candidates per asset: propose one by time, a second person's decision,

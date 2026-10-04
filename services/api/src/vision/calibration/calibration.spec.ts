@@ -36,6 +36,8 @@ const mockPrisma = {
   visionPitchCalibration: { create: vi.fn(), updateMany: vi.fn() },
   visionTrack: { findUnique: vi.fn() },
   visionJob: { findFirst: vi.fn() },
+  visionEventCandidate: { count: vi.fn() },
+  visionEvidenceLink: { count: vi.fn() },
   $transaction: vi.fn(),
 };
 const mockAudit = { record: vi.fn() };
@@ -57,18 +59,20 @@ beforeEach(() => {
   mockPrisma.visionPitchCalibration.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.$transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(mockPrisma));
   mockPrisma.visionTrack.findUnique.mockResolvedValue({ id: TRACK, videoAssetId: ASSET });
+  mockPrisma.visionEventCandidate.count.mockResolvedValue(0);
+  mockPrisma.visionEvidenceLink.count.mockResolvedValue(0);
 });
 
 describe("a camera segment", () => {
   it("is declared by a person, inside the footage, beside the others", async () => {
-    await expect(service.declareSegment(ASSET, { startMs: 0, endMs: 1000, kind: "wide" }, apiKey)).rejects.toMatchObject({ response: { error: "CalibrationNeedsAPerson" } });
-    await expect(service.declareSegment(ASSET, { startMs: 1000, endMs: 1000, kind: "wide" }, reviewer)).rejects.toMatchObject({ response: { error: "SegmentEmpty" } });
-    await expect(service.declareSegment(ASSET, { startMs: 0, endMs: 130_000, kind: "wide" }, reviewer)).rejects.toMatchObject({ response: { error: "SegmentOutsideAsset" } });
+    await expect(service.declareSegment(ASSET, { startMs: 0, endMs: 1000, kind: "live_play" }, apiKey)).rejects.toMatchObject({ response: { error: "CalibrationNeedsAPerson" } });
+    await expect(service.declareSegment(ASSET, { startMs: 1000, endMs: 1000, kind: "live_play" }, reviewer)).rejects.toMatchObject({ response: { error: "SegmentEmpty" } });
+    await expect(service.declareSegment(ASSET, { startMs: 0, endMs: 130_000, kind: "live_play" }, reviewer)).rejects.toMatchObject({ response: { error: "SegmentOutsideAsset" } });
     mockPrisma.visionCameraSegment.findFirst.mockResolvedValueOnce({ id: "s-0", startMs: 500, endMs: 2000 });
-    await expect(service.declareSegment(ASSET, { startMs: 0, endMs: 1000, kind: "wide" }, reviewer)).rejects.toMatchObject({ response: { error: "SegmentOverlaps" } });
+    await expect(service.declareSegment(ASSET, { startMs: 0, endMs: 1000, kind: "live_play" }, reviewer)).rejects.toMatchObject({ response: { error: "SegmentOverlaps" } });
     expect(mockPrisma.visionCameraSegment.findFirst.mock.calls.at(-1)![0].where).toEqual({ videoAssetId: ASSET, startMs: { lt: 1000 }, endMs: { gt: 0 } });
-    const out = await service.declareSegment(ASSET, { startMs: 0, endMs: 1000, kind: "wide" }, reviewer);
-    expect(out).toMatchObject({ videoAssetId: ASSET, startMs: 0, endMs: 1000, kind: "wide", source: "manual", createdBy: "u-reviewer" });
+    const out = await service.declareSegment(ASSET, { startMs: 0, endMs: 1000, kind: "live_play" }, reviewer);
+    expect(out).toMatchObject({ videoAssetId: ASSET, startMs: 0, endMs: 1000, kind: "live_play", source: "manual", createdBy: "u-reviewer" });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "camera.segment.declared" }), reviewer);
   });
 });
@@ -83,6 +87,21 @@ describe("removing a segment", () => {
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "camera.segment.removed" }), reviewer);
     mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ id: SEGMENT, videoAssetId: ASSET, source: "manual", startMs: 0, endMs: 1000, _count: { calibrations: 2 } });
     await expect(service.deleteSegment(SEGMENT, reviewer)).rejects.toMatchObject({ response: { error: "SegmentCalibrated" } });
+  });
+
+  it("stays while a current event candidate rests on it: its kind decided whether that event was play", async () => {
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ id: SEGMENT, videoAssetId: ASSET, source: "manual", startMs: 0, endMs: 1000, _count: { calibrations: 0 } });
+    // Filed under it, or linked to it as evidence: either is a reference with no foreign key behind it.
+    mockPrisma.visionEventCandidate.count.mockResolvedValueOnce(2);
+    await expect(service.deleteSegment(SEGMENT, reviewer)).rejects.toMatchObject({ response: { error: "SegmentReferenced" } });
+    mockPrisma.visionEvidenceLink.count.mockResolvedValueOnce(1);
+    await expect(service.deleteSegment(SEGMENT, reviewer)).rejects.toMatchObject({ response: { error: "SegmentReferenced" } });
+    expect(mockPrisma.visionCameraSegment.delete).not.toHaveBeenCalled();
+    // Only current candidates hold it: one that was superseded does not.
+    expect(mockPrisma.visionEventCandidate.count.mock.calls[0]![0].where).toEqual({ cameraSegmentId: SEGMENT, supersededBy: null });
+    expect(mockPrisma.visionEvidenceLink.count.mock.calls[0]![0].where).toEqual({ kind: "camera_segment", targetId: SEGMENT, candidate: { supersededBy: null } });
+    mockPrisma.visionCameraSegment.delete.mockResolvedValue({});
+    expect(await service.deleteSegment(SEGMENT, reviewer)).toEqual({ removed: SEGMENT });
   });
 });
 

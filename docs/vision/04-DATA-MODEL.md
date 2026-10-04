@@ -466,5 +466,25 @@ the new roles follow the same pattern and must not reset existing grants.
   migration, `20261005100000_vision_event_accepted_anchor`, is dated after the two
   future-dated migrations already on live because it alters a table the earlier of them
   creates. Until a migration no longer depends on those two, date it after them, not today.
-- Every `Json` column needs a Zod schema in `packages/vision-contracts` and a documented shape.
+- A `Json` column that a worker or a person writes into is validated at the door, by a
+  DTO or by a reader in `packages/vision-contracts`. A `Json` column the control plane
+  writes for itself has a documented TypeScript shape. This replaces "every `Json` column
+  needs a Zod schema", which the code never kept: the contracts carry no Zod, by the
+  decision in their README ([58](./58-QA-FIX-8-CONTRACT-PARITY.md)). The inventory:
+
+  | Column | Written by | Shape and check |
+  |---|---|---|
+  | `VisionRightsScope.restrictions` | a person | `RightsRestrictions`; `readRestrictions` in the contracts, at grant |
+  | `VisionPitchCalibration.points` | a person | `CalibrationPoint[]`; `CalibrationPointDto` |
+  | `VisionLabelSchemaVersion.definitions` | a person | free-form by design; `IsObject` only |
+  | `VisionDatasetVersion.splitPolicy` | a person | `SplitPolicyDto`, then `toPolicy` |
+  | `VisionJob.progress` | a worker | `CompleteJobDto`; each stage's `summary` is parsed where it is applied (`stage-results.service.ts`) |
+  | `VisionJob.error` | a worker | `FailJobDto` |
+  | `VisionUploadSession.receivedParts` | the control plane, from the store's own listing | `{ partNumber, etag, bytes }[]` |
+  | `VisionJob.inputSpec` | the control plane | the stage's `*JobParams` in the contracts |
+  | `VisionPitchCalibration.homography` | the control plane | `Homography` |
+  | `VisionJobEvent.data`, `VisionAuditLog.data` | the control plane | per event or action, at the call site |
+  | `VisionDatasetVersion.leakageReport`, `representationReport` | the control plane | the dataset service's return types |
+  | `VisionBenchmarkRun.verdictDetail`, `summary` | the control plane | `BenchmarkVerdict`, `BenchmarkSummary` |
+  | `VisionPromotionRequest.checks`, `replacedVersionIds` | the control plane | `PromotionGate`, `string[]` |
   PROMPT rule 19: core domain entities do not live in undocumented JSON blobs.

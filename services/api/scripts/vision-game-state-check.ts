@@ -275,9 +275,9 @@ async function main() {
     const noSegment = await post("/vision/jobs", { type: "gamestate", videoAssetId: fx.assetId });
     check("tracks but no camera segment: refused", `${noSegment.status}/${noSegment.body.error}`, "409/NoCalibration");
 
-    const segA = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { ...SEG_A, kind: "wide" });
-    const segB = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { ...SEG_B, kind: "wide" });
-    const segC = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { ...SEG_C, kind: "wide" });
+    const segA = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { ...SEG_A, kind: "live_play" });
+    const segB = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { ...SEG_B, kind: "live_play" });
+    const segC = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { ...SEG_C, kind: "live_play" });
     check("three segments declared", `${segA.status}/${segB.status}/${segC.status}`, "201/201/201");
     const noCalibration = await post("/vision/jobs", { type: "gamestate", videoAssetId: fx.assetId });
     check("segments but none calibrated: refused", noCalibration.body.error, "NoCalibration");

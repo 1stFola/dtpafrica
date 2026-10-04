@@ -56,3 +56,25 @@ handshake works from day one.
 | `1.10.0` | Event candidates (`events.ts`): `VISION_EVENT_TYPES` under `VISION_EVENT_TAXONOMY_VERSION`, `SCOREBOARD_TYPE_OF` (which types have a recorder event to promote into), `NON_PLAY_SEGMENT_KINDS`, review and promotion states, `EVIDENCE_KINDS`, and `VisionEventPromotionV1`, what promotion writes under the recorder event's metadata. No stage changes. |
 | `1.11.0` | The review queue's kinds, `REVIEW_QUEUE_KINDS` (`event`, `identity`): what `GET /vision/review/queue` lists, oldest first, the reader's own left out. Promotion also writes `SbMatchEvent.secondInMinute` beside the recorder's minute, the sub-minute widening D10 planned. No stage changes. |
 | `1.12.0` | Pipeline maths ([56](../../docs/vision/56-QA-FIX-6-PIPELINE-MATHS.md)). `TrackJobParams.cuts`: camera cuts in source milliseconds, at which every live track ends. A tracker ages a track by the clock (`maxAgeMs` in its params, where `maxAge` counted frames) and its artifact carries `trackedFrames` (`TrackedFrame`). `gamestate` reads a `DeclaredSegment` half-open, expects its homography oriented (positive `w` in view), adds `off_pitch` to `GAMESTATE_SUPPRESSION_REASONS` (`OFF_PITCH_MARGIN_M`), and reports `framesTracked` and a `coverageBasis` beside `validFrameCoverage`. |
+
+## Which worker may serve which stage
+
+The worker and the control plane no longer have to speak the same version exactly
+([58](../../docs/vision/58-QA-FIX-8-CONTRACT-PARITY.md)). A worker is served when it shares
+the major version, is no newer than the control plane, and, per stage, is at or past the
+version in `STAGE_CONTRACT_SINCE`.
+
+When you bump `VISION_CONTRACT_VERSION`:
+
+- a change to a stage's inputs or outputs moves that stage's entry in
+  `STAGE_CONTRACT_SINCE` to the new version;
+- a change that touches no stage moves nothing, and every worker goes on serving what it
+  served.
+
+The Python worker still mirrors `VISION_CONTRACT_VERSION` in `config.py`, and its tests
+check that an image built from this commit is at or past every stage's entry.
+
+## Readers for what a person writes
+
+`readRestrictions` (`rights.ts`) reads the restrictions on a grant before they are stored.
+It is a plain function, not a schema library; see "Why no Zod" above.

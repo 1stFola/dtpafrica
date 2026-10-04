@@ -10,6 +10,8 @@
  * and a publisher says so. The Vision row remains the evidence of record.
  */
 
+import { NON_LIVE_SEGMENT_KINDS } from "./media";
+
 /** Bumped when a type is added, removed or redefined. Every candidate carries the version it was proposed under. */
 export const VISION_EVENT_TAXONOMY_VERSION = "2026.10.0";
 
@@ -46,8 +48,12 @@ export const SCOREBOARD_TYPE_OF: Partial<Record<VisionEventType, string>> = {
   goal_candidate: "goal",
 };
 
-/** Camera segment kinds in which an event is not play: a replayed goal is not a second goal. */
-export const NON_PLAY_SEGMENT_KINDS = ["replay", "intro", "halftime"] as const;
+/**
+ * Camera segment kinds in which an event is not play: a replayed goal is not a
+ * second goal. The same list as `NON_LIVE_SEGMENT_KINDS` in media.ts, under the
+ * name the event rules use; one list, so the two cannot drift.
+ */
+export const NON_PLAY_SEGMENT_KINDS = NON_LIVE_SEGMENT_KINDS;
 
 export const EVENT_METHODS = ["manual", "model"] as const;
 export type EventMethod = (typeof EVENT_METHODS)[number];

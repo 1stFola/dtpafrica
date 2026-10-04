@@ -189,3 +189,33 @@ def test_a_job_taken_away_mid_stage_is_abandoned_not_failed(tmp_path: Path) -> N
     worker._stages = {"probe": stage}  # noqa: SLF001
     assert worker.run_one(spec) is False
     assert plane.failures == [] and plane.completions == []
+
+
+# ── which control plane a job may come from (docs/vision/58) ─────────────────
+
+
+def _payload(version: object) -> dict:
+    return {
+        "contractVersion": version, "jobId": "job-1", "type": "probe", "resourceClass": "cpu_small",
+        "attemptNumber": 1, "inputs": {}, "outputPrefix": "inference/job-1/1/",
+        "budget": {"maxRuntimeSeconds": 60, "maxCostUsdCents": 10},
+    }
+
+
+def test_a_job_from_a_newer_control_plane_of_the_same_major_is_taken() -> None:
+    from dtp_vision_worker.control_plane import JobSpec
+
+    major, minor, patch = (int(p) for p in CONTRACT_VERSION.split("."))
+    assert JobSpec.from_payload(_payload(CONTRACT_VERSION)).job_id == "job-1"
+    # The control plane was bumped and this image was not rebuilt: it still serves.
+    assert JobSpec.from_payload(_payload(f"{major}.{minor + 1}.0")).type == "probe"
+    assert JobSpec.from_payload(_payload(f"{major}.{minor}.{patch + 1}")).type == "probe"
+
+
+def test_a_job_from_another_major_or_an_older_control_plane_is_refused() -> None:
+    from dtp_vision_worker.control_plane import ContractMismatchError, JobSpec
+
+    major, minor, _patch = (int(p) for p in CONTRACT_VERSION.split("."))
+    for version in (f"{major + 1}.0.0", f"{major}.{minor - 1}.0", None, "latest"):
+        with pytest.raises(ContractMismatchError):
+            JobSpec.from_payload(_payload(version))

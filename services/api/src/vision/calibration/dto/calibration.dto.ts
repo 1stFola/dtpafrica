@@ -1,7 +1,7 @@
 import { Type } from "class-transformer";
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
 
-export const CAMERA_SEGMENT_KINDS = ["wide", "close", "replay", "other"] as const;
+import { CAMERA_SEGMENT_KINDS, type CameraSegmentKind } from "@dtp/vision-contracts";
 
 export class DeclareSegmentDto {
   /** Source milliseconds. */
@@ -14,7 +14,7 @@ export class DeclareSegmentDto {
   endMs!: number;
 
   @IsIn(CAMERA_SEGMENT_KINDS as unknown as string[])
-  kind!: (typeof CAMERA_SEGMENT_KINDS)[number];
+  kind!: CameraSegmentKind;
 }
 
 export class PitchDimensionsDto {

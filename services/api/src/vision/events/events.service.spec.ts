@@ -58,7 +58,7 @@ beforeEach(() => {
   mockPrisma.visionTrack.findUnique.mockResolvedValue({ id: TRACK, videoAssetId: ASSET });
   mockPrisma.sbMatchSquadPlayer.findUnique.mockResolvedValue({ id: SLOT, matchId: MATCH, teamId: HOME, playerId: "p9", playerName: "Nine" });
   mockPrisma.sbMatch.findUnique.mockResolvedValue({ id: MATCH, homeTeamId: HOME, awayTeamId: AWAY, competitionId: "comp-1", competition: { formatConfig: null }, statisticsSheet: null });
-  mockPrisma.visionCameraSegment.findFirst.mockResolvedValue({ id: "seg-1", kind: "wide", calibrations: [{ id: "cal-1" }] });
+  mockPrisma.visionCameraSegment.findFirst.mockResolvedValue({ id: "seg-1", kind: "live_play", calibrations: [{ id: "cal-1" }] });
   mockPrisma.visionIdentityAssignment.findFirst.mockResolvedValue({ id: "ident-1" });
   mockPrisma.visionClockAnchor.findFirst.mockResolvedValue({ id: "anchor-1", half: 1, sourceMs: 9000, endMs: null });
   mockClock.currentAnchors.mockResolvedValue([{ half: 1, sourceMs: 9000, endMs: null }]);

@@ -183,19 +183,19 @@ async function main() {
     // ── 1. Segments ──────────────────────────────────────────────────────
     section("1. Camera segments are a person's, inside the footage, and never overlap");
 
-    const keyed = await post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 60_000, kind: "wide" });
+    const keyed = await post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 60_000, kind: "live_play" });
     check("the operator key cannot declare a segment", keyed.body.error, "CalibrationNeedsAPerson");
-    const empty = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 9000, kind: "wide" });
+    const empty = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 9000, kind: "live_play" });
     check("an empty segment: refused", empty.body.error, "SegmentEmpty");
-    const outside = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 130_000, kind: "wide" });
+    const outside = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 130_000, kind: "live_play" });
     check("a segment past the footage: refused", outside.body.error, "SegmentOutsideAsset");
     const bad = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 60_000, kind: "drone" });
     check("an unknown kind: refused", bad.status, 400);
-    const first = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 60_000, kind: "wide" });
+    const first = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 9000, endMs: 60_000, kind: "live_play" });
     check("a wide segment over the first minute", `${first.status}/${first.body.source}/${first.body.createdBy === reviewer.id}`, "201/manual/true");
-    const overlap = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 50_000, endMs: 70_000, kind: "close" });
+    const overlap = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 50_000, endMs: 70_000, kind: "live_play" });
     check("an overlapping segment: refused", overlap.body.error, "SegmentOverlaps");
-    const second = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 60_001, endMs: 120_000, kind: "close" });
+    const second = await R.post(`/vision/review/${fx.assetId}/camera-segments`, { startMs: 60_001, endMs: 120_000, kind: "live_play" });
     check("a segment beside it", second.status, 201);
     const segmentId = String(first.body.id);
 

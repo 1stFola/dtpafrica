@@ -124,6 +124,21 @@ export class VisionCalibrationService {
         remediation: "A calibrated segment is a fact with a name on it. Supersede the calibration instead.",
       });
     }
+    /* A candidate filed under this segment took its in-play flag from the segment's kind,
+       and links to it as evidence. There is no foreign key, so deleting the segment used to
+       leave both pointing at nothing. */
+    const [filedUnder, linked] = await Promise.all([
+      this.prisma.visionEventCandidate.count({ where: { cameraSegmentId: segment.id, supersededBy: null } }),
+      this.prisma.visionEvidenceLink.count({ where: { kind: "camera_segment", targetId: segment.id, candidate: { supersededBy: null } } }),
+    ]);
+    if (filedUnder || linked) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "SegmentReferenced",
+        message: `Segment ${cameraSegmentId} is evidence for ${Math.max(filedUnder, linked)} current event candidate(s).`,
+        remediation: "Correct those candidates first, or leave the segment and change what is wrong about it.",
+      });
+    }
     await this.prisma.visionCameraSegment.delete({ where: { id: segment.id } });
     await this.audit.record({ action: "camera.segment.removed", targetKind: "vision_camera_segment", targetId: segment.id, data: { videoAssetId: segment.videoAssetId, source: segment.source, startMs: segment.startMs, endMs: segment.endMs } }, actor);
     return { removed: segment.id };
