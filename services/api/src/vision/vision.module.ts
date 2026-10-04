@@ -47,6 +47,8 @@ import { R2ObjectStore } from "./storage/r2-object-store";
 import { VisionStatusController } from "./vision-status.controller";
 import { VisionWorkerController } from "./worker/worker.controller";
 import { VisionWorkerBootstrapGuard, VisionWorkerGuard } from "./worker/vision-worker.guard";
+import { WorkerProvisionController } from "./worker/worker-provision.controller";
+import { WorkerProvisionGuard } from "./worker/worker-provision.guard";
 import { WorkerTokenService } from "./worker/worker-token.service";
 
 /**
@@ -108,6 +110,7 @@ const computeRegistryProvider: Provider = {
     VisionStatusController,
     VisionJobsController,
     VisionWorkerController,
+    WorkerProvisionController,
     VisionUploadsController,
     VisionPartnerUploadsController,
     VisionSourcesController,
@@ -153,6 +156,8 @@ const computeRegistryProvider: Provider = {
     AdminAuthService,
     AdminAuthGuard,
     PermissionsGuard,
+    // An admin with vision.jobs.run, or the provision-only key the box's worker holds.
+    WorkerProvisionGuard,
   ],
   exports: [
     VISION_CONFIG,

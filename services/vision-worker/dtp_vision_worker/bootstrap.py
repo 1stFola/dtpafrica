@@ -5,21 +5,23 @@ A hosted worker is handed its bootstrap token by the provider that launched it
 (docs/vision/17). A worker in the same compose stack as the API has no
 provider: it starts when the stack starts, and must ask the API for its own
 token first. That is all this does -- `POST /vision/workers/provision` with the
-operator key and the `local` provider, put the one-time token in the
+provision key and the `local` provider, put the one-time token in the
 environment, and hand over to the ordinary worker main. When the worker exits
 (the queue drained for the idle period), the row is retired so the dashboard
 does not count a worker that is gone, and the container's restart policy brings
 a fresh one up.
 
-The operator key is the only extra thing this worker holds, and it holds it for
-provisioning and retiring alone: the stages still run on a worker token, and the
-key never reaches a stage. It is taken out of the process environment before the
-worker runs, kept only in this function's frame for the retire call, so no child
+The provision key is the only extra thing this worker holds. It is not the
+operator key: the deploy derives it from the operator key, and the API lets it do
+two things, provision and retire, for the `local` provider only
+(docs/vision/67). The stages still run on a worker token, and the key never
+reaches a stage: it is taken out of the process environment before the worker
+runs, kept only in this function's frame for the retire call, so no child
 process can inherit it (docs/vision/50, PR-1). A worker given `VISION_BOOTSTRAP_TOKEN` directly, the
 hosted way, skips provisioning entirely.
 
     VISION_WORKER_CALLBACK_URL   e.g. http://api:3000/api/v1/vision/worker
-    VISION_PROVISION_API_KEY     the operator key (x-admin-api-key)
+    VISION_PROVISION_KEY         the provision key (x-vision-provision-key)
     VISION_RESOURCE_CLASS        e.g. cpu_small
     VISION_PROVIDER_ID           default local
     VISION_PROVISION_WAIT_SECONDS  how long to keep trying while the API comes up; default 600
@@ -37,6 +39,9 @@ import httpx
 log = logging.getLogger("dtp_vision_worker.bootstrap")
 
 DEFAULT_WAIT_SECONDS = 600.0
+PROVISION_KEY_HEADER = "x-vision-provision-key"
+#: What this worker was given until docs/vision/67: the operator key itself.
+RETIRED_KEY_VARIABLE = "VISION_PROVISION_API_KEY"
 RETRY_SECONDS = 5.0
 
 
@@ -79,7 +84,7 @@ def provision(
             try:
                 res = client.post(
                     "/vision/workers/provision",
-                    headers={"x-admin-api-key": api_key},
+                    headers={PROVISION_KEY_HEADER: api_key},
                     json={"resourceClass": resource_class, "providerId": provider_id},
                 )
             except httpx.HTTPError as exc:
@@ -107,7 +112,7 @@ def retire(callback_url: str, api_key: str, worker_id: str, *, transport: httpx.
     base = admin_base(callback_url)
     try:
         with httpx.Client(base_url=base, timeout=httpx.Timeout(30.0), transport=transport) as client:
-            res = client.post(f"/vision/workers/{worker_id}/retire", headers={"x-admin-api-key": api_key})
+            res = client.post(f"/vision/workers/{worker_id}/retire", headers={PROVISION_KEY_HEADER: api_key})
             if res.status_code >= 400:
                 log.warning("retire of worker %s answered %s", worker_id, res.status_code)
                 return False
@@ -129,10 +134,19 @@ def main(env: dict[str, str] | None = None, run=None) -> int:
         return run()
 
     callback = env.get("VISION_WORKER_CALLBACK_URL", "").strip()
-    key = env.pop("VISION_PROVISION_API_KEY", "").strip()
+    key = env.pop("VISION_PROVISION_KEY", "").strip()
+    # The old variable held the operator key. It is not read, and it is not left in the
+    # environment for a stage's child process to inherit either.
+    if env.pop(RETIRED_KEY_VARIABLE, "").strip() and not key:
+        log.error(
+            "%s is no longer read: it held the operator key. Give the worker VISION_PROVISION_KEY, "
+            "the provision-only key the deploy derives (docs/vision/67).",
+            RETIRED_KEY_VARIABLE,
+        )
+        return 2
     resource_class = env.get("VISION_RESOURCE_CLASS", "").strip()
     provider_id = env.get("VISION_PROVIDER_ID", "local").strip() or "local"
-    missing = [name for name, value in [("VISION_WORKER_CALLBACK_URL", callback), ("VISION_PROVISION_API_KEY", key), ("VISION_RESOURCE_CLASS", resource_class)] if not value]
+    missing = [name for name, value in [("VISION_WORKER_CALLBACK_URL", callback), ("VISION_PROVISION_KEY", key), ("VISION_RESOURCE_CLASS", resource_class)] if not value]
     if missing:
         log.error("cannot provision: %s not set", ", ".join(missing))
         return 2

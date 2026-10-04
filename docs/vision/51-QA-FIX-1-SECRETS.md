@@ -88,6 +88,8 @@ process inherited it while decoding untrusted media.
 
 A provision-only key separate from `ADMIN_API_KEY` would be better still. That is a
 new secret and a new guard, so it stays in the backlog. Docs 46 and 06 are updated.
+(Done since, in [67](./67-QA-FIX-17-PROVISION-KEY.md): the worker holds
+`VISION_PROVISION_KEY`, derived from the operator key, and the old variable is not read.)
 
 ## Tests and checks
 
@@ -125,5 +127,5 @@ depends on nothing they created.
 | | |
 |---|---|
 | **Rotating the key** | Fola's, above. |
-| **A provision-only key** | The worker still uses the full admin key to provision and retire. |
+| **A provision-only key** | Done since, in [67](./67-QA-FIX-17-PROVISION-KEY.md). As listed: the worker still uses the full admin key to provision and retire. |
 | **The rest of the fix plan** | PR-2 (deploy safety) is next. |

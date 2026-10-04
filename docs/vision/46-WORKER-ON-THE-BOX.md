@@ -18,7 +18,7 @@ token.
 A hosted worker is launched by a provider that hands it a bootstrap token. A
 worker in the compose stack has no provider: it starts when the stack starts.
 `dtp_vision_worker/bootstrap.py` is the entry point for that case. With the
-operator key and the `local` provider it calls `POST /vision/workers/provision`,
+provision key and the `local` provider it calls `POST /vision/workers/provision`,
 puts the one-time token in the environment, and hands over to the ordinary
 worker main, unchanged. It keeps trying while the API is still coming up,
 because the two start together, and gives up after ten minutes; a refusal the
@@ -28,8 +28,10 @@ so the dashboard does not count a worker that is gone, and the container's
 restart policy brings a fresh one up. A worker handed `VISION_BOOTSTRAP_TOKEN`
 directly, the hosted way, skips all of this.
 
-The operator key is the one extra thing this worker holds, and it holds it for
-provisioning and retiring alone. The stages run on the worker token as before;
+The provision key is the one extra thing this worker holds. It is derived from the
+operator key and is not it: the API lets it provision and retire a `local` worker and
+refuses it everywhere else ([67](./67-QA-FIX-17-PROVISION-KEY.md)). Until 67 the worker
+held the operator key itself. The stages run on the worker token as before;
 the key never reaches a stage; the store is reached through presigned URLs as
 before. Since [51](./51-QA-FIX-1-SECRETS.md) the key is taken out of the
 process environment before the worker runs, and FFmpeg is started with an

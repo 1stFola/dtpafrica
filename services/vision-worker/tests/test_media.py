@@ -89,6 +89,7 @@ def test_subprocesses_inherit_an_allow_list_not_the_worker_environment() -> None
         "HOME": "/home/worker",
         "VISION_WORKER_TOKEN": "secret",
         "VISION_BOOTSTRAP_TOKEN": "secret",
+        "VISION_PROVISION_KEY": "secret",
         "VISION_PROVISION_API_KEY": "secret",
         "AWS_SECRET_ACCESS_KEY": "secret",
     })

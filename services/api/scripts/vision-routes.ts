@@ -27,6 +27,11 @@ const GUARD_WORDS: Record<string, string> = {
   PartnerUploadGuard: "upload-grant token",
 };
 
+/** Guards that let something in beside an admin with the permission: shown after it. */
+const ALSO_ADMITS: Record<string, string> = {
+  WorkerProvisionGuard: "the provision key",
+};
+
 const VERB = /@(Get|Post|Patch|Put|Delete)\(\s*(?:"([^"]*)")?\s*\)/g;
 
 export function routesIn(text: string, file: string): Route[] {
@@ -54,8 +59,9 @@ export function routesIn(text: string, file: string): Route[] {
       const permission = /@RequirePermissions\(\s*"([^"]+)"/.exec(decorators)?.[1];
       const methodGuard = Object.keys(GUARD_WORDS).find((g) => decorators.includes(g)) ?? null;
       const guard = methodGuard ?? classGuard;
+      const also = Object.keys(ALSO_ADMITS).find((g) => decorators.includes(g) || head.includes(g));
       const path = `/${[controller[1]!, verb[2] ?? ""].map((p) => p.replace(/^\/|\/$/g, "")).filter(Boolean).join("/")}`;
-      out.push({ method: verb[1]!.toUpperCase(), path, access: permission ?? (guard ? GUARD_WORDS[guard]! : ""), file });
+      out.push({ method: verb[1]!.toUpperCase(), path, access: (permission ?? (guard ? GUARD_WORDS[guard]! : "")) + (also && permission ? ` or ${ALSO_ADMITS[also]}` : ""), file });
     });
   });
   return out;
@@ -81,7 +87,7 @@ export function scanRoutes(dir = VISION_DIR): Route[] {
 }
 
 export function renderTable(routes: readonly Route[]): string {
-  const rows = routes.map((r) => `| \`${r.method}\` | \`${r.path}\` | ${r.access.startsWith("vision.") ? `\`${r.access}\`` : r.access} | \`${r.file}\` |`);
+  const rows = routes.map((r) => `| \`${r.method}\` | \`${r.path}\` | ${r.access.replace(/^(vision\.[a-z._]+)/, "`$1`")} | \`${r.file}\` |`);
   return ["| Method | Path | Access | Controller |", "|---|---|---|---|", ...rows].join("\n");
 }
 

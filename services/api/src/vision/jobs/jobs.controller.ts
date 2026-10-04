@@ -150,68 +150,6 @@ export class VisionJobsController {
     return { ok: true };
   }
 
-  /**
-   * Launch capacity and mint its one-shot bootstrap token.
-   *
-   * The plaintext token is returned exactly once and never stored — only its
-   * hash is. For the `local` provider nothing is actually started: the operator
-   * runs the container themselves with this token, which is the same contract a
-   * hosted provider gets.
-   */
-  @Post("workers/provision")
-  @RequirePermissions("vision.jobs.run")
-  async provisionWorker(
-    @Body() dto: ProvisionWorkerDto,
-    @AdminAuth() auth: AdminAuthContext
-  ) {
-    const providerId = dto.providerId ?? this.config.compute.defaultProvider;
-    const provider = this.compute.get(providerId);
-
-    const capabilities = provider.capabilities();
-    if (!capabilities.resourceClasses.includes(dto.resourceClass)) {
-      throw refusal(404, "ResourceClassNotOffered", `Provider ${providerId} does not offer ${dto.resourceClass}. It offers ${capabilities.resourceClasses.join(", ")}.`, "Ask for a resource class the provider offers, or use another provider.");
-    }
-
-    const image = this.config.compute.workerImage;
-    const minted = await this.workerTokens.mintBootstrap({
-      providerId,
-      resourceClass: dto.resourceClass,
-      image,
-    });
-
-    const launch = await provider.launch({
-      image,
-      resourceClass: dto.resourceClass,
-      // The worker learns a URL, a token and its class. No storage credential,
-      // no database connection, no provider SDK configuration.
-      env: {
-        VISION_WORKER_CALLBACK_URL: "/api/v1/vision/worker",
-        VISION_BOOTSTRAP_TOKEN: minted.bootstrapToken,
-        VISION_RESOURCE_CLASS: dto.resourceClass,
-      },
-      maxRuntimeSeconds: this.config.jobs.defaultBudgetSeconds,
-      maxCostUsdCents: this.config.jobs.defaultBudgetUsdCents,
-      idleShutdownSeconds: 120,
-    });
-
-    await this.prisma.visionWorker.update({
-      where: { id: minted.workerId },
-      data: { providerRef: launch.providerRef },
-    });
-
-    return {
-      workerId: minted.workerId,
-      providerId,
-      providerRef: launch.providerRef,
-      resourceClass: dto.resourceClass,
-      image,
-      /** Shown once. Only its hash is stored. */
-      bootstrapToken: minted.bootstrapToken,
-      bootstrapExpiresAt: minted.expiresAt.toISOString(),
-      requestedBy: auth.userId ?? auth.method,
-    };
-  }
-
   /** Every worker the control plane has heard from, newest first; retired ones included so a retire can be seen. */
   @Get("workers")
   @RequirePermissions("vision.read")
@@ -224,12 +162,8 @@ export class VisionJobsController {
     return { workers };
   }
 
-  @Post("workers/:id/retire")
-  @RequirePermissions("vision.jobs.run")
-  async retireWorker(@Param("id") id: string) {
-    await this.workerTokens.retire(id);
-    return { ok: true };
-  }
+  // Provisioning and retiring a worker are in worker/worker-provision.controller.ts: they
+  // take the provision key as well as an admin session.
 
   @Get("jobs-meta/resource-classes")
   @RequirePermissions("vision.read")
