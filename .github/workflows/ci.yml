@@ -145,7 +145,11 @@ jobs:
         run: |
           set -euo pipefail
           compose() { docker compose --profile vision --env-file infra/.env.staging.example -f infra/docker-compose.staging.yml "$@"; }
-          compose config --services | grep -qx worker || { echo "::error::The vision profile does not define a worker service."; exit 1; }
+          # Into a variable first. Piped straight into `grep -q`, grep exits at the first match
+          # and compose is killed writing the rest; under `pipefail` that is a failure, so this
+          # step failed now and then with the worker plainly defined.
+          services=$(compose config --services)
+          grep -qx worker <<< "$services" || { echo "::error::The vision profile does not define a worker service."; exit 1; }
           rendered=$(compose config)
           for needle in "dtp_vision_worker.bootstrap" "init: true" "mem_limit:"; do
             grep -q -- "$needle" <<< "$rendered" || { echo "::error::The worker service lost \"$needle\"."; exit 1; }
