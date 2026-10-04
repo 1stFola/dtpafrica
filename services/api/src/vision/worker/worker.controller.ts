@@ -1,12 +1,10 @@
 import {
-  BadRequestException,
   Body,
   ConflictException,
   Controller,
   ForbiddenException,
   HttpCode,
   Inject,
-  NotFoundException,
   Param,
   Post,
   Req,
@@ -36,6 +34,7 @@ import { InputUrlDto } from "./dto/input-url.dto";
 import { PresignDto } from "./dto/presign.dto";
 import { VisionWorkerBootstrapGuard, VisionWorkerGuard, type WorkerRequest } from "./vision-worker.guard";
 import { WorkerTokenService } from "./worker-token.service";
+import { notFound, refusal } from "../shared/refusals";
 
 /**
  * The worker-facing API.
@@ -94,9 +93,7 @@ export class VisionWorkerController {
     const requested = dto.resourceClasses?.length ? dto.resourceClasses : auth.resourceClasses;
     const allowed = requested.filter((c) => auth.resourceClasses.includes(c));
     if (!allowed.length) {
-      throw new ForbiddenException(
-        `This worker is registered for ${auth.resourceClasses.join(", ")} and may not claim ${requested.join(", ")}`
-      );
+      throw refusal(403, "ResourceClassNotRegistered", `This worker is registered for ${auth.resourceClasses.join(", ")} and may not claim ${requested.join(", ")}`, "Claim only the resource classes this worker registered for.");
     }
 
     /* Which stages this worker may be handed (docs/vision/58). Same major, no newer than
@@ -107,12 +104,10 @@ export class VisionWorkerController {
     if (dto.contractVersion) {
       const served = workerCompatibility(dto.contractVersion);
       if (!served.compatible) {
-        throw new BadRequestException(`Contract mismatch: ${served.detail}. The control plane speaks ${VISION_CONTRACT_VERSION}.`);
+        throw refusal(400, "ContractMismatch", `Contract mismatch: ${served.detail}. The control plane speaks ${VISION_CONTRACT_VERSION}.`, "Rebuild the worker image from a commit the control plane serves.");
       }
       if (!served.stages.length) {
-        throw new BadRequestException(
-          `Contract mismatch: every stage has changed since ${dto.contractVersion}. The control plane speaks ${VISION_CONTRACT_VERSION}; rebuild the worker image.`
-        );
+        throw refusal(400, "ContractMismatch", `Contract mismatch: every stage has changed since ${dto.contractVersion}. The control plane speaks ${VISION_CONTRACT_VERSION}; rebuild the worker image.`, "Rebuild the worker image from the current commit.");
       }
       stages = served.stages;
     }
@@ -192,22 +187,20 @@ export class VisionWorkerController {
       where: { id: jobId },
       select: { type: true, state: true, workerId: true, outputPrefix: true, attemptNumber: true },
     });
-    if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
+    if (!job) throw notFound("job", jobId);
     if (job.workerId !== auth.workerId) {
-      throw new ForbiddenException("This worker does not hold that job");
+      throw refusal(403, "JobNotHeld", "This worker does not hold that job", "Stop work on the job: another worker holds it, or it was requeued.");
     }
     if (!["claimed", "running"].includes(job.state)) {
-      throw new ForbiddenException(`Job is ${job.state}; it may no longer write output`);
+      throw refusal(403, "JobNotActive", `Job is ${job.state}; it may no longer write output`, "Stop work on the job; its state has moved on.");
     }
 
     if (!isKeyUnderPrefix(dto.key, job.outputPrefix)) {
-      throw new ForbiddenException(
-        `Key must sit under this job's output prefix ${job.outputPrefix}`
-      );
+      throw refusal(403, "KeyOutsidePrefix", `Key must sit under this job's output prefix ${job.outputPrefix}`, "Write only under the output prefix the job was given.");
     }
 
     const bucket = OUTPUT_BUCKET_BY_JOB_TYPE[job.type as VisionJobType];
-    if (!bucket) throw new BadRequestException(`No output bucket for job type ${job.type}`);
+    if (!bucket) throw refusal(400, "NoOutputBucket", `No output bucket for job type ${job.type}`, "This job type writes nothing. Report the stage as a bug.");
 
     const url = await this.objectStore.presignPut(
       bucket,
@@ -236,24 +229,22 @@ export class VisionWorkerController {
       where: { id: jobId },
       select: { type: true, state: true, workerId: true, videoAssetId: true, inputSpec: true },
     });
-    if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
+    if (!job) throw notFound("job", jobId);
     if (job.workerId !== auth.workerId) {
-      throw new ForbiddenException("This worker does not hold that job");
+      throw refusal(403, "JobNotHeld", "This worker does not hold that job", "Stop work on the job: another worker holds it, or it was requeued.");
     }
     if (!["claimed", "running"].includes(job.state)) {
-      throw new ForbiddenException(`Job is ${job.state}; it may no longer read inputs`);
+      throw refusal(403, "JobNotActive", `Job is ${job.state}; it may no longer read inputs`, "Stop work on the job; its state has moved on.");
     }
 
     // A declared key: one the job listed when it was queued, and nothing else. The
     // list is on the job row, written by the control plane, never by the request.
     if (dto.role === "declared") {
-      if (!dto.key) throw new BadRequestException("The declared role needs a key");
+      if (!dto.key) throw refusal(400, "KeyRequired", "The declared role needs a key", "Name the key to read with the declared role.");
       const allowed = declaredKeys(job.inputSpec as Record<string, unknown>) ?? [];
       const match = allowed.find((k) => k.key === dto.key);
       if (!match) {
-        throw new ForbiddenException(
-          `Key ${dto.key} is not among the ${allowed.length} object(s) this job declared it may read`
-        );
+        throw refusal(403, "KeyNotDeclared", `Key ${dto.key} is not among the ${allowed.length} object(s) this job declared it may read`, "Read only the objects the job's inputs declare.");
       }
       const url = await this.objectStore.presignGet(match.bucket, match.key, this.config.playback.urlTtlSeconds);
       return {
@@ -266,14 +257,14 @@ export class VisionWorkerController {
     }
 
     if (!job.videoAssetId) {
-      throw new BadRequestException("This job has no video asset to read");
+      throw refusal(400, "JobHasNoAsset", "This job has no video asset to read", "This job reads no footage. Report the stage as a bug.");
     }
 
     const asset = await this.prisma.visionVideoAsset.findUnique({
       where: { id: job.videoAssetId },
       select: { id: true, objectKey: true, mimeType: true },
     });
-    if (!asset) throw new NotFoundException("The job's video asset no longer exists");
+    if (!asset) throw refusal(404, "AssetGone", "The job's video asset no longer exists", "Fail the job as not retryable: its footage was deleted.");
 
     // Roles resolve to keys here, from the asset's rows. Never from the request.
     //
@@ -286,9 +277,7 @@ export class VisionWorkerController {
       // The master is irreplaceable source media. Only the stages that make the proxy
       // from it read it, and every read is on the audit trail (docs/vision/50, PR-4).
       if (!INGEST_STAGES.includes(job.type)) {
-        throw new ForbiddenException(
-          `A ${job.type} job reads the proxy, not the master; only ${INGEST_STAGES.join(", ")} may read the source`
-        );
+        throw refusal(403, "MasterNotForThisStage", `A ${job.type} job reads the proxy, not the master; only ${INGEST_STAGES.join(", ")} may read the source`, "Ask for the proxy role.");
       }
       const decision = await this.rights.canAnalyze({ videoAssetId: asset.id });
       if (!decision.allowed) {
@@ -360,16 +349,14 @@ export class VisionWorkerController {
         inputSpec: true,
       },
     });
-    if (!job) throw new NotFoundException(`Unknown job ${jobId}`);
+    if (!job) throw notFound("job", jobId);
 
     // Re-validate every artifact path. A worker reporting an artifact it was
     // never allowed to write is either broken or lying; either way the control
     // plane must not record the claim.
     const stray = (dto.artifacts ?? []).find((a) => !isKeyUnderPrefix(a.key, job.outputPrefix));
     if (stray) {
-      throw new ForbiddenException(
-        `Artifact ${stray.key} is outside this job's output prefix ${job.outputPrefix}`
-      );
+      throw refusal(403, "ArtifactOutsidePrefix", `Artifact ${stray.key} is outside this job's output prefix ${job.outputPrefix}`, "Report only artifacts written under the job's output prefix.");
     }
     // The bucket too. Presign only ever wrote to this job type's output bucket, and the
     // projections downstream select artifacts by bucket, so a reported bucket that
@@ -377,9 +364,7 @@ export class VisionWorkerController {
     const expectedBucket = OUTPUT_BUCKET_BY_JOB_TYPE[job.type as VisionJobType];
     const misfiled = (dto.artifacts ?? []).find((a) => a.bucket !== expectedBucket);
     if (misfiled) {
-      throw new ForbiddenException(
-        `Artifact ${misfiled.key} names bucket ${misfiled.bucket}; ${job.type} writes only to ${expectedBucket}`
-      );
+      throw refusal(403, "ArtifactInWrongBucket", `Artifact ${misfiled.key} names bucket ${misfiled.bucket}; ${job.type} writes only to ${expectedBucket}`, "Write the stage's artifacts to the bucket its job type uses.");
     }
 
     // Same category as a stray artifact, checked at the same door: a completion that
@@ -397,6 +382,7 @@ export class VisionWorkerController {
         error: provenance.error,
         message: provenance.message,
         detail: provenance.detail,
+        remediation: "Report exactly the model version the job was dispatched with, loaded from the weights that version records. Do not retry with another.",
       });
     }
 
@@ -492,7 +478,7 @@ export class VisionWorkerController {
   }
 
   private auth(req: WorkerRequest) {
-    if (!req.workerAuth) throw new ForbiddenException("Worker identity missing");
+    if (!req.workerAuth) throw refusal(403, "WorkerIdentityMissing", "Worker identity missing", "A guard did not run. Report it as a bug in the control plane.");
     return req.workerAuth;
   }
 

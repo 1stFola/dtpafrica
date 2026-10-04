@@ -2,12 +2,11 @@ import { createHash } from "node:crypto";
 import {
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
   Inject,
   Injectable,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { refusal } from "../shared/refusals";
 
 /**
  * Authenticates a partner holding an upload link.
@@ -43,7 +42,7 @@ export class PartnerUploadGuard implements CanActivate {
     const header = req.headers["x-vision-upload-token"];
     const token = typeof header === "string" ? header.trim() : null;
 
-    if (!token) throw new UnauthorizedException("Upload token required");
+    if (!token) throw refusal(401, "UploadTokenRequired", "Upload token required", "Open the upload link DTP sent you; it carries the token.");
 
     const grant = await this.prisma.visionPartnerUploadGrant.findUnique({
       where: { tokenHash: createHash("sha256").update(token).digest("hex") },
@@ -62,15 +61,13 @@ export class PartnerUploadGuard implements CanActivate {
     // Unknown, expired, revoked and already-used all read the same to the caller.
     // A partner has no business learning which of the four it was, and the
     // distinctions are in the audit log where they belong.
-    if (!grant) throw new UnauthorizedException("Invalid or expired upload link");
-    if (grant.revokedAt) throw new UnauthorizedException("Invalid or expired upload link");
-    if (grant.expiresAt <= new Date()) throw new UnauthorizedException("Invalid or expired upload link");
+    if (!grant) throw refusal(401, "UploadLinkInvalid", "Invalid or expired upload link", "Ask DTP for a new upload link.");
+    if (grant.revokedAt) throw refusal(401, "UploadLinkInvalid", "Invalid or expired upload link", "Ask DTP for a new upload link.");
+    if (grant.expiresAt <= new Date()) throw refusal(401, "UploadLinkInvalid", "Invalid or expired upload link", "Ask DTP for a new upload link.");
 
     // One grant, one upload. Re-use would let a single link become an open door.
     if (grant.usedAt) {
-      throw new ForbiddenException(
-        "This upload link has already been used. Ask DTP for a new one."
-      );
+      throw refusal(403, "UploadLinkUsed", "This upload link has already been used. Ask DTP for a new one.", "Ask DTP for a new upload link.");
     }
 
     req.partnerUpload = {

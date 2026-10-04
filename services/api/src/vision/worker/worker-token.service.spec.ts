@@ -60,6 +60,22 @@ describe("verify accepts only a worker token", () => {
     await expect(service().verify(TOKEN)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it("refuses the token of a worker that has been retired, and says so by name", async () => {
+    // Nothing pinned this: a retired worker's token still verified in a mutation run (docs/vision/64).
+    mockPrisma.visionWorker.findUnique.mockResolvedValue(row({ retiredAt: new Date() }));
+    await expect(service().verify(TOKEN)).rejects.toMatchObject({ status: 401, response: { error: "WorkerRetired", remediation: expect.any(String) } });
+  });
+
+  it("answers a token it does not know, and one of the wrong kind, the same way", async () => {
+    mockPrisma.visionWorker.findUnique.mockResolvedValue(null);
+    const unknown = await service().verify(TOKEN).catch((e) => e.getResponse());
+    mockPrisma.visionWorker.findUnique.mockResolvedValue(row({ tokenKind: "bootstrap" }));
+    const wrongKind = await service().verify(TOKEN).catch((e) => e.getResponse());
+    // One answer for both: which of the two it was is not the caller's to learn.
+    expect(unknown).toEqual(wrongKind);
+    expect(unknown).toMatchObject({ statusCode: 401, error: "WorkerTokenInvalid" });
+  });
+
   it("refuses an expired token", async () => {
     mockPrisma.visionWorker.findUnique.mockResolvedValue(row({ tokenExpiresAt: new Date(Date.now() - 1) }));
     await expect(service().verify(TOKEN)).rejects.toBeInstanceOf(UnauthorizedException);
@@ -75,6 +91,12 @@ describe("register accepts only a bootstrap token", () => {
     expect(call.where).toEqual({ id: "worker-1", tokenHash: HASH, tokenKind: "bootstrap", retiredAt: null });
     expect(call.data.tokenKind).toBe("worker");
     expect(call.data.tokenHash).not.toBe(HASH);
+  });
+
+  it("refuses the bootstrap token of a worker retired before it registered", async () => {
+    mockPrisma.visionWorker.findUnique.mockResolvedValue(row({ tokenKind: "bootstrap", retiredAt: new Date() }));
+    await expect(service().register(TOKEN)).rejects.toMatchObject({ status: 401, response: { error: "WorkerRetired" } });
+    expect(mockPrisma.visionWorker.updateMany).not.toHaveBeenCalled();
   });
 
   it("refuses a worker token, so its lifetime cannot be extended by re-registering", async () => {

@@ -545,9 +545,16 @@ distinctly:
 A rights denial always tells the operator what to do next. "Forbidden" with no reason produces a
 support ticket; this produces an action.
 
+**Every Vision refusal has this shape** since [64](./64-QA-FIX-14-REFUSAL-SHAPES.md):
+`statusCode`, `error` as the refusal's name (`DatasetFrozen`, `WorkerTokenInvalid`,
+`NotFound`), `message`, and `remediation`. Some add fields a screen reads, such as `reason`
+above or `problems`. A test walks the module and fails on a refusal without a name or a
+remediation. Match on `statusCode` and `error`; a `message` is for a person and may be
+reworded.
+
 **Contract parity** ([58-QA-FIX-8-CONTRACT-PARITY.md](./58-QA-FIX-8-CONTRACT-PARITY.md)).
 `POST /vision/worker/jobs/claim` no longer needs the worker's `contractVersion` to equal the
-control plane's. It refuses `400 Contract mismatch` for another major version, a worker newer
+control plane's. It refuses `400 ContractMismatch` for another major version, a worker newer
 than the control plane, a version it cannot read, or a worker behind every stage; otherwise
 it hands over only jobs of the stages that worker can serve (`STAGE_CONTRACT_SINCE`).
 `POST /vision/review/:assetId/camera-segments` takes `kind` from `CAMERA_SEGMENT_KINDS`

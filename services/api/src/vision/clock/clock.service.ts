@@ -1,9 +1,9 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { clockAt, halfInfo, sortAnchors, type ClockAnchor, type Half } from "./match-clock";
-import { personFor } from "../shared/refusals";
+import { notFound, personFor } from "../shared/refusals";
 
 /**
  * Anchoring the match clock to the footage.
@@ -26,7 +26,7 @@ export class VisionClockService {
   async anchor(videoAssetId: string, input: { half: number; sourceMs: number; endMs?: number | null }, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "anchor the match clock");
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, durationMs: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     const half = input.half as Half;
     if (![1, 2, 3, 4].includes(input.half)) {
       throw new ConflictException({ statusCode: 409, error: "HalfUnknown", message: `There is no half ${input.half}.`, remediation: "1 and 2, or 3 and 4 for extra time." });
@@ -88,7 +88,7 @@ export class VisionClockService {
   /** The anchors, and where a given source millisecond falls on the clock. */
   async read(videoAssetId: string, sourceMs?: number) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true } });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${videoAssetId}`);
+    if (!asset) throw notFound("video asset", videoAssetId);
     const anchors = await this.currentAnchors(videoAssetId);
     return {
       videoAssetId,

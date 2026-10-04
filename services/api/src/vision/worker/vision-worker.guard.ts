@@ -3,9 +3,9 @@ import {
   ExecutionContext,
   Inject,
   Injectable,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { WorkerTokenService, type WorkerIdentity } from "./worker-token.service";
+import { refusal } from "../shared/refusals";
 
 export type WorkerRequest = {
   headers: Record<string, string | string[] | undefined>;
@@ -31,7 +31,7 @@ export class VisionWorkerGuard implements CanActivate {
     const header = req.headers["x-vision-worker-token"];
     const token = typeof header === "string" ? header.trim() : null;
 
-    if (!token) throw new UnauthorizedException("Worker token required");
+    if (!token) throw refusal(401, "WorkerTokenRequired", "Worker token required", "Send the worker token in the x-vision-worker-token header.");
 
     req.workerAuth = await this.tokens.verify(token);
     return true;
@@ -48,7 +48,7 @@ export class VisionWorkerBootstrapGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<WorkerRequest>();
     const header = req.headers["x-vision-bootstrap-token"];
     if (typeof header !== "string" || !header.trim()) {
-      throw new UnauthorizedException("Bootstrap token required");
+      throw refusal(401, "BootstrapTokenRequired", "Bootstrap token required", "Send the bootstrap token the worker was provisioned with.");
     }
     return true;
   }

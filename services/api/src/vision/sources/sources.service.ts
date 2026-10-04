@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import {
   ACQUISITION_METHODS,
@@ -22,6 +21,7 @@ import { RightsPolicyService } from "../rights/rights-policy.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { partnerHasUploadedEvidence } from "../rights/rights-evidence";
 import { JOB_QUEUE, JobNotClaimableError, type JobQueue } from "../jobs/job-queue";
+import { notFound, refusal } from "../shared/refusals";
 
 /**
  * The partner source catalog.
@@ -206,17 +206,13 @@ export class VisionSourcesService {
     }
     const targets = [dto.partnerId, dto.sourceVideoRecordId, dto.playerId].filter(Boolean);
     if (targets.length !== 1) {
-      throw new BadRequestException(
-        "Grant exactly one of partnerId, sourceVideoRecordId or playerId — the level decides precedence."
-      );
+      throw refusal(400, "GrantLevelAmbiguous", "Grant exactly one of partnerId, sourceVideoRecordId or playerId — the level decides precedence.", "Name one of partnerId, sourceVideoRecordId or playerId.");
     }
 
     const grantLevel = dto.partnerId ? "partner" : dto.sourceVideoRecordId ? "source" : "player";
 
     if (!RIGHTS_SCOPE_KEYS.some((key) => dto[key])) {
-      throw new BadRequestException(
-        `Grant at least one scope: ${RIGHTS_SCOPE_KEYS.join(", ")}.`
-      );
+      throw refusal(400, "GrantHasNoScope", `Grant at least one scope: ${RIGHTS_SCOPE_KEYS.join(", ")}.`, "Set at least one of the scopes to true.");
     }
 
     // Evidence is what the claim rests on. A grant with no document behind it is
@@ -226,7 +222,7 @@ export class VisionSourcesService {
         where: { id: dto.evidenceId },
         select: { id: true },
       });
-      if (!evidence) throw new NotFoundException(`Unknown rights evidence ${dto.evidenceId}`);
+      if (!evidence) throw notFound("rights evidence", dto.evidenceId);
     }
 
     const scope = await this.prisma.visionRightsScope.create({
@@ -282,8 +278,8 @@ export class VisionSourcesService {
         playerId: true,
       },
     });
-    if (!scope) throw new NotFoundException(`Unknown rights scope ${scopeId}`);
-    if (scope.revokedAt) throw new BadRequestException("This grant is already withdrawn");
+    if (!scope) throw notFound("rights scope", scopeId);
+    if (scope.revokedAt) throw refusal(400, "ScopeAlreadyRevoked", "This grant is already withdrawn", "Nothing to do: the grant was withdrawn already.");
 
     const updated = await this.prisma.visionRightsScope.update({
       where: { id: scopeId },
@@ -547,7 +543,7 @@ export class VisionSourcesService {
         },
       },
     });
-    if (!source) throw new NotFoundException(`Unknown source record ${id}`);
+    if (!source) throw notFound("source record", id);
 
     /**
      * What the rights engine actually decides, rather than what the rows suggest.
@@ -599,15 +595,13 @@ export class VisionSourcesService {
       where: { id },
       select: { id: true, partnerId: true, acquisitionStatus: true },
     });
-    if (!source) throw new NotFoundException(`Unknown source record ${id}`);
+    if (!source) throw notFound("source record", id);
     if (source.acquisitionStatus === "acquired") {
-      throw new BadRequestException("This source has already been acquired");
+      throw refusal(400, "SourceAlreadyAcquired", "This source has already been acquired", "Nothing to do: the footage is in DTP's hands.");
     }
 
     if (!ACQUISITION_METHODS.includes(dto.acquisitionMethod as never)) {
-      throw new BadRequestException(
-        `acquisitionMethod must be one of ${ACQUISITION_METHODS.join(", ")}. There is no fourth option: V1 ships no downloader.`
-      );
+      throw refusal(400, "AcquisitionMethodInvalid", `acquisitionMethod must be one of ${ACQUISITION_METHODS.join(", ")}. There is no fourth option: V1 ships no downloader.`, "Choose one of the methods listed.");
     }
 
     const signatory = await this.prisma.visionPartnerAuthorizedSignatory.findUnique({
@@ -615,10 +609,10 @@ export class VisionSourcesService {
       select: { id: true, partnerId: true, activeTo: true, name: true, role: true },
     });
     if (!signatory || signatory.partnerId !== source.partnerId) {
-      throw new BadRequestException("The signatory must belong to this source's partner");
+      throw refusal(400, "SignatoryNotOfPartner", "The signatory must belong to this source's partner", "Choose a signatory recorded for this source's partner, or add one.");
     }
     if (signatory.activeTo && signatory.activeTo < new Date()) {
-      throw new BadRequestException(`${signatory.name} is no longer an active signatory`);
+      throw refusal(400, "SignatoryInactive", `${signatory.name} is no longer an active signatory`, "Choose a signatory who is active, or add one.");
     }
 
     // A document that reached the store, not a row whose signed URL was never used.
@@ -684,7 +678,7 @@ export class VisionSourcesService {
       where: { id: sourceVideoRecordId },
       select: { id: true, partnerId: true, acquisitionStatus: true, acquisitionMethod: true },
     });
-    if (!source) throw new NotFoundException(`Unknown source record ${sourceVideoRecordId}`);
+    if (!source) throw notFound("source record", sourceVideoRecordId);
 
     // A grant is permission to upload. Issuing one before acquisition is
     // authorised would hand out exactly the permission the workflow withholds.
@@ -794,8 +788,8 @@ export class VisionSourcesService {
       where: { id: partnerId },
       select: { id: true, isActive: true },
     });
-    if (!partner) throw new NotFoundException(`Unknown partner ${partnerId}`);
-    if (!partner.isActive) throw new BadRequestException("This partner is not active");
+    if (!partner) throw notFound("partner", partnerId);
+    if (!partner.isActive) throw refusal(400, "PartnerInactive", "This partner is not active", "Reactivate the partner, or choose another.");
   }
 }
 

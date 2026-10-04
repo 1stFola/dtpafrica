@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { AdminAuth } from "../../admin/decorators/admin-auth.decorator";
 import { RequirePermissions } from "../../admin/decorators/require-permissions.decorator";
@@ -18,6 +18,7 @@ import {
   ReasonDto,
 } from "./dto/sources.dto";
 import { VisionSourcesService } from "./sources.service";
+import { refusal } from "../shared/refusals";
 
 /**
  * The Partner Video Catalog.
@@ -72,10 +73,10 @@ export class VisionSourcesController {
     @Body() body: { kind?: string; documentDate?: string; notes?: string },
     @AdminAuth() auth: AdminAuthContext
   ) {
-    if (!file || !file.size) throw new BadRequestException("Attach the document as the `file` field.");
+    if (!file || !file.size) throw refusal(400, "FileRequired", "Attach the document as the `file` field.", "Send the document as multipart form data in the field named file.");
     const extension = (file.originalname.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
-    if (!extension) throw new BadRequestException("The document needs a file extension (pdf, jpg, png).");
-    if (!body.kind) throw new BadRequestException("kind is required.");
+    if (!extension) throw refusal(400, "FileExtensionRequired", "The document needs a file extension (pdf, jpg, png).", "Name the file with its extension: pdf, jpg or png.");
+    if (!body.kind) throw refusal(400, "EvidenceKindRequired", "kind is required.", "Say what the document is in the kind field.");
     return jsonSafe(await this.sources.attachEvidenceFile(id, { kind: body.kind, extension, documentDate: body.documentDate, notes: body.notes }, file.buffer, file.mimetype, auth));
   }
 

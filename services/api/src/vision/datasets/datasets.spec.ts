@@ -408,6 +408,20 @@ describe("split generation", () => {
   });
 });
 
+describe("a version that is not there, or is frozen", () => {
+  it("answers 404 by name for a version that does not exist, on every route that changes one", async () => {
+    mockPrisma.visionDatasetVersion.findUnique.mockResolvedValue(null);
+    for (const act of [() => service.addMembers(VERSION, ["asset-1"]), () => service.generateSplits(VERSION), () => service.freeze(VERSION)]) {
+      await expect(act()).rejects.toMatchObject({ status: 404, response: { error: "NotFound", message: `Unknown dataset version ${VERSION}`, remediation: expect.any(String) } });
+    }
+  });
+
+  it("answers 409 DatasetFrozen for a change to a frozen version, saying to make a new one", async () => {
+    mockPrisma.visionDatasetVersion.findUnique.mockResolvedValue({ ...unfrozenVersion(), frozenAt: new Date("2026-10-01T00:00:00Z") });
+    await expect(service.addMembers(VERSION, ["asset-1"])).rejects.toMatchObject({ status: 409, response: { error: "DatasetFrozen", remediation: "Create a new dataset version and make the change there." } });
+  });
+});
+
 describe("freeze", () => {
   const cleanMembers = [member("a", "match:1", "train"), member("b", "match:2", "test")];
 

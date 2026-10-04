@@ -5,7 +5,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import {
   ACTIVE_LEARNING_REASONS,
@@ -28,6 +27,7 @@ import { VisionAuditService } from "../audit/vision-audit.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
+import { notFound, refusal } from "../shared/refusals";
 
 /**
  * Annotation: the human work that produces DTP's only irreplaceable training data.
@@ -86,9 +86,7 @@ function assertOneOf<T extends string>(
   field: string
 ): T {
   if (!allowed.includes(value as T)) {
-    throw new BadRequestException(
-      `${field} must be one of: ${allowed.join(", ")} — got ${JSON.stringify(value)}`
-    );
+    throw refusal(400, "ValueNotAllowed", `${field} must be one of: ${allowed.join(", ")} — got ${JSON.stringify(value)}`, "Send one of the values listed.");
   }
   return value as T;
 }
@@ -124,12 +122,10 @@ export class VisionAnnotationService {
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictException(
-        `Label schema ${dto.version} already exists. Publish a new version rather than changing it: existing annotations were made under the old definitions.`
-      );
+      throw refusal(409, "LabelSchemaExists", `Label schema ${dto.version} already exists. Publish a new version rather than changing it: existing annotations were made under the old definitions.`, "Publish it under a new version identifier.");
     }
     if (!dto.version?.trim()) {
-      throw new BadRequestException("A label schema needs a version identifier");
+      throw refusal(400, "LabelSchemaVersionRequired", "A label schema needs a version identifier", "Give the schema a version, such as 2026.2.");
     }
     // `Object.keys("text").length` is 4, so a string would have sailed through a
     // bare emptiness check and become a taxonomy made of character indices.
@@ -138,12 +134,10 @@ export class VisionAnnotationService {
       dto.definitions === null ||
       Array.isArray(dto.definitions)
     ) {
-      throw new BadRequestException("definitions must be an object of label definitions");
+      throw refusal(400, "LabelDefinitionsInvalid", "definitions must be an object of label definitions", "Send definitions as an object: one key per label, its meaning as the value.");
     }
     if (Object.keys(dto.definitions).length === 0) {
-      throw new BadRequestException(
-        "A label schema needs definitions. An empty taxonomy cannot tell two annotators apart."
-      );
+      throw refusal(400, "LabelDefinitionsEmpty", "A label schema needs definitions. An empty taxonomy cannot tell two annotators apart.", "Define at least one label.");
     }
 
     const created = await this.prisma.visionLabelSchemaVersion.create({
@@ -177,9 +171,9 @@ export class VisionAnnotationService {
    */
   async supersedeLabelSchema(id: string, actor?: AdminAuthContext) {
     const schema = await this.prisma.visionLabelSchemaVersion.findUnique({ where: { id } });
-    if (!schema) throw new NotFoundException(`Unknown label schema ${id}`);
+    if (!schema) throw notFound("label schema", id);
     if (schema.supersededAt) {
-      throw new ConflictException(`Label schema ${schema.version} is already superseded.`);
+      throw refusal(409, "LabelSchemaSuperseded", `Label schema ${schema.version} is already superseded.`, "Nothing to do: it was superseded already.");
     }
 
     const open = await this.prisma.visionAnnotationTask.count({
@@ -233,26 +227,22 @@ export class VisionAnnotationService {
       "samplingStrategy"
     );
     if (!Number.isInteger(dto.startMs) || !Number.isInteger(dto.endMs)) {
-      throw new BadRequestException("Window bounds must be whole milliseconds");
+      throw refusal(400, "WindowNotWholeMilliseconds", "Window bounds must be whole milliseconds", "Send startMs and endMs as integers.");
     }
     if (dto.endMs <= dto.startMs) {
-      throw new BadRequestException("A task window must end after it starts");
+      throw refusal(400, "WindowEndsBeforeStart", "A task window must end after it starts", "Make endMs greater than startMs.");
     }
     if (dto.endMs - dto.startMs > MAX_TASK_WINDOW_MS) {
-      throw new BadRequestException(
-        `A task window may not exceed ${MAX_TASK_WINDOW_MS / 60000} minutes. Split it: a task nobody can finish in one sitting gets abandoned half-done.`
-      );
+      throw refusal(400, "WindowTooLong", `A task window may not exceed ${MAX_TASK_WINDOW_MS / 60000} minutes. Split it: a task nobody can finish in one sitting gets abandoned half-done.`, "Split the window into shorter tasks.");
     }
 
     const schema = await this.prisma.visionLabelSchemaVersion.findUnique({
       where: { id: dto.labelSchemaVersionId },
       select: { id: true, version: true, supersededAt: true },
     });
-    if (!schema) throw new NotFoundException(`Unknown label schema ${dto.labelSchemaVersionId}`);
+    if (!schema) throw notFound("label schema", dto.labelSchemaVersionId);
     if (schema.supersededAt) {
-      throw new BadRequestException(
-        `Label schema ${schema.version} was superseded on ${schema.supersededAt.toISOString()}. New work uses the current definitions.`
-      );
+      throw refusal(400, "LabelSchemaSuperseded", `Label schema ${schema.version} was superseded on ${schema.supersededAt.toISOString()}. New work uses the current definitions.`, "Create the task under the current label schema.");
     }
 
     const asset = await this.prisma.visionVideoAsset.findUnique({
@@ -263,7 +253,7 @@ export class VisionAnnotationService {
         variants: { where: { kind: "proxy" }, select: { id: true }, take: 1 },
       },
     });
-    if (!asset) throw new NotFoundException(`Unknown video asset ${dto.videoAssetId}`);
+    if (!asset) throw notFound("video asset", dto.videoAssetId);
 
     // No proxy, no task. An annotator has no route to the master by design, so a
     // task on an asset without a proxy is work nobody can open.
@@ -276,9 +266,7 @@ export class VisionAnnotationService {
       });
     }
     if (asset.durationMs !== null && dto.endMs > asset.durationMs) {
-      throw new BadRequestException(
-        `The window ends at ${dto.endMs}ms but the asset is ${asset.durationMs}ms long`
-      );
+      throw refusal(400, "WindowPastAsset", `The window ends at ${dto.endMs}ms but the asset is ${asset.durationMs}ms long`, "End the window inside the footage.");
     }
 
     const decision = await this.rights.canAnalyze({ videoAssetId: dto.videoAssetId });
@@ -416,9 +404,7 @@ export class VisionAnnotationService {
     }
     const proxy = task.videoAsset.variants[0];
     if (!proxy) {
-      throw new ConflictException(
-        "This task's asset no longer has a proxy. Re-run transcode; the master is not an option."
-      );
+      throw refusal(409, "ProxyMissing", "This task's asset no longer has a proxy. Re-run transcode; the master is not an option.", "Run transcode for the asset again, then claim the task.");
     }
     return {
       url: await this.store.presignGet(
@@ -459,14 +445,14 @@ export class VisionAnnotationService {
         },
       },
     });
-    if (!task) throw new NotFoundException(`Unknown annotation task ${id}`);
+    if (!task) throw notFound("annotation task", id);
     return { task, media: await this.proxyForTask(task) };
   }
 
   async abandonTask(id: string, reason: string, actor?: AdminAuthContext) {
     const task = await this.requireTask(id);
     if (task.state === "approved") {
-      throw new ConflictException("An approved task cannot be abandoned.");
+      throw refusal(409, "TaskApproved", "An approved task cannot be abandoned.", "Leave it: an approved task is finished work that datasets may reference.");
     }
     const updated = await this.prisma.visionAnnotationTask.update({
       where: { id },
@@ -505,12 +491,10 @@ export class VisionAnnotationService {
   ) {
     const task = await this.requireTask(taskId);
     if (task.state === "approved") {
-      throw new ConflictException(
-        "This task is approved. Create a new task rather than resubmitting: an approved annotation is referenced by datasets."
-      );
+      throw refusal(409, "TaskApproved", "This task is approved. Create a new task rather than resubmitting: an approved annotation is referenced by datasets.", "Create a new task for the window.");
     }
     if (task.state === "abandoned") {
-      throw new ConflictException("This task was abandoned.");
+      throw refusal(409, "TaskAbandoned", "This task was abandoned.", "Create a new task for the window.");
     }
 
     // The signed-in person, never the body's say-so; only the operator key (no
@@ -525,16 +509,14 @@ export class VisionAnnotationService {
     }
     const annotatorId = actor?.userId ?? dto.annotatorId ?? null;
     if (task.assignedTo && annotatorId && task.assignedTo !== annotatorId) {
-      throw new ForbiddenException(
-        `This task is assigned to someone else. Claim it first, so two people are not labelling the same window unknowingly.`
-      );
+      throw refusal(403, "TaskAssignedToAnother", `This task is assigned to someone else. Claim it first, so two people are not labelling the same window unknowingly.`, "Claim a task of your own, or ask for this one to be released.");
     }
     if (dto.payload === null || dto.payload === undefined) {
-      throw new BadRequestException("A submission needs a payload, even an empty label set");
+      throw refusal(400, "PayloadRequired", "A submission needs a payload, even an empty label set", "Send the labels as payload; an empty set is { boxes: [] }.");
     }
     this.assertBoxesAreValid(dto.payload, task);
     if (dto.effortMinutes !== undefined && (!(dto.effortMinutes >= 0) || dto.effortMinutes > 480)) {
-      throw new BadRequestException("effortMinutes must be between 0 and 480");
+      throw refusal(400, "EffortOutOfRange", "effortMinutes must be between 0 and 480", "Send effortMinutes between 0 and 480, or leave it out.");
     }
 
     const previous = await this.prisma.visionAnnotationVersion.findFirst({
@@ -626,13 +608,11 @@ export class VisionAnnotationService {
       where: { id: versionId },
       select: { id: true, payloadKey: true, payloadChecksum: true, taskId: true },
     });
-    if (!version) throw new NotFoundException(`Unknown annotation version ${versionId}`);
+    if (!version) throw notFound("annotation version", versionId);
 
     const raw = await this.store.getSmallObject("derived", version.payloadKey);
     if (!raw) {
-      throw new NotFoundException(
-        `The labels for ${versionId} are missing from storage. The row survives so the gap is visible rather than silent.`
-      );
+      throw refusal(404, "LabelsMissing", `The labels for ${versionId} are missing from storage. The row survives so the gap is visible rather than silent.`, "The labels cannot be recovered from here. Have the window annotated again.");
     }
     const actual = createHash("sha256").update(raw).digest("hex");
     if (actual !== version.payloadChecksum) {
@@ -670,7 +650,7 @@ export class VisionAnnotationService {
       where: { id: annotationVersionId },
       select: { id: true, annotatorId: true, taskId: true },
     });
-    if (!version) throw new NotFoundException(`Unknown annotation version ${annotationVersionId}`);
+    if (!version) throw notFound("annotation version", annotationVersionId);
 
     const reviewerId = actor?.userId ?? null;
 
@@ -695,9 +675,7 @@ export class VisionAnnotationService {
     }
 
     if (REASON_REQUIRED_REVIEW_DECISIONS.includes(decisionKind) && !dto.rejectionReason) {
-      throw new BadRequestException(
-        `A "${dto.decision}" verdict needs a structured reason: these drive which windows are sampled next, and free text cannot be counted.`
-      );
+      throw refusal(400, "ReviewReasonRequired", `A "${dto.decision}" verdict needs a structured reason: these drive which windows are sampled next, and free text cannot be counted.`, "Give one of the listed reasons with the verdict.");
     }
 
     const decision = await this.prisma.visionReviewDecision.create({
@@ -759,10 +737,10 @@ export class VisionAnnotationService {
   ) {
     assertOneOf(dto.reason, ACTIVE_LEARNING_REASONS, "reason");
     if (dto.endMs <= dto.startMs) {
-      throw new BadRequestException("A queued window must end after it starts");
+      throw refusal(400, "WindowEndsBeforeStart", "A queued window must end after it starts", "Make endMs greater than startMs.");
     }
     if (!(dto.score >= 0 && dto.score <= 1)) {
-      throw new BadRequestException("score must be between 0 and 1");
+      throw refusal(400, "ScoreOutOfRange", "score must be between 0 and 1", "Send a score from 0 to 1.");
     }
     // Rights again, at this door too: the queue is a list of footage humans will be
     // shown, so it must not contain anything they may not see.
@@ -812,9 +790,9 @@ export class VisionAnnotationService {
     actor?: AdminAuthContext
   ) {
     const item = await this.prisma.visionActiveLearningItem.findUnique({ where: { id: itemId } });
-    if (!item) throw new NotFoundException(`Unknown queue item ${itemId}`);
+    if (!item) throw notFound("queue item", itemId);
     if (item.state !== "queued") {
-      throw new ConflictException(`This item is already ${item.state}.`);
+      throw refusal(409, "QueueItemDecided", `This item is already ${item.state}.`, "Nothing to do: the item has left the queue.");
     }
 
     const task = await this.createTask(
@@ -921,9 +899,9 @@ export class VisionAnnotationService {
 
   private async requireTask(id: string) {
     const task = await this.prisma.visionAnnotationTask.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException(`Unknown annotation task ${id}`);
+    if (!task) throw notFound("annotation task", id);
     if (!ANNOTATION_TASK_STATES.includes(task.state as AnnotationTaskState)) {
-      throw new ConflictException(`Task ${id} is in an unrecognised state "${task.state}".`);
+      throw refusal(409, "TaskStateUnrecognised", `Task ${id} is in an unrecognised state "${task.state}".`, "The row was written outside the service. Check it by hand before acting on it.");
     }
     return task;
   }

@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  BadRequestException,
   ForbiddenException,
   GoneException,
   Inject,
   Injectable,
   Logger,
-  NotFoundException,
 } from "@nestjs/common";
 import { visionKeys, type BucketId } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
@@ -16,6 +14,7 @@ import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionJobsService } from "../jobs/vision-jobs.service";
 import { OBJECT_STORE, type ObjectStore, type PartRef } from "../storage/object-store";
 import { partnerHasUploadedEvidence } from "../rights/rights-evidence";
+import { notFound, refusal } from "../shared/refusals";
 
 /**
  * Resumable upload of source footage.
@@ -87,7 +86,7 @@ export class VisionUploadService {
         _count: { select: { videoAssets: true } },
       },
     });
-    if (!record) throw new NotFoundException(`Unknown source record ${params.sourceVideoRecordId}`);
+    if (!record) throw notFound("source record", params.sourceVideoRecordId);
 
     // Cataloguing is not acquisition. A URL someone registered is not something
     // DTP has been authorised to hold a copy of.
@@ -287,7 +286,7 @@ export class VisionUploadService {
   ): Promise<{ partNumber: number; url: string; expiresInSeconds: number }[]> {
     const session = await this.load(sessionId, grantId);
     if (session.state !== "in_progress") {
-      throw new BadRequestException(`Session is ${session.state}; no more parts may be uploaded`);
+      throw refusal(400, "SessionNotInProgress", `Session is ${session.state}; no more parts may be uploaded`, "Start a new upload session for the file.");
     }
 
     const ttl = this.config.upload.partUrlTtlSeconds;
@@ -339,7 +338,7 @@ export class VisionUploadService {
       : (parts ?? []);
 
     if (!finalParts.length) {
-      throw new BadRequestException("No parts have been uploaded for this session");
+      throw refusal(400, "NoPartsUploaded", "No parts have been uploaded for this session", "Upload the file's parts, then complete the session.");
     }
 
     // A gap means a part was lost. Completing anyway would produce a silently
@@ -350,9 +349,7 @@ export class VisionUploadService {
       if (!numbers.includes(expected)) missing.push(expected);
     }
     if (missing.length) {
-      throw new BadRequestException(
-        `Cannot complete: part(s) ${missing.join(", ")} are missing. Upload them and retry.`
-      );
+      throw refusal(400, "PartsMissing", `Cannot complete: part(s) ${missing.join(", ")} are missing. Upload them and retry.`, "Upload the missing parts, then complete the session again.");
     }
 
     await this.store.completeMultipartUpload(
@@ -457,7 +454,7 @@ export class VisionUploadService {
   async abort(sessionId: string, actor?: AdminAuthContext, grantId?: string): Promise<void> {
     const session = await this.load(sessionId, grantId);
     if (session.state === "completed") {
-      throw new BadRequestException("Session is already completed");
+      throw refusal(400, "SessionCompleted", "Session is already completed", "Nothing to do: the upload is finished.");
     }
 
     await this.store
@@ -531,12 +528,12 @@ export class VisionUploadService {
     const session = await this.prisma.visionUploadSession.findUnique({
       where: { id: sessionId },
     });
-    if (!session) throw new NotFoundException(`Unknown upload session ${sessionId}`);
+    if (!session) throw notFound("upload session", sessionId);
 
     // A partner holds a grant, not an account. It may only touch its own session,
     // and the check is here rather than in the controller so no route can forget it.
     if (grantId !== undefined && session.grantId !== grantId) {
-      throw new NotFoundException(`Unknown upload session ${sessionId}`);
+      throw notFound("upload session", sessionId);
     }
     return session;
   }
