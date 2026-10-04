@@ -245,6 +245,7 @@ describe("completing a run", () => {
       modelVersionId: VERSION,
       datasetVersionId: DATASET,
       thresholdsVersion: "test-1",
+      modelVersion: { model: { task: "detect" } },
     });
     mockPrisma.$transaction.mockResolvedValue([]);
     mockPrisma.visionMetricResult.createMany.mockReturnValue("createMany");
@@ -287,12 +288,21 @@ describe("completing a run", () => {
       mockAudit as never,
       store,
       mockJobs as never,
-      { ...thresholds, minimums: { "recall:ball": 0.5 } }
+      { ...thresholds, minimums: { detect: { "recall:ball": 0.5 } } }
     );
     await strictService.complete(RUN, summary(), artifacts);
     const update = mockPrisma.visionBenchmarkRun.update.mock.calls[0]![0];
     expect(update.data.verdict).toBe("fail");
     expect(update.data.verdictDetail.failures[0]).toMatchObject({ metric: "recall:ball", reason: "below_minimum" });
+  });
+
+  it("judges a run under the bar set for its model's task, not another task's", async () => {
+    // The only minimums are a detector's. A tracker's run is not held to them.
+    const strictService = new VisionBenchmarksService(mockPrisma as never, mockAudit as never, store, mockJobs as never, { ...thresholds, minimums: { detect: { "recall:ball": 0.99 } } });
+    mockPrisma.visionBenchmarkRun.findUnique.mockResolvedValue({ id: RUN, modelVersionId: VERSION, datasetVersionId: DATASET, thresholdsVersion: "test-1", modelVersion: { model: { task: "track" } } });
+    await strictService.complete(RUN, summary(), artifacts);
+    expect(mockPrisma.visionBenchmarkRun.update.mock.calls[0]![0].data.verdict).toBe("unthresholded");
+    expect(mockPrisma.visionBenchmarkRun.findUnique.mock.calls[0]![0].select.modelVersion).toEqual({ select: { model: { select: { task: true } } } });
   });
 
   it("refuses a summary naming another run, model or dataset", async () => {
@@ -371,7 +381,7 @@ describe("an identify version is scored from accepted identities", () => {
       { trackId: "t5", sbTeamId: HOME },
       { trackId: "t6", sbTeamId: HOME },
     ]);
-    mockPrisma.visionBenchmarkRun.findUnique.mockResolvedValue({ id: RUN, modelVersionId: VERSION, datasetVersionId: DATASET, thresholdsVersion: "test-1" });
+    mockPrisma.visionBenchmarkRun.findUnique.mockResolvedValue({ id: RUN, modelVersionId: VERSION, datasetVersionId: DATASET, thresholdsVersion: "test-1", modelVersion: { model: { task: "identify" } } });
     mockPrisma.visionMetricResult.createMany.mockReturnValue("rows-op");
     mockPrisma.visionBenchmarkRun.update.mockReturnValue("run-op");
     mockPrisma.visionModelVersion.updateMany.mockReturnValue("stage-op");

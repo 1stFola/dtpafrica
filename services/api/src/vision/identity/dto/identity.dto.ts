@@ -6,6 +6,11 @@ export class SetSidesDto {
 
   @IsUUID()
   B!: string;
+
+  /** Change sides already decided for this job. Without it a different answer is refused. */
+  @IsOptional()
+  @IsBoolean()
+  override?: boolean;
 }
 
 export class AssignIdentityDto {

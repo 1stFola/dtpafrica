@@ -47,7 +47,7 @@ export class VisionIdentityController {
   @Post("review/jobs/:jobId/sides")
   @RequirePermissions("vision.review")
   async setSides(@Param("jobId") jobId: string, @Body() dto: SetSidesDto, @AdminAuth() auth: AdminAuthContext) {
-    return jsonSafe(await this.identity.setSides(jobId, { A: dto.A, B: dto.B }, auth));
+    return jsonSafe(await this.identity.setSides(jobId, { A: dto.A, B: dto.B, override: dto.override }, auth));
   }
 
   @Get("review/tracks/:trackId/candidates")

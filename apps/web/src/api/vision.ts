@@ -601,7 +601,7 @@ export function fetchVisionTrackCandidates(trackId: string, wholeMatch = false) 
   return adminFetch<VisionTrackCandidates>(`/vision/review/tracks/${trackId}/candidates${wholeMatch ? "?all=1" : ""}`);
 }
 
-export function setVisionTeamSides(jobId: string, sides: { A: string; B: string }) {
+export function setVisionTeamSides(jobId: string, sides: { A: string; B: string; override?: boolean }) {
   return adminFetch<{ inferenceJobId: string; sides: Record<string, string>; decidedBy: string }>(
     `/vision/review/jobs/${jobId}/sides`,
     { method: "POST", body: JSON.stringify(sides) }
@@ -957,6 +957,8 @@ export type VisionModelVersionRow = {
   promotedAt: string | null;
   createdAt: string;
   _count: { jobs: number };
+  /** The promotion request waiting on a second person, if any. */
+  pendingPromotion?: { id: string; fromStage: string; toStage: string; requestedBy: string; requestedByEmail: string | null; createdAt: string } | null;
 };
 
 export type VisionModelRow = { id: string; key: string; task: string; description: string | null; createdAt: string; versions: VisionModelVersionRow[] };

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { InMemoryObjectStore } from "../storage/in-memory-object-store";
 import type { BenchmarkThresholds } from "./benchmark-thresholds";
-import { VisionPromotionsService, type PromotionGate } from "./promotions.service";
+import { VisionPromotionsService, stagesOf, type PromotionGate } from "./promotions.service";
 
 /** The stored checks, typed: Prisma hands back Json. */
 const gateOf = (request: { checks: unknown }) => request.checks as PromotionGate;
@@ -25,12 +25,13 @@ const GOLD = "33333333-3333-4333-8333-333333333399";
 
 const mockPrisma = {
   visionModelVersion: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-  visionPromotionRequest: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  visionPromotionRequest: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   visionBenchmarkRun: { findFirst: vi.fn() },
   visionMetricResult: { findMany: vi.fn() },
   visionDatasetVersion: { findUnique: vi.fn() },
   visionJob: { count: vi.fn() },
   $transaction: vi.fn(),
+  $queryRaw: vi.fn(),
 };
 const mockAudit = { record: vi.fn() };
 const mockRights = { canTrain: vi.fn() };
@@ -94,10 +95,11 @@ beforeEach(async () => {
   service = new VisionPromotionsService(mockPrisma as never, mockAudit as never, store, mockRights as never, mockDatasets as never, thresholds);
   await allClear();
   mockPrisma.visionPromotionRequest.create.mockImplementation(({ data }: never) => Promise.resolve({ id: "pr-1", ...(data as object) }));
-  mockPrisma.visionPromotionRequest.update.mockReturnValue("update-request");
-  mockPrisma.visionModelVersion.update.mockReturnValue("update-version");
-  mockPrisma.visionModelVersion.updateMany.mockReturnValue("update-others");
-  mockPrisma.$transaction.mockResolvedValue([]);
+  mockPrisma.visionPromotionRequest.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.visionModelVersion.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.$queryRaw.mockResolvedValue([]);
+  // Every write is inside an interactive transaction; the fake runs it against the same mock.
+  mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma));
   mockAudit.record.mockResolvedValue(undefined);
   mockRights.canTrain.mockResolvedValue({ allowed: true });
   mockDatasets.checkLeakage.mockResolvedValue({ ok: true, offendingGroups: [] });
@@ -152,6 +154,24 @@ describe("requesting a promotion", () => {
   it("refuses a second request while one is pending", async () => {
     mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue({ id: "pr-0", requestedBy: "u-x" });
     await expect(service.request(VERSION, trainer)).rejects.toMatchObject({ response: { error: "PromotionPending", requestId: "pr-0" } });
+  });
+
+  it("leaves one pending request when two people ask at once", async () => {
+    // Neither saw the other's when they looked. Under the version's lock, the second does.
+    mockPrisma.visionPromotionRequest.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "pr-theirs" });
+    await expect(service.request(VERSION, trainer)).rejects.toMatchObject({ response: { error: "PromotionPending", requestId: "pr-theirs" } });
+    expect(mockPrisma.visionPromotionRequest.create).not.toHaveBeenCalled();
+    expect(mockAudit.record).not.toHaveBeenCalled();
+    // The lock is the version's, taken before the look that counts.
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mockPrisma.$queryRaw.mock.calls[0]![0])).toContain(`vision-promotion:version:${VERSION}`);
+    expect(mockPrisma.$queryRaw.mock.invocationCallOrder[0]!).toBeLessThan(mockPrisma.visionPromotionRequest.findFirst.mock.invocationCallOrder[1]!);
+  });
+
+  it("does not file a request from a stage the version has left meanwhile", async () => {
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValueOnce(version()).mockResolvedValueOnce({ stage: "staging" });
+    await expect(service.request(VERSION, trainer)).rejects.toMatchObject({ response: { error: "StageChanged" } });
+    expect(mockPrisma.visionPromotionRequest.create).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown version", async () => {
@@ -215,6 +235,28 @@ describe("the promotion gate", () => {
   it("fails without a succeeded inference on the built image", async () => {
     mockPrisma.visionJob.count.mockResolvedValue(0);
     expect((await failures()).map((x) => x.name)).toEqual(["smoke"]);
+    expect(mockPrisma.visionJob.count.mock.calls.at(-1)![0].where).toEqual({ type: { in: ["detect"] }, state: "succeeded", modelVersionId: VERSION });
+  });
+
+  it("looks for the smoke run in the stage the model's task runs in", async () => {
+    // A tracker's runs are track jobs, an identify version's are identify jobs. Counting
+    // detect jobs for every task meant neither could ever pass.
+    for (const [task, stage] of [["track", "track"], ["identify", "identify"], ["detect", "detect"]] as const) {
+      mockPrisma.visionModelVersion.findUnique.mockResolvedValue(version({ model: { key: `${task}/x`, task } }));
+      const request = await service.request(VERSION, trainer);
+      expect(gateOf(request).passed.find((c) => c.name === "smoke")!.detail).toBe(`1 succeeded ${stage} job(s) ran this version.`);
+      expect(mockPrisma.visionJob.count.mock.calls.at(-1)![0].where).toEqual({ type: { in: [stage] }, state: "succeeded", modelVersionId: VERSION });
+    }
+    expect(stagesOf("track")).toEqual(["track"]);
+  });
+
+  it("fails the smoke check for a task no stage runs yet, and says that is why", async () => {
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(version({ model: { key: "vlm/x", task: "vlm" } }));
+    mockPrisma.visionJob.count.mockClear();
+    const f = await failures();
+    expect(f.find((x) => x.name === "smoke")!.detail).toBe("No stage runs a vlm model yet, so nothing can have run this version.");
+    expect(mockPrisma.visionJob.count).not.toHaveBeenCalled();
+    expect(stagesOf("vlm")).toEqual([]);
   });
 
   it("reports every failure, not the first", async () => {
@@ -294,6 +336,7 @@ describe("the promotion gate", () => {
       ]);
       const request = await service.request(VERSION, trainer);
       expect(gateOf(request).comparedWith).toBe(OTHER);
+      expect(gateOf(request).comparedWithAll).toEqual([OTHER]);
       expect(gateOf(request).failures).toEqual([]);
     });
 
@@ -339,9 +382,12 @@ describe("approving", () => {
     mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue(pending);
     const result = await service.approve(VERSION, approver, "looked at the slices");
     expect(result).toEqual({ requestId: "pr-1", modelVersionId: VERSION, fromStage: "benchmarked", toStage: "staging", replacedVersionIds: [] });
-    expect(mockPrisma.visionModelVersion.update.mock.calls[0]![0]).toMatchObject({ where: { id: VERSION }, data: { stage: "staging", promotedBy: "u-approver" } });
-    expect(mockPrisma.visionPromotionRequest.update.mock.calls[0]![0].data).toMatchObject({ state: "approved", decidedBy: "u-approver", decisionReason: "looked at the slices" });
+    // Both writes are conditional on what was read: the request still pending, the version still where it was.
+    expect(mockPrisma.visionPromotionRequest.updateMany.mock.calls[0]![0]).toMatchObject({ where: { id: "pr-1", state: "pending" }, data: { state: "approved", decidedBy: "u-approver", decisionReason: "looked at the slices", replacedVersionIds: [] } });
+    expect(mockPrisma.visionModelVersion.updateMany.mock.calls[0]![0]).toMatchObject({ where: { id: VERSION, stage: "benchmarked" }, data: { stage: "staging", promotedBy: "u-approver" } });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "model.promoted", targetId: VERSION }), approver);
+    // To staging only the version's lock is taken; production is nobody else's business.
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it("re-runs the gate and leaves the request pending if it now fails", async () => {
@@ -361,6 +407,21 @@ describe("approving", () => {
     await expect(service.approve(VERSION, approver)).rejects.toMatchObject({ response: { error: "NoPendingPromotion" } });
   });
 
+  it("promotes once when two people approve at once: the second finds the request decided", async () => {
+    mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue(pending);
+    mockPrisma.visionPromotionRequest.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.approve(VERSION, approver)).rejects.toMatchObject({ response: { error: "PromotionDecided" } });
+    expect(mockPrisma.visionModelVersion.updateMany).not.toHaveBeenCalled();
+    expect(mockAudit.record).not.toHaveBeenCalled();
+  });
+
+  it("does not move a version that left the request's stage between the read and the write", async () => {
+    mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue(pending);
+    mockPrisma.visionModelVersion.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.approve(VERSION, approver)).rejects.toMatchObject({ response: { error: "StageChanged" } });
+    expect(mockAudit.record).not.toHaveBeenCalled();
+  });
+
   it("to production, demotes every other production version of the task and records them", async () => {
     mockPrisma.visionModelVersion.findUnique.mockResolvedValue(version({ stage: "staging" }));
     mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue({ ...pending, fromStage: "staging", toStage: "production" });
@@ -369,7 +430,14 @@ describe("approving", () => {
     mockPrisma.visionModelVersion.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: OTHER }]);
     const result = await service.approve(VERSION, approver);
     expect(result.replacedVersionIds).toEqual([OTHER]);
-    expect(mockPrisma.visionModelVersion.updateMany).toHaveBeenCalledWith({ where: { id: { in: [OTHER] } }, data: { stage: "staging" } });
+    expect(mockPrisma.visionPromotionRequest.updateMany.mock.calls[0]![0].data.replacedVersionIds).toEqual([OTHER]);
+    expect(mockPrisma.visionModelVersion.updateMany).toHaveBeenCalledWith({ where: { id: { in: [OTHER] }, stage: "production" }, data: { stage: "staging" } });
+    // What is in production is read under the task's lock, so two versions of one task
+    // promoted at once cannot each miss the other.
+    const locks = mockPrisma.$queryRaw.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(locks.some((l) => l.includes(`vision-promotion:version:${VERSION}`))).toBe(true);
+    expect(locks.some((l) => l.includes("vision-promotion:production:detect"))).toBe(true);
+    expect(mockPrisma.$queryRaw.mock.invocationCallOrder.at(-1)!).toBeLessThan(mockPrisma.visionModelVersion.findMany.mock.invocationCallOrder[1]!);
   });
 });
 
@@ -377,28 +445,95 @@ describe("rejecting", () => {
   it("records the reason and who decided", async () => {
     mockPrisma.visionPromotionRequest.findUnique.mockResolvedValue({ id: "pr-1", state: "pending", modelVersionId: VERSION });
     await service.reject("pr-1", "ball recall on night footage is not good enough", approver);
-    expect(mockPrisma.visionPromotionRequest.update.mock.calls[0]![0].data).toMatchObject({ state: "rejected", decidedBy: "u-approver", decisionReason: "ball recall on night footage is not good enough" });
+    expect(mockPrisma.visionPromotionRequest.updateMany.mock.calls[0]![0]).toMatchObject({ where: { id: "pr-1", state: "pending" }, data: { state: "rejected", decidedBy: "u-approver", decisionReason: "ball recall on night footage is not good enough" } });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "model.promotion.rejected" }), approver);
   });
 
   it("refuses to decide twice", async () => {
     mockPrisma.visionPromotionRequest.findUnique.mockResolvedValue({ id: "pr-1", state: "approved" });
     await expect(service.reject("pr-1", "late", approver)).rejects.toMatchObject({ response: { error: "PromotionDecided" } });
+    expect(mockPrisma.visionPromotionRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite an approval made a moment before", async () => {
+    mockPrisma.visionPromotionRequest.findUnique.mockResolvedValue({ id: "pr-1", state: "pending", modelVersionId: VERSION });
+    mockPrisma.visionPromotionRequest.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.reject("pr-1", "too late", approver)).rejects.toMatchObject({ response: { error: "PromotionDecided" } });
+    expect(mockAudit.record).not.toHaveBeenCalled();
   });
 });
 
 // ── rollback ──────────────────────────────────────────────────────────────────
 
 describe("rollback", () => {
-  it("restores exactly what the promotion replaced, in one operation", async () => {
+  const OTHER_PROD = "22222222-2222-4222-8222-222222222277";
+  /** The registry as the rollback's transaction reads it: its targets, then what is in production. */
+  function registry(targets: { id: string; stage: string }[], production: string[] = [VERSION]) {
+    // The fake honours the filter it is given, so a query that asks for less finds less.
+    mockPrisma.visionModelVersion.findMany.mockImplementation(async ({ where }: { where: { id?: string | { in?: string[]; notIn?: string[] }; stage?: string } }) => {
+      const id = where.id;
+      if (where.stage === "production") {
+        return production.filter((p) => (typeof id === "string" ? p === id : !(id?.notIn ?? []).includes(p))).map((p) => ({ id: p }));
+      }
+      const wanted = typeof id === "string" ? [id] : (id?.in ?? []);
+      return targets.filter((t) => wanted.includes(t.id)).map((t) => ({ ...t, version: "0.1", model: { key: "detector/x" } }));
+    });
+  }
+
+  beforeEach(() => {
     mockPrisma.visionModelVersion.findUnique.mockResolvedValue(version({ stage: "production" }));
     mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue({ id: "pr-2", replacedVersionIds: [OTHER], decidedAt: new Date() });
+    registry([{ id: OTHER, stage: "staging" }]);
+  });
+
+  it("restores exactly what the promotion replaced, in one operation", async () => {
     const result = await service.rollback(VERSION, approver);
-    expect(result).toEqual({ rolledBack: VERSION, restored: [OTHER], promotionRequestId: "pr-2" });
-    expect(mockPrisma.visionModelVersion.update).toHaveBeenCalledWith({ where: { id: VERSION }, data: { stage: "staging" } });
-    expect(mockPrisma.visionModelVersion.updateMany).toHaveBeenCalledWith({ where: { id: { in: [OTHER] } }, data: { stage: "production" } });
-    expect(mockPrisma.visionPromotionRequest.update.mock.calls[0]![0].data).toMatchObject({ rolledBackBy: "u-approver" });
+    expect(result).toEqual({ rolledBack: VERSION, restored: [OTHER], alsoDemoted: [], promotionRequestId: "pr-2" });
+    expect(mockPrisma.visionModelVersion.updateMany).toHaveBeenCalledWith({ where: { id: { in: [VERSION] }, stage: "production" }, data: { stage: "staging" } });
+    expect(mockPrisma.visionModelVersion.updateMany).toHaveBeenCalledWith({ where: { id: { in: [OTHER] }, stage: "staging" }, data: { stage: "production" } });
+    expect(mockPrisma.visionPromotionRequest.updateMany.mock.calls[0]![0]).toMatchObject({ where: { id: "pr-2", rolledBackAt: null }, data: { rolledBackBy: "u-approver" } });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "model.rolled_back" }), approver);
+    expect(JSON.stringify(mockPrisma.$queryRaw.mock.calls[0]![0])).toContain("vision-promotion:production:detect");
+  });
+
+  it("leaves the task with exactly what was restored: another version that reached production since is demoted too", async () => {
+    registry([{ id: OTHER, stage: "staging" }], [VERSION, OTHER_PROD]);
+    const result = await service.rollback(VERSION, approver);
+    expect(result.alsoDemoted).toEqual([OTHER_PROD]);
+    expect(mockPrisma.visionModelVersion.updateMany).toHaveBeenCalledWith({ where: { id: { in: [VERSION, OTHER_PROD] }, stage: "production" }, data: { stage: "staging" } });
+    expect(mockAudit.record.mock.calls[0]![0].data).toMatchObject({ restoredVersionIds: [OTHER], alsoDemoted: [OTHER_PROD] });
+  });
+
+  it("does not put back a version that was archived, promoted again or deleted since: it says which", async () => {
+    for (const [targets, said] of [
+      [[{ id: OTHER, stage: "archived" }], "detector/x@0.1 is archived"],
+      [[{ id: OTHER, stage: "production" }], "detector/x@0.1 is production"],
+      [[], `${OTHER} no longer exists`],
+    ] as const) {
+      registry([...targets]);
+      mockPrisma.visionModelVersion.updateMany.mockClear();
+      const refused = await service.rollback(VERSION, approver).catch((e) => e.getResponse());
+      expect(refused).toMatchObject({ error: "RollbackTargetMoved" });
+      expect(refused.message).toContain(said);
+      expect(mockPrisma.visionModelVersion.updateMany).not.toHaveBeenCalled();
+    }
+    // The claim on the promotion is made first and is undone with the transaction the refusal aborts.
+    expect(mockAudit.record).not.toHaveBeenCalled();
+  });
+
+  it("rolls back once when two people do it at once", async () => {
+    mockPrisma.visionPromotionRequest.updateMany.mockResolvedValue({ count: 0 });
+    // The winner has already restored its target to production. The loser is told it was
+    // rolled back, not that its target "moved".
+    registry([{ id: OTHER, stage: "production" }], [OTHER]);
+    await expect(service.rollback(VERSION, approver)).rejects.toMatchObject({ response: { error: "AlreadyRolledBack" } });
+    expect(mockPrisma.visionModelVersion.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not restore over a version that left production between the read and the write", async () => {
+    registry([{ id: OTHER, stage: "staging" }], []);
+    await expect(service.rollback(VERSION, approver)).rejects.toMatchObject({ response: { error: "NotInProduction" } });
+    expect(mockPrisma.visionModelVersion.updateMany).not.toHaveBeenCalled();
   });
 
   it("refuses a version that is not in production", async () => {
@@ -407,7 +542,6 @@ describe("rollback", () => {
   });
 
   it("refuses when the promotion replaced nothing", async () => {
-    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(version({ stage: "production" }));
     mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue({ id: "pr-2", replacedVersionIds: [] });
     await expect(service.rollback(VERSION, approver)).rejects.toMatchObject({ response: { error: "NothingToRollBackTo" } });
     mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue(null);
@@ -415,8 +549,6 @@ describe("rollback", () => {
   });
 
   it("looks only at promotions not already rolled back", async () => {
-    mockPrisma.visionModelVersion.findUnique.mockResolvedValue(version({ stage: "production" }));
-    mockPrisma.visionPromotionRequest.findFirst.mockResolvedValue({ id: "pr-2", replacedVersionIds: [OTHER] });
     await service.rollback(VERSION, approver);
     expect(mockPrisma.visionPromotionRequest.findFirst.mock.calls[0]![0].where).toMatchObject({ state: "approved", toStage: "production", rolledBackAt: null });
   });

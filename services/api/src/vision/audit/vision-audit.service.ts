@@ -26,6 +26,7 @@ export const VISION_AUDIT_ACTIONS = [
   "job.queued",
   "job.cancelled",
   "identity.sides.decided",
+  "identity.sides.changed",
   "identity.assigned",
   "identity.accepted",
   "identity.rejected",

@@ -87,8 +87,14 @@ export class VisionIdentityService {
   /**
    * Which of the match's two teams cluster A is, and which B. One decision per
    * identify job, both sides at once, by a person.
+   *
+   * Changing a decision already made is not a quiet upsert. Every identity on
+   * that job's tracks was checked against the sides as they stood, and the
+   * identify benchmark reads them as truth; swapping them changes what all of
+   * that means. So a different answer is refused unless the caller says
+   * `override`, and the audit keeps what it replaced.
    */
-  async setSides(inferenceJobId: string, sides: { A: string; B: string }, actor?: AdminAuthContext) {
+  async setSides(inferenceJobId: string, sides: { A: string; B: string; override?: boolean }, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "decide which team a side is");
     const job = await this.prisma.visionJob.findUnique({
       where: { id: inferenceJobId },
@@ -122,6 +128,19 @@ export class VisionIdentityService {
       });
     }
 
+    const existing = await this.prisma.visionTeamSide.findMany({ where: { inferenceJobId }, select: { team: true, sbTeamId: true, decidedBy: true } });
+    const previous = Object.fromEntries(existing.map((e) => [e.team, e.sbTeamId])) as Partial<Record<"A" | "B", string>>;
+    const changes = existing.some((e) => (e.team === "A" || e.team === "B") && sides[e.team] !== e.sbTeamId);
+    if (changes && !sides.override) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "SidesAlreadyDecided",
+        message: `This job's sides were decided as A ${previous.A ?? "?"}, B ${previous.B ?? "?"}.`,
+        current: previous,
+        remediation: "Changing them changes what every identity and benchmark on this job means. Send override: true to do it on purpose.",
+      });
+    }
+
     const rows = await this.prisma.$transaction(
       (["A", "B"] as const).map((team) =>
         this.prisma.visionTeamSide.upsert({
@@ -132,7 +151,7 @@ export class VisionIdentityService {
       )
     );
     await this.audit.record(
-      { action: "identity.sides.decided", targetKind: "vision_job", targetId: inferenceJobId, data: { A: sides.A, B: sides.B } },
+      { action: changes ? "identity.sides.changed" : "identity.sides.decided", targetKind: "vision_job", targetId: inferenceJobId, data: { A: sides.A, B: sides.B, ...(changes ? { previous } : {}) } },
       actor
     );
     return { inferenceJobId, sides: Object.fromEntries(rows.map((r) => [r.team, r.sbTeamId])), decidedBy: person.userId };
@@ -336,10 +355,7 @@ export class VisionIdentityService {
         remediation: "A second person with vision.review accepts. That is the whole control before a name goes public.",
       });
     }
-    const updated = await this.prisma.visionIdentityAssignment.update({
-      where: { id: row.id },
-      data: { reviewState: "accepted", reviewedBy: person.userId },
-    });
+    const updated = await this.decideOnce(row, { reviewState: "accepted", reviewedBy: person.userId });
     await this.audit.record({ action: "identity.accepted", targetKind: "vision_identity_assignment", targetId: row.id }, actor);
     return updated;
   }
@@ -347,10 +363,7 @@ export class VisionIdentityService {
   async reject(assignmentId: string, reason: string, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "reject an identity");
     const row = await this.loadAssignment(assignmentId);
-    const updated = await this.prisma.visionIdentityAssignment.update({
-      where: { id: row.id },
-      data: { reviewState: "rejected", reviewedBy: person.userId, note: [row.note, `rejected: ${reason}`].filter(Boolean).join(" | ") },
-    });
+    const updated = await this.decideOnce(row, { reviewState: "rejected", reviewedBy: person.userId, note: [row.note, `rejected: ${reason}`].filter(Boolean).join(" | ") });
     await this.audit.record({ action: "identity.rejected", targetKind: "vision_identity_assignment", targetId: row.id, reason }, actor);
     return updated;
   }
@@ -533,6 +546,27 @@ export class VisionIdentityService {
     return track;
   }
 
+  /**
+   * A decision, once. An accepted identity is public; flipping it to rejected in
+   * place, or back, rewrote who reviewed it and left no trace of the first
+   * decision but the audit log. A row is decided only from `unreviewed`, and only
+   * while it is still the current row; to change a decision, assign again, which
+   * supersedes it and starts the review over.
+   */
+  private async decideOnce(row: { id: string; reviewState: string }, data: { reviewState: "accepted" | "rejected"; reviewedBy: string; note?: string }) {
+    const refuse = (state: string) =>
+      new ConflictException({
+        statusCode: 409,
+        error: "AlreadyDecided",
+        message: `Assignment ${row.id} is ${state}.`,
+        remediation: "A decision is not changed in place. Assign the track again to supersede it and start its review over.",
+      });
+    if (row.reviewState !== "unreviewed") throw refuse(row.reviewState);
+    const decided = await this.prisma.visionIdentityAssignment.updateMany({ where: { id: row.id, supersededBy: null, reviewState: "unreviewed" }, data });
+    if (decided.count !== 1) throw refuse("decided or superseded by someone else meanwhile");
+    return this.prisma.visionIdentityAssignment.findUnique({ where: { id: row.id } });
+  }
+
   private async loadAssignment(id: string) {
     const row = await this.prisma.visionIdentityAssignment.findUnique({ where: { id } });
     if (!row) throw new NotFoundException(`Unknown identity assignment ${id}`);
@@ -592,16 +626,35 @@ export class VisionIdentityService {
     return slot;
   }
 
+  /**
+   * Supersede what a new window overlaps, and keep what it does not cover.
+   *
+   * An earlier assignment that the new window only partly overlaps used to be
+   * superseded whole: saying who a track was for its last ten seconds erased an
+   * accepted, public identity for the minute before. The part outside the new
+   * window is now filed again as its own row, carrying the old decision and its
+   * review as they were -- nothing about that stretch was said, so nothing about
+   * it changes.
+   */
   private async supersedeOverlaps(
     tx: Prisma.TransactionClient,
     trackId: string,
     byId: string,
     window: { from: number; to: number }
   ) {
-    await tx.visionIdentityAssignment.updateMany({
+    const overlapped = await tx.visionIdentityAssignment.findMany({
       where: { trackId, supersededBy: null, id: { not: byId }, validFromMs: { lt: window.to }, validToMs: { gt: window.from } },
-      data: { supersededBy: byId },
     });
+    if (!overlapped.length) return;
+    for (const old of overlapped) {
+      const { id: _id, createdAt: _createdAt, supersededBy: _supersededBy, validFromMs, validToMs, ...kept } = old;
+      const remainders = [
+        ...(validFromMs < window.from ? [{ validFromMs, validToMs: window.from }] : []),
+        ...(validToMs > window.to ? [{ validFromMs: window.to, validToMs }] : []),
+      ];
+      for (const part of remainders) await tx.visionIdentityAssignment.create({ data: { ...kept, ...part } });
+    }
+    await tx.visionIdentityAssignment.updateMany({ where: { id: { in: overlapped.map((o) => o.id) }, supersededBy: null }, data: { supersededBy: byId } });
   }
 }
 

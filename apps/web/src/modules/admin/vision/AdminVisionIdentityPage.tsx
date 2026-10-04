@@ -695,13 +695,25 @@ export function AdminVisionIdentityPage() {
                     <option value={review.match.awayTeam.id}>{review.match.awayTeam.name}</option>
                   </select>
                 </label>
-                <button
-                  type="button"
-                  disabled={busy || !sideA || !sideB || sideA === sideB}
-                  onClick={() => void run("Sides decided.", () => setVisionTeamSides(identifyJob, { A: sideA, B: sideB }))}
-                >
-                  Decide sides
-                </button>
+                {(() => {
+                  /* Sides already decided, and a different answer chosen: every identity on this job
+                     was checked against the old one, so the API refuses the change unless it is
+                     asked for on purpose. The button says which it is. */
+                  const decided = Object.fromEntries(review.sidesDecided.map((s) => [s.team, s.sbTeamId]));
+                  const changing = review.sidesDecided.length > 0 && (decided.A !== sideA || decided.B !== sideB);
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy || !sideA || !sideB || sideA === sideB}
+                        onClick={() => void run(changing ? "Sides changed." : "Sides decided.", () => setVisionTeamSides(identifyJob, { A: sideA, B: sideB, ...(changing ? { override: true } : {}) }))}
+                      >
+                        {changing ? "Change sides" : "Decide sides"}
+                      </button>
+                      {changing && <span className="vision-footnote"> This replaces a decision already made; identities on this job were checked against it.</span>}
+                    </>
+                  );
+                })()}
                 {sideA && sideA === sideB && <span className="vision-footnote"> One team each.</span>}
               </>
             )}

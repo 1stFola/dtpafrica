@@ -275,6 +275,20 @@ artifact by declared key, and its completion becomes one `VisionTeamAssignment` 
 returns each track's latest assignment as `teamAssignments[0]`. See
 [34-PHASE-4-INCREMENT-3.md](./34-PHASE-4-INCREMENT-3.md).
 
+**Promotion and identity, as fixed** ([57-QA-FIX-7-MODELS.md](./57-QA-FIX-7-MODELS.md)).
+`GET /vision/models` returns each version's `pendingPromotion` (`id`, `fromStage`, `toStage`,
+`requestedBy`, `requestedByEmail`, `createdAt`) or null. A request, an approval and a rollback
+are each one transaction under a lock, conditional on the state read: a second request gets
+`PromotionPending`, a second decision `PromotionDecided`, a version that moved `StageChanged`.
+`rollback` refuses `RollbackTargetMoved` when what it would restore is no longer in staging and
+`AlreadyRolledBack` when it lost a race; its reply adds `alsoDemoted`. The gate's smoke check
+counts jobs of the stages that run the model's task, and its record carries `comparedWithAll`.
+A benchmark run is judged against the minimums of its model's task. On identity,
+`accept` and `reject` work only from `unreviewed` (`AlreadyDecided`); `sides` refuses a
+different answer to one already given (`SidesAlreadyDecided`, with `current`) unless the body
+carries `override: true`; and an assignment that partly overlaps an earlier one re-files the
+part it does not cover, with its decision and review unchanged.
+
 **Identity** is a person's word, never a machine's. `POST /vision/review/jobs/:jobId/sides` says
 which of the match's two teams cluster `A` and `B` are (`SidesSame`, `SidesNotTheMatch`,
 `NotAnIdentifyJob`); `GET /vision/review/tracks/:trackId/candidates` is the track's side's match

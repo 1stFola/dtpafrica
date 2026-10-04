@@ -412,7 +412,7 @@ export class VisionBenchmarksService {
   ): Promise<{ applied: boolean; detail: string }> {
     const run = await this.prisma.visionBenchmarkRun.findUnique({
       where: { id: runId },
-      select: { id: true, modelVersionId: true, datasetVersionId: true, thresholdsVersion: true },
+      select: { id: true, modelVersionId: true, datasetVersionId: true, thresholdsVersion: true, modelVersion: { select: { model: { select: { task: true } } } } },
     });
     if (!run) return { applied: false, detail: `benchmark run ${runId} does not exist` };
 
@@ -428,7 +428,8 @@ export class VisionBenchmarksService {
       };
     }
 
-    const verdict = judge(parsed.metrics, this.thresholds);
+    // Against the bar set for this model's task: a tracker is not held to a detector's metrics.
+    const verdict = judge(parsed.metrics, this.thresholds, run.modelVersion.model.task);
     const report = artifacts.find((a) => a.role === "benchmark");
 
     await this.prisma.$transaction([

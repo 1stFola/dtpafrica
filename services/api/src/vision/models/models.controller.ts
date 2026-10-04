@@ -61,7 +61,7 @@ export class VisionModelsController {
   /**
    * Score a version against a frozen gold version. `vision.models.train`, like the
    * registration it follows: measuring is the trainer's job. Judging the measurement
-   * worthy of production is somebody else's, and has no route yet.
+   * worthy of production is somebody else's: the promotion routes below.
    */
   @Post("versions/:id/benchmark")
   @RequirePermissions("vision.models.train")

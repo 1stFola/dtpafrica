@@ -379,6 +379,56 @@ async function main() {
     check("v2's history is listed", Array.isArray(history.body.requests) && history.body.requests.length >= 2, true);
     const audit = await prisma.visionAuditLog.findMany({ where: { targetId: v2, action: { in: ["model.promoted", "model.rolled_back"] } }, select: { action: true, actorId: true } });
     check("promotion and rollback are audited to the approver", audit.every((a) => a.actorId === approver.id) && audit.length >= 2, true);
+
+    // ── 5. Two at once, and a rollback target that moved (docs/vision/57) ──
+    section("5. Two at once leave one; a rollback restores only what is still where it was left");
+
+    // v1 is production, v2 staging. Two people who may both ask for v2 -> production ask in the same instant.
+    const [askA, askB] = await Promise.all([
+      asTrainer(`/vision/models/versions/${v2}/promotion-request`, {}),
+      asApprover(`/vision/models/versions/${v2}/promotion-request`, {}),
+    ]);
+    check("two requests at once: one is filed, the other told one is pending", [askA.status, askB.status].sort().join(","), "201,409");
+    check("…refused by name", [askA, askB].find((r) => r.status === 409)?.body.error, "PromotionPending");
+    check("…and one row is pending, not two", await prisma.visionPromotionRequest.count({ where: { modelVersionId: v2, state: "pending" } }), 1);
+    const listed = await asKey(`/vision/models`);
+    const listedV2 = (listed.body.models ?? []).flatMap((m: any) => m.versions).find((v: any) => v.id === v2);
+    const winner = [askA, askB].find((r) => r.status === 201)!;
+    check("the registry list says which version has a request waiting, and for which stage", `${listedV2?.pendingPromotion?.id === winner.body.id}/${listedV2?.pendingPromotion?.toStage}`, "true/production");
+    check("…and that the production version has none", (listed.body.models ?? []).flatMap((m: any) => m.versions).find((v: any) => v.id === v1)?.pendingPromotion, null);
+
+    // Start clean: the trainer's request alone, then two approvers decide it in the same instant.
+    await asApprover(`/vision/models/promotions/${winner.body.id}/reject`, { reason: "gate fixture: clearing for the next check" });
+    const approver2 = await person(fx, "vision_admin", "approver2");
+    const asApprover2 = asUser(approver2.token);
+    const lone = await asTrainer(`/vision/models/versions/${v2}/promotion-request`, {});
+    check("the trainer requests v2 -> production again", `${lone.status}/${lone.body.toStage}`, "201/production");
+    const [okA, okB] = await Promise.all([
+      asApprover(`/vision/models/versions/${v2}/promote`, {}),
+      asApprover2(`/vision/models/versions/${v2}/promote`, {}),
+    ]);
+    const won = [okA, okB].filter((r) => r.status === 201);
+    const lost = [okA, okB].filter((r) => r.status !== 201);
+    check("two approvals at once: one promotes", `${won.length}/${won[0]?.body.toStage}`, "1/production");
+    check("…the other finds the request decided, or nothing pending", ["PromotionDecided", "NoPendingPromotion"].includes(lost[0]?.body.error), true);
+    check("…one audit entry for the promotion, not two", await prisma.visionAuditLog.count({ where: { targetId: v2, action: "model.promoted", data: { path: ["requestId"], equals: lone.body.id } } }), 1);
+    const stages = async () => `${(await asKey(`/vision/models/versions/${v1}`)).body.version?.stage}/${(await asKey(`/vision/models/versions/${v2}`)).body.version?.stage}`;
+    check("v1 is staging and v2 production: one production version for the task", await stages(), "staging/production");
+
+    // v1 is archived while v2 is in production. Rolling v2 back must not quietly resurrect it.
+    await prisma.visionModelVersion.update({ where: { id: v1 }, data: { stage: "archived" } });
+    const moved = await asApprover(`/vision/models/versions/${v2}/rollback`, {});
+    check("rolling back onto a version archived since: refused by name", `${moved.status}/${moved.body.error}`, "409/RollbackTargetMoved");
+    check("…saying which version and where it is now", String(moved.body.message ?? "").includes("is archived"), true);
+    check("…and nothing moved", await stages(), "archived/production");
+    await prisma.visionModelVersion.update({ where: { id: v1 }, data: { stage: "staging" } });
+    const [backA, backB] = await Promise.all([
+      asApprover(`/vision/models/versions/${v2}/rollback`, {}),
+      asApprover2(`/vision/models/versions/${v2}/rollback`, {}),
+    ]);
+    check("two rollbacks at once: one restores", [backA.status, backB.status].sort().join(","), "201,409");
+    check("…the other is refused, not applied twice", ["AlreadyRolledBack", "NotInProduction", "NothingToRollBackTo"].includes([backA, backB].find((r) => r.status === 409)?.body.error), true);
+    check("v1 is production again and v2 staging", await stages(), "production/staging");
   } catch (error) {
     failures += 1;
     console.error("\nGate aborted:", error);

@@ -287,6 +287,38 @@ async function main() {
     check("the audit trail: one side decision", count("identity.sides.decided"), 1);
     check("…every assignment (six calls; a merge is one)", count("identity.assigned"), 6);
     check("…one acceptance and one rejection", `${count("identity.accepted")}/${count("identity.rejected")}`, "1/1");
+
+    // ── 5. Decided once; sides not swapped quietly; an overlap keeps the rest (docs/vision/57) ──
+    section("5. A decision is made once, sides are not swapped quietly, and a partial overlap keeps what it does not cover");
+
+    const flip = await S.post(`/vision/review/identity/${firstId}/reject`, { reason: "changed my mind" });
+    check("an accepted identity is not flipped to rejected in place", `${flip.status}/${flip.body.error}`, "409/AlreadyDecided");
+    const unflip = await S.post(`/vision/review/identity/${unknown.body.assignment.id}/accept`, {});
+    check("nor a rejected one accepted", `${unflip.status}/${unflip.body.error}`, "409/AlreadyDecided");
+    const still = await prisma.visionIdentityAssignment.findUnique({ where: { id: firstId }, select: { reviewState: true, reviewedBy: true } });
+    check("…and the accepted row is as it was", `${still?.reviewState}/${still?.reviewedBy === admin.id}`, "accepted/true");
+
+    const swapped = await R.post(`/vision/review/jobs/${identifyJob}/sides`, { A: match.awayTeamId, B: match.homeTeamId });
+    check("sides already decided are not swapped by a second answer", `${swapped.status}/${swapped.body.error}/${swapped.body.current?.A === match.homeTeamId}`, "409/SidesAlreadyDecided/true");
+    const sameAgain = await R.post(`/vision/review/jobs/${identifyJob}/sides`, { A: match.homeTeamId, B: match.awayTeamId });
+    check("the same answer again is not a change", sameAgain.status, 201);
+    const onPurpose = await R.post(`/vision/review/jobs/${identifyJob}/sides`, { A: match.awayTeamId, B: match.homeTeamId, override: true });
+    check("with override they change, and the audit keeps what they were", `${onPurpose.status}/${onPurpose.body.sides?.A === match.awayTeamId}`, "201/true");
+    const changed = await prisma.visionAuditLog.findFirst({ where: { action: "identity.sides.changed", targetId: identifyJob }, select: { data: true } });
+    check("…as A and B before", `${(changed?.data as any)?.previous?.A === match.homeTeamId}/${(changed?.data as any)?.previous?.B === match.awayTeamId}`, "true/true");
+    await R.post(`/vision/review/jobs/${identifyJob}/sides`, { A: match.homeTeamId, B: match.awayTeamId, override: true });
+
+    // h1 is accepted and public on track 1 for 9000-14000. The reviewer now says who it was for one second in the middle.
+    const middle = await R.post(`/vision/review/tracks/${t1}/identity`, { matchSquadPlayerId: h2.id, validFromMs: 11000, validToMs: 12000 });
+    check("an identity for one second in the middle of an accepted window", middle.status, 201);
+    const nowCurrent = await prisma.visionIdentityAssignment.findMany({ where: { trackId: t1, supersededBy: null }, orderBy: { validFromMs: "asc" }, select: { validFromMs: true, validToMs: true, matchSquadPlayerId: true, reviewState: true, reviewedBy: true } });
+    check("…leaves the accepted identity either side of it, still accepted, still the second person's", nowCurrent.map((r) => `${r.validFromMs}-${r.validToMs}:${r.matchSquadPlayerId === h1.id ? "h1" : "h2"}:${r.reviewState}`).join(" "), "9000-11000:h1:accepted 11000-12000:h2:unreviewed 12000-14000:h1:accepted 14000-19000:h2:unreviewed");
+    check("…carrying who accepted it", nowCurrent.filter((r) => r.reviewState === "accepted").every((r) => r.reviewedBy === admin.id), true);
+    const pubAfter = await api(`/vision/assets/${fx.assetId}/identity?public=1`);
+    const windows = (pubAfter.body.tracks ?? []).flatMap((t: any) => t.identities).map((i: any) => `${i.validFromMs}-${i.validToMs}`).sort();
+    check("the public view still names him for the two stretches nobody spoke about, and not for the second in between", windows.join(","), "12000-14000,9000-11000");
+    const old = await prisma.visionIdentityAssignment.findUnique({ where: { id: firstId }, select: { supersededBy: true } });
+    check("…and the original row says what superseded it", old?.supersededBy === middle.body.assignment?.id, true);
   } catch (error) {
     failures += 1;
     console.error("\nGate aborted:", error);

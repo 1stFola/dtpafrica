@@ -6,7 +6,8 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import { ALL_SLICE, visionKeys, type VisionModelStage } from "@dtp/vision-contracts";
+import { Prisma } from "@prisma/client";
+import { ALL_SLICE, MODEL_TASK_BY_JOB_TYPE, visionKeys, type VisionModelStage } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
@@ -34,6 +35,11 @@ import { BENCHMARK_THRESHOLDS_TOKEN } from "./benchmarks.service";
  * Rollback is one operation: the request that put a version into production
  * recorded what it replaced, and rolling back restores exactly that.
  *
+ * Every write here is taken under a lock and is conditional on the state it was
+ * read in (docs/vision/57). Two requests for one version leave one pending; two
+ * approvals leave one promotion; two versions of one task promoted at once leave
+ * one in production.
+ *
  * See docs/vision/31-PHASE-3-INCREMENT-4.md.
  */
 
@@ -44,8 +50,10 @@ export type PromotionGate = {
   warnings: PromotionCheck[];
   failures: PromotionCheck[];
   benchmarkRunId: string | null;
-  /** The production version the candidate was compared against, if any. */
+  /** The production version the candidate was compared against, if any: the last of `comparedWithAll`. */
   comparedWith: string | null;
+  /** Every production version it was compared against. Normally one; more only if stages were set by hand. */
+  comparedWithAll: string[];
 };
 
 /** Where a stage can be promoted to. Anything else is not promotable. */
@@ -115,29 +123,30 @@ export class VisionPromotionsService {
       where: { modelVersionId: version.id, state: "pending" },
       select: { id: true, requestedBy: true },
     });
-    if (pending) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: "PromotionPending",
-        message: `A promotion request for ${version.model.key}@${version.version} is already waiting for a decision.`,
-        requestId: pending.id,
-        remediation: "Ask a holder of vision.models.promote to approve or reject it.",
-      });
-    }
+    if (pending) throw promotionPending(version, pending.id);
 
     const gate = await this.evaluateGate(version);
     if (gate.failures.length) throw gateFailed(gate);
 
-    const request = await this.prisma.visionPromotionRequest.create({
-      data: {
-        modelVersionId: version.id,
-        benchmarkRunId: gate.benchmarkRunId,
-        fromStage: version.stage,
-        toStage,
-        checks: gate as never,
-        requestedBy: person.userId,
-        requestedByEmail: person.email ?? null,
-      },
+    /* The check above was a courtesy; this one counts. Two people asking at once both
+       saw no pending request. Under the version's lock the second sees the first's. */
+    const request = await this.prisma.$transaction(async (tx) => {
+      await lock(tx, versionLock(version.id));
+      const waiting = await tx.visionPromotionRequest.findFirst({ where: { modelVersionId: version.id, state: "pending" }, select: { id: true } });
+      if (waiting) throw promotionPending(version, waiting.id);
+      const now = await tx.visionModelVersion.findUnique({ where: { id: version.id }, select: { stage: true } });
+      if (now?.stage !== version.stage) throw stageChanged(version.stage, now?.stage ?? "gone", "Request again from where the version now stands.");
+      return tx.visionPromotionRequest.create({
+        data: {
+          modelVersionId: version.id,
+          benchmarkRunId: gate.benchmarkRunId,
+          fromStage: version.stage,
+          toStage,
+          checks: gate as never,
+          requestedBy: person.userId,
+          requestedByEmail: person.email ?? null,
+        },
+      });
     });
 
     await this.audit.record(
@@ -187,50 +196,50 @@ export class VisionPromotionsService {
         remediation: "A second person with vision.models.promote decides. That is the whole control.",
       });
     }
-    if (version.stage !== request.fromStage) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: "StageChanged",
-        message: `The request was made from ${request.fromStage}; the version is now ${version.stage}.`,
-        remediation: "Reject this request and ask for a new one.",
-      });
-    }
+    if (version.stage !== request.fromStage) throw stageChanged(request.fromStage, version.stage);
 
     const gate = await this.evaluateGate(version);
     if (gate.failures.length) throw gateFailed(gate, "The request stays pending; fix the failures or reject it.");
 
     const toStage = request.toStage as VisionModelStage;
-    const replaced =
-      toStage === "production"
-        ? await this.prisma.visionModelVersion.findMany({
-            where: { stage: "production", model: { task: version.model.task }, id: { not: version.id } },
-            select: { id: true },
-          })
-        : [];
-    const replacedIds = replaced.map((r) => r.id);
     const now = new Date();
 
-    await this.prisma.$transaction([
-      ...(replacedIds.length
-        ? [this.prisma.visionModelVersion.updateMany({ where: { id: { in: replacedIds } }, data: { stage: "staging" } })]
-        : []),
-      this.prisma.visionModelVersion.update({
-        where: { id: version.id },
-        data: { stage: toStage, promotedBy: person.userId, promotedAt: now },
-      }),
-      this.prisma.visionPromotionRequest.update({
-        where: { id: request.id },
+    /* One transaction, under the version's lock and, for production, the task's. Each
+       step is conditional on what was read: the request still pending, the version still
+       where the request found it. Of two approvals at once the second finds the request
+       decided; of two versions of one task promoted at once the second demotes the first. */
+    const replacedIds = await this.prisma.$transaction(async (tx) => {
+      await lock(tx, versionLock(version.id));
+      if (toStage === "production") await lock(tx, productionLock(version.model.task));
+      const replaced =
+        toStage === "production"
+          ? await tx.visionModelVersion.findMany({
+              where: { stage: "production", model: { task: version.model.task }, id: { not: version.id } },
+              select: { id: true },
+            })
+          : [];
+      const ids = replaced.map((r) => r.id);
+      const decided = await tx.visionPromotionRequest.updateMany({
+        where: { id: request.id, state: "pending" },
         data: {
           state: "approved",
           decidedBy: person.userId,
           decidedByEmail: person.email ?? null,
           decidedAt: now,
           decisionReason: note?.trim() || null,
-          replacedVersionIds: replacedIds as never,
+          replacedVersionIds: ids as never,
           checks: gate as never,
         },
-      }),
-    ]);
+      });
+      if (decided.count !== 1) throw promotionDecided("decided by someone else meanwhile");
+      const moved = await tx.visionModelVersion.updateMany({
+        where: { id: version.id, stage: request.fromStage },
+        data: { stage: toStage, promotedBy: person.userId, promotedAt: now },
+      });
+      if (moved.count !== 1) throw stageChanged(request.fromStage, "another stage");
+      if (ids.length) await tx.visionModelVersion.updateMany({ where: { id: { in: ids }, stage: "production" }, data: { stage: "staging" } });
+      return ids;
+    });
 
     await this.audit.record(
       {
@@ -256,15 +265,10 @@ export class VisionPromotionsService {
     const person = requirePerson(actor, "reject a promotion");
     const request = await this.prisma.visionPromotionRequest.findUnique({ where: { id: requestId } });
     if (!request) throw new NotFoundException(`Unknown promotion request ${requestId}`);
-    if (request.state !== "pending") {
-      throw new ConflictException({
-        statusCode: 409,
-        error: "PromotionDecided",
-        message: `This request is already ${request.state}.`,
-      });
-    }
-    const updated = await this.prisma.visionPromotionRequest.update({
-      where: { id: request.id },
+    if (request.state !== "pending") throw promotionDecided(request.state);
+    // Only while it is still pending: a rejection does not overwrite an approval made a moment before.
+    const rejected = await this.prisma.visionPromotionRequest.updateMany({
+      where: { id: request.id, state: "pending" },
       data: {
         state: "rejected",
         decidedBy: person.userId,
@@ -273,6 +277,8 @@ export class VisionPromotionsService {
         decisionReason: reason.trim(),
       },
     });
+    if (rejected.count !== 1) throw promotionDecided("decided by someone else meanwhile");
+    const updated = await this.prisma.visionPromotionRequest.findUnique({ where: { id: request.id } });
     await this.audit.record(
       {
         action: "model.promotion.rejected",
@@ -291,6 +297,12 @@ export class VisionPromotionsService {
    * Restore what this version replaced. One operation, from the record the
    * promotion left: no searching for "the previous production model" during an
    * incident.
+   *
+   * What it restores must still be where the promotion left it, in staging. A
+   * version archived or promoted again since is not quietly put back: the
+   * rollback is refused and names it. And when it is done the task has in
+   * production exactly what was restored, so any other version that reached
+   * production in between is demoted with the one rolled back.
    */
   async rollback(modelVersionId: string, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "roll back a promotion");
@@ -300,6 +312,7 @@ export class VisionPromotionsService {
         statusCode: 409,
         error: "NotInProduction",
         message: `${version.model.key}@${version.version} is ${version.stage}; only a production version can be rolled back.`,
+        remediation: "Roll back the version that is in production now.",
       });
     }
 
@@ -320,25 +333,48 @@ export class VisionPromotionsService {
     }
 
     const now = new Date();
-    await this.prisma.$transaction([
-      this.prisma.visionModelVersion.update({ where: { id: version.id }, data: { stage: "staging" } }),
-      this.prisma.visionModelVersion.updateMany({ where: { id: { in: restore } }, data: { stage: "production" } }),
-      this.prisma.visionPromotionRequest.update({
-        where: { id: promotion.id },
-        data: { rolledBackAt: now, rolledBackBy: person.userId },
-      }),
-    ]);
+    const demoted = await this.prisma.$transaction(async (tx) => {
+      await lock(tx, productionLock(version.model.task));
+      // The claim first: of two rollbacks at once, the second is told so, and not that its targets moved.
+      const claimed = await tx.visionPromotionRequest.updateMany({ where: { id: promotion.id, rolledBackAt: null }, data: { rolledBackAt: now, rolledBackBy: person.userId } });
+      if (claimed.count !== 1) {
+        throw new ConflictException({ statusCode: 409, error: "AlreadyRolledBack", message: "This promotion was rolled back by someone else meanwhile.", remediation: "Reload; there is nothing to do twice." });
+      }
+      const targets = await tx.visionModelVersion.findMany({ where: { id: { in: restore } }, select: { id: true, version: true, stage: true, model: { select: { key: true } } } });
+      const moved = restore.filter((id) => targets.find((t) => t.id === id)?.stage !== "staging");
+      if (moved.length) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: "RollbackTargetMoved",
+          message: `What ${version.model.key}@${version.version} replaced is no longer in staging: ${moved
+            .map((id) => {
+              const t = targets.find((x) => x.id === id);
+              return t ? `${t.model.key}@${t.version} is ${t.stage}` : `${id} no longer exists`;
+            })
+            .join("; ")}.`,
+          remediation: "There is nothing to restore as it was. Promote the version you want in production through a request.",
+        });
+      }
+      // The version rolled back, and any other of its task that reached production since.
+      const others = await tx.visionModelVersion.findMany({ where: { stage: "production", model: { task: version.model.task }, id: { notIn: restore } }, select: { id: true } });
+      if (!others.some((o) => o.id === version.id)) {
+        throw new ConflictException({ statusCode: 409, error: "NotInProduction", message: `${version.model.key}@${version.version} left production meanwhile.`, remediation: "Reload and roll back the version that is in production now." });
+      }
+      await tx.visionModelVersion.updateMany({ where: { id: { in: others.map((o) => o.id) }, stage: "production" }, data: { stage: "staging" } });
+      await tx.visionModelVersion.updateMany({ where: { id: { in: restore }, stage: "staging" }, data: { stage: "production" } });
+      return others.map((o) => o.id).filter((id) => id !== version.id);
+    });
 
     await this.audit.record(
       {
         action: "model.rolled_back",
         targetKind: "vision_model_version",
         targetId: version.id,
-        data: { promotionRequestId: promotion.id, restoredVersionIds: restore },
+        data: { promotionRequestId: promotion.id, restoredVersionIds: restore, alsoDemoted: demoted },
       },
       actor
     );
-    return { rolledBack: version.id, restored: restore, promotionRequestId: promotion.id };
+    return { rolledBack: version.id, restored: restore, alsoDemoted: demoted, promotionRequestId: promotion.id };
   }
 
   // ── The gate ─────────────────────────────────────────────────────────────
@@ -349,7 +385,7 @@ export class VisionPromotionsService {
    * person, is enforced by `approve`.
    */
   async evaluateGate(version: LoadedVersion): Promise<PromotionGate> {
-    const gate: PromotionGate = { passed: [], warnings: [], failures: [], benchmarkRunId: null, comparedWith: null };
+    const gate: PromotionGate = { passed: [], warnings: [], failures: [], benchmarkRunId: null, comparedWith: null, comparedWithAll: [] };
     const add = (bucket: keyof Pick<PromotionGate, "passed" | "warnings" | "failures">, name: string, detail: string) =>
       gate[bucket].push({ name, ok: bucket !== "failures", detail });
 
@@ -394,6 +430,7 @@ export class VisionPromotionsService {
           continue;
         }
         gate.comparedWith = current.id;
+        gate.comparedWithAll.push(current.id);
         const metrics = this.thresholds.regressionMetrics[version.model.task] ?? [];
         const regressions = await this.regressions(run.id, theirs.id, metrics);
         if (regressions.length) {
@@ -470,14 +507,21 @@ export class VisionPromotionsService {
       add("passed", "reproducible", "Commit, config, image and weights checksum are all recorded.");
     }
 
-    // 6. Inference smoke: the built image has run this version successfully.
-    const inferences = await this.prisma.visionJob.count({
-      where: { type: "detect", state: "succeeded", modelVersionId: version.id },
-    });
-    if (!inferences) {
-      add("failures", "smoke", "No succeeded detect job has run this version on the built image.");
+    /* 6. Inference smoke: the built image has run this version successfully, in the stage
+       its task runs in. It used to count `detect` jobs whatever the task, so a tracker or
+       an identify version could never pass (docs/vision/50, appendix B). */
+    const stages = stagesOf(version.model.task);
+    if (!stages.length) {
+      add("failures", "smoke", `No stage runs a ${version.model.task} model yet, so nothing can have run this version.`);
     } else {
-      add("passed", "smoke", `${inferences} succeeded detect job(s) ran this version.`);
+      const inferences = await this.prisma.visionJob.count({
+        where: { type: { in: stages }, state: "succeeded", modelVersionId: version.id },
+      });
+      if (!inferences) {
+        add("failures", "smoke", `No succeeded ${stages.join(" or ")} job has run this version on the built image.`);
+      } else {
+        add("passed", "smoke", `${inferences} succeeded ${stages.join(" or ")} job(s) ran this version.`);
+      }
     }
 
     return gate;
@@ -536,6 +580,50 @@ type LoadedVersion = {
   licenceNote: string | null;
   model: { key: string; task: string };
 };
+
+/** The job types that run a model of this task: where a smoke run of one of its versions would be. */
+export function stagesOf(task: string): string[] {
+  return Object.entries(MODEL_TASK_BY_JOB_TYPE)
+    .filter(([, t]) => t === task)
+    .map(([jobType]) => jobType);
+}
+
+const versionLock = (versionId: string) => `vision-promotion:version:${versionId}`;
+const productionLock = (task: string) => `vision-promotion:production:${task}`;
+
+/** A lock named by a string, held to the end of the transaction. Whoever asks second waits. */
+async function lock(tx: Prisma.TransactionClient, key: string): Promise<void> {
+  // Cast to text: the function returns `void`, which the client cannot read back.
+  await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${key}))::text AS locked`);
+}
+
+function promotionPending(version: { version: string; model: { key: string } }, requestId: string): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: "PromotionPending",
+    message: `A promotion request for ${version.model.key}@${version.version} is already waiting for a decision.`,
+    requestId,
+    remediation: "Ask a holder of vision.models.promote to approve or reject it.",
+  });
+}
+
+function promotionDecided(state: string): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: "PromotionDecided",
+    message: `This request is already ${state}.`,
+    remediation: "A decision is made once. Ask for a new request if the version should move.",
+  });
+}
+
+function stageChanged(from: string, now: string, remediation = "Reject this request and ask for a new one."): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: "StageChanged",
+    message: `The request was made from ${from}; the version is now ${now}.`,
+    remediation,
+  });
+}
 
 function requirePerson(actor: AdminAuthContext | undefined, what: string): { userId: string; email?: string } {
   if (!actor?.userId) {
