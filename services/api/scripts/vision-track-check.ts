@@ -32,7 +32,7 @@ import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-stor
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
 import { PROVISION_KEY_HEADER, provisionKeyFor } from "../src/vision/worker/provision-key";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, removeGateWorkers, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -169,7 +169,7 @@ async function cleanup(fx: Fixture | null, store: ObjectStore) {
   // Tracks and jobs cascade with the asset; model versions are SetNull on jobs.
   await prisma.visionVideoAsset.deleteMany({ where: { id: fx.assetId } });
   await prisma.visionModel.deleteMany({ where: { id: { in: fx.modelIds } } });
-  await prisma.visionWorker.deleteMany({ where: { id: { in: fx.workerIds } } });
+  await removeGateWorkers(prisma, fx.workerIds);
   await prisma.visionAuditLog.deleteMany({ where: { targetId: { in: [...fx.modelIds, ...fx.jobIds] } } });
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
@@ -377,6 +377,17 @@ async function main() {
     check("…and retires its own", `${retireOwn.status}/${retireOwn.body.ok}`, "201/true");
     const retireGone = await withKey(`/vision/workers/${randomUUID()}/retire`, {});
     check("a worker that does not exist: not found, not a 500", `${retireGone.status}/${retireGone.body.error}`, "404/NotFound");
+    /* Each provision and each retire is on the audit trail (docs/vision/68), under who did it.
+       A refused retire ended nothing, and left no row. */
+    const trailOf = async (workerId: unknown) =>
+      (await prisma.visionAuditLog.findMany({ where: { targetKind: "vision_worker", targetId: String(workerId) }, orderBy: { createdAt: "asc" }, select: { action: true, actorMethod: true, actorId: true, data: true } }))
+        .map((a) => `${a.action}:${a.actorMethod}:${a.actorId}`)
+        .join(" ");
+    check("the box's worker: provisioned and retired, by the provision key", await trailOf(ownWorker.body.workerId), "worker.provisioned:provision_key:null worker.retired:provision_key:null");
+    check("the gate's worker: provisioned by the operator key, and the refused retire left nothing", await trailOf(provisioned.body.workerId), "worker.provisioned:api_key:null");
+    const ownRow = await prisma.visionAuditLog.findFirst({ where: { action: "worker.provisioned", targetId: String(ownWorker.body.workerId) }, select: { data: true } });
+    check("…the row names the provider and the class", `${(ownRow?.data as { providerId?: string } | null)?.providerId}/${(ownRow?.data as { resourceClass?: string } | null)?.resourceClass}`, "local/cpu_small");
+    check("…and never the token", JSON.stringify(ownRow?.data ?? {}).includes(String(ownWorker.body.bootstrapToken)), false);
 
     const noToken = await call("/vision/worker/jobs/claim", {}, { method: "POST", body: JSON.stringify({}) });
     check("…at the worker's door too", `${noToken.status}/${noToken.body.error}/${typeof noToken.body.remediation}`, "401/WorkerTokenRequired/string");

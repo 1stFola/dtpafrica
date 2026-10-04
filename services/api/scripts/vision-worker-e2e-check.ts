@@ -24,7 +24,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, removeGateWorkers, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -144,7 +144,7 @@ async function main() {
 
   const assetId = randomUUID();
   const source = visionKeys.sourceOriginal(assetId, "mp4");
-  const created: { partnerId?: string; jobId?: string; workerId?: string } = {};
+  const created: { partnerId?: string; jobId?: string; workerIds: string[] } = { workerIds: [] };
   const wroteKeys: { bucket: "derived"; key: string }[] = [];
 
   onInterrupt(async () => {
@@ -213,7 +213,7 @@ async function main() {
       method: "POST",
       body: JSON.stringify({ resourceClass: "cpu_small", providerId: "local" }),
     });
-    created.workerId = provisioned.workerId;
+    created.workerIds.push(provisioned.workerId);
     check("bootstrap token issued once", typeof provisioned.bootstrapToken, "string");
 
     // ── Run the real container ────────────────────────────────────────────
@@ -319,6 +319,7 @@ async function main() {
       method: "POST",
       body: JSON.stringify({ resourceClass: "cpu_small", providerId: "local" }),
     });
+    created.workerIds.push(secondWorker.workerId);
     const transcodeLog = runWorker(secondWorker.bootstrapToken);
     check("worker completed the transcode", /completed .* in /.test(transcodeLog), true);
 
@@ -396,6 +397,7 @@ async function main() {
       method: "POST",
       body: JSON.stringify({ resourceClass: "cpu_small", providerId: "local" }),
     });
+    created.workerIds.push(thirdWorker.workerId);
     const cutsLog = runWorker(thirdWorker.bootstrapToken);
     const cutsDone = await api(`/vision/jobs/${cutsJob.id}`);
     for (const artifact of (cutsDone.job.progress?.artifacts ?? []) as { key: string }[]) {
@@ -432,8 +434,9 @@ async function main() {
       await prisma.visionVideoAsset.deleteMany({ where: { id: assetId } });
       await prisma.visionSourcePartner.delete({ where: { id: created.partnerId } }).catch(() => undefined);
     }
-    // Both provisioned workers, not just the first.
-    await prisma.visionWorker.deleteMany({ where: { providerId: "local", retiredAt: null } });
+    // Every worker this run provisioned, with the audit rows that say it did, and
+    // nobody else's: it used to remove every unretired local worker in the database.
+    await removeGateWorkers(prisma, created.workerIds);
     await removeGateMatch(prisma, gateMatch);
     const strays = await prisma.visionSourcePartner.count({
       where: { name: { startsWith: "E2E worker check " } },

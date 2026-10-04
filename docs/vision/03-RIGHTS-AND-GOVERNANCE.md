@@ -270,7 +270,7 @@ signal — overwriting them throws away the most valuable data DTP generates.
 | Secrets | Existing AWS Secrets Manager path (`dtp/staging/app`). R2 and provider credentials join it. Never in the repository. |
 | File validation | Server-side MIME and container validation on finalize, by the worker during FFprobe, not by trusting the client. |
 | Rate limits | Per-token on upload initiation and per-job on worker progress. |
-| Audit log | Raw youth footage access, identity assignment, annotation approval, model promotion, publication, rights change, deletion request. Actor, target, timestamp, reason. |
+| Audit log | Raw youth footage access, identity assignment, annotation approval, model promotion, publication, rights change, deletion request, a worker provisioned or retired. Actor, target, timestamp, reason. |
 | Youth footage | Access-controlled as above, and excluded from any bulk export or general scout surface. |
 | Prompt injection | Overlays, scoreboards, and audio in footage are attacker-controllable input to a VLM. VLM output is schema-validated and can never write a numeric fact. See [09-ML-PIPELINE.md](./09-ML-PIPELINE.md). |
 | Incident path | Defined for: wrong identity published, footage leak, consent withdrawn after publication, credential compromise. |

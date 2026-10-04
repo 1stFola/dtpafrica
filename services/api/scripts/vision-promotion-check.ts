@@ -32,7 +32,7 @@ import { loadVisionConfig } from "../src/vision/config/vision.config";
 import { InMemoryObjectStore } from "../src/vision/storage/in-memory-object-store";
 import { R2ObjectStore } from "../src/vision/storage/r2-object-store";
 import type { ObjectStore } from "../src/vision/storage/object-store";
-import { assertDevDatabase, onInterrupt } from "./gate-harness";
+import { assertDevDatabase, onInterrupt, removeGateWorkers } from "./gate-harness";
 
 loadApiEnv();
 
@@ -178,7 +178,7 @@ async function cleanup(fx: Fixture | null, store: ObjectStore) {
   await prisma.visionDatasetVersion.deleteMany({ where: { label: { contains: RUN } } });
   await prisma.visionVideoAsset.deleteMany({ where: { id: fx.assetId } });
   await prisma.visionLabelSchemaVersion.deleteMany({ where: { version: { contains: RUN } } });
-  await prisma.visionWorker.deleteMany({ where: { id: { in: fx.workerIds } } });
+  await removeGateWorkers(prisma, fx.workerIds);
   await prisma.visionAuditLog.deleteMany({ where: { OR: [{ targetId: { in: [...fx.modelIds, ...fx.taskIds, ...fx.datasetIds, ...fx.jobIds] } }, { actorId: { in: fx.userIds } }] } });
   await prisma.adminUser.deleteMany({ where: { id: { in: fx.userIds } } });
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });

@@ -161,3 +161,14 @@ export async function removeGateMatch(prisma: PrismaClient, gm: Pick<GateMatch, 
   await prisma.sbCompetition.deleteMany({ where: { id: gm.competitionId } });
   await prisma.player.deleteMany({ where: { id: { in: gm.playerIds } } });
 }
+
+/**
+ * Workers a gate provisioned, and the audit rows that say it did (docs/vision/68).
+ * A provision and a retire each write one, so a gate that removed only the worker
+ * would leave a trail pointing at nothing.
+ */
+export async function removeGateWorkers(prisma: PrismaClient, workerIds: readonly string[]): Promise<void> {
+  if (!workerIds.length) return;
+  await prisma.visionAuditLog.deleteMany({ where: { targetKind: "vision_worker", targetId: { in: [...workerIds] } } });
+  await prisma.visionWorker.deleteMany({ where: { id: { in: [...workerIds] } } });
+}

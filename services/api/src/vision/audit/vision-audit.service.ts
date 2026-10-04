@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
+import type { AdminAuthContext, AdminAuthMethod } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 
 /**
@@ -25,6 +25,8 @@ export const VISION_AUDIT_ACTIONS = [
   "media.raw.read",
   "job.queued",
   "job.cancelled",
+  "worker.provisioned",
+  "worker.retired",
   "identity.sides.decided",
   "identity.sides.changed",
   "identity.assigned",
@@ -83,6 +85,12 @@ export type VisionAuditEntry = {
   data?: Record<string, unknown>;
 };
 
+/**
+ * Who did it. An admin's auth context fits; so does the provision key, which is
+ * neither a person nor the operator key and is recorded as what it is.
+ */
+export type VisionAuditActor = Pick<AdminAuthContext, "userId" | "email"> & { method: AdminAuthMethod | "provision_key" };
+
 export class AuditReasonRequiredError extends Error {
   constructor(action: VisionAuditAction) {
     super(`A reason is required when recording "${action}".`);
@@ -94,7 +102,7 @@ export class AuditReasonRequiredError extends Error {
 export class VisionAuditService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async record(entry: VisionAuditEntry, actor?: AdminAuthContext | null): Promise<void> {
+  async record(entry: VisionAuditEntry, actor?: VisionAuditActor | null): Promise<void> {
     if (REASON_REQUIRED_ACTIONS.includes(entry.action) && !entry.reason?.trim()) {
       throw new AuditReasonRequiredError(entry.action);
     }

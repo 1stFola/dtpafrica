@@ -27,7 +27,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
-import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, type GateMatch } from "./gate-harness";
+import { assertDevDatabase, createGateMatch, onInterrupt, removeGateMatch, removeGateWorkers, type GateMatch } from "./gate-harness";
 
 loadApiEnv();
 
@@ -231,7 +231,7 @@ async function cleanup(fx: Fixture | null) {
     where: { targetId: { in: [...fx.modelIds, ...versions.map((v) => v.id)] } },
   });
   await prisma.visionModel.deleteMany({ where: { id: { in: fx.modelIds } } });
-  await prisma.visionWorker.deleteMany({ where: { id: { in: fx.workerIds } } });
+  await removeGateWorkers(prisma, fx.workerIds);
   await prisma.visionRightsScope.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourceVideoRecord.deleteMany({ where: { partnerId: fx.partnerId } });
   await prisma.visionSourcePartner.deleteMany({ where: { id: fx.partnerId } });
