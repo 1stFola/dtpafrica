@@ -542,6 +542,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The licence register clears the FFmpeg this image installs, and "the build flags are
+      # the licence" (docs/licenses/OSS_REGISTER.md). The image takes the distribution's
+      # package, so nobody here chooses those flags. This reads the licence the built
+      # image's own ffmpeg reports and holds the register's row to it: a base image that
+      # ships a different build fails here, and the row is looked at again.
+      - name: The image's FFmpeg is the build the licence register cleared
+        run: |
+          set -euo pipefail
+          licence=$(docker run --rm --entrypoint ffmpeg dtp-vision-worker:ci -hide_banner -L)
+          if grep -q 'GNU General Public License' <<< "$licence"; then
+            built='GPL-2.0-or-later build'
+          elif grep -q 'GNU Lesser General Public License' <<< "$licence"; then
+            built='LGPL-2.1-or-later build'
+          else
+            echo "::error::The image's ffmpeg reports a licence this step does not know."
+            printf '%s\n' "$licence" | head -5
+            exit 1
+          fi
+          row=$(grep '^| FFmpeg |' docs/licenses/OSS_REGISTER.md)
+          if ! grep -qF "**$built**" <<< "$row"; then
+            echo "::error::The image's ffmpeg is a $built, and the FFmpeg row of docs/licenses/OSS_REGISTER.md does not say so. Review the row before this ships."
+            exit 1
+          fi
+          if ! grep -q 'APPROVED' <<< "$row"; then
+            echo "::error::The FFmpeg row of docs/licenses/OSS_REGISTER.md is not APPROVED, and the image installs it."
+            exit 1
+          fi
+          echo "The image's ffmpeg is a $built, as the register says."
+
       - name: Run the end-to-end gate with the worker's container
         env:
           VISION_E2E_IMAGE: dtp-vision-worker:ci

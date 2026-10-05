@@ -140,7 +140,8 @@ did. Nothing here is new.
   filesystem are grown on the server (`growpart`, `resize2fs`); `df -h /` there is the check that
   this is finished. As listed: grow the
   server's root volume from 20 GiB before a full match is uploaded.
-- The FFmpeg licence row in the OSS register.
+- **Done since, in [71](./71-FFMPEG-LICENCE.md).** As listed: the FFmpeg licence row in the OSS
+  register.
 
 **Low findings in appendix B, not done.** Earlier reports pointed these at this PR. They
 change behaviour, so they are not in a docs PR, and they are listed here so they are not
