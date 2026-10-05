@@ -145,6 +145,6 @@ against an unreachable host.
 
 | | |
 |---|---|
-| **The root volume** | 20 GiB; a full-match master needs it grown. Fola's. |
+| **The root volume** | Done since, on 4 October 2026: 100 GiB. As listed: 20 GiB; a full-match master needs it grown. Fola's. |
 | **A provision-only key** | Done since, in [67](./67-QA-FIX-17-PROVISION-KEY.md). As listed: still the admin key; [51](./51-QA-FIX-1-SECRETS.md). |
 | **The first deploy** | `cd.yml` and the role only take effect on `main`. Watch the first deploy: the new "Apply database migrations" step should report no pending migrations, or apply only `token_kind` if PR-1's deploy was not recorded. |

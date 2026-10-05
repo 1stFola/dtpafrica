@@ -135,7 +135,11 @@ did. Nothing here is new.
   letterbox fix (`select count(*) from vision_annotation_versions`). If so: discard or redraw.
 - Separate R2 buckets and a token for the server, so a developer's gates and the server
   do not share them. Needs the Cloudflare dashboard.
-- Grow the server's root volume from 20 GiB before a full match is uploaded.
+- **Done on 4 October 2026:** the volume is 100 GiB (`aws ec2 modify-volume`, after a snapshot,
+  `dtp-staging-root-before-grow`), and `infra/terraform` asks for the same. The partition and
+  filesystem are grown on the server (`growpart`, `resize2fs`); `df -h /` there is the check that
+  this is finished. As listed: grow the
+  server's root volume from 20 GiB before a full match is uploaded.
 - The FFmpeg licence row in the OSS register.
 
 **Low findings in appendix B, not done.** Earlier reports pointed these at this PR. They

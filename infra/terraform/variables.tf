@@ -63,7 +63,11 @@ variable "key_pair_name" {
 # ── Storage ───────────────────────────────────────────────────────────────────
 
 variable "root_volume_size" {
-  description = "Root EBS volume size in GiB — 20 GiB covers OS + Docker images + Postgres data"
+  # The live volume was grown from 20 to 100 GiB on 4 October 2026, by hand with
+  # `aws ec2 modify-volume` (Terraform is not run by the deploy). A volume cannot be
+  # shrunk, so this default must never be lower than the live size: an apply that asked
+  # for less would fail.
+  description = "Root EBS volume size in GiB — OS, Docker images, Postgres data, and the Vision worker's work directory, which needs a full-match master twice over"
   type        = number
-  default     = 20
+  default     = 100
 }
