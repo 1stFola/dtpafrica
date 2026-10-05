@@ -136,7 +136,8 @@ did. Nothing here is new.
 - Separate R2 buckets and a token for the server, so a developer's gates and the server
   do not share them. Needs the Cloudflare dashboard.
 - Grow the server's root volume from 20 GiB before a full match is uploaded.
-- The FFmpeg licence row in the OSS register.
+- **Done since, in [71](./71-FFMPEG-LICENCE.md).** As listed: the FFmpeg licence row in the OSS
+  register.
 
 **Low findings in appendix B, not done.** Earlier reports pointed these at this PR. They
 change behaviour, so they are not in a docs PR, and they are listed here so they are not
