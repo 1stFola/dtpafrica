@@ -42,7 +42,53 @@ shipped) · `dev-tool` (developer machines and CI only) · `reference` (read, no
 | TrackLab | TrackingLaboratory/tracklab | Verify | per-model | reference | **REVIEW REQUIRED** | Dependencies include Ultralytics — see below. |
 | **Ultralytics (YOLO)** | ultralytics/ultralytics | **AGPL-3.0** (or commercial licence) | — | — | **REJECTED for runtime** | AGPL is incompatible with the proprietary product without a commercial licence. It arrives transitively through several tracking repos — **check every dependency tree**. If a commercial licence is ever bought, revisit as a deliberate decision. |
 | OpenCV | opencv/opencv | Apache-2.0 (4.5+) | n/a | runtime | APPROVED | Core video and geometry. |
-| FFmpeg | ffmpeg.org | LGPL-2.1+ or GPL-2+ **depending on build flags** | n/a | runtime | **REVIEW REQUIRED** | The build configuration is the licence. Record the exact flags used for the worker image; `--enable-gpl` and some codecs change the answer. |
+| FFmpeg | ffmpeg.org | **GPL-2.0-or-later build** (the distribution's package, `--enable-gpl`, with libx264 and libx265) | n/a | runtime | APPROVED **for use inside DTP's own worker only** | The build configuration is the licence, and this one is GPL. Cleared on 4 October 2026 by Fola Sanni on the basis below, with a condition: the image is not given to anyone outside DTP. See [FFmpeg](#ffmpeg-what-is-installed-and-on-what-basis-it-is-cleared). |
+
+### FFmpeg: what is installed, and on what basis it is cleared
+
+**What is installed.** Neither worker image builds FFmpeg. Each installs its base
+distribution's package:
+
+| Image | Base | Package | Licence of the build |
+|---|---|---|---|
+| CPU worker (`services/vision-worker/Dockerfile`) | Debian 12 (`python:3.12-slim-bookworm`) | `ffmpeg 7:5.1.9-0+deb12u1`, with `libx264-164` and `libx265-199` | GPL-2.0-or-later: configured with `--enable-gpl --enable-libx264 --enable-libx265` among others; `ffmpeg -L` prints the GNU General Public License, version 2 or later |
+| GPU worker (`services/vision-worker/Dockerfile.gpu`) | Ubuntu 22.04 (`nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04`) | `ffmpeg 4.4.2-0ubuntu0.22.04.1` | GPL-2.0-or-later: configured with `--enable-gpl`. Read from the same package on a plain `ubuntu:22.04`; the GPU image itself was not built to check |
+
+The versions are what the distributions served on 4 October 2026. A rebuild picks up
+their security updates; the licence of the build does not change with those.
+
+**What DTP uses of it.** The worker runs `ffmpeg` and `ffprobe` as separate programs,
+through a command line. It links no FFmpeg library into DTP's code. It encodes the proxy
+video with libx264, which is the GPL part that matters: an LGPL-only build has no libx264.
+
+**The basis.** The GPL's conditions attach to giving copies of the software to others.
+Running it does not trigger them. The worker images are built by DTP's CI, pushed to
+DTP's own private registry, and run on DTP's own server. No copy leaves DTP, so there is
+nobody to whom source must be offered, and DTP's own code, which only starts the
+program, is not a derived work of it.
+
+**The condition.** This clearance holds only while the image stays inside DTP. Review
+this row again **before** any of these:
+
+- the image, or FFmpeg in any form, is given to a partner, a customer or the public;
+- the image is made pullable from a public registry;
+- the worker is run by a hosted GPU provider. Handing an image to a provider to run on
+  DTP's behalf is usually not treated as distribution, but it is the first time a copy
+  would sit on someone else's machines, so it is decided then and not assumed now;
+- FFmpeg's libraries are linked into DTP's code, or the build is changed.
+
+If any of those is wanted and the answer is no, the alternative is an LGPL-only build
+with another H.264 encoder in place of libx264.
+
+**What this does not cover.** Patents. H.264 and H.265 are covered by patent pools
+whatever software encodes them, and a software licence says nothing about that. It is a
+separate question from this row and is not answered here.
+
+CI holds this row to the image: the gates job reads the licence the built image's
+`ffmpeg` reports and fails if this row names a different one.
+
+This is the engineering record of a decision, and, as the head of this file says, not
+legal advice.
 
 ## Annotation, dataset and MLOps tooling
 
