@@ -112,7 +112,12 @@ export interface ObjectStore {
     body: Buffer | string,
     contentType: string
   ): Promise<void>;
-  getSmallObject(bucket: BucketId, key: string): Promise<Buffer | null>;
+  /** Optional hard byte bound also applies during streaming, not just to HEAD metadata. */
+  getSmallObject(bucket: BucketId, key: string, maxBytes?: number): Promise<Buffer | null>;
+}
+
+export class SmallObjectTooLargeError extends Error {
+  constructor(maxBytes: number) { super(`Small object exceeds its ${maxBytes}-byte read limit.`); this.name = "SmallObjectTooLargeError"; }
 }
 
 /** Nest DI token. `ObjectStore` is an interface, so it cannot be one itself. */

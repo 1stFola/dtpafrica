@@ -7,11 +7,17 @@ import {
 } from "@nestjs/common";
 import {
   DEFAULT_RESOURCE_CLASS,
+  CAMERA_SEGMENT_KINDS,
   DETECTION_ARTIFACT_ROLE,
   JOB_TYPE_PREREQUISITES,
   MIN_TRACK_SAMPLE_FPS,
   TRACK_ARTIFACT_ROLE,
   visionKeys,
+  type BallTrajectoryJobParams,
+  BALL_TRAJECTORY_INDEX_ROLE,
+  BALL_TRAJECTORY_CHUNK_ROLE,
+  BALL_TRAJECTORY_VERSION,
+  type PossessionJobParams,
   type GameStateJobParams,
   type IdentifyJobParams,
   type TrackJobParams,
@@ -22,11 +28,14 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { orientStored } from "../calibration/homography";
+import { possessionCalibration } from "../possession/possession-calibration";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionModelsService } from "../models/models.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { JOB_QUEUE, type JobQueue } from "./job-queue";
 import { refusal } from "../shared/refusals";
+import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
+import { eventCarryInputs } from "../events/event-carry-inputs";
 
 /**
  * Job orchestration.
@@ -42,7 +51,8 @@ export class VisionJobsService {
     @Inject(VisionAuditService) private readonly audit: VisionAuditService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(VISION_CONFIG) private readonly config: VisionConfig,
-    @Inject(VisionModelsService) private readonly models: VisionModelsService
+    @Inject(VisionModelsService) private readonly models: VisionModelsService,
+    @Inject(OBJECT_STORE) private readonly store?: ObjectStore
   ) {}
 
   /**
@@ -77,7 +87,7 @@ export class VisionJobsService {
   ): Promise<{ id: string }> {
     const asset = await this.prisma.visionVideoAsset.findUnique({
       where: { id: params.videoAssetId },
-      select: { id: true, sbMatchId: true, ingestState: true },
+      select: { id: true, sbMatchId: true, ingestState: true, checksumSha256: true, durationMs: true },
     });
     if (!asset) throw refusal(400, "AssetUnknown", `Unknown video asset ${params.videoAssetId}`, "Check the asset id; list footage with GET /vision/assets.");
 
@@ -108,8 +118,15 @@ export class VisionJobsService {
     const track = params.type === "track" ? await this.trackInputs(asset.id, params.params) : null;
     const identify = params.type === "identify" ? await this.identifyInputs(asset.id, params.params) : null;
     const gamestate = params.type === "gamestate" ? await this.gamestateInputs(asset.id, params.params) : null;
+    const ball = params.type === "ball_trajectory" ? await this.ballInputs(asset, params.params) : null;
+    const possession = params.type === "possession" ? await this.possessionInputs(asset, params.params) : null;
+    const events = params.type === "events" && model && this.store ? await eventCarryInputs(this.prisma, this.store, asset, model.id, params.params) : null;
+    if (params.type === "events" && !events) throw refusal(409, "EventCarryEvidenceMissing", "Event proposals require a resolved algorithm and original evidence storage.", "Select a compatible event rule version and complete calibrated possession.");
 
     const resourceClass = params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type];
+    if (params.type === "ball_trajectory" && resourceClass !== "cpu_small") throw refusal(400, "BallTrajectoryCpuOnly", "Ball trajectory is a CPU transformation of stored detections.", "Use the default cpu_small resource class.");
+    if (params.type === "possession" && resourceClass !== "cpu_small") throw refusal(400, "PossessionCpuOnly", "Possession candidates transform stored observations on CPU.", "Use cpu_small.");
+    if (params.type === "events" && resourceClass !== "cpu_small") throw refusal(400, "EventsCpuOnly", "Carry proposals transform original observations on CPU.", "Use cpu_small.");
 
     // The id is generated here so the output prefix can be derived from it in the
     // same insert: an artifact key then names the job that produced it, with no
@@ -129,10 +146,14 @@ export class VisionJobsService {
       inputSpec: {
         ...withoutReservedInputs(params.params),
         videoAssetId: asset.id,
+        ...(params.type === "detect" ? { sourceChecksum: asset.checksumSha256 } : {}),
         ...(proxy ? { proxy } : {}),
         ...(track ?? {}),
         ...(identify ?? {}),
         ...(gamestate ?? {}),
+        ...(ball ?? {}),
+        ...(possession ?? {}),
+        ...(events ?? {}),
       },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
       outputPrefix: visionKeys.inferencePrefix(id, 1),
@@ -212,6 +233,98 @@ export class VisionJobsService {
       ...(cuts.length ? { cuts } : {}),
       readKeys: [{ bucket: "derived", key: artifact.key }],
     };
+  }
+
+  private async possessionInputs(asset: { id: string; checksumSha256: string; durationMs: number | null }, requested?: Record<string, unknown>): Promise<PossessionJobParams> {
+    const fail = () => refusal(409, "PossessionEvidenceMismatch", "Possession needs a current, succeeded ball trajectory and full-rate tracks from the same detection bytes and camera boundaries.", "Complete compatible detect, ball_trajectory and track runs for this asset first.");
+    const hash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/i.test(v);
+    const positive = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+    const selectJob = (type: "ball_trajectory" | "track", id: unknown) => this.prisma.visionJob.findFirst({ where: { videoAssetId: asset.id, type, state: "succeeded", ...(typeof id === "string" ? { id } : {}) }, orderBy: { finishedAt: "desc" } });
+    const ball = await selectJob("ball_trajectory", requested?.ballJobId);
+    const track = await selectJob("track", requested?.trackJobId);
+    const bp = ball?.progress as { summary?: Record<string, unknown>; artifacts?: { key: string; bucket: string; role: string }[] } | null;
+    const tp = track?.progress as typeof bp;
+    const b = bp?.summary, t = tp?.summary;
+    const input = ball?.inputSpec as Record<string, unknown> | null;
+    const detector = input?.detections as Record<string, unknown> | undefined;
+    const artifacts = (p: typeof bp, role: string) => Array.isArray(p?.artifacts) ? p.artifacts.filter((a) => a && a.role === role && a.bucket === "derived") : [];
+    const indices = artifacts(bp, BALL_TRAJECTORY_INDEX_ROLE), chunks = artifacts(bp, BALL_TRAJECTORY_CHUNK_ROLE), tracks = artifacts(tp, TRACK_ARTIFACT_ROLE);
+    if (!ball || !track?.modelVersionId || !b || !t || !input || !detector || indices.length !== 1 || tracks.length !== 1 || !chunks.length || chunks.length > 6000
+      || chunks.length !== b.chunks || b.calculationVersion !== BALL_TRAJECTORY_VERSION || !hash(asset.checksumSha256) || !positive(asset.durationMs)
+      || !hash(b.indexChecksum) || !hash(b.detectionsChecksum) || !hash(t.tracksChecksum) || !hash(input.proxyChecksum)
+      || input.sourceChecksum !== asset.checksumSha256 || input.sourceDurationMs !== asset.durationMs || b.sourceChecksum !== asset.checksumSha256 || t.sourceChecksum !== asset.checksumSha256
+      || t.proxyChecksum !== input.proxyChecksum || t.detectionsChecksum !== b.detectionsChecksum || t.detectJobId !== detector.jobId || t.detectorVersionId !== detector.modelVersionId || t.trackerVersionId !== track.modelVersionId
+      || b.detectorJobId !== detector.jobId || b.detectorVersionId !== detector.modelVersionId || !positive(input.imageWidth) || !positive(input.imageHeight) || !positive(input.proxyDurationMs)
+      || t.imageWidth !== input.imageWidth || t.imageHeight !== input.imageHeight || t.proxyDurationMs !== input.proxyDurationMs
+      || [...indices, ...chunks].some((a) => typeof a.key !== "string" || !a.key.startsWith(visionKeys.inferencePrefix(ball.id, ball.attemptNumber)))
+      || !tracks[0]!.key.startsWith(visionKeys.inferencePrefix(track.id, track.attemptNumber)) || new Set([...indices, ...chunks].map((a) => a.key)).size !== chunks.length + 1)
+      throw fail();
+    const proxy = await this.proxyClock(asset.id);
+    const ballProxy = input.proxy as Record<string, unknown> | undefined, trackProxy = t.proxy as Record<string, unknown> | undefined;
+    const windowEnd = Math.min(asset.durationMs, proxy.sourceOffsetMs + input.proxyDurationMs);
+    if (!ballProxy || !trackProxy || proxy.fps < 10 || proxy.fps > 120 || ballProxy.fps !== proxy.fps || trackProxy.fps !== proxy.fps || t.sampleFps !== proxy.fps
+      || ballProxy.sourceOffsetMs !== proxy.sourceOffsetMs || trackProxy.sourceOffsetMs !== proxy.sourceOffsetMs || proxy.sourceOffsetMs < 0 || proxy.sourceOffsetMs >= asset.durationMs
+      || Math.ceil(input.proxyDurationMs * proxy.fps / 1000) > 1_000_000 || b.windowStartMs !== proxy.sourceOffsetMs || b.windowEndMs !== windowEnd || b.frames !== Math.ceil((windowEnd - proxy.sourceOffsetMs) * proxy.fps / 1000)) throw fail();
+    const cameras = await this.prisma.visionCameraSegment.findMany({ where: { videoAssetId: asset.id }, orderBy: { startMs: "asc" }, select: { id: true, startMs: true, endMs: true, kind: true } });
+    const segments = cameras.map((s) => ({ cameraSegmentId: s.id, startMs: s.startMs, endMs: s.endMs, kind: s.kind as BallTrajectoryJobParams["segments"][number]["kind"] }));
+    if (JSON.stringify(segments) !== JSON.stringify(input.segments) || !Array.isArray(t.cameraCuts) || segments.slice(1).some((s) => !(t.cameraCuts as unknown[]).includes(s.startMs))) throw fail();
+    const config = requested?.possessionConfig;
+    if (config !== undefined) {
+      const ranges: Record<string, [number, number]> = { minBallConfidence: [0, 1], minPlayerConfidence: [0, 1], maxFootDistanceHeights: [Number.MIN_VALUE, 0.5], minContinuityMs: [80, 2000] };
+      if (!config || typeof config !== "object" || Array.isArray(config) || Object.entries(config).some(([key, value]) => !ranges[key] || typeof value !== "number" || !Number.isFinite(value) || value < ranges[key]![0] || value > ranges[key]![1] || (key === "minContinuityMs" && !Number.isInteger(value))))
+        throw refusal(400, "InvalidPossessionConfig", "Invalid possession confidence, foot distance or continuity configuration.", "Use supported finite values; continuity is an integer from 80 to 2000 ms.");
+    }
+    if (requested?.chunkMs !== undefined && (!positive(requested.chunkMs) || requested.chunkMs < 10000 || requested.chunkMs > 600000)) throw refusal(400, "InvalidPossessionConfig", "Possession chunks must be 10000–600000 ms.", "Use the default 60000 ms chunks.");
+    const mode = requested?.constraintMode ?? "image";
+    if ((mode !== "image" && mode !== "calibrated") || (mode === "image" && requested?.calibrationSnapshot !== undefined)) throw refusal(400, "InvalidPossessionConfig", "Choose image or calibrated constraints; calibration evidence is owned by the API.", "Use constraintMode: calibrated for pitch constraints.");
+    const football = requested?.footballConfig;
+    const ranges: Record<string, [number, number]> = { maxGroundDistanceM: [0.1, 3], maxBallGroundSpeedMps: [5, 50], maxPlayerSpeedMps: [2, 15] };
+    if (football !== undefined && (mode !== "calibrated" || !football || typeof football !== "object" || Array.isArray(football)
+      || Object.entries(football).some(([k, v]) => !ranges[k] || typeof v !== "number" || !Number.isFinite(v) || v < ranges[k]![0] || v > ranges[k]![1])))
+      throw refusal(400, "InvalidPossessionConfig", "Invalid calibrated distance or motion limits.", "Use the documented finite footballConfig ranges with calibrated mode.");
+    const calibrationSnapshot = mode === "calibrated" ? await possessionCalibration(this.prisma, asset.id) : undefined;
+    if (calibrationSnapshot && (calibrationSnapshot.proxyChecksum !== input.proxyChecksum || JSON.stringify(calibrationSnapshot.segments.map((s) => ({ cameraSegmentId: s.cameraSegmentId, startMs: s.startMs, endMs: s.endMs }))) !== JSON.stringify(segments.map(({ kind: _kind, ...s }) => s)))) throw fail();
+    return { ball: { jobId: ball.id, key: indices[0]!.key, indexChecksum: b.indexChecksum, chunkKeys: chunks.map((c) => c.key) },
+      tracks: { jobId: track.id, key: tracks[0]!.key, trackerVersionId: track.modelVersionId, checksum: t.tracksChecksum },
+      sourceChecksum: asset.checksumSha256, sourceDurationMs: asset.durationMs, proxyChecksum: input.proxyChecksum, proxyDurationMs: input.proxyDurationMs,
+      imageWidth: input.imageWidth, imageHeight: input.imageHeight, detectionsChecksum: b.detectionsChecksum, detectorJobId: String(detector.jobId), detectorVersionId: String(detector.modelVersionId), segments, proxy,
+      ...(calibrationSnapshot ? { constraintMode: "calibrated" as const, calibrationSnapshot, ...(football ? { footballConfig: football as PossessionJobParams["footballConfig"] } : {}) } : {}),
+      readKeys: [...indices, ...chunks, ...tracks].map((a) => ({ bucket: "derived" as const, key: a.key })) };
+  }
+
+  private async ballInputs(asset: { id: string; checksumSha256: string; durationMs: number | null }, requested?: Record<string, unknown>): Promise<BallTrajectoryJobParams> {
+    const wanted = typeof requested?.detectJobId === "string" ? requested.detectJobId : undefined;
+    const job = await this.prisma.visionJob.findFirst({ where: { videoAssetId: asset.id, type: "detect", state: "succeeded", ...(wanted ? { id: wanted } : {}) }, orderBy: { finishedAt: "desc" } });
+    const progress = job?.progress as { artifacts?: { role: string; bucket: string; key: string }[]; summary?: Record<string, unknown> } | null;
+    const summary = progress?.summary;
+    const artifacts = Array.isArray(progress?.artifacts) ? progress.artifacts.filter((row) => row && typeof row === "object" && row.role === DETECTION_ARTIFACT_ROLE && row.bucket === "derived") : [];
+    const positive = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+    const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+    if (!job?.modelVersionId || !summary || summary.modelVersionId !== job.modelVersionId || artifacts.length !== 1 || typeof artifacts[0]!.key !== "string" || !artifacts[0]!.key.startsWith(visionKeys.inferencePrefix(job.id, job.attemptNumber))
+      || !hash(asset.checksumSha256) || !positive(asset.durationMs) || summary.sourceChecksum !== asset.checksumSha256 || !hash(summary.weightsSha256) || !hash(summary.proxyChecksum)
+      || !positive(summary.imageWidth) || !positive(summary.imageHeight) || !positive(summary.proxyDurationMs))
+      throw refusal(409, "BallDetectionsMissing", "Ball trajectory needs a succeeded detection artifact with source, proxy, weights and image geometry provenance.", "Complete fingerprint and a current detector run; this CPU stage does not load or approve a detector.");
+    const proxy = await this.proxyClock(asset.id);
+    if (proxy.fps < 10 || proxy.fps > 120 || summary.sampleFps !== proxy.fps || summary.proxyFps !== proxy.fps || summary.sourceOffsetMs !== proxy.sourceOffsetMs)
+      throw refusal(409, "BallDetectionsTooSparse", "Ball trajectory requires detections at the full proxy rate on the same source clock.", "Run a licensed detector with sampleFps equal to the proxy frame rate.");
+    if (!Number.isSafeInteger(proxy.sourceOffsetMs) || proxy.sourceOffsetMs < 0 || proxy.sourceOffsetMs >= asset.durationMs || Math.ceil(summary.proxyDurationMs * proxy.fps / 1000) > 1_000_000)
+      throw refusal(409, "BallTrajectoryWindowInvalid", "The ball trajectory proxy window is invalid or exceeds one million frames.", "Choose a bounded proxy inside the source, or split the footage.");
+    const config = requested?.trajectoryConfig;
+    if (config !== undefined) {
+      const ranges: Record<string, [number, number]> = { minConfidence: [0, 1], smoothingMs: [0, 1000], maxImageSpeedPerSecond: [Number.MIN_VALUE, 100] };
+      if (!config || typeof config !== "object" || Array.isArray(config) || Object.entries(config).some(([key, value]) => !ranges[key] || typeof value !== "number" || !Number.isFinite(value) || value < ranges[key]![0] || value > ranges[key]![1]))
+        throw refusal(400, "InvalidBallTrajectoryConfig", "The ball trajectory configuration is invalid.", "Use finite confidence [0,1], smoothingMs [0,1000] and positive maxImageSpeedPerSecond up to 100.");
+    }
+    if (requested?.chunkMs !== undefined && (!positive(requested.chunkMs) || requested.chunkMs < 10000 || requested.chunkMs > 600000))
+      throw refusal(400, "InvalidBallTrajectoryConfig", "Ball chunks must cover 10000 to 600000 source milliseconds.", "Use the default one-minute chunks.");
+    const segments = await this.prisma.visionCameraSegment.findMany({ where: { videoAssetId: asset.id }, orderBy: { startMs: "asc" }, select: { id: true, startMs: true, endMs: true, kind: true } });
+    if (segments.some((row, i) => !(CAMERA_SEGMENT_KINDS as readonly string[]).includes(row.kind) || row.startMs < 0 || row.endMs <= row.startMs || row.endMs > asset.durationMs! || (i > 0 && row.startMs < segments[i - 1]!.endMs)))
+      throw refusal(409, "InvalidBallCameraSegments", "Ball trajectory needs non-overlapping, bounded camera segments with supported kinds.", "Correct the camera segment declarations before queueing.");
+    return { detections: { jobId: job.id, key: artifacts[0]!.key, modelVersionId: job.modelVersionId, sampleFps: proxy.fps, weightsChecksum: summary.weightsSha256 },
+      sourceChecksum: asset.checksumSha256, sourceDurationMs: asset.durationMs, proxyChecksum: summary.proxyChecksum, proxyDurationMs: summary.proxyDurationMs,
+      imageWidth: summary.imageWidth, imageHeight: summary.imageHeight,
+      segments: segments.map((segment) => ({ cameraSegmentId: segment.id, startMs: segment.startMs, endMs: segment.endMs, kind: segment.kind as BallTrajectoryJobParams["segments"][number]["kind"] })),
+      readKeys: [{ bucket: "derived", key: artifacts[0]!.key }] };
   }
 
   /**
@@ -488,6 +601,22 @@ export const RESERVED_INPUT_KEYS = [
   "segments",
   "anchors",
   "cuts",
+  "sourceChecksum",
+  "sourceDurationMs",
+  "proxyChecksum",
+  "proxyDurationMs",
+  "imageWidth",
+  "imageHeight",
+  "ball",
+  "detectionsChecksum",
+  "detectorJobId",
+  "detectorVersionId",
+  "eventAlgorithm",
+  "possession",
+  "possessionIndex",
+  "possessionSource",
+  "windowStartMs",
+  "windowEndMs",
 ] as const;
 
 export function withoutReservedInputs(params: Record<string, unknown> | undefined): Record<string, unknown> {

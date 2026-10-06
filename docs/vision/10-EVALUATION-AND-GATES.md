@@ -1,5 +1,22 @@
 # 10 — Evaluation and promotion gates
 
+[Increment 8](./79-PHASE-6-INCREMENT-8.md) evaluates one complete-run event artifact
+without mixing repeated runs or human corrections. Coverage is reported by the
+worker and checked against the queued window; it is not independent decoder
+coverage proof or representative accuracy. The producer, real labels and full
+Phase 6 evaluation remain outstanding.
+
+[Increment 7](./78-PHASE-6-INCREMENT-7.md) isolates original event proposals from
+one model version, retaining corrected/rejected originals. These are candidate
+evidence scores: complete inference coverage and representative benchmark support
+are not established, and no model promotion gate is satisfied by them alone.
+
+Event reference capture and candidate scoring are implemented in
+[Phase 6 Increment 6](./77-PHASE-6-INCREMENT-6.md). This does not close the event
+accuracy gate: the pilot still needs two independent human submissions,
+reconciliation and freeze, followed by representative automatic-model evaluation.
+Candidate snapshots include manual claims and do not promote model versions.
+
 ## The core rule
 
 **Do not hard-code a "good" metric today.** Run a baseline on representative Nigerian matches,

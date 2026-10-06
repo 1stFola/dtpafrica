@@ -14,6 +14,7 @@ import sys
 
 from .config import ConfigError, load_config
 from .control_plane import ContractMismatchError
+from .logging_config import configure_logging
 from .runner import Worker, WorkerTerminated
 
 
@@ -24,10 +25,7 @@ def _terminate(signum: int, _frame: object) -> None:
 
 
 def main() -> int:
-    logging.basicConfig(
-        level=os.environ.get("VISION_LOG_LEVEL", "INFO").upper(),
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
-    )
+    configure_logging(os.environ.get("VISION_LOG_LEVEL", "INFO").upper())
     log = logging.getLogger("dtp_vision_worker")
 
     try:

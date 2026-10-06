@@ -499,7 +499,7 @@ export class VisionIdentityService {
   async media(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({
       where: { id: videoAssetId },
-      select: { id: true, variants: { where: { kind: "proxy" }, orderBy: { createdAt: "desc" }, take: 1 } },
+      select: { id: true, durationMs: true, variants: { where: { kind: "proxy" }, orderBy: { createdAt: "desc" }, take: 1 } },
     });
     if (!asset) throw notFound("video asset", videoAssetId);
     const proxy = asset.variants[0];
@@ -515,6 +515,7 @@ export class VisionIdentityService {
       url: await this.store.presignGet("derived", proxy.objectKey, this.config.playback.urlTtlSeconds),
       fps: proxy.fps,
       sourceOffsetMs: proxy.sourceOffsetMs,
+      sourceDurationMs: asset.durationMs ?? null,
       durationMs: proxy.durationMs,
       width: proxy.width,
       height: proxy.height,

@@ -446,13 +446,13 @@ describe("the queue", () => {
   type Row = { id: string; decidedBy: string; createdAt: Date; videoAssetId?: string; track?: { localTrackId: number; videoAssetId: string } } & Record<string, unknown>;
   type Where = { decidedBy?: { not: string }; videoAssetId?: string; track?: { videoAssetId?: string }; supersededBy?: null; reviewState?: string };
   const at = (minute: number) => new Date(Date.UTC(2026, 9, 3, 8, minute));
-  const event = (id: string, decidedBy: string, minute: number, asset = ASSET): Row => ({ id, videoAssetId: asset, type: "shot", startMs: 100_000, endMs: 100_000, actorTrackId: null, decidedBy, createdAt: at(minute) });
-  const identity = (id: string, decidedBy: string, minute: number, asset = ASSET): Row => ({ id, trackId: TRACK, matchSquadPlayerId: SLOT, validFromMs: 40_000, validToMs: 90_000, decidedBy, createdAt: at(minute), track: { localTrackId: 4, videoAssetId: asset } });
+  const event = (id: string, decidedBy: string, minute: number, asset = ASSET): Row => ({ confidence: 1, id, videoAssetId: asset, type: "shot", startMs: 100_000, endMs: 100_000, actorTrackId: null, decidedBy, createdAt: at(minute) });
+  const identity = (id: string, decidedBy: string, minute: number, asset = ASSET): Row => ({ confidence: 1, id, trackId: TRACK, matchSquadPlayerId: SLOT, validFromMs: 40_000, validToMs: 90_000, decidedBy, createdAt: at(minute), track: { localTrackId: 4, videoAssetId: asset } });
   const holding = (rows: Row[]) => {
     const matching = (where: Where) =>
       rows.filter((r) => (!where.decidedBy || r.decidedBy !== where.decidedBy.not) && (!where.videoAssetId || r.videoAssetId === where.videoAssetId) && (!where.track?.videoAssetId || r.track?.videoAssetId === where.track.videoAssetId));
     return {
-      findMany: async ({ where, take }: { where: Where; take?: number }) => matching(where).sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime() || x.id.localeCompare(y.id)).slice(0, take),
+      findMany: async ({ where, take, orderBy }: { where: Where; take?: number; orderBy: Record<string, string>[] }) => matching(where).sort((x, y) => (orderBy.some((field) => field.confidence) ? Number(x.confidence) - Number(y.confidence) : 0) || x.createdAt.getTime() - y.createdAt.getTime() || x.id.localeCompare(y.id)).slice(0, take),
       count: async ({ where }: { where: Where }) => matching(where).length,
     };
   };
@@ -515,5 +515,24 @@ describe("the queue", () => {
     expect(mockPrisma.visionEventCandidate.findMany.mock.calls[0]![0].take).toBe(500);
     await service.queue({ limit: 0 }, bob);
     expect(mockPrisma.visionEventCandidate.findMany.mock.calls[1]![0].take).toBe(1);
+  });
+
+  it("orders in SQL before the limit, merges low-confidence claims across kinds, and retains depth", async () => {
+    hold([event("old-high", "alice", 0), { ...event("new-low", "alice", 90), confidence: 0.1 }, { ...event("mine", "bob", 0), confidence: 0 }], [{ ...identity("id-low", "alice", 80), confidence: 0 }]);
+    const out = await service.queue({ order: "confidence", limit: 1 }, bob);
+    expect(out.order).toBe("confidence");
+    expect(out.items.map((item) => item.id)).toEqual(["id-low"]);
+    expect(out.items[0]?.confidence).toBe(0);
+    expect(out.waiting).toEqual({ events: 2, identities: 1 });
+    for (const delegate of [mockPrisma.visionEventCandidate, mockPrisma.visionIdentityAssignment]) {
+      expect(delegate.findMany.mock.calls[0]![0]).toMatchObject({ orderBy: [{ confidence: "asc" }, { createdAt: "asc" }, { id: "asc" }], take: 1, select: { confidence: true } });
+    }
+  });
+
+  it("keeps oldest-first as the backwards-compatible API default and rejects no data for unknown order", async () => {
+    hold([event("old", "alice", 0), { ...event("low", "alice", 90), confidence: 0 }], []);
+    const out = await service.queue({ order: "unsupported" }, bob);
+    expect(out.order).toBe("oldest");
+    expect(out.items.map((item) => item.id)).toEqual(["old", "low"]);
   });
 });

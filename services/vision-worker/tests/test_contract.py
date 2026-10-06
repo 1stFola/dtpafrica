@@ -22,8 +22,20 @@ import pytest
 from dtp_vision_worker.config import CONTRACT_VERSION
 from dtp_vision_worker.stages import CPU_STAGES, GPU_STAGES, STAGES
 from dtp_vision_worker.stages.detect import ARTIFACT_ROLE, CONTRACT_CLASSES, DETECTION_CLASS_BY_LABEL
+from dtp_vision_worker.ball_trajectory import VERSION, INDEX_ROLE, CHUNK_ROLE, LOST_REASONS
+from dtp_vision_worker import possession
+from dtp_vision_worker import possession_constraints
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages" / "vision-contracts" / "src"
+
+
+def test_possession_contract_roles_version_and_unknown_reasons_match():
+    source = _read("possession.ts")
+    for name, value in (("POSSESSION_VERSION", possession.VERSION), ("POSSESSION_INDEX_ROLE", possession.INDEX_ROLE), ("POSSESSION_CHUNK_ROLE", possession.CHUNK_ROLE)):
+        assert re.search(rf'{name}\s*=\s*"{value}"', source)
+    assert _typescript_list(source, "POSSESSION_UNKNOWN_REASONS") == set(possession.UNKNOWN_REASONS)
+    assert f'CALIBRATED_POSSESSION_VERSION = "{possession_constraints.VERSION}"' in source
+    assert _typescript_list(source, "POSSESSION_CALIBRATED_REASONS") == set(possession_constraints.REASONS)
 
 
 def _read(name: str) -> str:
@@ -53,6 +65,14 @@ def test_contract_version_matches_typescript() -> None:
         f"Python speaks {CONTRACT_VERSION}, TypeScript speaks {match.group(1)}. "
         "Bump dtp_vision_worker.config.CONTRACT_VERSION to match."
     )
+
+
+def test_ball_trajectory_states_and_artifact_roles_match_typescript() -> None:
+    source = _read("ball-trajectory.ts")
+    for name, value in [("BALL_TRAJECTORY_VERSION", VERSION), ("BALL_TRAJECTORY_INDEX_ROLE", INDEX_ROLE), ("BALL_TRAJECTORY_CHUNK_ROLE", CHUNK_ROLE)]:
+        assert re.search(rf'{name}\s*=\s*"{value}"', source)
+    block = re.search(r'BALL_LOST_REASONS\s*=\s*\[(.*?)\]', source, re.S)
+    assert block and tuple(re.findall(r'"([a-z_]+)"', block.group(1))) == LOST_REASONS
 
 
 def test_every_stage_is_a_declared_job_type() -> None:

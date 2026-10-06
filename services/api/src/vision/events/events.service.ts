@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { EVIDENCE_KINDS, VISION_EVENT_TAXONOMY_VERSION, type VisionEventPromotionV1, type VisionEventType } from "@dtp/vision-contracts";
+import { EVIDENCE_KINDS, VISION_EVENT_TAXONOMY_VERSION, reviewQueueOrder, type VisionEventPromotionV1, type VisionEventType } from "@dtp/vision-contracts";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ScoreboardLifecycleService } from "../../scoreboard/scoreboard-lifecycle.service";
@@ -435,34 +435,39 @@ export class VisionEventsService {
    * and event candidate that is not their own, oldest first, with the words a
    * list needs -- the footage, the match clock, the roster slot named.
    */
-  async queue(opts: { assetId?: string; limit?: number }, actor?: AdminAuthContext) {
+  async queue(opts: { assetId?: string; limit?: number; order?: string }, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "read the review queue");
     const limit = Math.min(Math.max(Math.floor(opts.limit ?? 100), 1), 500);
+    const order = reviewQueueOrder(opts.order);
+    const orderBy: Prisma.VisionEventCandidateOrderByWithRelationInput[] = [
+      ...(order === "confidence" ? [{ confidence: "asc" as const }] : []),
+      { createdAt: "asc" }, { id: "asc" },
+    ];
     const assetFilter = opts.assetId ? { videoAssetId: opts.assetId } : {};
     /* "Not mine" and the limit are in the queries. This read every undecided row of both
        kinds, filtered them in memory and then cut to the limit (docs/vision/50, appendix B).
-       The oldest `limit` of the two kinds together are among the oldest `limit` of each, so
-       taking that many of each loses nothing; the depth is a count, not a list. */
+       The first `limit` of the two kinds together are among the first `limit` of each
+       under the same confidence/age order, so the cut loses nothing; depth is a count. */
     const eventWhere = { supersededBy: null, reviewState: "unreviewed", decidedBy: { not: person.userId }, ...assetFilter };
     const identityWhere = { supersededBy: null, reviewState: "unreviewed", decidedBy: { not: person.userId }, ...(opts.assetId ? { track: assetFilter } : {}) };
     const [events, identities, eventsWaiting, identitiesWaiting] = await Promise.all([
       this.prisma.visionEventCandidate.findMany({
         where: eventWhere,
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        orderBy,
         take: limit,
-        select: { id: true, videoAssetId: true, type: true, startMs: true, endMs: true, actorTrackId: true, decidedBy: true, createdAt: true },
+        select: { id: true, videoAssetId: true, type: true, startMs: true, endMs: true, actorTrackId: true, decidedBy: true, createdAt: true, confidence: true },
       }),
       this.prisma.visionIdentityAssignment.findMany({
         where: identityWhere,
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        orderBy: order === "confidence" ? [{ confidence: "asc" }, { createdAt: "asc" }, { id: "asc" }] : [{ createdAt: "asc" }, { id: "asc" }],
         take: limit,
-        select: { id: true, trackId: true, matchSquadPlayerId: true, validFromMs: true, validToMs: true, decidedBy: true, createdAt: true, track: { select: { localTrackId: true, videoAssetId: true } } },
+        select: { id: true, trackId: true, matchSquadPlayerId: true, validFromMs: true, validToMs: true, decidedBy: true, createdAt: true, confidence: true, track: { select: { localTrackId: true, videoAssetId: true } } },
       }),
       this.prisma.visionEventCandidate.count({ where: eventWhere }),
       this.prisma.visionIdentityAssignment.count({ where: identityWhere }),
     ]);
     const identityRows: QueueIdentityRow[] = identities.map(({ track, ...a }) => ({ ...a, videoAssetId: track.videoAssetId, localTrackId: track.localTrackId }));
-    const built = { items: buildQueue(person.userId, events, identityRows, limit).items, waiting: { events: eventsWaiting, identities: identitiesWaiting } };
+    const built = { items: buildQueue(person.userId, events, identityRows, limit, order).items, waiting: { events: eventsWaiting, identities: identitiesWaiting } };
 
     const assetIds = [...new Set(built.items.map((i) => i.videoAssetId))];
     const slotIds = [...new Set(built.items.flatMap((i) => (i.kind === "identity" && i.matchSquadPlayerId ? [i.matchSquadPlayerId] : [])))];
@@ -481,6 +486,7 @@ export class VisionEventsService {
     const anchorsOf = anchorsByAsset;
     return {
       me: person.userId,
+      order,
       waiting: built.waiting,
       count: built.items.length,
       items: built.items.map((i) => {

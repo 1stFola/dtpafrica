@@ -10,6 +10,7 @@ import {
   type PutConstraints,
   type UploadedPart,
 } from "./object-store";
+import { SmallObjectTooLargeError } from "./object-store";
 
 type StoredObject = {
   body: Buffer;
@@ -203,8 +204,10 @@ export class InMemoryObjectStore implements ObjectStore {
     });
   }
 
-  async getSmallObject(bucket: BucketId, key: string) {
-    return this.objects.get(this.id(bucket, key))?.body ?? null;
+  async getSmallObject(bucket: BucketId, key: string, maxBytes?: number) {
+    const body = this.objects.get(this.id(bucket, key))?.body ?? null;
+    if (maxBytes !== undefined && body && body.length > maxBytes) throw new SmallObjectTooLargeError(maxBytes);
+    return body;
   }
 
   private assertWritable(bucket: BucketId, key: string) {

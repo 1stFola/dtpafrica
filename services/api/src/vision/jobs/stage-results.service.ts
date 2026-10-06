@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, GAMESTATE_CHUNK_ROLE, GAMESTATE_INDEX_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
+import { BALL_TRAJECTORY_CHUNK_ROLE, BALL_TRAJECTORY_INDEX_ROLE, BALL_TRAJECTORY_VERSION, BALL_LOST_REASONS } from "@dtp/vision-contracts";
+import { CALIBRATED_POSSESSION_VERSION, POSSESSION_CALIBRATED_REASONS, POSSESSION_CHUNK_ROLE, POSSESSION_INDEX_ROLE, POSSESSION_VERSION, POSSESSION_UNKNOWN_REASONS } from "@dtp/vision-contracts";
+import { sameEvidence } from "../possession/possession-evidence";
+import { EVENT_CARRY_VERSION, EVENT_CARRY_MANIFEST_CHECKSUM, EVENT_INFERENCE_ARTIFACT_ROLE, MAX_EVENT_INFERENCE_BYTES, validCarryProducer } from "@dtp/vision-contracts";
 import { VisionBenchmarksService } from "../models/benchmarks.service";
 
 /**
@@ -47,7 +51,7 @@ export type ApplyContext = {
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify", "gamestate"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify", "gamestate", "ball_trajectory", "possession", "events"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -87,6 +91,12 @@ export class VisionStageResultsService {
           return await this.applyCuts(videoAssetId, completion);
         case "gamestate":
           return this.applyGamestate(completion);
+        case "ball_trajectory":
+          return this.applyBallTrajectory(completion, context);
+        case "possession":
+          return this.applyPossession(completion, context);
+        case "events":
+          return this.applyEvents(completion, context);
         default:
           return { applied: false, detail: `no domain effect for ${jobType}` };
       }
@@ -103,6 +113,24 @@ export class VisionStageResultsService {
         .catch(() => undefined);
       return { applied: false, detail: message };
     }
+  }
+
+  /** A completion declares an immutable artifact; it never imports event rows. */
+  private applyEvents(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const s = completion.summary, input = context.inputSpec ?? {}, index = obj(input.possessionIndex) ?? {}, possession = obj(input.possession) ?? {}, tracks = obj(input.tracks) ?? {}, algorithm = obj(input.eventAlgorithm) ?? {};
+    const expected = { algorithm: EVENT_CARRY_VERSION, manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, possessionJobId: possession.jobId,
+      possessionIndexChecksum: possession.indexChecksum, tracksChecksum: tracks.checksum, calibrationSnapshot: index.calibrationSnapshot, cameraSegments: index.cameraSegments };
+    const a = completion.artifacts[0];
+    if (!context.modelVersionId || s.modelVersionId !== context.modelVersionId || algorithm.modelVersionId !== context.modelVersionId || s.weightsSha256 !== null || s.reviewState !== "unreviewed"
+      || algorithm.configKey !== EVENT_CARRY_VERSION || algorithm.manifestChecksum !== EVENT_CARRY_MANIFEST_CHECKSUM || algorithm.weightsChecksum !== null
+      || typeof algorithm.gitCommit !== "string" || !algorithm.gitCommit.trim() || typeof algorithm.workerImage !== "string" || !algorithm.workerImage.trim()
+      || s.sourceChecksum !== input.sourceChecksum || s.windowStartMs !== input.windowStartMs || s.windowEndMs !== input.windowEndMs
+      || !Number.isSafeInteger(s.windowStartMs) || !Number.isSafeInteger(s.windowEndMs) || Number(s.windowStartMs) < 0 || Number(s.windowEndMs) <= Number(s.windowStartMs) || Number(s.windowEndMs) - Number(s.windowStartMs) > 300000
+      || !Number.isSafeInteger(s.eventCount) || Number(s.eventCount) < 0 || Number(s.eventCount) > 200 || !/^[a-f0-9]{64}$/.test(String(s.eventArtifactSha256))
+      || !validCarryProducer(s.producer) || !sameEvidence(s.producer, expected) || completion.artifacts.length !== 1 || !a || a.role !== EVENT_INFERENCE_ARTIFACT_ROLE
+      || a.bucket !== "derived" || a.contentType !== "application/json" || !Number.isSafeInteger(a.bytes) || Number(a.bytes) < 1 || Number(a.bytes) > MAX_EVENT_INFERENCE_BYTES)
+      return { applied: false, detail: "invalid carry artifact completion; no event rows written" };
+    return { applied: true, detail: `${s.eventCount} unreviewed carry proposal(s); immutable artifact ready for evaluation, no event rows written` };
   }
 
   /** probe → container metadata onto the asset. */
@@ -448,6 +476,58 @@ export class VisionStageResultsService {
       applied: true,
       detail: `${chunks.length} chunk(s), ${placed} placed and ${suppressed} suppressed row(s) over ${int(completion.summary.frames) ?? "?"} frame(s); valid-frame coverage ${coverage === null ? "n/a" : coverage.toFixed(3)}; index ${index.key}`,
     };
+  }
+
+  private applyPossession(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const indices = completion.artifacts.filter((a) => a.role === POSSESSION_INDEX_ROLE && a.bucket === "derived");
+    const chunks = completion.artifacts.filter((a) => a.role === POSSESSION_CHUNK_ROLE && a.bucket === "derived");
+    const s = completion.summary, input = context.inputSpec ?? {}, proxy = obj(input.proxy), ball = obj(input.ball), tracks = obj(input.tracks);
+    const calibrated = s.calculationVersion === CALIBRATED_POSSESSION_VERSION;
+    if (calibrated ? input.constraintMode !== "calibrated" || s.constraintMode !== "calibrated" || !input.calibrationSnapshot
+      || !sameEvidence(s.calibrationSnapshot, input.calibrationSnapshot) || !sameEvidence(s.footballConfig, { maxGroundDistanceM: 2, maxBallGroundSpeedMps: 35, maxPlayerSpeedMps: 12, ...obj(input.footballConfig) })
+      : input.constraintMode === "calibrated" || s.constraintMode !== undefined || s.calibrationSnapshot !== undefined || s.footballConfig !== undefined)
+      return { applied: false, detail: "possession calibrated constraints differ from queued evidence" };
+    const count = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+    if (indices.length !== 1 || !chunks.length || s.chunks !== chunks.length || new Set(completion.artifacts.map((a) => a.key)).size !== completion.artifacts.length
+      || completion.artifacts.length !== chunks.length + 1 || ![POSSESSION_VERSION, CALIBRATED_POSSESSION_VERSION].includes(String(s.calculationVersion)) || !count(s.frames) || s.frames < 1
+      || !count(s.candidateFrames) || !count(s.unknownFrames) || s.candidateFrames + s.unknownFrames !== s.frames
+      || !count(s.segments) || s.segments < 1 || s.segments > s.frames || typeof s.candidateFrameCoverage !== "number" || !Number.isFinite(s.candidateFrameCoverage)
+      || Math.abs(s.candidateFrameCoverage - s.candidateFrames / s.frames) > 1e-9 || s.reviewState !== "unreviewed" || s.coordinateBasis !== "image_foot_proximity")
+      return { applied: false, detail: "possession completion has inconsistent artifacts, candidate counts or review state" };
+    const reasons = obj(s.reasons);
+    if (!reasons || Object.entries(reasons).some(([key, value]) => ![...POSSESSION_UNKNOWN_REASONS, ...(calibrated ? POSSESSION_CALIBRATED_REASONS : [])].includes(key as never) || !count(value))
+      || Object.values(reasons).reduce<number>((sum, value) => sum + Number(value), 0) !== s.unknownFrames)
+      return { applied: false, detail: "possession reasons must account for every Unknown frame" };
+    if (!proxy || !ball || !tracks || !count(proxy.sourceOffsetMs) || typeof proxy.fps !== "number" || !Number.isFinite(proxy.fps) || proxy.fps < 10 || proxy.fps > 120
+      || !count(input.sourceDurationMs) || !count(input.proxyDurationMs) || input.sourceDurationMs <= proxy.sourceOffsetMs || input.proxyDurationMs < 1
+      || s.sourceChecksum !== input.sourceChecksum || s.ballJobId !== ball.jobId || s.trackJobId !== tracks.jobId || s.ballIndexChecksum !== ball.indexChecksum || s.tracksChecksum !== tracks.checksum
+      || s.windowStartMs !== proxy.sourceOffsetMs || s.windowEndMs !== Math.min(input.sourceDurationMs, proxy.sourceOffsetMs + input.proxyDurationMs)
+      || s.frames !== Math.ceil((Number(s.windowEndMs) - proxy.sourceOffsetMs) * proxy.fps / 1000) || typeof s.indexChecksum !== "string" || !/^[a-f0-9]{64}$/i.test(s.indexChecksum))
+      return { applied: false, detail: "possession source window or input provenance differs from the queued evidence" };
+    return { applied: true, detail: `${s.candidateFrames} unreviewed proximity candidate frames and ${s.unknownFrames} Unknown frames; no confirmed possession or player statistics; index ${indices[0]!.key}` };
+  }
+
+  private applyBallTrajectory(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const indices = completion.artifacts.filter((row) => row.role === BALL_TRAJECTORY_INDEX_ROLE && row.bucket === "derived");
+    const chunks = completion.artifacts.filter((row) => row.role === BALL_TRAJECTORY_CHUNK_ROLE && row.bucket === "derived");
+    const s = completion.summary, input = context.inputSpec ?? {}, proxy = obj(input.proxy);
+    const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    if (indices.length !== 1 || !chunks.length || new Set(chunks.map((row) => row.key)).size !== chunks.length || s.chunks !== chunks.length
+      || s.calculationVersion !== BALL_TRAJECTORY_VERSION || !count(s.frames) || s.frames < 1 || !count(s.observed) || !count(s.lost) || s.observed + s.lost !== s.frames
+      || typeof s.observedFrameCoverage !== "number" || !Number.isFinite(s.observedFrameCoverage) || Math.abs(s.observedFrameCoverage - s.observed / s.frames) > 1e-9)
+      return { applied: false, detail: "ball trajectory completion has inconsistent artifacts, calculation version or frame counts" };
+    const reasons = obj(s.reasons);
+    if (!reasons || Object.entries(reasons).some(([key, value]) => !(BALL_LOST_REASONS as readonly string[]).includes(key) || !count(value))
+      || Object.values(reasons).reduce<number>((sum, value) => sum + Number(value), 0) !== s.lost)
+      return { applied: false, detail: "ball trajectory lost reasons do not account for every lost frame" };
+    if (!proxy || !count(proxy.sourceOffsetMs) || typeof proxy.fps !== "number" || !Number.isFinite(proxy.fps) || proxy.fps < 10 || proxy.fps > 120
+      || !count(input.sourceDurationMs) || !count(input.proxyDurationMs) || input.sourceDurationMs <= proxy.sourceOffsetMs || input.proxyDurationMs <= 0
+      || s.sourceChecksum !== input.sourceChecksum || s.windowStartMs !== proxy.sourceOffsetMs
+      || s.windowEndMs !== Math.min(input.sourceDurationMs, proxy.sourceOffsetMs + input.proxyDurationMs)
+      || s.frames !== Math.ceil((Number(s.windowEndMs) - proxy.sourceOffsetMs) * proxy.fps / 1000)
+      || typeof s.indexChecksum !== "string" || !/^[a-f0-9]{64}$/i.test(s.indexChecksum))
+      return { applied: false, detail: "ball trajectory coverage or source provenance differs from the queued inputs" };
+    return { applied: true, detail: `${s.observed} observed and ${s.lost} explicitly lost ball frames; image coordinates only, no possession or physical metric claim; index ${indices[0]!.key}` };
   }
 
   /**

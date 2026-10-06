@@ -75,8 +75,8 @@ export const PROMOTION_MINUTE_TOLERANCE = 1;
 /**
  * What the review queue holds: every current, undecided claim that needs a
  * second person -- an identity on a window of a track, an event candidate on a
- * window of the footage. `GET /vision/review/queue` lists them oldest first,
- * the reader's own left out.
+ * window of the footage. `GET /vision/review/queue` lists them oldest first by
+ * default or by ascending confidence with `order=confidence`, the reader's own left out.
  */
 export const REVIEW_QUEUE_KINDS = ["event", "identity"] as const;
 export type ReviewQueueKind = (typeof REVIEW_QUEUE_KINDS)[number];

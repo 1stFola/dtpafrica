@@ -13,10 +13,10 @@
 - [P5/38] Automatic calibration (`method: model`) — no model in register. 11:153, 38:126.
 - [P5/41] Automatic clock anchoring — no licensed model. 41:111.
 - [P3/P5/43] Ball: tiled ball path; ball on the minimap — no ball detector. 11:140, 43:115.
-- [P6/44,49] Ball smoothing with lost state; possessor candidates; `VisionPossessionSegment`. 11:160, 44:118, 49:140.
-- [P6/44] No stage writes `method: model` event candidates. 44:117.
-- [P6/48,49] Confidence-ranked walk and queue (`,` `.` lowest first). 48:99, 49:138, 08:166.
-- [P5/P6 gates] Phase 5 coverage and Phase 6 per-event precision / actor attribution on real footage with gold events. 42:144, 48:101, 49:141.
+- [P6/44,49] Ball smoothing **implemented in [80](../80-PHASE-6-INCREMENT-9.md)**; original image-proximity possession candidates/Unknown artifacts **implemented in [81](../81-PHASE-6-INCREMENT-10.md)**; `VisionPossessionSegment` persistence and second-person review **implemented in [82](../82-PHASE-6-INCREMENT-11.md)**; immutable boundary/actor corrections and independent revision decisions **implemented in [83](../83-PHASE-6-INCREMENT-12.md)**; calibrated ground-plane distance/motion vetoes **implemented in [84](../84-PHASE-6-INCREMENT-13.md)**. Still open: named actor attribution, airborne-ball/control reasoning and real detector/possession evaluation. 11:160, 44:118, 49:140.
+- [P6/44] Automatic weight-free carry artifact producer and original-run scoring **implemented in [85](../85-PHASE-6-INCREMENT-14.md)**. Import into `method: model` event reviewer rows, additional event types and real-footage accuracy remain open. 44:117.
+- [P6/48,49] Confidence-ranked walk and queue (`,` `.` lowest first) **implemented in [76](../76-PHASE-6-INCREMENT-5.md)**. Stored scores do not establish model accuracy; manual scores tie and use age.
+- [P5/P6 gates] Phase 5 coverage and Phase 6 per-event precision / actor attribution on real footage with gold events. Capture, reconciliation, freeze and candidate scoring are implemented in [77](../77-PHASE-6-INCREMENT-6.md); independent pilot labels and representative model evaluation remain outstanding. 42:144, 48:101, 49:141.
 - [P4/34, P5/39] FFmpeg never run on a real proxy for identify's frame decoder or the cuts filter graph; cuts threshold 0.4 unvalidated. 34:138, 39:86, 39:88.
 - [P3/31] Canary (both versions on selected matches). 31:97; 10 § canary.
 - [P1/46] More than one worker; a worker that survives a deploy (a deploy re-queues a job mid-run). 46:94–95.
@@ -42,7 +42,7 @@
 - [P4/36] Per-track artifacts — positions route refuses > 32 MB (`identity.service.ts:497`); track crop thumbnail strip. 36:111–112.
 - [P5/39,40] Segment kinds: proposals stay `unknown`; drag/nudge a landmark. 39:87, 40:97–100. (**Resolved:** the editor asks for the contract's kinds since [58](../58-QA-FIX-8-CONTRACT-PARITY.md), and the annotation workstation uses the picture rect since [59](../59-QA-FIX-9-WORKSTATION.md).)
 - [P5/41–43] Kit changes in the substitution window; which goal each side attacks per half; chunks/segments on the match clock; speed/distance/trails/smoothing (metrics phase). 41:109, 41:112, 42:141–143, 43:116–117.
-- [P6/47,48,49] Drag an event boundary; recorder console offers no second; leakage/representation/benchmark/promotion reports shown as raw JSON `<pre>` (`AdminVisionDatasetsPage.tsx:178`, `AdminVisionModelsPage.tsx:281`). 48:98, 49:139, 47:75.
+- [P6/47,48,49] Drag an event boundary **implemented in [72](../72-PHASE-6-INCREMENT-4.md)**. Still open: recorder console offers no second; leakage/representation/benchmark/promotion reports shown as raw JSON `<pre>` (`AdminVisionDatasetsPage.tsx:178`, `AdminVisionModelsPage.tsx:281`). 48:98, 49:139, 47:75.
 
 ### B. Promised in plan/contract/frontend doc but never built
 - `GET /vision/review/:assetId/timeline` — no route. 07:109.

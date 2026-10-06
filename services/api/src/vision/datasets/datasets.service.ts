@@ -17,6 +17,7 @@ import {
   type ExportMember,
 } from "./fiftyone-export";
 import { goldContamination, goldReadiness } from "./gold-benchmark";
+import { lockGoldReservations } from "../event-gold/gold-lock";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import {
   DATASET_SPLITS,
@@ -931,7 +932,11 @@ export class VisionDatasetsService {
       "application/json"
     );
 
-    const frozen = await this.prisma.visionDatasetVersion.update({
+    const frozen = await this.prisma.$transaction(async (tx) => {
+      await lockGoldReservations(tx);
+      const reserved = await goldContamination(tx, version.id);
+      if (reserved.length) throw refusal(409, "GoldContamination", "A held-out reference now reserves this footage or match from training.", "Remove reserved training/validation members before freezing.", { members: reserved });
+      return tx.visionDatasetVersion.update({
       where: { id: version.id },
       data: {
         frozenAt: new Date(),
@@ -940,6 +945,7 @@ export class VisionDatasetsService {
         leakageReport: leakage as never,
         representationReport: { ...representation, gold } as never,
       },
+      });
     });
 
     await this.audit.record(

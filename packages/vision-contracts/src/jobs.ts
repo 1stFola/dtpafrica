@@ -74,8 +74,21 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  * `off_pitch`, and reports coverage against the tracked frames
  * (`framesTracked`, `coverageBasis`). A declared homography is oriented: positive
  * `w` for what the camera sees.
+ *
+ * 1.13.0 -- `ball_trajectory`: CPU smoothing of full-rate, provenance-pinned
+ * detections. Explicit lost states reset smoothing; coordinates remain in image
+ * space. No new model or possession inference is implied.
+ *
+ * 1.14.0 -- `possession`: unreviewed track candidates from pinned ball/player
+ * observations. Image proximity and continuity only; gaps remain Unknown.
+ *
+ * 1.15.0 -- optional possession ground-plane vetoes pin proxy geometry/checksum
+ * and current calibration. Missing/failed calibration remains Unknown.
+ *
+ * 1.16.0 -- CPU carry event proposals from original calibrated possession and
+ * exact player observations, bound to a registered weight-free rule version.
  */
-export const VISION_CONTRACT_VERSION = "1.12.0";
+export const VISION_CONTRACT_VERSION = "1.16.0";
 
 /**
  * Which worker may serve which stage (docs/vision/58).
@@ -103,7 +116,9 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   identify: "1.12.0",
   calibrate: "1.12.0",
   gamestate: "1.12.0",
-  events: "1.12.0",
+  ball_trajectory: "1.13.0",
+  possession: "1.15.0",
+  events: "1.16.0",
   clip: "1.12.0",
   vlm: "1.12.0",
   train: "1.12.0",
@@ -160,6 +175,8 @@ export const VISION_JOB_TYPES = [
   "identify",
   "calibrate",
   "gamestate",
+  "ball_trajectory",
+  "possession",
   "events",
   "clip",
   "vlm",
@@ -197,6 +214,8 @@ export const DEFAULT_RESOURCE_CLASS: Record<VisionJobType, VisionResourceClass> 
   identify: "cpu_small",
   calibrate: "gpu_24gb",
   gamestate: "cpu_small",
+  ball_trajectory: "cpu_small",
+  possession: "cpu_small",
   events: "cpu_small",
   vlm: "cpu_small",
   train: "gpu_48gb",
@@ -242,7 +261,9 @@ export const JOB_TYPE_PREREQUISITES: Record<VisionJobType, readonly VisionJobTyp
   // Calibration is filed by a person per camera segment (docs/vision/38), not by a
   // stage; the control plane checks for it when queueing.
   gamestate: ["track"],
-  events: ["gamestate"],
+  ball_trajectory: ["detect"],
+  possession: ["ball_trajectory", "track"],
+  events: ["possession", "track"],
   clip: ["transcode"],
   vlm: ["clip"],
   train: [],
@@ -269,6 +290,7 @@ export const MODEL_TASK_BY_JOB_TYPE: Partial<Record<VisionJobType, VisionModelTa
   // Kit clustering is an algorithm with parameters; it is a version so that every
   // team assignment names what made it.
   identify: "identify",
+  events: "event",
 };
 
 /** What a `VisionModel` is for. One task per model; a version inherits it. */
@@ -442,6 +464,8 @@ export const OUTPUT_BUCKET_BY_JOB_TYPE: Record<VisionJobType, "derived" | "model
   identify: "derived",
   calibrate: "derived",
   gamestate: "derived",
+  ball_trajectory: "derived",
+  possession: "derived",
   events: "derived",
   vlm: "derived",
   benchmark: "models",

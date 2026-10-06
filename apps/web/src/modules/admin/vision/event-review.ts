@@ -10,8 +10,19 @@
  * are mirrored so a reviewer is told before the round trip.
  */
 
-import { VISION_EVENT_TYPES } from "@dtp/vision-contracts";
+import { VISION_EVENT_TYPES, compareReviewClaims, type ReviewQueueOrder } from "@dtp/vision-contracts";
 import type { VisionEventCandidate, VisionReviewTrack } from "../../../api/vision";
+import { snapSourceTimeMs } from "./annotation-boxes";
+
+/** A dragged boundary uses the proxy's clock and frames, without crossing its other boundary. */
+export function draggedEventBoundary(boundary: "startMs" | "endMs", proxyMs: number, window: { startMs: number; endMs: number }, offsetMs: number, clipMs: number, fps: number | null, sourceDurationMs: number | null = null): number {
+  const visibleEnd = Math.min(offsetMs + clipMs, sourceDurationMs ?? Infinity);
+  const proxyEnd = Math.max(0, visibleEnd - offsetMs);
+  const snapped = snapSourceTimeMs(Math.min(proxyEnd, Math.max(0, proxyMs)), fps, offsetMs);
+  const lower = boundary === "startMs" ? Math.max(0, offsetMs) : Math.max(window.startMs, offsetMs);
+  const upper = boundary === "startMs" ? Math.min(window.endMs, visibleEnd) : visibleEnd;
+  return Math.round(Math.min(upper, Math.max(lower, snapped)));
+}
 
 /** The taxonomy's types, from the contract: the same list the API validates against. */
 export const EVENT_TYPES = VISION_EVENT_TYPES;
@@ -51,21 +62,28 @@ export function stepCandidate(candidates: readonly VisionEventCandidate[], sourc
   return [...current].reverse().find((c) => c.startMs < sourceMs - 1) ?? null;
 }
 
-export type Uncertainty = { kind: "event" | "identity"; id: string; trackId: string | null; sourceMs: number };
+export type Uncertainty = { kind: "event" | "identity"; id: string; trackId: string | null; sourceMs: number; confidence: number; createdAt: string };
 
 /**
  * What a second person has to decide on this footage, by source time: every
  * current, unreviewed candidate and identity window that is not theirs. The
  * same list the review queue holds for one asset; `,` and `.` walk it.
  */
-export function uncertainties(candidates: readonly VisionEventCandidate[], tracks: readonly VisionReviewTrack[], me: string | undefined): Uncertainty[] {
+export function uncertainties(candidates: readonly VisionEventCandidate[], tracks: readonly VisionReviewTrack[], me: string | undefined, order?: ReviewQueueOrder): Uncertainty[] {
   const events: Uncertainty[] = candidates
     .filter((c) => !c.supersededBy && c.reviewState === "unreviewed" && c.decidedBy !== me)
-    .map((c) => ({ kind: "event", id: c.id, trackId: c.actorTrackId, sourceMs: c.startMs }));
+    .map((c) => ({ kind: "event", id: c.id, trackId: c.actorTrackId, sourceMs: c.startMs, confidence: c.confidence, createdAt: c.createdAt }));
   const identities: Uncertainty[] = tracks.flatMap((t) =>
-    t.identities.filter((a) => a.supersededBy === null && a.reviewState === "unreviewed" && a.decidedBy !== me).map((a) => ({ kind: "identity" as const, id: a.id, trackId: t.id, sourceMs: a.validFromMs }))
+    t.identities.filter((a) => a.supersededBy === null && a.reviewState === "unreviewed" && a.decidedBy !== me).map((a) => ({ kind: "identity" as const, id: a.id, trackId: t.id, sourceMs: a.validFromMs, confidence: a.confidence, createdAt: a.createdAt }))
   );
-  return [...events, ...identities].sort((a, b) => a.sourceMs - b.sourceMs || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+  return [...events, ...identities].sort((a, b) => order ? compareReviewClaims(a, b, order) : a.sourceMs - b.sourceMs || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+}
+
+/** Walk by row identity, so equal timestamps and a nonchronological order cannot trap the cursor. */
+export function stepRankedReview(items: readonly Uncertainty[], current: string | null, direction: 1 | -1): Uncertainty | null {
+  const index = current === null ? -1 : items.findIndex((item) => `${item.kind}:${item.id}` === current);
+  if (index === -1) return (direction === 1 ? items[0] : items[items.length - 1]) ?? null;
+  return items[index + direction] ?? null;
 }
 
 /** The next uncertainty after the playhead, or the previous before it; null at either end. */

@@ -5,11 +5,17 @@ import { STAGES, UNFINISHED_JOB_STATES, canQueue, describeRun, latestByType, mis
 const job = (type: string, state: string, queuedAt: string, over: Partial<JobRow> = {}): JobRow => ({ id: `${type}-${queuedAt}`, type, state, queuedAt, finishedAt: state === "succeeded" ? queuedAt : null, error: null, ...over });
 
 describe("the stage order", () => {
-  it("mirrors the contract: eight stages, detect on the GPU, gamestate after track alone", () => {
-    expect(STAGES.map((s) => s.type)).toEqual(["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify", "gamestate"]);
+  it("mirrors the contract: eleven stages, detect on the GPU, carry processing on CPU", () => {
+    expect(STAGES.map((s) => s.type)).toEqual(["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify", "gamestate", "ball_trajectory", "possession", "events"]);
     expect(STAGES.find((s) => s.type === "detect")?.where).toBe("gpu");
     expect(STAGES.find((s) => s.type === "gamestate")?.needs).toEqual(["track"]);
     expect(STAGES.find((s) => s.type === "probe")?.needs).toEqual([]);
+    expect(STAGES.find((s) => s.type === "ball_trajectory")?.where).toBe("cpu");
+    expect(STAGES.find((s) => s.type === "ball_trajectory")?.needs).toEqual(["detect"]);
+    expect(STAGES.find((s) => s.type === "possession")?.needs).toEqual(["ball_trajectory", "track"]);
+    expect(STAGES.find((s) => s.type === "possession")?.where).toBe("cpu");
+    expect(STAGES.find((s) => s.type === "events")?.needs).toEqual(["possession", "track"]);
+    expect(STAGES.find((s) => s.type === "events")?.where).toBe("cpu");
   });
 
   it("takes what each stage needs from the contract, not from a copy", () => {

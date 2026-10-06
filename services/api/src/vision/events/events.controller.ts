@@ -34,9 +34,9 @@ export class VisionEventsController {
   /** What this person should look at next, across the footage or on one asset; their own proposals are not in it. */
   @Get("queue")
   @RequirePermissions("vision.review")
-  async queue(@AdminAuth() auth: AdminAuthContext, @Query("assetId") assetId?: string, @Query("limit") limit?: string) {
+  async queue(@AdminAuth() auth: AdminAuthContext, @Query("assetId") assetId?: string, @Query("limit") limit?: string, @Query("order") order?: string) {
     const parsed = limit ? Number(limit) : undefined;
-    return jsonSafe(await this.events.queue({ assetId: assetId || undefined, limit: Number.isFinite(parsed) ? parsed : undefined }, auth));
+    return jsonSafe(await this.events.queue({ assetId: assetId || undefined, limit: Number.isFinite(parsed) ? parsed : undefined, order }, auth));
   }
 
   @Post("events")

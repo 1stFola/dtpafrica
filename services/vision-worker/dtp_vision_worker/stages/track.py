@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from ..config import CONTRACT_VERSION
+from ..media import sha256_file
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
 from ..jsonstream import JsonStreamError, fields, items
 from ..tracking import MIN_TRACK_SAMPLE_FPS, Linker, Params, Track, record, summary_row
@@ -114,6 +115,13 @@ def _track(ctx: StageContext, params: Params = Params()) -> StageResult:
         "detectionsKey": key,
         "sampleFps": fps,
         "proxy": artifact.get("proxy"),
+        "sourceChecksum": artifact.get("sourceChecksum"),
+        "proxyChecksum": artifact.get("proxyChecksum"),
+        "proxyDurationMs": artifact.get("proxyDurationMs"),
+        "imageWidth": artifact.get("imageWidth"),
+        "imageHeight": artifact.get("imageHeight"),
+        "detectionsChecksum": sha256_file(path),
+        "cameraCuts": cuts,
         **{k: v for k, v in stats.items() if k != "tracks"},
         "trackCount": stats["tracks"],
         # Every frame the tracker was given, with or without a track on it: what a
@@ -145,6 +153,15 @@ def _track(ctx: StageContext, params: Params = Params()) -> StageResult:
             "detectorVersionId": detector_version_id,
             "detectJobId": source.get("jobId"),
             "sampleFps": fps,
+            "sourceChecksum": payload["sourceChecksum"],
+            "proxyChecksum": payload["proxyChecksum"],
+            "proxyDurationMs": payload["proxyDurationMs"],
+            "imageWidth": payload["imageWidth"],
+            "imageHeight": payload["imageHeight"],
+            "detectionsChecksum": payload["detectionsChecksum"],
+            "tracksChecksum": sha256_file(out_path),
+            "proxy": payload["proxy"],
+            "cameraCuts": cuts,
             **stats,
             # The compact index the control plane turns into rows; positions stay in the artifact.
             "trackRows": [rows[local_id] for local_id, _o, _l in where],

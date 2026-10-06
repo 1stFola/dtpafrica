@@ -181,10 +181,12 @@ reviewer there.
 
 As built ([49](./49-PHASE-6-INCREMENT-3.md)): on the identity workstation `,` and `.` walk the
 review queue for that footage — every current, unreviewed identity window and event candidate
-that is not the reviewer's own, by source time — selecting the track or the candidate and seeking
+that is not the reviewer's own, in the selected confidence/age order — selecting the track or the candidate and seeking
 to its start. `[` and `]` walk every current candidate ([48](./48-PHASE-6-INCREMENT-2.md)) and `E`
-proposes at the playhead. Until a model proposes with a confidence, *unreviewed* is the only
-uncertainty the system knows.
+proposes at the playhead. Since [76](./76-PHASE-6-INCREMENT-5.md), Review order defaults to
+lowest stored confidence and can switch to oldest first. Manual claim scores are not measured
+accuracy. The workstation walk covers loaded rows; the Review page preserves a global order
+across footage. Row IDs keep equal timestamps navigable.
 
 This section said the identity panel's `1`–`9` assigned a roster slot before they did. They do
 since [59](./59-QA-FIX-9-WORKSTATION.md), which built `U`, `1`–`9`, `A`, `R`, `M`, `S` and `?`:

@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import { buildQueue, type QueueEventRow, type QueueIdentityRow } from "./review-queue";
 
 const at = (iso: string) => new Date(iso);
-const event = (over: Partial<QueueEventRow>): QueueEventRow => ({ id: "e", videoAssetId: "asset", type: "shot", startMs: 12_000, endMs: 12_000, actorTrackId: null, decidedBy: "alice", createdAt: at("2026-10-03T10:00:00Z"), ...over });
-const identity = (over: Partial<QueueIdentityRow>): QueueIdentityRow => ({ id: "i", trackId: "t", videoAssetId: "asset", localTrackId: 4, matchSquadPlayerId: "slot", validFromMs: 5000, validToMs: 9000, decidedBy: "alice", createdAt: at("2026-10-03T09:00:00Z"), ...over });
+const event = (over: Partial<QueueEventRow>): QueueEventRow => ({ confidence: 1, id: "e", videoAssetId: "asset", type: "shot", startMs: 12_000, endMs: 12_000, actorTrackId: null, decidedBy: "alice", createdAt: at("2026-10-03T10:00:00Z"), ...over });
+const identity = (over: Partial<QueueIdentityRow>): QueueIdentityRow => ({ confidence: 1, id: "i", trackId: "t", videoAssetId: "asset", localTrackId: 4, matchSquadPlayerId: "slot", validFromMs: 5000, validToMs: 9000, decidedBy: "alice", createdAt: at("2026-10-03T09:00:00Z"), ...over });
 
 describe("the review queue", () => {
+  it("prioritises low confidence across kinds before applying the limit, with stable age ties", () => {
+    const q = buildQueue("bob", [event({ id: "high", confidence: 1 }), event({ id: "zero", confidence: 0 }), event({ id: "mine", confidence: 0, decidedBy: "bob" }), event({ id: "tied", confidence: 0.2 })], [identity({ id: "low", confidence: 0.2 })], 3, "confidence");
+    expect(q.items.map((i) => i.id)).toEqual(["zero", "low", "tied"]);
+    expect(q.waiting).toEqual({ events: 3, identities: 1 });
+    expect(q.items[1]?.confidence).toBe(0.2);
+  });
   it("merges both kinds, leaves out the reader's own, and puts the longest-waiting first", () => {
     const q = buildQueue(
       "bob",

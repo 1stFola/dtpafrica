@@ -244,6 +244,17 @@ players is roughly 3 million detections; that does not belong in a row store on 
 | `VisionPossessionSegment` | |
 | `VisionEventCandidate` | |
 
+Possession review is implemented in [82](./82-PHASE-6-INCREMENT-11.md):
+`VisionPossessionRun` pins the original attempt and checksums;
+`VisionPossessionSegment` stores bounded candidate/Unknown intervals;
+`VisionPossessionDecision` appends the second person's decision. Original rows
+and artifact bytes are never edited. Dense ball/player observations remain in
+derived object storage, and this ledger does not update player metrics.
+Immutable manual versions and independent decisions use
+`VisionPossessionCorrection` and `VisionPossessionCorrectionDecision`
+([83](./83-PHASE-6-INCREMENT-12.md)). Parent keys and per-segment version numbers
+serialize revisions without changing original evidence.
+
 A game-state chunk (Phase 5, [42](./42-PHASE-5-INCREMENT-5.md)) is one Parquet file per sixty
 seconds of source time under the `gamestate` job's prefix, one row per track per frame:
 `frame_index, source_ms, half, match_minute, local_track_id, class, x_m, y_m, camera_segment_id,

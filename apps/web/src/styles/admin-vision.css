@@ -2,6 +2,49 @@
    Scoped .vision-* rules, loaded after global.css so they win inside the
    dark admin shell without touching any other module. */
 
+.vision-possession-page label { display: flex; flex-direction: column; gap: 0.35rem; }
+.vision-possession-page input, .vision-possession-page select { min-width: 0; max-width: 100%; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 0.5rem; font: inherit; }
+.vision-possession-page button { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 0.45rem 0.65rem; font: inherit; cursor: pointer; margin: 0.25rem 0; }
+.vision-possession-page button:hover:not(:disabled) { border-color: #86efac; }
+.vision-possession-page button:focus-visible, .vision-possession-page input:focus-visible, .vision-possession-page select:focus-visible { outline: 2px solid #86efac; outline-offset: 2px; }
+.vision-possession-page button:disabled { opacity: 0.45; cursor: not-allowed; }
+.vision-possession-page td { max-width: 22rem; overflow-wrap: anywhere; }
+.vision-possession-page details p { overflow-wrap: anywhere; }
+.vision-possession-page td { vertical-align: top; }
+.vision-possession-page .admin-sb-table-wrap { max-height: none; overflow-x: auto; }
+.vision-possession-page .vision-table { min-width: 58rem; table-layout: fixed; width: 100%; }
+.vision-possession-page .vision-table th:nth-child(1) { width: 20%; }
+.vision-possession-page .vision-table th:nth-child(2) { width: 30%; }
+.vision-possession-page .vision-table th:nth-child(3) { width: 22%; }
+.vision-possession-page .vision-table th:nth-child(4) { width: 28%; }
+.vision-possession-page td:first-child button { white-space: nowrap; }
+.vision-possession-correction { border-top: 1px solid #475569; margin-top: 0.8rem; padding-top: 0.8rem; white-space: normal; }
+.vision-possession-correction fieldset { border: 1px solid #475569; border-radius: 8px; padding: 0.7rem; min-width: 0; }
+.vision-possession-correction label { margin: 0.6rem 0; }
+.vision-possession-correction p { margin: 0.4rem 0; }
+.vision-possession-correction legend { color: #86efac; }
+
+.vision-ready-clips { display: grid; gap: 0.75rem; margin: 1rem 0; }
+.vision-review-order { display: inline-flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.85rem; }
+.vision-review-order select { max-width: 100%; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 0.4rem; }
+.vision-gold-video { display: block; width: 100%; max-height: 60vh; background: #000; }
+.vision-gold-editor { display: flex; flex-direction: column; gap: 0.9rem; border: 1px solid #475569; border-radius: 10px; padding: 1rem; min-width: 0; }
+.vision-gold-create { display: flex; flex-direction: column; gap: 0.75rem; max-width: 42rem; }
+.vision-gold-editor label, .vision-gold-create label { display: flex; flex-direction: column; gap: 0.35rem; }
+.vision-gold-editor input, .vision-gold-editor select, .vision-gold-editor textarea, .vision-gold-create input, .vision-gold-create select { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 0.5rem; width: 100%; }
+.vision-gold-label-row { display: flex; flex-wrap: wrap; align-items: end; gap: 0.7rem; padding: 0.75rem; border: 1px solid #334155; border-radius: 8px; }
+.vision-gold-label-row label { flex: 1 1 9rem; min-width: 0; }
+.vision-gold-editor .vision-gold-complete { flex-direction: row; align-items: start; }
+.vision-gold-complete input { width: auto; }
+.vision-gold-reference-list { display: flex; flex-direction: column; align-items: start; gap: 0.75rem; }
+.vision-gold-checksum { overflow-wrap: anywhere; }
+.vision-ready-clip { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 1rem; border: 1px solid rgba(134,239,172,0.25); border-radius: 10px; background: rgba(34,197,94,0.04); }
+.vision-ready-clip h3 { margin: 0 0 0.4rem; }
+.vision-ready-clip p { margin: 0.3rem 0; overflow-wrap: anywhere; }
+.vision-open-review { display: inline-block; margin-top: 0.5rem; padding: 0.6rem 0.9rem; border-radius: 8px; background: #86efac; color: #052e16; font-weight: 700; text-decoration: none; }
+.vision-open-review:hover { background: #bbf7d0; }
+.vision-open-review:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
 .vision-page {
   display: flex;
   flex-direction: column;
@@ -1049,6 +1092,11 @@
 .vision-timeline {
   margin-top: 0.6rem;
 }
+
+.vision-boundaries { margin-top: 0.75rem; }
+.vision-boundaries__row { display: flex; align-items: center; gap: 1rem; margin: 0.5rem 0; }
+.vision-boundaries__row span { min-width: 10rem; font-variant-numeric: tabular-nums; }
+.vision-boundaries__row input { flex: 1; min-width: 0; }
 
 .vision-timeline__track {
   background: rgba(2, 6, 23, 0.6);

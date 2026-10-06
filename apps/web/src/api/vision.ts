@@ -1,5 +1,29 @@
 import { adminFetch } from "./admin";
-import type { CalibrationQuality } from "@dtp/vision-contracts";
+
+export type VisionPossessionSegment = {
+  id: string; runId: string; ordinal: number; startMs: number; endMs: number; frames: number;
+  sourceState: "candidate" | "unknown"; reason: string | null; cameraSegmentId: string | null;
+  trajectoryId: number | null; localTrackId: number | null; actorTrackId: string | null; evidenceConfidence: number | null;
+  decision: { id: string; decision: "accepted" | "rejected"; reviewedBy: string; reason: string | null; createdAt: string } | null;
+  corrections?: VisionPossessionCorrection[];
+};
+export type VisionPossessionCorrection = { id: string; segmentId: string; parentKey: string; startMs: number; endMs: number;
+  state: "candidate" | "unknown"; actorTrackId: string | null; localTrackId: number | null; reason: string; proposedBy: string; createdAt: string;
+  decision: VisionPossessionSegment["decision"] };
+export type PossessionCorrectionInput = { parentKey: string; startMs: number; endMs: number; state: "candidate" | "unknown"; actorTrackId: string | null; reason: string };
+export function fetchPossessionCorrectionTracks(id: string) { return adminFetch<{ tracks: { id: string; localTrackId: number; startMs: number; endMs: number }[] }>(`/vision/review/possession/segments/${id}/correction-tracks`); }
+export function correctVisionPossession(id: string, input: PossessionCorrectionInput) { return adminFetch(`/vision/review/possession/segments/${id}/corrections`, { method: "POST", body: JSON.stringify(input) }); }
+export function decidePossessionCorrection(id: string, decision: "accepted" | "rejected", reason?: string) { return adminFetch(`/vision/review/possession/corrections/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, reason }) }); }
+export type VisionPossessionRun = { id: string; videoAssetId: string; inferenceJobId: string; attemptNumber: number; createdBy: string; createdAt: string;
+  windowStartMs: number; windowEndMs: number; calculationVersion: string; indexChecksum: string; trackJobId: string; snapshot: unknown;
+  stale: boolean; segments: VisionPossessionSegment[]; nextCursor: number | null; totalSegments: number; candidateFrames: number; unknownFrames: number };
+export function fetchVisionPossession(assetId: string) { return adminFetch<{ videoAssetId: string; runs: Pick<VisionPossessionRun, "id" | "inferenceJobId" | "attemptNumber" | "createdBy" | "createdAt" | "windowStartMs" | "windowEndMs" | "calculationVersion" | "indexChecksum">[];
+  jobs: { id: string; attemptNumber: number; finishedAt: string | null }[] }>(`/vision/review/${assetId}/possession`); }
+export function importVisionPossession(assetId: string, jobId: string) { return adminFetch<{ id: string; imported: boolean }>(`/vision/review/${assetId}/possession/import`, { method: "POST", body: JSON.stringify({ jobId }) }); }
+export function fetchVisionPossessionRun(id: string, cursor = 0) { return adminFetch<VisionPossessionRun>(`/vision/review/possession/runs/${id}?cursor=${cursor}`); }
+export function decideVisionPossession(id: string, decision: "accepted" | "rejected", reason?: string) { return adminFetch(`/vision/review/possession/segments/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, reason }) }); }
+import type { CalibrationQuality, ReviewQueueOrder } from "@dtp/vision-contracts";
+import type { EventGoldLabels } from "@dtp/vision-contracts";
 
 /**
  * Vision Engine API client: one function per route the screens call, and the
@@ -534,6 +558,8 @@ export type VisionReviewMedia = {
   url: string;
   fps: number | null;
   sourceOffsetMs: number;
+  /** Original footage limit; a CFR proxy can have a padded last frame. */
+  sourceDurationMs: number | null;
   durationMs: number | null;
   width: number | null;
   height: number | null;
@@ -760,7 +786,7 @@ export function fetchVisionJobs(videoAssetId: string) {
   return adminFetch<{ jobs: VisionJobRow[] }>(`/vision/jobs?videoAssetId=${encodeURIComponent(videoAssetId)}`);
 }
 
-export function queueVisionJob(body: { type: string; videoAssetId: string; params?: Record<string, unknown> }) {
+export function queueVisionJob(body: { type: string; videoAssetId: string; params?: Record<string, unknown>; modelVersionId?: string }) {
   return adminFetch<{ id: string }>(`/vision/jobs`, { method: "POST", body: JSON.stringify(body) });
 }
 
@@ -974,6 +1000,8 @@ export type VisionModelVersionRow = {
   gitCommit: string;
   workerImage: string;
   weightsChecksum: string | null;
+  configKey?: string;
+  weightsKey?: string | null;
   promotedAt: string | null;
   createdAt: string;
   _count: { jobs: number };
@@ -1084,6 +1112,7 @@ export function promoteVisionEvent(id: string, create = false) {
 // The review queue: what a second person should look at next (docs/vision/49).
 
 export type VisionReviewQueueItem = {
+  confidence: number;
   kind: "event" | "identity";
   id: string;
   videoAssetId: string;
@@ -1107,15 +1136,31 @@ export type VisionReviewQueueItem = {
   validToMs?: number;
 };
 
-export type VisionReviewQueue = { me: string; waiting: { events: number; identities: number }; count: number; items: VisionReviewQueueItem[] };
+export type VisionReviewQueue = { me: string; order: ReviewQueueOrder; waiting: { events: number; identities: number }; count: number; items: VisionReviewQueueItem[] };
 
-export function fetchVisionReviewQueue(opts: { assetId?: string; limit?: number } = {}) {
+export function fetchVisionReviewQueue(opts: { assetId?: string; limit?: number; order?: ReviewQueueOrder } = {}) {
   const q = new URLSearchParams();
   if (opts.assetId) q.set("assetId", opts.assetId);
   if (opts.limit) q.set("limit", String(opts.limit));
+  if (opts.order) q.set("order", opts.order);
   const qs = q.toString();
   return adminFetch<VisionReviewQueue>(`/vision/review/queue${qs ? `?${qs}` : ""}`);
 }
+
+export type VisionEventGoldSet = { id: string; label: string; videoAssetId: string; sourceChecksum: string; windowStartMs: number; windowEndMs: number; toleranceMs: number; taxonomyVersion: string; reviewerAId: string; reviewerBId: string; createdBy: string; frozenAt: string | null; frozenBy: string | null; createdAt: string };
+export type EventScoreMetrics = { reference: number; predictions: number; tp: number; fp: number; fn: number; precision: number | null; recall: number | null; f1: number | null; actorAccuracy: number | null; actorRecall: number | null; matchedKnownActors: number; correctActors: number; meanStartErrorMs: number | null; meanEndErrorMs: number | null };
+export type EventRunProvenance = { jobId: string; attemptNumber: number; artifactKey: string; artifactChecksum: string; artifactSchemaVersion: string; coverage: { startMs: number; endMs: number; complete: true }; finishedAt: string; eventCount: number; producer?: { algorithm: string; manifestChecksum: string; possessionJobId: string; possessionIndexChecksum: string; tracksChecksum: string } };
+export type VisionEventScore = { scorerVersion: string; toleranceMs: number; all: EventScoreMetrics; byType: (EventScoreMetrics & { type: string })[]; pairs: { referenceId: string; predictionId: string; type: string; startErrorMs: number; endErrorMs: number; actorCorrect: boolean | null }[]; missedReferenceIds: string[]; falsePositiveIds: string[]; suppressedPredictionIds: string[]; duplicatePredictionIds: string[]; nonPlayErrors: { startMs: number; endMs: number; kind: string; predictionIds: string[] }[]; methods?: string[]; snapshotChecksum?: string; referenceChecksum?: string; interpretation?: string; scope?: EventBenchmarkInput["scope"]; inference?: EventRunProvenance | null; model?: { id: string; version: string; weightsChecksum: string | null; gitCommit: string | null; datasetVersionId: string | null; configKey: string | null; workerImage: string | null; model: { key: string; task: string } } | null };
+export type VisionEventGoldDetail = VisionEventGoldSet & { me: string; schemaVersion: string; disagreement: VisionEventScore | null; submissions: { id: string; reviewerId: string; createdAt: string; labels: EventGoldLabels | null }[]; proposal: { id: string; proposedBy: string; reason: string; labels: EventGoldLabels; disagreement: VisionEventScore; nonPlayAgreement: boolean } | null; roster: { id: string; playerName: string; jerseyNumber: number | null; teamId: string; team?: { name: string } }[]; runs: { id: string; createdAt: string }[]; benchmarkModels: { id: string; version: string; model: { key: string } }[]; benchmarkJobs: { id: string; modelVersionId: string | null; attemptNumber: number; finishedAt: string | null }[] };
+export function fetchVisionEventGoldSets(assetId?: string) { return adminFetch<{ sets: VisionEventGoldSet[] }>(`/vision/event-gold${assetId ? `?assetId=${encodeURIComponent(assetId)}` : ""}`); }
+export function fetchVisionEventGold(id: string) { return adminFetch<VisionEventGoldDetail>(`/vision/event-gold/${id}`); }
+export function createVisionEventGold(body: { label: string; videoAssetId: string; windowStartMs: number; windowEndMs: number; toleranceMs: number; reviewerAEmail: string; reviewerBEmail: string }) { return adminFetch<VisionEventGoldSet>("/vision/event-gold", { method: "POST", body: JSON.stringify(body) }); }
+export function submitVisionEventGold(id: string, labels: EventGoldLabels) { return adminFetch<VisionEventGoldDetail>(`/vision/event-gold/${id}/submissions`, { method: "POST", body: JSON.stringify({ labels, complete: true }) }); }
+export function reconcileVisionEventGold(id: string, labels: EventGoldLabels, reason: string) { return adminFetch<VisionEventGoldDetail>(`/vision/event-gold/${id}/reconciliations`, { method: "POST", body: JSON.stringify({ labels, reason }) }); }
+export function freezeVisionEventGold(id: string, proposalId: string) { return adminFetch<VisionEventGoldDetail>(`/vision/event-gold/${id}/freeze`, { method: "POST", body: JSON.stringify({ proposalId }) }); }
+export type EventBenchmarkInput = { scope: "all_current_candidates" | "model_original_candidates" | "complete_event_run"; modelVersionId?: string; jobId?: string };
+export function scoreVisionEventGold(id: string, selection: EventBenchmarkInput = { scope: "all_current_candidates" }) { return adminFetch<{ runId: string; report: VisionEventScore }>(`/vision/event-gold/${id}/benchmarks`, { method: "POST", body: JSON.stringify(selection) }); }
+export function fetchVisionEventGoldReport(id: string, runId: string) { return adminFetch<{ runId: string; report: VisionEventScore }>(`/vision/event-gold/${id}/benchmarks/${runId}`); }
 
 // ── The audit trail (docs/vision/69) ──
 

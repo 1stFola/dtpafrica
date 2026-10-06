@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from ..media import probe, thumbnail, transcode_proxy
+from ..media import probe, sha256_file, thumbnail, transcode_proxy
 from ..runner import StageContext, StageResult, download, upload
 
 log = logging.getLogger(__name__)
@@ -89,6 +89,8 @@ def run_transcode(ctx: StageContext) -> StageResult:
                 "key": proxy_key,
                 "fps": proxy_info["fps"],
                 "height": proxy_info["height"],
+                "width": proxy_width_px(proxy_path),
+                "checksumSha256": sha256_file(proxy_path),
                 "bytes": proxy_info["bytes"],
                 "settingsHash": proxy_info["settingsHash"],
                 # Which FFmpeg build made this file. The settings hash covers the recipe
@@ -115,4 +117,13 @@ def proxy_duration_ms(path) -> int | None:
         return probe(path).duration_ms
     except Exception as exc:  # noqa: BLE001
         log.warning("could not probe the proxy: %s", exc)
+        return None
+
+
+def proxy_width_px(path) -> int | None:
+    """Actual encoded width; no aspect-ratio guess can stand in for calibration geometry."""
+    try:
+        return probe(path).width
+    except Exception as exc:
+        log.warning("could not read proxy width: %s", exc)
         return None

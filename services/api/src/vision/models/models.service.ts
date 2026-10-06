@@ -90,6 +90,8 @@ export class VisionModelsService {
             gitCommit: true,
             workerImage: true,
             weightsChecksum: true,
+            configKey: true,
+            weightsKey: true,
             promotedAt: true,
             createdAt: true,
             _count: { select: { jobs: true } },

@@ -62,7 +62,9 @@ export class CreateSourceDto {
   @IsOptional() @IsString() @MaxLength(500) title?: string;
   @IsOptional() @IsISO8601() publishedAt?: string;
   @IsOptional() @IsInt() @Min(1) durationSeconds?: number;
-  @IsOptional() @IsUUID() sbMatchId?: string;
+  // ScoreBoard stores text IDs, including legacy fixture IDs that are not UUIDs.
+  // The service checks the referenced match instead of guessing its ID format.
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(200) sbMatchId?: string;
   @IsOptional() @IsUUID() sbCompetitionId?: string;
   /** Not always the partner. A club can grant access to footage it does not own. */
   @IsOptional() @IsString() @MaxLength(200) rightsOwnerName?: string;

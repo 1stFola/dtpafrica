@@ -13,6 +13,7 @@ Thumbs.db
 .idea/
 .vscode/
 coverage/
+tmp/
 *.tsbuildinfo
 
 # Local dev scratch: background server stderr and ad-hoc API dumps. The curl

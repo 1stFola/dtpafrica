@@ -18,6 +18,7 @@ const DATASET = "33333333-3333-4333-8333-333333333333";
 const SHA = "a".repeat(64);
 
 const mockPrisma = {
+  visionEventGoldSet: { findMany: vi.fn().mockResolvedValue([]) },
   visionModel: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   visionModelVersion: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
   visionDatasetVersion: { findUnique: vi.fn() },

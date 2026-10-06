@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useOutletContext } from "react-router-dom";
 import { fetchVisionOverview, type VisionOverview } from "../../../api/vision";
 import { useAdminAuth } from "../AdminAuthContext";
+import { useCollapsedMenu } from "../useCollapsedMenu";
 
 /**
  * The Vision environment: its own shell beside ScoreBoard's, with a section
@@ -17,10 +18,12 @@ const sections = [
   { to: "/admin/vision/footage", label: "Footage", icon: "▣" },
   { to: "/admin/vision/pipeline", label: "Pipeline", icon: "⚙" },
   { to: "/admin/vision/review", label: "Review", icon: "☑", permission: "vision.review" },
+  { to: "/admin/vision/event-gold", label: "Event gold", icon: "◇", permission: "vision.review" },
   { to: "/admin/vision/annotation", label: "Annotation", icon: "✎", permission: "vision.annotate" },
   { to: "/admin/vision/datasets", label: "Datasets", icon: "⛁" },
   { to: "/admin/vision/models", label: "Models", icon: "◉" },
   { to: "/admin/vision/events", label: "Events", icon: "⚑" },
+  { to: "/admin/vision/possession", label: "Possession", icon: "◉" },
   { to: "/admin/vision/audit", label: "Audit trail", icon: "≡", permission: "vision.audit.read" },
 ];
 
@@ -32,6 +35,7 @@ export function useAdminVisionContext() {
 
 export function AdminVisionLayout() {
   const { hasPermission } = useAdminAuth();
+  const { collapsed, toggle } = useCollapsedMenu("dtp.vision.menu.collapsed");
   const [overview, setOverview] = useState<VisionOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,6 +66,9 @@ export function AdminVisionLayout() {
             <span>Vision</span>
           </nav>
           <h1>Vision Engine</h1>
+          <button type="button" className="admin-menu-toggle" onClick={toggle} aria-expanded={!collapsed} aria-controls="vision-sections">
+            {collapsed ? "Show Vision menu" : "Hide Vision menu"}
+          </button>
           <p className="muted admin-sb-shell-tagline">Footage in, rights first; the pipeline, the review screens, the models, and what reaches the match record</p>
         </div>
         <div className="admin-sb-badges" aria-label="Counts" aria-busy={loading}>
@@ -78,8 +85,8 @@ export function AdminVisionLayout() {
           ) : null}
         </div>
       </header>
-      <div className="admin-sb-shell">
-        <aside className="admin-sb-sidebar" aria-label="Vision sections">
+      <div className={`admin-sb-shell${collapsed ? " admin-sb-shell--collapsed" : ""}`}>
+        <aside id="vision-sections" hidden={collapsed} className="admin-sb-sidebar" aria-label="Vision sections">
           <nav className="admin-sb-sidebar-nav">
             {visible.map((s) => (
               <NavLink key={s.to} to={s.to} end={s.end} className={({ isActive }) => (isActive ? "admin-sb-sidebar-link active" : "admin-sb-sidebar-link")}>

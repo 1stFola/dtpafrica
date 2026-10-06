@@ -4,6 +4,7 @@ import { BrandLogo } from "../../components/BrandLogo";
 import { adminApi, type SupportSummary } from "../../api/admin";
 import { useAdminAuth } from "./AdminAuthContext";
 import { ADMIN_NAV_PERMISSIONS, canAccessNav } from "./admin-permissions";
+import { useCollapsedMenu } from "./useCollapsedMenu";
 
 type AdminNavLink = {
   to: string;
@@ -42,6 +43,7 @@ export function AdminLayout() {
   const { logout, session } = useAdminAuth();
   const location = useLocation();
   const isScoreboard = location.pathname.startsWith("/admin/scoreboard");
+  const { collapsed, toggle } = useCollapsedMenu("dtp.admin.menu.collapsed");
   const [supportSummary, setSupportSummary] = useState<SupportSummary | null>(null);
 
   const visibleLinks = links.filter((l) =>
@@ -86,6 +88,9 @@ export function AdminLayout() {
     <div className="admin-shell">
       <header className="admin-topbar">
         <div className="admin-topbar__brand">
+          {!isScoreboard && <button type="button" className="admin-menu-toggle" onClick={toggle} aria-expanded={!collapsed} aria-controls="admin-sections">
+            {collapsed ? "Show main menu" : "Hide main menu"}
+          </button>}
           <Link to="/admin" className="admin-topbar__brand-link">
             <BrandLogo variant="white-horizontal" size="admin" />
           </Link>
@@ -104,9 +109,9 @@ export function AdminLayout() {
         </div>
       </header>
 
-      <div className={`admin-cms-shell ${isScoreboard ? "admin-cms-shell--full" : ""}`}>
+      <div className={`admin-cms-shell ${isScoreboard || collapsed ? "admin-cms-shell--full" : ""}`}>
         {!isScoreboard && (
-          <aside className="admin-sb-sidebar admin-cms-sidebar" aria-label="Admin sections">
+          <aside id="admin-sections" hidden={collapsed} className="admin-sb-sidebar admin-cms-sidebar" aria-label="Admin sections">
             <nav className="admin-sb-sidebar-nav">
               {visibleLinks.map((l) => (
                 <NavLink
