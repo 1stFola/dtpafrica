@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { reviewQueueOrder } from "@dtp/vision-contracts";
+import { ReviewOrderControl } from "./ReviewOrderControl";
 import {
   acceptVisionIdentity,
   assignVisionIdentity,
@@ -27,7 +29,7 @@ import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
 import { ChunkCache, chunkCovering, explainChunkFailure, loadChunk, rowsNear, rowsOnFrame, type DecodedChunk } from "./game-state";
 import { snapSourceTimeMs } from "./annotation-boxes";
-import { EVENT_TYPES, allowedActions, candidateAt, describeCandidate, proposalAt, stepCandidate, stepUncertainty, uncertainties } from "./event-review";
+import { EVENT_TYPES, allowedActions, candidateAt, describeCandidate, proposalAt, stepCandidate, stepRankedReview, uncertainties } from "./event-review";
 import { SHORTCUT_HELP, shortcutOf, type Shortcut } from "./identity-shortcuts";
 import { describeClock } from "./match-clock";
 import { VisionEventInspector } from "./VisionEventInspector";
@@ -71,6 +73,8 @@ export function AdminVisionIdentityPage() {
   const { session, hasPermission } = useAdminAuth();
   const me = session?.userId;
   const [params, setParams] = useSearchParams();
+  const reviewOrder = params.has("order") ? reviewQueueOrder(params.get("order")) : "confidence";
+  const rankedCursor = useRef<string | null>(params.get("event") ? `event:${params.get("event")}` : params.get("review") ? `identity:${params.get("review")}` : null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -203,7 +207,7 @@ export function AdminVisionIdentityPage() {
   }, [allRuns, review, trackRun]);
   const selected = useMemo(() => review?.tracks.find((t) => t.id === selectedId) ?? null, [review, selectedId]);
   /* What a second person has to decide here: the review queue for this asset, walked with `,` and `.`. */
-  const uncertain = useMemo(() => uncertainties(eventCandidates, tracks, me), [eventCandidates, me, tracks]);
+  const uncertain = useMemo(() => uncertainties(eventCandidates, tracks, me, reviewOrder), [eventCandidates, me, tracks, reviewOrder]);
 
   /* Keyed on which track, not on its row: the rows reload after every action, and that
      used to clear the search and the chosen candidate in the middle of a run of work. */
@@ -480,7 +484,8 @@ export function AdminVisionIdentityPage() {
   const canPublishEvents = hasPermission("vision.publish");
   const pickEvent = (c: VisionEventCandidate) => {
     setSelectedEventId(c.id);
-    setParams(c.id ? { event: c.id } : {}, { replace: true });
+    rankedCursor.current = `event:${c.id}`;
+    setParams({ event: c.id, order: reviewOrder }, { replace: true });
     seekTo(c.startMs - offsetMs);
   };
   function proposeHere() {
@@ -493,16 +498,16 @@ export function AdminVisionIdentityPage() {
       setSelectedEventId(created.id);
     });
   }
-  function correctEvent(changes: { type?: string; startMs?: number; endMs?: number; actor?: boolean; note?: string }, label: string) {
-    if (!selectedEvent) return;
+  function correctEvent(changes: { type?: string; startMs?: number; endMs?: number; actor?: boolean; note?: string }, label: string, candidate = selectedEvent) {
+    if (!candidate || busy || !allowedActions(candidate, me, { review: canReviewEvents, publish: canPublishEvents }).correct) return;
     const body: Parameters<typeof correctVisionEvent>[1] = { type: changes.type, startMs: changes.startMs, endMs: changes.endMs, note: changes.note };
     if (changes.actor) {
-      const who = proposalAt(selected, selectedEvent.startMs);
+      const who = proposalAt(selected, candidate.startMs);
       body.actorTrackId = who.actorTrackId;
       body.actorMatchSquadPlayerId = who.actorMatchSquadPlayerId;
     }
     void run(`${label} A new row supersedes the old; review starts again.`, async () => {
-      const created = await correctVisionEvent(selectedEvent.id, body);
+      const created = await correctVisionEvent(candidate.id, body);
       setSelectedEventId(created.id);
     });
   }
@@ -585,8 +590,9 @@ export function AdminVisionIdentityPage() {
         return;
       }
       case "walkUncertain": {
-        const next = stepUncertainty(uncertain, walkFrom(walked), shortcut.direction);
-        if (!next) return;
+        const next = stepRankedReview(uncertain, rankedCursor.current, shortcut.direction);
+        if (!next) { setNotice("End of the loaded review queue."); return; }
+        rankedCursor.current = `${next.kind}:${next.id}`;
         if (next.kind === "event") {
           setSelectedEventId(next.id);
         } else if (next.trackId) {
@@ -668,6 +674,10 @@ export function AdminVisionIdentityPage() {
         {trackRun.runs > 1 && <span className="vision-pill vision-pill--warn">{allRuns ? `every one of ${trackRun.runs} track runs; boxes are the latest run's` : `the latest of ${trackRun.runs} track runs`}</span>}
         {review.truncated && <span className="vision-pill vision-pill--warn">the first {review.count} of {review.total} tracks</span>}
         <span className="vision-filters__grow" />
+        <ReviewOrderControl order={reviewOrder} onChange={(value) => {
+          rankedCursor.current = null;
+          setParams((previous) => { const next = new URLSearchParams(previous); next.set("order", value); return next; }, { replace: true });
+        }} />
         <button type="button" aria-expanded={showHelp} onClick={() => setShowHelp((shown) => !shown)} title="?">
           Keys
         </button>
@@ -813,6 +823,10 @@ export function AdminVisionIdentityPage() {
             selectedId={selectedEvent?.id ?? null}
             describe={(c) => describeCandidate(c, trackLabel)}
             onPick={pickEvent}
+            fps={media.fps}
+            sourceDurationMs={media.sourceDurationMs}
+            canCorrect={(c) => !busy && allowedActions(c, me, { review: canReviewEvents, publish: canPublishEvents }).correct}
+            onCorrect={(c, window) => correctEvent(window, `Window moved to ${formatClock(window.startMs)}–${formatClock(window.endMs)}.`, c)}
           />
 
           <VisionMinimap
@@ -848,7 +862,7 @@ export function AdminVisionIdentityPage() {
               </div>
               <p className="vision-footnote">
                 {selected ? `Actor: track #${selected.localTrackId}${proposalAt(selected, sourceMs).actorMatchSquadPlayerId ? ", the player it was said to be" : ", nobody named yet"}.` : "Select a track first to name the actor."}{" "}
-                {eventCandidates.filter((c) => !c.supersededBy).length} candidate(s) on this footage; {uncertain.length} identity window(s) and candidate(s) for you to decide (<kbd>,</kbd> <kbd>.</kbd> walk them).
+                {eventCandidates.filter((c) => !c.supersededBy).length} candidate(s) on this footage; {uncertain.length} loaded identity window(s) and candidate(s) for you to decide (<kbd>,</kbd> <kbd>.</kbd> walk them {reviewOrder === "confidence" ? "by lowest stored confidence" : "oldest first"}). Confidence is a claim score, not measured accuracy.
               </p>
             </section>
           )}

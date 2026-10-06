@@ -29,6 +29,9 @@ const SHOWN: readonly Omit<Stage, "needs">[] = [
   { type: "track", label: "Track", where: "cpu", note: "Links detections into tracks." },
   { type: "identify", label: "Identify", where: "cpu", note: "Which side each track's kit is." },
   { type: "gamestate", label: "Game state", where: "cpu", note: "Every track in metres per frame; needs a calibrated segment." },
+  { type: "ball_trajectory", label: "Ball trajectory", where: "cpu", note: "Smooths full-frame-rate ball detections in labelled live play. Missing or ambiguous balls stay Unknown; image coordinates only." },
+  { type: "possession", label: "Possession candidates", where: "cpu", note: "Proposes a track after sustained ball proximity. Gaps and ambiguity stay Unknown; unreviewed image evidence, not confirmed possession." },
+  { type: "events", label: "Carry proposals", where: "cpu", note: "Original calibrated possession plus measured player movement. No roster guesses; gaps stay uncertain. Produces an unreviewed run for evaluation." },
 ];
 
 /** Stage order, with what each needs to have succeeded first. */

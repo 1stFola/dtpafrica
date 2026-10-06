@@ -26,6 +26,8 @@ import {
   type PutConstraints,
   type UploadedPart,
 } from "./object-store";
+import { SmallObjectTooLargeError } from "./object-store";
+import { readBoundedBody } from "./bounded-body";
 
 /**
  * Cloudflare R2, via its S3-compatible API.
@@ -264,12 +266,19 @@ export class R2ObjectStore implements ObjectStore {
     );
   }
 
-  async getSmallObject(bucket: BucketId, key: string) {
+  async getSmallObject(bucket: BucketId, key: string, maxBytes?: number) {
     try {
       const res = await this.client.send(
         new GetObjectCommand({ Bucket: this.bucketName(bucket), Key: key })
       );
       if (!res.Body) return null;
+      if (maxBytes !== undefined) {
+        if (res.ContentLength !== undefined && res.ContentLength > maxBytes) {
+          (res.Body as { destroy?: () => void }).destroy?.();
+          throw new SmallObjectTooLargeError(maxBytes);
+        }
+        return readBoundedBody(res.Body as AsyncIterable<Uint8Array>, maxBytes);
+      }
       return Buffer.from(await res.Body.transformToByteArray());
     } catch (error) {
       if (isNotFound(error)) return null;

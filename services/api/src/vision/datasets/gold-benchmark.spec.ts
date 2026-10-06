@@ -108,6 +108,7 @@ describe("disagreement", () => {
 describe("gold is never trained on", () => {
   function contaminationPrisma(mine: { videoAssetId: string; split: string }[], frozenGold: { videoAssetId: string; label: string }[]) {
     return {
+      visionEventGoldSet: { findMany: vi.fn().mockResolvedValue([]) },
       visionDatasetMember: {
         findMany: vi.fn(({ where }: never) => {
           const w = where as Record<string, unknown>;
@@ -137,5 +138,19 @@ describe("gold is never trained on", () => {
   it("says nothing when this version trains on nothing", async () => {
     const p = contaminationPrisma([], []);
     expect(await goldContamination(p, "dv2")).toEqual([]);
+  });
+  it("holds out an unfinished event reference, checksum copies and other footage of the same match", async () => {
+    const p = {
+      visionDatasetMember: { findMany: vi.fn().mockResolvedValueOnce([
+        { videoAssetId: "direct", split: "train", checksumSha256: "same", sbMatchId: "match-1" },
+        { videoAssetId: "copy", split: "val", checksumSha256: "same", sbMatchId: null },
+        { videoAssetId: "other-camera", split: "train", checksumSha256: "different", sbMatchId: "match-1" },
+      ]).mockResolvedValueOnce([]) },
+      visionEventGoldSet: { findMany: vi.fn().mockResolvedValue([{ videoAssetId: "direct", label: "collecting-v1", sourceChecksum: "same", videoAsset: { sbMatchId: "match-1" } }]) },
+    };
+    const result = await goldContamination(p as never, "training-draft");
+    expect(result.map((row) => row.videoAssetId)).toEqual(["direct", "copy", "other-camera"]);
+    expect(result.every((row) => row.heldOutBy === "event-gold:collecting-v1")).toBe(true);
+    expect(p.visionEventGoldSet.findMany.mock.calls[0]?.[0]).not.toHaveProperty("where.frozenAt");
   });
 });

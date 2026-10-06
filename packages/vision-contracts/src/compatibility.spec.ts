@@ -37,10 +37,19 @@ describe("which worker may serve which stage", () => {
     expect(workerCompatibility(VISION_CONTRACT_VERSION)).toEqual({ compatible: true, stages: [...VISION_JOB_TYPES] });
   });
 
-  it("goes on serving an older worker when a bump changed no stage", () => {
-    // The control plane moved to 1.13.0 and no entry in the table moved with it.
+  it("keeps older workers on their existing stages and withholds the new ball stage", () => {
     const served = workerCompatibility("1.12.0", "1.13.0");
-    expect(served).toEqual({ compatible: true, stages: [...VISION_JOB_TYPES] });
+    expect(served).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "ball_trajectory" && type !== "possession" && type !== "events") });
+  });
+
+  it("withholds possession from a worker that only knows ball trajectories", () => {
+    expect(workerCompatibility("1.13.0", "1.14.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "possession" && type !== "events") });
+  });
+  it("withholds changed possession inputs from a 1.14 worker, while other stages remain available", () => {
+    expect(workerCompatibility("1.14.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "possession" && type !== "events") });
+  });
+  it("withholds carry inputs from a 1.15 worker while keeping calibrated possession", () => {
+    expect(workerCompatibility("1.15.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "events") });
   });
 
   it("serves an older worker only the stages that have not changed since it was built", () => {

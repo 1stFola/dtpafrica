@@ -1267,6 +1267,8 @@ model VisionVideoAsset {
   cameraSegments    VisionCameraSegment[]
   clockAnchors      VisionClockAnchor[]
   eventCandidates   VisionEventCandidate[]
+  eventGoldSets      VisionEventGoldSet[]
+  possessionRuns    VisionPossessionRun[]
   uploadSessions    VisionUploadSession[]
   jobs              VisionJob[]
   datasetMembers    VisionDatasetMember[]
@@ -1690,6 +1692,74 @@ model VisionWorker {
 
 // ── Datasets and models (skeletons; filled out in Phases 2 and 3) ──────────
 
+/// Independent event reference; creating one reserves its asset/match from training.
+model VisionEventGoldSet {
+  id String @id @default(uuid())
+  label String @unique
+  videoAssetId String @map("video_asset_id")
+  sourceChecksum String @map("source_checksum")
+  windowStartMs Int @map("window_start_ms")
+  windowEndMs Int @map("window_end_ms")
+  toleranceMs Int @map("tolerance_ms")
+  taxonomyVersion String @map("taxonomy_version")
+  reviewerAId String @map("reviewer_a_id")
+  reviewerBId String @map("reviewer_b_id")
+  createdBy String @map("created_by")
+  currentProposalId String? @map("current_proposal_id")
+  revision Int @default(0)
+  frozenAt DateTime? @map("frozen_at")
+  frozenBy String? @map("frozen_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Restrict)
+  submissions VisionEventGoldSubmission[]
+  proposals VisionEventGoldProposal[]
+  runs VisionEventGoldRun[]
+  @@index([videoAssetId])
+  @@map("vision_event_gold_sets")
+}
+
+/// Once per assigned reviewer. Label JSON is checksummed in derived storage.
+model VisionEventGoldSubmission {
+  id String @id @default(uuid())
+  goldSetId String @map("gold_set_id")
+  reviewerId String @map("reviewer_id")
+  payloadKey String @map("payload_key")
+  payloadChecksum String @map("payload_checksum")
+  createdAt DateTime @default(now()) @map("created_at")
+  goldSet VisionEventGoldSet @relation(fields: [goldSetId], references: [id], onDelete: Cascade)
+  @@unique([goldSetId, reviewerId])
+  @@map("vision_event_gold_submissions")
+}
+
+/// Append-only reconciliations. A second assigned reviewer freezes one by its exact id.
+model VisionEventGoldProposal {
+  id String @id @default(uuid())
+  goldSetId String @map("gold_set_id")
+  proposedBy String @map("proposed_by")
+  reason String @db.Text
+  payloadKey String @map("payload_key")
+  payloadChecksum String @map("payload_checksum")
+  createdAt DateTime @default(now()) @map("created_at")
+  goldSet VisionEventGoldSet @relation(fields: [goldSetId], references: [id], onDelete: Cascade)
+  @@index([goldSetId, createdAt])
+  @@map("vision_event_gold_proposals")
+}
+
+/// Reproducible candidate snapshot, reference checksum and scored report; never promotion evidence.
+model VisionEventGoldRun {
+  id String @id @default(uuid())
+  goldSetId String @map("gold_set_id")
+  requestedBy String @map("requested_by")
+  snapshotKey String @map("snapshot_key")
+  snapshotChecksum String @map("snapshot_checksum")
+  reportKey String @map("report_key")
+  reportChecksum String @map("report_checksum")
+  createdAt DateTime @default(now()) @map("created_at")
+  goldSet VisionEventGoldSet @relation(fields: [goldSetId], references: [id], onDelete: Cascade)
+  @@index([goldSetId, createdAt])
+  @@map("vision_event_gold_runs")
+}
+
 model VisionDatasetVersion {
   id          String    @id @default(uuid())
   label       String    @unique
@@ -2095,6 +2165,96 @@ model VisionEventCandidate {
   /// The review queue and the overview: current, undecided, oldest first.
   @@index([reviewState, supersededBy, createdAt])
   @@map("vision_event_candidates")
+}
+
+/// Immutable imported possession run. Dense observations remain in object storage.
+model VisionPossessionRun {
+  id              String @id @default(uuid())
+  videoAssetId    String @map("video_asset_id")
+  inferenceJobId  String @map("inference_job_id")
+  attemptNumber   Int @map("attempt_number")
+  indexKey        String @map("index_key")
+  indexChecksum   String @map("index_checksum")
+  sourceChecksum  String @map("source_checksum")
+  windowStartMs   Int @map("window_start_ms")
+  windowEndMs     Int @map("window_end_ms")
+  trackJobId      String @map("track_job_id")
+  calculationVersion String @map("calculation_version")
+  snapshot        Json
+  createdBy       String @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  videoAsset      VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  segments        VisionPossessionSegment[]
+  @@unique([inferenceJobId, attemptNumber])
+  @@index([videoAssetId, createdAt])
+  @@map("vision_possession_runs")
+}
+
+/// Original candidate/Unknown interval. Review appends a decision, never edits evidence.
+model VisionPossessionSegment {
+  id              String @id @default(uuid())
+  runId           String @map("run_id")
+  ordinal         Int
+  startMs         Int @map("start_ms")
+  endMs           Int @map("end_ms")
+  frames          Int
+  sourceState     String @map("source_state")
+  reason          String?
+  cameraSegmentId String? @map("camera_segment_id")
+  trajectoryId    Int? @map("trajectory_id")
+  localTrackId    Int? @map("local_track_id")
+  /// Flat evidence ID retained even if a later track is removed.
+  actorTrackId    String? @map("actor_track_id")
+  evidenceConfidence Float? @map("evidence_confidence")
+  run             VisionPossessionRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  decision        VisionPossessionDecision?
+  corrections     VisionPossessionCorrection[]
+  @@unique([runId, ordinal])
+  @@index([runId, startMs])
+  @@map("vision_possession_segments")
+}
+
+model VisionPossessionDecision {
+  id              String @id @default(uuid())
+  segmentId       String @unique @map("segment_id")
+  decision        String
+  reason          String?
+  reviewedBy      String @map("reviewed_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  segment         VisionPossessionSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  @@map("vision_possession_decisions")
+}
+
+/// Append-only human interpretation; original model evidence is never replaced.
+model VisionPossessionCorrection {
+  id              String @id @default(uuid())
+  segmentId       String @map("segment_id")
+  parentKey       String @unique @map("parent_key")
+  version         Int
+  startMs         Int @map("start_ms")
+  endMs           Int @map("end_ms")
+  state           String
+  actorTrackId    String? @map("actor_track_id")
+  localTrackId    Int? @map("local_track_id")
+  reason          String
+  proposedBy      String @map("proposed_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  segment         VisionPossessionSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  decision        VisionPossessionCorrectionDecision?
+  @@index([segmentId, createdAt])
+  @@unique([segmentId, version])
+  @@map("vision_possession_corrections")
+}
+
+model VisionPossessionCorrectionDecision {
+  id              String @id @default(uuid())
+  correctionId    String @unique @map("correction_id")
+  decision        String
+  reason          String?
+  reviewedBy      String @map("reviewed_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  correction      VisionPossessionCorrection @relation(fields: [correctionId], references: [id], onDelete: Cascade)
+  @@map("vision_possession_correction_decisions")
 }
 
 /// What a candidate rests on: a track, a camera segment, a calibration, an identity

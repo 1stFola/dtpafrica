@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import CONTRACT_VERSION
-from ..media import DETECT_SAMPLE_FPS, PROXY_FPS, frame_timestamp_ms, sample_frames, sha256_file
+from ..media import DETECT_SAMPLE_FPS, PROXY_FPS, frame_timestamp_ms, sample_frames, sha256_file, probe
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
 
 log = logging.getLogger(__name__)
@@ -267,6 +267,10 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     url = ctx.client.input_url(ctx.job.job_id, "proxy")
     proxy = ctx.work_dir / "proxy.mp4"
     read = download(ctx, url, proxy)
+    # Ball trajectory must normalize against the actual image that produced the
+    # boxes, not a later proxy rendition with different dimensions.
+    proxy_meta = probe(proxy)
+    proxy_checksum = sha256_file(proxy)
 
     ctx.progress.set("sample")
     frames_dir = ctx.work_dir / "frames"
@@ -307,6 +311,11 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
         "modelVersionId": model_version_id,
         "datasetVersionId": dataset_version_id,
         "proxy": {"fps": proxy_fps, "sourceOffsetMs": source_offset_ms},
+        "proxyChecksum": proxy_checksum,
+        "imageWidth": proxy_meta.width,
+        "imageHeight": proxy_meta.height,
+        "proxyDurationMs": proxy_meta.duration_ms,
+        "sourceChecksum": params.get("sourceChecksum"),
         "sampleFps": fps,
         "minScore": MIN_SCORE,
         "classes": dict(DETECTION_CLASS_BY_LABEL),
@@ -338,6 +347,11 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
             "weightsSha256": weights_sha256,
             "proxyFps": proxy_fps,
             "sourceOffsetMs": source_offset_ms,
+            "proxyChecksum": proxy_checksum,
+            "imageWidth": proxy_meta.width,
+            "imageHeight": proxy_meta.height,
+            "proxyDurationMs": proxy_meta.duration_ms,
+            "sourceChecksum": params.get("sourceChecksum"),
         },
         model_version_ids=[model_version_id],
         bytes_read=read,

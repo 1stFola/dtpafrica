@@ -150,12 +150,12 @@ export type GoldContamination = {
  * and it is the footage itself that a model would memorise.
  */
 export async function goldContamination(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "visionDatasetMember" | "visionEventGoldSet">,
   datasetVersionId: string
 ): Promise<GoldContamination[]> {
   const candidates = await prisma.visionDatasetMember.findMany({
     where: { datasetVersionId, split: { in: [...TRAINING_SPLITS] } },
-    select: { videoAssetId: true, split: true },
+    select: { videoAssetId: true, split: true, checksumSha256: true, sbMatchId: true },
   });
   if (!candidates.length) return [];
 
@@ -173,9 +173,21 @@ export async function goldContamination(
   });
 
   const bySplit = new Map(candidates.map((c) => [c.videoAssetId, c.split]));
-  return heldOut.map((h) => ({
+  const eventGold = await prisma.visionEventGoldSet.findMany({
+    // Reservation begins before independent labelling, so fitting cannot contaminate an unfinished reference.
+    where: { OR: [
+      { videoAssetId: { in: candidates.map((c) => c.videoAssetId) } },
+      { sourceChecksum: { in: candidates.map((c) => c.checksumSha256).filter(Boolean) } },
+      { videoAsset: { sbMatchId: { in: candidates.flatMap((c) => c.sbMatchId ? [c.sbMatchId] : []) } } },
+    ] },
+    select: { videoAssetId: true, label: true, sourceChecksum: true, videoAsset: { select: { sbMatchId: true } } },
+  });
+  const eventHits = eventGold.flatMap((set) => candidates.filter((candidate) => candidate.videoAssetId === set.videoAssetId
+    || candidate.checksumSha256 === set.sourceChecksum || (candidate.sbMatchId && candidate.sbMatchId === set.videoAsset.sbMatchId))
+    .map((candidate) => ({ videoAssetId: candidate.videoAssetId, heldOutBy: `event-gold:${set.label}`, wouldBecome: candidate.split })));
+  return [...heldOut.map((h) => ({
     videoAssetId: h.videoAssetId,
     heldOutBy: h.datasetVersion.label,
     wouldBecome: bySplit.get(h.videoAssetId) ?? "unknown",
-  }));
+  })), ...eventHits];
 }

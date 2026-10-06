@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { AdminVisionPossessionPage } from "./AdminVisionPossessionPage";
 import { AdminRequirePermission } from "../AdminRequirePermission";
 import { AdminVisionAnnotationPage } from "./AdminVisionAnnotationPage";
 import { AdminVisionAuditPage } from "./AdminVisionAuditPage";
@@ -10,6 +11,7 @@ import { AdminVisionModelsPage } from "./AdminVisionModelsPage";
 import { AdminVisionOverviewPage } from "./AdminVisionOverviewPage";
 import { AdminVisionPipelinePage } from "./AdminVisionPipelinePage";
 import { AdminVisionReviewPage } from "./AdminVisionReviewPage";
+import { AdminVisionEventGoldPage } from "./AdminVisionEventGoldPage";
 import { AdminVisionSourceDetailPage } from "./AdminVisionSourceDetailPage";
 import { AdminVisionSourcesPage } from "./AdminVisionSourcesPage";
 
@@ -26,6 +28,7 @@ export function AdminVisionApp() {
         {/* The queue is a second person's; reading it needs `vision.review`, as deciding does. */}
         <Route element={<AdminRequirePermission permission="vision.review" />}>
           <Route path="review" element={<AdminVisionReviewPage />} />
+          <Route path="event-gold" element={<AdminVisionEventGoldPage />} />
         </Route>
         {/* Claiming and labelling need `vision.annotate`; the workstation itself mounts outside the shell (App.tsx). */}
         <Route element={<AdminRequirePermission permission="vision.annotate" />}>
@@ -34,6 +37,7 @@ export function AdminVisionApp() {
         <Route path="datasets" element={<AdminVisionDatasetsPage />} />
         <Route path="models" element={<AdminVisionModelsPage />} />
         <Route path="events" element={<AdminVisionEventsPage />} />
+        <Route path="possession" element={<AdminVisionPossessionPage />} />
         {/* The trail names who read raw footage and who named a player; `vision.read` does not open it. */}
         <Route element={<AdminRequirePermission permission="vision.audit.read" redirectTo="/admin/vision" />}>
           <Route path="audit" element={<AdminVisionAuditPage />} />

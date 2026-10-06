@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { reviewQueueOrder, type ReviewQueueOrder } from "@dtp/vision-contracts";
+import { ReviewOrderControl } from "./ReviewOrderControl";
 import { Link, useSearchParams } from "react-router-dom";
 import { fetchVisionReviewQueue, type VisionReviewQueue, type VisionReviewQueueItem } from "../../../api/vision";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -8,45 +10,37 @@ import { Panel, Pill, formatWhen, short } from "./vision-ui";
 
 /**
  * The review queue: what this person should look at next, across every piece
- * of footage, oldest first, their own proposals left out. Each item opens on
+ * of footage, confidence or age first, their own proposals left out. Each item opens on
  * the video at its moment, where the decision is made; the queue itself decides
  * nothing. `,` and `.` on the workstation walk the same list on one asset.
  */
 export function AdminVisionReviewPage() {
   usePageTitle("Review queue");
   const { refreshOverview } = useAdminVisionContext();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const order = params.has("order") ? reviewQueueOrder(params.get("order")) : "confidence";
   const assetId = params.get("asset") ?? "";
   const [queue, setQueue] = useState<VisionReviewQueue | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const request = useRef(0);
 
   const load = useCallback(async () => {
+    const current = ++request.current;
     setError(null);
     try {
-      setQueue(await fetchVisionReviewQueue({ assetId: assetId || undefined, limit: 200 }));
+      const result = await fetchVisionReviewQueue({ assetId: assetId || undefined, limit: 200, order });
+      if (current !== request.current) return;
+      setQueue(result);
       await refreshOverview();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (current === request.current) setError(e instanceof Error ? e.message : String(e));
     }
-  }, [assetId, refreshOverview]);
+  }, [assetId, refreshOverview, order]);
 
   useEffect(() => {
     void load();
+    return () => { request.current++; };
   }, [load]);
-
-  /* Grouped by footage in queue order, so the longest-waiting footage is first. */
-  const groups = useMemo(() => {
-    const out: { videoAssetId: string; title: string; match: string | null; items: VisionReviewQueueItem[] }[] = [];
-    for (const item of queue?.items ?? []) {
-      let g = out.find((x) => x.videoAssetId === item.videoAssetId);
-      if (!g) {
-        g = { videoAssetId: item.videoAssetId, title: item.asset.title ?? `footage ${short(item.videoAssetId)}`, match: item.asset.match, items: [] };
-        out.push(g);
-      }
-      g.items.push(item);
-    }
-    return out;
-  }, [queue]);
 
   return (
     <div className="vision-page">
@@ -59,36 +53,42 @@ export function AdminVisionReviewPage() {
           </button>
         }
       >
+        <ReviewOrderControl order={order} onChange={(value) => {
+          setQueue(null);
+          setParams((previous) => { const next = new URLSearchParams(previous); next.set("order", value); return next; });
+        }} />
         {!queue ? (
           <p className="muted">Loading…</p>
         ) : (
           <p className="vision-footnote muted">
             {queue.waiting.identities} identity window(s) and {queue.waiting.events} event candidate(s) are waiting for someone who did not propose them
-            {assetId ? " on this footage" : ""}. Yours are not listed: a second person decides those. Oldest first; each opens on the video at its moment, where <kbd>,</kbd> and <kbd>.</kbd> walk the rest.
+            {assetId ? " on this footage" : ""}. Yours are not listed: a second person decides those. {order === "confidence" ? "Lowest stored confidence first; equal scores use oldest first." : "Oldest first."} Confidence is a claim score, not measured accuracy. Each opens on the video at its moment, where <kbd>,</kbd> and <kbd>.</kbd> walk the rest in the chosen order.
             {queue.count < queue.waiting.identities + queue.waiting.events && ` Showing the first ${queue.count}.`}
             {assetId && (
               <>
                 {" "}
-                <Link to="/admin/vision/review">Every piece of footage →</Link>
+                <Link to={`/admin/vision/review?order=${order}`}>Every piece of footage →</Link>
               </>
             )}
           </p>
         )}
       </Panel>
 
-      {queue && groups.length === 0 && (
+      {queue && queue.items.length === 0 && (
         <Panel title="Nothing waiting">
           <p className="muted">Every identity and event candidate someone else proposed has been decided{assetId ? " on this footage" : ""}.</p>
         </Panel>
       )}
 
-      {groups.map((g) => (
-        <Panel key={g.videoAssetId} title={`${g.title}${g.match ? ` · ${g.match}` : ""}`}>
+      {queue && queue.items.length > 0 && (
+        <Panel title="Review items">
           <div className="admin-sb-table-wrap">
             <table className="vision-table">
               <thead>
                 <tr>
                   <th scope="col">Waiting since</th>
+                  <th scope="col">Footage</th>
+                  <th scope="col">Confidence</th>
                   <th scope="col">What</th>
                   <th scope="col">When</th>
                   <th scope="col">Proposed by</th>
@@ -96,9 +96,11 @@ export function AdminVisionReviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {g.items.map((item) => (
+                {queue.items.map((item) => (
                   <tr key={`${item.kind}:${item.id}`}>
                     <td className="vision-sub">{formatWhen(item.createdAt)}</td>
+                    <td>{item.asset.title ?? `Footage ${short(item.videoAssetId)}`}<div className="vision-sub muted">{item.asset.match}</div></td>
+                    <td>{Math.round(item.confidence * 100)}%</td>
                     <td>
                       <Pill tone={item.kind === "event" ? "warn" : "muted"}>{item.kind}</Pill> {describeItem(item)}
                     </td>
@@ -110,7 +112,7 @@ export function AdminVisionReviewPage() {
                       <code className="vision-mono">{short(item.decidedBy)}</code>
                     </td>
                     <td>
-                      <Link to={linkFor(item)}>Open on the video →</Link>
+                      <Link to={linkFor(item, order)}>Open on the video →</Link>
                     </td>
                   </tr>
                 ))}
@@ -118,7 +120,7 @@ export function AdminVisionReviewPage() {
             </table>
           </div>
         </Panel>
-      ))}
+      )}
     </div>
   );
 }
@@ -131,8 +133,10 @@ export function describeItem(item: VisionReviewQueueItem): string {
 }
 
 /** Where the item is decided: the identity workstation, with the candidate or the track and the moment in the URL. */
-export function linkFor(item: VisionReviewQueueItem): string {
+export function linkFor(item: VisionReviewQueueItem, order?: ReviewQueueOrder): string {
   const base = `/admin/vision/workstation/identity/${item.videoAssetId}`;
-  if (item.kind === "event") return `${base}?event=${item.id}`;
-  return `${base}?track=${item.trackId}&at=${item.sourceMs}`;
+  const query = new URLSearchParams(item.kind === "event" ? { event: item.id } : { track: item.trackId ?? "", at: String(item.sourceMs) });
+  if (order) query.set("order", order);
+  if (order && item.kind === "identity") query.set("review", item.id);
+  return `${base}?${query}`;
 }

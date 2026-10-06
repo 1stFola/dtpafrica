@@ -432,6 +432,14 @@ export class VisionSourcesService {
   ) {
     await this.requirePartner(dto.partnerId);
 
+    if (dto.sbMatchId) {
+      const match = await this.prisma.sbMatch.findUnique({ where: { id: dto.sbMatchId }, select: { id: true, competitionId: true } });
+      if (!match) throw notFound("match", dto.sbMatchId);
+      if (dto.sbCompetitionId && match.competitionId !== dto.sbCompetitionId) {
+        throw refusal(400, "SourceMatchCompetitionMismatch", "The source's match does not belong to its competition.", "Link the source to the match's competition, or select a match from the named competition.");
+      }
+    }
+
     const source = await this.prisma.visionSourceVideoRecord.create({
       data: {
         partnerId: dto.partnerId,

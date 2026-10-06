@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,7 +32,7 @@ MODEL = "6a1b2c3d-0000-4000-8000-000000000001"
 DISPATCHED = {
     "videoAssetId": "asset-1",
     "modelVersionIds": [MODEL],
-    "params": {"videoAssetId": "asset-1", "proxy": {"fps": 25, "sourceOffsetMs": 0}},
+    "params": {"videoAssetId": "asset-1", "proxy": {"fps": 25, "sourceOffsetMs": 0}, "sourceChecksum": "a" * 64},
 }
 
 
@@ -90,7 +91,11 @@ def ctx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         progress=FakeProgress(),  # type: ignore[arg-type]
     )
 
-    monkeypatch.setattr(detect_stage, "download", lambda *_a, **_k: 4096)
+    def fake_download(_ctx, _url, path):
+        path.write_bytes(b"x" * 4096)
+        return 4096
+    monkeypatch.setattr(detect_stage, "download", fake_download)
+    monkeypatch.setattr(detect_stage, "probe", lambda _path: SimpleNamespace(width=1280, height=720, duration_ms=2500))
 
     uploaded: dict[str, Any] = {}
 

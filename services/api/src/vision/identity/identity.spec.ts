@@ -439,11 +439,13 @@ describe("what the screen plays and draws", () => {
   it("presigns the proxy, never the master, with the playback TTL", async () => {
     mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({
       id: ASSET,
+        durationMs: 9970,
       variants: [{ objectKey: "proxies/x/proxy.mp4", fps: 25, sourceOffsetMs: 5000, durationMs: 5000, width: 1280, height: 720 }],
     });
     const out = await service.media(ASSET);
     expect(out.url).toContain("proxies/x/proxy.mp4");
-    expect(out).toMatchObject({ fps: 25, sourceOffsetMs: 5000, width: 1280, expiresInSeconds: 600 });
+      expect(out).toMatchObject({ fps: 25, sourceOffsetMs: 5000, sourceDurationMs: 9970, width: 1280, expiresInSeconds: 600 });
+      expect(mockPrisma.visionVideoAsset.findUnique.mock.calls[0]![0].select.durationMs).toBe(true);
     expect(mockPrisma.visionVideoAsset.findUnique.mock.calls[0]![0].select.variants.where).toEqual({ kind: "proxy" });
   });
 

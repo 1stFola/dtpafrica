@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { VisionEventCandidate, VisionReviewTrack } from "../../../api/vision";
-import { allowedActions, candidateAt, describeCandidate, proposalAt, slotAt, stepCandidate, stepUncertainty, timelineMarks, uncertainties, windowProblem } from "./event-review";
+import { allowedActions, candidateAt, describeCandidate, draggedEventBoundary, proposalAt, slotAt, stepCandidate, stepUncertainty, stepRankedReview, timelineMarks, uncertainties, windowProblem } from "./event-review";
 
 const cand = (over: Partial<VisionEventCandidate>): VisionEventCandidate => ({
   id: "c", videoAssetId: "a", sbMatchId: "m", type: "shot", taxonomyVersion: "2026.10.0", startMs: 10_000, endMs: 10_000, actorTrackId: "t1", actorPlayerId: null, actorMatchSquadPlayerId: null, sbTeamId: null,
@@ -9,6 +9,29 @@ const cand = (over: Partial<VisionEventCandidate>): VisionEventCandidate => ({
 });
 
 describe("the timeline", () => {
+  it("never stores a boundary in the CFR proxy's padded tail, including with an offset", () => {
+    const window = { startMs: 10000, endMs: 20000 };
+    // Real pilot: source 49.706 s; proxy 49.760 s. The last valid 25 fps frame is 49.680 s.
+    expect(draggedEventBoundary("endMs", 49760, window, 0, 49760, 25, 49706)).toBe(49680);
+    expect(draggedEventBoundary("endMs", 49760, window, 0, 49760, null, 49706)).toBe(49706);
+    expect(draggedEventBoundary("endMs", 6000, window, 45007, 6000, 25, 49706)).toBe(49687);
+  });
+  it("drags in proxy time and snaps before adding a non-frame-aligned source offset", () => {
+    const window = { startMs: 9007, endMs: 19007 };
+    expect(draggedEventBoundary("startMs", 1169, window, 9007, 10000, 25)).toBe(10167);
+    expect(draggedEventBoundary("endMs", 1169, window, 9007, 10000, 25)).toBe(10167);
+    expect(draggedEventBoundary("startMs", 1169, window, 9007, 10000, null)).toBe(10176);
+  });
+
+  it("keeps dragged boundaries in the visible footage and never crosses the other boundary", () => {
+    const window = { startMs: 10000, endMs: 12000 };
+    expect(draggedEventBoundary("startMs", -500, window, 9000, 10000, 25)).toBe(9000);
+    expect(draggedEventBoundary("startMs", 99999, window, 9000, 10000, 25)).toBe(12000);
+    expect(draggedEventBoundary("endMs", -500, window, 9000, 10000, 25)).toBe(10000);
+    expect(draggedEventBoundary("endMs", 99999, window, 9000, 10000, 25)).toBe(19000);
+    expect(draggedEventBoundary("startMs", 0, { startMs: 0, endMs: 0 }, 0, 10000, 25)).toBe(0);
+    expect(draggedEventBoundary("endMs", 41.8, { startMs: 0, endMs: 0 }, 0, 10000, 29.97)).toBe(33);
+  });
   it("places current candidates on the clip as fractions, with a minimum width, and drops superseded ones", () => {
     const marks = timelineMarks([cand({ id: "a", startMs: 14_000, endMs: 16_000 }), cand({ id: "s", supersededBy: "x" }), cand({ id: "b", startMs: 9000, endMs: 9000 })], 9000, 10_000);
     expect(marks.map((m) => m.candidate.id)).toEqual(["a", "b"]);
@@ -110,6 +133,29 @@ describe("words and actions", () => {
 });
 
 describe("the uncertainty walk", () => {
+  it("walks ranked rows even at the same timestamp, backwards, and after a decision removes the cursor", () => {
+    const list = uncertainties([
+      cand({ id: "high", startMs: 1000, confidence: 1, createdAt: "2026-10-01T00:00:00Z" }),
+      cand({ id: "low", startMs: 9000, confidence: 0, createdAt: "2026-10-02T00:00:00Z" }),
+      cand({ id: "same-time", startMs: 9000, confidence: 0.2 }),
+    ], [], "bob", "confidence");
+    expect(list.map((item) => item.id)).toEqual(["low", "same-time", "high"]);
+    expect(stepRankedReview(list, null, 1)?.id).toBe("low");
+    expect(stepRankedReview(list, "event:low", 1)?.id).toBe("same-time");
+    expect(stepRankedReview(list, "event:same-time", 1)?.sourceMs).toBe(1000);
+    expect(stepRankedReview(list, "event:high", -1)?.id).toBe("same-time");
+    expect(stepRankedReview(list, "event:high", 1)).toBeNull();
+    expect(stepRankedReview(list, "event:low", -1)).toBeNull();
+    expect(stepRankedReview(list.slice(1), "event:low", 1)?.id).toBe("same-time");
+    expect(stepRankedReview([], null, 1)).toBeNull();
+  });
+
+  it("uses stored confidence across identities and events with age breaking ties", () => {
+    const identities = { ...track, identities: [ { ...track.identities[0]!, confidence: 0.2 } ] };
+    const events = [cand({ id: "late-tie", confidence: 0.2, createdAt: "2026-10-03T00:00:00Z" }), cand({ id: "old-high", confidence: 1, createdAt: "2026-10-01T00:00:00Z" })];
+    expect(uncertainties(events, [identities], "bob", "confidence").map((item) => item.id)).toEqual(["i-theirs", "late-tie", "old-high"]);
+    expect(uncertainties(events, [identities], "bob", "oldest").map((item) => item.id)).toEqual(["old-high", "i-theirs", "late-tie"]);
+  });
   const track = {
     id: "t1", localTrackId: 1, inferenceJobId: "j", artifactKey: "k", class: "player", startMs: 0, endMs: 60_000, team: null, sbTeamId: "home", matchClock: null,
     identities: [

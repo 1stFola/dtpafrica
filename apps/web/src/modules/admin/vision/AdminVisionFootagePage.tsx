@@ -96,7 +96,7 @@ export function AdminVisionFootagePage() {
                   const latest = latestByType(jobs);
                   const done = succeededTypes(jobs);
                   const next = nextStage(jobs);
-                  const hasProxy = a.hasProxy || done.has("transcode");
+                  const hasProxy = a.hasProxy;
                   return (
                     <tr key={a.id}>
                       <td>
@@ -104,6 +104,7 @@ export function AdminVisionFootagePage() {
                         <div className="vision-sub muted">
                           {a.sourceVideoRecord?.partner.name ?? "—"} · <code className="vision-mono">{short(a.id)}</code>
                         </div>
+                        {hasProxy && hasPermission("vision.review") && <Link className="vision-open-review" to={`/admin/vision/workstation/identity/${a.id}`}>Open review</Link>}
                       </td>
                       <td>{a.sbMatch ? `${a.sbMatch.homeTeam.name} v ${a.sbMatch.awayTeam.name}` : <Pill tone="warn">not linked</Pill>}</td>
                       <td>
@@ -135,13 +136,12 @@ export function AdminVisionFootagePage() {
                       </td>
                       <td>
                         <div className="vision-asset__links">
-                          <Link to={`/admin/vision/workstation/identity/${a.id}`} className={hasProxy ? "" : "vision-link--dim"}>
-                            Identity review →
-                          </Link>
-                          <Link to={`/admin/vision/workstation/calibration/${a.id}`} className={hasProxy ? "" : "vision-link--dim"}>
-                            Calibration →
-                          </Link>
+                          {hasProxy && hasPermission("vision.review") ? <>
+                            <Link to={`/admin/vision/workstation/identity/${a.id}`}>Identity review →</Link>
+                            <Link to={`/admin/vision/workstation/calibration/${a.id}`}>Calibration →</Link>
+                          </> : !hasProxy ? <span className="muted">Workstation available when video is ready</span> : null}
                           <Link to={`/admin/vision/events?asset=${a.id}`}>Events →</Link>
+                          <Link to={`/admin/vision/possession?asset=${a.id}`}>Possession →</Link>
                         </div>
                       </td>
                       {canRun && (
@@ -162,9 +162,9 @@ export function AdminVisionFootagePage() {
             </table>
           </div>
         )}
-        <p className="vision-footnote muted">
+        {canRun && <p className="vision-footnote muted">
           The queue button offers the next stage in order; the source page offers any stage. Detect needs a GPU worker; the rest run on the CPU worker beside the API.
-        </p>
+        </p>}
       </Panel>
     </div>
   );

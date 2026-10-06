@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { adminReturnPath } from "../admin-return-path";
 import { Button } from "@dtp/ui";
 import { BrandLogo } from "../../../components/BrandLogo";
 import { useAdminAuth } from "../AdminAuthContext";
@@ -16,14 +17,16 @@ export function AdminLoginPage() {
   usePageTitle("Admin login");
   const { loginWithPassword, checkStored, isAuthenticated } = useAdminAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const destination = adminReturnPath(location.state);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     checkStored().then((ok) => {
-      if (ok) navigate("/admin", { replace: true });
+      if (ok) navigate(destination, { replace: true });
     });
-  }, [checkStored, navigate]);
+  }, [checkStored, navigate, destination]);
 
   if (isAuthenticated) {
     return <p className="muted admin-loading">Redirecting to admin…</p>;
@@ -39,7 +42,7 @@ export function AdminLoginPage() {
         data.get("email") as string,
         data.get("password") as string
       );
-      navigate("/admin", { replace: true });
+      navigate(destination, { replace: true });
     } catch {
       setError("Invalid email or password.");
     } finally {

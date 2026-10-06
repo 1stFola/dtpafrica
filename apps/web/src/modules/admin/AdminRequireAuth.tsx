@@ -16,7 +16,7 @@ export function AdminRequireAuth() {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/admin/login" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/admin/login" state={{ from: location.pathname + location.search + location.hash }} replace />;
   }
 
   return <Outlet />;

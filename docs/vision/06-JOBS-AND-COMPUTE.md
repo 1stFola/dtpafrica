@@ -79,7 +79,9 @@ detection over 90 minutes of video.
 | `identify` | tracks, crops, roster | jersey candidates, identity assignments | 4 |
 | `calibrate` | proxy, camera segments | `calibration.parquet` | 5 |
 | `gamestate` | tracks + calibration | `gamestate.parquet` | 5 |
-| `events` | gamestate, ball, possession | event candidates | 6 |
+| `ball_trajectory` | full-rate pinned detections, camera snapshot | image-space trajectory index and JSONL chunks; explicit lost frames ([80](./80-PHASE-6-INCREMENT-9.md)) | 6 |
+| `possession` | compatible ball trajectory and full-rate player tracks; opt-in calibrated mode also pins proxy geometry/checksum and camera calibration | unreviewed candidate/Unknown segments in derived JSONL chunks; calibrated distance/motion vetoes ([84](./84-PHASE-6-INCREMENT-13.md)), contract 1.15.0 | 6 |
+| `events` | current original calibrated possession and full-rate tracks; registered weight-free event-carry/v1 version | bounded unreviewed carry artifact, explicit zero output, original provenance; CPU only, contract 1.16.0 ([85](./85-PHASE-6-INCREMENT-14.md)); event ledger import remains next | 6 |
 | `clip` | proxy, event window | clip mp4, poster | 7 |
 | `vlm` | approved clip + context | scouting observation JSON | 8 |
 | `train` | dataset version | weights, metrics | 3+ |

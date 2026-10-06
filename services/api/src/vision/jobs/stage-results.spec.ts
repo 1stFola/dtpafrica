@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VisionStageResultsService } from "./stage-results.service";
+import { BALL_TRAJECTORY_VERSION } from "@dtp/vision-contracts";
 
 const ASSET = "aaaa1111-2222-3333-4444-555566667777";
 
@@ -31,6 +32,53 @@ beforeEach(() => {
   mockPrisma.visionVideoAsset.findMany.mockResolvedValue([]);
   mockPrisma.visionVideoVariant.upsert.mockReturnValue("upsert-op");
   mockPrisma.$transaction.mockResolvedValue([]);
+});
+
+describe("ball trajectory remains derived image evidence", () => {
+  const artifacts = [{ key: "inference/ball/1/ball-trajectory.json", bucket: "derived", role: "ball_trajectory" }, { key: "inference/ball/1/ball/ball-000000.jsonl", bucket: "derived", role: "ball_trajectory_chunk" }];
+  const summary = () => ({ calculationVersion: BALL_TRAJECTORY_VERSION, chunks: 1, frames: 5, observed: 2, lost: 3, observedFrameCoverage: 0.4, reasons: { no_detection: 3 }, sourceChecksum: "a".repeat(64), windowStartMs: 0, windowEndMs: 200, indexChecksum: "b".repeat(64) });
+  const context = { modelVersionId: null, inputSpec: { sourceChecksum: "a".repeat(64), sourceDurationMs: 200, proxyDurationMs: 240, proxy: { fps: 25, sourceOffsetMs: 0 } } };
+  it("checks honest observed/lost coverage without writing match, player or coordinate facts", async () => {
+    const result = await service().apply("ball_trajectory", ASSET, { artifacts, summary: summary() }, context);
+    expect(result).toMatchObject({ applied: true });
+    expect(result.detail).toContain("no possession or physical metric claim");
+    expect(mockPrisma.visionVideoAsset.update).not.toHaveBeenCalled();
+    expect(mockPrisma.visionTrack.createMany).not.toHaveBeenCalled();
+  });
+  it("refuses inconsistent counts, source windows, coverage, lost states and artifacts", async () => {
+    for (const patch of [{ observed: 3 }, { observed: 2.5 }, { observedFrameCoverage: 1 }, { reasons: { invented: 3 } }, { reasons: { no_detection: 2 } }, { sourceChecksum: "other" }, { windowEndMs: 240 }, { frames: 6, observed: 3, lost: 3, observedFrameCoverage: 0.5 }, { calculationVersion: "other" }])
+      expect((await service().apply("ball_trajectory", ASSET, { artifacts, summary: { ...summary(), ...patch } }, context)).applied).toBe(false);
+    expect((await service().apply("ball_trajectory", ASSET, { artifacts: [], summary: summary() }, context)).applied).toBe(false);
+  });
+});
+
+describe("possession completion remains unreviewed image evidence", () => {
+  const artifacts = [{ key: "inference/p/1/possession.json", bucket: "derived", role: "possession" }, { key: "inference/p/1/chunk.jsonl", bucket: "derived", role: "possession_chunk" }];
+  const context = { modelVersionId: null, inputSpec: { sourceChecksum: "a".repeat(64), sourceDurationMs: 200, proxyDurationMs: 240, proxy: { fps: 25, sourceOffsetMs: 0 }, ball: { jobId: "ball", indexChecksum: "b".repeat(64) }, tracks: { jobId: "track", checksum: "c".repeat(64) } } };
+  const summary = () => ({ calculationVersion: "possession-candidates/v1", frames: 5, candidateFrames: 2, unknownFrames: 3, candidateFrameCoverage: .4, segments: 2, chunks: 1,
+    reasons: { continuity_pending: 3 }, sourceChecksum: "a".repeat(64), windowStartMs: 0, windowEndMs: 200,
+    ballJobId: "ball", trackJobId: "track", ballIndexChecksum: "b".repeat(64), tracksChecksum: "c".repeat(64), indexChecksum: "d".repeat(64), coordinateBasis: "image_foot_proximity", reviewState: "unreviewed" });
+  it("validates counts without writing accepted possession, tracks or player metrics", async () => {
+    const result = await service().apply("possession", ASSET, { artifacts, summary: summary() }, context);
+    expect(result.applied).toBe(true);
+    expect(result.detail).toContain("no confirmed possession or player statistics");
+    expect(mockPrisma.visionTrack.createMany).not.toHaveBeenCalled();
+    expect(mockPrisma.visionVideoAsset.update).not.toHaveBeenCalled();
+  });
+  it("accepts v2 only with the queued calibration and configuration, without domain writes", async () => {
+    const calibrationSnapshot = { proxyVariantId: "proxy", segments: [] };
+    const inputSpec = { ...context.inputSpec, constraintMode: "calibrated", calibrationSnapshot };
+    const s = { ...summary(), calculationVersion: "possession-candidates/v2", constraintMode: "calibrated", calibrationSnapshot, footballConfig: { maxGroundDistanceM: 2, maxBallGroundSpeedMps: 35, maxPlayerSpeedMps: 12 }, reasons: { calibration_unavailable: 3 } };
+    expect((await service().apply("possession", ASSET, { artifacts, summary: s }, { ...context, inputSpec })).applied).toBe(true);
+    expect((await service().apply("possession", ASSET, { artifacts, summary: { ...s, calibrationSnapshot: {} } }, { ...context, inputSpec })).applied).toBe(false);
+    expect((await service().apply("possession", ASSET, { artifacts, summary: s }, context)).applied).toBe(false);
+    expect(mockPrisma.visionTrack.createMany).not.toHaveBeenCalled(); expect(mockPrisma.visionVideoAsset.update).not.toHaveBeenCalled();
+  });
+  it("refuses altered source, upstream evidence, counters, reasons or review state", async () => {
+    for (const patch of [{ reviewState: "accepted" }, { coordinateBasis: "pitch" }, { candidateFrames: 3 }, { reasons: { invented: 3 } }, { reasons: { continuity_pending: 2 } }, { sourceChecksum: "other" }, { trackJobId: "other" }, { ballIndexChecksum: "other" }, { tracksChecksum: "other" }, { candidateFrameCoverage: 1 }, { windowEndMs: 240 }, { calculationVersion: "other" }, { segments: 6 }])
+      expect((await service().apply("possession", ASSET, { artifacts, summary: { ...summary(), ...patch } }, context)).applied).toBe(false);
+    expect((await service().apply("possession", ASSET, { artifacts: [], summary: summary() }, context)).applied).toBe(false);
+  });
 });
 
 describe("probe results reach the asset", () => {

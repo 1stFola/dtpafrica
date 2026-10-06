@@ -31,6 +31,10 @@ import { VisionAssetsController } from "./assets/assets.controller";
 import { ScoreboardModule } from "../scoreboard/scoreboard.module";
 import { VisionEventsController } from "./events/events.controller";
 import { VisionEventsService } from "./events/events.service";
+import { VisionEventGoldController } from "./event-gold/event-gold.controller";
+import { VisionEventGoldService } from "./event-gold/event-gold.service";
+import { VisionPossessionController } from "./possession/possession.controller";
+import { VisionPossessionService } from "./possession/possession.service";
 import { VisionClockController } from "./clock/clock.controller";
 import { VisionClockService } from "./clock/clock.service";
 import { JOB_QUEUE } from "./jobs/job-queue";
@@ -124,6 +128,8 @@ const computeRegistryProvider: Provider = {
     VisionCalibrationController,
     VisionClockController,
     VisionEventsController,
+    VisionEventGoldController,
+    VisionPossessionController,
     VisionAssetsController,
   ],
   providers: [
@@ -147,6 +153,8 @@ const computeRegistryProvider: Provider = {
     VisionCalibrationService,
     VisionClockService,
     VisionEventsService,
+    VisionEventGoldService,
+    VisionPossessionService,
     // A third auth stack, unrelated to admin sessions and worker tokens.
     PartnerUploadGuard,
     // Worker auth is a separate stack from admin auth on purpose: a worker token

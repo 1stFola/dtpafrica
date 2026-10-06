@@ -9592,6 +9592,23 @@ a {
   min-width: 0;
 }
 
+.admin-menu-toggle {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(134, 239, 172, 0.4);
+  border-radius: 8px;
+  color: var(--color-text);
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+}
+
+.admin-menu-toggle:focus-visible {
+  outline: 2px solid #86efac;
+  outline-offset: 3px;
+}
+
+.admin-sb-sidebar[hidden] { display: none; }
+.admin-sb-shell.admin-sb-shell--collapsed { grid-template-columns: minmax(0, 1fr); }
+
 .admin-cms-sidebar {
   top: 0.75rem;
 }

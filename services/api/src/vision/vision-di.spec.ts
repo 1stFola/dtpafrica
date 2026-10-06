@@ -27,6 +27,10 @@ import { VisionClockService } from "./clock/clock.service";
 import { VisionAssetsController } from "./assets/assets.controller";
 import { VisionEventsController } from "./events/events.controller";
 import { VisionEventsService } from "./events/events.service";
+import { VisionEventGoldController } from "./event-gold/event-gold.controller";
+import { VisionEventGoldService } from "./event-gold/event-gold.service";
+import { VisionPossessionController } from "./possession/possession.controller";
+import { VisionPossessionService } from "./possession/possession.service";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { VisionBenchmarksService } from "./models/benchmarks.service";
@@ -82,6 +86,8 @@ const PROVIDERS = [
   VisionCalibrationService,
   VisionClockService,
   VisionEventsService,
+  VisionEventGoldService,
+  VisionPossessionService,
   WorkerTokenService,
 ] as const;
 
@@ -102,10 +108,14 @@ const CONTROLLERS = [
   VisionCalibrationController,
   VisionClockController,
   VisionEventsController,
+  VisionEventGoldController,
+  VisionPossessionController,
   VisionAssetsController,
 ] as const;
 
 const SERVICES = [
+  VisionPossessionService,
+  VisionEventGoldService,
   VisionJobsService,
   VisionStageResultsService,
   VisionUploadService,

@@ -17,6 +17,7 @@ import { STAGES, canQueue, describeRun, latestByType, missingFor, nextStage, suc
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { useAdminAuth } from "../AdminAuthContext";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { EventCarryControl } from "./EventCarryControl";
 
 /**
  * One source, and everything the rights engine thinks about it.
@@ -46,9 +47,12 @@ function formatDuration(ms: number | null): string {
 }
 
 export function AdminVisionSourceDetailPage() {
+  const [possessionMode, setPossessionMode] = useState<"image" | "calibrated">("image");
+  const [eventModelVersion, setEventModelVersion] = useState("");
   const { id = "" } = useParams<{ id: string }>();
   const { hasPermission } = useAdminAuth();
   const canManageRights = hasPermission("vision.rights.manage");
+  const canRunJobs = hasPermission("vision.jobs.run");
 
   const [detail, setDetail] = useState<VisionSourceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -464,6 +468,12 @@ export function AdminVisionSourceDetailPage() {
                   </table>
 
                   <div className="vision-asset__queue">
+                    {stage.type === "events" && <EventCarryControl assetId={asset.id} value={eventModelVersion} onChange={setEventModelVersion} disabled={busy} />}
+                    {stage.type === "possession" && <label className="vision-row"><span className="vision-row__label">Possession constraints</span>
+                      <select aria-label={`Possession constraints for ${asset.id}`} value={possessionMode} disabled={busy} onChange={(e) => setPossessionMode(e.target.value as "image" | "calibrated")}>
+                        <option value="image">Image proximity</option><option value="calibrated">Calibrated distance and motion</option>
+                      </select><span className="vision-footnote">Calibrated mode requires recorded proxy geometry and checksum evidence. Missing or failed calibration stays Unknown.</span>
+                    </label>}
                     <label className="vision-row">
                       <span className="vision-row__label">Queue</span>
                       <select value={picked} onChange={(e) => setStagePick((p) => ({ ...p, [asset.id]: e.target.value }))} disabled={busy}>
@@ -476,10 +486,10 @@ export function AdminVisionSourceDetailPage() {
                     </label>
                     <button
                       type="button"
-                      disabled={busy || !canQueue(stage, done)}
+                      disabled={busy || !canRunJobs || !canQueue(stage, done) || (stage.type === "events" && !eventModelVersion)}
                       onClick={() =>
                         run(`${stage.label} queued on ${asset.id.slice(0, 8)}.`, async () => {
-                          await queueVisionJob({ type: stage.type, videoAssetId: asset.id });
+                          await queueVisionJob({ type: stage.type, videoAssetId: asset.id, ...(stage.type === "possession" ? { params: { constraintMode: possessionMode } } : {}), ...(stage.type === "events" ? { modelVersionId: eventModelVersion } : {}) });
                           await loadJobs(source.videoAssets.map((a) => a.id));
                         })
                       }
@@ -487,6 +497,7 @@ export function AdminVisionSourceDetailPage() {
                       Queue {stage.label.toLowerCase()}
                     </button>
                     <span className="vision-footnote">
+                      {!canRunJobs && "A job operator must queue this stage. "}
                       {missing ? `needs ${missing.join(", ")} to succeed first` : next?.type === stage.type ? "the next stage in order" : "prerequisites met"}
                       {" · the API refuses a stage out of order; the worker runs it"}
                     </span>

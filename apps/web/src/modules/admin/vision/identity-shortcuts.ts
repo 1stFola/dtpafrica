@@ -97,7 +97,7 @@ export function shortcutOf(event: KeyLike): Shortcut | null {
 export const SHORTCUT_HELP: readonly { keys: string; does: string }[] = [
   { keys: "Space", does: "Play or pause" },
   { keys: "← →", does: "One frame back or on; with Shift, one second" },
-  { keys: ", .", does: "The previous or next thing waiting for you to decide" },
+  { keys: ", .", does: "The previous or next waiting claim in the selected review order" },
   { keys: "[ ]", does: "The previous or next event candidate" },
   { keys: "E", does: "Propose an event at the playhead" },
   { keys: "U", does: "Mark the selected track unknown, over the whole track" },

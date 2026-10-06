@@ -5,14 +5,15 @@
  * starts `unreviewed` and was decided by someone: an identity assignment on a
  * window of a track, an event candidate on a window of the footage. The queue
  * is those rows, current and undecided, that are *not the reader's own* --
- * the self-acceptance rule applied before the round trip -- oldest first, so
- * the one that has waited longest is the one at the top. The workstation walks
- * the same list on one asset with `,` and `.`; this is the whole of it.
+ * the self-acceptance rule applied before the round trip. Oldest-first remains
+ * the API default; confidence order brings the lowest stored claim score first.
+ * The workstation walks loaded claims on one asset with `,` and `.`.
  */
 
-import type { ReviewQueueKind } from "@dtp/vision-contracts";
+import { compareReviewClaims, type ReviewQueueKind, type ReviewQueueOrder } from "@dtp/vision-contracts";
 
 export type QueueEventRow = {
+  confidence: number;
   id: string;
   videoAssetId: string;
   type: string;
@@ -24,6 +25,7 @@ export type QueueEventRow = {
 };
 
 export type QueueIdentityRow = {
+  confidence: number;
   id: string;
   trackId: string;
   videoAssetId: string;
@@ -40,14 +42,14 @@ export type QueueItem =
   | ({ kind: ReviewQueueKind & "identity"; sourceMs: number } & QueueIdentityRow);
 
 /**
- * The queue for one person: both kinds merged, theirs left out, oldest first,
+ * The queue for one person: both kinds merged in the requested order, theirs left out,
  * cut to `limit`. `waiting` counts what is in the queue before the cut, so a
  * page can say how deep it is.
  */
-export function buildQueue(me: string, events: readonly QueueEventRow[], identities: readonly QueueIdentityRow[], limit: number): { items: QueueItem[]; waiting: { events: number; identities: number } } {
+export function buildQueue(me: string, events: readonly QueueEventRow[], identities: readonly QueueIdentityRow[], limit: number, order: ReviewQueueOrder = "oldest"): { items: QueueItem[]; waiting: { events: number; identities: number } } {
   const mine = (row: { decidedBy: string }) => row.decidedBy === me;
   const eventItems: QueueItem[] = events.filter((e) => !mine(e)).map((e) => ({ kind: "event", sourceMs: e.startMs, ...e }));
   const identityItems: QueueItem[] = identities.filter((a) => !mine(a)).map((a) => ({ kind: "identity", sourceMs: a.validFromMs, ...a }));
-  const all = [...eventItems, ...identityItems].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+  const all = [...eventItems, ...identityItems].sort((a, b) => compareReviewClaims(a, b, order));
   return { items: all.slice(0, Math.max(0, limit)), waiting: { events: eventItems.length, identities: identityItems.length } };
 }

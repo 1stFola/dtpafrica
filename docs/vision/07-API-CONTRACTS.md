@@ -1,5 +1,68 @@
 # 07 — API contracts
 
+## Independent event references
+
+`scope: complete_event_run` plus `jobId` evaluates one succeeded event job's
+checksum-pinned artifact and explicit complete coverage. It accepts a genuine
+completed zero-output artifact and refuses absent, incomplete or conflicting
+evidence. The event producer is not enabled by this evaluator. See
+[79](./79-PHASE-6-INCREMENT-8.md) for the input, completion and artifact contract.
+
+`POST /vision/jobs` also accepts `type: "ball_trajectory"` (CPU only, contract
+1.13.0). The API owns the successful full-rate detection artifact, source/proxy
+checksums and clocks, detector geometry and camera snapshot. Optional parameters
+are `detectJobId`, `trajectoryConfig` and `chunkMs`; see
+[80](./80-PHASE-6-INCREMENT-9.md) for refusal rules and artifact semantics.
+
+`POST /vision/jobs` accepts `type: "possession"` (CPU only, contract 1.15.0).
+Optional parameters are `ballJobId`, `trackJobId`, `possessionConfig` and
+`chunkMs`. The API owns all object keys, checksums, source/proxy clocks,
+geometry and camera snapshot, and requires compatible full-rate ball and player
+evidence. Outputs remain unreviewed image-proximity candidates; see
+[81](./81-PHASE-6-INCREMENT-10.md) for the complete input/output contract.
+Optional `constraintMode: "calibrated"` adds pinned current calibration/proxy
+geometry and provisional `footballConfig` ground distance/motion vetoes. Missing
+or failed calibration stays Unknown, and old proxies without width/checksum
+provenance refuse calibrated enqueue. V2 output remains unreviewed; v1 image
+artifacts remain readable. See [84](./84-PHASE-6-INCREMENT-13.md).
+
+`POST /vision/jobs` also accepts `type: "events"` on CPU, contract 1.16.0.
+Select an event-task version with `configKey: event-carry/v1`, null weights and
+registered commit/image provenance. Optional `params.possessionJobId` selects
+original calibrated possession; the API owns the evidence and entire source window
+(at most five minutes). Output is a bounded `event-inference/v2` carry artifact
+with a separate rule manifest checksum and unknown roster actors. It can be scored
+against frozen human gold; it does not yet import event reviewer rows. See
+[85](./85-PHASE-6-INCREMENT-14.md). Existing weighted v1 event artifacts remain
+readable. No new route or permission is introduced.
+
+The possession reviewer ledger has seven routes under `/vision/review`, listed in
+the generated table below. Imports pin one immutable succeeded attempt and read
+bounded segment JSON. Decisions require a different signed-in reviewer and never
+edit original intervals. Unknown confirmation introduces no actor. See
+[82](./82-PHASE-6-INCREMENT-11.md) for limits, staleness and response semantics.
+Manual boundary/actor corrections append new versions with expected-parent conflict
+checks and independent decisions. Reads include at most 20 versions per interval;
+Unknown cannot acquire an actor and trimmed portions stay unresolved. See
+[83](./83-PHASE-6-INCREMENT-12.md) for correction bodies and reviewer rules.
+
+Benchmark POST bodies may select `scope: model_original_candidates` and one
+registered event `modelVersionId`; omitted bodies preserve current-candidate
+scoring. Original model scoring includes superseded and rejected originals and
+excludes manual corrections and other versions. Missing model proposals refuse
+evaluation rather than imply completed zero-output inference. Saved reports pin
+scope and registry metadata. See [78](./78-PHASE-6-INCREMENT-7.md).
+
+The eight `/vision/event-gold` routes listed below require `vision.review` and
+a signed-in person. Creation pins the asset checksum, source window, taxonomy,
+matching tolerance and two different existing reviewers. List/detail are limited
+to the creator and assigned people. Independent immutable submissions require
+explicit completeness; the other payload stays hidden until both submit.
+Reconciliation appends a reasoned proposal; freeze requires the other assigned
+reviewer's approval of the current proposal. Benchmark runs require a frozen
+reference and persist checksum-pinned candidate snapshots and reports. Analysis
+and named-player rights remain checked. See [77](./77-PHASE-6-INCREMENT-6.md).
+
 All routes sit under the existing global prefix `api/v1` and are guarded by the existing
 `AdminAuthGuard` + `PermissionsGuard`, except the worker surface, which has its own guard.
 
@@ -201,12 +264,16 @@ marked `metadata.source = "vision"` with `metadata.half` and `metadata.addedMinu
 decision that loses a race is refused rather than applied twice. The reads add
 `promotionStale`; a stale candidate can only be corrected, which starts its review again.
 `GET /vision/review/queue` is what a signed-in reviewer should look at next: every current,
-unreviewed identity assignment and event candidate that is *not their own*, oldest first, as
+unreviewed identity assignment and event candidate that is *not their own*, oldest first by default, as
 `items` of `kind: event | identity` (`REVIEW_QUEUE_KINDS`) each with `sourceMs` (the start of its
 window), `matchClock`, `asset: { title, match }`, `decidedBy`, `createdAt` and, for an identity,
 `trackId`, `localTrackId` and the `slot` named; `waiting: { events, identities }` counts the whole
 queue before `limit` (default 100, at most 500) cuts it. The operator key has no queue
-(`EventNeedsAPerson`).
+(`EventNeedsAPerson`). `order=confidence` orders by ascending stored confidence, then age,
+kind and ID; both database queries order before taking their limit. Each item includes
+`confidence`, and the response names the applied `order` (`oldest | confidence`). Unknown
+order values fall back to `oldest`. The UI defaults to confidence; this is not an accuracy
+measurement or a promotion threshold.
 
 ### Datasets and models
 
@@ -676,6 +743,14 @@ when a route has neither a permission nor a token guard.
 | `POST` | `/vision/datasets/:id/members` | `vision.datasets.manage` | `datasets/datasets.controller.ts` |
 | `GET` | `/vision/datasets/:id/representation` | `vision.read` | `datasets/datasets.controller.ts` |
 | `POST` | `/vision/datasets/:id/splits` | `vision.datasets.manage` | `datasets/datasets.controller.ts` |
+| `GET` | `/vision/event-gold` | `vision.review` | `event-gold/event-gold.controller.ts` |
+| `POST` | `/vision/event-gold` | `vision.review` | `event-gold/event-gold.controller.ts` |
+| `GET` | `/vision/event-gold/:id` | `vision.review` | `event-gold/event-gold.controller.ts` |
+| `POST` | `/vision/event-gold/:id/benchmarks` | `vision.review` | `event-gold/event-gold.controller.ts` |
+| `GET` | `/vision/event-gold/:id/benchmarks/:runId` | `vision.review` | `event-gold/event-gold.controller.ts` |
+| `POST` | `/vision/event-gold/:id/freeze` | `vision.review` | `event-gold/event-gold.controller.ts` |
+| `POST` | `/vision/event-gold/:id/reconciliations` | `vision.review` | `event-gold/event-gold.controller.ts` |
+| `POST` | `/vision/event-gold/:id/submissions` | `vision.review` | `event-gold/event-gold.controller.ts` |
 | `GET` | `/vision/jobs` | `vision.read` | `jobs/jobs.controller.ts` |
 | `POST` | `/vision/jobs` | `vision.jobs.run` | `jobs/jobs.controller.ts` |
 | `GET` | `/vision/jobs-meta/resource-classes` | `vision.read` | `jobs/jobs.controller.ts` |
@@ -719,6 +794,8 @@ when a route has neither a permission nor a token guard.
 | `GET` | `/vision/review/:assetId/game-state` | `vision.read` | `calibration/calibration.controller.ts` |
 | `GET` | `/vision/review/:assetId/media` | `vision.read` | `identity/identity.controller.ts` |
 | `GET` | `/vision/review/:assetId/positions` | `vision.read` | `identity/identity.controller.ts` |
+| `GET` | `/vision/review/:assetId/possession` | `vision.read` | `possession/possession.controller.ts` |
+| `POST` | `/vision/review/:assetId/possession/import` | `vision.review` | `possession/possession.controller.ts` |
 | `GET` | `/vision/review/:assetId/tracks` | `vision.read` | `identity/identity.controller.ts` |
 | `DELETE` | `/vision/review/camera-segments/:id` | `vision.review` | `calibration/calibration.controller.ts` |
 | `POST` | `/vision/review/camera-segments/:id/calibration` | `vision.review` | `calibration/calibration.controller.ts` |
@@ -730,6 +807,11 @@ when a route has neither a permission nor a token guard.
 | `POST` | `/vision/review/identity/:id/accept` | `vision.review` | `identity/identity.controller.ts` |
 | `POST` | `/vision/review/identity/:id/reject` | `vision.review` | `identity/identity.controller.ts` |
 | `POST` | `/vision/review/jobs/:jobId/sides` | `vision.review` | `identity/identity.controller.ts` |
+| `POST` | `/vision/review/possession/corrections/:id/decision` | `vision.review` | `possession/possession.controller.ts` |
+| `GET` | `/vision/review/possession/runs/:id` | `vision.read` | `possession/possession.controller.ts` |
+| `GET` | `/vision/review/possession/segments/:id/correction-tracks` | `vision.read` | `possession/possession.controller.ts` |
+| `POST` | `/vision/review/possession/segments/:id/corrections` | `vision.review` | `possession/possession.controller.ts` |
+| `POST` | `/vision/review/possession/segments/:id/decision` | `vision.review` | `possession/possession.controller.ts` |
 | `GET` | `/vision/review/queue` | `vision.review` | `events/events.controller.ts` |
 | `GET` | `/vision/review/tracks/:trackId/candidates` | `vision.read` | `identity/identity.controller.ts` |
 | `POST` | `/vision/review/tracks/:trackId/identity` | `vision.review` | `identity/identity.controller.ts` |

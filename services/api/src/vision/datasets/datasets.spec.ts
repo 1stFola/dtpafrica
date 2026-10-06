@@ -16,6 +16,8 @@ import { DEFAULT_SPLIT_POLICY } from "./split-policy";
 const VERSION = "dsv-1";
 
 const mockPrisma = {
+  visionEventGoldSet: { findMany: vi.fn().mockResolvedValue([]) },
+  $executeRaw: vi.fn().mockResolvedValue(1),
   visionDatasetVersion: {
     create: vi.fn(),
     findUnique: vi.fn(),
@@ -156,7 +158,7 @@ beforeEach(() => {
   });
   mockRights.canTrain.mockResolvedValue({ allowed: true, reason: "granted", remediation: "" });
   answerMany();
-  mockPrisma.$transaction.mockResolvedValue([]);
+  mockPrisma.$transaction.mockImplementation(async (value) => typeof value === "function" ? value(mockPrisma) : Promise.all(value));
 });
 
 describe("dataset membership eligibility", () => {
