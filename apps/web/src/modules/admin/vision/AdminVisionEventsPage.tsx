@@ -5,6 +5,8 @@ import {
   fetchVisionAssets,
   fetchVisionEventCandidates,
   fetchVisionEventImports,
+  fetchVisionEventGoldSets,
+  type VisionEventGoldListSet,
   importVisionEventRun,
   type VisionEventImports,
   promoteVisionEvent,
@@ -18,6 +20,7 @@ import { EVENT_TYPES, allowedActions } from "./event-review";
 import { useAdminVisionContext } from "./AdminVisionLayout";
 import { Field, Panel, Pill, formatDuration, short, toneOfState, useAction } from "./vision-ui";
 import { EventImportControl } from "./EventImportControl";
+import { EventPilotHandoff } from "./EventPilotHandoff";
 
 
 /**
@@ -39,6 +42,17 @@ export function AdminVisionEventsPage() {
   const [reason, setReason] = useState<Record<string, string>>({});
   const [imports, setImports] = useState<VisionEventImports | null>(null);
   const [importJob, setImportJob] = useState("");
+  const [references, setReferences] = useState<VisionEventGoldListSet[] | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const canReview = hasPermission("vision.review");
+  useEffect(() => {
+    let cancelled = false;
+    setReferences(null); setReferenceError(null); setImportJob("");
+    if (assetId && canReview) void fetchVisionEventGoldSets(assetId).then((value) => {
+      if (!cancelled) setReferences(value.sets);
+    }).catch((error) => { if (!cancelled) setReferenceError(error instanceof Error ? error.message : String(error)); });
+    return () => { cancelled = true; };
+  }, [assetId, canReview]);
 
   const load = useCallback(async () => {
     setAssets((await fetchVisionAssets()).assets);
@@ -54,7 +68,6 @@ export function AdminVisionEventsPage() {
     load().catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [load, setError]);
 
-  const canReview = hasPermission("vision.review");
   const canPublish = hasPermission("vision.publish");
   const me = session?.userId;
   const asset = assets.find((a) => a.id === assetId);
@@ -95,6 +108,8 @@ export function AdminVisionEventsPage() {
       {assetId && <Panel title="Import completed carry evidence"><EventImportControl data={imports} selected={importJob} onSelect={setImportJob} canReview={canReview} busy={busy} onImport={() => {
         void run("Original carry evidence imported; a second person reviews the proposals.", async () => { await importVisionEventRun(assetId, importJob); });
       }} /></Panel>}
+
+      {asset && <Panel title="Pilot prerequisites and evaluation"><EventPilotHandoff asset={asset} imports={imports?.videoAssetId === asset.id ? imports : null} references={references} referenceError={referenceError} canReview={canReview} /></Panel>}
 
       {assetId && canReview && (
         <Panel title="Propose an event">

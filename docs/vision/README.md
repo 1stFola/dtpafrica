@@ -8,7 +8,12 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: Phase 6 Increment 15 implemented** — original carry artifacts import
+**Latest: Phase 6 Increment 16 implemented** — asset-specific pilot prerequisites,
+reviewer-scoped gold progress and direct evaluation handoff
+([87](./87-PHASE-6-INCREMENT-16.md)). QA: 266 web tests, production build and
+real-pilot browser checks. Gold remains 0/2; Phase 6 remains open, spend $0/$4.
+
+**Phase 6 Increment 15 implemented** — original carry artifacts import
 into the event review ledger with idempotent mappings, independent acceptance,
 immutable manual corrections and stale-evidence guards
 ([86](./86-PHASE-6-INCREMENT-15.md)). QA passed: 1,799 API tests, 261 web tests

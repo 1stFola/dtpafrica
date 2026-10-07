@@ -1,5 +1,14 @@
 # 08 — Frontend
 
+## Pilot and evaluation handoff (Phase 6 Increment 16)
+
+Events shows asset-specific prerequisite declarations and direct pipeline,
+calibration, possession and gold links. Existing API metadata displays only
+accessible reference progress, never independent label bodies. Gold list links
+filter by footage and preserve creation-form selection. Completed stages are
+not marked as proven compatible or accurate; the full gate remains open. See
+[87](./87-PHASE-6-INCREMENT-16.md).
+
 ## Completed carry import (Phase 6 Increment 15)
 
 The Events page now lists completed carry jobs, imports original proposals and
