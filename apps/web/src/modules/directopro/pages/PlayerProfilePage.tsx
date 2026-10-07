@@ -197,6 +197,9 @@ function isGkProfile(player: Pick<PublicPlayerProfile, "role" | "positionPrimary
 
 type BioFact = { label: string; value: string; highlight?: boolean };
 
+// Temporarily hide valuation on public profiles; keep its calculation and data intact.
+const SHOW_PLAYER_VALUE = false;
+
 function isDuplicateScoutingCopy(
   biography: string | null | undefined,
   scoutingSummary: string | null | undefined
@@ -495,7 +498,9 @@ export function PlayerProfilePage() {
   ];
 
   const categoryScores = buildPerformanceRadarScores(player);
-  const bioFacts = buildBioFacts(player, player.valuation);
+  const bioFacts = buildBioFacts(player, player.valuation).filter(
+    (fact) => SHOW_PLAYER_VALUE || fact.label !== "Player value"
+  );
 
   const tabs: { id: ProfileTab; label: string }[] = [
     { id: "overview", label: "Overview" },
