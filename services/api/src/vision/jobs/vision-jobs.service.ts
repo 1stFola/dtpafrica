@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
 } from "@nestjs/common";
@@ -37,6 +38,8 @@ import { refusal } from "../shared/refusals";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { eventCarryInputs } from "../events/event-carry-inputs";
 
+type AssetJobRequest = { type: VisionJobType; videoAssetId: string; resourceClass?: VisionResourceClass; priority?: number; params?: Record<string, unknown>; budgetSeconds?: number; budgetUsdCents?: number; modelVersionId?: string };
+
 /**
  * Job orchestration.
  *
@@ -71,20 +74,7 @@ export class VisionJobsService {
    * because a worker sees a presigned URL and a job id -- it cannot ask which model
    * the operator meant, or what a trimmed proxy's source offset is.
    */
-  async enqueueForAsset(
-    params: {
-      type: VisionJobType;
-      videoAssetId: string;
-      resourceClass?: VisionResourceClass;
-      priority?: number;
-      params?: Record<string, unknown>;
-      budgetSeconds?: number;
-      budgetUsdCents?: number;
-      /** For a model-bound job type. Omitted, the production version for the task is used. */
-      modelVersionId?: string;
-    },
-    actor?: AdminAuthContext
-  ): Promise<{ id: string }> {
+  private async prepareForAsset(params: AssetJobRequest) {
     const asset = await this.prisma.visionVideoAsset.findUnique({
       where: { id: params.videoAssetId },
       select: { id: true, sbMatchId: true, ingestState: true, checksumSha256: true, durationMs: true },
@@ -128,6 +118,25 @@ export class VisionJobsService {
     if (params.type === "possession" && resourceClass !== "cpu_small") throw refusal(400, "PossessionCpuOnly", "Possession candidates transform stored observations on CPU.", "Use cpu_small.");
     if (params.type === "events" && resourceClass !== "cpu_small") throw refusal(400, "EventsCpuOnly", "Carry proposals transform original observations on CPU.", "Use cpu_small.");
 
+    return { asset, model, proxy, track, identify, gamestate, ball, possession, events, resourceClass };
+  }
+
+  /** Read-only, fail-fast assessment of exactly the inputs enqueue would resolve. */
+  async carryPreflight(videoAssetId: string, modelVersionId?: string, possessionJobId?: string) {
+    const checkedAt = new Date().toISOString();
+    try {
+      const prepared = await this.prepareForAsset({ type: "events", videoAssetId, modelVersionId, params: possessionJobId === undefined ? undefined : { possessionJobId } });
+      return { videoAssetId, checkedAt, ready: true as const, modelVersionId: prepared.model!.id, possessionJobId: prepared.events!.possession.jobId };
+    } catch (error) {
+      if (!(error instanceof HttpException) || error.getStatus() >= 500) throw error;
+      const response = error.getResponse();
+      const body = typeof response === "object" ? response as Record<string, unknown> : { message: response };
+      return { videoAssetId, checkedAt, ready: false as const, blocker: { statusCode: error.getStatus(), error: String(body.error ?? "CarryPreflightBlocked"), message: String(body.message ?? "Carry inputs are unavailable."), remediation: String(body.remediation ?? "Review the named input, then recheck.") } };
+    }
+  }
+
+  async enqueueForAsset(params: AssetJobRequest, actor?: AdminAuthContext): Promise<{ id: string }> {
+    const { asset, model, proxy, track, identify, gamestate, ball, possession, events, resourceClass } = await this.prepareForAsset(params);
     // The id is generated here so the output prefix can be derived from it in the
     // same insert: an artifact key then names the job that produced it, with no
     // second write to correct.

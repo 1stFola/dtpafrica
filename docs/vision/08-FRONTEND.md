@@ -1,5 +1,13 @@
 # 08 — Frontend
 
+## Carry compatibility preflight (Phase 6 Increment 17)
+
+The Events pilot panel provides an explicit read-only check with a registered
+carry rule selector. Results show the first queue refusal and remediation or the
+resolved rule/possession IDs, with a timestamp and snapshot limitation. Changing
+footage or rule clears the result. No queue action is included. See
+[88](./88-PHASE-6-INCREMENT-17.md).
+
 ## Pilot and evaluation handoff (Phase 6 Increment 16)
 
 Events shows asset-specific prerequisite declarations and direct pipeline,

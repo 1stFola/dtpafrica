@@ -90,6 +90,12 @@ export class VisionJobsController {
     return { depth: await this.queue.depth() };
   }
 
+  @Get("assets/:assetId/carry-preflight")
+  @RequirePermissions("vision.read")
+  async carryPreflight(@Param("assetId") assetId: string, @Query("modelVersionId") modelVersionId?: string, @Query("possessionJobId") possessionJobId?: string) {
+    return this.jobs.carryPreflight(assetId, modelVersionId, possessionJobId);
+  }
+
   @Get("jobs/dispatcher")
   @RequirePermissions("vision.read")
   dispatcherHealth() {

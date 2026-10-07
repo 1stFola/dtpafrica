@@ -8,7 +8,13 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: Phase 6 Increment 16 implemented** — asset-specific pilot prerequisites,
+**Latest: Phase 6 Increment 17 implemented** — carry compatibility preflight shares
+the queue's evidence guards, reports the first exact refusal and creates no job
+([88](./88-PHASE-6-INCREMENT-17.md)). QA: 1,810 API tests, 268 web tests,
+both builds and real-pilot browser checks passed. The
+real pilot reports missing possession/track; gold remains 0/2 and spend $0/$4.
+
+**Phase 6 Increment 16 implemented** — asset-specific pilot prerequisites,
 reviewer-scoped gold progress and direct evaluation handoff
 ([87](./87-PHASE-6-INCREMENT-16.md)). QA: 266 web tests, production build and
 real-pilot browser checks. Gold remains 0/2; Phase 6 remains open, spend $0/$4.

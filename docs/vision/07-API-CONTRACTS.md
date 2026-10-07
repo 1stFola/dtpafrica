@@ -2,6 +2,13 @@
 
 ## Independent event references
 
+`GET /vision/assets/:assetId/carry-preflight` (`vision.read`) accepts optional
+`modelVersionId` and `possessionJobId` query parameters. It reuses queue preparation
+without a job write and returns `{ videoAssetId, checkedAt, ready }` plus resolved
+model/possession IDs on success or a first `blocker` with status/code/message/
+remediation. Readiness is a snapshot; later checks remain unverified on refusal.
+Unexpected server failures propagate. See [88](./88-PHASE-6-INCREMENT-17.md).
+
 `scope: complete_event_run` plus `jobId` evaluates one succeeded event job's
 checksum-pinned artifact and explicit complete coverage. It accepts a genuine
 completed zero-output artifact and refuses absent, incomplete or conflicting
@@ -739,6 +746,7 @@ when a route has neither a permission nor a token guard.
 | `GET` | `/vision/annotation/versions/:id` | `vision.read` | `annotation/annotation.controller.ts` |
 | `POST` | `/vision/annotation/versions/:id/review` | `vision.review` | `annotation/annotation.controller.ts` |
 | `GET` | `/vision/assets` | `vision.read` | `assets/assets.controller.ts` |
+| `GET` | `/vision/assets/:assetId/carry-preflight` | `vision.read` | `jobs/jobs.controller.ts` |
 | `GET` | `/vision/assets/:id/identity` | `vision.read` | `identity/identity.controller.ts` |
 | `GET` | `/vision/assets/:id/tracks` | `vision.read` | `jobs/tracks.controller.ts` |
 | `GET` | `/vision/audit` | `vision.audit.read` | `audit/audit.controller.ts` |
