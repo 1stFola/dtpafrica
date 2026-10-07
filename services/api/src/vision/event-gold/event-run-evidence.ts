@@ -13,7 +13,7 @@ const sha256 = (body: Buffer) => createHash("sha256").update(body).digest("hex")
 
 /** Read one bounded immutable run, never merge candidates or infer completion from a missing output. */
 export async function readEventRunEvidence(db: Pick<PrismaClient, "visionJob" | "visionJobEvent" | "visionModelVersion">, store: ObjectStore,
-  set: VisionEventGoldSet, jobId: string, durationMs: number) {
+  set: Pick<VisionEventGoldSet, "videoAssetId" | "sourceChecksum" | "taxonomyVersion" | "windowStartMs" | "windowEndMs">, jobId: string, durationMs: number) {
   const job = await db.visionJob.findFirst({ where: { id: jobId, videoAssetId: set.videoAssetId, type: "events", state: "succeeded" } });
   if (!job?.modelVersionId || job.type !== "events" || job.state !== "succeeded" || job.videoAssetId !== set.videoAssetId
     || !job.finishedAt || !job.idempotencyKey || !job.workerId) throw bad("This is not a completed, model-bound event job for the reference asset.");

@@ -23,6 +23,7 @@ export function AdminVisionEventGoldPage() {
   usePageTitle("Event gold benchmark");
   const [params, setParams] = useSearchParams();
   const id = params.get("reference") ?? "";
+  const filterAsset = params.get("asset") ?? undefined;
   const [sets, setSets] = useState<VisionEventGoldSet[]>([]);
   const [assets, setAssets] = useState<VisionAssetRow[]>([]);
   const [assetId, setAssetId] = useState(params.get("asset") ?? "");
@@ -36,7 +37,9 @@ export function AdminVisionEventGoldPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const video = useRef<HTMLVideoElement | null>(null);
   const request = useRef(0);
-  const load = useCallback(async () => { setSets((await fetchVisionEventGoldSets()).sets); }, []);
+  const listRequest = useRef(0);
+  const load = useCallback(async () => { const serial = ++listRequest.current; const value = await fetchVisionEventGoldSets(filterAsset); if (serial === listRequest.current) setSets(value.sets); }, [filterAsset]);
+  useEffect(() => { if (filterAsset) setAssetId(filterAsset); setSets([]); return () => { listRequest.current++; }; }, [filterAsset]);
   useEffect(() => { void load().catch((e) => setError(String(e))); fetchVisionAssets().then((value) => setAssets(value.assets.filter((asset) => asset.hasProxy))).catch((e) => setError(String(e))); }, [load]);
   useEffect(() => {
     const serial = ++request.current;
@@ -73,7 +76,7 @@ export function AdminVisionEventGoldPage() {
         <label>Reference label<input name="label" required maxLength={120} placeholder="Competition · window · version" /></label>
         <label>Footage<select required value={assetId} onChange={(event) => setAssetId(event.target.value)}><option value="">Choose ready footage</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.sourceVideoRecord?.title ?? asset.id}</option>)}</select></label>
         <label>Window start (source seconds)<input name="start" type="number" required min="0" step="0.001" defaultValue="0" /></label>
-        <label>Window end (source seconds)<input name="end" key={assetId} type="number" required min="0.001" step="0.001" defaultValue={assetId ? Math.min(300, (assets.find((asset) => asset.id === assetId)?.durationMs ?? 0) / 1000) : undefined} /></label>
+        <label>Window end (source seconds)<input name="end" key={`${assetId}:${assets.find((asset) => asset.id === assetId)?.durationMs ?? "loading"}`} type="number" required min="0.001" step="0.001" defaultValue={assetId ? Math.min(300, (assets.find((asset) => asset.id === assetId)?.durationMs ?? 0) / 1000) : undefined} /></label>
         <label>Temporal comparison tolerance (milliseconds)<input name="tolerance" type="number" required min="0" max="10000" defaultValue="500" /></label>
         <p className="muted">Tolerance is fixed when created and applies to both event boundaries. The suggested 500ms is a comparison setting, not a promotion or accuracy threshold. Maximum window: five minutes.</p>
         <label>First reviewer email<input name="reviewerA" type="email" required /></label><label>Second reviewer email<input name="reviewerB" type="email" required /></label>

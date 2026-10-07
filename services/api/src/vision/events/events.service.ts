@@ -13,6 +13,7 @@ import { RightsPolicyService } from "../rights/rights-policy.service";
 import { isEventType, isPlay, matchRecorderEvent, scoreboardTypeOf, secondToWrite, windowProblem, type RecorderEvent } from "./event-taxonomy";
 import { buildQueue, type QueueIdentityRow } from "./review-queue";
 import { notFound, personFor, refusal } from "../shared/refusals";
+import { VisionEventImportsService, type ImportedEventRun } from "./event-imports.service";
 
 /**
  * Event candidates: a person's (later, a model's) proposal that something
@@ -70,7 +71,8 @@ export class VisionEventsService {
     @Inject(VisionAuditService) private readonly audit: VisionAuditService,
     @Inject(RightsPolicyService) private readonly rights: RightsPolicyService,
     @Inject(VisionClockService) private readonly clock: VisionClockService,
-    @Inject(ScoreboardLifecycleService) private readonly lifecycle: ScoreboardLifecycleService
+    @Inject(ScoreboardLifecycleService) private readonly lifecycle: ScoreboardLifecycleService,
+    @Inject(VisionEventImportsService) private readonly imports?: VisionEventImportsService
   ) {}
 
   // ── Proposing and correcting ─────────────────────────────────────────────
@@ -115,6 +117,7 @@ export class VisionEventsService {
     const person = requirePerson(actor, "correct an event");
     const current = await this.loadCurrent(candidateId);
     this.refuseIfPromoted(current);
+    await this.assertImportedCurrent(current);
     const merged: ProposeInput = {
       videoAssetId: current.videoAssetId,
       type: changes.type ?? current.type,
@@ -129,6 +132,7 @@ export class VisionEventsService {
     };
     const resolved = await this.resolve(current.videoAssetId, merged);
     const row = await this.prisma.$transaction(async (tx) => {
+      await this.assertImportedCurrent(current, tx);
       const created = await tx.visionEventCandidate.create({
         data: {
           videoAssetId: current.videoAssetId,
@@ -153,6 +157,8 @@ export class VisionEventsService {
           /* Whoever proposed the event first stays its proposer through every correction. */
           proposedBy: current.proposedBy ?? current.decidedBy,
           note: merged.note ?? null,
+          importRunId: current.importRunId ?? null,
+          importPredictionId: null,
         },
       });
       await tx.visionEvidenceLink.createMany({ data: resolved.evidence.map((e) => ({ candidateId: created.id, kind: e.kind, targetId: e.targetId, note: e.note ?? null })) });
@@ -174,6 +180,7 @@ export class VisionEventsService {
     const current = await this.loadCurrent(candidateId);
     this.refuseIfPromoted(current);
     this.refuseIfStale(current);
+    await this.assertImportedCurrent(current);
     if (current.reviewState !== "unreviewed") throw alreadyDecided(current.id, current.reviewState);
     if (decision === "accepted" && current.decidedBy === person.userId) {
       throw refusal(403, "SelfAcceptanceRefused", "You cannot accept an event you proposed.", "A second person with vision.review accepts. That is the whole control before an event can reach the match record.");
@@ -198,10 +205,11 @@ export class VisionEventsService {
     // The clock the second person saw it on. Promotion holds the record to this one (see `promote`).
     const acceptedAnchorId = decision === "accepted" ? ((await this.anchorAt(current.videoAssetId, current.startMs))?.id ?? null) : null;
     // Only from unreviewed, and only while it is still the current row: a decision is not flipped in place.
-    const decided = await this.prisma.visionEventCandidate.updateMany({
+    const save = (db: Prisma.TransactionClient | PrismaService) => db.visionEventCandidate.updateMany({
       where: { id: current.id, supersededBy: null, reviewState: "unreviewed", promotedAt: null },
       data: { reviewState: decision, reviewedBy: person.userId, reviewNote: reason?.trim() || null, acceptedAnchorId },
     });
+    const decided = current.importRunId ? await this.prisma.$transaction(async (tx) => { await this.assertImportedCurrent(current, tx); return save(tx); }) : await save(this.prisma);
     if (decided.count !== 1) throw alreadyDecided(current.id, "decided or corrected by someone else meanwhile");
     await this.audit.record(
       { action: decision === "accepted" ? "event.accepted" : "event.rejected", targetKind: "vision_event_candidate", targetId: current.id, reason: reason?.trim() || undefined },
@@ -224,6 +232,7 @@ export class VisionEventsService {
       throw new ConflictException({ statusCode: 409, error: "AlreadyPromoted", message: `Candidate ${current.id} was promoted into event ${current.promotedEventId}.`, remediation: "Nothing to do." });
     }
     this.refuseIfStale(current);
+    await this.assertImportedCurrent(current);
     if (current.reviewState !== "accepted") {
       throw new ConflictException({ statusCode: 409, error: "NotAccepted", message: `Candidate ${current.id} is ${current.reviewState}.`, remediation: "A second person accepts it first." });
     }
@@ -359,6 +368,7 @@ export class VisionEventsService {
     let result;
     try {
       result = await this.prisma.$transaction(async (tx) => {
+        await this.assertImportedCurrent(current, tx);
         // The claim comes first and is conditional: of two promotions at once, one finds
         // nothing to claim and writes nothing.
         const claimed = await tx.visionEventCandidate.updateMany({
@@ -510,28 +520,34 @@ export class VisionEventsService {
       this.prisma.visionEventCandidate.findMany({
         where: { videoAssetId, ...(includeSuperseded ? {} : { supersededBy: null }) },
         orderBy: [{ startMs: "asc" }, { createdAt: "asc" }],
-        include: { evidence: { orderBy: { createdAt: "asc" } } },
+        include: { evidence: { orderBy: { createdAt: "asc" } }, importRun: true },
       }),
       this.clock.currentAnchors(videoAssetId),
     ]);
+    const staleByRun = new Map<string, Promise<boolean>>();
+    const staleFor = (row: typeof rows[number]) => {
+      if (!row.importRunId) return Promise.resolve(false);
+      if (!staleByRun.has(row.importRunId)) staleByRun.set(row.importRunId, this.importedStale(row));
+      return staleByRun.get(row.importRunId)!;
+    };
     return {
       videoAssetId,
       matchId: asset.sbMatchId,
       taxonomyVersion: VISION_EVENT_TAXONOMY_VERSION,
       clock: { anchored: anchors.length > 0 },
-      candidates: rows.map((r) => this.view(r, anchors)),
+      candidates: await Promise.all(rows.map(async (r) => this.view(r, anchors, await staleFor(r)))),
       count: rows.length,
     };
   }
 
   async get(candidateId: string) {
-    const row = await this.prisma.visionEventCandidate.findUnique({ where: { id: candidateId }, include: { evidence: { orderBy: { createdAt: "asc" } } } });
+    const row = await this.prisma.visionEventCandidate.findUnique({ where: { id: candidateId }, include: { evidence: { orderBy: { createdAt: "asc" } }, importRun: true } });
     if (!row) throw notFound("event candidate", candidateId);
     const anchors = await this.clock.currentAnchors(row.videoAssetId);
-    return this.view(row, anchors);
+    return this.view(row, anchors, await this.importedStale(row));
   }
 
-  private view(row: CandidateRow, anchors: ClockAnchor[]) {
+  private view(row: CandidateRow, anchors: ClockAnchor[], evidenceStale = false) {
     const scoreboardType = isEventType(row.type) ? scoreboardTypeOf(row.type) : null;
     return {
       ...row,
@@ -540,6 +556,8 @@ export class VisionEventsService {
       promotable: scoreboardType !== null,
       /** Promoted once, and the event it was promoted into has since left the match record. */
       promotionStale: isStale(row),
+      evidenceStale,
+      importRun: row.importRun ? { id: row.importRunId, inferenceJobId: objectField(row.importRun, "inferenceJobId"), artifactChecksum: objectField(row.importRun, "artifactChecksum"), createdBy: objectField(row.importRun, "createdBy") } : null,
       evidence: row.evidence.map((e) => ({ id: e.id, kind: e.kind, targetId: e.targetId, note: e.note })),
     };
   }
@@ -642,12 +660,21 @@ export class VisionEventsService {
   }
 
   private async loadCurrent(candidateId: string) {
-    const row = await this.prisma.visionEventCandidate.findUnique({ where: { id: candidateId }, include: { evidence: true } });
+    const row = await this.prisma.visionEventCandidate.findUnique({ where: { id: candidateId }, include: { evidence: true, importRun: true } });
     if (!row) throw notFound("event candidate", candidateId);
     if (row.supersededBy) {
       throw new ConflictException({ statusCode: 409, error: "EventSuperseded", message: `Candidate ${candidateId} was superseded by ${row.supersededBy}.`, remediation: "Act on the current candidate instead." });
     }
     return row;
+  }
+  private async importedStale(row: { importRunId?: string | null; importRun?: ImportedEventRun | null }) {
+    if (!row.importRunId) return false;
+    return !row.importRun || !this.imports || !await this.imports.current(row.importRun);
+  }
+  private async assertImportedCurrent(row: { importRunId?: string | null; importRun?: ImportedEventRun | null }, db: Prisma.TransactionClient | PrismaService = this.prisma) {
+    if (!row.importRunId) return;
+    if (!row.importRun || !this.imports) throw refusal(409, "EventEvidenceStale", "Imported event provenance is missing.", "Import compatible original evidence before reviewing it.");
+    await this.imports.assertCurrent(row.importRun, db);
   }
 
   /** The current anchor governing a source millisecond, when that moment is on the clock. */
@@ -689,6 +716,9 @@ export class VisionEventsService {
 }
 
 type CandidateRow = {
+  importRunId?: string | null;
+  importPredictionId?: string | null;
+  importRun?: ImportedEventRun | null;
   id: string;
   videoAssetId: string;
   sbMatchId: string | null;
@@ -721,6 +751,8 @@ type CandidateRow = {
   createdAt: Date;
   evidence: { id: string; kind: string; targetId: string; note: string | null }[];
 };
+
+const objectField = (row: unknown, key: string) => row && typeof row === "object" ? (row as Record<string, unknown>)[key] : null;
 
 function isStale(row: { promotedEventId: string | null; promotedAt: Date | null }): boolean {
   return row.promotedAt !== null && row.promotedEventId === null;

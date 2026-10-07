@@ -8,11 +8,23 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: Phase 6 Increment 14 implemented** — automatic, weight-free carry
+**Latest: Phase 6 Increment 16 implemented** — asset-specific pilot prerequisites,
+reviewer-scoped gold progress and direct evaluation handoff
+([87](./87-PHASE-6-INCREMENT-16.md)). QA: 266 web tests, production build and
+real-pilot browser checks. Gold remains 0/2; Phase 6 remains open, spend $0/$4.
+
+**Phase 6 Increment 15 implemented** — original carry artifacts import
+into the event review ledger with idempotent mappings, independent acceptance,
+immutable manual corrections and stale-evidence guards
+([86](./86-PHASE-6-INCREMENT-15.md)). QA passed: 1,799 API tests, 261 web tests
+plus the added stale-action test, both production builds, local schema parity
+and disposable database/browser checks. The full Phase 6 gate remains open.
+
+**Phase 6 Increment 14 implemented** — automatic, weight-free carry
 proposals over original calibrated possession and measured player movement,
 bounded immutable artifacts and original-run scoring
-([85](./85-PHASE-6-INCREMENT-14.md)). Event artifact import for human review and
-the full phase gate remain open.
+([85](./85-PHASE-6-INCREMENT-14.md)). Event artifact import followed in
+Increment 15; the full phase gate remains open.
 
 **Phase 6 Increment 13 implemented** — opt-in calibrated possession
 distance/motion vetoes, pinned calibration/proxy provenance and stale-review

@@ -31,6 +31,7 @@ import { VisionAssetsController } from "./assets/assets.controller";
 import { ScoreboardModule } from "../scoreboard/scoreboard.module";
 import { VisionEventsController } from "./events/events.controller";
 import { VisionEventsService } from "./events/events.service";
+import { VisionEventImportsService } from "./events/event-imports.service";
 import { VisionEventGoldController } from "./event-gold/event-gold.controller";
 import { VisionEventGoldService } from "./event-gold/event-gold.service";
 import { VisionPossessionController } from "./possession/possession.controller";
@@ -153,6 +154,7 @@ const computeRegistryProvider: Provider = {
     VisionCalibrationService,
     VisionClockService,
     VisionEventsService,
+    VisionEventImportsService,
     VisionEventGoldService,
     VisionPossessionService,
     // A third auth stack, unrelated to admin sessions and worker tokens.

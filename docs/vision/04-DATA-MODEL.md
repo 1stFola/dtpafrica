@@ -1,5 +1,15 @@
 # 04 — Data model
 
+## Original carry import provenance (Phase 6 Increment 15)
+
+`VisionEventImportRun` stores one immutable completed job/attempt, bounded artifact
+key/checksum, source checksum, count, input/producer/model/declaration snapshot,
+importer and timestamp. Unique job/attempt prevents duplicate imports.
+`VisionEventCandidate.importRunId` follows originals and manual descendants;
+`importPredictionId` exists only on original model rows. Their composite unique
+mapping survives supersession. Asset deletion cascades the import history.
+See [86](./86-PHASE-6-INCREMENT-15.md) for current-evidence and review semantics.
+
 ## Naming rules — read before writing any migration
 
 1. **Every Vision model is prefixed `Vision`.** No exceptions.

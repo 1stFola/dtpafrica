@@ -1054,6 +1054,10 @@ export function fetchVisionPromotions(versionId: string) {
 // Event candidates
 
 export type VisionEventCandidate = {
+  evidenceStale?: boolean;
+  importRunId?: string | null;
+  importPredictionId?: string | null;
+  importRun?: { id: string; inferenceJobId: string; artifactChecksum: string; createdBy: string } | null;
   id: string;
   videoAssetId: string;
   sbMatchId: string | null;
@@ -1091,6 +1095,9 @@ export type VisionEventCandidate = {
 export function fetchVisionEventCandidates(assetId: string, all = false) {
   return adminFetch<{ videoAssetId: string; matchId: string | null; taxonomyVersion: string; clock: { anchored: boolean }; candidates: VisionEventCandidate[]; count: number }>(`/vision/review/${assetId}/events${all ? "?all=1" : ""}`);
 }
+export type VisionEventImports = { videoAssetId: string; canImport: boolean; runs: { id: string; inferenceJobId: string; attemptNumber: number; eventCount: number; artifactChecksum: string; createdBy: string; createdAt: string }[]; jobs: { id: string; attemptNumber: number; finishedAt: string | null }[] };
+export function fetchVisionEventImports(assetId: string) { return adminFetch<VisionEventImports>(`/vision/review/${assetId}/event-imports`); }
+export function importVisionEventRun(assetId: string, jobId: string) { return adminFetch<{ id: string; imported: boolean; eventCount: number; candidateIds: string[] }>(`/vision/review/${assetId}/events/import`, { method: "POST", body: JSON.stringify({ jobId }) }); }
 
 export function proposeVisionEvent(body: { videoAssetId: string; type: string; startMs: number; endMs: number; actorTrackId?: string; actorMatchSquadPlayerId?: string; sbTeamId?: string; note?: string }) {
   return adminFetch<VisionEventCandidate>("/vision/review/events", { method: "POST", body: JSON.stringify(body) });
@@ -1152,7 +1159,8 @@ export type EventScoreMetrics = { reference: number; predictions: number; tp: nu
 export type EventRunProvenance = { jobId: string; attemptNumber: number; artifactKey: string; artifactChecksum: string; artifactSchemaVersion: string; coverage: { startMs: number; endMs: number; complete: true }; finishedAt: string; eventCount: number; producer?: { algorithm: string; manifestChecksum: string; possessionJobId: string; possessionIndexChecksum: string; tracksChecksum: string } };
 export type VisionEventScore = { scorerVersion: string; toleranceMs: number; all: EventScoreMetrics; byType: (EventScoreMetrics & { type: string })[]; pairs: { referenceId: string; predictionId: string; type: string; startErrorMs: number; endErrorMs: number; actorCorrect: boolean | null }[]; missedReferenceIds: string[]; falsePositiveIds: string[]; suppressedPredictionIds: string[]; duplicatePredictionIds: string[]; nonPlayErrors: { startMs: number; endMs: number; kind: string; predictionIds: string[] }[]; methods?: string[]; snapshotChecksum?: string; referenceChecksum?: string; interpretation?: string; scope?: EventBenchmarkInput["scope"]; inference?: EventRunProvenance | null; model?: { id: string; version: string; weightsChecksum: string | null; gitCommit: string | null; datasetVersionId: string | null; configKey: string | null; workerImage: string | null; model: { key: string; task: string } } | null };
 export type VisionEventGoldDetail = VisionEventGoldSet & { me: string; schemaVersion: string; disagreement: VisionEventScore | null; submissions: { id: string; reviewerId: string; createdAt: string; labels: EventGoldLabels | null }[]; proposal: { id: string; proposedBy: string; reason: string; labels: EventGoldLabels; disagreement: VisionEventScore; nonPlayAgreement: boolean } | null; roster: { id: string; playerName: string; jerseyNumber: number | null; teamId: string; team?: { name: string } }[]; runs: { id: string; createdAt: string }[]; benchmarkModels: { id: string; version: string; model: { key: string } }[]; benchmarkJobs: { id: string; modelVersionId: string | null; attemptNumber: number; finishedAt: string | null }[] };
-export function fetchVisionEventGoldSets(assetId?: string) { return adminFetch<{ sets: VisionEventGoldSet[] }>(`/vision/event-gold${assetId ? `?assetId=${encodeURIComponent(assetId)}` : ""}`); }
+export type VisionEventGoldListSet = VisionEventGoldSet & { submissions: { reviewerId: string; createdAt: string }[] };
+export function fetchVisionEventGoldSets(assetId?: string) { return adminFetch<{ sets: VisionEventGoldListSet[] }>(`/vision/event-gold${assetId ? `?assetId=${encodeURIComponent(assetId)}` : ""}`); }
 export function fetchVisionEventGold(id: string) { return adminFetch<VisionEventGoldDetail>(`/vision/event-gold/${id}`); }
 export function createVisionEventGold(body: { label: string; videoAssetId: string; windowStartMs: number; windowEndMs: number; toleranceMs: number; reviewerAEmail: string; reviewerBEmail: string }) { return adminFetch<VisionEventGoldSet>("/vision/event-gold", { method: "POST", body: JSON.stringify(body) }); }
 export function submitVisionEventGold(id: string, labels: EventGoldLabels) { return adminFetch<VisionEventGoldDetail>(`/vision/event-gold/${id}/submissions`, { method: "POST", body: JSON.stringify({ labels, complete: true }) }); }

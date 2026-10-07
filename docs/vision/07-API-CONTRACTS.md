@@ -32,9 +32,20 @@ registered commit/image provenance. Optional `params.possessionJobId` selects
 original calibrated possession; the API owns the evidence and entire source window
 (at most five minutes). Output is a bounded `event-inference/v2` carry artifact
 with a separate rule manifest checksum and unknown roster actors. It can be scored
-against frozen human gold; it does not yet import event reviewer rows. See
+against frozen human gold; original carry imports are available in Increment 15. See
 [85](./85-PHASE-6-INCREMENT-14.md). Existing weighted v1 event artifacts remain
 readable. No new route or permission is introduced.
+
+`GET /vision/review/:assetId/event-imports` (`vision.read`) lists bounded import
+history and completed carry jobs with current analysis eligibility.
+`POST /vision/review/:assetId/events/import` (`vision.review`) accepts `{ jobId }`
+from a signed-in person. It verifies the bounded original v2 artifact, completed
+attempt and current source, match, camera, calibration, proxy and track evidence.
+The response includes `{ id, imported, eventCount, candidateIds }`; retries return
+the same original mapping even after correction. Genuine zero-output runs create
+history without candidates. Original proposals require another person to accept;
+manual descendants retain the import provenance. Changed evidence refuses review
+mutations with `EventEvidenceStale`. See [86](./86-PHASE-6-INCREMENT-15.md).
 
 The possession reviewer ledger has seven routes under `/vision/review`, listed in
 the generated table below. Imports pin one immutable succeeded attempt and read
@@ -790,7 +801,9 @@ when a route has neither a permission nor a token guard.
 | `POST` | `/vision/review/:assetId/camera-segments` | `vision.review` | `calibration/calibration.controller.ts` |
 | `GET` | `/vision/review/:assetId/clock` | `vision.read` | `clock/clock.controller.ts` |
 | `POST` | `/vision/review/:assetId/clock` | `vision.review` | `clock/clock.controller.ts` |
+| `GET` | `/vision/review/:assetId/event-imports` | `vision.read` | `events/events.controller.ts` |
 | `GET` | `/vision/review/:assetId/events` | `vision.read` | `events/events.controller.ts` |
+| `POST` | `/vision/review/:assetId/events/import` | `vision.review` | `events/events.controller.ts` |
 | `GET` | `/vision/review/:assetId/game-state` | `vision.read` | `calibration/calibration.controller.ts` |
 | `GET` | `/vision/review/:assetId/media` | `vision.read` | `identity/identity.controller.ts` |
 | `GET` | `/vision/review/:assetId/positions` | `vision.read` | `identity/identity.controller.ts` |

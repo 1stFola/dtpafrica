@@ -21,7 +21,7 @@ export function EventCarryControl({ assetId, value, onChange, disabled }: { asse
       </select>
     </label>
     {error && <p role="alert">{error}</p>}
-    <p className="vision-footnote">Requires a current calibrated possession run on a clip of at most five minutes. Carries need at least one second and two metres of observed movement. Output awaits evaluation and import for human review.</p>
+    <p className="vision-footnote">Requires a current calibrated possession run on a clip of at most five minutes. Carries need at least one second and two metres of observed movement. Import a completed run on the Events page for independent human review; accuracy still needs evaluation.</p>
     {!loading && !versions.length && !error && <p className="vision-footnote">No compatible carry rule is registered. <Link to="/admin/vision/models">Open the model registry</Link>.</p>}
   </div>;
 }

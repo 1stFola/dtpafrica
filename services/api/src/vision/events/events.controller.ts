@@ -7,6 +7,7 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { jsonSafe } from "../shared/json-safe";
 import { CorrectEventDto, DecideEventDto, PromoteEventDto, ProposeEventDto } from "./dto/events.dto";
 import { VisionEventsService } from "./events.service";
+import { VisionEventImportsService } from "./event-imports.service";
 
 /**
  * Event candidates: proposed and corrected by a person with `vision.review`,
@@ -17,7 +18,20 @@ import { VisionEventsService } from "./events.service";
 @Controller("vision/review")
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 export class VisionEventsController {
-  constructor(@Inject(VisionEventsService) private readonly events: VisionEventsService) {}
+  constructor(@Inject(VisionEventsService) private readonly events: VisionEventsService,
+    @Inject(VisionEventImportsService) private readonly imports: VisionEventImportsService) {}
+
+  @Get(":assetId/event-imports")
+  @RequirePermissions("vision.read")
+  async imported(@Param("assetId") assetId: string) {
+    return jsonSafe(await this.imports.forAsset(assetId));
+  }
+
+  @Post(":assetId/events/import")
+  @RequirePermissions("vision.review")
+  async importRun(@Param("assetId") assetId: string, @Body() dto: { jobId?: unknown }, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.imports.importRun(assetId, dto?.jobId, auth));
+  }
 
   @Get(":assetId/events")
   @RequirePermissions("vision.read")

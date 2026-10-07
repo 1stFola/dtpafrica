@@ -1268,6 +1268,7 @@ model VisionVideoAsset {
   clockAnchors      VisionClockAnchor[]
   eventCandidates   VisionEventCandidate[]
   eventGoldSets      VisionEventGoldSet[]
+  eventImportRuns    VisionEventImportRun[]
   possessionRuns    VisionPossessionRun[]
   uploadSessions    VisionUploadSession[]
   jobs              VisionJob[]
@@ -2152,19 +2153,45 @@ model VisionEventCandidate {
   acceptedAnchorId        String?  @map("accepted_anchor_id")
   supersededBy            String?  @map("superseded_by")
   createdAt               DateTime @default(now()) @map("created_at")
+  /// Original model proposals and all manual descendants retain their imported run.
+  importRunId             String? @map("import_run_id")
+  /// Set only on the immutable original proposal; corrections never reuse the key.
+  importPredictionId      String? @map("import_prediction_id")
 
   videoAsset    VisionVideoAsset     @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
   actorTrack    VisionTrack?         @relation(fields: [actorTrackId], references: [id], onDelete: SetNull)
   actorPlayer   Player?              @relation(fields: [actorPlayerId], references: [id], onDelete: SetNull)
   promotedEvent SbMatchEvent?        @relation(fields: [promotedEventId], references: [id], onDelete: SetNull)
   evidence      VisionEvidenceLink[]
+  importRun     VisionEventImportRun? @relation(fields: [importRunId], references: [id], onDelete: Cascade)
 
   @@index([videoAssetId, startMs])
   @@index([sbMatchId])
   @@index([actorTrackId])
   /// The review queue and the overview: current, undecided, oldest first.
   @@index([reviewState, supersededBy, createdAt])
+  @@unique([importRunId, importPredictionId])
   @@map("vision_event_candidates")
+}
+
+/// Immutable carry artifact import, including explicit zero-output runs.
+model VisionEventImportRun {
+  id              String @id @default(uuid())
+  videoAssetId    String @map("video_asset_id")
+  inferenceJobId  String @map("inference_job_id")
+  attemptNumber   Int @map("attempt_number")
+  artifactKey     String @map("artifact_key")
+  artifactChecksum String @map("artifact_checksum")
+  sourceChecksum  String @map("source_checksum")
+  eventCount      Int @map("event_count")
+  snapshot        Json
+  createdBy       String @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  videoAsset      VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  candidates      VisionEventCandidate[]
+  @@unique([inferenceJobId, attemptNumber])
+  @@index([videoAssetId, createdAt])
+  @@map("vision_event_import_runs")
 }
 
 /// Immutable imported possession run. Dense observations remain in object storage.

@@ -201,6 +201,7 @@ export const AUDIT_TARGET_MODELS: Readonly<Record<string, string>> = {
   vision_camera_segment: "visionCameraSegment",
   vision_dataset_version: "visionDatasetVersion",
   vision_event_candidate: "visionEventCandidate",
+  vision_event_import_run: "visionEventImportRun",
   vision_identity_assignment: "visionIdentityAssignment",
   vision_job: "visionJob",
   vision_label_schema_version: "visionLabelSchemaVersion",
