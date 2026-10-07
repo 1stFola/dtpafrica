@@ -1,5 +1,15 @@
 # 08 — Frontend
 
+## Completed carry import (Phase 6 Increment 15)
+
+The Events page now lists completed carry jobs, imports original proposals and
+shows bounded import history, including zero-output runs. Import controls require
+review permission and current analysis rights. Rows distinguish original carries
+from manual revisions. Changed source/calibration/camera/proxy/track evidence
+marks the chain stale and withholds review mutations; the workstation inspector
+shows the pinned run/checksum and explanatory warning. Importing does not publish
+match events or fill unknown roster actors. See [86](./86-PHASE-6-INCREMENT-15.md).
+
 ## Where it lives
 
 Inside the **existing** web app. No new application. See

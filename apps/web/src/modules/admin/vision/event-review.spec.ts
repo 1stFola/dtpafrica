@@ -9,6 +9,10 @@ const cand = (over: Partial<VisionEventCandidate>): VisionEventCandidate => ({
 });
 
 describe("the timeline", () => {
+  it("withholds every review mutation when imported evidence is stale", () => {
+    const can = { review: true, publish: true };
+    expect(allowedActions(cand({ evidenceStale: true }), "bob", can)).toMatchObject({ accept: false, reject: false, correct: false, promote: false });
+  });
   it("never stores a boundary in the CFR proxy's padded tail, including with an offset", () => {
     const window = { startMs: 10000, endMs: 20000 };
     // Real pilot: source 49.706 s; proxy 49.760 s. The last valid 25 fps frame is 49.680 s.

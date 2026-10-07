@@ -125,7 +125,7 @@ export function describeCandidate(c: VisionEventCandidate, trackLabel: (trackId:
 
 /** The actions a candidate allows this person, mirrored from the service so the buttons match the refusals. */
 export function allowedActions(c: VisionEventCandidate, me: string | undefined, can: { review: boolean; publish: boolean }) {
-  const live = !c.supersededBy && !c.promotedEventId;
+  const live = !c.supersededBy && !c.promotedEventId && !c.evidenceStale;
   /* Its event left the match record (the sheet was rebuilt). Only a correction moves it on:
      that starts its review again, against the record as it now stands. */
   const stale = Boolean(c.promotionStale);

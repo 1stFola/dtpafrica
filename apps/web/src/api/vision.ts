@@ -1054,6 +1054,10 @@ export function fetchVisionPromotions(versionId: string) {
 // Event candidates
 
 export type VisionEventCandidate = {
+  evidenceStale?: boolean;
+  importRunId?: string | null;
+  importPredictionId?: string | null;
+  importRun?: { id: string; inferenceJobId: string; artifactChecksum: string; createdBy: string } | null;
   id: string;
   videoAssetId: string;
   sbMatchId: string | null;
@@ -1091,6 +1095,9 @@ export type VisionEventCandidate = {
 export function fetchVisionEventCandidates(assetId: string, all = false) {
   return adminFetch<{ videoAssetId: string; matchId: string | null; taxonomyVersion: string; clock: { anchored: boolean }; candidates: VisionEventCandidate[]; count: number }>(`/vision/review/${assetId}/events${all ? "?all=1" : ""}`);
 }
+export type VisionEventImports = { videoAssetId: string; canImport: boolean; runs: { id: string; inferenceJobId: string; attemptNumber: number; eventCount: number; artifactChecksum: string; createdBy: string; createdAt: string }[]; jobs: { id: string; attemptNumber: number; finishedAt: string | null }[] };
+export function fetchVisionEventImports(assetId: string) { return adminFetch<VisionEventImports>(`/vision/review/${assetId}/event-imports`); }
+export function importVisionEventRun(assetId: string, jobId: string) { return adminFetch<{ id: string; imported: boolean; eventCount: number; candidateIds: string[] }>(`/vision/review/${assetId}/events/import`, { method: "POST", body: JSON.stringify({ jobId }) }); }
 
 export function proposeVisionEvent(body: { videoAssetId: string; type: string; startMs: number; endMs: number; actorTrackId?: string; actorMatchSquadPlayerId?: string; sbTeamId?: string; note?: string }) {
   return adminFetch<VisionEventCandidate>("/vision/review/events", { method: "POST", body: JSON.stringify(body) });

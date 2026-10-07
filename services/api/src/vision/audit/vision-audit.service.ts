@@ -37,6 +37,7 @@ export const VISION_AUDIT_ACTIONS = [
   "calibration.set",
   "clock.anchored",
   "event.proposed",
+  "event.imported",
   "possession.imported",
   "possession.accepted",
   "possession.rejected",

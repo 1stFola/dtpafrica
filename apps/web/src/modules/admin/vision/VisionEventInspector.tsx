@@ -52,6 +52,13 @@ export function VisionEventInspector({
         </button>
       </div>
 
+      {candidate.evidenceStale && <p role="alert" className="vision-warn">Original source, calibration, proxy or track evidence changed. Review and correction actions are unavailable; import a compatible new run.</p>}
+      {candidate.importRun && <details><summary>Original carry run provenance</summary>
+        <p>{candidate.method === "model" ? "Original automatic proposal" : "Manual revision; the original algorithm proposal remains separate"}.</p>
+        <p>Inference job: {candidate.importRun.inferenceJobId}</p><p className="vision-gold-checksum">Artifact checksum: {candidate.importRun.artifactChecksum}</p>
+        <p>Imported by: {candidate.importRun.createdBy}. A different person accepts the proposal. No roster actor was inferred.</p>
+      </details>}
+
       <dl className="vision-inspector__facts">
         <dt>Window</dt>
         <dd>

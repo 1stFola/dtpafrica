@@ -76,6 +76,23 @@ beforeEach(() => {
 });
 
 describe("proposing", () => {
+  it("preserves imported run provenance through a manual correction without reusing the original key", async () => {
+    const imported = { current: vi.fn().mockResolvedValue(true), assertCurrent: vi.fn().mockResolvedValue(undefined) };
+    service = new VisionEventsService(mockPrisma as never, mockAudit as never, mockRights as never, mockClock as never, mockLifecycle as never, imported as never);
+    stored = candidate({ reviewState: "unreviewed", method: "model", modelVersionId: "model", importRunId: "run", importPredictionId: "carry-1", importRun: { videoAssetId: ASSET, sourceChecksum: "a".repeat(64), snapshot: {} } });
+    await service.correct("cand-1", { note: "Manual correction" }, bob);
+    expect(stored).toMatchObject({ importRunId: "run", importPredictionId: null, method: "manual", modelVersionId: null, decidedBy: "bob", proposedBy: "alice" });
+    expect(imported.assertCurrent).toHaveBeenCalledTimes(2);
+  });
+  it.each(["correct", "accepted", "rejected", "promote"])("refuses %s when imported evidence is stale", async (action) => {
+    const imported = { assertCurrent: vi.fn().mockRejectedValue(new Error("stale original evidence")) };
+    service = new VisionEventsService(mockPrisma as never, mockAudit as never, mockRights as never, mockClock as never, mockLifecycle as never, imported as never);
+    stored = candidate({ reviewState: "unreviewed", importRunId: "run", importRun: { videoAssetId: ASSET, sourceChecksum: "a".repeat(64), snapshot: {} } });
+    const call = action === "correct" ? service.correct("cand-1", {}, bob) : action === "promote" ? service.promote("cand-1", {}, bob) : service.decide("cand-1", action as "accepted" | "rejected", "QA rejection", bob);
+    await expect(call).rejects.toThrow("stale original evidence");
+    expect(mockPrisma.visionEventCandidate.create).not.toHaveBeenCalled();
+    expect(mockPrisma.visionEventCandidate.updateMany).not.toHaveBeenCalled();
+  });
   it("is a person's, in the taxonomy, inside the footage, on this asset and this match", async () => {
     await expect(service.propose({ videoAssetId: ASSET, type: "shot", startMs: 1, endMs: 2 }, keyed)).rejects.toMatchObject({ response: { error: "EventNeedsAPerson" } });
     await expect(service.propose({ videoAssetId: ASSET, type: "goal", startMs: 1, endMs: 2 }, alice)).rejects.toMatchObject({ response: { error: "UnknownEventType" } });
