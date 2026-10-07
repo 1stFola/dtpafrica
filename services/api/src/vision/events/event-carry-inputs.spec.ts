@@ -22,6 +22,40 @@ async function fixture() {
 }
 
 describe("carry producer enqueue evidence", () => {
+  it("preflights valid original evidence without queue, audit or exposing resolved object keys", async () => {
+    const { f, db } = await fixture();
+    const queue = { enqueue: vi.fn() }, audit = { record: vi.fn() };
+    const service = new VisionJobsService(db, { canAnalyze: vi.fn().mockResolvedValue({ allowed: true }) } as never, audit as never, queue as never, {} as never, { resolveForJob: vi.fn().mockResolvedValue({ id: "model" }) } as never, f.store);
+    const result = await service.carryPreflight("asset", "model", "job");
+    expect(result).toMatchObject({ ready: true, videoAssetId: "asset", modelVersionId: "model", possessionJobId: "job" });
+    expect(JSON.stringify(result)).not.toContain("readKeys");
+    expect(queue.enqueue).not.toHaveBeenCalled(); expect(audit.record).not.toHaveBeenCalled();
+  });
+  it.each(["rights", "prerequisite", "model", "camera", "proxy", "clock", "tamper", "missing asset", "match"])("preflight and enqueue share the first refusal: %s", async (change) => {
+    const { f, db, camera, proxy } = await fixture();
+    const rights = { canAnalyze: vi.fn().mockResolvedValue({ allowed: change !== "rights", remediation: "Obtain rights." }) };
+    const queue = { enqueue: vi.fn() }, audit = { record: vi.fn() };
+    const models = { resolveForJob: vi.fn().mockResolvedValue({ id: "model" }) };
+    if (change === "prerequisite") db.visionJob.findMany.mockResolvedValue([]);
+    if (change === "model") models.resolveForJob.mockRejectedValue(new (await import("@nestjs/common")).ConflictException({ error: "NoProductionModel", message: "Select a version.", remediation: "Open models." }));
+    if (change === "camera") camera.kind = "replay";
+    if (change === "proxy") proxy.width = 900;
+    if (change === "clock") proxy.fps = 30;
+    if (change === "tamper") await f.store.putSmallObject("derived", "inference/job/1/possession.json", "{}", "application/json");
+    if (change === "missing asset") db.visionVideoAsset.findUnique.mockResolvedValue(null);
+    if (change === "match") db.visionVideoAsset.findUnique.mockResolvedValue({ ...f.asset, sbMatchId: null });
+    const service = new VisionJobsService(db, rights as never, audit as never, queue as never, {} as never, models as never, f.store);
+    const result = await service.carryPreflight("asset", "model");
+    expect(result.ready).toBe(false);
+    if (result.ready) throw new Error("Unexpected ready result");
+    await expect(service.enqueueForAsset({ type: "events", videoAssetId: "asset", modelVersionId: "model" })).rejects.toMatchObject({ response: { error: result.blocker.error, message: result.blocker.message } });
+    expect(queue.enqueue).not.toHaveBeenCalled(); expect(audit.record).not.toHaveBeenCalled();
+  });
+  it("propagates infrastructure failure instead of reporting compatible evidence", async () => {
+    const { f, db } = await fixture(); db.visionVideoAsset.findUnique.mockRejectedValue(new Error("DB unavailable"));
+    const service = new VisionJobsService(db, {} as never, {} as never, {} as never, {} as never, {} as never, f.store);
+    await expect(service.carryPreflight("asset")).rejects.toThrow("DB unavailable");
+  });
   it("pins original evidence and ignores a caller's forged matrices, models, read keys and windows", async () => {
     const { f, db } = await fixture();
     const queue = { enqueue: vi.fn(async (data) => ({ id: data.id })) };
