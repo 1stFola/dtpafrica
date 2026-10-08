@@ -117,7 +117,7 @@ describe("what the provision key may do past the door", () => {
   const tokens = { mintBootstrap: vi.fn(), retire: vi.fn() };
   const launch = vi.fn();
   const compute = { get: vi.fn(() => ({ capabilities: () => ({ resourceClasses: ["cpu_small", "gpu_24gb"] }), launch })) };
-  const config = { compute: { defaultProvider: "runpod", workerImage: "img:1" }, jobs: { defaultBudgetSeconds: 600, defaultBudgetUsdCents: 100 } };
+  const config = { compute: { defaultProvider: "runpod", workerImage: "img:1", hostedWorkerCallbackUrl: "https://api.example.test/api/v1/vision/worker" as string | null }, jobs: { defaultBudgetSeconds: 600, defaultBudgetUsdCents: 100 } };
   const audit = { record: vi.fn() };
   const controller = new WorkerProvisionController(prisma as never, tokens as never, compute as never, config as never, audit as never);
   const withKey = { headers: {}, provisionKey: true };
@@ -160,8 +160,23 @@ describe("what the provision key may do past the door", () => {
     const out = await controller.provisionWorker({ resourceClass: "gpu_24gb", providerId: "runpod" } as never, asAdmin as never);
     expect(out).toMatchObject({ providerId: "runpod", requestedBy: "u-1" });
     expect(launch).toHaveBeenCalledTimes(1);
+    // A pod on the provider's network is told the public URL, not the box's relative path.
+    expect(launch.mock.calls[0][0].env.VISION_WORKER_CALLBACK_URL).toBe("https://api.example.test/api/v1/vision/worker");
     // The admin is the actor, whole: the audit service reads the id, email and method from it.
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "worker.provisioned", targetId: "w-1" }), asAdmin.adminAuth);
+  });
+
+  it("refuses a hosted launch with no reachable callback before minting or buying anything", async () => {
+    config.compute.hostedWorkerCallbackUrl = null;
+    try {
+      await expect(controller.provisionWorker({ resourceClass: "gpu_24gb", providerId: "runpod" } as never, asAdmin as never)).rejects.toMatchObject({ status: 409, response: { error: "WorkerCallbackUrlMissing" } });
+      expect(tokens.mintBootstrap).not.toHaveBeenCalled(); expect(launch).not.toHaveBeenCalled(); expect(audit.record).not.toHaveBeenCalled();
+      // The box's worker and the mock provider still get the relative path: their host is the operator's to name.
+      for (const providerId of ["local", "mock"]) {
+        await controller.provisionWorker({ resourceClass: "cpu_small", providerId } as never, asAdmin as never);
+        expect(launch.mock.calls.at(-1)![0].env.VISION_WORKER_CALLBACK_URL).toBe("/api/v1/vision/worker");
+      }
+    } finally { config.compute.hostedWorkerCallbackUrl = "https://api.example.test/api/v1/vision/worker"; }
   });
 
   it("records nothing for a worker that was never started", async () => {

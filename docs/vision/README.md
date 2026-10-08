@@ -8,7 +8,14 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: Phase 6 Increment 18 implemented** — ball trajectory and calibrated
+**Latest: hosted workers get a reachable callback URL** — provisioning gave every
+provider a relative callback path, which no RunPod pod could resolve; a hosted
+provider now needs `VISION_HOSTED_WORKER_CALLBACK_URL` or is refused before a token
+or pod ([90](./90-HOSTED-WORKER-CALLBACK.md)). Doc 90 also lists what a RunPod
+detect run on the pilot still needs: an FFmpeg licence ruling, a pullable GPU image
+and a control plane the pod can reach.
+
+**Phase 6 Increment 18 implemented** — ball trajectory and calibrated
 possession preflight through the same shared queue guards, so a blocker shows at
 the stage where it starts ([89](./89-PHASE-6-INCREMENT-18.md)). QA: 1,836 of
 1,837 API tests (one local CRLF checkout failure, untouched file), 272 web tests,

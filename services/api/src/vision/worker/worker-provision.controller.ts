@@ -4,7 +4,7 @@ import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService, type VisionAuditActor } from "../audit/vision-audit.service";
 import { COMPUTE_PROVIDER_REGISTRY, type ComputeProviderRegistry } from "../compute/compute-provider";
-import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
+import { VISION_CONFIG, WORKER_CALLBACK_PATH, type VisionConfig } from "../config/vision.config";
 import { ProvisionWorkerDto } from "../jobs/dto/enqueue-job.dto";
 import { notFound, refusal } from "../shared/refusals";
 import { PROVISION_KEY_PROVIDERS } from "./provision-key";
@@ -57,6 +57,15 @@ export class WorkerProvisionController {
       throw refusal(404, "ResourceClassNotOffered", `Provider ${providerId} does not offer ${dto.resourceClass}. It offers ${capabilities.resourceClasses.join(", ")}.`, "Ask for a resource class the provider offers, or use another provider.");
     }
 
+    // A provider that starts nothing hands the token to an operator who names the host;
+    // one that launches a pod must give it a URL it can reach from outside. Refused before
+    // a token is minted or capacity bought.
+    const selfStarted = PROVISION_KEY_PROVIDERS.includes(providerId) || providerId === "mock";
+    const callbackUrl = selfStarted ? WORKER_CALLBACK_PATH : this.config.compute.hostedWorkerCallbackUrl;
+    if (!callbackUrl) {
+      throw refusal(409, "WorkerCallbackUrlMissing", `Provider ${providerId} launches its worker elsewhere, and no URL it can call back to is configured.`, "Set VISION_HOSTED_WORKER_CALLBACK_URL to this API's public https URL ending in /api/v1/vision/worker, then provision again.");
+    }
+
     const image = this.config.compute.workerImage;
     const minted = await this.workerTokens.mintBootstrap({
       providerId,
@@ -70,7 +79,7 @@ export class WorkerProvisionController {
       // The worker learns a URL, a token and its class. No storage credential,
       // no database connection, no provider SDK configuration.
       env: {
-        VISION_WORKER_CALLBACK_URL: "/api/v1/vision/worker",
+        VISION_WORKER_CALLBACK_URL: callbackUrl,
         VISION_BOOTSTRAP_TOKEN: minted.bootstrapToken,
         VISION_RESOURCE_CLASS: dto.resourceClass,
       },
