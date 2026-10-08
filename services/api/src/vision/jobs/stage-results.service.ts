@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { CAMERA_MOTION_CHUNK_ROLE, CAMERA_MOTION_INDEX_ROLE, CAMERA_MOTION_VERSION, CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, PROPOSED_SEGMENT_SOURCES, visionKeys, GAMESTATE_CHUNK_ROLE, GAMESTATE_INDEX_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
+import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, CAMERA_MOTION_CHUNK_ROLE, CAMERA_MOTION_INDEX_ROLE, CAMERA_MOTION_VERSION, CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, PROPOSED_SEGMENT_SOURCES, visionKeys, GAMESTATE_CHUNK_ROLE, GAMESTATE_INDEX_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BALL_TRAJECTORY_CHUNK_ROLE, BALL_TRAJECTORY_INDEX_ROLE, BALL_TRAJECTORY_VERSION, BALL_LOST_REASONS } from "@dtp/vision-contracts";
 import { CALIBRATED_POSSESSION_VERSION, POSSESSION_CALIBRATED_REASONS, POSSESSION_CHUNK_ROLE, POSSESSION_INDEX_ROLE, POSSESSION_VERSION, POSSESSION_UNKNOWN_REASONS } from "@dtp/vision-contracts";
@@ -51,7 +51,7 @@ export type ApplyContext = {
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "camera_motion", "detect", "track", "identify", "gamestate", "ball_trajectory", "possession", "events"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "camera_motion", "calibrate", "detect", "track", "identify", "gamestate", "ball_trajectory", "possession", "events"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -91,6 +91,8 @@ export class VisionStageResultsService {
           return await this.applyCuts(videoAssetId, completion);
         case "camera_motion":
           return await this.applyCameraMotion(videoAssetId, completion, context);
+        case "calibrate":
+          return this.applyCalibrate(completion, context);
         case "gamestate":
           return this.applyGamestate(completion);
         case "ball_trajectory":
@@ -571,6 +573,34 @@ export class VisionStageResultsService {
     if (typeof shots === "string") return { applied: false, detail: `camera motion ${shots}` };
     return this.proposeSegments(videoAssetId, shots, "camera_motion",
       `${s.tracked ?? 0} tracked, ${s.bridged ?? 0} bridged, ${s.break ?? 0} cut(s); motion in ${indices[0]!.key}`);
+  }
+
+  /**
+   * calibrate -> nothing in Postgres. The per-frame rows stay in the artifact, read by
+   * the frame lookup and, in step 3, by the stages that place players and the ball. The
+   * completion must name the motion and proxy the job was queued with.
+   */
+  private applyCalibrate(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const indices = completion.artifacts.filter((a) => a.role === CALIBRATION_FRAMES_INDEX_ROLE && a.bucket === "derived");
+    const chunks = completion.artifacts.filter((a) => a.role === CALIBRATION_FRAMES_CHUNK_ROLE && a.bucket === "derived");
+    const s = completion.summary;
+    const input = (context.inputSpec ?? {}) as Record<string, unknown>;
+    const motion = obj(input.cameraMotion);
+    const jobPrefix = context.jobId ? visionKeys.inferencePrefix(context.jobId, 1).replace(/1\/$/, "") : null;
+    const frames = int(s.frames);
+    const covered = int(s.covered);
+    if (indices.length !== 1 || !chunks.length || chunks.length !== s.chunks || s.calculationVersion !== CALIBRATION_PROPAGATION_VERSION
+      || (jobPrefix !== null && [...indices, ...chunks].some((a) => !a.key.startsWith(jobPrefix)))
+      || s.proxyChecksum !== String(input.proxyChecksum ?? "").toLowerCase()
+      || s.cameraMotionIndexChecksum !== String(motion?.indexChecksum ?? "").toLowerCase()
+      || typeof s.indexChecksum !== "string" || !/^[a-f0-9]{64}$/i.test(s.indexChecksum)
+      || frames === null || covered === null || covered < 0 || covered > frames)
+      return { applied: false, detail: "calibrate artifacts, version, motion or proxy differ from the queued inputs" };
+    const segments = Array.isArray(s.segments) ? (s.segments as { drift?: { medianM?: number | null }[] }[]) : [];
+    const drift = segments.flatMap((g) => g.drift ?? []).map((d) => d.medianM).filter((m): m is number => typeof m === "number");
+    return { applied: true, detail: `${covered} of ${frames} frame(s) calibrated (${((covered / Math.max(frames, 1)) * 100).toFixed(1)}%)`
+      + (drift.length ? `; drift between keyframes ${Math.min(...drift).toFixed(2)}-${Math.max(...drift).toFixed(2)} m` : "; no two keyframes share a shot, so no drift measured")
+      + `; rows in ${indices[0]!.key}` };
   }
 
   /** Whole-ms, non-empty windows, or why not. */

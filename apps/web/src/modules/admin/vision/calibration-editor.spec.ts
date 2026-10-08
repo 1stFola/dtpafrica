@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { VisionCameraSegment, VisionPitchLandmark } from "../../../api/vision";
 import { CAMERA_SEGMENT_KINDS } from "@dtp/vision-contracts";
-import { SEGMENT_KIND_WORDS, clickToProxyPixel, describeQuality, describeSegment, fitReason, nextLandmark, overlayPaths, pictureRect, placePoint, removePoint, segmentAt, segmentFromMarks, toFraction } from "./calibration-editor";
+import { SEGMENT_KIND_WORDS, clickToProxyPixel, describeCarried, keyframeFrameOf, describeQuality, describeSegment, fitReason, nextLandmark, overlayPaths, pictureRect, placePoint, removePoint, segmentAt, segmentFromMarks, toFraction } from "./calibration-editor";
 
 const PROXY = { width: 1280, height: 720 };
 
@@ -110,5 +110,26 @@ describe("segments and words", () => {
     expect(segmentFromMarks(9000, 9000, 120000)).toContain("empty");
     expect(segmentFromMarks(9000, 130000, 120000)).toContain("past");
     expect(segmentFromMarks(9000, 130000, null)).toEqual({ startMs: 9000, endMs: 130000 });
+  });
+});
+
+describe("keyframes and the carried calibration, in words", () => {
+  const clock = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
+  it("allows a keyframe only from points all placed on the frame on screen", () => {
+    expect(keyframeFrameOf([{ frameIndex: 50 }, { frameIndex: 50 }], 50)).toBe(50);
+    expect(keyframeFrameOf([{ frameIndex: 50 }, { frameIndex: 51 }], 50)).toMatch(/another frame/);
+    expect(keyframeFrameOf([{ frameIndex: 50 }], 51)).toMatch(/another frame/);
+    expect(keyframeFrameOf([{}], 50)).toMatch(/another frame/);
+    expect(keyframeFrameOf([], 50)).toMatch(/Place the landmarks/);
+    expect(keyframeFrameOf([{ frameIndex: 0 }], null)).toMatch(/frame rate is unknown/);
+  });
+
+  it("says where a frame's calibration came from, or why there is none", () => {
+    const carried = { H: [1, 0, 0, 0, 1, 0, 0, 0, 1], quality: "good", keyframe: 50, framesFromKeyframe: 12, reason: null };
+    expect(describeCarried(carried, 25, clock)).toBe("Carried from the keyframe at 2.00s, 12 frame(s) away · good.");
+    expect(describeCarried({ ...carried, keyframe: null, framesFromKeyframe: null }, 25, clock)).toBe("Whole-segment calibration · good.");
+    expect(describeCarried({ ...carried, H: null, reason: "no_keyframe_in_shot" }, 25, clock)).toBe("No calibration here: no keyframe in this shot.");
+    expect(describeCarried({ ...carried, H: null, reason: "beyond_reach" }, 25, clock)).toBe("No calibration here: too far from any keyframe in this shot.");
+    expect(describeCarried(null, 25, clock)).toBe("No carried calibration for this frame.");
   });
 });

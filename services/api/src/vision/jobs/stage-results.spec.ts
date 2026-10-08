@@ -357,8 +357,8 @@ describe("failure handling", () => {
   });
 
   it("has no domain effect for a stage that does not produce one", async () => {
-    // `calibrate` has no projection yet; detect and track gained theirs in Phases 3 and 4.
-    const outcome = await service().apply("calibrate", ASSET, { artifacts: [], summary: {} });
+    // `clip` has no projection yet; calibrate gained its check in docs/vision/93.
+    const outcome = await service().apply("clip", ASSET, { artifacts: [], summary: {} });
     expect(outcome.applied).toBe(false);
     expect(outcome.detail).toMatch(/no domain effect/);
   });
@@ -776,6 +776,40 @@ describe("camera motion proposes the shots between cuts", () => {
     const outcome = await service().apply("camera_motion", ASSET, { artifacts: arts, summary: summary(over) }, context);
     expect(outcome.applied).toBe(false);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+/** calibrate -> nothing in Postgres; the completion must name what it was queued with. */
+describe("calibrate results are checked, not stored", () => {
+  const JOB = "cal-job";
+  const proxyChecksum = "a".repeat(64);
+  const motionChecksum = "b".repeat(64);
+  const artifacts = [
+    { key: `inference/${JOB}/1/frames/frames-0000.jsonl`, bucket: "derived", role: "calibration_frames_chunk" },
+    { key: `inference/${JOB}/1/calibration-frames.json`, bucket: "derived", role: "calibration_frames" },
+  ];
+  const summary = (over: Record<string, unknown> = {}) => ({ calculationVersion: "calibration-propagation/v1", chunks: 1, frames: 1244, covered: 600, proxyChecksum,
+    cameraMotionIndexChecksum: motionChecksum, indexChecksum: "c".repeat(64), segments: [{ drift: [{ medianM: 0.4 }, { medianM: 1.2 }] }], ...over });
+  const context = { jobId: JOB, modelVersionId: null, inputSpec: { proxyChecksum, cameraMotion: { indexChecksum: motionChecksum } } };
+
+  it("reports coverage and the drift measured between keyframes", async () => {
+    const outcome = await service().apply("calibrate", ASSET, { artifacts, summary: summary() }, context);
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("600 of 1244 frame(s) calibrated (48.2%)");
+    expect(outcome.detail).toContain("drift between keyframes 0.40-1.20 m");
+    const lone = await service().apply("calibrate", ASSET, { artifacts, summary: summary({ segments: [] }) }, context);
+    expect(lone.detail).toContain("no drift measured");
+  });
+
+  it.each([
+    ["another proxy", { proxyChecksum: "e".repeat(64) }, artifacts],
+    ["other motion", { cameraMotionIndexChecksum: "e".repeat(64) }, artifacts],
+    ["another version", { calculationVersion: "calibration-propagation/v0" }, artifacts],
+    ["more covered than frames", { covered: 2000 }, artifacts],
+    ["a chunk count that differs", { chunks: 3 }, artifacts],
+    ["an artifact outside the job", {}, [artifacts[0]!, { ...artifacts[1]!, key: "inference/x/1/calibration-frames.json" }]],
+  ])("refuses %s", async (_label, over, arts) => {
+    expect((await service().apply("calibrate", ASSET, { artifacts: arts, summary: summary(over) }, context)).applied).toBe(false);
   });
 });
 

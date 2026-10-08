@@ -61,7 +61,21 @@ export class VisionCalibrationController {
   @Post("review/camera-segments/:id/calibration")
   @RequirePermissions("vision.review")
   async calibrate(@Param("id") id: string, @Body() dto: CalibrateDto, @AdminAuth() auth: AdminAuthContext) {
-    return jsonSafe(await this.calibration.calibrate(id, { points: dto.points, pitch: dto.pitch }, auth));
+    return jsonSafe(await this.calibration.calibrate(id, { points: dto.points, pitch: dto.pitch, keyframe: dto.keyframe }, auth));
+  }
+
+  /** One frame's carried calibration and the pitch lines it draws, from the latest calibrate run. */
+  @Get("review/:assetId/calibration/frames/:frame")
+  @RequirePermissions("vision.read")
+  async carried(@Param("assetId") assetId: string, @Param("frame") frame: string) {
+    return jsonSafe(await this.calibration.carriedAt(assetId, Number(frame)));
+  }
+
+  /** A person takes a keyframe back; the frames it reached lose it. */
+  @Post("review/calibrations/:id/withdraw")
+  @RequirePermissions("vision.review")
+  async withdraw(@Param("id") id: string, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.calibration.withdrawKeyframe(id, auth));
   }
 
   @Get("review/:assetId/game-state")

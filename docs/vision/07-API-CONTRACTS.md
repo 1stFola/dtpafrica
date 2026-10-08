@@ -815,6 +815,7 @@ when a route has neither a permission nor a token guard.
 | `POST` | `/vision/partners/:id/evidence` | `vision.rights.manage` | `sources/sources.controller.ts` |
 | `POST` | `/vision/partners/:id/evidence/file` | `vision.rights.manage` | `sources/sources.controller.ts` |
 | `POST` | `/vision/partners/:id/signatories` | `vision.rights.manage` | `sources/sources.controller.ts` |
+| `GET` | `/vision/review/:assetId/calibration/frames/:frame` | `vision.read` | `calibration/calibration.controller.ts` |
 | `GET` | `/vision/review/:assetId/camera-segments` | `vision.read` | `calibration/calibration.controller.ts` |
 | `POST` | `/vision/review/:assetId/camera-segments` | `vision.review` | `calibration/calibration.controller.ts` |
 | `GET` | `/vision/review/:assetId/clock` | `vision.read` | `clock/clock.controller.ts` |
@@ -828,6 +829,7 @@ when a route has neither a permission nor a token guard.
 | `GET` | `/vision/review/:assetId/possession` | `vision.read` | `possession/possession.controller.ts` |
 | `POST` | `/vision/review/:assetId/possession/import` | `vision.review` | `possession/possession.controller.ts` |
 | `GET` | `/vision/review/:assetId/tracks` | `vision.read` | `identity/identity.controller.ts` |
+| `POST` | `/vision/review/calibrations/:id/withdraw` | `vision.review` | `calibration/calibration.controller.ts` |
 | `DELETE` | `/vision/review/camera-segments/:id` | `vision.review` | `calibration/calibration.controller.ts` |
 | `PATCH` | `/vision/review/camera-segments/:id` | `vision.review` | `calibration/calibration.controller.ts` |
 | `POST` | `/vision/review/camera-segments/:id/calibration` | `vision.review` | `calibration/calibration.controller.ts` |

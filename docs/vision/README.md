@@ -8,7 +8,14 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: camera motion and the shots between cuts** — a CPU `camera_motion` stage
+**Latest: keyframes that follow the camera** — a person files keyframe calibrations on
+frames of a panning shot; a CPU `calibrate` stage (contract 1.18.0) carries them to every
+frame of the shot along the camera motion, never across a cut, and measures drift
+between keyframes. Camera motion now tracks against a reference frame: drift on the
+pilot fell from 9.7 px to 0.24 px over 8 s. The page draws the carried pitch lines
+on any frame. Step 2 of three ([93](./93-KEYFRAMES-THAT-FOLLOW-THE-CAMERA.md)).
+
+**Camera motion and the shots between cuts** — a CPU `camera_motion` stage
 (contract 1.17.0, OpenCV) measures how the picture moves frame to frame and finds the
 edit cuts, proposed as segments. On the pilot it found the 6 cuts the scene filter
 missed, with per-pair fits at a fifth of a pixel. A person sets a segment's kind; the

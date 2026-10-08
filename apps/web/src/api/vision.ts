@@ -728,6 +728,8 @@ export type VisionCameraSegment = {
   startMs: number;
   endMs: number;
   calibration: VisionCalibrationSummary | null;
+  /** Keyframes for a moving camera, by frame; a segment has these or a whole-segment calibration. */
+  keyframes?: (VisionCalibrationSummary & { frameIndex: number })[];
   superseded: number;
 };
 
@@ -735,7 +737,7 @@ export type VisionCameraSegments = {
   videoAssetId: string;
   durationMs: number | null;
   segments: VisionCameraSegment[];
-  coverage: { segmentedMs: number; calibratedMs: number };
+  coverage: { segmentedMs: number; calibratedMs: number; keyframedMs?: number };
   thresholds: { version: string; goodRmseM: number; goodMinPoints: number; usableRmseM: number; maxPointErrorM: number };
 };
 
@@ -765,8 +767,26 @@ export function previewVisionCalibration(points: VisionCalibrationPoint[], pitch
   return adminFetch<VisionCalibrationPreview>(`/vision/calibration/preview`, { method: "POST", body: JSON.stringify({ points, pitch }) });
 }
 
-export function calibrateVisionSegment(segmentId: string, points: VisionCalibrationPoint[], pitch?: VisionPitchDimensions) {
-  return adminFetch<VisionCalibrationSummary>(`/vision/review/camera-segments/${segmentId}/calibration`, { method: "POST", body: JSON.stringify({ points, pitch }) });
+/** `keyframe`: true of the one frame the points were placed on (a moving camera); otherwise the whole segment. */
+export function calibrateVisionSegment(segmentId: string, points: VisionCalibrationPoint[], pitch?: VisionPitchDimensions, keyframe = false) {
+  return adminFetch<VisionCalibrationSummary>(`/vision/review/camera-segments/${segmentId}/calibration`, { method: "POST", body: JSON.stringify({ points, pitch, ...(keyframe ? { keyframe: true } : {}) }) });
+}
+
+export function withdrawVisionKeyframe(calibrationId: string) {
+  return adminFetch<{ withdrawn: string }>(`/vision/review/calibrations/${calibrationId}/withdraw`, { method: "POST" });
+}
+
+/** One frame of the latest calibrate run: its carried calibration, or why it has none, and the lines it draws. */
+export type VisionCarriedFrame = {
+  videoAssetId: string;
+  frame: number;
+  run: { jobId: string; finishedAt: string | null; stale: boolean; frames: number | null; covered: number | null; coverage: number | null } | null;
+  row: { f: number; ms: number; cameraSegmentId: string | null; H: number[] | null; calibrationId: string | null; quality: VisionCalibrationQuality | null; keyframe: number | null; framesFromKeyframe: number | null; reason: string | null } | null;
+  overlay: VisionOverlay;
+};
+
+export function fetchVisionCarriedFrame(assetId: string, frame: number) {
+  return adminFetch<VisionCarriedFrame>(`/vision/review/${assetId}/calibration/frames/${frame}`);
 }
 
 export type VisionJobRow = {

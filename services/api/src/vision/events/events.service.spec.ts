@@ -125,7 +125,9 @@ describe("proposing", () => {
     expect(query.where).toEqual({ videoAssetId: ASSET, startMs: { lte: 100_000 }, endMs: { gt: 100_000 } });
     // Of two that overlap, the one that started latest; and the newest current calibration.
     expect(query.orderBy).toEqual({ startMs: "desc" });
-    expect(query.select.calibrations).toMatchObject({ where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 });
+    expect(query.select.calibrations).toMatchObject({ orderBy: { createdAt: "desc" }, take: 1 });
+    // The evidence link names a whole-segment calibration, never one frame's keyframe.
+    expect(query.select.calibrations.where).toEqual({ supersededBy: null, withdrawnAt: null, frameIndex: null });
   });
 
   it("flags a candidate inside a replay as not play, and one under no segment as play", async () => {

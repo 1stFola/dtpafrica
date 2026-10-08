@@ -72,6 +72,12 @@ class Config:
     texture_gradient: float = 40.0
     #: Shots shorter than this are transitions, not shots, and propose no segment.
     min_shot_ms: int = 500
+    #: Frames are measured against a reference frame, not the one before: chained pair by
+    #: pair, the error of every pair adds up (about 10 px over 8 s on the pilot). A new
+    #: reference is taken after this many frames, or sooner when fewer than
+    #: `ref_min_survival` of its corners still agree.
+    ref_max_frames: int = 75
+    ref_min_survival: float = 0.5
 
     @staticmethod
     def parse(raw: object) -> "Config":
@@ -160,6 +166,32 @@ def track_pair(a: np.ndarray, b: np.ndarray, mask: np.ndarray, config: Config) -
     return {"h": h, "tracked": int(len(p0)), "inliers": n, "residualPx": residual}
 
 
+def reference_corners(frame: np.ndarray, mask: np.ndarray, config: Config) -> np.ndarray | None:
+    corners = cv2.goodFeaturesToTrack(frame, maxCorners=config.max_corners, qualityLevel=config.corner_quality,
+                                      minDistance=config.corner_min_distance, mask=mask)
+    return corners if corners is not None and len(corners) >= config.min_inliers else None
+
+
+def track_from_reference(ref: np.ndarray, corners: np.ndarray, predicted: np.ndarray, frame: np.ndarray, config: Config) -> dict:
+    """Reference frame -> this frame, the reference's corners started where the prediction puts them."""
+    guess = cv2.perspectiveTransform(corners.astype(np.float32), predicted).astype(np.float32)
+    moved, status, _ = cv2.calcOpticalFlowPyrLK(ref, frame, corners, guess.copy(), winSize=(21, 21), maxLevel=3,
+                                                flags=cv2.OPTFLOW_USE_INITIAL_FLOW)
+    keep = status.ravel() == 1
+    p0, p1 = corners[keep].reshape(-1, 2), moved[keep].reshape(-1, 2)
+    if len(p0) < config.min_inliers:
+        return {"h": None, "tracked": int(len(p0)), "inliers": 0, "residualPx": None}
+    h, inliers = cv2.findHomography(p0, p1, cv2.RANSAC, config.ransac_px)
+    if h is None or not np.all(np.isfinite(h)):
+        return {"h": None, "tracked": int(len(p0)), "inliers": 0, "residualPx": None}
+    agree = inliers.ravel() == 1
+    n = int(agree.sum())
+    residual = float(np.linalg.norm(cv2.perspectiveTransform(p0[agree][None], h)[0] - p1[agree], axis=1).mean()) if n else None
+    if n < config.min_inliers or n < config.min_inlier_ratio * len(p0):
+        return {"h": None, "tracked": int(len(p0)), "inliers": n, "residualPx": residual}
+    return {"h": h, "tracked": int(len(p0)), "inliers": n, "residualPx": residual}
+
+
 def bridge_pair(a: np.ndarray, b: np.ndarray, mask: np.ndarray, config: Config) -> np.ndarray | None:
     """Wide-baseline match of a -> b, for a pair tracking could not follow. None means a cut."""
     orb = cv2.ORB_create(config.bridge_features)
@@ -207,21 +239,57 @@ def frame_start_ms(frame: int, fps: float) -> int:
 
 
 def estimate(frames: Iterator[np.ndarray], mask: np.ndarray, scale: float, config: Config) -> Iterator[dict]:
-    """One row per frame. Row 0 is the first frame; row f describes the pair f-1 -> f, in proxy pixels."""
+    """One row per frame. Row 0 is the first frame; row f describes the pair f-1 -> f, in proxy pixels.
+
+    Each frame is measured against a reference frame, started where the last motion
+    predicts, and the pair is what that leaves: H(ref->f) . H(ref->f-1)^-1. Chained, the
+    pairs telescope back to the reference measurements, so error accumulates once per
+    reference rather than once per frame. When the reference no longer holds (too many
+    corners lost, or too long ago) the frame is tracked from the one before, as a pair,
+    and becomes the new reference. A pair that cannot be tracked either way is bridged
+    or is a break, as before.
+    """
     previous = None
+    ref = ref_corners = None
+    ref_index = 0
+    ref_to_prev = np.eye(3)
+    last_pair = np.eye(3)
     for index, frame in enumerate(frames):
         if previous is None:
             yield {"f": 0, "status": "start", "H": None, "inliers": None, "tracked": None, "residualPx": None}
+            ref, ref_corners, ref_index, ref_to_prev, last_pair = frame, reference_corners(frame, mask, config), 0, np.eye(3), np.eye(3)
+            previous = frame
+            continue
+        row: dict = {"f": index}
+        from_ref = None
+        if ref_corners is not None:
+            from_ref = track_from_reference(ref, ref_corners, last_pair @ ref_to_prev, frame, config)
+        if from_ref is not None and from_ref["h"] is not None:
+            ref_to_frame = from_ref["h"]
+            pair = ref_to_frame @ np.linalg.inv(ref_to_prev)
+            row |= {"status": "tracked", "inliers": from_ref["inliers"], "tracked": from_ref["tracked"],
+                    "residualPx": None if from_ref["residualPx"] is None else round(from_ref["residualPx"] / scale, 4)}
+            stale = index - ref_index >= config.ref_max_frames or from_ref["inliers"] < config.ref_min_survival * len(ref_corners)
+            if stale:
+                ref, ref_corners, ref_index, ref_to_prev = frame, reference_corners(frame, mask, config), index, np.eye(3)
+            else:
+                ref_to_prev = ref_to_frame
         else:
-            pair = track_pair(previous, frame, mask, config)
-            row = {"f": index, "inliers": pair["inliers"], "tracked": pair["tracked"],
-                   "residualPx": None if pair["residualPx"] is None else round(pair["residualPx"] / scale, 4)}
-            if pair["h"] is not None:
-                row |= {"status": "tracked", "H": _scale_to_proxy(pair["h"], scale)}
+            single = track_pair(previous, frame, mask, config)
+            row |= {"inliers": single["inliers"], "tracked": single["tracked"],
+                    "residualPx": None if single["residualPx"] is None else round(single["residualPx"] / scale, 4)}
+            if single["h"] is not None:
+                pair = single["h"]
+                row["status"] = "tracked"
             else:
                 bridged = bridge_pair(previous, frame, mask, config)
-                row |= {"status": "bridged", "H": _scale_to_proxy(bridged, scale)} if bridged is not None else {"status": "break", "H": None}
-            yield row
+                pair = bridged
+                row["status"] = "bridged" if bridged is not None else "break"
+            # The reference did not hold: this frame starts the next one.
+            ref, ref_corners, ref_index, ref_to_prev = frame, reference_corners(frame, mask, config), index, np.eye(3)
+        row["H"] = None if pair is None else _scale_to_proxy(pair, scale)
+        last_pair = np.eye(3) if pair is None else pair
+        yield row
         previous = frame
 
 

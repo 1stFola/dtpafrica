@@ -126,7 +126,33 @@ def test_a_fixed_scoreboard_graphic_is_masked_out_rather_than_read_as_a_still_ca
     assert mask[150, 160] == 0 and mask[40, 40] == 255
     for row in estimate(iter(smalls), mask, SCALE, CONFIG):
         if row["f"]:
-            assert max_error(to_proxy(row["H"]), translate(-12.0)) < 0.5
+            # Read as a still camera, every pair would be 12 px out; each is within a pixel.
+            assert max_error(to_proxy(row["H"]), translate(-12.0)) < 1.0
+
+
+def test_a_long_noisy_pan_drifts_far_less_measured_against_a_reference_than_chained_pair_by_pair():
+    # 150 frames of a pan with sensor noise: what matters is the error the chain carries
+    # to the last frame, which is what a keyframe's calibration rides on.
+    rng = np.random.default_rng(3)
+    frames, cams = pan_frames(150, translate(-2.3, 0.4))
+    noisy = [np.clip(f.astype(np.int16) + rng.normal(0, 6, f.shape).astype(np.int16), 0, 255).astype(np.uint8) for f in frames]
+    smalls = [small(f) for f in noisy]
+    open_mask = np.full(smalls[0].shape, 255, np.uint8)
+    truth = cams[-1] @ np.linalg.inv(cams[0])
+
+    chained = np.eye(3)
+    for row in estimate(iter(smalls), open_mask, SCALE, CONFIG):
+        if row["f"]:
+            assert row["status"] == "tracked"
+            chained = to_proxy(row["H"]) @ chained
+    pairwise = np.eye(3)
+    for a, b in zip(smalls, smalls[1:]):
+        h = track_pair(a, b, open_mask, CONFIG)["h"]
+        s_ = np.diag([SCALE, SCALE, 1.0])
+        pairwise = (np.linalg.inv(s_) @ h @ s_) @ pairwise
+    with_reference, pair_by_pair = max_error(chained, truth), max_error(pairwise, truth)
+    assert with_reference < 1.5
+    assert with_reference < pair_by_pair
 
 
 def test_a_still_camera_is_not_masked_into_having_nothing_to_track():

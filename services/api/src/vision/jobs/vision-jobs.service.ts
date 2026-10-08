@@ -16,6 +16,10 @@ import {
   visionKeys,
   type BallTrajectoryJobParams,
   type CameraMotionJobParams,
+  type CalibrateJobParams,
+  CAMERA_MOTION_INDEX_ROLE,
+  CAMERA_MOTION_CHUNK_ROLE,
+  CAMERA_MOTION_VERSION,
   BALL_TRAJECTORY_INDEX_ROLE,
   BALL_TRAJECTORY_CHUNK_ROLE,
   BALL_TRAJECTORY_VERSION,
@@ -113,6 +117,7 @@ export class VisionJobsService {
     const ball = params.type === "ball_trajectory" ? await this.ballInputs(asset, params.params) : null;
     const possession = params.type === "possession" ? await this.possessionInputs(asset, params.params) : null;
     const motion = params.type === "camera_motion" ? await this.cameraMotionInputs(asset, params.params) : null;
+    const carried = params.type === "calibrate" ? await this.calibrateInputs(asset, params.params) : null;
     const events = params.type === "events" && model && this.store ? await eventCarryInputs(this.prisma, this.store, asset, model.id, params.params) : null;
     if (params.type === "events" && !events) throw refusal(409, "EventCarryEvidenceMissing", "Event proposals require a resolved algorithm and original evidence storage.", "Select a compatible event rule version and complete calibrated possession.");
 
@@ -120,9 +125,10 @@ export class VisionJobsService {
     if (params.type === "ball_trajectory" && resourceClass !== "cpu_small") throw refusal(400, "BallTrajectoryCpuOnly", "Ball trajectory is a CPU transformation of stored detections.", "Use the default cpu_small resource class.");
     if (params.type === "possession" && resourceClass !== "cpu_small") throw refusal(400, "PossessionCpuOnly", "Possession candidates transform stored observations on CPU.", "Use cpu_small.");
     if (params.type === "camera_motion" && resourceClass !== "cpu_small") throw refusal(400, "CameraMotionCpuOnly", "Camera motion is corner tracking over the proxy on CPU; a GPU adds cost, not speed.", "Use cpu_small.");
+    if (params.type === "calibrate" && resourceClass !== "cpu_small") throw refusal(400, "CalibrateCpuOnly", "Carrying calibrations along camera motion is matrix arithmetic on CPU.", "Use cpu_small.");
     if (params.type === "events" && resourceClass !== "cpu_small") throw refusal(400, "EventsCpuOnly", "Carry proposals transform original observations on CPU.", "Use cpu_small.");
 
-    return { asset, model, proxy, track, identify, gamestate, ball, possession, motion, events, resourceClass };
+    return { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, resourceClass };
   }
 
   /**
@@ -169,7 +175,7 @@ export class VisionJobsService {
   }
 
   async enqueueForAsset(params: AssetJobRequest, actor?: AdminAuthContext): Promise<{ id: string }> {
-    const { asset, model, proxy, track, identify, gamestate, ball, possession, motion, events, resourceClass } = await this.prepareForAsset(params);
+    const { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, resourceClass } = await this.prepareForAsset(params);
     // The id is generated here so the output prefix can be derived from it in the
     // same insert: an artifact key then names the job that produced it, with no
     // second write to correct.
@@ -196,6 +202,7 @@ export class VisionJobsService {
         ...(ball ?? {}),
         ...(possession ?? {}),
         ...(motion ?? {}),
+        ...(carried ?? {}),
         ...(events ?? {}),
       },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
@@ -356,6 +363,64 @@ export class VisionJobsService {
     return { proxyChecksum: pinned.checksum, sourceDurationMs: asset.durationMs };
   }
 
+  /**
+   * What a calibrate job carries, and along what: the latest camera motion measured on
+   * the current proxy's bytes, and every segment with its current calibrations as a
+   * person left them, whole-segment or keyframes, oriented. Pinned here, so a keyframe
+   * filed or withdrawn after queueing is not half-applied, and the run can be told stale.
+   */
+  private async calibrateInputs(asset: { id: string }, requested?: Record<string, unknown>): Promise<CalibrateJobParams & { readKeys: { bucket: "derived"; key: string }[] }> {
+    const whole = (v: unknown, lo: number, hi: number) => typeof v === "number" && Number.isSafeInteger(v) && v >= lo && v <= hi;
+    if (requested?.reachMs !== undefined && !whole(requested.reachMs, 1_000, 120_000))
+      throw refusal(400, "InvalidCalibrateConfig", "reachMs must be a whole number of milliseconds from 1000 to 120000.", "Leave it out for ten seconds either side of a keyframe.");
+    if (requested?.chunkMs !== undefined && !whole(requested.chunkMs, 10_000, 600_000))
+      throw refusal(400, "InvalidCalibrateConfig", "chunkMs must cover 10000 to 600000 milliseconds.", "Use the default one-minute chunks.");
+    const pinned = await pinnedProxy(this.prisma, asset.id);
+    const variant = await this.prisma.visionVideoVariant.findUnique({ where: { id: pinned.variantId }, select: { createdAt: true } });
+    const runs = await this.prisma.visionJob.findMany({ where: { videoAssetId: asset.id, type: "camera_motion", state: "succeeded" }, orderBy: { finishedAt: "desc" }, take: 20 });
+    const run = runs.find((j) => (j.progress as { summary?: { proxyChecksum?: unknown } } | null)?.summary?.proxyChecksum === pinned.checksum);
+    const progress = run?.progress as { summary?: Record<string, unknown>; artifacts?: { key: string; bucket: string; role: string }[] } | null;
+    const artifacts = Array.isArray(progress?.artifacts) ? progress!.artifacts : [];
+    const index = artifacts.filter((a) => a.role === CAMERA_MOTION_INDEX_ROLE && a.bucket === "derived");
+    const chunks = artifacts.filter((a) => a.role === CAMERA_MOTION_CHUNK_ROLE && a.bucket === "derived");
+    const checksum = progress?.summary?.indexChecksum;
+    if (!run || index.length !== 1 || !chunks.length || chunks.length !== progress?.summary?.chunks || progress?.summary?.calculationVersion !== CAMERA_MOTION_VERSION
+      || typeof checksum !== "string" || !/^[a-f0-9]{64}$/i.test(checksum)
+      || [...index, ...chunks].some((a) => !a.key.startsWith(visionKeys.inferencePrefix(run.id, run.attemptNumber))))
+      throw refusal(409, "CameraMotionMissing", "No completed camera motion was measured on the current proxy.", "Find the shots (queue camera_motion) for this footage, then carry the calibrations.");
+    const segments = await this.prisma.visionCameraSegment.findMany({
+      where: { videoAssetId: asset.id }, orderBy: { startMs: "asc" },
+      include: { calibrations: { where: { supersededBy: null, withdrawnAt: null }, orderBy: { createdAt: "desc" } } },
+    });
+    let calibrations = 0;
+    const pinnedSegments = segments.map((s) => {
+      const wholeRows = s.calibrations.filter((c) => c.frameIndex === null);
+      const keyframes = s.calibrations.filter((c) => c.frameIndex !== null);
+      const rows = keyframes.length ? keyframes : wholeRows.slice(0, 1);
+      return { cameraSegmentId: s.id, startMs: s.startMs, endMs: s.endMs, kind: s.kind, calibrations: rows.map((c) => {
+        calibrations += 1;
+        if (variant && c.createdAt < variant.createdAt)
+          throw refusal(409, "CalibrationPredatesProxy", `Calibration ${c.id} was made before the current proxy existed.`, "Recalibrate against the current review proxy.");
+        const points = (Array.isArray(c.points) ? c.points : []) as { px?: unknown; py?: unknown }[];
+        const homography = orientStored(c.homography as number[], c.points as never);
+        if (!Array.isArray(homography) || homography.length !== 9 || homography.some((v) => typeof v !== "number" || !Number.isFinite(v)))
+          throw refusal(409, "CalibrationInvalid", `Calibration ${c.id} has a malformed transform.`, "File the calibration again.");
+        return { calibrationId: c.id, quality: c.quality as "good" | "usable" | "failed", thresholdsVersion: c.thresholdsVersion,
+          homography: homography as CalibrateJobParams["segments"][number]["calibrations"][number]["homography"],
+          points: points.filter((p) => typeof p.px === "number" && typeof p.py === "number").map((p) => ({ px: p.px as number, py: p.py as number })),
+          frameIndex: c.frameIndex, pitch: { lengthM: c.pitchLengthM, widthM: c.pitchWidthM } };
+      }) };
+    });
+    if (!calibrations)
+      throw refusal(409, "NoCalibration", "No segment of this footage has a calibration to carry.", "File a calibration, or keyframes, on a camera segment first.");
+    return {
+      proxyChecksum: pinned.checksum,
+      cameraMotion: { jobId: run.id, indexKey: index[0]!.key, indexChecksum: checksum.toLowerCase() },
+      segments: pinnedSegments,
+      readKeys: [...index, ...chunks].map((a) => ({ bucket: "derived" as const, key: a.key })),
+    };
+  }
+
   private async ballInputs(asset: { id: string; checksumSha256: string; durationMs: number | null }, requested?: Record<string, unknown>): Promise<BallTrajectoryJobParams> {
     const wanted = typeof requested?.detectJobId === "string" ? requested.detectJobId : undefined;
     const job = await this.prisma.visionJob.findFirst({ where: { videoAssetId: asset.id, type: "detect", state: "succeeded", ...(wanted ? { id: wanted } : {}) }, orderBy: { finishedAt: "desc" } });
@@ -406,7 +471,7 @@ export class VisionJobsService {
     const segments = await this.prisma.visionCameraSegment.findMany({
       where: { videoAssetId },
       orderBy: { startMs: "asc" },
-      include: { calibrations: { where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 } },
+      include: { calibrations: { where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1 } },
     });
     const declared: GameStateJobParams["segments"] = segments.map((s) => {
       const c = s.calibrations[0] ?? null;
@@ -673,6 +738,7 @@ export const RESERVED_INPUT_KEYS = [
   "detections",
   "tracks",
   "segments",
+  "cameraMotion",
   "anchors",
   "cuts",
   "sourceChecksum",

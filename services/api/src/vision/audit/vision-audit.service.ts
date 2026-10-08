@@ -36,6 +36,7 @@ export const VISION_AUDIT_ACTIONS = [
   "camera.segment.removed",
   "camera.segment.updated",
   "calibration.set",
+  "calibration.withdrawn",
   "clock.anchored",
   "event.proposed",
   "event.imported",

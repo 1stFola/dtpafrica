@@ -1392,11 +1392,21 @@ model VisionPitchCalibration {
   thresholdsVersion String   @map("thresholds_version")
   decidedBy         String?  @map("decided_by")
   supersededBy      String?  @map("superseded_by")
+  /// Null: the calibration holds for the whole segment (a still camera). Set: a
+  /// keyframe, true of this proxy frame only, carried to the frames around it along
+  /// measured camera motion by the `calibrate` stage (docs/vision/93). A segment holds
+  /// either one whole-segment calibration or any number of keyframes, one per frame.
+  frameIndex        Int?     @map("frame_index")
+  /// A keyframe a person took back. Superseding is "a better one replaced it"; this
+  /// is "there should be none here", and no row replaces it.
+  withdrawnAt       DateTime? @map("withdrawn_at")
+  withdrawnBy       String?  @map("withdrawn_by")
   createdAt         DateTime @default(now()) @map("created_at")
 
   cameraSegment VisionCameraSegment @relation(fields: [cameraSegmentId], references: [id], onDelete: Cascade)
 
   @@index([cameraSegmentId, createdAt])
+  @@index([cameraSegmentId, frameIndex])
   @@map("vision_pitch_calibrations")
 }
 
