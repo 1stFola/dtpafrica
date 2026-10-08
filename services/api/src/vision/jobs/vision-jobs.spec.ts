@@ -315,6 +315,138 @@ describe("ball trajectory inputs are pinned before CPU dispatch", () => {
     await service.enqueueForAsset({ type: "ball_trajectory", videoAssetId: ASSET });
     expect(enqueued().inputSpec.segments).toEqual([]);
   });
+  it("preflights the pinned detect run without a queue write, an audit row or an object key", async () => {
+    const result = await service.ballTrajectoryPreflight(ASSET, "ball-detect");
+    expect(result).toMatchObject({ videoAssetId: ASSET, ready: true, detectJobId: "ball-detect", detectorVersionId: MODEL_VERSION, cameraSegments: 1 });
+    expect(JSON.stringify(result)).not.toMatch(/inference\/|readKeys|detections\.json/);
+    expect(mockPrisma.visionJob.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { videoAssetId: ASSET, type: "detect", state: "succeeded", id: "ball-detect" } }));
+    expect(mockQueue.enqueue).not.toHaveBeenCalled(); expect(mockAudit.record).not.toHaveBeenCalled();
+  });
+  it.each(["missing", "source", "sparse", "attempt", "geometry", "segments", "rights", "prerequisite", "unlinked", "unknown"])("preflight and enqueue share the first ball refusal: %s", async (change) => {
+    const row = detector();
+    if (change === "missing") row.progress.summary.weightsSha256 = "";
+    if (change === "source") row.progress.summary.sourceChecksum = "d".repeat(64);
+    if (change === "sparse") row.progress.summary.sampleFps = 2;
+    if (change === "attempt") row.progress.artifacts[0]!.key = "inference/ball-detect/1/detections.json";
+    if (change === "geometry") row.progress.summary.imageWidth = 0;
+    mockPrisma.visionJob.findFirst.mockResolvedValue(row);
+    if (change === "segments") mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: "a", startMs: 0, endMs: 160, kind: "live_play" }, { id: "b", startMs: 80, endMs: 200, kind: "live_play" }]);
+    if (change === "rights") mockRights.canAnalyze.mockResolvedValue({ allowed: false, reason: "revoked", remediation: "Renew the licence." });
+    if (change === "prerequisite") mockPrisma.visionJob.findMany.mockResolvedValue([]);
+    if (change === "unlinked") mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: null, checksumSha256: hash, durationMs: 200 });
+    if (change === "unknown") mockPrisma.visionVideoAsset.findUnique.mockResolvedValue(null);
+    const result = await service.ballTrajectoryPreflight(ASSET);
+    if (result.ready) throw new Error("Unexpected ready result");
+    expect(result.blocker.remediation).not.toBe("");
+    expect(result.blocker.error).toBe(({ missing: "BallDetectionsMissing", source: "BallDetectionsMissing", sparse: "BallDetectionsTooSparse", attempt: "BallDetectionsMissing", geometry: "BallDetectionsMissing", segments: "InvalidBallCameraSegments", rights: "RightsDenied", prerequisite: "PrerequisiteMissing", unlinked: "AssetNotLinked", unknown: "AssetUnknown" } as Record<string, string>)[change]);
+    await expect(service.enqueueForAsset({ type: "ball_trajectory", videoAssetId: ASSET })).rejects.toMatchObject({ status: result.blocker.statusCode, response: { error: result.blocker.error, message: result.blocker.message } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled(); expect(mockAudit.record).not.toHaveBeenCalled();
+  });
+  it("propagates a server failure and refuses an ambiguous selection before reading anything", async () => {
+    mockPrisma.visionVideoAsset.findUnique.mockRejectedValue(new Error("DB unavailable"));
+    await expect(service.ballTrajectoryPreflight(ASSET)).rejects.toThrow("DB unavailable");
+    mockPrisma.visionVideoAsset.findUnique.mockClear();
+    for (const id of ["", " ", ["a", "b"], "a,b", "x".repeat(101)])
+      await expect(service.ballTrajectoryPreflight(ASSET, id as never)).rejects.toMatchObject({ status: 400, response: { error: "InvalidPreflightSelection" } });
+    expect(mockPrisma.visionVideoAsset.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("camera motion is pinned to the current proxy's bytes", () => {
+  const checksum = "A".repeat(64);
+  const transcode = (over: Record<string, unknown> = {}) => ({ progress: { summary: { proxy: { key: "proxy.mp4", checksumSha256: checksum } }, artifacts: [{ key: "proxy.mp4", role: "proxy" }] }, ...over });
+  beforeEach(() => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: "match-1", ingestState: "ready", checksumSha256: "b".repeat(64), durationMs: 49706 });
+    mockPrisma.visionJob.findMany.mockResolvedValue([{ type: "transcode" }]);
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4", fps: 25, sourceOffsetMs: 0 });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(transcode());
+  });
+
+  it("queues on CPU with the proxy checksum and the source's end, owned by the control plane", async () => {
+    await service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET, params: { proxyChecksum: "forged", sourceDurationMs: 1, chunkMs: 30000 } });
+    const job = enqueued();
+    expect(job.resourceClass).toBe("cpu_small");
+    expect(job.modelVersionId).toBeNull();
+    expect(job.inputSpec).toMatchObject({ proxyChecksum: "a".repeat(64), sourceDurationMs: 49706, proxy: { fps: 25, sourceOffsetMs: 0 }, chunkMs: 30000 });
+    expect(job.inputSpec.readKeys).toBeUndefined();
+  });
+
+  it("refuses a proxy no completed transcode vouches for, and footage of unknown length", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue(transcode({ progress: { summary: { proxy: { key: "older.mp4", checksumSha256: checksum } }, artifacts: [{ key: "older.mp4", role: "proxy" }] } }));
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "ProxyUnpinned" } });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(null);
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "ProxyUnpinned" } });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(transcode());
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: "match-1", ingestState: "ready", checksumSha256: "b".repeat(64), durationMs: null });
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "AssetDurationUnknown" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses bad knobs and a GPU at the door", async () => {
+    for (const params of [{ chunkMs: 5 }, { cameraMotionConfig: { minInliers: 2 } }, { cameraMotionConfig: { minShotMs: 1.5 } }, { cameraMotionConfig: { other: 1 } }, { cameraMotionConfig: [] }])
+      await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET, params })).rejects.toMatchObject({ response: { error: "InvalidCameraMotionConfig" } });
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET, resourceClass: "gpu_24gb" })).rejects.toMatchObject({ response: { error: "CameraMotionCpuOnly" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("calibrate carries a person's calibrations along the pinned motion", () => {
+  const checksum = "a".repeat(64);
+  const transcode = { progress: { summary: { proxy: { key: "proxy.mp4", checksumSha256: checksum } }, artifacts: [{ key: "proxy.mp4", role: "proxy" }] } };
+  const motion = (over: Record<string, unknown> = {}) => ({ id: "motion", attemptNumber: 1, progress: {
+    summary: { calculationVersion: "camera-motion/v1", proxyChecksum: checksum, chunks: 1, indexChecksum: "C".repeat(64) },
+    artifacts: [{ key: "inference/motion/1/camera-motion.json", bucket: "derived", role: "camera_motion" }, { key: "inference/motion/1/motion/motion-0000.jsonl", bucket: "derived", role: "camera_motion_chunk" }] }, ...over });
+  const cal = (id: string, frameIndex: number | null, over: object = {}) => ({ id, frameIndex, quality: "good", thresholdsVersion: "t", homography: [0.1, 0, -5, 0, 0.2, -10, 0, 0, 1],
+    points: [{ landmark: "a", px: 100, py: 200, frameIndex }], pitchLengthM: 105, pitchWidthM: 68, createdAt: new Date("2026-10-08T12:00:00Z"), ...over });
+  beforeEach(() => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: "match-1", ingestState: "ready", checksumSha256: "b".repeat(64), durationMs: 49706 });
+    mockPrisma.visionJob.findMany.mockImplementation(({ where }: { where: { type?: string } }) => Promise.resolve(where?.type === "camera_motion" ? [motion()] : [{ type: "camera_motion" }]));
+    mockPrisma.visionJob.findFirst.mockResolvedValue(transcode);
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4", fps: 25, sourceOffsetMs: 0 });
+    (mockPrisma.visionVideoVariant as Record<string, ReturnType<typeof vi.fn>>).findUnique = vi.fn().mockResolvedValue({ createdAt: new Date("2026-10-08T10:00:00Z") });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "shot-1", startMs: 0, endMs: 4120, kind: "live_play", calibrations: [cal("k90", 90), cal("k10", 10)] },
+      { id: "shot-2", startMs: 4120, endMs: 14360, kind: "live_play", calibrations: [cal("whole", null)] },
+      { id: "shot-3", startMs: 14360, endMs: 26000, kind: "unknown", calibrations: [] },
+    ]);
+  });
+
+  it("pins the motion measured on this proxy and every segment's current calibrations, owned by the control plane", async () => {
+    await service.enqueueForAsset({ type: "calibrate", videoAssetId: ASSET, params: { cameraMotion: { indexKey: "forged" }, segments: [], reachMs: 5000 } });
+    const job = enqueued();
+    expect(job.resourceClass).toBe("cpu_small");
+    expect(job.modelVersionId).toBeNull();
+    expect(job.inputSpec.cameraMotion).toEqual({ jobId: "motion", indexKey: "inference/motion/1/camera-motion.json", indexChecksum: "c".repeat(64) });
+    expect(job.inputSpec.readKeys).toEqual([{ bucket: "derived", key: "inference/motion/1/camera-motion.json" }, { bucket: "derived", key: "inference/motion/1/motion/motion-0000.jsonl" }]);
+    expect(job.inputSpec.reachMs).toBe(5000);
+    const [one, two, three] = job.inputSpec.segments;
+    expect(one.calibrations.map((c: { calibrationId: string; frameIndex: number }) => [c.calibrationId, c.frameIndex])).toEqual([["k90", 90], ["k10", 10]]);
+    expect(two.calibrations).toHaveLength(1);
+    expect(two.calibrations[0]).toMatchObject({ calibrationId: "whole", frameIndex: null, pitch: { lengthM: 105, widthM: 68 }, points: [{ px: 100, py: 200 }] });
+    expect(three.calibrations).toEqual([]);
+  });
+
+  it("refuses without motion on the current proxy, with nothing to carry, or with a calibration older than the proxy", async () => {
+    mockPrisma.visionJob.findMany.mockImplementation(({ where }: { where: { type?: string } }) => Promise.resolve(where?.type === "camera_motion"
+      ? [motion({ progress: { ...motion().progress, summary: { ...motion().progress.summary, proxyChecksum: "f".repeat(64) } } })] : [{ type: "camera_motion" }]));
+    await expect(service.enqueueForAsset({ type: "calibrate", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "CameraMotionMissing" } });
+    mockPrisma.visionJob.findMany.mockImplementation(({ where }: { where: { type?: string } }) => Promise.resolve(where?.type === "camera_motion"
+      ? [motion({ attemptNumber: 2 })] : [{ type: "camera_motion" }]));
+    await expect(service.enqueueForAsset({ type: "calibrate", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "CameraMotionMissing" } });
+    mockPrisma.visionJob.findMany.mockImplementation(({ where }: { where: { type?: string } }) => Promise.resolve(where?.type === "camera_motion" ? [motion()] : [{ type: "camera_motion" }]));
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: "shot-3", startMs: 0, endMs: 1000, kind: "unknown", calibrations: [] }]);
+    await expect(service.enqueueForAsset({ type: "calibrate", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "NoCalibration" } });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: "s", startMs: 0, endMs: 1000, kind: "live_play", calibrations: [cal("old", 3, { createdAt: new Date("2026-10-01") })] }]);
+    await expect(service.enqueueForAsset({ type: "calibrate", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "CalibrationPredatesProxy" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses a GPU, a model and knobs out of range at the door", async () => {
+    await expect(service.enqueueForAsset({ type: "calibrate", videoAssetId: ASSET, resourceClass: "gpu_24gb" })).rejects.toMatchObject({ response: { error: "CalibrateCpuOnly" } });
+    for (const params of [{ reachMs: 10 }, { reachMs: 1.5e5 }, { chunkMs: 1 }])
+      await expect(service.enqueueForAsset({ type: "calibrate", videoAssetId: ASSET, params })).rejects.toMatchObject({ response: { error: "InvalidCalibrateConfig" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
 });
 
 describe("possession candidates require compatible, pinned ball and player evidence", () => {
@@ -407,6 +539,61 @@ describe("possession candidates require compatible, pinned ball and player evide
     for (const params of [{ constraintMode: "guess" }, { constraintMode: "image", calibrationSnapshot: {} }, { footballConfig: {} }, { constraintMode: "calibrated", footballConfig: { maxGroundDistanceM: 10 } }, { constraintMode: "calibrated", footballConfig: { maxPlayerSpeedMps: true } }])
       await expect(service.enqueueForAsset({ type: "possession", videoAssetId: ASSET, params })).rejects.toMatchObject({ response: { error: "InvalidPossessionConfig" } });
   });
+
+  describe("calibrated possession preflight", () => {
+    const calibration = (createdAt = new Date("2026-10-02")) => ({ id: "cal", quality: "good", thresholdsVersion: "provisional/v1", homography: [0.1, 0, 0, 0, 0.1, 0, 0, 0, 1], points: [], pitchLengthM: 105, pitchWidthM: 68, createdAt });
+    function calibrated(r = rows(), calibrations: unknown[] = [calibration()]) {
+      mockPrisma.visionJob.findFirst.mockImplementation(({ where }) => Promise.resolve(where.type === "ball_trajectory" ? r.ball : where.type === "track" ? r.track : { progress: { summary: { proxy: { key: "proxy.mp4", checksumSha256: proxyHash } }, artifacts: [{ key: "proxy.mp4", role: "proxy" }] } }));
+      mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4", width: 1280, height: 720, fps: 25, sourceOffsetMs: 0, createdAt: new Date("2026-10-01") });
+      mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: "cam", startMs: 0, endMs: 200, kind: "live_play", calibrations }]);
+      return r;
+    }
+    it("names the ball and track runs and counts calibrated windows, with no write and no key", async () => {
+      calibrated();
+      const result = await service.possessionPreflight(ASSET, "ball", "track");
+      expect(result).toMatchObject({ ready: true, ballJobId: "ball", trackJobId: "track", constraintMode: "calibrated", cameraSegments: 1, calibratedSegments: 1 });
+      expect(JSON.stringify(result)).not.toMatch(/inference\/|proxy\.mp4|readKeys|homography/);
+      expect(mockPrisma.visionJob.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ type: "ball_trajectory", id: "ball" }) }));
+      expect(mockPrisma.visionJob.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ type: "track", id: "track" }) }));
+      expect(mockQueue.enqueue).not.toHaveBeenCalled(); expect(mockAudit.record).not.toHaveBeenCalled();
+    });
+    it("is ready with no passing calibration, exactly as the queue is, and says so in the count", async () => {
+      calibrated(rows(), []);
+      expect(await service.possessionPreflight(ASSET)).toMatchObject({ ready: true, cameraSegments: 1, calibratedSegments: 0 });
+      calibrated(rows(), [{ ...calibration(), quality: "failed" }]);
+      expect(await service.possessionPreflight(ASSET)).toMatchObject({ ready: true, calibratedSegments: 0 });
+    });
+    it.each(["geometry", "unpinned proxy", "old calibration", "snapshot proxy", "source", "clock", "camera", "tracker", "rights", "prerequisite", "unlinked"])("preflight and calibrated enqueue share the first refusal: %s", async (change) => {
+      const r = calibrated(rows(), change === "old calibration" ? [calibration(new Date("2026-09-01"))] : [calibration()]);
+      if (change === "geometry") mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4", width: null, height: 720, fps: 25, sourceOffsetMs: 0, createdAt: new Date("2026-10-01") });
+      if (change === "unpinned proxy") mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "other.mp4", width: 1280, height: 720, fps: 25, sourceOffsetMs: 0, createdAt: new Date("2026-10-01") });
+      if (change === "snapshot proxy") { r.ball.inputSpec.proxyChecksum = "f".repeat(64); r.track.progress.summary.proxyChecksum = "f".repeat(64); }
+      if (change === "source") r.track.progress.summary.sourceChecksum = "f".repeat(64);
+      if (change === "clock") r.track.progress.summary.proxy.sourceOffsetMs = 1;
+      if (change === "camera") mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: "cam", startMs: 0, endMs: 200, kind: "replay", calibrations: [] }]);
+      if (change === "tracker") r.track.modelVersionId = "other";
+      if (change === "rights") mockRights.canAnalyze.mockResolvedValue({ allowed: false, reason: "revoked", remediation: "Renew the licence." });
+      if (change === "prerequisite") mockPrisma.visionJob.findMany.mockResolvedValue([{ type: "track" }]);
+      if (change === "unlinked") mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: null, checksumSha256: sourceHash, durationMs: 200 });
+      const result = await service.possessionPreflight(ASSET);
+      if (result.ready) throw new Error("Unexpected ready result");
+      expect(result.blocker.error).toBe(({ geometry: "PossessionCalibrationGeometryMissing", "unpinned proxy": "PossessionCalibrationProxyUnpinned", "old calibration": "PossessionCalibrationPredatesProxy", "snapshot proxy": "PossessionEvidenceMismatch", source: "PossessionEvidenceMismatch", clock: "PossessionEvidenceMismatch", camera: "PossessionEvidenceMismatch", tracker: "PossessionEvidenceMismatch", rights: "RightsDenied", prerequisite: "PrerequisiteMissing", unlinked: "AssetNotLinked" } as Record<string, string>)[change]);
+      await expect(service.enqueueForAsset({ type: "possession", videoAssetId: ASSET, params: { constraintMode: "calibrated" } })).rejects.toMatchObject({ status: result.blocker.statusCode, response: { error: result.blocker.error, message: result.blocker.message } });
+      expect(mockQueue.enqueue).not.toHaveBeenCalled(); expect(mockAudit.record).not.toHaveBeenCalled();
+    });
+    it("checks calibrated mode only, even where image mode would pass", async () => {
+      install();
+      expect(await service.possessionPreflight(ASSET)).toMatchObject({ ready: false, blocker: { error: "PossessionCalibrationGeometryMissing" } });
+      await service.enqueueForAsset({ type: "possession", videoAssetId: ASSET });
+      expect(enqueued().inputSpec.constraintMode).toBeUndefined();
+    });
+    it("propagates a server failure and refuses an ambiguous selection", async () => {
+      mockPrisma.visionJob.findFirst.mockRejectedValue(new Error("DB unavailable"));
+      await expect(service.possessionPreflight(ASSET)).rejects.toThrow("DB unavailable");
+      await expect(service.possessionPreflight(ASSET, ["a", "b"] as never)).rejects.toMatchObject({ status: 400, response: { error: "InvalidPreflightSelection" } });
+      await expect(service.possessionPreflight(ASSET, undefined, "a,b")).rejects.toMatchObject({ status: 400, response: { error: "InvalidPreflightSelection" } });
+    });
+  });
 });
 
 describe("an identify job is given the track artifact it assigns teams on", () => {
@@ -464,7 +651,9 @@ describe("a gamestate job is given the tracks, the calibrations and the clock", 
       { cameraSegmentId: "seg-3", startMs: 120001, endMs: 180000, quality: "failed", homography: H, pitch: { lengthM: 100, widthM: 64 } },
     ]);
     expect(spec.anchors).toEqual([{ half: 1, sourceMs: 9000, endMs: null }]);
-    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toMatchObject({ where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 });
+    // Whole-segment calibrations only: a keyframe is true of one frame, and read as the
+    // segment's it would place every other frame of a moving camera (docs/vision/93).
+    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toEqual({ where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1 });
     expect(spec.chunkMs).toBe(30000);
     expect(spec.proxy).toEqual({ fps: 25, sourceOffsetMs: 9000 });
     expect(enqueued().modelVersionId).toBeNull();

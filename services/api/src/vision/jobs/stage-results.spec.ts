@@ -5,7 +5,7 @@ import { BALL_TRAJECTORY_VERSION } from "@dtp/vision-contracts";
 const ASSET = "aaaa1111-2222-3333-4444-555566667777";
 
 const mockPrisma = {
-  visionVideoAsset: { update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
+  visionVideoAsset: { update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
   visionVideoVariant: { upsert: vi.fn() },
   visionDuplicateCluster: { create: vi.fn() },
   visionTrack: { createMany: vi.fn(), findMany: vi.fn() },
@@ -239,6 +239,7 @@ describe("transcode results become variant rows", () => {
     proxy: {
       key: "inference/j/1/proxy.mp4",
       fps: 25,
+      width: 1280,
       height: 720,
       settingsHash: "abc123",
       durationMs: 4000,
@@ -266,6 +267,16 @@ describe("transcode results become variant rows", () => {
   // worker images ship different FFmpeg versions (5.1.9 against 4.4.2 -- measured during
   // Spike S0). Without this column two proxies that are not byte-identical look identical
   // in the database.
+  // The worker reported the width all along; it was never stored, so calibrated
+  // possession refused the pilot for "missing" geometry its transcode had measured.
+  it("records the proxy's width beside its height, on first write and on a re-run", async () => {
+    await service().apply("transcode", ASSET, { artifacts, summary });
+    const call = mockPrisma.visionVideoVariant.upsert.mock.calls[0]![0];
+    expect(call.create).toMatchObject({ width: 1280, height: 720 });
+    expect(call.update).toMatchObject({ width: 1280, height: 720 });
+    expect(mockPrisma.visionVideoVariant.upsert.mock.calls[1]![0].create.width).toBeNull();
+  });
+
   it("records which FFmpeg build produced the proxy", async () => {
     await service().apply("transcode", ASSET, { artifacts, summary });
     const proxyCreate = mockPrisma.visionVideoVariant.upsert.mock.calls[0]![0].create;
@@ -346,8 +357,8 @@ describe("failure handling", () => {
   });
 
   it("has no domain effect for a stage that does not produce one", async () => {
-    // `calibrate` has no projection yet; detect and track gained theirs in Phases 3 and 4.
-    const outcome = await service().apply("calibrate", ASSET, { artifacts: [], summary: {} });
+    // `clip` has no projection yet; calibrate gained its check in docs/vision/93.
+    const outcome = await service().apply("clip", ASSET, { artifacts: [], summary: {} });
     expect(outcome.applied).toBe(false);
     expect(outcome.detail).toMatch(/no domain effect/);
   });
@@ -637,6 +648,7 @@ describe("cut proposals become camera segments", () => {
   const summary = (segments: unknown[] = [{ startMs: 9000, endMs: 70200 }, { startMs: 70200, endMs: 189000 }, { startMs: 189000, endMs: 609000 }]) => ({ cuts: 2, segments });
 
   beforeEach(() => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ durationMs: 609000 });
     mockPrisma.visionCameraSegment.findMany.mockResolvedValue([]);
     mockPrisma.visionCameraSegment.deleteMany.mockReturnValue("delete-op");
     mockPrisma.visionCameraSegment.createMany.mockReturnValue("create-op");
@@ -679,11 +691,125 @@ describe("cut proposals become camera segments", () => {
     expect(mockPrisma.visionCameraSegment.createMany.mock.calls[0]![0].data.map((d: { startMs: number }) => d.startMs)).toEqual([70200, 189000]);
   });
 
+  it("clips a proposal to the source's end, and drops one wholly past it", async () => {
+    // The proxy's padded tail ran 54 ms past the pilot's source: a segment there is one nobody could declare.
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ durationMs: 49706 });
+    await service().apply("cuts", ASSET, { artifacts, summary: summary([{ startMs: 0, endMs: 49760 }, { startMs: 49706, endMs: 49760 }]) });
+    expect(mockPrisma.visionCameraSegment.createMany.mock.calls[0]![0].data).toEqual([
+      { videoAssetId: ASSET, startMs: 0, endMs: 49706, kind: "unknown", source: "scene_detect" },
+    ]);
+  });
+
   it("refuses a malformed proposal, and a completion with no artifact", async () => {
     expect((await service().apply("cuts", ASSET, { artifacts, summary: summary([{ startMs: 5, endMs: 5 }]) })).applied).toBe(false);
     expect((await service().apply("cuts", ASSET, { artifacts: [], summary: summary() })).applied).toBe(false);
     expect((await service().apply("cuts", ASSET, { artifacts, summary: { cuts: 0 } })).applied).toBe(false);
     expect(mockPrisma.visionCameraSegment.createMany).not.toHaveBeenCalled();
+  });
+});
+
+/** camera_motion -> its shots proposed as segments; the motion rows stay in the artifact. */
+describe("camera motion proposes the shots between cuts", () => {
+  const JOB = "motion-job";
+  const proxyChecksum = "c".repeat(64);
+  const artifacts = [
+    { key: `inference/${JOB}/1/motion/motion-0000.jsonl`, bucket: "derived", role: "camera_motion_chunk" },
+    { key: `inference/${JOB}/1/camera-motion.json`, bucket: "derived", role: "camera_motion" },
+  ];
+  const summary = (over: Record<string, unknown> = {}) => ({ calculationVersion: "camera-motion/v1", chunks: 1, tracked: 1237, bridged: 0, break: 6,
+    proxyChecksum, indexChecksum: "d".repeat(64), shots: [{ startFrame: 0, endFrame: 103, startMs: 0, endMs: 4120 }, { startFrame: 103, endFrame: 1244, startMs: 4120, endMs: 49760 }], ...over });
+  const context = { jobId: JOB, modelVersionId: null, inputSpec: { proxyChecksum } };
+
+  beforeEach(() => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ durationMs: 49706 });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([]);
+    mockPrisma.visionCameraSegment.deleteMany.mockReturnValue("delete-op");
+    mockPrisma.visionCameraSegment.createMany.mockReturnValue("create-op");
+    mockPrisma.$transaction.mockResolvedValue([]);
+  });
+
+  it("writes each shot as a camera_motion proposal, clipped to the source", async () => {
+    const outcome = await service().apply("camera_motion", ASSET, { artifacts, summary: summary() }, context);
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("2 proposed segment(s): 2 new");
+    expect(outcome.detail).toContain("1237 tracked, 0 bridged, 6 cut(s)");
+    expect(mockPrisma.visionCameraSegment.createMany.mock.calls[0]![0].data).toEqual([
+      { videoAssetId: ASSET, startMs: 0, endMs: 4120, kind: "unknown", source: "camera_motion" },
+      { videoAssetId: ASSET, startMs: 4120, endMs: 49706, kind: "unknown", source: "camera_motion" },
+    ]);
+  });
+
+  it("replaces the scene filter's stale proposals, but never a person's or a calibrated one", async () => {
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "filter", startMs: 0, endMs: 49706, source: "scene_detect", _count: { calibrations: 0 } },
+      { id: "kept", startMs: 40000, endMs: 49706, source: "manual", _count: { calibrations: 0 } },
+    ]);
+    const outcome = await service().apply("camera_motion", ASSET, { artifacts, summary: summary() }, context);
+    expect(mockPrisma.visionCameraSegment.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["filter"] } } });
+    expect(outcome.detail).toContain("1 new, 0 already there, 1 skipped");
+  });
+
+  it("replaces its own earlier run's shots that nobody kept, and the scene filter replaces them too", async () => {
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+      { id: "older-shot", startMs: 0, endMs: 3000, source: "camera_motion", _count: { calibrations: 0 } },
+      { id: "calibrated-shot", startMs: 44360, endMs: 49706, source: "camera_motion", _count: { calibrations: 1 } },
+    ]);
+    await service().apply("camera_motion", ASSET, { artifacts, summary: summary() }, context);
+    expect(mockPrisma.visionCameraSegment.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["older-shot"] } } });
+    vi.clearAllMocks();
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ durationMs: 49706 });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: "older-shot", startMs: 0, endMs: 3000, source: "camera_motion", _count: { calibrations: 0 } }]);
+    mockPrisma.$transaction.mockResolvedValue([]);
+    await service().apply("cuts", ASSET, { artifacts: [{ key: "inference/c/1/cuts.json", bucket: "derived", role: "cuts" }], summary: { cuts: 0, segments: [{ startMs: 0, endMs: 49706 }] } });
+    expect(mockPrisma.visionCameraSegment.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["older-shot"] } } });
+  });
+
+  it.each([
+    ["another proxy", { proxyChecksum: "e".repeat(64) }, artifacts],
+    ["another version", { calculationVersion: "camera-motion/v0" }, artifacts],
+    ["a chunk count that differs", { chunks: 2 }, artifacts],
+    ["no index checksum", { indexChecksum: "x" }, artifacts],
+    ["an artifact outside the job", {}, [{ ...artifacts[0]!, key: "inference/other/1/motion/motion-0000.jsonl" }, artifacts[1]!]],
+    ["no index", {}, [artifacts[0]!]],
+    ["a malformed shot", { shots: [{ startMs: 10, endMs: 10 }] }, artifacts],
+  ])("writes nothing for %s", async (_label, over, arts) => {
+    const outcome = await service().apply("camera_motion", ASSET, { artifacts: arts, summary: summary(over) }, context);
+    expect(outcome.applied).toBe(false);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+/** calibrate -> nothing in Postgres; the completion must name what it was queued with. */
+describe("calibrate results are checked, not stored", () => {
+  const JOB = "cal-job";
+  const proxyChecksum = "a".repeat(64);
+  const motionChecksum = "b".repeat(64);
+  const artifacts = [
+    { key: `inference/${JOB}/1/frames/frames-0000.jsonl`, bucket: "derived", role: "calibration_frames_chunk" },
+    { key: `inference/${JOB}/1/calibration-frames.json`, bucket: "derived", role: "calibration_frames" },
+  ];
+  const summary = (over: Record<string, unknown> = {}) => ({ calculationVersion: "calibration-propagation/v1", chunks: 1, frames: 1244, covered: 600, proxyChecksum,
+    cameraMotionIndexChecksum: motionChecksum, indexChecksum: "c".repeat(64), segments: [{ drift: [{ medianM: 0.4 }, { medianM: 1.2 }] }], ...over });
+  const context = { jobId: JOB, modelVersionId: null, inputSpec: { proxyChecksum, cameraMotion: { indexChecksum: motionChecksum } } };
+
+  it("reports coverage and the drift measured between keyframes", async () => {
+    const outcome = await service().apply("calibrate", ASSET, { artifacts, summary: summary() }, context);
+    expect(outcome.applied).toBe(true);
+    expect(outcome.detail).toContain("600 of 1244 frame(s) calibrated (48.2%)");
+    expect(outcome.detail).toContain("drift between keyframes 0.40-1.20 m");
+    const lone = await service().apply("calibrate", ASSET, { artifacts, summary: summary({ segments: [] }) }, context);
+    expect(lone.detail).toContain("no drift measured");
+  });
+
+  it.each([
+    ["another proxy", { proxyChecksum: "e".repeat(64) }, artifacts],
+    ["other motion", { cameraMotionIndexChecksum: "e".repeat(64) }, artifacts],
+    ["another version", { calculationVersion: "calibration-propagation/v0" }, artifacts],
+    ["more covered than frames", { covered: 2000 }, artifacts],
+    ["a chunk count that differs", { chunks: 3 }, artifacts],
+    ["an artifact outside the job", {}, [artifacts[0]!, { ...artifacts[1]!, key: "inference/x/1/calibration-frames.json" }]],
+  ])("refuses %s", async (_label, over, arts) => {
+    expect((await service().apply("calibrate", ASSET, { artifacts: arts, summary: summary(over) }, context)).applied).toBe(false);
   });
 });
 

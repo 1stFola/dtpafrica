@@ -40,6 +40,12 @@ export type VisionConfig = {
   compute: {
     defaultProvider: string;
     workerImage: string;
+    /**
+     * The absolute URL a hosted worker calls back to, ending in `/api/v1/vision/worker`.
+     * Null until set; a provider that launches capacity is refused without it, because a
+     * pod on someone else's network cannot resolve the relative path the box's worker uses.
+     */
+    hostedWorkerCallbackUrl: string | null;
     /** Refuses to launch new capacity past this, per month. */
     monthlyBudgetUsdCents: number;
   };
@@ -107,6 +113,28 @@ function boolFromEnv(env: NodeJS.ProcessEnv, key: string, fallback: boolean): bo
   const raw = env[key]?.trim().toLowerCase();
   if (raw === undefined || raw === "") return fallback;
   return raw === "1" || raw === "true" || raw === "yes";
+}
+
+export const WORKER_CALLBACK_PATH = "/api/v1/vision/worker";
+
+/**
+ * `VISION_HOSTED_WORKER_CALLBACK_URL`: https, or http only to this machine, because the
+ * bootstrap token travels in it; and ending in the worker path, which the worker's own
+ * bootstrap requires. Not `VISION_WORKER_CALLBACK_URL`: that is the box's worker's
+ * setting, a name on the compose network no pod can reach.
+ */
+function callbackUrlFromEnv(env: NodeJS.ProcessEnv, problems: string[]): string | null {
+  const raw = env.VISION_HOSTED_WORKER_CALLBACK_URL?.trim();
+  if (!raw) return null;
+  let url: URL | null = null;
+  try { url = new URL(raw); } catch { /* reported below */ }
+  const local = url !== null && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  const path = url?.pathname.replace(/\/+$/, "");
+  if (!url || (url.protocol !== "https:" && !(url.protocol === "http:" && local)) || path !== WORKER_CALLBACK_PATH || url.search || url.hash || url.username || url.password) {
+    problems.push(`VISION_HOSTED_WORKER_CALLBACK_URL must be an https URL ending in ${WORKER_CALLBACK_PATH}, with no query or credentials; got ${JSON.stringify(raw)}`);
+    return null;
+  }
+  return `${url.origin}${WORKER_CALLBACK_PATH}`;
 }
 
 /**
@@ -234,6 +262,7 @@ export function loadVisionConfig(env: NodeJS.ProcessEnv = process.env): VisionCo
     compute: {
       defaultProvider: env.VISION_COMPUTE_PROVIDER?.trim() || "mock",
       workerImage: env.VISION_WORKER_IMAGE?.trim() || DEFAULTS.workerImage,
+      hostedWorkerCallbackUrl: callbackUrlFromEnv(env, problems),
       monthlyBudgetUsdCents: intFromEnv(
         env,
         "VISION_MONTHLY_BUDGET_USD_CENTS",

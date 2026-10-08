@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
 
 import { CAMERA_SEGMENT_KINDS, type CameraSegmentKind } from "@dtp/vision-contracts";
 
@@ -13,6 +13,11 @@ export class DeclareSegmentDto {
   @Min(1)
   endMs!: number;
 
+  @IsIn(CAMERA_SEGMENT_KINDS as unknown as string[])
+  kind!: CameraSegmentKind;
+}
+
+export class SetSegmentKindDto {
   @IsIn(CAMERA_SEGMENT_KINDS as unknown as string[])
   kind!: CameraSegmentKind;
 }
@@ -54,4 +59,12 @@ export class CalibrateDto {
   @ValidateNested()
   @Type(() => PitchDimensionsDto)
   pitch?: PitchDimensionsDto;
+
+  /**
+   * True: a keyframe, true of the one frame its points were placed on, for a moving
+   * camera. Absent or false: the whole segment, for a still one.
+   */
+  @IsOptional()
+  @IsBoolean()
+  keyframe?: boolean;
 }

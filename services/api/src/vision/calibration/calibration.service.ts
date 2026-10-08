@@ -15,6 +15,7 @@ import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { CALIBRATION_THRESHOLDS, qualityOf, type CalibrationQuality, type CalibrationThresholds } from "./calibration-thresholds";
 import { fitHomography, homogeneousW, invert3, isFit, orientStored, project, projectInView, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
 import { DEFAULT_PITCH, landmarkById, pitchLines, pitchProblem, type PitchDimensions } from "./pitch-model";
+import { pinnedProxy } from "./pinned-proxy";
 import { notFound, personFor } from "../shared/refusals";
 
 /**
@@ -143,6 +144,41 @@ export class VisionCalibrationService {
     return { removed: segment.id };
   }
 
+  /**
+   * A person says what a segment is: live play, a replay, half-time. On a proposal
+   * this is the person adopting it, so it becomes `manual`, with their name, and a
+   * later automatic run no longer replaces it. Refused while current event candidates
+   * were filed under the segment: their in-play flag came from its kind.
+   */
+  async setSegmentKind(cameraSegmentId: string, kind: string, actor?: AdminAuthContext) {
+    const person = requirePerson(actor, "set a camera segment's kind");
+    const segment = await this.prisma.visionCameraSegment.findUnique({
+      where: { id: cameraSegmentId },
+      select: { id: true, videoAssetId: true, kind: true, source: true, startMs: true, endMs: true },
+    });
+    if (!segment) throw notFound("camera segment", cameraSegmentId);
+    if (segment.kind === kind && segment.source === "manual") return segment;
+    const [filedUnder, linked] = await Promise.all([
+      this.prisma.visionEventCandidate.count({ where: { cameraSegmentId: segment.id, supersededBy: null } }),
+      this.prisma.visionEvidenceLink.count({ where: { kind: "camera_segment", targetId: segment.id, candidate: { supersededBy: null } } }),
+    ]);
+    if (segment.kind !== kind && (filedUnder || linked)) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "SegmentReferenced",
+        message: `Segment ${cameraSegmentId} is evidence for ${Math.max(filedUnder, linked)} current event candidate(s), which took their in-play flag from its kind.`,
+        remediation: "Correct those candidates first, then change the segment's kind.",
+      });
+    }
+    const updated = await this.prisma.visionCameraSegment.update({
+      where: { id: segment.id },
+      data: { kind, source: "manual", ...(segment.source === "manual" ? {} : { createdBy: person.userId }) },
+    });
+    await this.audit.record({ action: "camera.segment.updated", targetKind: "vision_camera_segment", targetId: segment.id,
+      data: { videoAssetId: segment.videoAssetId, startMs: segment.startMs, endMs: segment.endMs, kindFrom: segment.kind, kindTo: kind, sourceFrom: segment.source } }, actor);
+    return updated;
+  }
+
   /** The asset's segments with each one's current calibration, as a reviewer reads them. */
   async segments(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, durationMs: true } });
@@ -153,7 +189,10 @@ export class VisionCalibrationService {
       include: { calibrations: { orderBy: { createdAt: "desc" } } },
     });
     const rows = segments.map((s) => {
-      const current = s.calibrations.find((c) => c.supersededBy === null) ?? null;
+      const live = s.calibrations.filter((c) => c.supersededBy === null && c.withdrawnAt === null);
+      // A segment holds one whole-segment calibration (a still camera) or keyframes (a moving one).
+      const current = live.find((c) => c.frameIndex === null) ?? null;
+      const keyframes = live.filter((c) => c.frameIndex !== null).sort((a, b) => a.frameIndex! - b.frameIndex!);
       return {
         id: s.id,
         kind: s.kind,
@@ -161,7 +200,8 @@ export class VisionCalibrationService {
         startMs: s.startMs,
         endMs: s.endMs,
         calibration: current ? summarise(current) : null,
-        superseded: s.calibrations.filter((c) => c.supersededBy !== null).length,
+        keyframes: keyframes.map((k) => ({ ...summarise(k), frameIndex: k.frameIndex! })),
+        superseded: s.calibrations.filter((c) => c.supersededBy !== null || c.withdrawnAt !== null).length,
       };
     });
     const covered = rows.reduce((ms, r) => ms + (r.endMs - r.startMs), 0);
@@ -172,6 +212,8 @@ export class VisionCalibrationService {
       coverage: {
         segmentedMs: covered,
         calibratedMs: rows.filter((r) => r.calibration && r.calibration.quality !== "failed").reduce((ms, r) => ms + (r.endMs - r.startMs), 0),
+        // Segments with keyframes: how much of each the `calibrate` stage carries them to is its finding, not this one.
+        keyframedMs: rows.filter((r) => r.keyframes.some((k) => k.quality !== "failed")).reduce((ms, r) => ms + (r.endMs - r.startMs), 0),
       },
       thresholds: this.thresholds,
     };
@@ -211,10 +253,11 @@ export class VisionCalibrationService {
    * quality -- a `failed` calibration is a fact about the footage, and it is what
    * makes the suppression rule fire rather than fall back to a stale one.
    */
-  async calibrate(cameraSegmentId: string, input: { points: CalibrationPointInput[]; pitch?: PitchDimensions }, actor?: AdminAuthContext) {
+  async calibrate(cameraSegmentId: string, input: { points: CalibrationPointInput[]; pitch?: PitchDimensions; keyframe?: boolean }, actor?: AdminAuthContext) {
     const person = requirePerson(actor, "calibrate a camera segment");
-    const segment = await this.prisma.visionCameraSegment.findUnique({ where: { id: cameraSegmentId }, select: { id: true, videoAssetId: true } });
+    const segment = await this.prisma.visionCameraSegment.findUnique({ where: { id: cameraSegmentId }, select: { id: true, videoAssetId: true, startMs: true, endMs: true } });
     if (!segment) throw notFound("camera segment", cameraSegmentId);
+    const frameIndex = input.keyframe ? await this.keyframeFrame(segment, input.points) : null;
     const pitch = input.pitch ?? DEFAULT_PITCH;
     const result = this.preview(input.points, pitch);
     if (!result.ok) {
@@ -241,9 +284,17 @@ export class VisionCalibrationService {
           quality: result.quality,
           thresholdsVersion: result.thresholdsVersion,
           decidedBy: person.userId,
+          frameIndex,
         },
       });
-      await tx.visionPitchCalibration.updateMany({ where: { cameraSegmentId: segment.id, supersededBy: null, id: { not: created.id } }, data: { supersededBy: created.id } });
+      // A whole-segment calibration replaces everything current on the segment, keyframes
+      // included: the camera is declared still. A keyframe replaces the whole-segment one
+      // and an earlier keyframe on the same frame, and nothing else.
+      await tx.visionPitchCalibration.updateMany({
+        where: { cameraSegmentId: segment.id, supersededBy: null, withdrawnAt: null, id: { not: created.id },
+          ...(frameIndex === null ? {} : { OR: [{ frameIndex: null }, { frameIndex }] }) },
+        data: { supersededBy: created.id },
+      });
       return created;
     });
     await this.audit.record(
@@ -251,7 +302,7 @@ export class VisionCalibrationService {
         action: "calibration.set",
         targetKind: "vision_camera_segment",
         targetId: segment.id,
-        data: { calibrationId: row.id, videoAssetId: segment.videoAssetId, quality: row.quality, reprojectionErrorM: row.reprojectionErrorM, points: row.pointsUsed, thresholdsVersion: row.thresholdsVersion },
+        data: { calibrationId: row.id, videoAssetId: segment.videoAssetId, quality: row.quality, reprojectionErrorM: row.reprojectionErrorM, points: row.pointsUsed, thresholdsVersion: row.thresholdsVersion, frameIndex },
       },
       actor
     );
@@ -330,6 +381,99 @@ export class VisionCalibrationService {
    * is reported only when every position was placed; otherwise it is suppressed
    * and labelled, never a number with a footnote.
    */
+  /**
+   * The proxy frame a keyframe is true of. Every point must have been clicked on that
+   * one frame, and the frame must lie inside the segment, half-open as the pipeline
+   * reads it: a keyframe is a fact about one picture, and a fit mixing two pictures
+   * of a moving camera describes neither.
+   */
+  private async keyframeFrame(segment: { videoAssetId: string; startMs: number; endMs: number }, points: CalibrationPointInput[]): Promise<number> {
+    const frames = new Set(points.map((p) => p.frameIndex));
+    const frame = points[0]?.frameIndex;
+    if (frames.size !== 1 || typeof frame !== "number" || !Number.isSafeInteger(frame) || frame < 0) {
+      throw new BadRequestException({ statusCode: 400, error: "KeyframePointsSpanFrames", message: "A keyframe's landmarks must all be placed on one frame.",
+        remediation: "Clear the points, pause on one frame, and place every landmark on it." });
+    }
+    const proxy = await this.prisma.visionVideoVariant.findFirst({ where: { videoAssetId: segment.videoAssetId, kind: "proxy" }, orderBy: { createdAt: "desc" }, select: { fps: true, sourceOffsetMs: true } });
+    if (!proxy?.fps || proxy.fps <= 0) {
+      throw new ConflictException({ statusCode: 409, error: "ProxyWithoutFps", message: "The proxy has no recorded frame rate, so a frame cannot be placed in time.", remediation: "Run transcode for the asset again." });
+    }
+    const sourceMs = (proxy.sourceOffsetMs ?? 0) + Math.round((frame * 1000) / proxy.fps);
+    if (sourceMs < segment.startMs || sourceMs >= segment.endMs) {
+      throw new ConflictException({ statusCode: 409, error: "KeyframeOutsideSegment", message: `Frame ${frame} is at ${sourceMs} ms, outside the segment ${segment.startMs}–${segment.endMs} ms.`,
+        remediation: "File the keyframe on the segment the frame belongs to." });
+    }
+    return frame;
+  }
+
+  /**
+   * One frame's calibration as the latest `calibrate` run carried it, with the pitch
+   * lines it puts on the picture: how a person sees a keyframe hold, or drift, away
+   * from the frame it was made on. `stale` when the run's pinned calibrations, segments
+   * or proxy are no longer the current ones; the row is still shown, marked.
+   */
+  async carriedAt(videoAssetId: string, frame: number) {
+    if (!Number.isSafeInteger(frame) || frame < 0)
+      throw new BadRequestException({ statusCode: 400, error: "FrameInvalid", message: `Frame ${frame} is not a frame number.`, remediation: "Ask for a whole, non-negative proxy frame." });
+    const job = await this.prisma.visionJob.findFirst({ where: { videoAssetId, type: "calibrate", state: "succeeded" }, orderBy: { finishedAt: "desc" } });
+    if (!job) return { videoAssetId, frame, run: null, row: null, overlay: [] };
+    const progress = job.progress as { summary?: Record<string, unknown>; artifacts?: { key: string; role: string; bucket: string }[] } | null;
+    const indexKey = progress?.artifacts?.find((a) => a.role === "calibration_frames" && a.bucket === "derived")?.key;
+    const run = { jobId: job.id, finishedAt: job.finishedAt, stale: await this.carriedRunStale(videoAssetId, job.inputSpec as Record<string, unknown> | null),
+      frames: progress?.summary?.frames ?? null, covered: progress?.summary?.covered ?? null, coverage: progress?.summary?.coverage ?? null };
+    const index = indexKey ? await this.store.getSmallObject("derived", indexKey, 4_000_000) : null;
+    const chunks = index ? ((JSON.parse(index.toString("utf8")) as { chunks?: { key: string; firstFrame: number; lastFrame: number }[] }).chunks ?? []) : [];
+    const chunk = chunks.find((c) => c.firstFrame <= frame && frame <= c.lastFrame);
+    if (!chunk) return { videoAssetId, frame, run, row: null, overlay: [] };
+    const body = await this.store.getSmallObject("derived", chunk.key, 64_000_000);
+    const row = body ? body.toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as CarriedRow).find((r) => r.f === frame) ?? null : null;
+    if (!row?.H) return { videoAssetId, frame, run, row, overlay: [] };
+    const pitch = this.pinnedPitch(job.inputSpec as Record<string, unknown> | null, row.calibrationId) ?? DEFAULT_PITCH;
+    const back = invert3(row.H as Homography);
+    const centre = projectInView(row.H as Homography, { x: 640, y: 360 });
+    return { videoAssetId, frame, run, row, pitch, overlay: back ? overlayFor(back, pitch, centre ?? { x: pitch.lengthM / 2, y: pitch.widthM / 2 }) : [] };
+  }
+
+  /** The pitch size the run carried with a calibration, as the person filed it. */
+  private pinnedPitch(spec: Record<string, unknown> | null, calibrationId: string | null): PitchDimensions | null {
+    const segments = Array.isArray(spec?.segments) ? (spec!.segments as { calibrations?: { calibrationId?: string; pitch?: PitchDimensions }[] }[]) : [];
+    const pinned = segments.flatMap((s) => s.calibrations ?? []).find((c) => c.calibrationId === calibrationId);
+    return pinned?.pitch ?? null;
+  }
+
+  /** Whether a calibrate run's pins still describe the footage: same proxy, segments and current calibrations. */
+  private async carriedRunStale(videoAssetId: string, spec: Record<string, unknown> | null): Promise<boolean> {
+    let checksum: string;
+    try { checksum = (await pinnedProxy(this.prisma, videoAssetId)).checksum; } catch { return true; }
+    if (spec?.proxyChecksum !== checksum) return true;
+    const segments = await this.prisma.visionCameraSegment.findMany({ where: { videoAssetId }, orderBy: { startMs: "asc" },
+      include: { calibrations: { where: { supersededBy: null, withdrawnAt: null }, select: { id: true, frameIndex: true } } } });
+    const now = segments.map((s) => {
+      const keyframes = s.calibrations.filter((c) => c.frameIndex !== null).map((c) => c.id).sort();
+      const whole = s.calibrations.filter((c) => c.frameIndex === null).map((c) => c.id);
+      return `${s.id}:${s.startMs}:${s.endMs}:${s.kind}:${(keyframes.length ? keyframes : whole.slice(0, 1)).join(",")}`;
+    });
+    const pinned = (Array.isArray(spec?.segments) ? (spec!.segments as { cameraSegmentId: string; startMs: number; endMs: number; kind: string; calibrations?: { calibrationId: string }[] }[]) : [])
+      .map((s) => `${s.cameraSegmentId}:${s.startMs}:${s.endMs}:${s.kind}:${(s.calibrations ?? []).map((c) => c.calibrationId).sort().join(",")}`);
+    return JSON.stringify(now) !== JSON.stringify(pinned);
+  }
+
+  /** A person takes a keyframe back: nothing replaces it, and the frames it reached lose it. */
+  async withdrawKeyframe(calibrationId: string, actor?: AdminAuthContext) {
+    const person = requirePerson(actor, "withdraw a keyframe");
+    const row = await this.prisma.visionPitchCalibration.findUnique({ where: { id: calibrationId }, select: { id: true, cameraSegmentId: true, frameIndex: true, supersededBy: true, withdrawnAt: true } });
+    if (!row) throw notFound("calibration", calibrationId);
+    if (row.frameIndex === null) {
+      throw new ConflictException({ statusCode: 409, error: "NotAKeyframe", message: "This calibration holds for its whole segment; only a keyframe is withdrawn.", remediation: "File a new calibration to replace it." });
+    }
+    if (row.supersededBy !== null || row.withdrawnAt !== null) {
+      throw new ConflictException({ statusCode: 409, error: "KeyframeNotCurrent", message: "This keyframe has already been replaced or withdrawn.", remediation: "Reload the segment and act on its current keyframes." });
+    }
+    const withdrawn = await this.prisma.visionPitchCalibration.update({ where: { id: row.id }, data: { withdrawnAt: new Date(), withdrawnBy: person.userId } });
+    await this.audit.record({ action: "calibration.withdrawn", targetKind: "vision_camera_segment", targetId: row.cameraSegmentId, data: { calibrationId: row.id, frameIndex: row.frameIndex } }, actor);
+    return { withdrawn: withdrawn.id };
+  }
+
   async pitchPositions(trackId: string) {
     const track = await this.prisma.visionTrack.findUnique({ where: { id: trackId }, select: { id: true, videoAssetId: true } });
     if (!track) throw notFound("track", trackId);
@@ -338,7 +482,9 @@ export class VisionCalibrationService {
       this.prisma.visionCameraSegment.findMany({
         where: { videoAssetId: track.videoAssetId },
         orderBy: { startMs: "asc" },
-        include: { calibrations: { where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 } },
+        // Whole-segment calibrations only: a keyframe is true of one frame, and read as the
+        // segment's it would place every other frame of a moving camera wrongly.
+        include: { calibrations: { where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1 } },
       }),
     ]);
 
@@ -426,6 +572,9 @@ export class VisionCalibrationService {
  * -- or absurdly far outside the picture breaks the polyline, so the far
  * touchline of a low camera does not become a line across the sky.
  */
+/** A frame row of a calibrate run, as the stage wrote it. */
+type CarriedRow = { f: number; ms: number; cameraSegmentId: string | null; H: number[] | null; calibrationId: string | null; quality: string | null; keyframe: number | null; framesFromKeyframe: number | null; reason: string | null };
+
 function overlayFor(pitchToPixel: Homography, pitch: PitchDimensions, inView: { x: number; y: number }): Overlay {
   const LIMIT = 20_000;
   const side = Math.sign(homogeneousW(pitchToPixel, inView)) || 1;

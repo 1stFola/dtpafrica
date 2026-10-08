@@ -15,7 +15,7 @@ export async function possessionCalibration(db: Pick<PrismaClient, "visionCamera
   if (declared?.key !== proxy.objectKey || !/^[a-f0-9]{64}$/i.test(declared?.checksumSha256 ?? "") || !progress?.artifacts?.some((a) => a.role === "proxy" && a.key === proxy.objectKey))
     throw refusal(409, "PossessionCalibrationProxyUnpinned", "The current proxy has no matching completed checksum evidence.", "Produce a proxy with the updated local worker, then recalibrate and regenerate detection evidence.");
   const cameras = await db.visionCameraSegment.findMany({ where: { videoAssetId }, orderBy: { startMs: "asc" },
-    include: { calibrations: { where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 } } });
+    include: { calibrations: { where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1 } } });
   return { proxyWidth: proxy.width, proxyHeight: proxy.height, proxyVariantId: proxy.id, proxyKey: proxy.objectKey, proxyChecksum: declared!.checksumSha256!, segments: cameras.map((s) => {
     const c = s.calibrations[0] ?? null;
     const passing = c?.quality === "good" || c?.quality === "usable";

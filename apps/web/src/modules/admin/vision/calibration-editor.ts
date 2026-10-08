@@ -93,9 +93,13 @@ export function removePoint(placed: VisionCalibrationPoint[], landmark: string):
   return placed.filter((p) => p.landmark !== landmark);
 }
 
-/** The segment covering a moment in source time, if any. Inclusive at both ends, as the API reads it. */
+/**
+ * The segment covering a moment in source time, if any. Half-open, `start <= t < end`,
+ * as the API and the worker read it: at a cut the next shot's first frame belongs to
+ * the next shot, so a calibration filed there lands where the pipeline will look.
+ */
 export function segmentAt(segments: VisionCameraSegment[], sourceMs: number): VisionCameraSegment | null {
-  return segments.find((s) => s.startMs <= sourceMs && sourceMs <= s.endMs) ?? null;
+  return segments.find((s) => s.startMs <= sourceMs && sourceMs < s.endMs) ?? null;
 }
 
 /**
@@ -131,10 +135,45 @@ export function fitReason(reason: string, detail?: string): string {
   }
 }
 
-/** A segment's label: `wide · 0:09–1:00 · good 0.42 m`, or `proposed`. */
+/**
+ * The frame a keyframe from these points would be true of, or why they cannot be one:
+ * every point placed on the frame now on screen. A fit mixing frames of a moving
+ * camera describes none of them.
+ */
+export function keyframeFrameOf(points: { frameIndex?: number }[], frameNow: number | null): number | string {
+  if (frameNow === null) return "The proxy's frame rate is unknown, so this frame cannot be named.";
+  if (!points.length) return "Place the landmarks on this frame first.";
+  if (points.some((p) => p.frameIndex !== frameNow)) return "Some landmarks were placed on another frame. Clear them and place every one on this frame.";
+  return frameNow;
+}
+
+const CARRIED_REASON_WORDS: Record<string, string> = {
+  no_camera_segment: "no camera segment here",
+  segment_not_calibrated: "this segment has no calibration",
+  calibration_failed: "the segment's calibration failed",
+  no_keyframe_in_shot: "no keyframe in this shot",
+  beyond_reach: "too far from any keyframe in this shot",
+  keyframe_failed: "the nearest keyframe failed",
+  motion_unknown: "the camera's motion here was not measured",
+};
+
+/** The carried calibration at the playhead, in words: where it came from and how far, or why there is none. */
+export function describeCarried(row: { H: number[] | null; quality: string | null; keyframe: number | null; framesFromKeyframe: number | null; reason: string | null } | null, fps: number | null, formatClock: (ms: number) => string): string {
+  if (!row) return "No carried calibration for this frame.";
+  if (!row.H) return `No calibration here: ${CARRIED_REASON_WORDS[row.reason ?? ""] ?? row.reason ?? "unknown"}.`;
+  if (row.keyframe === null) return `Whole-segment calibration · ${row.quality}.`;
+  const at = fps ? ` at ${formatClock((row.keyframe * 1000) / fps)}` : "";
+  return `Carried from the keyframe${at}, ${row.framesFromKeyframe} frame(s) away · ${row.quality}.`;
+}
+
+/** Words for who proposed a segment nobody has labelled yet. */
+export const PROPOSAL_WORDS: Record<string, string> = { scene_detect: "proposed cut", camera_motion: "proposed shot" };
+
+/** A segment's label: `live play · 0:09–1:00 · good 0.42 m`, or `proposed shot · …`. */
 export function describeSegment(s: VisionCameraSegment, formatClock: (ms: number) => string): string {
-  const who = s.source === "scene_detect" ? "proposed" : ((SEGMENT_KIND_WORDS as Record<string, string>)[s.kind] ?? s.kind);
-  const cal = s.calibration ? `${s.calibration.quality} ${s.calibration.reprojectionErrorM.toFixed(2)} m` : "not calibrated";
+  const who = PROPOSAL_WORDS[s.source] ?? ((SEGMENT_KIND_WORDS as Record<string, string>)[s.kind] ?? s.kind);
+  const keyframes = s.keyframes?.length ?? 0;
+  const cal = s.calibration ? `${s.calibration.quality} ${s.calibration.reprojectionErrorM.toFixed(2)} m` : keyframes ? `${keyframes} keyframe(s)` : "not calibrated";
   return `${who} · ${formatClock(s.startMs)}–${formatClock(s.endMs)} · ${cal}`;
 }
 

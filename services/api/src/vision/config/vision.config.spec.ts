@@ -144,3 +144,26 @@ describe("job defaults", () => {
     expect(jobs.heartbeatIntervalSeconds).toBe(30);
   });
 });
+
+describe("the URL a hosted worker calls back to", () => {
+  const load = (value?: string) => loadVisionConfig(value === undefined ? {} : { VISION_HOSTED_WORKER_CALLBACK_URL: value }).compute.hostedWorkerCallbackUrl;
+  it("is unset by default and when blank, so a deploy without the key still boots", () => {
+    expect(load()).toBeNull(); expect(load("")).toBeNull(); expect(load("  ")).toBeNull();
+  });
+  it("accepts https, or http to this machine, ending in the worker path, and normalises it", () => {
+    expect(load("https://api.dtp.africa/api/v1/vision/worker/")).toBe("https://api.dtp.africa/api/v1/vision/worker");
+    expect(load("http://localhost:3000/api/v1/vision/worker")).toBe("http://localhost:3000/api/v1/vision/worker");
+  });
+  it.each([
+    "/api/v1/vision/worker",
+    "http://api:3000/api/v1/vision/worker",
+    "http://api.dtp.africa/api/v1/vision/worker",
+    "https://api.dtp.africa",
+    "https://api.dtp.africa/api/v1/vision",
+    "https://api.dtp.africa/api/v1/vision/worker?x=1",
+    "https://user:pass@api.dtp.africa/api/v1/vision/worker",
+    "ftp://api.dtp.africa/api/v1/vision/worker",
+  ])("refuses at boot: %s", (value) => {
+    expect(() => load(value)).toThrow(/VISION_HOSTED_WORKER_CALLBACK_URL/);
+  });
+});

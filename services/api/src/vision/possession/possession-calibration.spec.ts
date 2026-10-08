@@ -9,6 +9,11 @@ function fixture(c: any = calibration()) {
     visionCameraSegment: { findMany: vi.fn().mockResolvedValue([{ id: "cam", startMs: 0, endMs: 400, calibrations: c ? [c] : [] }]) } };
 }
 describe("possession calibration provenance", () => {
+  it("reads only whole-segment calibrations: a keyframe is true of one frame, not of the segment", async () => {
+    const db = fixture();
+    await possessionCalibration(db as never, "asset");
+    expect(db.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations.where).toEqual({ supersededBy: null, withdrawnAt: null, frameIndex: null });
+  });
   it("pins the exact proxy variant, checksum, calibration ID, geometry and thresholds", async () => {
     const db = fixture();
     expect(await possessionCalibration(db as never, "asset")).toMatchObject({ proxyVariantId: "proxy", proxyWidth: 500, proxyChecksum: "e".repeat(64), segments: [{ calibrationId: "cal", quality: "good", thresholdsVersion: "provisional/v1" }] });

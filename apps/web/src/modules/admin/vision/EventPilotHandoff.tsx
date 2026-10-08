@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { VisionAssetRow, VisionEventGoldListSet, VisionEventImports } from "../../../api/vision";
 import { CarryPreflightControl } from "./CarryPreflightControl";
+import { UpstreamPreflightControl } from "./UpstreamPreflightControl";
 
 export function EventPilotHandoff({ asset, imports, references, referenceError, canReview }: {
   asset: VisionAssetRow; imports: VisionEventImports | null; references: VisionEventGoldListSet[] | null; referenceError: string | null; canReview: boolean;
@@ -12,6 +13,7 @@ export function EventPilotHandoff({ asset, imports, references, referenceError, 
   const ownReferences = references?.filter((reference) => reference.videoAssetId === asset.id);
   return <section aria-label="Pilot prerequisites and evaluation handoff">
     <p>Phase 6 accuracy gate remains open. Completed stages and reviewer acceptance do not establish real-footage accuracy.</p>
+    <UpstreamPreflightControl key={`upstream-${asset.id}`} assetId={asset.id} />
     <CarryPreflightControl key={asset.id} assetId={asset.id} />
     <ol>
       <li><Link to={source}>Source rights and pipeline</Link>: {imports ? imports.canImport ? "analysis currently permitted" : "analysis rights blocked" : "rights status loading"}; {asset.sbMatchId ? "match linked" : "link a match"}; {bounded ? "within the five-minute carry limit" : "carry needs a known positive duration of at most five minutes"}.</li>

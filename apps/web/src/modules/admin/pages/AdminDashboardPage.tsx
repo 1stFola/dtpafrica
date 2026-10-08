@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi, type AdminStats } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminAuth } from "../AdminAuthContext";
+import { ADMIN_NAV_PERMISSIONS, canAccessNav } from "../admin-permissions";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { StoppedRecordingsPanel } from "../components/StoppedRecordingsPanel";
 
@@ -60,10 +62,19 @@ const cards: Array<{ to: string; title: string; desc: string; tag: string }> = [
     desc: "Entities, rosters, highlights, match center, live ops",
     tag: "Live ops",
   },
+  {
+    to: "/admin/vision",
+    title: "Vision Engine",
+    desc: "Footage, analysis jobs, review workstation and event evaluation",
+    tag: "Match video",
+  },
 ];
 
 export function AdminDashboardPage() {
   usePageTitle("Admin");
+  const { session } = useAdminAuth();
+  // The same rule as the sidebar, so a card never leads to a page that refuses the person.
+  const visibleCards = cards.filter((c) => canAccessNav(session?.permissions ?? [], session?.method ?? "jwt", ADMIN_NAV_PERMISSIONS[c.to]));
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -136,7 +147,7 @@ export function AdminDashboardPage() {
       ) : null}
 
       <div className="admin-sb-hub-grid">
-        {cards.map((c) => (
+        {visibleCards.map((c) => (
           <Link key={c.to} to={c.to} className="admin-sb-hub-card sip-card">
             <span className="admin-sb-hub-card__tag">{c.tag}</span>
             <h3>{c.title}</h3>

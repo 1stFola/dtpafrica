@@ -724,10 +724,12 @@ export type VisionCalibrationSummary = {
 export type VisionCameraSegment = {
   id: string;
   kind: string;
-  source: "manual" | "scene_detect" | string;
+  source: "manual" | "scene_detect" | "camera_motion" | string;
   startMs: number;
   endMs: number;
   calibration: VisionCalibrationSummary | null;
+  /** Keyframes for a moving camera, by frame; a segment has these or a whole-segment calibration. */
+  keyframes?: (VisionCalibrationSummary & { frameIndex: number })[];
   superseded: number;
 };
 
@@ -735,7 +737,7 @@ export type VisionCameraSegments = {
   videoAssetId: string;
   durationMs: number | null;
   segments: VisionCameraSegment[];
-  coverage: { segmentedMs: number; calibratedMs: number };
+  coverage: { segmentedMs: number; calibratedMs: number; keyframedMs?: number };
   thresholds: { version: string; goodRmseM: number; goodMinPoints: number; usableRmseM: number; maxPointErrorM: number };
 };
 
@@ -745,6 +747,11 @@ export function fetchVisionCameraSegments(assetId: string) {
 
 export function declareVisionCameraSegment(assetId: string, body: { startMs: number; endMs: number; kind: string }) {
   return adminFetch<VisionCameraSegment>(`/vision/review/${assetId}/camera-segments`, { method: "POST", body: JSON.stringify(body) });
+}
+
+/** A person says what a segment is; labelling a proposal makes it their declaration. */
+export function setVisionCameraSegmentKind(segmentId: string, kind: string) {
+  return adminFetch<VisionCameraSegment>(`/vision/review/camera-segments/${segmentId}`, { method: "PATCH", body: JSON.stringify({ kind }) });
 }
 
 export function removeVisionCameraSegment(segmentId: string) {
@@ -760,8 +767,26 @@ export function previewVisionCalibration(points: VisionCalibrationPoint[], pitch
   return adminFetch<VisionCalibrationPreview>(`/vision/calibration/preview`, { method: "POST", body: JSON.stringify({ points, pitch }) });
 }
 
-export function calibrateVisionSegment(segmentId: string, points: VisionCalibrationPoint[], pitch?: VisionPitchDimensions) {
-  return adminFetch<VisionCalibrationSummary>(`/vision/review/camera-segments/${segmentId}/calibration`, { method: "POST", body: JSON.stringify({ points, pitch }) });
+/** `keyframe`: true of the one frame the points were placed on (a moving camera); otherwise the whole segment. */
+export function calibrateVisionSegment(segmentId: string, points: VisionCalibrationPoint[], pitch?: VisionPitchDimensions, keyframe = false) {
+  return adminFetch<VisionCalibrationSummary>(`/vision/review/camera-segments/${segmentId}/calibration`, { method: "POST", body: JSON.stringify({ points, pitch, ...(keyframe ? { keyframe: true } : {}) }) });
+}
+
+export function withdrawVisionKeyframe(calibrationId: string) {
+  return adminFetch<{ withdrawn: string }>(`/vision/review/calibrations/${calibrationId}/withdraw`, { method: "POST" });
+}
+
+/** One frame of the latest calibrate run: its carried calibration, or why it has none, and the lines it draws. */
+export type VisionCarriedFrame = {
+  videoAssetId: string;
+  frame: number;
+  run: { jobId: string; finishedAt: string | null; stale: boolean; frames: number | null; covered: number | null; coverage: number | null } | null;
+  row: { f: number; ms: number; cameraSegmentId: string | null; H: number[] | null; calibrationId: string | null; quality: VisionCalibrationQuality | null; keyframe: number | null; framesFromKeyframe: number | null; reason: string | null } | null;
+  overlay: VisionOverlay;
+};
+
+export function fetchVisionCarriedFrame(assetId: string, frame: number) {
+  return adminFetch<VisionCarriedFrame>(`/vision/review/${assetId}/calibration/frames/${frame}`);
 }
 
 export type VisionJobRow = {
@@ -1162,6 +1187,11 @@ export type VisionEventGoldDetail = VisionEventGoldSet & { me: string; schemaVer
 export type VisionEventGoldListSet = VisionEventGoldSet & { submissions: { reviewerId: string; createdAt: string }[] };
 export type VisionCarryPreflight = { videoAssetId: string; checkedAt: string } & ({ ready: true; modelVersionId: string; possessionJobId: string } | { ready: false; blocker: { statusCode: number; error: string; message: string; remediation: string } });
 export function fetchVisionCarryPreflight(assetId: string, modelVersionId?: string) { return adminFetch<VisionCarryPreflight>(`/vision/assets/${encodeURIComponent(assetId)}/carry-preflight${modelVersionId ? `?modelVersionId=${encodeURIComponent(modelVersionId)}` : ""}`); }
+export type VisionPreflightBlocker = { statusCode: number; error: string; message: string; remediation: string };
+export type VisionBallTrajectoryPreflight = { videoAssetId: string; checkedAt: string } & ({ ready: true; detectJobId: string; detectorVersionId: string; cameraSegments: number } | { ready: false; blocker: VisionPreflightBlocker });
+export type VisionPossessionPreflight = { videoAssetId: string; checkedAt: string } & ({ ready: true; ballJobId: string; trackJobId: string; constraintMode: "calibrated"; cameraSegments: number; calibratedSegments: number } | { ready: false; blocker: VisionPreflightBlocker });
+export function fetchVisionBallTrajectoryPreflight(assetId: string) { return adminFetch<VisionBallTrajectoryPreflight>(`/vision/assets/${encodeURIComponent(assetId)}/ball-trajectory-preflight`); }
+export function fetchVisionPossessionPreflight(assetId: string) { return adminFetch<VisionPossessionPreflight>(`/vision/assets/${encodeURIComponent(assetId)}/possession-preflight`); }
 export function fetchVisionEventGoldSets(assetId?: string) { return adminFetch<{ sets: VisionEventGoldListSet[] }>(`/vision/event-gold${assetId ? `?assetId=${encodeURIComponent(assetId)}` : ""}`); }
 export function fetchVisionEventGold(id: string) { return adminFetch<VisionEventGoldDetail>(`/vision/event-gold/${id}`); }
 export function createVisionEventGold(body: { label: string; videoAssetId: string; windowStartMs: number; windowEndMs: number; toleranceMs: number; reviewerAEmail: string; reviewerBEmail: string }) { return adminFetch<VisionEventGoldSet>("/vision/event-gold", { method: "POST", body: JSON.stringify(body) }); }

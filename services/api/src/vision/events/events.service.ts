@@ -653,7 +653,7 @@ export class VisionEventsService {
     const segment = await this.prisma.visionCameraSegment.findFirst({
       where: { videoAssetId, startMs: { lte: sourceMs }, endMs: { gt: sourceMs } },
       orderBy: { startMs: "desc" },
-      select: { id: true, kind: true, calibrations: { where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
+      select: { id: true, kind: true, calibrations: { where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
     });
     if (!segment) return null;
     return { id: segment.id, kind: segment.kind, calibrationId: segment.calibrations[0]?.id ?? null };

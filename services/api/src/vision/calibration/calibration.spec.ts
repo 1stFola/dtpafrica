@@ -32,10 +32,11 @@ const SIX = ["corner_left_near", "corner_left_far", "halfway_near", "halfway_far
 
 const mockPrisma = {
   visionVideoAsset: { findUnique: vi.fn() },
-  visionCameraSegment: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
-  visionPitchCalibration: { create: vi.fn(), updateMany: vi.fn() },
+  visionCameraSegment: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), delete: vi.fn(), update: vi.fn() },
+  visionPitchCalibration: { create: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+  visionVideoVariant: { findFirst: vi.fn() },
   visionTrack: { findUnique: vi.fn() },
-  visionJob: { findFirst: vi.fn() },
+  visionJob: { findFirst: vi.fn(), findMany: vi.fn() },
   visionEventCandidate: { count: vi.fn() },
   visionEvidenceLink: { count: vi.fn() },
   $transaction: vi.fn(),
@@ -46,10 +47,12 @@ const reviewer: AdminAuthContext = { method: "jwt", roleSlug: "vision_reviewer",
 const apiKey: AdminAuthContext = { method: "api_key", roleSlug: null, roleName: null, permissions: [] };
 
 let service: VisionCalibrationService;
+let store: InMemoryObjectStore;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  service = new VisionCalibrationService(mockPrisma as never, mockAudit as never, mockIdentity as never, new InMemoryObjectStore(), { playback: { urlTtlSeconds: 600 } } as never);
+  store = new InMemoryObjectStore();
+  service = new VisionCalibrationService(mockPrisma as never, mockAudit as never, mockIdentity as never, store, { playback: { urlTtlSeconds: 600 } } as never);
   mockAudit.record.mockResolvedValue(undefined);
   mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, durationMs: 120_000 });
   mockPrisma.visionCameraSegment.findFirst.mockResolvedValue(null);
@@ -102,6 +105,42 @@ describe("removing a segment", () => {
     expect(mockPrisma.visionEvidenceLink.count.mock.calls[0]![0].where).toEqual({ kind: "camera_segment", targetId: SEGMENT, candidate: { supersededBy: null } });
     mockPrisma.visionCameraSegment.delete.mockResolvedValue({});
     expect(await service.deleteSegment(SEGMENT, reviewer)).toEqual({ removed: SEGMENT });
+  });
+});
+
+describe("a segment's kind", () => {
+  const proposal = { id: SEGMENT, videoAssetId: ASSET, kind: "unknown", source: "camera_motion", startMs: 0, endMs: 4120 };
+  beforeEach(() => {
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue(proposal);
+    mockPrisma.visionCameraSegment.update.mockImplementation(({ data }: { data: object }) => Promise.resolve({ ...proposal, ...data }));
+  });
+
+  it("is set by a person, and labelling a proposal makes it that person's declaration", async () => {
+    await expect(service.setSegmentKind(SEGMENT, "live_play", apiKey)).rejects.toMatchObject({ response: { error: "CalibrationNeedsAPerson" } });
+    const out = await service.setSegmentKind(SEGMENT, "live_play", reviewer);
+    expect(mockPrisma.visionCameraSegment.update).toHaveBeenCalledWith({ where: { id: SEGMENT }, data: { kind: "live_play", source: "manual", createdBy: "u-reviewer" } });
+    expect(out).toMatchObject({ kind: "live_play", source: "manual" });
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "camera.segment.updated", targetId: SEGMENT,
+      data: expect.objectContaining({ kindFrom: "unknown", kindTo: "live_play", sourceFrom: "camera_motion" }) }), reviewer);
+  });
+
+  it("keeps the declaring person's name on a manual segment, and a no-op writes nothing", async () => {
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ ...proposal, source: "manual", kind: "live_play" });
+    await service.setSegmentKind(SEGMENT, "live_play", reviewer);
+    expect(mockPrisma.visionCameraSegment.update).not.toHaveBeenCalled();
+    expect(mockAudit.record).not.toHaveBeenCalled();
+    await service.setSegmentKind(SEGMENT, "replay", reviewer);
+    expect(mockPrisma.visionCameraSegment.update).toHaveBeenCalledWith({ where: { id: SEGMENT }, data: { kind: "replay", source: "manual" } });
+  });
+
+  it("will not change under a current event candidate, whose in-play flag came from it", async () => {
+    mockPrisma.visionEventCandidate.count.mockResolvedValueOnce(1);
+    await expect(service.setSegmentKind(SEGMENT, "replay", reviewer)).rejects.toMatchObject({ response: { error: "SegmentReferenced" } });
+    mockPrisma.visionEvidenceLink.count.mockResolvedValueOnce(2);
+    await expect(service.setSegmentKind(SEGMENT, "replay", reviewer)).rejects.toMatchObject({ response: { error: "SegmentReferenced" } });
+    expect(mockPrisma.visionCameraSegment.update).not.toHaveBeenCalled();
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue(null);
+    await expect(service.setSegmentKind("missing", "replay", reviewer)).rejects.toMatchObject({ status: 404 });
   });
 });
 
@@ -162,7 +201,7 @@ describe("a person's calibration", () => {
     expect(out).toMatchObject({ cameraSegmentId: SEGMENT, method: "manual", quality: "good", points: 6, decidedBy: "u-reviewer", pitch: { lengthM: 105, widthM: 68 } });
     expect(out.clicked).toHaveLength(6);
     expect(out.clicked[0]).toMatchObject({ landmark: "corner_left_near" });
-    expect(mockPrisma.visionPitchCalibration.updateMany).toHaveBeenCalledWith({ where: { cameraSegmentId: SEGMENT, supersededBy: null, id: { not: "cal-1" } }, data: { supersededBy: "cal-1" } });
+    expect(mockPrisma.visionPitchCalibration.updateMany).toHaveBeenCalledWith({ where: { cameraSegmentId: SEGMENT, supersededBy: null, withdrawnAt: null, id: { not: "cal-1" } }, data: { supersededBy: "cal-1" } });
     expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "calibration.set", data: expect.objectContaining({ quality: "good" }) }), reviewer);
   });
 
@@ -175,6 +214,115 @@ describe("a person's calibration", () => {
     const out = await service.calibrate(SEGMENT, { points: swapped }, reviewer);
     expect(out.quality).toBe("failed");
     expect(mockPrisma.visionPitchCalibration.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("keyframes for a moving camera", () => {
+  // Segment 0-4120 ms at 25 fps from offset 0: frames 0..102 belong to it.
+  const keyed = (frame: number) => clicks(SIX).map((p) => ({ ...p, frameIndex: frame }));
+  beforeEach(() => {
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ id: SEGMENT, videoAssetId: ASSET, startMs: 0, endMs: 4120 });
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ fps: 25, sourceOffsetMs: 0 });
+  });
+
+  it("files a keyframe on the one frame its points were placed on, replacing only that frame's and the whole-segment one", async () => {
+    const out = await service.calibrate(SEGMENT, { points: keyed(50), keyframe: true }, reviewer);
+    expect(mockPrisma.visionPitchCalibration.create.mock.calls[0]![0].data.frameIndex).toBe(50);
+    expect(mockPrisma.visionPitchCalibration.updateMany).toHaveBeenCalledWith({
+      where: { cameraSegmentId: SEGMENT, supersededBy: null, withdrawnAt: null, id: { not: "cal-1" }, OR: [{ frameIndex: null }, { frameIndex: 50 }] },
+      data: { supersededBy: "cal-1" },
+    });
+    expect(out).toMatchObject({ quality: "good" });
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "calibration.set", data: expect.objectContaining({ frameIndex: 50 }) }), reviewer);
+    // A whole-segment calibration replaces everything current, keyframes included.
+    await service.calibrate(SEGMENT, { points: clicks(SIX) }, reviewer);
+    expect(mockPrisma.visionPitchCalibration.updateMany.mock.calls.at(-1)![0].where).toEqual({ cameraSegmentId: SEGMENT, supersededBy: null, withdrawnAt: null, id: { not: "cal-1" } });
+    expect(mockPrisma.visionPitchCalibration.create.mock.calls.at(-1)![0].data.frameIndex).toBeNull();
+  });
+
+  it("refuses a keyframe whose points span frames, or sit outside the segment", async () => {
+    const mixed = keyed(50);
+    mixed[3] = { ...mixed[3]!, frameIndex: 51 };
+    await expect(service.calibrate(SEGMENT, { points: mixed, keyframe: true }, reviewer)).rejects.toMatchObject({ response: { error: "KeyframePointsSpanFrames" } });
+    await expect(service.calibrate(SEGMENT, { points: clicks(SIX), keyframe: true }, reviewer)).rejects.toMatchObject({ response: { error: "KeyframePointsSpanFrames" } });
+    // Frame 103 is at 4120 ms: the next shot's first frame, half-open.
+    await expect(service.calibrate(SEGMENT, { points: keyed(103), keyframe: true }, reviewer)).rejects.toMatchObject({ response: { error: "KeyframeOutsideSegment" } });
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ fps: null, sourceOffsetMs: 0 });
+    await expect(service.calibrate(SEGMENT, { points: keyed(50), keyframe: true }, reviewer)).rejects.toMatchObject({ response: { error: "ProxyWithoutFps" } });
+    expect(mockPrisma.visionPitchCalibration.create).not.toHaveBeenCalled();
+  });
+
+  it("is withdrawn by a person, only while it is a current keyframe", async () => {
+    const row = { id: "k1", cameraSegmentId: SEGMENT, frameIndex: 50, supersededBy: null, withdrawnAt: null };
+    mockPrisma.visionPitchCalibration.findUnique.mockResolvedValue(row);
+    mockPrisma.visionPitchCalibration.update.mockResolvedValue({ id: "k1" });
+    await expect(service.withdrawKeyframe("k1", apiKey)).rejects.toMatchObject({ response: { error: "CalibrationNeedsAPerson" } });
+    expect(await service.withdrawKeyframe("k1", reviewer)).toEqual({ withdrawn: "k1" });
+    expect(mockPrisma.visionPitchCalibration.update.mock.calls[0]![0].data).toMatchObject({ withdrawnBy: "u-reviewer" });
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "calibration.withdrawn", data: { calibrationId: "k1", frameIndex: 50 } }), reviewer);
+    for (const [over, error] of [[{ frameIndex: null }, "NotAKeyframe"], [{ supersededBy: "k2" }, "KeyframeNotCurrent"], [{ withdrawnAt: new Date() }, "KeyframeNotCurrent"]] as const) {
+      mockPrisma.visionPitchCalibration.findUnique.mockResolvedValue({ ...row, ...over });
+      await expect(service.withdrawKeyframe("k1", reviewer)).rejects.toMatchObject({ response: { error } });
+    }
+    mockPrisma.visionPitchCalibration.findUnique.mockResolvedValue(null);
+    await expect(service.withdrawKeyframe("gone", reviewer)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("are listed apart from a whole-segment calibration, withdrawn and superseded ones counted, not shown", async () => {
+    const cal = (id: string, frameIndex: number | null, over: object = {}) => ({ id, frameIndex, supersededBy: null, withdrawnAt: null, quality: "good", reprojectionErrorM: 0.3, maxPointErrorM: 0.5,
+      reprojectionErrorPx: 1, pointsUsed: 6, thresholdsVersion: "t", method: "manual", modelVersionId: null, decidedBy: "u", createdAt: new Date(), cameraSegmentId: SEGMENT,
+      pitchLengthM: 105, pitchWidthM: 68, points: [], homography: [1, 0, 0, 0, 1, 0, 0, 0, 1], ...over });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, kind: "live_play", source: "manual", startMs: 0, endMs: 4120,
+      calibrations: [cal("k90", 90), cal("k10", 10), cal("gone", 30, { withdrawnAt: new Date() }), cal("old", 10, { supersededBy: "k10" })] }]);
+    const out = await service.segments(ASSET);
+    expect(out.segments[0]!.calibration).toBeNull();
+    expect(out.segments[0]!.keyframes.map((k) => k.frameIndex)).toEqual([10, 90]);
+    expect(out.segments[0]!.superseded).toBe(2);
+    expect(out.coverage).toMatchObject({ calibratedMs: 0, keyframedMs: 4120 });
+  });
+});
+
+describe("a frame's carried calibration", () => {
+  const H = [0.1, 0, -5, 0, 0.2, -10, 0, 0, 1];
+  const spec = { proxyChecksum: "a".repeat(64), segments: [{ cameraSegmentId: SEGMENT, startMs: 0, endMs: 4120, kind: "live_play", calibrations: [{ calibrationId: "k10", pitch: { lengthM: 100, widthM: 64 } }] }] };
+  async function seedRun(rows: object[]) {
+    await store.putSmallObject("derived", "inference/c/1/frames/frames-0000.jsonl", rows.map((r) => JSON.stringify(r)).join("\n") + "\n", "application/x-ndjson");
+    await store.putSmallObject("derived", "inference/c/1/calibration-frames.json", JSON.stringify({ chunks: [{ key: "inference/c/1/frames/frames-0000.jsonl", firstFrame: 0, lastFrame: rows.length - 1 }] }), "application/json");
+    mockPrisma.visionJob.findFirst.mockImplementation(({ where }: { where: { type: string } }) => Promise.resolve(where.type === "calibrate"
+      ? { id: "c", finishedAt: new Date("2026-10-08"), inputSpec: spec, progress: { summary: { frames: rows.length, covered: 1, coverage: 0.5 }, artifacts: [{ key: "inference/c/1/calibration-frames.json", bucket: "derived", role: "calibration_frames" }] } }
+      : { progress: { summary: { proxy: { key: "proxy.mp4", checksumSha256: "a".repeat(64) } }, artifacts: [{ key: "proxy.mp4", role: "proxy" }] } }));
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4" });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, startMs: 0, endMs: 4120, kind: "live_play", calibrations: [{ id: "k10", frameIndex: 10 }] }]);
+  }
+
+  it("is the run's row for that frame, with the pitch lines its homography draws, at the size the person filed", async () => {
+    await seedRun([{ f: 0, H: null, reason: "beyond_reach", calibrationId: null }, { f: 1, H, calibrationId: "k10", quality: "good", keyframe: 10, framesFromKeyframe: 9, reason: null }]);
+    const out = await service.carriedAt(ASSET, 1);
+    expect(out.run).toMatchObject({ jobId: "c", stale: false, coverage: 0.5 });
+    expect(out.row).toMatchObject({ f: 1, calibrationId: "k10", framesFromKeyframe: 9 });
+    expect((out as { pitch?: object }).pitch).toEqual({ lengthM: 100, widthM: 64 });
+    expect(out.overlay.length).toBeGreaterThan(0);
+    const none = await service.carriedAt(ASSET, 0);
+    expect(none.row).toMatchObject({ reason: "beyond_reach" });
+    expect(none.overlay).toEqual([]);
+    expect((await service.carriedAt(ASSET, 5)).row).toBeNull();
+  });
+
+  it("is marked stale once a keyframe or the proxy changed since the run", async () => {
+    await seedRun([{ f: 0, H, calibrationId: "k10", reason: null }]);
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, startMs: 0, endMs: 4120, kind: "live_play", calibrations: [{ id: "k10", frameIndex: 10 }, { id: "k60", frameIndex: 60 }] }]);
+    expect((await service.carriedAt(ASSET, 0)).run).toMatchObject({ stale: true });
+    mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, startMs: 0, endMs: 4120, kind: "replay", calibrations: [{ id: "k10", frameIndex: 10 }] }]);
+    expect((await service.carriedAt(ASSET, 0)).run).toMatchObject({ stale: true });
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "newer.mp4" });
+    expect((await service.carriedAt(ASSET, 0)).run).toMatchObject({ stale: true });
+  });
+
+  it("says plainly when no run exists, and refuses a frame that is not one", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue(null);
+    expect(await service.carriedAt(ASSET, 3)).toEqual({ videoAssetId: ASSET, frame: 3, run: null, row: null, overlay: [] });
+    await expect(service.carriedAt(ASSET, -1)).rejects.toMatchObject({ response: { error: "FrameInvalid" } });
+    await expect(service.carriedAt(ASSET, 1.5)).rejects.toMatchObject({ response: { error: "FrameInvalid" } });
   });
 });
 

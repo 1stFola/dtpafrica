@@ -56,6 +56,9 @@ services:
       VISION_R2_BUCKET_CLIPS: ${VISION_R2_BUCKET_CLIPS:-}
       # What a provisioned worker row records as its image: the one this stack runs.
       VISION_WORKER_IMAGE: ${IMAGE_REGISTRY}/dtp-vision-worker:${IMAGE_TAG}
+      # The public URL a hosted pod calls back to. Empty refuses hosted provisioning
+      # (WorkerCallbackUrlMissing); the worker below keeps its own compose-network URL.
+      VISION_HOSTED_WORKER_CALLBACK_URL: ${VISION_HOSTED_WORKER_CALLBACK_URL:-}
     ports:
       - "127.0.0.1:${API_PORT:-3000}:3000"
 

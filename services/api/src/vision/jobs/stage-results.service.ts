@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, GAMESTATE_CHUNK_ROLE, GAMESTATE_INDEX_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
+import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, CAMERA_MOTION_CHUNK_ROLE, CAMERA_MOTION_INDEX_ROLE, CAMERA_MOTION_VERSION, CUTS_ARTIFACT_ROLE, DETECTION_ARTIFACT_ROLE, PROPOSED_SEGMENT_SOURCES, visionKeys, GAMESTATE_CHUNK_ROLE, GAMESTATE_INDEX_ROLE, IDENTITY_ARTIFACT_ROLE, TRACK_ARTIFACT_ROLE, type VisionJobType } from "@dtp/vision-contracts";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BALL_TRAJECTORY_CHUNK_ROLE, BALL_TRAJECTORY_INDEX_ROLE, BALL_TRAJECTORY_VERSION, BALL_LOST_REASONS } from "@dtp/vision-contracts";
 import { CALIBRATED_POSSESSION_VERSION, POSSESSION_CALIBRATED_REASONS, POSSESSION_CHUNK_ROLE, POSSESSION_INDEX_ROLE, POSSESSION_VERSION, POSSESSION_UNKNOWN_REASONS } from "@dtp/vision-contracts";
@@ -51,7 +51,7 @@ export type ApplyContext = {
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "detect", "track", "identify", "gamestate", "ball_trajectory", "possession", "events"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "camera_motion", "calibrate", "detect", "track", "identify", "gamestate", "ball_trajectory", "possession", "events"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -89,6 +89,10 @@ export class VisionStageResultsService {
           return await this.applyIdentify(completion, context);
         case "cuts":
           return await this.applyCuts(videoAssetId, completion);
+        case "camera_motion":
+          return await this.applyCameraMotion(videoAssetId, completion, context);
+        case "calibrate":
+          return this.applyCalibrate(completion, context);
         case "gamestate":
           return this.applyGamestate(completion);
         case "ball_trajectory":
@@ -278,6 +282,10 @@ export class VisionStageResultsService {
     const durationMs = int(proxy?.durationMs);
     const fps = num(proxy?.fps);
     const height = int(proxy?.height);
+    // The width the worker measured on the encoded proxy (docs/vision/56). It was never
+    // stored, so every check that needs the proxy's geometry (calibrated possession)
+    // refused footage whose transcode had reported it all along.
+    const width = int(proxy?.width);
     const settingsHash = str(proxy?.settingsHash);
     // Which encoder build the worker used, as it reported it. The settings hash covers the
     // recipe and not the build that runs it, and the CPU and GPU worker images ship
@@ -292,6 +300,7 @@ export class VisionStageResultsService {
       objectKey: string;
       bytes: number | null;
       fps: number | null;
+      width: number | null;
       height: number | null;
       durationMs: number | null;
       settingsHash: string | null;
@@ -302,6 +311,7 @@ export class VisionStageResultsService {
         objectKey: proxyArtifact.key,
         bytes: int(proxyArtifact.bytes),
         fps,
+        width,
         height,
         durationMs,
         settingsHash,
@@ -314,6 +324,7 @@ export class VisionStageResultsService {
           objectKey: a.key,
           bytes: int(a.bytes),
           fps: null,
+          width: null,
           height: null,
           durationMs: null,
           settingsHash: null,
@@ -340,6 +351,7 @@ export class VisionStageResultsService {
           update: {
             bytes: v.bytes,
             fps: v.fps,
+            width: v.width,
             height: v.height,
             durationMs: v.durationMs,
             settingsHash: v.settingsHash,
@@ -530,42 +542,108 @@ export class VisionStageResultsService {
     return { applied: true, detail: `${s.observed} observed and ${s.lost} explicitly lost ball frames; image coordinates only, no possession or physical metric claim; index ${indices[0]!.key}` };
   }
 
-  /**
-   * cuts → proposed camera segments, `source: scene_detect`, beside the ones a
-   * person declared and never over them.
-   *
-   * A proposal that overlaps a manual segment is skipped and counted: a person's
-   * declaration is a fact about the footage, a filter's score is a guess. Earlier
-   * proposals that nobody calibrated are replaced by this run's; one that was
-   * calibrated has become a fact too and stays. Idempotent: a retried completion
-   * finds its own proposals already there and adds nothing.
-   */
+  /** cuts → proposed camera segments, `source: scene_detect`. See `proposeSegments`. */
   private async applyCuts(videoAssetId: string, completion: StageCompletion): Promise<ApplyOutcome> {
     const artifact = completion.artifacts.find((a) => a.role === CUTS_ARTIFACT_ROLE);
     if (!artifact) return { applied: false, detail: "cuts reported no cuts artifact" };
-    const proposed = Array.isArray(completion.summary.segments) ? completion.summary.segments : null;
-    if (!proposed) return { applied: false, detail: "cuts summary carried no segments" };
-    const segments: { startMs: number; endMs: number }[] = [];
-    for (const row of proposed) {
+    const segments = this.proposals(completion.summary.segments);
+    if (typeof segments === "string") return { applied: false, detail: `cuts ${segments}` };
+    return this.proposeSegments(videoAssetId, segments, "scene_detect", `cuts in ${artifact.key}`);
+  }
+
+  /**
+   * camera_motion → the shots between edit cuts, proposed as camera segments with
+   * `source: camera_motion`. The motion rows stay in the artifact, for calibration
+   * propagation to read; only the shots land here. The artifact must name the proxy
+   * the job was queued against, and sit under the job's own output prefix.
+   */
+  private async applyCameraMotion(videoAssetId: string, completion: StageCompletion, context: ApplyContext): Promise<ApplyOutcome> {
+    const indices = completion.artifacts.filter((a) => a.role === CAMERA_MOTION_INDEX_ROLE && a.bucket === "derived");
+    const chunks = completion.artifacts.filter((a) => a.role === CAMERA_MOTION_CHUNK_ROLE && a.bucket === "derived");
+    const s = completion.summary;
+    const input = (context.inputSpec ?? {}) as Record<string, unknown>;
+    // `inference/<job>/<attempt>/`: any attempt of this job, nothing outside it.
+    const jobPrefix = context.jobId ? visionKeys.inferencePrefix(context.jobId, 1).replace(/1\/$/, "") : null;
+    if (indices.length !== 1 || !chunks.length || chunks.length !== s.chunks || s.calculationVersion !== CAMERA_MOTION_VERSION
+      || (jobPrefix !== null && [...indices, ...chunks].some((a) => !a.key.startsWith(jobPrefix)))
+      || typeof s.proxyChecksum !== "string" || s.proxyChecksum !== String(input.proxyChecksum ?? "").toLowerCase()
+      || typeof s.indexChecksum !== "string" || !/^[a-f0-9]{64}$/i.test(s.indexChecksum))
+      return { applied: false, detail: "camera motion artifacts, version or proxy differ from the queued inputs; no segments proposed" };
+    const shots = this.proposals(s.shots);
+    if (typeof shots === "string") return { applied: false, detail: `camera motion ${shots}` };
+    return this.proposeSegments(videoAssetId, shots, "camera_motion",
+      `${s.tracked ?? 0} tracked, ${s.bridged ?? 0} bridged, ${s.break ?? 0} cut(s); motion in ${indices[0]!.key}`);
+  }
+
+  /**
+   * calibrate -> nothing in Postgres. The per-frame rows stay in the artifact, read by
+   * the frame lookup and, in step 3, by the stages that place players and the ball. The
+   * completion must name the motion and proxy the job was queued with.
+   */
+  private applyCalibrate(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const indices = completion.artifacts.filter((a) => a.role === CALIBRATION_FRAMES_INDEX_ROLE && a.bucket === "derived");
+    const chunks = completion.artifacts.filter((a) => a.role === CALIBRATION_FRAMES_CHUNK_ROLE && a.bucket === "derived");
+    const s = completion.summary;
+    const input = (context.inputSpec ?? {}) as Record<string, unknown>;
+    const motion = obj(input.cameraMotion);
+    const jobPrefix = context.jobId ? visionKeys.inferencePrefix(context.jobId, 1).replace(/1\/$/, "") : null;
+    const frames = int(s.frames);
+    const covered = int(s.covered);
+    if (indices.length !== 1 || !chunks.length || chunks.length !== s.chunks || s.calculationVersion !== CALIBRATION_PROPAGATION_VERSION
+      || (jobPrefix !== null && [...indices, ...chunks].some((a) => !a.key.startsWith(jobPrefix)))
+      || s.proxyChecksum !== String(input.proxyChecksum ?? "").toLowerCase()
+      || s.cameraMotionIndexChecksum !== String(motion?.indexChecksum ?? "").toLowerCase()
+      || typeof s.indexChecksum !== "string" || !/^[a-f0-9]{64}$/i.test(s.indexChecksum)
+      || frames === null || covered === null || covered < 0 || covered > frames)
+      return { applied: false, detail: "calibrate artifacts, version, motion or proxy differ from the queued inputs" };
+    const segments = Array.isArray(s.segments) ? (s.segments as { drift?: { medianM?: number | null }[] }[]) : [];
+    const drift = segments.flatMap((g) => g.drift ?? []).map((d) => d.medianM).filter((m): m is number => typeof m === "number");
+    return { applied: true, detail: `${covered} of ${frames} frame(s) calibrated (${((covered / Math.max(frames, 1)) * 100).toFixed(1)}%)`
+      + (drift.length ? `; drift between keyframes ${Math.min(...drift).toFixed(2)}-${Math.max(...drift).toFixed(2)} m` : "; no two keyframes share a shot, so no drift measured")
+      + `; rows in ${indices[0]!.key}` };
+  }
+
+  /** Whole-ms, non-empty windows, or why not. */
+  private proposals(raw: unknown): { startMs: number; endMs: number }[] | string {
+    if (!Array.isArray(raw)) return "summary carried no segments";
+    const out: { startMs: number; endMs: number }[] = [];
+    for (const row of raw) {
       const r = obj(row);
       const startMs = int(r?.startMs);
       const endMs = int(r?.endMs);
-      if (startMs === null || endMs === null || endMs <= startMs) {
-        return { applied: false, detail: `proposed segment ${JSON.stringify(row).slice(0, 80)} is malformed; nothing written` };
-      }
-      segments.push({ startMs, endMs });
+      if (startMs === null || endMs === null || startMs < 0 || endMs <= startMs) return `proposed segment ${JSON.stringify(row).slice(0, 80)} is malformed; nothing written`;
+      out.push({ startMs, endMs });
     }
+    return out;
+  }
 
+  /**
+   * Proposed camera segments beside the ones a person declared, never over them.
+   *
+   * A proposal that overlaps a manual or calibrated segment is skipped and counted: a
+   * declaration is a fact about the footage, a filter's score is a guess. Earlier
+   * proposals of either automatic source that nobody kept or calibrated are replaced
+   * by this run's; a calibrated one has become a fact and stays. Idempotent: a retried
+   * completion finds its own proposals already there.
+   *
+   * A proposal is clipped to the source's end. The proxy can run a frame or two past
+   * it, and a segment past the footage is one a person could never have declared.
+   */
+  private async proposeSegments(videoAssetId: string, raw: { startMs: number; endMs: number }[], source: (typeof PROPOSED_SEGMENT_SOURCES)[number], provenance: string): Promise<ApplyOutcome> {
+    const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { durationMs: true } });
+    const end = asset?.durationMs ?? null;
+    const segments = raw.map((s) => ({ startMs: s.startMs, endMs: end === null ? s.endMs : Math.min(s.endMs, end) })).filter((s) => s.endMs > s.startMs);
     const existing = await this.prisma.visionCameraSegment.findMany({
       where: { videoAssetId },
       select: { id: true, startMs: true, endMs: true, source: true, _count: { select: { calibrations: true } } },
     });
+    const proposed = (e: { source: string; _count: { calibrations: number } }) => (PROPOSED_SEGMENT_SOURCES as readonly string[]).includes(e.source) && e._count.calibrations === 0;
     const overlaps = (a: { startMs: number; endMs: number }, b: { startMs: number; endMs: number }) => a.startMs < b.endMs && b.startMs < a.endMs;
     const same = (a: { startMs: number; endMs: number }, b: { startMs: number; endMs: number }) => a.startMs === b.startMs && a.endMs === b.endMs;
-    const kept = existing.filter((e) => e.source !== "scene_detect" || e._count.calibrations > 0);
-    const stale = existing.filter((e) => e.source === "scene_detect" && e._count.calibrations === 0);
-    // A stale proposal identical to a new one is this run's own, retried: keep it rather than churn ids.
-    const retained = stale.filter((e) => segments.some((s) => same(s, e)));
+    const kept = existing.filter((e) => !proposed(e));
+    const stale = existing.filter(proposed);
+    // A stale proposal identical to a new one from the same source is this run's own, retried: keep it rather than churn ids.
+    const retained = stale.filter((e) => e.source === source && segments.some((s) => same(s, e)));
     const toDelete = stale.filter((e) => !retained.includes(e));
     const fixed = [...kept, ...retained];
     const toCreate: { startMs: number; endMs: number }[] = [];
@@ -580,12 +658,12 @@ export class VisionStageResultsService {
     await this.prisma.$transaction([
       ...(toDelete.length ? [this.prisma.visionCameraSegment.deleteMany({ where: { id: { in: toDelete.map((e) => e.id) } } })] : []),
       ...(toCreate.length
-        ? [this.prisma.visionCameraSegment.createMany({ data: toCreate.map((s) => ({ videoAssetId, startMs: s.startMs, endMs: s.endMs, kind: "unknown", source: "scene_detect" })) })]
+        ? [this.prisma.visionCameraSegment.createMany({ data: toCreate.map((s) => ({ videoAssetId, startMs: s.startMs, endMs: s.endMs, kind: "unknown", source })) })]
         : []),
     ]);
     return {
       applied: true,
-      detail: `${segments.length} proposed segment(s): ${toCreate.length} new, ${alreadyThere} already there, ${skipped} skipped for overlapping a segment a person declared or calibrated, ${toDelete.length} earlier proposal(s) replaced; cuts in ${artifact.key}`,
+      detail: `${segments.length} proposed segment(s): ${toCreate.length} new, ${alreadyThere} already there, ${skipped} skipped for overlapping a segment a person declared or calibrated, ${toDelete.length} earlier proposal(s) replaced; ${provenance}`,
     };
   }
 

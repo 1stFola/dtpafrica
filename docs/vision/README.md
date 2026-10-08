@@ -8,7 +8,43 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: Phase 6 Increment 17 implemented** — carry compatibility preflight shares
+**Latest: keyframes that follow the camera** — a person files keyframe calibrations on
+frames of a panning shot; a CPU `calibrate` stage (contract 1.18.0) carries them to every
+frame of the shot along the camera motion, never across a cut, and measures drift
+between keyframes. Camera motion now tracks against a reference frame: drift on the
+pilot fell from 9.7 px to 0.24 px over 8 s. The page draws the carried pitch lines
+on any frame. Step 2 of three ([93](./93-KEYFRAMES-THAT-FOLLOW-THE-CAMERA.md)).
+
+**Camera motion and the shots between cuts** — a CPU `camera_motion` stage
+(contract 1.17.0, OpenCV) measures how the picture moves frame to frame and finds the
+edit cuts, proposed as segments. On the pilot it found the 6 cuts the scene filter
+missed, with per-pair fits at a fifth of a pixel. A person sets a segment's kind; the
+proxy's width is now stored. Step 1 of camera-following calibration
+([92](./92-CAMERA-MOTION-AND-SHOTS.md)).
+
+**Hosted capacity stops, and the pilot's first GPU run** — retiring a hosted
+worker terminates its pod, a failed launch revokes its token, and the dispatcher stops
+idle (5 min) or never-registered (20 min) pods; all three seen on real RunPod pods.
+Detect ran on the pilot for $0.31 in total: 22,315 people and 660 balls over 1,244
+frames, raw counts, not accuracy. Track and ball trajectory now wait on a declared camera
+segment and its calibration, both a person's work
+([91](./91-HOSTED-CAPACITY-AND-FIRST-GPU-RUN.md)).
+
+**Hosted workers get a reachable callback URL** — provisioning gave every
+provider a relative callback path, which no RunPod pod could resolve; a hosted
+provider now needs `VISION_HOSTED_WORKER_CALLBACK_URL` or is refused before a token
+or pod ([90](./90-HOSTED-WORKER-CALLBACK.md)). Doc 90 also lists what a RunPod
+detect run on the pilot still needs: an FFmpeg licence ruling, a pullable GPU image
+and a control plane the pod can reach.
+
+**Phase 6 Increment 18 implemented** — ball trajectory and calibrated
+possession preflight through the same shared queue guards, so a blocker shows at
+the stage where it starts ([89](./89-PHASE-6-INCREMENT-18.md)). QA: 1,836 of
+1,837 API tests (one local CRLF checkout failure, untouched file), 272 web tests,
+both builds, six mutants killed, real-pilot API and browser checks. The pilot now
+reports detect as the first missing stage; gold remains 0/2 and spend $0/$4.
+
+**Phase 6 Increment 17 implemented** — carry compatibility preflight shares
 the queue's evidence guards, reports the first exact refusal and creates no job
 ([88](./88-PHASE-6-INCREMENT-17.md)). QA: 1,810 API tests, 268 web tests,
 both builds and real-pilot browser checks passed. The

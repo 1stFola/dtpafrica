@@ -18,6 +18,8 @@ from .benchmark import run_benchmark
 from .ball_trajectory import run_ball_trajectory
 from .possession import run_possession
 from .events import run_events
+from .calibrate import run_calibrate
+from .camera_motion import run_camera_motion
 from .cuts import run_cuts
 from .detect import run_detect
 from .fingerprint import run_fingerprint
@@ -46,6 +48,11 @@ STAGES: dict[str, StageHandler] = {
     "identify": run_identify,
     # CPU: FFmpeg's scene-change score over the proxy, proposing camera segments.
     "cuts": run_cuts,
+    # CPU: how the picture moves frame to frame (OpenCV over the proxy), and the shots
+    # it falls into, proposed as camera segments. No model.
+    "camera_motion": run_camera_motion,
+    # CPU: a person's keyframe calibrations carried to every frame along that motion.
+    "calibrate": run_calibrate,
     # CPU: every track's foot point in metres through the declared calibrations, as Parquet.
     "gamestate": run_gamestate,
     "ball_trajectory": run_ball_trajectory,
@@ -61,7 +68,7 @@ STAGES: dict[str, StageHandler] = {
 #: Named rather than inferred, because the consequence of getting it wrong is a cost
 #: rather than an error: FFmpeg on a GPU pod works perfectly and bills at GPU rates.
 #: `tests/test_contract.py` checks both of these against the contract's routing table.
-CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track", "identify", "cuts", "gamestate", "ball_trajectory", "possession", "events"})
+CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track", "identify", "cuts", "camera_motion", "calibrate", "gamestate", "ball_trajectory", "possession", "events"})
 
 #: Stages that need CUDA and the model stack, and so only run on the GPU image.
 GPU_STAGES = frozenset({"detect"})

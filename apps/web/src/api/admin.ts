@@ -115,12 +115,26 @@ export type AdminUser = {
 };
 
 export class AdminApiError extends Error {
+  /** The refusal's code and what to do about it, when the API sent them (every Vision refusal does). */
+  readonly code: string | null;
+  readonly remediation: string | null;
+
   constructor(
     message: string,
     public status: number
   ) {
     super(parseApiErrorMessage(message, `Request failed (${status})`));
+    let body: { error?: unknown; remediation?: unknown } | null = null;
+    try { body = JSON.parse(message); } catch { /* not JSON: message only */ }
+    this.code = typeof body?.error === "string" ? body.error : null;
+    this.remediation = typeof body?.remediation === "string" && body.remediation.trim() ? body.remediation : null;
   }
+}
+
+/** A failure as a person should read it: what went wrong, then what to do about it. */
+export function describeFailure(e: unknown): string {
+  if (e instanceof AdminApiError) return e.remediation ? `${e.message} ${e.remediation}` : e.message;
+  return e instanceof Error ? e.message : String(e);
 }
 
 export async function adminFetch<T>(

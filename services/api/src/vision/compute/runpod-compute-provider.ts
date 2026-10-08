@@ -73,6 +73,7 @@ export class RunPodComputeProvider implements ComputeProvider {
       containerDiskInGb: this.config.containerDiskGb,
       computeType: isCpu ? "CPU" : "GPU",
       cloudType: this.config.cloudType,
+      ...(this.config.registryAuthId ? { containerRegistryAuthId: this.config.registryAuthId } : {}),
       // Several ids so the scheduler can fall back when one is out of stock.
       ...(isCpu ? {} : { gpuTypeIds, gpuCount: 1 }),
     };

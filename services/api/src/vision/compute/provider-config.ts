@@ -24,6 +24,12 @@ export type RunPodConfig = {
   gpuTypeIds: Record<VisionResourceClass, string[]>;
   containerDiskGb: number;
   cloudType: "SECURE" | "COMMUNITY";
+  /**
+   * The provider's id for a stored registry credential, so a pod can pull DTP's private
+   * image. The credential itself is created in the provider's console and never passes
+   * through this API; null pulls anonymously, which only a public image allows.
+   */
+  registryAuthId: string | null;
 };
 
 export type LambdaConfig = {
@@ -83,6 +89,7 @@ export function loadRunPodConfig(env: NodeJS.ProcessEnv = process.env): RunPodCo
     // Empty is unset (#205's class): `Number("")` is 0, a pod with no disk.
     containerDiskGb: positiveNumber(env.VISION_RUNPOD_DISK_GB, 60),
     cloudType: env.VISION_RUNPOD_CLOUD_TYPE?.trim() === "COMMUNITY" ? "COMMUNITY" : "SECURE",
+    registryAuthId: env.VISION_RUNPOD_REGISTRY_AUTH_ID?.trim() || null,
   };
 }
 

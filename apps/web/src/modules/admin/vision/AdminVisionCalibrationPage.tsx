@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CAMERA_SEGMENT_KINDS, DEFAULT_PITCH_DIMENSIONS } from "@dtp/vision-contracts";
+import { CAMERA_SEGMENT_KINDS, DEFAULT_PITCH_DIMENSIONS, type CameraSegmentKind } from "@dtp/vision-contracts";
 import {
   anchorVisionClock,
   calibrateVisionSegment,
+  fetchVisionCarriedFrame,
+  withdrawVisionKeyframe,
+  type VisionCarriedFrame,
   declareVisionCameraSegment,
   fetchVisionClock,
   fetchVisionCameraSegments,
@@ -12,6 +15,7 @@ import {
   previewVisionCalibration,
   queueVisionJob,
   removeVisionCameraSegment,
+  setVisionCameraSegmentKind,
   type VisionCalibrationPoint,
   type VisionCalibrationPreview,
   type VisionCameraSegments,
@@ -20,6 +24,7 @@ import {
   type VisionPitchLandmark,
   type VisionReviewMedia,
 } from "../../../api/vision";
+import { describeFailure } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
@@ -38,6 +43,8 @@ import {
   placePoint,
   removePoint,
   segmentAt,
+  keyframeFrameOf,
+  describeCarried,
   segmentFromMarks,
   toFraction,
 } from "./calibration-editor";
@@ -80,6 +87,9 @@ export function AdminVisionCalibrationPage() {
   const [kind, setKind] = useState<string>(CAMERA_SEGMENT_KINDS[0]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Where the last action's outcome is shown: beside the controls that caused it. The
+  // side panel scrolls, and a banner at the top of the page is out of sight from there.
+  const [outcomeAt, setOutcomeAt] = useState<OutcomePlace>("top");
   const [busy, setBusy] = useState(false);
 
   const loadSegments = useCallback(async () => {
@@ -144,6 +154,10 @@ export function AdminVisionCalibrationPage() {
   const suggested = useMemo(() => nextLandmark(landmarks, points), [landmarks, points]);
   const target = activeLandmark ?? suggested?.id ?? null;
   const paths = useMemo(() => (preview?.ok ? overlayPaths(preview.overlay, proxySize) : []), [preview, proxySize]);
+  const frameNow = frameIndexAt(proxyMs, media?.fps ?? null);
+  const keyframeFrame = keyframeFrameOf(points, frameNow);
+  const [carried, setCarried] = useState<VisionCarriedFrame | null>(null);
+  const carriedPaths = useMemo(() => (carried && carried.frame === frameNow ? overlayPaths(carried.overlay, proxySize) : []), [carried, frameNow, proxySize]);
   const reprojected = useMemo(() => (preview?.ok ? preview.reprojected : []), [preview]);
   const landmarkName = useCallback((id: string) => landmarks.find((l) => l.id === id)?.name ?? id, [landmarks]);
 
@@ -205,6 +219,20 @@ export function AdminVisionCalibrationPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [media, step, togglePlay]);
 
+  /* The carried calibration of the frame on screen, while paused: what a keyframe does to
+     the frames around it, drawn so a person can see it hold or drift. Waits a moment so
+     stepping through frames does not ask for each one. */
+  useEffect(() => {
+    if (playing || frameNow === null || !assetId) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchVisionCarriedFrame(assetId, frameNow)
+        .then((r) => { if (!cancelled) setCarried(r); })
+        .catch(() => { if (!cancelled) setCarried(null); });
+    }, 150);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [assetId, frameNow, playing, segments]);
+
   /** A click on the paused frame places the target landmark there, in the proxy's pixels. */
   const onStageClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -219,16 +247,17 @@ export function AdminVisionCalibrationPage() {
     [media, picture, playing, proxyMs, proxySize, target]
   );
 
-  async function run(label: string, action: () => Promise<unknown>) {
+  async function run(label: string, action: () => Promise<unknown>, where: OutcomePlace = "top") {
     setBusy(true);
     setError(null);
     setNotice(null);
+    setOutcomeAt(where);
     try {
       await action();
       setNotice(label);
       await loadSegments();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeFailure(e));
     } finally {
       setBusy(false);
     }
@@ -237,6 +266,8 @@ export function AdminVisionCalibrationPage() {
   function declare() {
     const made = segmentFromMarks(markStart, markEnd, segments?.durationMs ?? null);
     if (typeof made === "string") {
+      setNotice(null);
+      setOutcomeAt("segments");
       setError(made);
       return;
     }
@@ -244,15 +275,24 @@ export function AdminVisionCalibrationPage() {
       await declareVisionCameraSegment(assetId, { ...made, kind });
       setMarkStart(null);
       setMarkEnd(null);
-    });
+    }, "segments");
   }
 
-  function save() {
+  function save(asKeyframe: boolean) {
     if (!current) {
+      setNotice(null);
+      setOutcomeAt("fit");
       setError("No camera segment covers the playhead. Declare one, or move to one.");
       return;
     }
-    void run(`Calibration filed on the segment at ${formatClock(sourceMs)}.`, () => calibrateVisionSegment(current.id, points, pitch));
+    if (asKeyframe) {
+      void run(`Keyframe filed at ${formatClock(sourceMs)}. Follow the camera to carry it to the frames around it.`, async () => {
+        await calibrateVisionSegment(current.id, points, pitch, true);
+        setPoints([]);
+      }, "fit");
+      return;
+    }
+    void run(`Calibration filed for the whole segment at ${formatClock(sourceMs)}.`, () => calibrateVisionSegment(current.id, points, pitch), "fit");
   }
 
   function loadFromSegment() {
@@ -272,6 +312,14 @@ export function AdminVisionCalibrationPage() {
   }
   if (!media || !segments) return <div className="vision-workstation">Loading…</div>;
 
+  const outcome = (place: OutcomePlace) =>
+    outcomeAt === place && (error || notice) ? (
+      // Into view when it appears: the side panel scrolls, and a result below its fold is one nobody sees.
+      <p className={`vision-outcome ${error ? "vision-warn" : "vision-ok"}`} role={error ? "alert" : "status"} ref={(el) => el?.scrollIntoView({ block: "nearest" })}>
+        {error ?? notice}
+      </p>
+    ) : null;
+
   return (
     <div className="vision-workstation">
       <div className="vision-workstation__bar">
@@ -285,8 +333,8 @@ export function AdminVisionCalibrationPage() {
         <Link to="/admin/vision">Vision</Link>
       </div>
 
-      {error && <p className="vision-panel vision-panel--error">{error}</p>}
-      {notice && <p className="vision-panel vision-panel--ok">{notice}</p>}
+      {outcomeAt === "top" && error && <p className="vision-panel vision-panel--error" role="alert">{error}</p>}
+      {outcomeAt === "top" && notice && <p className="vision-panel vision-panel--ok" role="status">{notice}</p>}
 
       <div className="vision-workstation__body">
         <div className="vision-workstation__video">
@@ -295,8 +343,21 @@ export function AdminVisionCalibrationPage() {
                 const seconds = event.currentTarget.duration;
                 if (Number.isFinite(seconds)) setVideoMs(seconds * 1000);
                 seekTo(0);
-              }} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
+              }} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)}
+              /* The playhead follows the picture itself as well as the animation loop: a
+                 browser pauses that loop in a hidden tab, and a seek made outside the page's
+                 controls (media keys, another script) left points named for a frame that was
+                 not the one on screen. A keyframe is a claim about one picture. */
+              onSeeked={(event) => setProxyMs(event.currentTarget.currentTime * 1000)}
+              onTimeUpdate={(event) => { if (event.currentTarget.paused) setProxyMs(event.currentTarget.currentTime * 1000); }} />
             <div className="vision-picture" style={{ left: picture.x, top: picture.y, width: picture.width, height: picture.height }}>
+            {!playing && carriedPaths.length > 0 && (
+              <svg className="vision-overlay vision-overlay--carried" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="The carried calibration">
+                {carriedPaths.map((p) => (
+                  <path key={`carried-${p.id}`} d={p.d} vectorEffect="non-scaling-stroke" />
+                ))}
+              </svg>
+            )}
             {paths.length > 0 && (
               <svg className="vision-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="The fitted pitch">
                 {paths.map((p) => (
@@ -360,6 +421,12 @@ export function AdminVisionCalibrationPage() {
             </div>
           </div>
 
+          {!playing && carried?.run && (
+            <p className={`vision-footnote vision-carried${carried.run.stale ? " is-stale" : ""}`} role="status">
+              {carried.frame === frameNow ? describeCarried(carried.row, media.fps, formatClock) : "Reading this frame's carried calibration…"}
+              {carried.run.stale && " This run predates the current keyframes or segments: follow the camera again."}
+            </p>
+          )}
           <input type="range" min={0} max={clipEndMs || 0} step={frameStartMs(1, media.fps) ?? 1} value={proxyMs} onChange={(e) => seekTo(Number(e.target.value))} aria-label="Position in the clip" />
           <div className="vision-transport">
             <button type="button" onClick={() => step(-Math.round(media.fps ?? 10))}>−1s</button>
@@ -402,9 +469,16 @@ export function AdminVisionCalibrationPage() {
                 </p>
               </>
             )}
+            <p className="vision-footnote">
+              A still camera: file for the whole segment. A camera that pans or zooms: file a keyframe on this frame, add more on frames where the view has moved, then follow the camera.
+            </p>
+            {preview?.ok && typeof keyframeFrame === "string" && <p className="vision-footnote">Keyframe: {keyframeFrame}</p>}
             <div className="vision-actions">
-              <button type="button" disabled={busy || !preview?.ok || !current} onClick={save}>
-                File on the segment here
+              <button type="button" disabled={busy || !preview?.ok || !current || typeof keyframeFrame === "string"} onClick={() => save(true)}>
+                File as a keyframe
+              </button>
+              <button type="button" disabled={busy || !preview?.ok || !current} onClick={() => save(false)}>
+                File for the whole segment
               </button>
               <button type="button" disabled={busy || !current?.calibration} onClick={loadFromSegment}>
                 Load the segment's calibration
@@ -413,6 +487,26 @@ export function AdminVisionCalibrationPage() {
                 Clear
               </button>
             </div>
+            {outcome("fit")}
+            {current?.keyframes && current.keyframes.length > 0 && (
+              <>
+                <h4 className="vision-panel__subtitle">Keyframes on this segment</h4>
+                <ul className="vision-tracklist">
+                  {current.keyframes.map((k) => (
+                    <li key={k.id}>
+                      <div className={`vision-tracklist__row${k.frameIndex === frameNow ? " is-selected" : ""}`}>
+                        <button type="button" className="vision-linklike" onClick={() => seekTo(frameStartMs(k.frameIndex, media.fps) ?? 0)}>
+                          {formatClock((frameStartMs(k.frameIndex, media.fps) ?? 0) + offsetMs)} · {describeQuality(k)}
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => void run("Keyframe withdrawn.", () => withdrawVisionKeyframe(k.id), "fit")}>
+                          Withdraw
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </section>
 
           <section className="vision-panel">
@@ -460,7 +554,7 @@ export function AdminVisionCalibrationPage() {
               </span>
             </div>
             <div className="vision-actions">
-              <button type="button" disabled={busy} onClick={() => void run(`${HALF_NAMES[half]} kicks off at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: atMs }))}>
+              <button type="button" disabled={busy} onClick={() => void run(`${HALF_NAMES[half]} kicks off at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: atMs }), "clock")}>
                 Kick-off is here
               </button>
               <button
@@ -468,12 +562,13 @@ export function AdminVisionCalibrationPage() {
                 disabled={busy || !anchors.some((a) => a.half === half)}
                 onClick={() => {
                   const a = anchors.find((x) => x.half === half)!;
-                  void run(`${HALF_NAMES[half]} ends at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: a.sourceMs, endMs: atMs }));
+                  void run(`${HALF_NAMES[half]} ends at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: a.sourceMs, endMs: atMs }), "clock");
                 }}
               >
                 Half ends here
               </button>
             </div>
+            {outcome("clock")}
           </section>
 
           <section className="vision-panel">
@@ -486,15 +581,28 @@ export function AdminVisionCalibrationPage() {
                       {describeSegment(s, formatClock)}
                     </button>
                     {s.superseded > 0 && <span className="vision-sub"> · {s.superseded} superseded</span>}
+                    <select
+                      value={s.source === "manual" ? s.kind : ""}
+                      disabled={busy}
+                      aria-label={`Kind of the segment from ${formatClock(s.startMs)}`}
+                      onChange={(e) => e.target.value && void run(`Segment marked ${SEGMENT_KIND_WORDS[e.target.value as CameraSegmentKind]}.`, () => setVisionCameraSegmentKind(s.id, e.target.value), "segments")}
+                    >
+                      {s.source !== "manual" && <option value="">label as…</option>}
+                      {CAMERA_SEGMENT_KINDS.map((k) => (
+                        <option key={k} value={k}>
+                          {SEGMENT_KIND_WORDS[k]}
+                        </option>
+                      ))}
+                    </select>
                     {!s.calibration && (
-                      <button type="button" disabled={busy} onClick={() => void run("Segment removed.", () => removeVisionCameraSegment(s.id))}>
+                      <button type="button" disabled={busy} onClick={() => void run("Segment removed.", () => removeVisionCameraSegment(s.id), "segments")}>
                         Remove
                       </button>
                     )}
                   </div>
                 </li>
               ))}
-              {!segments.segments.length && <li className="vision-footnote">No segments yet. Mark a start and an end, or propose cuts.</li>}
+              {!segments.segments.length && <li className="vision-footnote">No segments yet. Find the shots, or mark a start and an end.</li>}
             </ul>
             <div className="vision-row">
               <span className="vision-row__label">New</span>
@@ -515,14 +623,26 @@ export function AdminVisionCalibrationPage() {
                 Declare segment
               </button>
               {hasPermission("vision.jobs.run") && (
-                <button type="button" disabled={busy} onClick={() => void run("Cuts queued; proposals appear when the worker finishes.", () => queueVisionJob({ type: "cuts", videoAssetId: assetId }))}>
-                  Propose cuts
-                </button>
+                <>
+                  <button type="button" disabled={busy} onClick={() => void run("Shot finding queued; the shots appear as proposals when the worker finishes.", () => queueVisionJob({ type: "camera_motion", videoAssetId: assetId }), "segments")}>
+                    Find shots
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => void run("Following the camera: the keyframes are carried to every frame when the worker finishes.", () => queueVisionJob({ type: "calibrate", videoAssetId: assetId }), "segments")}>
+                    Follow the camera
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => void run("Cuts queued; proposals appear when the worker finishes.", () => queueVisionJob({ type: "cuts", videoAssetId: assetId }), "segments")}>
+                    Propose cuts
+                  </button>
+                </>
               )}
             </div>
+            {outcome("segments")}
           </section>
         </div>
       </div>
     </div>
   );
 }
+
+/** Where an action's outcome is reported: beside the panel whose controls caused it. */
+type OutcomePlace = "top" | "fit" | "clock" | "segments";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { VisionCameraSegment, VisionPitchLandmark } from "../../../api/vision";
 import { CAMERA_SEGMENT_KINDS } from "@dtp/vision-contracts";
-import { SEGMENT_KIND_WORDS, clickToProxyPixel, describeQuality, describeSegment, fitReason, nextLandmark, overlayPaths, pictureRect, placePoint, removePoint, segmentAt, segmentFromMarks, toFraction } from "./calibration-editor";
+import { SEGMENT_KIND_WORDS, clickToProxyPixel, describeCarried, keyframeFrameOf, describeQuality, describeSegment, fitReason, nextLandmark, overlayPaths, pictureRect, placePoint, removePoint, segmentAt, segmentFromMarks, toFraction } from "./calibration-editor";
 
 const PROXY = { width: 1280, height: 720 };
 
@@ -73,12 +73,21 @@ describe("segments and words", () => {
   });
   const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
 
-  it("finds the segment at the playhead, inclusive at both ends", () => {
-    const segments = [seg(), seg({ id: "s2", startMs: 60001, endMs: 120000 })];
+  it("finds the segment at the playhead half-open, as the API and worker do", () => {
+    // Shots meet edge to edge: the cut's first frame belongs to the next shot.
+    const segments = [seg(), seg({ id: "s2", startMs: 60000, endMs: 120000 })];
     expect(segmentAt(segments, 9000)?.id).toBe("s1");
-    expect(segmentAt(segments, 60000)?.id).toBe("s1");
-    expect(segmentAt(segments, 60001)?.id).toBe("s2");
+    expect(segmentAt(segments, 59999)?.id).toBe("s1");
+    expect(segmentAt(segments, 60000)?.id).toBe("s2");
+    expect(segmentAt(segments, 120000)).toBeNull();
     expect(segmentAt(segments, 8999)).toBeNull();
+  });
+
+  it("names a proposal by what proposed it until a person labels it", () => {
+    const clockWords = (ms: number) => `${ms}`;
+    expect(describeSegment(seg({ source: "camera_motion", kind: "unknown" }), clockWords)).toMatch(/^proposed shot · /);
+    expect(describeSegment(seg({ source: "scene_detect", kind: "unknown" }), clockWords)).toMatch(/^proposed cut · /);
+    expect(describeSegment(seg({ source: "manual", kind: "replay" }), clockWords)).toMatch(/^replay · /);
   });
 
   it("describes a fit and a segment in words a reviewer reads", () => {
@@ -88,7 +97,7 @@ describe("segments and words", () => {
     expect(describeSegment({ ...seg(), kind: "wide" }, clock)).toBe("wide · 0:09–1:00 · not calibrated");
     // Every kind the contract has, has words here.
     expect(Object.keys(SEGMENT_KIND_WORDS).sort()).toEqual([...CAMERA_SEGMENT_KINDS].sort());
-    expect(describeSegment(seg({ source: "scene_detect", kind: "unknown", calibration: { quality: "usable", reprojectionErrorM: 1.5 } as never }), clock)).toBe("proposed · 0:09–1:00 · usable 1.50 m");
+    expect(describeSegment(seg({ source: "scene_detect", kind: "unknown", calibration: { quality: "usable", reprojectionErrorM: 1.5 } as never }), clock)).toBe("proposed cut · 0:09–1:00 · usable 1.50 m");
     expect(fitReason("too_few_points")).toContain("four");
     expect(fitReason("degenerate")).toContain("line");
     expect(fitReason("unknown_landmark", "dugout")).toContain("dugout");
@@ -101,5 +110,26 @@ describe("segments and words", () => {
     expect(segmentFromMarks(9000, 9000, 120000)).toContain("empty");
     expect(segmentFromMarks(9000, 130000, 120000)).toContain("past");
     expect(segmentFromMarks(9000, 130000, null)).toEqual({ startMs: 9000, endMs: 130000 });
+  });
+});
+
+describe("keyframes and the carried calibration, in words", () => {
+  const clock = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
+  it("allows a keyframe only from points all placed on the frame on screen", () => {
+    expect(keyframeFrameOf([{ frameIndex: 50 }, { frameIndex: 50 }], 50)).toBe(50);
+    expect(keyframeFrameOf([{ frameIndex: 50 }, { frameIndex: 51 }], 50)).toMatch(/another frame/);
+    expect(keyframeFrameOf([{ frameIndex: 50 }], 51)).toMatch(/another frame/);
+    expect(keyframeFrameOf([{}], 50)).toMatch(/another frame/);
+    expect(keyframeFrameOf([], 50)).toMatch(/Place the landmarks/);
+    expect(keyframeFrameOf([{ frameIndex: 0 }], null)).toMatch(/frame rate is unknown/);
+  });
+
+  it("says where a frame's calibration came from, or why there is none", () => {
+    const carried = { H: [1, 0, 0, 0, 1, 0, 0, 0, 1], quality: "good", keyframe: 50, framesFromKeyframe: 12, reason: null };
+    expect(describeCarried(carried, 25, clock)).toBe("Carried from the keyframe at 2.00s, 12 frame(s) away · good.");
+    expect(describeCarried({ ...carried, keyframe: null, framesFromKeyframe: null }, 25, clock)).toBe("Whole-segment calibration · good.");
+    expect(describeCarried({ ...carried, H: null, reason: "no_keyframe_in_shot" }, 25, clock)).toBe("No calibration here: no keyframe in this shot.");
+    expect(describeCarried({ ...carried, H: null, reason: "beyond_reach" }, 25, clock)).toBe("No calibration here: too far from any keyframe in this shot.");
+    expect(describeCarried(null, 25, clock)).toBe("No carried calibration for this frame.");
   });
 });
