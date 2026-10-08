@@ -8,7 +8,14 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: Phase 6 Increment 17 implemented** — carry compatibility preflight shares
+**Latest: Phase 6 Increment 18 implemented** — ball trajectory and calibrated
+possession preflight through the same shared queue guards, so a blocker shows at
+the stage where it starts ([89](./89-PHASE-6-INCREMENT-18.md)). QA: 1,836 of
+1,837 API tests (one local CRLF checkout failure, untouched file), 272 web tests,
+both builds, six mutants killed, real-pilot API and browser checks. The pilot now
+reports detect as the first missing stage; gold remains 0/2 and spend $0/$4.
+
+**Phase 6 Increment 17 implemented** — carry compatibility preflight shares
 the queue's evidence guards, reports the first exact refusal and creates no job
 ([88](./88-PHASE-6-INCREMENT-17.md)). QA: 1,810 API tests, 268 web tests,
 both builds and real-pilot browser checks passed. The

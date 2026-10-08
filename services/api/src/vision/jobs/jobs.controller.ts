@@ -96,6 +96,18 @@ export class VisionJobsController {
     return this.jobs.carryPreflight(assetId, modelVersionId, possessionJobId);
   }
 
+  @Get("assets/:assetId/ball-trajectory-preflight")
+  @RequirePermissions("vision.read")
+  async ballTrajectoryPreflight(@Param("assetId") assetId: string, @Query("detectJobId") detectJobId?: string) {
+    return this.jobs.ballTrajectoryPreflight(assetId, detectJobId);
+  }
+
+  @Get("assets/:assetId/possession-preflight")
+  @RequirePermissions("vision.read")
+  async possessionPreflight(@Param("assetId") assetId: string, @Query("ballJobId") ballJobId?: string, @Query("trackJobId") trackJobId?: string) {
+    return this.jobs.possessionPreflight(assetId, ballJobId, trackJobId);
+  }
+
   @Get("jobs/dispatcher")
   @RequirePermissions("vision.read")
   dispatcherHealth() {

@@ -121,18 +121,47 @@ export class VisionJobsService {
     return { asset, model, proxy, track, identify, gamestate, ball, possession, events, resourceClass };
   }
 
-  /** Read-only, fail-fast assessment of exactly the inputs enqueue would resolve. */
-  async carryPreflight(videoAssetId: string, modelVersionId?: string, possessionJobId?: string) {
-    const checkedAt = new Date().toISOString();
+  /**
+   * Read-only, fail-fast assessment of exactly the inputs enqueue would resolve:
+   * the same `prepareForAsset`, stopped before an id, a queue write or an audit row.
+   * A refusal becomes the first blocker; a server failure stays an error, never readiness.
+   */
+  private async preflight<T extends object>(request: AssetJobRequest, fallback: string, resolved: (prepared: Awaited<ReturnType<VisionJobsService["prepareForAsset"]>>) => T) {
+    const checkedAt = new Date().toISOString(), videoAssetId = request.videoAssetId;
     try {
-      const prepared = await this.prepareForAsset({ type: "events", videoAssetId, modelVersionId, params: possessionJobId === undefined ? undefined : { possessionJobId } });
-      return { videoAssetId, checkedAt, ready: true as const, modelVersionId: prepared.model!.id, possessionJobId: prepared.events!.possession.jobId };
+      return { videoAssetId, checkedAt, ready: true as const, ...resolved(await this.prepareForAsset(request)) };
     } catch (error) {
       if (!(error instanceof HttpException) || error.getStatus() >= 500) throw error;
       const response = error.getResponse();
       const body = typeof response === "object" ? response as Record<string, unknown> : { message: response };
-      return { videoAssetId, checkedAt, ready: false as const, blocker: { statusCode: error.getStatus(), error: String(body.error ?? "CarryPreflightBlocked"), message: String(body.message ?? "Carry inputs are unavailable."), remediation: String(body.remediation ?? "Review the named input, then recheck.") } };
+      return { videoAssetId, checkedAt, ready: false as const, blocker: { statusCode: error.getStatus(), error: String(body.error ?? `${fallback}PreflightBlocked`), message: String(body.message ?? `${fallback} inputs are unavailable.`), remediation: String(body.remediation ?? "Review the named input, then recheck.") } };
     }
+  }
+
+  async carryPreflight(videoAssetId: string, modelVersionId?: string, possessionJobId?: string) {
+    return this.preflight({ type: "events", videoAssetId, modelVersionId, params: possessionJobId === undefined ? undefined : { possessionJobId } }, "Carry",
+      (prepared) => ({ modelVersionId: prepared.model!.id, possessionJobId: prepared.events!.possession.jobId }));
+  }
+
+  /** The ball trajectory a CPU job would build: which detect run, which detector, how many camera windows. */
+  async ballTrajectoryPreflight(videoAssetId: string, detectJobId?: string) {
+    selectedJobId("detectJobId", detectJobId);
+    return this.preflight({ type: "ball_trajectory", videoAssetId, params: detectJobId === undefined ? undefined : { detectJobId } }, "BallTrajectory",
+      ({ ball }) => ({ detectJobId: ball!.detections.jobId, detectorVersionId: ball!.detections.modelVersionId, cameraSegments: ball!.segments.length }));
+  }
+
+  /**
+   * Calibrated possession only: carry refuses an image-mode run, so checking image
+   * mode would pass footage the next stage cannot use. Calibrated segments are counted
+   * because the queue accepts a snapshot where none passed; the operator should see that.
+   */
+  async possessionPreflight(videoAssetId: string, ballJobId?: string, trackJobId?: string) {
+    selectedJobId("ballJobId", ballJobId); selectedJobId("trackJobId", trackJobId);
+    const params = { constraintMode: "calibrated", ...(ballJobId === undefined ? {} : { ballJobId }), ...(trackJobId === undefined ? {} : { trackJobId }) };
+    return this.preflight({ type: "possession", videoAssetId, params }, "Possession", ({ possession }) => {
+      const segments = possession!.calibrationSnapshot!.segments;
+      return { ballJobId: possession!.ball.jobId, trackJobId: possession!.tracks.jobId, constraintMode: "calibrated" as const, cameraSegments: segments.length, calibratedSegments: segments.filter((s) => s.homography !== null).length };
+    });
   }
 
   async enqueueForAsset(params: AssetJobRequest, actor?: AdminAuthContext): Promise<{ id: string }> {
@@ -587,6 +616,16 @@ export class VisionJobsService {
 }
 
 /** Whether `type` has `ancestor` anywhere in its prerequisite chain. */
+/**
+ * A selection must look like one job id. Enqueue ignores a non-string and checks the
+ * latest run instead; over HTTP the global pipe turns `?ballJobId=a&ballJobId=b` into
+ * "a,b". Either way the check would not be about the run the operator named.
+ */
+function selectedJobId(name: string, value: unknown) {
+  if (value !== undefined && (typeof value !== "string" || !/^[A-Za-z0-9-]{1,100}$/.test(value)))
+    throw refusal(400, "InvalidPreflightSelection", `${name} must name one job.`, `Pass a single ${name}, or omit it to check the latest succeeded run.`);
+}
+
 function dependsOn(type: VisionJobType, ancestor: VisionJobType): boolean {
   const seen = new Set<VisionJobType>();
   const stack: VisionJobType[] = [...JOB_TYPE_PREREQUISITES[type]];
