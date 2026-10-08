@@ -373,11 +373,53 @@
 
 .vision-workstation {
   box-sizing: border-box;
+  /* Native controls (range, number spinners, scrollbars) drawn for a dark page. */
+  color-scheme: dark;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   min-height: 100vh;
   padding: 0.85rem;
+}
+
+/* A browser's default button and input are dark text on light grey, and a button does
+   not inherit colour, so on this dark page list rows read black on navy. `:where` keeps
+   this at one class of weight and it sits before every component rule, so each of
+   those (the active landmark, the markers on the video) still wins. */
+.vision-workstation :where(button, input, select, textarea) {
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  color: #e2e8f0;
+  font: inherit;
+}
+
+.vision-workstation :where(button) {
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+}
+
+.vision-workstation :where(button:hover:not(:disabled)) {
+  border-color: #94a3b8;
+}
+
+.vision-workstation :where(button:disabled) {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.vision-workstation :where(input, select) {
+  padding: 0.25rem 0.4rem;
+}
+
+.vision-workstation :where(input[type="number"]) {
+  width: 4.75rem;
+}
+
+.vision-workstation :where(input[type="range"]) {
+  background: transparent;
+  border: 0;
+  padding: 0;
 }
 
 .vision-workstation__bar {
@@ -414,6 +456,19 @@
   gap: 0.5rem;
   max-height: 88vh;
   overflow-y: auto;
+}
+
+/* The side panel is narrow: a label column of at least 10rem left the pitch size's two
+   inputs 88px between them, so they stacked. Here a label takes only what it needs. */
+.vision-workstation__side .vision-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.vision-workstation__side .vision-row__value {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 .vision-workstation__side textarea {
@@ -664,8 +719,10 @@
 }
 
 .vision-candidates__pick.is-active {
-  background: rgba(250, 204, 21, 0.18);
+  background: rgba(250, 204, 21, 0.22);
   border-color: #facc15;
+  color: #fef08a;
+  font-weight: 600;
 }
 
 .vision-identity-row {
@@ -757,8 +814,9 @@
   white-space: nowrap;
 }
 
+/* Placed, not faded: a dimmed row read as disabled. The filled dot says it is placed. */
 .vision-candidates__pick.is-placed {
-  opacity: 0.75;
+  color: #86efac;
 }
 
 .vision-quality--good {
