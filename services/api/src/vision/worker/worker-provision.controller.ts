@@ -1,4 +1,4 @@
-import { Body, Controller, Inject, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Inject, Logger, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { RequirePermissions } from "../../admin/decorators/require-permissions.decorator";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -9,6 +9,7 @@ import { ProvisionWorkerDto } from "../jobs/dto/enqueue-job.dto";
 import { notFound, refusal } from "../shared/refusals";
 import { PROVISION_KEY_PROVIDERS } from "./provision-key";
 import { WorkerProvisionGuard, type ProvisionRequest } from "./worker-provision.guard";
+import { SELF_STARTED_PROVIDERS, WorkerCapacityService } from "./worker-capacity.service";
 import { WorkerTokenService } from "./worker-token.service";
 
 type Caller = ProvisionRequest & { adminAuth?: AdminAuthContext };
@@ -29,12 +30,15 @@ function actorOf(req: Caller): VisionAuditActor | null {
 @Controller("vision/workers")
 @UseGuards(WorkerProvisionGuard)
 export class WorkerProvisionController {
+  private readonly log = new Logger(WorkerProvisionController.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(WorkerTokenService) private readonly workerTokens: WorkerTokenService,
     @Inject(COMPUTE_PROVIDER_REGISTRY) private readonly compute: ComputeProviderRegistry,
     @Inject(VISION_CONFIG) private readonly config: VisionConfig,
-    @Inject(VisionAuditService) private readonly audit: VisionAuditService
+    @Inject(VisionAuditService) private readonly audit: VisionAuditService,
+    @Inject(WorkerCapacityService) private readonly capacity: WorkerCapacityService
   ) {}
 
   /**
@@ -60,7 +64,7 @@ export class WorkerProvisionController {
     // A provider that starts nothing hands the token to an operator who names the host;
     // one that launches a pod must give it a URL it can reach from outside. Refused before
     // a token is minted or capacity bought.
-    const selfStarted = PROVISION_KEY_PROVIDERS.includes(providerId) || providerId === "mock";
+    const selfStarted = SELF_STARTED_PROVIDERS.includes(providerId);
     const callbackUrl = selfStarted ? WORKER_CALLBACK_PATH : this.config.compute.hostedWorkerCallbackUrl;
     if (!callbackUrl) {
       throw refusal(409, "WorkerCallbackUrlMissing", `Provider ${providerId} launches its worker elsewhere, and no URL it can call back to is configured.`, "Set VISION_HOSTED_WORKER_CALLBACK_URL to this API's public https URL ending in /api/v1/vision/worker, then provision again.");
@@ -73,20 +77,33 @@ export class WorkerProvisionController {
       image,
     });
 
-    const launch = await provider.launch({
-      image,
-      resourceClass: dto.resourceClass,
-      // The worker learns a URL, a token and its class. No storage credential,
-      // no database connection, no provider SDK configuration.
-      env: {
-        VISION_WORKER_CALLBACK_URL: callbackUrl,
-        VISION_BOOTSTRAP_TOKEN: minted.bootstrapToken,
-        VISION_RESOURCE_CLASS: dto.resourceClass,
-      },
-      maxRuntimeSeconds: this.config.jobs.defaultBudgetSeconds,
-      maxCostUsdCents: this.config.jobs.defaultBudgetUsdCents,
-      idleShutdownSeconds: 120,
-    });
+    // A launch that throws leaves a worker row holding a live bootstrap token for capacity
+    // that does not exist. Retire it before passing the failure on.
+    let launch: Awaited<ReturnType<typeof provider.launch>>;
+    try {
+      launch = await provider.launch({
+        image,
+        resourceClass: dto.resourceClass,
+        // The worker learns a URL, a token and its class. No storage credential,
+        // no database connection, no provider SDK configuration.
+        env: {
+          VISION_WORKER_CALLBACK_URL: callbackUrl,
+          VISION_BOOTSTRAP_TOKEN: minted.bootstrapToken,
+          VISION_RESOURCE_CLASS: dto.resourceClass,
+        },
+        maxRuntimeSeconds: this.config.jobs.defaultBudgetSeconds,
+        maxCostUsdCents: this.config.jobs.defaultBudgetUsdCents,
+        idleShutdownSeconds: 120,
+      });
+    } catch (error) {
+      // No audit row: nothing was started. The retire only revokes the token.
+      try {
+        await this.workerTokens.retire(minted.workerId);
+      } catch (retireError) {
+        this.log.error(`could not retire unlaunched worker ${minted.workerId}: ${String(retireError)}`);
+      }
+      throw error;
+    }
 
     await this.prisma.visionWorker.update({
       where: { id: minted.workerId },
@@ -121,23 +138,15 @@ export class WorkerProvisionController {
   @Post(":id/retire")
   @RequirePermissions("vision.jobs.run")
   async retireWorker(@Param("id") id: string, @Req() req: Caller) {
-    const worker = await this.prisma.visionWorker.findUnique({ where: { id }, select: { id: true, providerId: true, resourceClass: true, retiredAt: true } });
+    const worker = await this.prisma.visionWorker.findUnique({ where: { id }, select: { id: true, providerId: true, providerRef: true, resourceClass: true, retiredAt: true } });
     // It was an update on a row that might not exist, which answered 500.
     if (!worker) throw notFound("worker", id);
     if (req.provisionKey) this.keyMayActFor(worker.providerId, "retire this worker");
-    await this.workerTokens.retire(id);
     // A retire rotates the token whether or not the worker was already retired, so
-    // each one is on the trail; `alreadyRetired` tells the first from a repeat.
-    await this.audit.record(
-      {
-        action: "worker.retired",
-        targetKind: "vision_worker",
-        targetId: id,
-        data: { providerId: worker.providerId, resourceClass: worker.resourceClass, alreadyRetired: worker.retiredAt !== null },
-      },
-      actorOf(req)
-    );
-    return { ok: true };
+    // each one is on the trail; `alreadyRetired` tells the first from a repeat. A hosted
+    // worker's pod is terminated too, so retiring one again stops a pod left running.
+    const { terminated } = await this.capacity.stop(worker, "operator", actorOf(req));
+    return { ok: true, terminated };
   }
 
   /** The provision key acts only for a provider that launches nothing. */

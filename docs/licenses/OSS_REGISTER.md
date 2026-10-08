@@ -42,7 +42,7 @@ shipped) · `dev-tool` (developer machines and CI only) · `reference` (read, no
 | TrackLab | TrackingLaboratory/tracklab | Verify | per-model | reference | **REVIEW REQUIRED** | Dependencies include Ultralytics — see below. |
 | **Ultralytics (YOLO)** | ultralytics/ultralytics | **AGPL-3.0** (or commercial licence) | — | — | **REJECTED for runtime** | AGPL is incompatible with the proprietary product without a commercial licence. It arrives transitively through several tracking repos — **check every dependency tree**. If a commercial licence is ever bought, revisit as a deliberate decision. |
 | OpenCV | opencv/opencv | Apache-2.0 (4.5+) | n/a | runtime | APPROVED | Core video and geometry. |
-| FFmpeg | ffmpeg.org | **GPL-2.0-or-later build** (the distribution's package, `--enable-gpl`, with libx264 and libx265) | n/a | runtime | APPROVED **for use inside DTP's own worker only** | The build configuration is the licence, and this one is GPL. Cleared on 4 October 2026 by Fola Sanni on the basis below, with a condition: the image is not given to anyone outside DTP. See [FFmpeg](#ffmpeg-what-is-installed-and-on-what-basis-it-is-cleared). |
+| FFmpeg | ffmpeg.org | **GPL-2.0-or-later build** (the distribution's package, `--enable-gpl`, with libx264 and libx265) | n/a | runtime | APPROVED **for use inside DTP's own worker only**, including on rented hosted-GPU hardware (ruling of 8 October 2026) | The build configuration is the licence, and this one is GPL. Cleared on 4 October 2026 by Fola Sanni on the basis below, with a condition: the image is not given to anyone outside DTP. Extended on 8 October 2026 to DTP's private image run by a hosted GPU provider on DTP's behalf. See [FFmpeg](#ffmpeg-what-is-installed-and-on-what-basis-it-is-cleared). |
 
 ### FFmpeg: what is installed, and on what basis it is cleared
 
@@ -52,7 +52,7 @@ distribution's package:
 | Image | Base | Package | Licence of the build |
 |---|---|---|---|
 | CPU worker (`services/vision-worker/Dockerfile`) | Debian 12 (`python:3.12-slim-bookworm`) | `ffmpeg 7:5.1.9-0+deb12u1`, with `libx264-164` and `libx265-199` | GPL-2.0-or-later: configured with `--enable-gpl --enable-libx264 --enable-libx265` among others; `ffmpeg -L` prints the GNU General Public License, version 2 or later |
-| GPU worker (`services/vision-worker/Dockerfile.gpu`) | Ubuntu 22.04 (`nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04`) | `ffmpeg 4.4.2-0ubuntu0.22.04.1` | GPL-2.0-or-later: configured with `--enable-gpl`. Read from the same package on a plain `ubuntu:22.04`; the GPU image itself was not built to check |
+| GPU worker (`services/vision-worker/Dockerfile.gpu`) | Ubuntu 22.04 (`nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04`) | `ffmpeg 4.4.2-0ubuntu0.22.04.1` | GPL-2.0-or-later: configured with `--enable-gpl`. Confirmed in the built GPU image on 8 October 2026 (`ffmpeg -L` prints the GPL), the image pushed to private ECR as `dtp-vision-worker:gpu-9816ef0c` |
 
 The versions are what the distributions served on 4 October 2026. A rebuild picks up
 their security updates; the licence of the build does not change with those.
@@ -76,6 +76,14 @@ this row again **before** any of these:
   DTP's behalf is usually not treated as distribution, but it is the first time a copy
   would sit on someone else's machines, so it is decided then and not assumed now;
 - FFmpeg's libraries are linked into DTP's code, or the build is changed.
+
+**Ruling, 8 October 2026: a hosted GPU provider.** Asked before the first RunPod run of the
+GPU worker, Fola Sanni ruled that running DTP's own private image on rented hardware stays
+inside this clearance. The image is pulled from DTP's private registry with DTP's credential,
+runs on DTP's behalf under DTP's account, and is not offered to the provider or anyone else to
+use. The provider holds a copy only as the machine that runs it. The other three triggers
+above are unchanged, and a public registry, a shared template or an image handed to the
+provider for its own use would each need this row reviewed again.
 
 If any of those is wanted and the answer is no, the alternative is an LGPL-only build
 with another H.264 encoder in place of libx264.

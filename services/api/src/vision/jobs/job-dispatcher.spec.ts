@@ -41,6 +41,7 @@ describe("a tick does both jobs", () => {
       requeued: ["job-1"],
       failed: ["job-2"],
       sessionsExpired: ["session-1"],
+      workersStopped: [],
     });
     expect(d.stats).toMatchObject({ ticks: 1, requeued: 1, failed: 1, sessionsExpired: 1 });
   });
@@ -79,7 +80,7 @@ describe("a tick does both jobs", () => {
     const first = d.tick();
     const second = await d.tick();
 
-    expect(second).toEqual({ requeued: [], failed: [], sessionsExpired: [] });
+    expect(second).toEqual({ requeued: [], failed: [], sessionsExpired: [], workersStopped: [] });
     expect(d.stats.ticks).toBe(1);
 
     release();
@@ -120,5 +121,20 @@ describe("health", () => {
   it("counts jobs whose heartbeat has gone stale", async () => {
     mockPrisma.visionJob.count.mockResolvedValue(3);
     expect((await dispatcher().health()).staleHeartbeats).toBe(3);
+  });
+});
+
+describe("a tick stops idle hosted capacity", () => {
+  it("reports the workers it stopped, after the job reap, and survives a failure", async () => {
+    const order: string[] = [];
+    mockQueue.reap.mockImplementation(async () => { order.push("reap"); return { requeued: [], failed: [] }; });
+    const capacity = { reapIdle: vi.fn(async () => { order.push("capacity"); return ["w-1"]; }) };
+    const d = new VisionJobDispatcher(mockPrisma as never, mockQueue as never, mockUploads as never, loadVisionConfig({}), capacity as never);
+    expect((await d.tick()).workersStopped).toEqual(["w-1"]);
+    expect(order).toEqual(["reap", "capacity"]);
+    expect(d.stats.workersStopped).toBe(1);
+    capacity.reapIdle.mockRejectedValueOnce(new Error("provider down"));
+    expect((await d.tick()).workersStopped).toEqual([]);
+    expect(d.stats.errors).toBe(1);
   });
 });

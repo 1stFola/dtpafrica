@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } f
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionUploadService } from "../assets/upload.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
+import { WorkerCapacityService } from "../worker/worker-capacity.service";
 import { JOB_QUEUE, type JobQueue } from "./job-queue";
 
 /**
@@ -32,6 +33,8 @@ export type DispatcherStats = {
   requeued: number;
   failed: number;
   sessionsExpired: number;
+  /** Hosted workers whose pods this pass terminated: idle, or never registered. */
+  workersStopped: number;
   errors: number;
 };
 
@@ -47,6 +50,7 @@ export class VisionJobDispatcher implements OnModuleInit, OnModuleDestroy {
     requeued: 0,
     failed: 0,
     sessionsExpired: 0,
+    workersStopped: 0,
     errors: 0,
   };
 
@@ -54,7 +58,8 @@ export class VisionJobDispatcher implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JOB_QUEUE) private readonly queue: JobQueue,
     @Inject(VisionUploadService) private readonly uploads: VisionUploadService,
-    @Inject(VISION_CONFIG) private readonly config: VisionConfig
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig,
+    @Inject(WorkerCapacityService) private readonly capacity?: WorkerCapacityService
   ) {}
 
   onModuleInit(): void {
@@ -82,15 +87,15 @@ export class VisionJobDispatcher implements OnModuleInit, OnModuleDestroy {
    * One pass. Public so a test — or an operator endpoint — can run it
    * deterministically instead of waiting for a timer.
    */
-  async tick(): Promise<{ requeued: string[]; failed: string[]; sessionsExpired: string[] }> {
+  async tick(): Promise<{ requeued: string[]; failed: string[]; sessionsExpired: string[]; workersStopped: string[] }> {
     // A slow pass must not overlap the next tick and double-reap.
     if (this.running) {
-      return { requeued: [], failed: [], sessionsExpired: [] };
+      return { requeued: [], failed: [], sessionsExpired: [], workersStopped: [] };
     }
     this.running = true;
     this.stats.ticks += 1;
 
-    const result = { requeued: [] as string[], failed: [] as string[], sessionsExpired: [] as string[] };
+    const result = { requeued: [] as string[], failed: [] as string[], sessionsExpired: [] as string[], workersStopped: [] as string[] };
 
     try {
       const reaped = await this.queue.reap();
@@ -122,6 +127,17 @@ export class VisionJobDispatcher implements OnModuleInit, OnModuleDestroy {
       this.log.error(
         `expiring upload sessions failed: ${error instanceof Error ? error.message : String(error)}`
       );
+    }
+
+    // After the job reap, so a worker whose job was just requeued is judged idle on this
+    // pass rather than kept for one held by a dead heartbeat.
+    try {
+      const stopped = (await this.capacity?.reapIdle()) ?? [];
+      result.workersStopped = stopped;
+      this.stats.workersStopped += stopped.length;
+    } catch (error) {
+      this.stats.errors += 1;
+      this.log.error(`stopping idle hosted workers failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       this.running = false;
     }

@@ -56,6 +56,7 @@ import { VisionWorkerBootstrapGuard, VisionWorkerGuard } from "./worker/vision-w
 import { WorkerProvisionController } from "./worker/worker-provision.controller";
 import { WorkerProvisionGuard } from "./worker/worker-provision.guard";
 import { WorkerTokenService } from "./worker/worker-token.service";
+import { WorkerCapacityService } from "./worker/worker-capacity.service";
 
 /**
  * Vision Engine control plane — Phase 0.
@@ -162,6 +163,7 @@ const computeRegistryProvider: Provider = {
     // Worker auth is a separate stack from admin auth on purpose: a worker token
     // must never reach an admin endpoint, and vice versa.
     WorkerTokenService,
+    WorkerCapacityService,
     VisionWorkerGuard,
     VisionWorkerBootstrapGuard,
     // Reuse the existing admin auth stack rather than building a second one.

@@ -240,6 +240,19 @@ describe("the providers are not identical, and the differences are the finding",
     expect(loadRunPodConfig({ VISION_RUNPOD_DISK_GB: "120" }).containerDiskGb).toBe(120);
   });
 
+  it("sends a registry credential id only when one is configured", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const http = (async (_url: string, init?: RequestInit) => {
+      if (init?.body) bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ id: "pod-1" }), { status: 200 });
+    }) as unknown as HttpClient;
+    const spec = { image: "registry.example/img:1", resourceClass: "gpu_24gb" as const, env: {}, maxRuntimeSeconds: 60, maxCostUsdCents: 10, idleShutdownSeconds: 60 };
+    await new RunPodComputeProvider(loadRunPodConfig({ VISION_RUNPOD_API_KEY: "k", VISION_RUNPOD_REGISTRY_AUTH_ID: " auth-1 " }), http).launch(spec as never);
+    await new RunPodComputeProvider(loadRunPodConfig({ VISION_RUNPOD_API_KEY: "k", VISION_RUNPOD_REGISTRY_AUTH_ID: "" }), http).launch(spec as never);
+    expect(bodies[0]).toMatchObject({ imageName: "registry.example/img:1", containerRegistryAuthId: "auth-1" });
+    expect(bodies[1]).not.toHaveProperty("containerRegistryAuthId");
+  });
+
   it("advertises only classes with a configured machine type behind them", () => {
     const provider = new RunPodComputeProvider(
       loadRunPodConfig({ VISION_RUNPOD_API_KEY: "k", VISION_RUNPOD_GPUS_24GB: "" }),

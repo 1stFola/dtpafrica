@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VISION_AUDIT_ACTIONS, VisionAuditService } from "../audit/vision-audit.service";
 import { PROVISION_KEY_HEADER, PROVISION_KEY_PROVIDERS, isProvisionKey, provisionKeyFor } from "./provision-key";
+import { WorkerCapacityService } from "./worker-capacity.service";
 import { WorkerProvisionController } from "./worker-provision.controller";
 import { WorkerProvisionGuard } from "./worker-provision.guard";
 
@@ -116,10 +117,12 @@ describe("what the provision key may do past the door", () => {
   const prisma = { visionWorker: { update: vi.fn(), findUnique: vi.fn() } };
   const tokens = { mintBootstrap: vi.fn(), retire: vi.fn() };
   const launch = vi.fn();
-  const compute = { get: vi.fn(() => ({ capabilities: () => ({ resourceClasses: ["cpu_small", "gpu_24gb"] }), launch })) };
+  const terminate = vi.fn();
+  const compute = { get: vi.fn(() => ({ capabilities: () => ({ resourceClasses: ["cpu_small", "gpu_24gb"] }), launch, terminate })) };
   const config = { compute: { defaultProvider: "runpod", workerImage: "img:1", hostedWorkerCallbackUrl: "https://api.example.test/api/v1/vision/worker" as string | null }, jobs: { defaultBudgetSeconds: 600, defaultBudgetUsdCents: 100 } };
   const audit = { record: vi.fn() };
-  const controller = new WorkerProvisionController(prisma as never, tokens as never, compute as never, config as never, audit as never);
+  const capacity = new WorkerCapacityService(prisma as never, tokens as never, compute as never, audit as never);
+  const controller = new WorkerProvisionController(prisma as never, tokens as never, compute as never, config as never, audit as never, capacity);
   const withKey = { headers: {}, provisionKey: true };
   const asAdmin = { headers: {}, adminAuth: { method: "jwt", userId: "u-1", roleSlug: "vision_admin", roleName: null, permissions: [] } };
 
@@ -186,25 +189,35 @@ describe("what the provision key may do past the door", () => {
     launch.mockRejectedValueOnce(new Error("the provider is down"));
     await expect(controller.provisionWorker({ resourceClass: "gpu_24gb", providerId: "runpod" } as never, asAdmin as never)).rejects.toThrow("the provider is down");
     expect(audit.record).not.toHaveBeenCalled();
+    // The row minted for it does not keep a live bootstrap token for a pod that does not exist.
+    expect(tokens.retire).toHaveBeenCalledWith("w-1");
+    // A retire that fails too still reports the launch failure, not its own.
+    launch.mockRejectedValueOnce(new Error("the provider is down"));
+    tokens.retire.mockRejectedValueOnce(new Error("db blip"));
+    await expect(controller.provisionWorker({ resourceClass: "gpu_24gb", providerId: "runpod" } as never, asAdmin as never)).rejects.toThrow("the provider is down");
   });
 
   it("retires the box's own worker, and not a hosted one", async () => {
-    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-1", providerId: "local", resourceClass: "cpu_small", retiredAt: null });
-    await expect(controller.retireWorker("w-1", withKey as never)).resolves.toEqual({ ok: true });
+    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-1", providerId: "local", providerRef: "ref-1", resourceClass: "cpu_small", retiredAt: null });
+    await expect(controller.retireWorker("w-1", withKey as never)).resolves.toEqual({ ok: true, terminated: false });
+    expect(terminate).not.toHaveBeenCalled();
     expect(tokens.retire).toHaveBeenCalledWith("w-1");
     expect(audit.record).toHaveBeenCalledWith(
-      { action: "worker.retired", targetKind: "vision_worker", targetId: "w-1", data: { providerId: "local", resourceClass: "cpu_small", alreadyRetired: false } },
+      { action: "worker.retired", targetKind: "vision_worker", targetId: "w-1", data: { providerId: "local", resourceClass: "cpu_small", alreadyRetired: false, reason: "operator", terminated: false } },
       { method: "provision_key" }
     );
 
     tokens.retire.mockClear();
     audit.record.mockClear();
-    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-2", providerId: "runpod", resourceClass: "gpu_24gb", retiredAt: new Date("2026-10-04T00:00:00Z") });
+    prisma.visionWorker.findUnique.mockResolvedValue({ id: "w-2", providerId: "runpod", providerRef: "pod-9", resourceClass: "gpu_24gb", retiredAt: new Date("2026-10-04T00:00:00Z") });
     await expect(controller.retireWorker("w-2", withKey as never)).rejects.toMatchObject({ status: 403, response: { error: "ProvisionKeyScope" } });
     expect(tokens.retire).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
     // An admin may. Retiring a retired worker rotates its token again, and the row says it was a repeat.
-    await expect(controller.retireWorker("w-2", asAdmin as never)).resolves.toEqual({ ok: true });
+    // Its pod is terminated too, even on a repeat: a retired worker's pod may still be running.
+    expect(terminate).not.toHaveBeenCalled();
+    await expect(controller.retireWorker("w-2", asAdmin as never)).resolves.toEqual({ ok: true, terminated: true });
+    expect(terminate).toHaveBeenCalledWith("pod-9");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "worker.retired", targetId: "w-2", data: expect.objectContaining({ alreadyRetired: true }) }), asAdmin.adminAuth);
   });
 

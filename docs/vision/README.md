@@ -8,7 +8,15 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: hosted workers get a reachable callback URL** — provisioning gave every
+**Latest: hosted capacity stops, and the pilot's first GPU run** — retiring a hosted
+worker terminates its pod, a failed launch revokes its token, and the dispatcher stops
+idle (5 min) or never-registered (20 min) pods; all three seen on real RunPod pods.
+Detect ran on the pilot for $0.31 in total: 22,315 people and 660 balls over 1,244
+frames, raw counts, not accuracy. Track and ball trajectory now wait on a declared camera
+segment and its calibration, both a person's work
+([91](./91-HOSTED-CAPACITY-AND-FIRST-GPU-RUN.md)).
+
+**Hosted workers get a reachable callback URL** — provisioning gave every
 provider a relative callback path, which no RunPod pod could resolve; a hosted
 provider now needs `VISION_HOSTED_WORKER_CALLBACK_URL` or is refused before a token
 or pod ([90](./90-HOSTED-WORKER-CALLBACK.md)). Doc 90 also lists what a RunPod

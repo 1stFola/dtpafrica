@@ -45,6 +45,7 @@ import { VisionStatusController } from "./vision-status.controller";
 import { VisionWorkerController } from "./worker/worker.controller";
 import { WorkerProvisionController } from "./worker/worker-provision.controller";
 import { WorkerTokenService } from "./worker/worker-token.service";
+import { WorkerCapacityService } from "./worker/worker-capacity.service";
 
 /**
  * Dependency-injection smoke test.
@@ -136,6 +137,7 @@ const SERVICES = [
   VisionClockService,
   VisionEventsService,
   WorkerTokenService,
+  WorkerCapacityService,
 ] as const;
 
 /**
