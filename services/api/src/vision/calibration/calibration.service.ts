@@ -143,6 +143,41 @@ export class VisionCalibrationService {
     return { removed: segment.id };
   }
 
+  /**
+   * A person says what a segment is: live play, a replay, half-time. On a proposal
+   * this is the person adopting it, so it becomes `manual`, with their name, and a
+   * later automatic run no longer replaces it. Refused while current event candidates
+   * were filed under the segment: their in-play flag came from its kind.
+   */
+  async setSegmentKind(cameraSegmentId: string, kind: string, actor?: AdminAuthContext) {
+    const person = requirePerson(actor, "set a camera segment's kind");
+    const segment = await this.prisma.visionCameraSegment.findUnique({
+      where: { id: cameraSegmentId },
+      select: { id: true, videoAssetId: true, kind: true, source: true, startMs: true, endMs: true },
+    });
+    if (!segment) throw notFound("camera segment", cameraSegmentId);
+    if (segment.kind === kind && segment.source === "manual") return segment;
+    const [filedUnder, linked] = await Promise.all([
+      this.prisma.visionEventCandidate.count({ where: { cameraSegmentId: segment.id, supersededBy: null } }),
+      this.prisma.visionEvidenceLink.count({ where: { kind: "camera_segment", targetId: segment.id, candidate: { supersededBy: null } } }),
+    ]);
+    if (segment.kind !== kind && (filedUnder || linked)) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "SegmentReferenced",
+        message: `Segment ${cameraSegmentId} is evidence for ${Math.max(filedUnder, linked)} current event candidate(s), which took their in-play flag from its kind.`,
+        remediation: "Correct those candidates first, then change the segment's kind.",
+      });
+    }
+    const updated = await this.prisma.visionCameraSegment.update({
+      where: { id: segment.id },
+      data: { kind, source: "manual", ...(segment.source === "manual" ? {} : { createdBy: person.userId }) },
+    });
+    await this.audit.record({ action: "camera.segment.updated", targetKind: "vision_camera_segment", targetId: segment.id,
+      data: { videoAssetId: segment.videoAssetId, startMs: segment.startMs, endMs: segment.endMs, kindFrom: segment.kind, kindTo: kind, sourceFrom: segment.source } }, actor);
+    return updated;
+  }
+
   /** The asset's segments with each one's current calibration, as a reviewer reads them. */
   async segments(videoAssetId: string) {
     const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { id: true, durationMs: true } });

@@ -829,6 +829,7 @@ when a route has neither a permission nor a token guard.
 | `POST` | `/vision/review/:assetId/possession/import` | `vision.review` | `possession/possession.controller.ts` |
 | `GET` | `/vision/review/:assetId/tracks` | `vision.read` | `identity/identity.controller.ts` |
 | `DELETE` | `/vision/review/camera-segments/:id` | `vision.review` | `calibration/calibration.controller.ts` |
+| `PATCH` | `/vision/review/camera-segments/:id` | `vision.review` | `calibration/calibration.controller.ts` |
 | `POST` | `/vision/review/camera-segments/:id/calibration` | `vision.review` | `calibration/calibration.controller.ts` |
 | `POST` | `/vision/review/events` | `vision.review` | `events/events.controller.ts` |
 | `GET` | `/vision/review/events/:id` | `vision.read` | `events/events.controller.ts` |

@@ -8,7 +8,14 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: hosted capacity stops, and the pilot's first GPU run** — retiring a hosted
+**Latest: camera motion and the shots between cuts** — a CPU `camera_motion` stage
+(contract 1.17.0, OpenCV) measures how the picture moves frame to frame and finds the
+edit cuts, proposed as segments. On the pilot it found the 6 cuts the scene filter
+missed, with per-pair fits at a fifth of a pixel. A person sets a segment's kind; the
+proxy's width is now stored. Step 1 of camera-following calibration
+([92](./92-CAMERA-MOTION-AND-SHOTS.md)).
+
+**Hosted capacity stops, and the pilot's first GPU run** — retiring a hosted
 worker terminates its pod, a failed launch revokes its token, and the dispatcher stops
 idle (5 min) or never-registered (20 min) pods; all three seen on real RunPod pods.
 Detect ran on the pilot for $0.31 in total: 22,315 people and 660 balls over 1,244

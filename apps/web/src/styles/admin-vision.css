@@ -288,6 +288,19 @@
   margin: 0.5rem 0;
 }
 
+.vision-ok {
+  color: #86efac;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin: 0.5rem 0;
+}
+
+/* An action's outcome, beside the controls that caused it. */
+.vision-outcome {
+  border-left: 3px solid currentColor;
+  padding-left: 0.5rem;
+}
+
 .vision-actions {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   margin-top: 1rem;

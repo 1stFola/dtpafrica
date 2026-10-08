@@ -87,8 +87,13 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  *
  * 1.16.0 -- CPU carry event proposals from original calibrated possession and
  * exact player observations, bound to a registered weight-free rule version.
+ *
+ * 1.17.0 -- `camera_motion`: CPU frame-to-frame homographies over the pinned proxy
+ * and the shots between edit cuts, proposed as `camera_motion` camera segments.
+ * No model; the per-frame rows are the input calibration propagation reads
+ * (docs/vision/92).
  */
-export const VISION_CONTRACT_VERSION = "1.16.0";
+export const VISION_CONTRACT_VERSION = "1.17.0";
 
 /**
  * Which worker may serve which stage (docs/vision/58).
@@ -111,6 +116,7 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   fingerprint: "1.12.0",
   transcode: "1.12.0",
   cuts: "1.12.0",
+  camera_motion: "1.17.0",
   detect: "1.12.0",
   track: "1.12.0",
   identify: "1.12.0",
@@ -170,6 +176,7 @@ export const VISION_JOB_TYPES = [
   "fingerprint",
   "transcode",
   "cuts",
+  "camera_motion",
   "detect",
   "track",
   "identify",
@@ -206,6 +213,8 @@ export const DEFAULT_RESOURCE_CLASS: Record<VisionJobType, VisionResourceClass> 
   transcode: "cpu_small",
   // FFmpeg's scene-change score over the proxy: a decode, no model.
   cuts: "cpu_small",
+  // Corner tracking and homographies over a decode of the proxy: arithmetic, no model.
+  camera_motion: "cpu_small",
   clip: "cpu_small",
   detect: "gpu_24gb",
   // Association over stored detections is arithmetic; see `benchmark`.
@@ -254,6 +263,7 @@ export const JOB_TYPE_PREREQUISITES: Record<VisionJobType, readonly VisionJobTyp
   fingerprint: [],
   transcode: ["probe"],
   cuts: ["transcode"],
+  camera_motion: ["transcode"],
   detect: ["transcode"],
   track: ["detect"],
   identify: ["track"],
@@ -459,6 +469,7 @@ export const OUTPUT_BUCKET_BY_JOB_TYPE: Record<VisionJobType, "derived" | "model
   fingerprint: "derived",
   transcode: "derived",
   cuts: "derived",
+  camera_motion: "derived",
   detect: "derived",
   track: "derived",
   identify: "derived",
@@ -693,8 +704,13 @@ export type PitchCalibration = {
 /** Role of the artifact a `cuts` job writes. */
 export const CUTS_ARTIFACT_ROLE = "cuts";
 
-/** Who declared a camera segment: a person, or the scene-change filter. */
-export const CAMERA_SEGMENT_SOURCES = ["manual", "scene_detect"] as const;
+/**
+ * Who declared a camera segment: a person, the scene-change filter, or the shots
+ * `camera_motion` found. A person setting a proposal's kind makes it `manual`.
+ */
+export const CAMERA_SEGMENT_SOURCES = ["manual", "scene_detect", "camera_motion"] as const;
+/** The sources that are proposals: replaced by a later run unless a person kept or calibrated them. */
+export const PROPOSED_SEGMENT_SOURCES = ["scene_detect", "camera_motion"] as const;
 export type CameraSegmentSource = (typeof CAMERA_SEGMENT_SOURCES)[number];
 
 /** Optional knobs under `inputs.params`, beside the proxy clock the clock gives every stage after transcode. */
@@ -706,6 +722,41 @@ export type CutsJobParams = {
 };
 
 export type CameraCut = { proxyMs: number; sourceMs: number; score: number };
+
+// ── Camera motion ───────────────────────────────────────────────────────────
+
+/** Version of the motion calculation; a change of method is a new version, not an edit. */
+export const CAMERA_MOTION_VERSION = "camera-motion/v1";
+/** Roles of what a `camera_motion` job writes: one index, and per-minute JSONL chunks of rows. */
+export const CAMERA_MOTION_INDEX_ROLE = "camera_motion";
+export const CAMERA_MOTION_CHUNK_ROLE = "camera_motion_chunk";
+
+/** What the control plane pins for a `camera_motion` job, beside the proxy clock. */
+export type CameraMotionJobParams = {
+  /** The proxy the motion is measured on; the worker refuses any other. */
+  proxyChecksum: string;
+  /** Shots stop at the end of the source, not of the proxy's padded tail. */
+  sourceDurationMs: number;
+  chunkMs?: number;
+  cameraMotionConfig?: { minInliers?: number; minShotMs?: number };
+};
+
+/**
+ * One row per proxy frame. Row 0 is `start`; row f is the pair f-1 -> f, with the
+ * homography mapping a proxy pixel in frame f-1 to frame f. `break` is an edit cut
+ * (no homography): nothing is carried across it.
+ */
+export type CameraMotionRow = {
+  f: number;
+  status: "start" | "tracked" | "bridged" | "break";
+  H: Homography | null;
+  inliers: number | null;
+  tracked: number | null;
+  residualPx: number | null;
+};
+
+/** A run of frames joined by tracked or bridged pairs: half-open source ms, inside the source. */
+export type CameraShot = { startFrame: number; endFrame: number; startMs: number; endMs: number };
 
 /** A proposed camera segment, in source milliseconds, [start, end). */
 export type ProposedSegment = { startMs: number; endMs: number; proxyStartMs: number; proxyEndMs: number };

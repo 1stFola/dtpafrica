@@ -724,7 +724,7 @@ export type VisionCalibrationSummary = {
 export type VisionCameraSegment = {
   id: string;
   kind: string;
-  source: "manual" | "scene_detect" | string;
+  source: "manual" | "scene_detect" | "camera_motion" | string;
   startMs: number;
   endMs: number;
   calibration: VisionCalibrationSummary | null;
@@ -745,6 +745,11 @@ export function fetchVisionCameraSegments(assetId: string) {
 
 export function declareVisionCameraSegment(assetId: string, body: { startMs: number; endMs: number; kind: string }) {
   return adminFetch<VisionCameraSegment>(`/vision/review/${assetId}/camera-segments`, { method: "POST", body: JSON.stringify(body) });
+}
+
+/** A person says what a segment is; labelling a proposal makes it their declaration. */
+export function setVisionCameraSegmentKind(segmentId: string, kind: string) {
+  return adminFetch<VisionCameraSegment>(`/vision/review/camera-segments/${segmentId}`, { method: "PATCH", body: JSON.stringify({ kind }) });
 }
 
 export function removeVisionCameraSegment(segmentId: string) {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { AdminAuth } from "../../admin/decorators/admin-auth.decorator";
 import { RequirePermissions } from "../../admin/decorators/require-permissions.decorator";
 import { AdminAuthGuard } from "../../admin/guards/admin-auth.guard";
@@ -6,7 +6,7 @@ import { PermissionsGuard } from "../../admin/guards/permissions.guard";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { jsonSafe } from "../shared/json-safe";
 import { VisionCalibrationService } from "./calibration.service";
-import { CalibrateDto, DeclareSegmentDto } from "./dto/calibration.dto";
+import { CalibrateDto, DeclareSegmentDto, SetSegmentKindDto } from "./dto/calibration.dto";
 import { DEFAULT_PITCH, pitchLandmarks, pitchProblem } from "./pitch-model";
 
 /**
@@ -43,6 +43,13 @@ export class VisionCalibrationController {
   @RequirePermissions("vision.review")
   async declare(@Param("assetId") assetId: string, @Body() dto: DeclareSegmentDto, @AdminAuth() auth: AdminAuthContext) {
     return jsonSafe(await this.calibration.declareSegment(assetId, dto, auth));
+  }
+
+  /** A person says what a segment is; a proposal they label becomes their declaration. */
+  @Patch("review/camera-segments/:id")
+  @RequirePermissions("vision.review")
+  async setKind(@Param("id") id: string, @Body() dto: SetSegmentKindDto, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.calibration.setSegmentKind(id, dto.kind, auth));
   }
 
   @Delete("review/camera-segments/:id")

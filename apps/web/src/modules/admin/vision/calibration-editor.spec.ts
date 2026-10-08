@@ -73,12 +73,21 @@ describe("segments and words", () => {
   });
   const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
 
-  it("finds the segment at the playhead, inclusive at both ends", () => {
-    const segments = [seg(), seg({ id: "s2", startMs: 60001, endMs: 120000 })];
+  it("finds the segment at the playhead half-open, as the API and worker do", () => {
+    // Shots meet edge to edge: the cut's first frame belongs to the next shot.
+    const segments = [seg(), seg({ id: "s2", startMs: 60000, endMs: 120000 })];
     expect(segmentAt(segments, 9000)?.id).toBe("s1");
-    expect(segmentAt(segments, 60000)?.id).toBe("s1");
-    expect(segmentAt(segments, 60001)?.id).toBe("s2");
+    expect(segmentAt(segments, 59999)?.id).toBe("s1");
+    expect(segmentAt(segments, 60000)?.id).toBe("s2");
+    expect(segmentAt(segments, 120000)).toBeNull();
     expect(segmentAt(segments, 8999)).toBeNull();
+  });
+
+  it("names a proposal by what proposed it until a person labels it", () => {
+    const clockWords = (ms: number) => `${ms}`;
+    expect(describeSegment(seg({ source: "camera_motion", kind: "unknown" }), clockWords)).toMatch(/^proposed shot · /);
+    expect(describeSegment(seg({ source: "scene_detect", kind: "unknown" }), clockWords)).toMatch(/^proposed cut · /);
+    expect(describeSegment(seg({ source: "manual", kind: "replay" }), clockWords)).toMatch(/^replay · /);
   });
 
   it("describes a fit and a segment in words a reviewer reads", () => {
@@ -88,7 +97,7 @@ describe("segments and words", () => {
     expect(describeSegment({ ...seg(), kind: "wide" }, clock)).toBe("wide · 0:09–1:00 · not calibrated");
     // Every kind the contract has, has words here.
     expect(Object.keys(SEGMENT_KIND_WORDS).sort()).toEqual([...CAMERA_SEGMENT_KINDS].sort());
-    expect(describeSegment(seg({ source: "scene_detect", kind: "unknown", calibration: { quality: "usable", reprojectionErrorM: 1.5 } as never }), clock)).toBe("proposed · 0:09–1:00 · usable 1.50 m");
+    expect(describeSegment(seg({ source: "scene_detect", kind: "unknown", calibration: { quality: "usable", reprojectionErrorM: 1.5 } as never }), clock)).toBe("proposed cut · 0:09–1:00 · usable 1.50 m");
     expect(fitReason("too_few_points")).toContain("four");
     expect(fitReason("degenerate")).toContain("line");
     expect(fitReason("unknown_landmark", "dugout")).toContain("dugout");

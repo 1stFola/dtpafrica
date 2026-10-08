@@ -93,9 +93,13 @@ export function removePoint(placed: VisionCalibrationPoint[], landmark: string):
   return placed.filter((p) => p.landmark !== landmark);
 }
 
-/** The segment covering a moment in source time, if any. Inclusive at both ends, as the API reads it. */
+/**
+ * The segment covering a moment in source time, if any. Half-open, `start <= t < end`,
+ * as the API and the worker read it: at a cut the next shot's first frame belongs to
+ * the next shot, so a calibration filed there lands where the pipeline will look.
+ */
 export function segmentAt(segments: VisionCameraSegment[], sourceMs: number): VisionCameraSegment | null {
-  return segments.find((s) => s.startMs <= sourceMs && sourceMs <= s.endMs) ?? null;
+  return segments.find((s) => s.startMs <= sourceMs && sourceMs < s.endMs) ?? null;
 }
 
 /**
@@ -131,9 +135,12 @@ export function fitReason(reason: string, detail?: string): string {
   }
 }
 
-/** A segment's label: `wide · 0:09–1:00 · good 0.42 m`, or `proposed`. */
+/** Words for who proposed a segment nobody has labelled yet. */
+export const PROPOSAL_WORDS: Record<string, string> = { scene_detect: "proposed cut", camera_motion: "proposed shot" };
+
+/** A segment's label: `live play · 0:09–1:00 · good 0.42 m`, or `proposed shot · …`. */
 export function describeSegment(s: VisionCameraSegment, formatClock: (ms: number) => string): string {
-  const who = s.source === "scene_detect" ? "proposed" : ((SEGMENT_KIND_WORDS as Record<string, string>)[s.kind] ?? s.kind);
+  const who = PROPOSAL_WORDS[s.source] ?? ((SEGMENT_KIND_WORDS as Record<string, string>)[s.kind] ?? s.kind);
   const cal = s.calibration ? `${s.calibration.quality} ${s.calibration.reprojectionErrorM.toFixed(2)} m` : "not calibrated";
   return `${who} · ${formatClock(s.startMs)}–${formatClock(s.endMs)} · ${cal}`;
 }

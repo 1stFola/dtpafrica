@@ -39,17 +39,21 @@ describe("which worker may serve which stage", () => {
 
   it("keeps older workers on their existing stages and withholds the new ball stage", () => {
     const served = workerCompatibility("1.12.0", "1.13.0");
-    expect(served).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "ball_trajectory" && type !== "possession" && type !== "events") });
+    expect(served).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "ball_trajectory" && type !== "possession" && type !== "events" && type !== "camera_motion") });
   });
 
   it("withholds possession from a worker that only knows ball trajectories", () => {
-    expect(workerCompatibility("1.13.0", "1.14.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "possession" && type !== "events") });
+    expect(workerCompatibility("1.13.0", "1.14.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "possession" && type !== "events" && type !== "camera_motion") });
   });
   it("withholds changed possession inputs from a 1.14 worker, while other stages remain available", () => {
-    expect(workerCompatibility("1.14.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "possession" && type !== "events") });
+    expect(workerCompatibility("1.14.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "possession" && type !== "events" && type !== "camera_motion") });
   });
   it("withholds carry inputs from a 1.15 worker while keeping calibrated possession", () => {
-    expect(workerCompatibility("1.15.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "events") });
+    expect(workerCompatibility("1.15.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "events" && type !== "camera_motion") });
+  });
+  it("withholds camera motion from a 1.16 worker, which has no OpenCV and no such stage, and nothing else", () => {
+    expect(workerCompatibility("1.16.0")).toEqual({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => type !== "camera_motion") });
+    expect(workerCompatibility("1.17.0").stages).toContain("camera_motion");
   });
 
   it("serves an older worker only the stages that have not changed since it was built", () => {

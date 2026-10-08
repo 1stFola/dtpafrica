@@ -15,6 +15,7 @@ import {
   TRACK_ARTIFACT_ROLE,
   visionKeys,
   type BallTrajectoryJobParams,
+  type CameraMotionJobParams,
   BALL_TRAJECTORY_INDEX_ROLE,
   BALL_TRAJECTORY_CHUNK_ROLE,
   BALL_TRAJECTORY_VERSION,
@@ -30,6 +31,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { orientStored } from "../calibration/homography";
 import { possessionCalibration } from "../possession/possession-calibration";
+import { pinnedProxy } from "../calibration/pinned-proxy";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionModelsService } from "../models/models.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
@@ -110,15 +112,17 @@ export class VisionJobsService {
     const gamestate = params.type === "gamestate" ? await this.gamestateInputs(asset.id, params.params) : null;
     const ball = params.type === "ball_trajectory" ? await this.ballInputs(asset, params.params) : null;
     const possession = params.type === "possession" ? await this.possessionInputs(asset, params.params) : null;
+    const motion = params.type === "camera_motion" ? await this.cameraMotionInputs(asset, params.params) : null;
     const events = params.type === "events" && model && this.store ? await eventCarryInputs(this.prisma, this.store, asset, model.id, params.params) : null;
     if (params.type === "events" && !events) throw refusal(409, "EventCarryEvidenceMissing", "Event proposals require a resolved algorithm and original evidence storage.", "Select a compatible event rule version and complete calibrated possession.");
 
     const resourceClass = params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type];
     if (params.type === "ball_trajectory" && resourceClass !== "cpu_small") throw refusal(400, "BallTrajectoryCpuOnly", "Ball trajectory is a CPU transformation of stored detections.", "Use the default cpu_small resource class.");
     if (params.type === "possession" && resourceClass !== "cpu_small") throw refusal(400, "PossessionCpuOnly", "Possession candidates transform stored observations on CPU.", "Use cpu_small.");
+    if (params.type === "camera_motion" && resourceClass !== "cpu_small") throw refusal(400, "CameraMotionCpuOnly", "Camera motion is corner tracking over the proxy on CPU; a GPU adds cost, not speed.", "Use cpu_small.");
     if (params.type === "events" && resourceClass !== "cpu_small") throw refusal(400, "EventsCpuOnly", "Carry proposals transform original observations on CPU.", "Use cpu_small.");
 
-    return { asset, model, proxy, track, identify, gamestate, ball, possession, events, resourceClass };
+    return { asset, model, proxy, track, identify, gamestate, ball, possession, motion, events, resourceClass };
   }
 
   /**
@@ -165,7 +169,7 @@ export class VisionJobsService {
   }
 
   async enqueueForAsset(params: AssetJobRequest, actor?: AdminAuthContext): Promise<{ id: string }> {
-    const { asset, model, proxy, track, identify, gamestate, ball, possession, events, resourceClass } = await this.prepareForAsset(params);
+    const { asset, model, proxy, track, identify, gamestate, ball, possession, motion, events, resourceClass } = await this.prepareForAsset(params);
     // The id is generated here so the output prefix can be derived from it in the
     // same insert: an artifact key then names the job that produced it, with no
     // second write to correct.
@@ -191,6 +195,7 @@ export class VisionJobsService {
         ...(gamestate ?? {}),
         ...(ball ?? {}),
         ...(possession ?? {}),
+        ...(motion ?? {}),
         ...(events ?? {}),
       },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
@@ -328,6 +333,27 @@ export class VisionJobsService {
       imageWidth: input.imageWidth, imageHeight: input.imageHeight, detectionsChecksum: b.detectionsChecksum, detectorJobId: String(detector.jobId), detectorVersionId: String(detector.modelVersionId), segments, proxy,
       ...(calibrationSnapshot ? { constraintMode: "calibrated" as const, calibrationSnapshot, ...(football ? { footballConfig: football as PossessionJobParams["footballConfig"] } : {}) } : {}),
       readKeys: [...indices, ...chunks, ...tracks].map((a) => ({ bucket: "derived" as const, key: a.key })) };
+  }
+
+  /**
+   * What a camera_motion job measures: the current proxy, pinned by the checksum its
+   * transcode recorded, and the source's end, so the last shot stops at the footage
+   * rather than at the proxy's padded tail. The optional knobs are checked here, at
+   * the door, as the worker would refuse them after a pod spun up.
+   */
+  private async cameraMotionInputs(asset: { id: string; durationMs: number | null }, requested?: Record<string, unknown>): Promise<CameraMotionJobParams> {
+    if (!Number.isSafeInteger(asset.durationMs) || !asset.durationMs || asset.durationMs < 1)
+      throw refusal(409, "AssetDurationUnknown", "Camera motion needs the footage's duration to bound its shots.", "Run probe for the asset first.");
+    const pinned = await pinnedProxy(this.prisma, asset.id);
+    const whole = (v: unknown, lo: number, hi: number) => typeof v === "number" && Number.isSafeInteger(v) && v >= lo && v <= hi;
+    if (requested?.chunkMs !== undefined && !whole(requested.chunkMs, 10_000, 600_000))
+      throw refusal(400, "InvalidCameraMotionConfig", "Camera motion chunks must cover 10000 to 600000 milliseconds.", "Use the default one-minute chunks.");
+    const config = requested?.cameraMotionConfig;
+    const ranges: Record<string, [number, number]> = { minInliers: [8, 400], minShotMs: [0, 10_000] };
+    if (config !== undefined && (!config || typeof config !== "object" || Array.isArray(config)
+      || Object.entries(config).some(([k, v]) => !ranges[k] || !whole(v, ranges[k]![0], ranges[k]![1]))))
+      throw refusal(400, "InvalidCameraMotionConfig", "The camera motion configuration is invalid.", "Use whole-number minInliers 8-400 and minShotMs 0-10000, or leave it out.");
+    return { proxyChecksum: pinned.checksum, sourceDurationMs: asset.durationMs };
   }
 
   private async ballInputs(asset: { id: string; checksumSha256: string; durationMs: number | null }, requested?: Record<string, unknown>): Promise<BallTrajectoryJobParams> {

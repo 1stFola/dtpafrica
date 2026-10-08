@@ -352,6 +352,44 @@ describe("ball trajectory inputs are pinned before CPU dispatch", () => {
   });
 });
 
+describe("camera motion is pinned to the current proxy's bytes", () => {
+  const checksum = "A".repeat(64);
+  const transcode = (over: Record<string, unknown> = {}) => ({ progress: { summary: { proxy: { key: "proxy.mp4", checksumSha256: checksum } }, artifacts: [{ key: "proxy.mp4", role: "proxy" }] }, ...over });
+  beforeEach(() => {
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: "match-1", ingestState: "ready", checksumSha256: "b".repeat(64), durationMs: 49706 });
+    mockPrisma.visionJob.findMany.mockResolvedValue([{ type: "transcode" }]);
+    mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4", fps: 25, sourceOffsetMs: 0 });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(transcode());
+  });
+
+  it("queues on CPU with the proxy checksum and the source's end, owned by the control plane", async () => {
+    await service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET, params: { proxyChecksum: "forged", sourceDurationMs: 1, chunkMs: 30000 } });
+    const job = enqueued();
+    expect(job.resourceClass).toBe("cpu_small");
+    expect(job.modelVersionId).toBeNull();
+    expect(job.inputSpec).toMatchObject({ proxyChecksum: "a".repeat(64), sourceDurationMs: 49706, proxy: { fps: 25, sourceOffsetMs: 0 }, chunkMs: 30000 });
+    expect(job.inputSpec.readKeys).toBeUndefined();
+  });
+
+  it("refuses a proxy no completed transcode vouches for, and footage of unknown length", async () => {
+    mockPrisma.visionJob.findFirst.mockResolvedValue(transcode({ progress: { summary: { proxy: { key: "older.mp4", checksumSha256: checksum } }, artifacts: [{ key: "older.mp4", role: "proxy" }] } }));
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "ProxyUnpinned" } });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(null);
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "ProxyUnpinned" } });
+    mockPrisma.visionJob.findFirst.mockResolvedValue(transcode());
+    mockPrisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: "match-1", ingestState: "ready", checksumSha256: "b".repeat(64), durationMs: null });
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "AssetDurationUnknown" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses bad knobs and a GPU at the door", async () => {
+    for (const params of [{ chunkMs: 5 }, { cameraMotionConfig: { minInliers: 2 } }, { cameraMotionConfig: { minShotMs: 1.5 } }, { cameraMotionConfig: { other: 1 } }, { cameraMotionConfig: [] }])
+      await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET, params })).rejects.toMatchObject({ response: { error: "InvalidCameraMotionConfig" } });
+    await expect(service.enqueueForAsset({ type: "camera_motion", videoAssetId: ASSET, resourceClass: "gpu_24gb" })).rejects.toMatchObject({ response: { error: "CameraMotionCpuOnly" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
+});
+
 describe("possession candidates require compatible, pinned ball and player evidence", () => {
   const sourceHash = "a".repeat(64), proxyHash = "b".repeat(64), detectionsHash = "c".repeat(64), ballHash = "d".repeat(64), trackHash = "e".repeat(64);
   const segments = [{ cameraSegmentId: "cam", startMs: 0, endMs: 200, kind: "live_play" }];

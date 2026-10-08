@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CAMERA_SEGMENT_KINDS, DEFAULT_PITCH_DIMENSIONS } from "@dtp/vision-contracts";
+import { CAMERA_SEGMENT_KINDS, DEFAULT_PITCH_DIMENSIONS, type CameraSegmentKind } from "@dtp/vision-contracts";
 import {
   anchorVisionClock,
   calibrateVisionSegment,
@@ -12,6 +12,7 @@ import {
   previewVisionCalibration,
   queueVisionJob,
   removeVisionCameraSegment,
+  setVisionCameraSegmentKind,
   type VisionCalibrationPoint,
   type VisionCalibrationPreview,
   type VisionCameraSegments,
@@ -20,6 +21,7 @@ import {
   type VisionPitchLandmark,
   type VisionReviewMedia,
 } from "../../../api/vision";
+import { describeFailure } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { formatClock, frameIndexAt, frameStartMs, stepFrames } from "./annotation-time";
@@ -80,6 +82,9 @@ export function AdminVisionCalibrationPage() {
   const [kind, setKind] = useState<string>(CAMERA_SEGMENT_KINDS[0]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Where the last action's outcome is shown: beside the controls that caused it. The
+  // side panel scrolls, and a banner at the top of the page is out of sight from there.
+  const [outcomeAt, setOutcomeAt] = useState<OutcomePlace>("top");
   const [busy, setBusy] = useState(false);
 
   const loadSegments = useCallback(async () => {
@@ -219,16 +224,17 @@ export function AdminVisionCalibrationPage() {
     [media, picture, playing, proxyMs, proxySize, target]
   );
 
-  async function run(label: string, action: () => Promise<unknown>) {
+  async function run(label: string, action: () => Promise<unknown>, where: OutcomePlace = "top") {
     setBusy(true);
     setError(null);
     setNotice(null);
+    setOutcomeAt(where);
     try {
       await action();
       setNotice(label);
       await loadSegments();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeFailure(e));
     } finally {
       setBusy(false);
     }
@@ -237,6 +243,8 @@ export function AdminVisionCalibrationPage() {
   function declare() {
     const made = segmentFromMarks(markStart, markEnd, segments?.durationMs ?? null);
     if (typeof made === "string") {
+      setNotice(null);
+      setOutcomeAt("segments");
       setError(made);
       return;
     }
@@ -244,7 +252,7 @@ export function AdminVisionCalibrationPage() {
       await declareVisionCameraSegment(assetId, { ...made, kind });
       setMarkStart(null);
       setMarkEnd(null);
-    });
+    }, "segments");
   }
 
   function save() {
@@ -252,7 +260,7 @@ export function AdminVisionCalibrationPage() {
       setError("No camera segment covers the playhead. Declare one, or move to one.");
       return;
     }
-    void run(`Calibration filed on the segment at ${formatClock(sourceMs)}.`, () => calibrateVisionSegment(current.id, points, pitch));
+    void run(`Calibration filed on the segment at ${formatClock(sourceMs)}.`, () => calibrateVisionSegment(current.id, points, pitch), "fit");
   }
 
   function loadFromSegment() {
@@ -272,6 +280,14 @@ export function AdminVisionCalibrationPage() {
   }
   if (!media || !segments) return <div className="vision-workstation">Loading…</div>;
 
+  const outcome = (place: OutcomePlace) =>
+    outcomeAt === place && (error || notice) ? (
+      // Into view when it appears: the side panel scrolls, and a result below its fold is one nobody sees.
+      <p className={`vision-outcome ${error ? "vision-warn" : "vision-ok"}`} role={error ? "alert" : "status"} ref={(el) => el?.scrollIntoView({ block: "nearest" })}>
+        {error ?? notice}
+      </p>
+    ) : null;
+
   return (
     <div className="vision-workstation">
       <div className="vision-workstation__bar">
@@ -285,8 +301,8 @@ export function AdminVisionCalibrationPage() {
         <Link to="/admin/vision">Vision</Link>
       </div>
 
-      {error && <p className="vision-panel vision-panel--error">{error}</p>}
-      {notice && <p className="vision-panel vision-panel--ok">{notice}</p>}
+      {outcomeAt === "top" && error && <p className="vision-panel vision-panel--error" role="alert">{error}</p>}
+      {outcomeAt === "top" && notice && <p className="vision-panel vision-panel--ok" role="status">{notice}</p>}
 
       <div className="vision-workstation__body">
         <div className="vision-workstation__video">
@@ -413,6 +429,7 @@ export function AdminVisionCalibrationPage() {
                 Clear
               </button>
             </div>
+            {outcome("fit")}
           </section>
 
           <section className="vision-panel">
@@ -460,7 +477,7 @@ export function AdminVisionCalibrationPage() {
               </span>
             </div>
             <div className="vision-actions">
-              <button type="button" disabled={busy} onClick={() => void run(`${HALF_NAMES[half]} kicks off at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: atMs }))}>
+              <button type="button" disabled={busy} onClick={() => void run(`${HALF_NAMES[half]} kicks off at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: atMs }), "clock")}>
                 Kick-off is here
               </button>
               <button
@@ -468,12 +485,13 @@ export function AdminVisionCalibrationPage() {
                 disabled={busy || !anchors.some((a) => a.half === half)}
                 onClick={() => {
                   const a = anchors.find((x) => x.half === half)!;
-                  void run(`${HALF_NAMES[half]} ends at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: a.sourceMs, endMs: atMs }));
+                  void run(`${HALF_NAMES[half]} ends at ${formatClock(sourceMs)}.`, () => anchorVisionClock(assetId, { half, sourceMs: a.sourceMs, endMs: atMs }), "clock");
                 }}
               >
                 Half ends here
               </button>
             </div>
+            {outcome("clock")}
           </section>
 
           <section className="vision-panel">
@@ -486,15 +504,28 @@ export function AdminVisionCalibrationPage() {
                       {describeSegment(s, formatClock)}
                     </button>
                     {s.superseded > 0 && <span className="vision-sub"> · {s.superseded} superseded</span>}
+                    <select
+                      value={s.source === "manual" ? s.kind : ""}
+                      disabled={busy}
+                      aria-label={`Kind of the segment from ${formatClock(s.startMs)}`}
+                      onChange={(e) => e.target.value && void run(`Segment marked ${SEGMENT_KIND_WORDS[e.target.value as CameraSegmentKind]}.`, () => setVisionCameraSegmentKind(s.id, e.target.value), "segments")}
+                    >
+                      {s.source !== "manual" && <option value="">label as…</option>}
+                      {CAMERA_SEGMENT_KINDS.map((k) => (
+                        <option key={k} value={k}>
+                          {SEGMENT_KIND_WORDS[k]}
+                        </option>
+                      ))}
+                    </select>
                     {!s.calibration && (
-                      <button type="button" disabled={busy} onClick={() => void run("Segment removed.", () => removeVisionCameraSegment(s.id))}>
+                      <button type="button" disabled={busy} onClick={() => void run("Segment removed.", () => removeVisionCameraSegment(s.id), "segments")}>
                         Remove
                       </button>
                     )}
                   </div>
                 </li>
               ))}
-              {!segments.segments.length && <li className="vision-footnote">No segments yet. Mark a start and an end, or propose cuts.</li>}
+              {!segments.segments.length && <li className="vision-footnote">No segments yet. Find the shots, or mark a start and an end.</li>}
             </ul>
             <div className="vision-row">
               <span className="vision-row__label">New</span>
@@ -515,14 +546,23 @@ export function AdminVisionCalibrationPage() {
                 Declare segment
               </button>
               {hasPermission("vision.jobs.run") && (
-                <button type="button" disabled={busy} onClick={() => void run("Cuts queued; proposals appear when the worker finishes.", () => queueVisionJob({ type: "cuts", videoAssetId: assetId }))}>
-                  Propose cuts
-                </button>
+                <>
+                  <button type="button" disabled={busy} onClick={() => void run("Shot finding queued; the shots appear as proposals when the worker finishes.", () => queueVisionJob({ type: "camera_motion", videoAssetId: assetId }), "segments")}>
+                    Find shots
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => void run("Cuts queued; proposals appear when the worker finishes.", () => queueVisionJob({ type: "cuts", videoAssetId: assetId }), "segments")}>
+                    Propose cuts
+                  </button>
+                </>
               )}
             </div>
+            {outcome("segments")}
           </section>
         </div>
       </div>
     </div>
   );
 }
+
+/** Where an action's outcome is reported: beside the panel whose controls caused it. */
+type OutcomePlace = "top" | "fit" | "clock" | "segments";

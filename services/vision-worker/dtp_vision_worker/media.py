@@ -13,6 +13,8 @@ import logging
 import os
 import re
 import subprocess
+import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from fractions import Fraction
 from functools import lru_cache
@@ -378,6 +380,47 @@ def decode_frame(source: Path, frame_index: int, fps: float, timeout: float = 12
     if not data or len(data) % (width * 3) != 0:
         raise MediaError(f"ffmpeg returned {len(data)} bytes, not a whole {width}-wide RGB frame")
     return width, len(data) // (width * 3), data
+
+
+def gray_frames(source: Path, width: int, height: int, every: int = 1, timeout: float = 14_400.0) -> Iterator[bytes]:
+    """Every `every`-th proxy frame, scaled to `width` x `height`, as raw 8-bit grey, streamed.
+
+    One FFmpeg process decodes the proxy once and pipes frames as they come, so a full
+    match is never held in memory. `every` > 1 thins by frame number (`select`), not by
+    time, so frame n of the output is frame n * every of the proxy, exactly.
+    """
+    if width <= 0 or height <= 0 or every < 1:
+        raise MediaError("gray_frames needs a positive size and step")
+    thin = f"select='not(mod(n\\,{every}))'," if every > 1 else ""
+    # Errors only: progress lines on a pipe nobody reads until the end would fill it and stall the decode.
+    cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-nostats", *ffmpeg_threads(), "-i", str(source), "-an",
+           "-vf", f"{thin}scale={width}:{height}:flags=area,format=gray", "-vsync", "0",
+           "-f", "rawvideo", "-pix_fmt", "gray", "-"]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=subprocess_env())
+    except FileNotFoundError as exc:
+        raise MediaError("ffmpeg is not installed in this image") from exc
+    size = width * height
+    started = time.monotonic()
+    try:
+        assert proc.stdout is not None
+        while True:
+            if time.monotonic() - started > timeout:
+                raise MediaError(f"ffmpeg timed out after {timeout}s reading frames")
+            block = proc.stdout.read(size)
+            if not block:
+                break
+            if len(block) != size:
+                raise MediaError(f"ffmpeg returned a partial frame ({len(block)} of {size} bytes)")
+            yield block
+        code = proc.wait(timeout=60)
+        if code != 0:
+            tail = (proc.stderr.read() if proc.stderr else b"").decode("utf-8", "replace")[-2000:]
+            raise MediaError(f"ffmpeg exited {code}: {tail}")
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
 
 def scene_changes(source: Path, threshold: float, timeout: float = 7_200.0) -> str:

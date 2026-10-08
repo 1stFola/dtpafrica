@@ -8,6 +8,11 @@ dependencies = [
     # Game-state chunks are Parquet (docs/vision/04 § CV outputs). Apache-2.0; registered in
     # docs/licenses/OSS_REGISTER.md.
     "pyarrow>=17",
+    # camera_motion: frame-to-frame tracking and homographies (docs/vision/92). OpenCV is
+    # Apache-2.0 (4.5+) and NumPy BSD-3-Clause; both rows are in docs/licenses/OSS_REGISTER.md.
+    # Frames are decoded by the image's own FFmpeg; the wheel's bundled decoder is not used.
+    "opencv-python-headless>=4.10,<5",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

@@ -17,6 +17,11 @@ export class DeclareSegmentDto {
   kind!: CameraSegmentKind;
 }
 
+export class SetSegmentKindDto {
+  @IsIn(CAMERA_SEGMENT_KINDS as unknown as string[])
+  kind!: CameraSegmentKind;
+}
+
 export class PitchDimensionsDto {
   @IsNumber()
   lengthM!: number;

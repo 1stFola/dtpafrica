@@ -32,7 +32,7 @@ const SIX = ["corner_left_near", "corner_left_far", "halfway_near", "halfway_far
 
 const mockPrisma = {
   visionVideoAsset: { findUnique: vi.fn() },
-  visionCameraSegment: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
+  visionCameraSegment: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), delete: vi.fn(), update: vi.fn() },
   visionPitchCalibration: { create: vi.fn(), updateMany: vi.fn() },
   visionTrack: { findUnique: vi.fn() },
   visionJob: { findFirst: vi.fn() },
@@ -102,6 +102,42 @@ describe("removing a segment", () => {
     expect(mockPrisma.visionEvidenceLink.count.mock.calls[0]![0].where).toEqual({ kind: "camera_segment", targetId: SEGMENT, candidate: { supersededBy: null } });
     mockPrisma.visionCameraSegment.delete.mockResolvedValue({});
     expect(await service.deleteSegment(SEGMENT, reviewer)).toEqual({ removed: SEGMENT });
+  });
+});
+
+describe("a segment's kind", () => {
+  const proposal = { id: SEGMENT, videoAssetId: ASSET, kind: "unknown", source: "camera_motion", startMs: 0, endMs: 4120 };
+  beforeEach(() => {
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue(proposal);
+    mockPrisma.visionCameraSegment.update.mockImplementation(({ data }: { data: object }) => Promise.resolve({ ...proposal, ...data }));
+  });
+
+  it("is set by a person, and labelling a proposal makes it that person's declaration", async () => {
+    await expect(service.setSegmentKind(SEGMENT, "live_play", apiKey)).rejects.toMatchObject({ response: { error: "CalibrationNeedsAPerson" } });
+    const out = await service.setSegmentKind(SEGMENT, "live_play", reviewer);
+    expect(mockPrisma.visionCameraSegment.update).toHaveBeenCalledWith({ where: { id: SEGMENT }, data: { kind: "live_play", source: "manual", createdBy: "u-reviewer" } });
+    expect(out).toMatchObject({ kind: "live_play", source: "manual" });
+    expect(mockAudit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "camera.segment.updated", targetId: SEGMENT,
+      data: expect.objectContaining({ kindFrom: "unknown", kindTo: "live_play", sourceFrom: "camera_motion" }) }), reviewer);
+  });
+
+  it("keeps the declaring person's name on a manual segment, and a no-op writes nothing", async () => {
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ ...proposal, source: "manual", kind: "live_play" });
+    await service.setSegmentKind(SEGMENT, "live_play", reviewer);
+    expect(mockPrisma.visionCameraSegment.update).not.toHaveBeenCalled();
+    expect(mockAudit.record).not.toHaveBeenCalled();
+    await service.setSegmentKind(SEGMENT, "replay", reviewer);
+    expect(mockPrisma.visionCameraSegment.update).toHaveBeenCalledWith({ where: { id: SEGMENT }, data: { kind: "replay", source: "manual" } });
+  });
+
+  it("will not change under a current event candidate, whose in-play flag came from it", async () => {
+    mockPrisma.visionEventCandidate.count.mockResolvedValueOnce(1);
+    await expect(service.setSegmentKind(SEGMENT, "replay", reviewer)).rejects.toMatchObject({ response: { error: "SegmentReferenced" } });
+    mockPrisma.visionEvidenceLink.count.mockResolvedValueOnce(2);
+    await expect(service.setSegmentKind(SEGMENT, "replay", reviewer)).rejects.toMatchObject({ response: { error: "SegmentReferenced" } });
+    expect(mockPrisma.visionCameraSegment.update).not.toHaveBeenCalled();
+    mockPrisma.visionCameraSegment.findUnique.mockResolvedValue(null);
+    await expect(service.setSegmentKind("missing", "replay", reviewer)).rejects.toMatchObject({ status: 404 });
   });
 });
 
