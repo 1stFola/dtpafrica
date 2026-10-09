@@ -355,3 +355,39 @@ would skip the colour or the parked check without saying so.
    an ECR token that lasts 12 hours, so it may need refreshing again.
 2. **Then possession on the pilot's live shots,** which needs a person to set the
    shots' kinds.
+
+## The GPU image moves to GitHub Container Registry
+
+**Why.** RunPod pulls the private GPU image with a saved registry credential. For ECR
+that credential is a login token that expires after 12 hours, so every run began with
+Fola refreshing it by hand.
+
+On 9 October, after a refresh, every pod was stopped by RunPod about a second after
+starting:
+- with the new image and with the previous one, `gpu-fe55265`, which had pulled fine
+  that morning;
+- and with both saved credentials.
+
+Those attempts cost nothing. The RunPod API does not say why a pod exits. The detect
+job `223a42e9` stays queued.
+
+**The setup.**
+- **Where:** `ghcr.io/1stfola/dtp-vision-worker:gpu-<commit>`, a private package
+  linked to this repository by the image label
+  `org.opencontainers.image.source=https://github.com/1stFola/dtpafrica`.
+- **CI:** the manual "Build the GPU image" job has a `publish-gpu-image` option. When
+  ticked, it pushes the image it built and checked, with the workflow's own token
+  (`packages: write`). No personal token is used.
+- **RunPod pulls with a GitHub token that has only `read:packages`**, saved as a RunPod
+  registry credential (username `1stFola`). It lasts as long as Fola sets it to, not 12
+  hours.
+- **The API** takes `VISION_WORKER_IMAGE` and `VISION_RUNPOD_REGISTRY_AUTH_ID` as before.
+  Only their values change.
+
+**Fola's steps, once:**
+1. Let the GitHub CLI push packages, so the first image can go from this machine:
+   `gh auth refresh -h github.com -s write:packages`.
+2. Create a classic GitHub token with only `read:packages`, at github.com → Settings →
+   Developer settings → Personal access tokens → Tokens (classic).
+3. In RunPod, add a Container Registry Auth: name `dtp-ghcr`, username `1stFola`,
+   password that token.

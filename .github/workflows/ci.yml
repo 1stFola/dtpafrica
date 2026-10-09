@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish-gpu-image:
+        description: "Also push the GPU worker image to GitHub Container Registry (ghcr.io/<owner>/dtp-vision-worker:gpu-<commit>)"
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -775,6 +780,11 @@ jobs:
     name: Build the GPU image (manual)
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
+    # Publishing pushes to this repository's own package with the workflow's token
+    # (docs/vision/95): no personal token, and nothing that expires in 12 hours.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout
@@ -800,6 +810,8 @@ jobs:
           context: services/vision-worker
           file: services/vision-worker/Dockerfile.gpu
           tags: dtp-vision-engine:ci
+          # Links the package to this repository, so the workflow's token may push to it.
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           load: true
           cache-from: type=gha,scope=gpu
           cache-to: type=gha,mode=max,scope=gpu
@@ -818,3 +830,17 @@ jobs:
 
       - name: ffmpeg is present in the GPU image too
         run: docker run --rm --entrypoint ffmpeg dtp-vision-engine:ci -version
+
+      # A RunPod pod pulls the GPU image from here with a read:packages token that does
+      # not expire every 12 hours, as an ECR login does (docs/vision/95). Opt-in, so a
+      # manual run that only checks the image publishes nothing.
+      - name: Publish to GitHub Container Registry
+        if: inputs.publish-gpu-image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/dtp-vision-worker:gpu-${GITHUB_SHA::7}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag dtp-vision-engine:ci "$image"
+          docker push "$image"
+          echo "published $image" >> "$GITHUB_STEP_SUMMARY"
