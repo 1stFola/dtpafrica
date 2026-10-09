@@ -289,29 +289,69 @@ The 37 in 4.12–14.36 s are the match ball, as checked earlier.
 These rules were tuned and checked on this one clip, so they are a measurement on the
 pilot, not a validated filter.
 
+## Built in: ball-tiles/v2 (contract 1.21.0)
+
+Fola chose to build both filters into the pipeline.
+
+**Detect: the `…COCO_V1+ball-tiles/v2` config.**
+- It runs the tiled pass with the colour check (`ball_colour_ok`) on every tiled ball
+  before it is merged. The thresholds are those measured above, as named constants.
+- It marks each tiled ball it adds `source: "ball_tiles"`. `DetectionPrediction`
+  gains an optional `source` field for this.
+- The summary and artifact record the colour settings and how many tiled balls the
+  check rejected (`colourRejected`).
+- v1 is unchanged.
+
+**Ball trajectory:**
+- **The camera motion is pinned when needed.** For detections from the v2 detector,
+  the control plane pins the camera motion measured on the same proxy bytes
+  (`cameraMotion`), adds its index and chunks to `readKeys`, and refuses without one
+  (`CameraMotionMissing`).
+- **The worker refuses mismatches:** v2 detections without a pin, or a pin with any
+  other detections.
+- **The motion is checked** with the same helper `calibrate` now uses
+  (`motion_pin.load_camera_motion`): index and chunks against their checksums, the
+  proxy bytes and the clock.
+- **The check itself:** `parked_tile_balls` drops a marked ball that dwells 60 frames
+  within 6 px of one ground spot of its shot, before smoothing. Plain-pass balls count
+  towards the dwell but are never dropped. A grid keeps it linear for a full match.
+- **The completion** reports `parkedTileBalls` and the camera-motion index checksum.
+  The control plane refuses a completion whose checksum is not the one it pinned, or
+  one that reports the check when none was pinned.
+- **Shared selection:** `calibrate` and ball trajectory now share one way of choosing
+  the current camera motion (`currentCameraMotion`).
+
+**Contract 1.21.0:** detect and ball trajectory both need a 1.21 worker. A 1.20 worker
+would skip the colour or the parked check without saying so.
+
+**Parity with the offline experiment, on the pilot's own data:**
+- the pipeline's `ball_colour_ok` on the held-out boxes kept 11 of 12 match balls and
+  let 2 of 20 false boxes through, the same as the experiment;
+- `parked_tile_balls` over the production camera motion dropped 79 tiled balls, all in
+  the spare-ball shot, also the same.
+
+**QA:**
+- **Tests:**
+  - worker: the colour check on synthetic white, warm and grass patches; the
+    merge's accept and marker; the marker in the contract shape; the v2 summary; the
+    parked check under a panning camera; plain balls never dropped; dwell counted
+    within one shot; the stage's refusals and its reads; the contract mirror;
+  - API: the camera motion pinned and readable, refused when missing or on another
+    proxy, none for plain detections; the completion's camera-motion check;
+  - contracts: 1.20 workers withheld from both stages.
+- **Mutation testing:** 16 mutants, 15 killed. Two survived the first run, "plain balls
+  judged" and "shots merged"; tests were added and both are now killed. The remaining
+  one, dropping the stage's explicit pin check, is equivalent: the camera-motion
+  helper refuses a missing pin anyway.
+
 ## Next
 
-1. **Build the filters into the pipeline, if Fola wants this path:**
-   - **the colour check** belongs in the detect stage's tiled pass, which has the
-     pixels;
-   - **the parked check** belongs where camera motion is already pinned, which today is
-     `calibrate` and not `ball_trajectory`, so it needs a new input.
+1. **Run it on the pilot** (a few cents, with Fola's go-ahead):
+   - build and push the GPU image at this commit;
+   - register version `0.3.0-coco-ball-tiles-v2`;
+   - run detect at 25 fps, then ball trajectory on the CPU worker.
 
-   That would be a new detector config (`ball-tiles/v2`), and so a new candidate
-   version and one more GPU run.
-2. **Or wait for a ball model trained on DTP footage** (Phase 3), and keep this as
-   evidence that the ball is findable at this size.
-
-**Earlier options, now measured:**
-
-1. **The parked ball.** The spare ball's position stays fixed on the pitch: it moves in
-   the picture only as the camera pans. `camera_motion` already measures that pan for
-   every frame, so a candidate that stays put once the camera's motion is removed, over
-   many frames, can be flagged as a ball not in play. That can also be measured
-   offline at $0.
-2. **Or let trajectory choose by continuity** instead of calling every two-candidate
-   frame ambiguous. That would change the smoother's "Unknown beats wrong" rule, which
-   is a decision for Fola.
-3. **Until then,** version `0.2.0-coco-ball-tiles` stays a candidate. The colour rule
-   is an offline experiment (`colour_rule.py` in the QA scratch); it is not in the
-   worker.
+   Compare it with the offline 446 observed frames. The RunPod registry credential is
+   an ECR token that lasts 12 hours, so it may need refreshing again.
+2. **Then possession on the pilot's live shots,** which needs a person to set the
+   shots' kinds.

@@ -192,3 +192,72 @@ def build(smoother: Smoother, frames: Iterable[dict[str, Any]], out_dir: Path, c
     return {"calculationVersion": VERSION, "frames": smoother.frames, "observed": observed, "lost": smoother.frames - observed,
             "observedFrameCoverage": observed / smoother.frames, "reasons": dict(reasons), "chunkMs": chunk_ms, "chunks": chunks,
             "windowStartMs": smoother.offset, "windowEndMs": smoother.end_ms, "config": asdict(smoother.config)}
+
+
+#: A tiled ball (detect's ball-tiles/v2 marks it `source: "ball_tiles"`) that stays
+#: within PARKED_RADIUS_PX of one spot of the ground for PARKED_MIN_FRAMES frames of its
+#: shot is a ball not in play: a spare by the post, not the match ball (docs/vision/95).
+#: Mirrors BALL_PARKED_MIN_FRAMES / BALL_PARKED_RADIUS_PX in the contracts.
+PARKED_MIN_FRAMES = 60
+PARKED_RADIUS_PX = 6.0
+TILE_SOURCE = "ball_tiles"
+
+
+def _ball_centre(d: dict[str, Any]) -> tuple[float, float] | None:
+    box = d.get("box")
+    if d.get("class") != "ball" or not isinstance(box, dict) or any(not number(box.get(k)) for k in ("x", "y", "width", "height")):
+        return None
+    return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+
+def parked_tile_balls(frames: Iterable[dict[str, Any]], transforms: Any, shot: Any,
+                      min_frames: int = PARKED_MIN_FRAMES, radius: float = PARKED_RADIUS_PX) -> set[tuple[int, int]]:
+    """(frameIndex, detection index) of every tiled ball parked on one spot of the ground.
+
+    `transforms[f]` maps frame f's shot-first frame onto frame f (camera_motion chained by
+    `calibration_propagation.chain`); its inverse puts a pixel back in the shot's fixed
+    ground frame. A candidate's dwell is the number of frames of its shot holding any
+    ball within `radius` of its ground point. Only tiled balls are judged: the whole
+    frame's boxes are never dropped, so the tiles only ever add.
+    """
+    import numpy as np  # noqa: PLC0415 -- the CPU image has it; the smoother itself does not need it
+
+    n = len(shot)
+    cell = max(radius, 1e-6)
+    grid: dict[tuple[int, int, int], list[tuple[int, float, float]]] = {}
+    tiled: list[tuple[int, int, int, float, float]] = []
+    inverse: dict[int, Any] = {}
+    for frame in frames:
+        f = frame.get("frameIndex")
+        if not integer(f) or not 0 <= f < n:
+            continue
+        for k, d in enumerate(frame.get("detections") or []):
+            centre = _ball_centre(d) if isinstance(d, dict) else None
+            if centre is None:
+                continue
+            if f not in inverse:
+                inverse[f] = np.linalg.inv(transforms[f])
+            p = inverse[f] @ np.array([centre[0], centre[1], 1.0])
+            if not p[2] or not math.isfinite(p[0] / p[2]) or not math.isfinite(p[1] / p[2]):
+                continue
+            gx, gy, s = p[0] / p[2], p[1] / p[2], int(shot[f])
+            grid.setdefault((s, math.floor(gx / cell), math.floor(gy / cell)), []).append((f, gx, gy))
+            if d.get("source") == TILE_SOURCE:
+                tiled.append((f, k, s, gx, gy))
+    parked: set[tuple[int, int]] = set()
+    for f, k, s, gx, gy in tiled:
+        cx, cy = math.floor(gx / cell), math.floor(gy / cell)
+        near = {g for dx in (-1, 0, 1) for dy in (-1, 0, 1) for g, x, y in grid.get((s, cx + dx, cy + dy), ()) if math.hypot(x - gx, y - gy) <= radius}
+        if len(near) >= min_frames:
+            parked.add((f, k))
+    return parked
+
+
+def without(frames: Iterable[dict[str, Any]], dropped: set[tuple[int, int]]) -> Iterator[dict[str, Any]]:
+    """The frames with the dropped detections removed, everything else as it was."""
+    touched = {g for g, _ in dropped}
+    for frame in frames:
+        f = frame.get("frameIndex")
+        if f in touched:
+            frame = {**frame, "detections": [d for k, d in enumerate(frame.get("detections") or []) if (f, k) not in dropped]}
+        yield frame

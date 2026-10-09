@@ -90,6 +90,8 @@ export type DetectionPrediction = {
   box: BoundingBox;
   /** The detector's native label before it was mapped onto `class`, kept so a mapping can be audited later. */
   rawLabel?: string;
+  /** A ball found only by the ball-tiles pass, not by the whole frame (docs/vision/95). */
+  source?: "ball_tiles";
 };
 
 /**

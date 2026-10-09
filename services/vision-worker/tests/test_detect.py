@@ -569,3 +569,56 @@ def test_tiles_add_no_unconfident_ball_and_no_person():
     tiled = [ball(500, 400, 0.69), {"label": "person", "score": 0.99, "box": [0, 0, 30, 90]}]
     assert detect_stage.merge_ball_tiles([], tiled) == ([], 0)
     assert detect_stage.merge_ball_tiles([], [ball(500, 400, 0.7)])[1] == 1
+
+
+# ── Ball-tiles/v2: the colour check and the tile marker (docs/vision/95) ──────
+
+
+def patch(rgb, w=14, h=14, background=(60, 130, 60)):
+    """A box of the given colour on grass, as the colour check sees it: an RGB uint8 array."""
+    import numpy as np
+
+    img = np.zeros((h, w, 3), np.uint8)
+    img[:] = background
+    import cv2
+    cv2.ellipse(img, (w // 2, h // 2), (w // 2 - 1, h // 2 - 1), 0, 0, 360, rgb, -1)
+    return img
+
+
+@pytest.mark.parametrize("rgb,ok", [((235, 235, 230), True), ((200, 200, 205), True),
+                                    ((230, 210, 40), False), ((240, 120, 30), False), ((200, 30, 40), False), ((60, 130, 60), False)])
+def test_the_colour_check_keeps_a_white_ball_and_refuses_warm_colours_and_grass(rgb, ok):
+    assert detect_stage.ball_colour_ok(patch(rgb)) is ok
+
+
+def test_the_colour_check_refuses_a_box_that_is_not_near_square():
+    assert detect_stage.ball_colour_ok(patch((235, 235, 230), w=14, h=24)) is False
+    import numpy as np
+
+    assert detect_stage.ball_colour_ok(np.zeros((0, 0, 3), np.uint8)) is False
+
+
+def test_v2_merges_only_tiled_balls_that_pass_the_check_and_marks_them():
+    merged, added = detect_stage.merge_ball_tiles([], [ball(500, 400, 0.98), ball(900, 300, 0.97)], accept=lambda d: d["box"][0] == 500, mark=True)
+    assert merged == [{**ball(500, 400, 0.98), "source": "ball_tiles"}] and added == 1
+    # The whole frame's ball is never put to the check, nor marked.
+    whole = [ball(100, 100, 0.6)]
+    assert detect_stage.merge_ball_tiles(whole, [], accept=lambda d: False, mark=True) == (whole, 0)
+
+
+def test_a_marked_ball_keeps_its_marker_in_the_contract_shape_and_nothing_else_does():
+    assert detect_stage.to_prediction({**ball(10, 10, 0.9), "source": "ball_tiles"})["source"] == "ball_tiles"
+    assert "source" not in detect_stage.to_prediction({**ball(10, 10, 0.9), "source": "elsewhere"})
+    assert "source" not in detect_stage.to_prediction(ball(10, 10, 0.9))
+
+
+def test_v2_reports_its_colour_settings_and_what_they_rejected(ctx, monkeypatch):
+    stub_frames(monkeypatch, 2)
+    ctx.job = spec(dispatched(detector={"configKey": detect_stage.DETECTOR_CONFIG_BALL_TILES_V2}))
+
+    def run(batch):
+        return [[] for _ in batch]
+    run.tile_balls_added, run.tile_balls_rejected = 4, 7
+    tiles = detect_stage._detect(ctx, detector=run).summary["ballTiles"]
+    assert tiles["ballsAdded"] == 4 and tiles["colourRejected"] == 7 and tiles["source"] == "ball_tiles"
+    assert tiles["colourCheck"] == {"ellipse": 0.4, "warmHueBelow": 38, "warmHueAbove": 165, "warmMinSaturation": 50, "warmMinValue": 70, "maxGreen": 0.15, "aspect": [0.85, 1.3]}

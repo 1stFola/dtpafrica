@@ -8,10 +8,13 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: a tiled ball pass** — detect runs the config its model version names
-(contract 1.20.0). A new ball-tiles config adds four corner tiles and keeps only
-confident ball boxes from them. On 32 pilot frames where the ball lies in open grass,
-real balls found went from 2 to 9. On the whole pilot, frames with a ball rose from 44% to 56%, but the tiles also add confident boots and a stationary second ball, and ball trajectory then follows them in two shots: not usable as it stands ([95](./95-BALL-TILES.md)).
+**Latest: a tiled ball pass, with colour and parked-ball checks** — detect runs the
+config its model version names. The ball-tiles/v2 config adds four corner tiles, keeps
+a tiled ball only if it is not yellow, orange or red, and marks it. Ball trajectory
+then drops a tiled ball that stays on one ground spot for 2.4 s, along pinned camera
+motion (contract 1.21.0). Offline on the pilot, observed ball frames went from 395 to
+446, almost all of the gain the match ball. Not yet run on a GPU
+([95](./95-BALL-TILES.md)).
 
 **Stages read the carried calibration** — possession, carry, game state and
 pitch positions place each frame of a moving camera through its own carried

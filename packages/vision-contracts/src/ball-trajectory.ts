@@ -1,5 +1,5 @@
 import type { CameraSegmentKind } from "./media";
-import type { TrackJobParams } from "./jobs";
+import type { CalibrateJobParams, TrackJobParams } from "./jobs";
 
 export const BALL_TRAJECTORY_VERSION = "ball-trajectory/v1";
 export const BALL_TRAJECTORY_INDEX_ROLE = "ball_trajectory";
@@ -27,5 +27,15 @@ export type BallTrajectoryJobParams = {
   imageWidth: number;
   imageHeight: number;
   segments: { cameraSegmentId: string; startMs: number; endMs: number; kind: CameraSegmentKind }[];
+  /**
+   * The camera motion measured on the same proxy, pinned when the detections hold
+   * tiled balls: the stage removes the camera's motion to find a tiled ball that stays
+   * on one spot of the ground, and drops it as not in play (docs/vision/95).
+   */
+  cameraMotion?: CalibrateJobParams["cameraMotion"];
   readKeys: { bucket: "derived"; key: string }[];
 };
+
+/** A tiled ball on one ground spot (within BALL_PARKED_RADIUS_PX) for this many frames of its shot is parked. */
+export const BALL_PARKED_MIN_FRAMES = 60;
+export const BALL_PARKED_RADIUS_PX = 6;

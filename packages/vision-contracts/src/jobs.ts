@@ -108,8 +108,14 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  * config adds a tiled pass that keeps only confident ball boxes; an older worker
  * would run the plain detector under that version's name, so detect needs 1.20
  * (docs/vision/95).
+ *
+ * 1.21.0 -- the ball-tiles/v2 detector keeps a tiled ball only if it is not
+ * yellow, orange or red, and marks each one `source: "ball_tiles"`. Ball
+ * trajectory, given such detections, is pinned to the current camera motion
+ * (`cameraMotion`) and drops a tiled ball that stays on one spot of the ground for
+ * 2.4 s: a ball not in play. Both stages need 1.21 (docs/vision/95).
  */
-export const VISION_CONTRACT_VERSION = "1.20.0";
+export const VISION_CONTRACT_VERSION = "1.21.0";
 
 /**
  * The detectors a worker can run, named by the model version's config key. The
@@ -119,7 +125,9 @@ export const VISION_CONTRACT_VERSION = "1.20.0";
 export const DETECTOR_CONFIG_BASE = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1";
 /** The same weights, plus four overlapping corner tiles at 60% of the frame for the ball only (docs/vision/95). */
 export const DETECTOR_CONFIG_BALL_TILES = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v1";
-export const DETECTOR_CONFIGS = [DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES] as const;
+/** Ball tiles plus a colour check on each tiled ball, and the tiled balls marked for ball trajectory's parked check (docs/vision/95). */
+export const DETECTOR_CONFIG_BALL_TILES_V2 = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v2";
+export const DETECTOR_CONFIGS = [DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2] as const;
 export type DetectorConfigKey = (typeof DETECTOR_CONFIGS)[number];
 /** A tiled ball box is kept only at or above this score: below it, on the pilot, were boots and heads. */
 export const BALL_TILE_MIN_SCORE = 0.7;
@@ -148,12 +156,12 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   transcode: "1.12.0",
   cuts: "1.12.0",
   camera_motion: "1.17.0",
-  detect: "1.20.0",
+  detect: "1.21.0",
   track: "1.12.0",
   identify: "1.12.0",
   calibrate: "1.18.0",
   gamestate: "1.19.0",
-  ball_trajectory: "1.13.0",
+  ball_trajectory: "1.21.0",
   possession: "1.19.0",
   events: "1.19.0",
   clip: "1.12.0",

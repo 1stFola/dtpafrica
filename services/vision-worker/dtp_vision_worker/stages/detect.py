@@ -81,7 +81,8 @@ ARTIFACT_ROLE = "detections"
 #: something else would otherwise be run as whatever this file defaults to.
 DETECTOR_CONFIG_BASE = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1"
 DETECTOR_CONFIG_BALL_TILES = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v1"
-DETECTOR_CONFIGS = (DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES)
+DETECTOR_CONFIG_BALL_TILES_V2 = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v2"
+DETECTOR_CONFIGS = (DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2)
 
 #: The ball-tiles pass (docs/vision/95). The ball on grassroots footage is ~14 px across;
 #: the detector resizes a 720p frame's shorter side to 800, and at that scale it found
@@ -93,6 +94,21 @@ BALL_TILE_FRACTION = 0.6
 BALL_TILE_MIN_SCORE = 0.7
 #: A tiled ball overlapping a ball the whole frame already found is the same ball.
 BALL_MERGE_IOU = 0.3
+
+#: The v2 colour check on a tiled ball (docs/vision/95). On the pilot, tiled boxes over
+#: 0.7 included yellow and orange boots that scored as high as the ball; brightness did
+#: not tell them apart (white socks), warm colour did. Inside the box's inner ellipse a
+#: ball has no yellow, orange or red pixel, little grass, and the box is near square.
+#: OpenCV HSV: hue 0-179, saturation and value 0-255.
+BALL_COLOUR_ELLIPSE = 0.4
+BALL_WARM_HUE_BELOW = 38
+BALL_WARM_HUE_ABOVE = 165
+BALL_WARM_MIN_SATURATION = 50
+BALL_WARM_MIN_VALUE = 70
+BALL_MAX_GREEN = 0.15
+BALL_ASPECT = (0.85, 1.3)
+#: Marks a ball only the tiles found, so ball trajectory can test it for being parked.
+BALL_TILE_SOURCE = "ball_tiles"
 
 #: One frame's raw detections, as the detector hands them back:
 #: [{label, score, box:[x1,y1,x2,y2]}]
@@ -144,6 +160,7 @@ def to_prediction(raw: dict[str, Any]) -> dict[str, Any]:
             "height": round(y2 - y1, 1),
         },
         "rawLabel": label,
+        **({"source": raw["source"]} if raw.get("source") == BALL_TILE_SOURCE else {}),
     }
 
 
@@ -242,13 +259,32 @@ def _iou(a: Sequence[float], b: Sequence[float]) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def merge_ball_tiles(whole: FrameDetections, tiled: FrameDetections) -> tuple[FrameDetections, int]:
+def ball_colour_ok(rgb: Any) -> bool:
+    """The v2 colour check on one tiled ball's box, an HxWx3 uint8 RGB array."""
+    import cv2  # noqa: PLC0415 -- both worker images ship OpenCV; nothing else here needs it
+    import numpy as np  # noqa: PLC0415
+
+    h, w = rgb.shape[:2]
+    if not h or not w or not BALL_ASPECT[0] <= w / h <= BALL_ASPECT[1]:
+        return False
+    mask = np.zeros((h, w), np.uint8)
+    cv2.ellipse(mask, (w // 2, h // 2), (max(1, int(w * BALL_COLOUR_ELLIPSE)), max(1, int(h * BALL_COLOUR_ELLIPSE))), 0, 0, 360, 1, -1)
+    hsv = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2HSV)[mask > 0].astype(int)
+    hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
+    warm = ((hue < BALL_WARM_HUE_BELOW) | (hue > BALL_WARM_HUE_ABOVE)) & (sat > BALL_WARM_MIN_SATURATION) & (val > BALL_WARM_MIN_VALUE)
+    green = (hue >= 35) & (hue <= 85) & (sat > 50)
+    return not warm.any() and float(green.mean()) <= BALL_MAX_GREEN
+
+
+def merge_ball_tiles(whole: FrameDetections, tiled: FrameDetections, accept: Callable[[dict[str, Any]], bool] | None = None,
+                     mark: bool = False) -> tuple[FrameDetections, int]:
     """The whole frame's boxes, plus the confident tiled balls it did not already have.
 
     `tiled` is in frame coordinates. Its people are ignored: the whole frame sees them
     well, and a person cut by a tile edge would come back as a second, smaller person.
     A tiled ball overlapping a kept ball (IoU >= BALL_MERGE_IOU) is that ball; the
     whole frame's box is kept, so the tiles add frames with a ball, never move one.
+    `accept` is the v2 colour check; `mark` labels an added ball BALL_TILE_SOURCE.
     """
     kept = list(whole)
     balls = [d["box"] for d in whole if d["label"] == "sports ball"]
@@ -258,6 +294,10 @@ def merge_ball_tiles(whole: FrameDetections, tiled: FrameDetections) -> tuple[Fr
             continue
         if any(_iou(d["box"], b) >= BALL_MERGE_IOU for b in balls):
             continue
+        if accept is not None and not accept(d):
+            continue
+        if mark:
+            d = {**d, "source": BALL_TILE_SOURCE}
         kept.append(d)
         balls.append(d["box"])
         added += 1
@@ -329,7 +369,8 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     # Before any download: a job naming a detector this worker cannot run is refused,
     # not run as the plain detector under another version's name.
     config = detector_config(params)
-    ball_tiles = config == DETECTOR_CONFIG_BALL_TILES
+    ball_tiles = config in (DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2)
+    colour = config == DETECTOR_CONFIG_BALL_TILES_V2
 
     ctx.progress.set("download")
     # The proxy, never the source: it is constant-frame-rate, so a frame index maps to
@@ -348,7 +389,7 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     log.info("sampled %d frames at %s fps", len(frames), fps)
 
     ctx.progress.set("detect")
-    run = detector or _torchvision_detector(ball_tiles=ball_tiles)
+    run = detector or _torchvision_detector(ball_tiles=ball_tiles, colour=colour)
     inference_started = time.perf_counter()
     outcome = detect_frames(
         frames,
@@ -374,6 +415,11 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     # How many balls the tiles added: the measure of what the pass is worth on this footage.
     tile_balls = getattr(run, "tile_balls_added", 0) if ball_tiles else None
     tiles = {"fraction": BALL_TILE_FRACTION, "minScore": BALL_TILE_MIN_SCORE, "mergeIou": BALL_MERGE_IOU, "ballsAdded": tile_balls} if ball_tiles else None
+    if tiles is not None and colour:
+        tiles |= {"colourCheck": {"ellipse": BALL_COLOUR_ELLIPSE, "warmHueBelow": BALL_WARM_HUE_BELOW, "warmHueAbove": BALL_WARM_HUE_ABOVE,
+                                  "warmMinSaturation": BALL_WARM_MIN_SATURATION, "warmMinValue": BALL_WARM_MIN_VALUE, "maxGreen": BALL_MAX_GREEN,
+                                  "aspect": list(BALL_ASPECT)},
+                  "colourRejected": getattr(run, "tile_balls_rejected", 0), "source": BALL_TILE_SOURCE}
 
     ctx.progress.set("upload")
     key = f"{ctx.job.output_prefix}detections.json"
@@ -442,7 +488,7 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     )
 
 
-def _torchvision_detector(ball_tiles: bool = False) -> Detector:
+def _torchvision_detector(ball_tiles: bool = False, colour: bool = False) -> Detector:
     """COCO-pretrained Faster R-CNN, on the GPU when there is one.
 
     With `ball_tiles`, each frame is also run as four corner tiles and the confident
@@ -514,12 +560,23 @@ def _torchvision_detector(ball_tiles: bool = False) -> Detector:
             tiled: FrameDetections = []
             for (x0, y0, _w, _h), output in zip(windows, tiled_outputs, strict=True):
                 tiled += kept(output, x0, y0)
-            frame, added = merge_ball_tiles(whole, tiled)
+            accept = None
+            if colour:
+                pixels = (image.clamp(0, 1) * 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+
+                def accept(d: dict[str, Any], pixels: Any = pixels) -> bool:
+                    x1, y1, x2, y2 = (int(round(v)) for v in d["box"])
+                    ok = ball_colour_ok(pixels[max(0, y1):max(0, y2), max(0, x1):max(0, x2)])
+                    if not ok:
+                        run.tile_balls_rejected += 1  # type: ignore[attr-defined]
+                    return ok
+            frame, added = merge_ball_tiles(whole, tiled, accept=accept, mark=colour)
             run.tile_balls_added += added  # type: ignore[attr-defined]
             merged.append(frame)
         return merged
 
     run.tile_balls_added = 0  # type: ignore[attr-defined]
+    run.tile_balls_rejected = 0  # type: ignore[attr-defined]
 
     # Read by `_detect` to decide whether the time it just measured was GPU time. An
     # attribute rather than a return value so `Detector` stays a plain callable and a test

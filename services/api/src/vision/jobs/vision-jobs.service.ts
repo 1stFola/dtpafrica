@@ -11,6 +11,7 @@ import {
   CAMERA_SEGMENT_KINDS,
   DETECTION_ARTIFACT_ROLE,
   DETECTOR_CONFIGS,
+  DETECTOR_CONFIG_BALL_TILES_V2,
   type DetectJobParams,
   JOB_TYPE_PREREQUISITES,
   MIN_TRACK_SAMPLE_FPS,
@@ -392,17 +393,8 @@ export class VisionJobsService {
       throw refusal(400, "InvalidCalibrateConfig", "chunkMs must cover 10000 to 600000 milliseconds.", "Use the default one-minute chunks.");
     const pinned = await pinnedProxy(this.prisma, asset.id);
     const variant = await this.prisma.visionVideoVariant.findUnique({ where: { id: pinned.variantId }, select: { createdAt: true } });
-    const runs = await this.prisma.visionJob.findMany({ where: { videoAssetId: asset.id, type: "camera_motion", state: "succeeded" }, orderBy: { finishedAt: "desc" }, take: 20 });
-    const run = runs.find((j) => (j.progress as { summary?: { proxyChecksum?: unknown } } | null)?.summary?.proxyChecksum === pinned.checksum);
-    const progress = run?.progress as { summary?: Record<string, unknown>; artifacts?: { key: string; bucket: string; role: string }[] } | null;
-    const artifacts = Array.isArray(progress?.artifacts) ? progress!.artifacts : [];
-    const index = artifacts.filter((a) => a.role === CAMERA_MOTION_INDEX_ROLE && a.bucket === "derived");
-    const chunks = artifacts.filter((a) => a.role === CAMERA_MOTION_CHUNK_ROLE && a.bucket === "derived");
-    const checksum = progress?.summary?.indexChecksum;
-    if (!run || index.length !== 1 || !chunks.length || chunks.length !== progress?.summary?.chunks || progress?.summary?.calculationVersion !== CAMERA_MOTION_VERSION
-      || typeof checksum !== "string" || !/^[a-f0-9]{64}$/i.test(checksum)
-      || [...index, ...chunks].some((a) => !a.key.startsWith(visionKeys.inferencePrefix(run.id, run.attemptNumber))))
-      throw refusal(409, "CameraMotionMissing", "No completed camera motion was measured on the current proxy.", "Find the shots (queue camera_motion) for this footage, then carry the calibrations.");
+    const motion = await this.currentCameraMotion(asset.id, pinned.checksum);
+    if (!motion) throw refusal(409, "CameraMotionMissing", "No completed camera motion was measured on the current proxy.", "Find the shots (queue camera_motion) for this footage, then carry the calibrations.");
     const segments = await this.prisma.visionCameraSegment.findMany({
       where: { videoAssetId: asset.id }, orderBy: { startMs: "asc" },
       include: { calibrations: { where: { supersededBy: null, withdrawnAt: null }, orderBy: { createdAt: "desc" } } },
@@ -430,10 +422,27 @@ export class VisionJobsService {
       throw refusal(409, "NoCalibration", "No segment of this footage has a calibration to carry.", "File a calibration, or keyframes, on a camera segment first.");
     return {
       proxyChecksum: pinned.checksum,
-      cameraMotion: { jobId: run.id, indexKey: index[0]!.key, indexChecksum: checksum.toLowerCase() },
+      cameraMotion: motion.pin,
       segments: pinnedSegments,
-      readKeys: [...index, ...chunks].map((a) => ({ bucket: "derived" as const, key: a.key })),
+      readKeys: motion.readKeys,
     };
+  }
+
+  /** The latest camera motion measured on these proxy bytes, whole and under its own attempt, or null. */
+  private async currentCameraMotion(videoAssetId: string, proxyChecksum: string) {
+    const runs = await this.prisma.visionJob.findMany({ where: { videoAssetId, type: "camera_motion", state: "succeeded" }, orderBy: { finishedAt: "desc" }, take: 20 });
+    const run = runs.find((j) => (j.progress as { summary?: { proxyChecksum?: unknown } } | null)?.summary?.proxyChecksum === proxyChecksum);
+    const progress = run?.progress as { summary?: Record<string, unknown>; artifacts?: { key: string; bucket: string; role: string }[] } | null;
+    const artifacts = Array.isArray(progress?.artifacts) ? progress!.artifacts : [];
+    const index = artifacts.filter((a) => a.role === CAMERA_MOTION_INDEX_ROLE && a.bucket === "derived");
+    const chunks = artifacts.filter((a) => a.role === CAMERA_MOTION_CHUNK_ROLE && a.bucket === "derived");
+    const checksum = progress?.summary?.indexChecksum;
+    if (!run || index.length !== 1 || !chunks.length || chunks.length !== progress?.summary?.chunks || progress?.summary?.calculationVersion !== CAMERA_MOTION_VERSION
+      || typeof checksum !== "string" || !/^[a-f0-9]{64}$/i.test(checksum)
+      || [...index, ...chunks].some((a) => !a.key.startsWith(visionKeys.inferencePrefix(run.id, run.attemptNumber))))
+      return null;
+    return { pin: { jobId: run.id, indexKey: index[0]!.key, indexChecksum: checksum.toLowerCase() },
+      readKeys: [...index, ...chunks].map((a) => ({ bucket: "derived" as const, key: a.key })) };
   }
 
   private async ballInputs(asset: { id: string; checksumSha256: string; durationMs: number | null }, requested?: Record<string, unknown>): Promise<BallTrajectoryJobParams> {
@@ -461,6 +470,10 @@ export class VisionJobsService {
     }
     if (requested?.chunkMs !== undefined && (!positive(requested.chunkMs) || requested.chunkMs < 10000 || requested.chunkMs > 600000))
       throw refusal(400, "InvalidBallTrajectoryConfig", "Ball chunks must cover 10000 to 600000 source milliseconds.", "Use the default one-minute chunks.");
+    // Tiled balls are tested for being parked against the camera motion of the same proxy bytes (docs/vision/95).
+    const motion = summary.detectorConfig === DETECTOR_CONFIG_BALL_TILES_V2 ? await this.currentCameraMotion(asset.id, String(summary.proxyChecksum)) : null;
+    if (summary.detectorConfig === DETECTOR_CONFIG_BALL_TILES_V2 && !motion)
+      throw refusal(409, "CameraMotionMissing", "These detections hold tiled balls, which are checked for being parked against camera motion, and none was measured on their proxy.", "Find the shots (queue camera_motion) for this footage, then queue ball trajectory.");
     const segments = await this.prisma.visionCameraSegment.findMany({ where: { videoAssetId: asset.id }, orderBy: { startMs: "asc" }, select: { id: true, startMs: true, endMs: true, kind: true } });
     if (segments.some((row, i) => !(CAMERA_SEGMENT_KINDS as readonly string[]).includes(row.kind) || row.startMs < 0 || row.endMs <= row.startMs || row.endMs > asset.durationMs! || (i > 0 && row.startMs < segments[i - 1]!.endMs)))
       throw refusal(409, "InvalidBallCameraSegments", "Ball trajectory needs non-overlapping, bounded camera segments with supported kinds.", "Correct the camera segment declarations before queueing.");
@@ -468,7 +481,8 @@ export class VisionJobsService {
       sourceChecksum: asset.checksumSha256, sourceDurationMs: asset.durationMs, proxyChecksum: summary.proxyChecksum, proxyDurationMs: summary.proxyDurationMs,
       imageWidth: summary.imageWidth, imageHeight: summary.imageHeight,
       segments: segments.map((segment) => ({ cameraSegmentId: segment.id, startMs: segment.startMs, endMs: segment.endMs, kind: segment.kind as BallTrajectoryJobParams["segments"][number]["kind"] })),
-      readKeys: [{ bucket: "derived", key: artifacts[0]!.key }] };
+      ...(motion ? { cameraMotion: motion.pin } : {}),
+      readKeys: [{ bucket: "derived", key: artifacts[0]!.key }, ...(motion?.readKeys ?? [])] };
   }
 
   /**

@@ -41,8 +41,9 @@ describe("which worker may serve which stage", () => {
   const allBut = (...withheld: string[]) => ({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => !withheld.includes(type)) });
   // Since 1.19.0 possession, events and gamestate read keyframed calibrations frame by frame.
   const perFrame = ["possession", "events", "gamestate"];
-  // Since 1.20.0 detect runs the config its model version names, and reports it.
-  const configured = ["detect"];
+  // Since 1.21.0 detect runs (and colour-checks) the config its version names, and ball
+  // trajectory drops parked tiled balls along pinned camera motion.
+  const configured = ["detect", "ball_trajectory"];
 
   it("keeps older workers on their existing stages and withholds the new ball stage", () => {
     expect(workerCompatibility("1.12.0", "1.13.0")).toEqual(allBut("ball_trajectory", "camera_motion", "calibrate", ...perFrame, ...configured));
@@ -70,7 +71,10 @@ describe("which worker may serve which stage", () => {
   });
   it("withholds detect from a 1.19 worker, which would run the plain detector under a ball-tiles version's name", () => {
     expect(workerCompatibility("1.19.0")).toEqual(allBut(...configured));
-    expect(workerCompatibility("1.20.0").stages).toContain("detect");
+  });
+  it("withholds detect and ball trajectory from a 1.20 worker, which knows neither the colour check nor the parked ball", () => {
+    expect(workerCompatibility("1.20.0")).toEqual(allBut(...configured));
+    for (const stage of configured) expect(workerCompatibility("1.21.0").stages).toContain(stage);
   });
 
   it("serves an older worker only the stages that have not changed since it was built", () => {
