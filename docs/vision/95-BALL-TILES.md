@@ -391,3 +391,61 @@ job `223a42e9` stays queued.
    Developer settings → Personal access tokens → Tokens (classic).
 3. In RunPod, add a Container Registry Auth: name `dtp-ghcr`, username `1stFola`,
    password that token.
+
+## The v2 run on the pilot (9 October 2026)
+
+**The registry change worked.** Fola created the `dtp-ghcr` credential, a GitHub token
+with only `read:packages`.
+- The GitHub CLI refresh to `write:packages` did not reach this machine's login, so the
+  image could not be pushed from here. Instead CI's manual GPU job, at `aa22684`, built
+  and checked the image and published it as
+  `ghcr.io/1stfola/dtp-vision-worker:gpu-aa22684` with the workflow's own token. Run
+  `37967678818`; every check passed, including "does not run as root".
+- The worker code is unchanged since `339d467`, which the registered version
+  `0.3.0-coco-ball-tiles-v2` (`9da0be9d`) names.
+- The pod pulled the image and registered 7 minutes after launch, where every ECR pod
+  that morning had been stopped within a second.
+
+**Detect** (job `223a42e9`, 25 fps):
+- 1,244 frames in 134 GPU-seconds, with the weights hash verified;
+- the tiles added 157 balls and the colour check rejected 120. The offline experiment
+  kept 151 and rejected 121; the small difference comes from decoding: the worker reads
+  ffmpeg JPEGs, the experiment read the video;
+- 637 frames with a ball.
+
+**Ball trajectory** (job `b9d37e17`, the local 1.21 CPU worker):
+- **The pipeline, end to end:** the control plane pinned the current camera motion
+  (`28e82c23`). The worker read the detections, the motion index and its chunk, and
+  dropped **73 parked tiled balls** (79 offline). The completion reported the pinned
+  motion checksum and was accepted.
+- **Its observed count is low only because of the segments:** most of the pilot's
+  shots are still marked `unknown`.
+
+**Comparable figures:** the worker's own code (`parked_tile_balls`, `Smoother`) on the
+GPU's detections, with every shot treated as `live_play`, as in the offline tables:
+
+| Shot (ms) | Plain | v2 on the GPU | Offline estimate |
+|---|---|---|---|
+| 0–1040 | 14 | 14 | 14 |
+| 1040–4120 | 29 | 28 | 28 |
+| 4120–14360 | 26 | **63** | 63 |
+| 14360–26000 | 126 | 132 | 133 |
+| 26000–31560 | 57 | 58 | 58 |
+| 31560–40360 | 53 | 62 | 64 |
+| 40360–44360 | 38 | 39 | 40 |
+| 44360–49706 | 52 | **44** | 46 |
+| **All** | **395** | **440** | 446 |
+
+**Afterwards:** the capacity service retired the pod 5 minutes after its last job, and
+RunPod reported no pods on the account. The tunnel was closed and the local worker
+removed. **Cost:** RunPod's balance went from $9.3586 to $9.1917, so **$0.17**. Phase 6
+spend is now **$0.79 of $4**.
+
+**Verdict:**
+- **v2 does on real hardware what the experiment predicted:** 45 more observed frames
+  than the plain pass, most of them the match ball, and the spare ball no longer takes
+  the trajectory.
+- **The one shot it still costs:** 44.36–49.71 s, where boots that slip past the colour
+  check make 18 frames ambiguous (1 with the plain pass).
+- **Version `9da0be9d` stays a candidate.** Promoting it is a decision for after gold
+  labels exist to score it against.

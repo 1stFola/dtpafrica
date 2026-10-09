@@ -13,7 +13,8 @@ config its model version names. The ball-tiles/v2 config adds four corner tiles,
 a tiled ball only if it is not yellow, orange or red, and marks it. Ball trajectory
 then drops a tiled ball that stays on one ground spot for 2.4 s, along pinned camera
 motion (contract 1.21.0). Offline on the pilot, observed ball frames went from 395 to
-446, almost all of the gain the match ball. Not yet run on a GPU
+446, almost all of the gain the match ball. On the GPU (image now in GitHub Container
+Registry, since ECR's 12-hour pull token kept failing) it gave 440, for $0.17
 ([95](./95-BALL-TILES.md)).
 
 **Stages read the carried calibration** — possession, carry, game state and
