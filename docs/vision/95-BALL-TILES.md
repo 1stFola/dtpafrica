@@ -155,14 +155,47 @@ false positive scored under 0.7. On the whole clip, brightly coloured boots scor
 high as the ball. The tiles find the ball where it is clear and small, and they also
 add confident boots and a second ball. The overall 44% → 56% overstates the gain.
 
+## Ball trajectory on both
+
+Both detection files went through the worker's own smoother (`ball_trajectory.Smoother`,
+default config), offline, on CPU, with no job and nothing written. Every shot was
+treated as `live_play` so the whole clip is compared; the real segments mark most
+shots `unknown`.
+
+The smoother does not choose between candidates. A frame with two or more balls scoring
+0.5 or more is `ambiguous`, which counts as lost. So a false ball beside the real one
+costs that frame, and a false ball alone is followed as if it were the ball.
+
+**Observed frames:** 395 with the plain pass, 499 with tiles. Per shot:
+
+| Shot (ms) | Gained | From a tile box | Lost | The tile box |
+|---|---|---|---|---|
+| 0–1040 | 0 | 0 | 0 | |
+| 1040–4120 | 0 | 0 | 1 | |
+| 4120–14360 | 40 | 40 | 0 | **the match ball** (checked) |
+| 14360–26000 | 12 | 12 | 3 | not checked |
+| 26000–31560 | 12 | 12 | 7 | partly boots |
+| 31560–40360 | 12 | 12 | 0 | not checked |
+| 40360–44360 | 44 | 44 | **32** | **the spare ball by the post** |
+| 44360–49706 | 59 | 59 | **32** | **yellow boots** |
+
+**Verdict:** the ball-tiles pass is **not usable as it stands**.
+- **Where nothing else is ball-like**, it is a clear win: the 4.12–14.36 s shot went
+  from 26 to 66 observed frames, all of them the match ball.
+- **Where a boot or a spare ball is in view**, the trajectory follows the wrong object
+  and loses the real ball on 32 frames in each of the last two shots.
+
+Version `0.2.0-coco-ball-tiles` stays a candidate, and the plain run stays the
+reference.
+
 ## Next
 
-1. **Run ball trajectory on both detection sets** (CPU, $0). See whether continuity
-   follows the match ball and drops the stationary second ball and the boots. That is
-   the test that matters for possession.
-2. **If it does not:** filter tiled candidates before merging, for example by colour
-   (the match ball is mostly white), by size relative to nearby players, or by
-   requiring motion across frames. Or make the decision on a model trained on DTP
-   footage, which Phase 3 already plans.
-3. **Keep version `0.2.0-coco-ball-tiles` a candidate.** Nothing promotes it, and the
-   plain run stays the reference.
+1. **Filter tiled candidates before merging.** Both kinds of false ball have a tell:
+   - **colour:** the boots are yellow and orange, and the match ball is mostly white;
+   - **motion:** the spare ball only moves with the camera.
+
+   A colour check on each tiled box can be measured offline against the frames already
+   checked by eye, at $0, before any new GPU run.
+2. **Or leave the ball to a model trained on DTP footage**, which Phase 3 already
+   plans. The tiles show the ball is findable at this size; what is missing is telling
+   it from boots.

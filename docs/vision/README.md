@@ -11,7 +11,7 @@ whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchan
 **Latest: a tiled ball pass** — detect runs the config its model version names
 (contract 1.20.0). A new ball-tiles config adds four corner tiles and keeps only
 confident ball boxes from them. On 32 pilot frames where the ball lies in open grass,
-real balls found went from 2 to 9. On the whole pilot, frames with a ball rose from 44% to 56%, but the tiles also add confident boots and a stationary second ball, so the gain is not yet usable as is ([95](./95-BALL-TILES.md)).
+real balls found went from 2 to 9. On the whole pilot, frames with a ball rose from 44% to 56%, but the tiles also add confident boots and a stationary second ball, and ball trajectory then follows them in two shots: not usable as it stands ([95](./95-BALL-TILES.md)).
 
 **Stages read the carried calibration** — possession, carry, game state and
 pitch positions place each frame of a moving camera through its own carried
