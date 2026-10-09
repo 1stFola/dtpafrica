@@ -25,7 +25,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
-import { VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
+import { DETECTOR_CONFIG_BASE, VISION_CONTRACT_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { loadApiEnv } from "../src/shared/load-dotenv";
 import { assertDevDatabase, closeGate, createGateMatch, onInterrupt, removeGateMatch, removeGateWorkers, type GateMatch } from "./gate-harness";
 
@@ -267,7 +267,8 @@ async function main() {
     const registration = {
       version: "0.1",
       gitCommit: "3eeec6e0",
-      configKey: `models/gate-${RUN}/config.json`,
+      // A detector a worker can run: detect is refused for any other (docs/vision/95).
+      configKey: DETECTOR_CONFIG_BASE,
       workerImage: "dtp-vision-engine:0.1",
       licenceNote: "Gate fixture: torchvision BSD-3-Clause; COCO weights via torchvision; no DTP data.",
     };
@@ -371,6 +372,12 @@ async function main() {
     check("job carries the proxy's frame rate from the variant", spec.proxy?.fps, 25);
     check("job carries the proxy's source offset from the variant", spec.proxy?.sourceOffsetMs, 9000);
     check("the operator's own parameters survive", spec.sampleFps, 1);
+    check("job is told the detector config its version names", spec.detector?.configKey, DETECTOR_CONFIG_BASE);
+
+    const unknownConfig = await post(`/vision/models/${modelId}/versions`, { ...registration, version: "0.2-unknown-config", configKey: `models/gate-${RUN}/config.json` });
+    const unrunnable = await post("/vision/jobs", { type: "detect", videoAssetId: a.run, modelVersionId: unknownConfig.body.id });
+    check("a version whose detector config no worker runs: refused", unrunnable.body.error, "DetectorConfigUnknown");
+    await prisma.visionModelVersion.update({ where: { id: String(unknownConfig.body.id) }, data: { stage: "archived" } });
 
     await prisma.visionModelVersion.update({ where: { id: versionId }, data: { stage: "production" } });
     const implicit = await post("/vision/jobs", { type: "detect", videoAssetId: a.run });
@@ -436,6 +443,7 @@ async function main() {
       ballVisibilityPct: 7.5,
       modelVersionId: versionId,
       weightsSha256: sha,
+      detectorConfig: DETECTOR_CONFIG_BASE,
     });
 
     const impostor = await pod.complete(jobId, {
@@ -463,6 +471,14 @@ async function main() {
       modelVersionIds: [versionId],
     });
     check("a checksum that is not a digest refused", garbage.body.error, "WeightsMismatch");
+
+    const otherConfig = await pod.complete(jobId, {
+      idempotencyKey: `gate-${RUN}-other-config`,
+      artifacts: [artifact],
+      summary: { ...summaryFor(SHA_FIRST), detectorConfig: "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v1" },
+      modelVersionIds: [versionId],
+    });
+    check("a completion from another detector config refused", otherConfig.body.error, "ProvenanceMismatch");
 
     const accepted = await pod.complete(jobId, {
       idempotencyKey: `gate-${RUN}-ok`,
