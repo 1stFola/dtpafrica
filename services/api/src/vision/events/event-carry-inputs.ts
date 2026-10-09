@@ -1,7 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
-import { CALIBRATED_POSSESSION_VERSION, EVENT_CARRY_VERSION, EVENT_CARRY_MANIFEST_CHECKSUM, validCarryProducer } from "@dtp/vision-contracts";
+import { CALIBRATED_POSSESSION_VERSION, EVENT_CARRY_VERSION, EVENT_CARRY_MANIFEST_CHECKSUM, validCarryProducer, type PossessionCalibrationSnapshot } from "@dtp/vision-contracts";
 import { object, readPossessionEvidence, sameEvidence } from "../possession/possession-evidence";
 import { possessionCalibration } from "../possession/possession-calibration";
+import { carriedReadKeys } from "../calibration/carried-run";
 import { refusal } from "../shared/refusals";
 import type { ObjectStore } from "../storage/object-store";
 
@@ -33,5 +34,6 @@ export async function eventCarryInputs(db: Pick<PrismaClient, "visionJob" | "vis
     proxy: index.proxy, tracks, possession: { jobId: job.id, key: evidence.indexKey, indexChecksum: evidence.indexChecksum }, possessionIndex: index,
     possessionSource: { proxyDurationMs: input.proxyDurationMs },
     eventAlgorithm: { modelVersionId: model.id, configKey: model.configKey, gitCommit: model.gitCommit, workerImage: model.workerImage, weightsChecksum: null, manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM },
-    readKeys: [{ bucket: "derived", key: evidence.indexKey }, ...chunks, { bucket: "derived", key: String(tracks.key) }] };
+    readKeys: [{ bucket: "derived", key: evidence.indexKey }, ...chunks, { bucket: "derived", key: String(tracks.key) },
+      ...carriedReadKeys((index.calibrationSnapshot as PossessionCalibrationSnapshot | undefined)?.carried)] };
 }

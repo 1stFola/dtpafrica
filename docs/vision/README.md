@@ -8,7 +8,14 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: keyframes that follow the camera** — a person files keyframe calibrations on
+**Latest: stages read the carried calibration** — possession, carry, game state and
+pitch positions place each frame of a moving camera through its own carried
+calibration, pinned to the current `calibrate` run, and say `calibration_not_carried`
+where no keyframe reached (contract 1.19.0). Fixes possession never queueing on a real
+database: Postgres `jsonb` stores keys in its own order, so a string comparison always
+failed. Step 3 of three ([94](./94-STAGES-READ-THE-CARRIED-CALIBRATION.md)).
+
+**Keyframes that follow the camera** — a person files keyframe calibrations on
 frames of a panning shot; a CPU `calibrate` stage (contract 1.18.0) carries them to every
 frame of the shot along the camera motion, never across a cut, and measures drift
 between keyframes. Camera motion now tracks against a reference frame: drift on the

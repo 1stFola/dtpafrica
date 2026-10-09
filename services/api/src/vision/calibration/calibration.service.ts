@@ -16,6 +16,7 @@ import { CALIBRATION_THRESHOLDS, qualityOf, type CalibrationQuality, type Calibr
 import { fitHomography, homogeneousW, invert3, isFit, orientStored, project, projectInView, type Correspondence, type Fit, type FitFailure, type Homography } from "./homography";
 import { DEFAULT_PITCH, landmarkById, pitchLines, pitchProblem, type PitchDimensions } from "./pitch-model";
 import { pinnedProxy } from "./pinned-proxy";
+import { carriedRunStale, carriedSegment, currentCarriedRun, readCarriedFrames } from "./carried-run";
 import { notFound, personFor } from "../shared/refusals";
 
 /**
@@ -419,7 +420,7 @@ export class VisionCalibrationService {
     if (!job) return { videoAssetId, frame, run: null, row: null, overlay: [] };
     const progress = job.progress as { summary?: Record<string, unknown>; artifacts?: { key: string; role: string; bucket: string }[] } | null;
     const indexKey = progress?.artifacts?.find((a) => a.role === "calibration_frames" && a.bucket === "derived")?.key;
-    const run = { jobId: job.id, finishedAt: job.finishedAt, stale: await this.carriedRunStale(videoAssetId, job.inputSpec as Record<string, unknown> | null),
+    const run = { jobId: job.id, finishedAt: job.finishedAt, stale: await carriedRunStale(this.prisma, videoAssetId, job.inputSpec as Record<string, unknown> | null),
       frames: progress?.summary?.frames ?? null, covered: progress?.summary?.covered ?? null, coverage: progress?.summary?.coverage ?? null };
     const index = indexKey ? await this.store.getSmallObject("derived", indexKey, 4_000_000) : null;
     const chunks = index ? ((JSON.parse(index.toString("utf8")) as { chunks?: { key: string; firstFrame: number; lastFrame: number }[] }).chunks ?? []) : [];
@@ -439,23 +440,6 @@ export class VisionCalibrationService {
     const segments = Array.isArray(spec?.segments) ? (spec!.segments as { calibrations?: { calibrationId?: string; pitch?: PitchDimensions }[] }[]) : [];
     const pinned = segments.flatMap((s) => s.calibrations ?? []).find((c) => c.calibrationId === calibrationId);
     return pinned?.pitch ?? null;
-  }
-
-  /** Whether a calibrate run's pins still describe the footage: same proxy, segments and current calibrations. */
-  private async carriedRunStale(videoAssetId: string, spec: Record<string, unknown> | null): Promise<boolean> {
-    let checksum: string;
-    try { checksum = (await pinnedProxy(this.prisma, videoAssetId)).checksum; } catch { return true; }
-    if (spec?.proxyChecksum !== checksum) return true;
-    const segments = await this.prisma.visionCameraSegment.findMany({ where: { videoAssetId }, orderBy: { startMs: "asc" },
-      include: { calibrations: { where: { supersededBy: null, withdrawnAt: null }, select: { id: true, frameIndex: true } } } });
-    const now = segments.map((s) => {
-      const keyframes = s.calibrations.filter((c) => c.frameIndex !== null).map((c) => c.id).sort();
-      const whole = s.calibrations.filter((c) => c.frameIndex === null).map((c) => c.id);
-      return `${s.id}:${s.startMs}:${s.endMs}:${s.kind}:${(keyframes.length ? keyframes : whole.slice(0, 1)).join(",")}`;
-    });
-    const pinned = (Array.isArray(spec?.segments) ? (spec!.segments as { cameraSegmentId: string; startMs: number; endMs: number; kind: string; calibrations?: { calibrationId: string }[] }[]) : [])
-      .map((s) => `${s.cameraSegmentId}:${s.startMs}:${s.endMs}:${s.kind}:${(s.calibrations ?? []).map((c) => c.calibrationId).sort().join(",")}`);
-    return JSON.stringify(now) !== JSON.stringify(pinned);
   }
 
   /** A person takes a keyframe back: nothing replaces it, and the frames it reached lose it. */
@@ -482,11 +466,19 @@ export class VisionCalibrationService {
       this.prisma.visionCameraSegment.findMany({
         where: { videoAssetId: track.videoAssetId },
         orderBy: { startMs: "asc" },
-        // Whole-segment calibrations only: a keyframe is true of one frame, and read as the
-        // segment's it would place every other frame of a moving camera wrongly.
-        include: { calibrations: { where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1 } },
+        include: { calibrations: { where: { supersededBy: null, withdrawnAt: null }, orderBy: { createdAt: "desc" } } },
       }),
     ]);
+
+    /* A keyframed segment is placed frame by frame from the current calibrate run (docs/vision/94):
+       read once, for this track's frames only. With no current run its positions are not carried. */
+    const keyframed = new Set(segments.filter((s) => s.calibrations.some((c) => c.frameIndex != null)).map((s) => s.id));
+    const proxy = keyframed.size ? await this.prisma.visionVideoVariant.findFirst({ where: { videoAssetId: track.videoAssetId, kind: "proxy" }, orderBy: { createdAt: "desc" }, select: { fps: true, sourceOffsetMs: true } }) : null;
+    const frameOf = (t: number) => (proxy?.fps ? Math.round(((t - (proxy.sourceOffsetMs ?? 0)) * proxy.fps) / 1000) : -1);
+    const run = keyframed.size ? await currentCarriedRun(this.prisma, track.videoAssetId) : null;
+    const carriedFrames = run && proxy?.fps
+      ? await readCarriedFrames(this.store, run, keyframed, new Set((positions as { sourceTimeMs?: unknown }[]).filter((p) => typeof p.sourceTimeMs === "number").map((p) => frameOf(p.sourceTimeMs as number))))
+      : new Map<number, { segmentId: string; H: number[] }>();
 
     const placed: { frameIndex: number; sourceTimeMs: number; xM: number; yM: number; cameraSegmentId: string }[] = [];
     const suppressed: Record<string, number> = {};
@@ -510,16 +502,30 @@ export class VisionCalibrationService {
         fail("no_camera_segment");
         continue;
       }
-      const calibration = segment.calibrations[0];
-      if (!calibration) {
-        fail("segment_not_calibrated");
-        continue;
+      let homography: Homography;
+      let size: PitchDimensions;
+      if (keyframed.has(segment.id)) {
+        const carried = carriedFrames.get(frameOf(t));
+        if (!carried || carried.segmentId !== segment.id) {
+          fail("calibration_not_carried");
+          continue;
+        }
+        homography = carried.H as Homography;
+        size = carriedSegment(segment.calibrations.filter((c) => c.frameIndex != null)).pitch;
+      } else {
+        const calibration = segment.calibrations.find((c) => c.frameIndex == null);
+        if (!calibration) {
+          fail("segment_not_calibrated");
+          continue;
+        }
+        if (calibration.quality === "failed") {
+          fail("calibration_failed");
+          continue;
+        }
+        homography = orientStored(calibration.homography, calibration.points);
+        size = { lengthM: calibration.pitchLengthM, widthM: calibration.pitchWidthM };
       }
-      if (calibration.quality === "failed") {
-        fail("calibration_failed");
-        continue;
-      }
-      const point = projectInView(orientStored(calibration.homography, calibration.points), { x: box.x + box.width / 2, y: box.y + box.height });
+      const point = projectInView(homography, { x: box.x + box.width / 2, y: box.y + box.height });
       if (!point) {
         fail("beyond_horizon");
         continue;
@@ -527,14 +533,14 @@ export class VisionCalibrationService {
       // A pixel just under the horizon maps to hundreds of metres. That is a number, not a position.
       if (
         point.x < -OFF_PITCH_MARGIN_M ||
-        point.x > calibration.pitchLengthM + OFF_PITCH_MARGIN_M ||
+        point.x > size.lengthM + OFF_PITCH_MARGIN_M ||
         point.y < -OFF_PITCH_MARGIN_M ||
-        point.y > calibration.pitchWidthM + OFF_PITCH_MARGIN_M
+        point.y > size.widthM + OFF_PITCH_MARGIN_M
       ) {
         fail("off_pitch");
         continue;
       }
-      pitch = pitch ?? { lengthM: calibration.pitchLengthM, widthM: calibration.pitchWidthM };
+      pitch = pitch ?? size;
       placed.push({ frameIndex, sourceTimeMs: t, xM: round(point.x), yM: round(point.y), cameraSegmentId: segment.id });
     }
 

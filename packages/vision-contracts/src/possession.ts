@@ -8,11 +8,17 @@ export const POSSESSION_INDEX_ROLE = "possession";
 export const POSSESSION_CHUNK_ROLE = "possession_chunk";
 export const POSSESSION_UNKNOWN_REASONS = ["ball_lost", "weak_ball", "no_player", "no_near_player", "ambiguous_players", "weak_player", "continuity_pending"] as const;
 export type PossessionUnknownReason = (typeof POSSESSION_UNKNOWN_REASONS)[number] | (typeof POSSESSION_CALIBRATED_REASONS)[number];
+/**
+ * Calibration as a possession or carry run pinned it. A segment is uncalibrated (null),
+ * failed, passing with one homography (a still camera), or `carried`: calibrated by
+ * keyframes, its frames read from the pinned calibrate run (`carried`, docs/vision/94).
+ */
 export type PossessionCalibrationSnapshot = {
   proxyWidth: number; proxyHeight: number; proxyVariantId: string; proxyKey: string; proxyChecksum: string;
   segments: { cameraSegmentId: string; startMs: number; endMs: number; calibrationId: string | null;
-    quality: "good" | "usable" | "failed" | null; thresholdsVersion: string | null;
-    homography: number[] | null; pitch: { lengthM: number; widthM: number } | null }[];
+    quality: "good" | "usable" | "failed" | "carried" | null; thresholdsVersion: string | null;
+    homography: number[] | null; pitch: { lengthM: number; widthM: number } | null; keyframeIds?: string[] }[];
+  carried?: import("./jobs").CarriedCalibrationPin;
 };
 export type PossessionFootballConfig = { maxGroundDistanceM?: number; maxBallGroundSpeedMps?: number; maxPlayerSpeedMps?: number };
 export type PossessionCandidateSegment = {

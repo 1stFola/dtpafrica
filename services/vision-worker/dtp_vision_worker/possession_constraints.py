@@ -1,8 +1,15 @@
-"""Additional ground-plane vetoes; a projected ball is not evidence of height/control."""
+"""Additional ground-plane vetoes; a projected ball is not evidence of height/control.
+
+A camera segment's calibration is one homography (a still camera), or `carried`: a
+moving camera calibrated by keyframes, whose every frame has its own homography from
+a pinned `calibrate` run (docs/vision/94). A carried frame no keyframe reached is
+`calibration_unavailable`, as an uncalibrated segment is.
+"""
 from dataclasses import asdict, dataclass
 import math
 
 from .ball_trajectory import integer, number
+from .carried_frames import CarriedFrames, parse_pin
 from .gamestate import project
 
 VERSION = "possession-candidates/v2"
@@ -24,8 +31,14 @@ class FootballConfig:
         return cls(**raw)
 
 
+def carried_segment_ids(snapshot) -> set[str]:
+    """The segments of a snapshot calibrated by keyframes, read frame by frame."""
+    rows = snapshot.get("segments") if isinstance(snapshot, dict) else None
+    return {r["cameraSegmentId"] for r in rows or [] if isinstance(r, dict) and r.get("quality") == "carried" and isinstance(r.get("cameraSegmentId"), str)}
+
+
 class Constraints:
-    def __init__(self, clock, snapshot, config=None):
+    def __init__(self, clock, snapshot, config=None, carried: CarriedFrames | None = None):
         if not isinstance(snapshot, dict) or not integer(snapshot.get("proxyWidth")) or not integer(snapshot.get("proxyHeight")) or snapshot["proxyWidth"] <= 0 or snapshot["proxyHeight"] <= 0:
             raise ValueError("calibrated constraints need explicit proxy geometry")
         declared = snapshot.get("segments")
@@ -34,12 +47,22 @@ class Constraints:
         if not isinstance(declared, list) or len(declared) != len(clock.segments):
             raise ValueError("calibrations must match every pinned camera segment")
         self.by_id = {}
+        self_carried = False
         for camera, row in zip(clock.segments, declared, strict=True):
             if not isinstance(row, dict) or any(row.get(k) != camera[k] for k in ("cameraSegmentId", "startMs", "endMs")):
                 raise ValueError("calibration and camera snapshots disagree")
             quality = row.get("quality")
-            if quality not in {None, "failed", "good", "usable"}:
+            if quality not in {None, "failed", "good", "usable", "carried"}:
                 raise ValueError("unsupported calibration quality")
+            if quality == "carried":
+                keyframes, pitch = row.get("keyframeIds"), row.get("pitch")
+                if (row.get("calibrationId") is not None or row.get("homography") is not None or not isinstance(row.get("thresholdsVersion"), str) or not row["thresholdsVersion"]
+                        or not isinstance(keyframes, list) or not keyframes or any(not isinstance(k, str) or not k for k in keyframes) or len(set(keyframes)) != len(keyframes)
+                        or not isinstance(pitch, dict) or any(not number(pitch.get(k)) or not 0 < pitch[k] <= 200 for k in ("lengthM", "widthM"))):
+                    raise ValueError("a carried calibration names its keyframes and pitch, and no single transform")
+                self_carried = True
+                self.by_id[row["cameraSegmentId"]] = row
+                continue
             if quality is not None and (not isinstance(row.get("calibrationId"), str) or not row["calibrationId"] or not isinstance(row.get("thresholdsVersion"), str) or not row["thresholdsVersion"]):
                 raise ValueError("calibration needs immutable identity and threshold version")
             if quality is None and any(row.get(k) is not None for k in ("calibrationId", "thresholdsVersion", "homography", "pitch")):
@@ -54,25 +77,44 @@ class Constraints:
                 if not math.isfinite(determinant) or abs(determinant) < 1e-14:
                     raise ValueError("singular calibrated transform")
             self.by_id[row["cameraSegmentId"]] = row
+        if self_carried:
+            parse_pin(snapshot.get("carried"))
+            if carried is None:
+                raise ValueError("carried calibrations were declared but not loaded")
+        elif snapshot.get("carried") is not None:
+            raise ValueError("a carried calibration run is pinned for no carried segment")
         self.snapshot, self.clock = snapshot, clock
+        self.carried = carried
         self.config = config or FootballConfig()
         self.previous = None
+
+    def homography_at(self, ms, camera_id):
+        """(homography, pitch) for this source millisecond on this camera, or None."""
+        row = self.by_id.get(camera_id)
+        if not row:
+            return None
+        if row["quality"] == "carried":
+            h = self.carried.at_ms(ms, camera_id) if self.carried is not None else None
+            return (h, row["pitch"]) if h is not None else None
+        if row["quality"] in {"good", "usable"}:
+            return row["homography"], row["pitch"]
+        return None
 
     def clear(self):
         self.previous = None
 
     def check(self, ms, camera_id, trajectory, ball, player):
-        row = self.by_id.get(camera_id)
-        if not row or row["quality"] not in {"good", "usable"}:
+        found = self.homography_at(ms, camera_id)
+        if found is None:
             self.clear()
             return "calibration_unavailable"
+        homography, pitch = found
         sx, sy = self.snapshot["proxyWidth"] / self.clock.width, self.snapshot["proxyHeight"] / self.clock.height
-        bp = project(row["homography"], ball[0] * sx, ball[1] * sy)
-        pp = project(row["homography"], player[1] * sx, player[2] * sy)
+        bp = project(homography, ball[0] * sx, ball[1] * sy)
+        pp = project(homography, player[1] * sx, player[2] * sy)
         if bp is None or pp is None or any(not math.isfinite(v) for p in (bp, pp) for v in p):
             self.clear()
             return "projection_invalid"
-        pitch = row["pitch"]
         if any(not (0 <= p[0] <= pitch["lengthM"] and 0 <= p[1] <= pitch["widthM"]) for p in (bp, pp)):
             self.clear()
             return "off_pitch"

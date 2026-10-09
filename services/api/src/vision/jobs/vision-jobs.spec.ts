@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { VisionJobsService } from "./vision-jobs.service";
 
 /**
@@ -480,6 +481,15 @@ describe("possession candidates require compatible, pinned ball and player evide
       tracks: { jobId: "track", key: "inference/track/1/tracks.json", checksum: trackHash } });
     expect(job.inputSpec.readKeys).toEqual([{ bucket: "derived", key: "inference/ball/2/index.json" }, { bucket: "derived", key: "inference/ball/2/chunk.jsonl" }, { bucket: "derived", key: "inference/track/1/tracks.json" }]);
   });
+  it("reads the ball run's segments as Postgres returns them: its own key order, the same evidence", async () => {
+    const r = rows();
+    r.ball.inputSpec.segments = [{ kind: "live_play", endMs: 200, startMs: 0, cameraSegmentId: "cam" }];
+    install(r);
+    await service.enqueueForAsset({ type: "possession", videoAssetId: ASSET });
+    expect(enqueued().inputSpec.segments).toEqual(segments);
+    r.ball.inputSpec.segments = [{ kind: "live_play", endMs: 199, startMs: 0, cameraSegmentId: "cam" }];
+    await expect(service.enqueueForAsset({ type: "possession", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "PossessionEvidenceMismatch" } });
+  });
   it("refuses incompatible clocks, attempts, detector bytes, geometry, source, weights lineage and camera changes", async () => {
     for (const change of ["source", "clock", "attempt", "detections", "geometry", "detector", "tracker", "sparse", "hash", "window", "chunks"]) {
       const r = rows();
@@ -651,9 +661,9 @@ describe("a gamestate job is given the tracks, the calibrations and the clock", 
       { cameraSegmentId: "seg-3", startMs: 120001, endMs: 180000, quality: "failed", homography: H, pitch: { lengthM: 100, widthM: 64 } },
     ]);
     expect(spec.anchors).toEqual([{ half: 1, sourceMs: 9000, endMs: null }]);
-    // Whole-segment calibrations only: a keyframe is true of one frame, and read as the
-    // segment's it would place every other frame of a moving camera (docs/vision/93).
-    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toEqual({ where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1 });
+    // Every current calibration: whole ones for still cameras, keyframes for moving ones (docs/vision/94).
+    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toEqual({ where: { supersededBy: null, withdrawnAt: null }, orderBy: { createdAt: "desc" } });
+    expect(spec).not.toHaveProperty("carried");
     expect(spec.chunkMs).toBe(30000);
     expect(spec.proxy).toEqual({ fps: 25, sourceOffsetMs: 9000 });
     expect(enqueued().modelVersionId).toBeNull();
@@ -671,6 +681,47 @@ describe("a gamestate job is given the tracks, the calibrations and the clock", 
     const [first, second] = enqueued().inputSpec.segments;
     expect(first.homography).toEqual(stored.map((v) => -v));
     expect(second.homography).toEqual(stored);
+  });
+
+  describe("a moving camera's segment", () => {
+    const prefix = visionKeys.inferencePrefix("job-c", 1);
+    const keyframe = (id: string, frameIndex: number) => ({ id, frameIndex, quality: "good", thresholdsVersion: "t", homography: H, points: [], pitchLengthM: 100, pitchWidthM: 64 });
+    function withRun(run: boolean) {
+      mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4", fps: 25, sourceOffsetMs: 9000 });
+      mockPrisma.visionCameraSegment.findMany.mockResolvedValue([
+        { id: "seg-1", startMs: 9000, endMs: 60000, kind: "live_play", calibrations: [{ id: "w", frameIndex: null, quality: "good", homography: H, points: [], pitchLengthM: 105, pitchWidthM: 68 }] },
+        { id: "seg-2", startMs: 60000, endMs: 90000, kind: "live_play", calibrations: [keyframe("k2", 1900), keyframe("k1", 1600)] },
+      ]);
+      mockPrisma.visionJob.findFirst.mockImplementation(({ where }: { where: { type: string } }) => Promise.resolve(
+        where.type === "track" ? { id: "job-t", modelVersionId: TRACKER, progress: { artifacts: [{ key: "inference/job-t/1/tracks.json", bucket: "derived", role: "tracks" }] } }
+        : where.type === "transcode" ? { progress: { summary: { proxy: { key: "proxy.mp4", checksumSha256: "e".repeat(64) } }, artifacts: [{ role: "proxy", key: "proxy.mp4" }] } }
+        : run ? { id: "job-c", attemptNumber: 1, finishedAt: new Date(),
+          inputSpec: { proxyChecksum: "e".repeat(64), segments: [
+            { cameraSegmentId: "seg-1", startMs: 9000, endMs: 60000, kind: "live_play", calibrations: [{ calibrationId: "w" }] },
+            { cameraSegmentId: "seg-2", startMs: 60000, endMs: 90000, kind: "live_play", calibrations: [{ calibrationId: "k1" }, { calibrationId: "k2" }] }] },
+          progress: { summary: { indexChecksum: "a".repeat(64), chunks: 1, calculationVersion: CALIBRATION_PROPAGATION_VERSION },
+            artifacts: [{ role: CALIBRATION_FRAMES_INDEX_ROLE, bucket: "derived", key: `${prefix}index.json` }, { role: CALIBRATION_FRAMES_CHUNK_ROLE, bucket: "derived", key: `${prefix}c0.jsonl` }] } }
+        : null));
+    }
+
+    it("is declared carried, naming its keyframes, with the current run pinned and readable", async () => {
+      withRun(true);
+      await service.enqueueForAsset({ type: "gamestate", videoAssetId: ASSET });
+      const spec = enqueued().inputSpec;
+      expect(spec.segments[1]).toEqual({ cameraSegmentId: "seg-2", startMs: 60000, endMs: 90000, homography: null, quality: "carried", thresholdsVersion: "t", pitch: { lengthM: 100, widthM: 64 }, keyframeIds: ["k1", "k2"] });
+      expect(spec.segments[0]).toMatchObject({ quality: "good", homography: H });
+      expect(spec.carried).toEqual({ jobId: "job-c", indexKey: `${prefix}index.json`, indexChecksum: "a".repeat(64), chunkKeys: [`${prefix}c0.jsonl`] });
+      expect(spec.readKeys).toEqual([{ bucket: "derived", key: "inference/job-t/1/tracks.json" }, { bucket: "derived", key: `${prefix}index.json` }, { bucket: "derived", key: `${prefix}c0.jsonl` }]);
+    });
+
+    it("is uncalibrated, with nothing pinned, when no current run follows its keyframes", async () => {
+      withRun(false);
+      await service.enqueueForAsset({ type: "gamestate", videoAssetId: ASSET });
+      const spec = enqueued().inputSpec;
+      expect(spec.segments[1]).toEqual({ cameraSegmentId: "seg-2", startMs: 60000, endMs: 90000, quality: null, homography: null, pitch: null });
+      expect(spec).not.toHaveProperty("carried");
+      expect(spec.readKeys).toEqual([{ bucket: "derived", key: "inference/job-t/1/tracks.json" }]);
+    });
   });
 
   it("refuses when no segment is calibrated, and when there are no tracks", async () => {

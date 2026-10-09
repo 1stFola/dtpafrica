@@ -35,7 +35,9 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
 import { orientStored } from "../calibration/homography";
 import { possessionCalibration } from "../possession/possession-calibration";
+import { sameEvidence } from "../possession/possession-evidence";
 import { pinnedProxy } from "../calibration/pinned-proxy";
+import { carriedReadKeys, carriedSegment, currentCarriedRun } from "../calibration/carried-run";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionModelsService } from "../models/models.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
@@ -170,7 +172,7 @@ export class VisionJobsService {
     const params = { constraintMode: "calibrated", ...(ballJobId === undefined ? {} : { ballJobId }), ...(trackJobId === undefined ? {} : { trackJobId }) };
     return this.preflight({ type: "possession", videoAssetId, params }, "Possession", ({ possession }) => {
       const segments = possession!.calibrationSnapshot!.segments;
-      return { ballJobId: possession!.ball.jobId, trackJobId: possession!.tracks.jobId, constraintMode: "calibrated" as const, cameraSegments: segments.length, calibratedSegments: segments.filter((s) => s.homography !== null).length };
+      return { ballJobId: possession!.ball.jobId, trackJobId: possession!.tracks.jobId, constraintMode: "calibrated" as const, cameraSegments: segments.length, calibratedSegments: segments.filter((s) => s.homography !== null || s.quality === "carried").length };
     });
   }
 
@@ -317,7 +319,8 @@ export class VisionJobsService {
       || Math.ceil(input.proxyDurationMs * proxy.fps / 1000) > 1_000_000 || b.windowStartMs !== proxy.sourceOffsetMs || b.windowEndMs !== windowEnd || b.frames !== Math.ceil((windowEnd - proxy.sourceOffsetMs) * proxy.fps / 1000)) throw fail();
     const cameras = await this.prisma.visionCameraSegment.findMany({ where: { videoAssetId: asset.id }, orderBy: { startMs: "asc" }, select: { id: true, startMs: true, endMs: true, kind: true } });
     const segments = cameras.map((s) => ({ cameraSegmentId: s.id, startMs: s.startMs, endMs: s.endMs, kind: s.kind as BallTrajectoryJobParams["segments"][number]["kind"] }));
-    if (JSON.stringify(segments) !== JSON.stringify(input.segments) || !Array.isArray(t.cameraCuts) || segments.slice(1).some((s) => !(t.cameraCuts as unknown[]).includes(s.startMs))) throw fail();
+    // Key order is not evidence: Postgres jsonb stores an object's keys in its own order.
+    if (!sameEvidence(segments, input.segments) || !Array.isArray(t.cameraCuts) || segments.slice(1).some((s) => !(t.cameraCuts as unknown[]).includes(s.startMs))) throw fail();
     const config = requested?.possessionConfig;
     if (config !== undefined) {
       const ranges: Record<string, [number, number]> = { minBallConfidence: [0, 1], minPlayerConfidence: [0, 1], maxFootDistanceHeights: [Number.MIN_VALUE, 0.5], minContinuityMs: [80, 2000] };
@@ -339,7 +342,7 @@ export class VisionJobsService {
       sourceChecksum: asset.checksumSha256, sourceDurationMs: asset.durationMs, proxyChecksum: input.proxyChecksum, proxyDurationMs: input.proxyDurationMs,
       imageWidth: input.imageWidth, imageHeight: input.imageHeight, detectionsChecksum: b.detectionsChecksum, detectorJobId: String(detector.jobId), detectorVersionId: String(detector.modelVersionId), segments, proxy,
       ...(calibrationSnapshot ? { constraintMode: "calibrated" as const, calibrationSnapshot, ...(football ? { footballConfig: football as PossessionJobParams["footballConfig"] } : {}) } : {}),
-      readKeys: [...indices, ...chunks, ...tracks].map((a) => ({ bucket: "derived" as const, key: a.key })) };
+      readKeys: [...[...indices, ...chunks, ...tracks].map((a) => ({ bucket: "derived" as const, key: a.key })), ...carriedReadKeys(calibrationSnapshot?.carried)] };
   }
 
   /**
@@ -471,10 +474,19 @@ export class VisionJobsService {
     const segments = await this.prisma.visionCameraSegment.findMany({
       where: { videoAssetId },
       orderBy: { startMs: "asc" },
-      include: { calibrations: { where: { supersededBy: null, withdrawnAt: null, frameIndex: null }, orderBy: { createdAt: "desc" }, take: 1 } },
+      include: { calibrations: { where: { supersededBy: null, withdrawnAt: null }, orderBy: { createdAt: "desc" } } },
     });
+    // A keyframed segment is placed frame by frame from the current calibrate run; with
+    // none current it is not calibrated, and its rows say so (docs/vision/94).
+    const run = segments.some((s) => s.calibrations.some((c) => c.frameIndex != null)) ? await currentCarriedRun(this.prisma, videoAssetId) : null;
     const declared: GameStateJobParams["segments"] = segments.map((s) => {
-      const c = s.calibrations[0] ?? null;
+      const keyframes = s.calibrations.filter((c) => c.frameIndex != null);
+      if (keyframes.length) {
+        return run
+          ? { cameraSegmentId: s.id, startMs: s.startMs, endMs: s.endMs, homography: null, ...carriedSegment(keyframes) }
+          : { cameraSegmentId: s.id, startMs: s.startMs, endMs: s.endMs, quality: null, homography: null, pitch: null };
+      }
+      const c = s.calibrations.find((x) => x.frameIndex == null) ?? null;
       return {
         cameraSegmentId: s.id,
         startMs: s.startMs,
@@ -502,12 +514,14 @@ export class VisionJobsService {
       orderBy: { half: "asc" },
     });
     const chunkMs = typeof requested?.chunkMs === "number" && Number.isInteger(requested.chunkMs) && requested.chunkMs > 0 ? requested.chunkMs : undefined;
+    const carried = run && declared.some((s) => s.quality === "carried") ? run : undefined;
     return {
       tracks: identify.tracks,
       segments: declared,
       anchors,
+      ...(carried ? { carried } : {}),
       ...(chunkMs ? { chunkMs } : {}),
-      readKeys: identify.readKeys,
+      readKeys: [...identify.readKeys, ...carriedReadKeys(carried)],
     };
   }
 

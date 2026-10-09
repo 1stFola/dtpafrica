@@ -97,8 +97,13 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  * to every frame along pinned `camera_motion`, per-frame rows with a reason where
  * there is none, and drift measured between keyframes of one shot. Requires
  * `camera_motion`; loads no model (docs/vision/93).
+ *
+ * 1.19.0 -- possession, events and gamestate read a keyframed segment's calibration
+ * frame by frame: a `carried` segment names its keyframes and pitch, and the
+ * calibrate run is pinned (`carried`) beside the segments. A frame no keyframe
+ * reached is unplaced (`calibration_not_carried` in game state) (docs/vision/94).
  */
-export const VISION_CONTRACT_VERSION = "1.18.0";
+export const VISION_CONTRACT_VERSION = "1.19.0";
 
 /**
  * Which worker may serve which stage (docs/vision/58).
@@ -126,10 +131,10 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   track: "1.12.0",
   identify: "1.12.0",
   calibrate: "1.18.0",
-  gamestate: "1.12.0",
+  gamestate: "1.19.0",
   ball_trajectory: "1.13.0",
-  possession: "1.15.0",
-  events: "1.16.0",
+  possession: "1.19.0",
+  events: "1.19.0",
   clip: "1.12.0",
   vlm: "1.12.0",
   train: "1.12.0",
@@ -832,10 +837,15 @@ export type DeclaredSegment = {
   cameraSegmentId: string;
   startMs: number;
   endMs: number;
-  quality: CalibrationQuality | null;
+  /** `carried`: calibrated by keyframes; no single homography, each frame's comes from the pinned run. */
+  quality: CalibrationQuality | "carried" | null;
   homography: Homography | null;
   pitch: PitchDimensions | null;
+  keyframeIds?: string[];
 };
+
+/** A calibrate run as the control plane pins it for a stage that reads frames' calibrations. */
+export type CarriedCalibrationPin = { jobId: string; indexKey: string; indexChecksum: string; chunkKeys: string[] };
 
 export type DeclaredClockAnchor = { half: number; sourceMs: number; endMs: number | null };
 
@@ -844,12 +854,14 @@ export type GameStateJobParams = {
   tracks: { jobId: string; key: string; trackerVersionId: string | null };
   segments: DeclaredSegment[];
   anchors: DeclaredClockAnchor[];
+  /** Present when a segment is `carried`. */
+  carried?: CarriedCalibrationPin;
   chunkMs?: number;
   readKeys: { bucket: "derived" | "models"; key: string }[];
 };
 
 /** Why a row was not placed. */
-export const GAMESTATE_SUPPRESSION_REASONS = ["no_camera_segment", "segment_not_calibrated", "calibration_failed", "beyond_horizon", "off_pitch"] as const;
+export const GAMESTATE_SUPPRESSION_REASONS = ["no_camera_segment", "segment_not_calibrated", "calibration_failed", "calibration_not_carried", "beyond_horizon", "off_pitch"] as const;
 
 /** How far outside the lines, in metres, a placed point may be and still be a position. */
 export const OFF_PITCH_MARGIN_M = 5;

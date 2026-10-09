@@ -174,3 +174,43 @@ def test_real_ball_and_track_handlers_feed_the_possession_handler_without_contra
     assert result.summary["frames"] == 10
     assert track_result.summary["detectionsChecksum"] == ball_result.summary["detectionsChecksum"] == params["detectionsChecksum"]
     assert track_result.summary["cameraCuts"] == ([160] if camera_cut else [])
+
+
+def carried_run(objects, carried_until=6, frames=11):
+    """A calibrate run carrying the proxy's first `carried_until` frames, pinned as the control plane pins it."""
+    chunk = b"".join((json.dumps({"f": f, "cameraSegmentId": "live", "H": [.1, 0, 0, 0, .1, 0, 0, 0, 1] if f < carried_until else None,
+                                  "quality": "good" if f < carried_until else None}) + "\n").encode() for f in range(frames))
+    objects["inference/c/1/c0.jsonl"] = chunk
+    objects["inference/c/1/index.json"] = json.dumps({"role": "calibration_frames", "proxy": {"fps": 25, "sourceOffsetMs": 0}, "chunks": [{"key": "inference/c/1/c0.jsonl", "sha256": sha(chunk)}]}).encode()
+    return {"jobId": "c", "indexKey": "inference/c/1/index.json", "indexChecksum": sha(objects["inference/c/1/index.json"]), "chunkKeys": ["inference/c/1/c0.jsonl"]}
+
+
+def test_calibrated_handler_reads_a_moving_cameras_frames_from_the_pinned_run(fixture, monkeypatch):
+    from dtp_vision_worker import runner
+    from test_possession import clock
+    from test_carried_frames import carried_snapshot
+    ctx, params, index, tracks, balls, objects, uploads, repin = fixture
+    monkeypatch.setattr(runner, "download", lambda ctx, key, path: path.write_bytes(objects[key]) or len(objects[key]))
+    snap = carried_snapshot(clock())
+    snap["carried"] = carried_run(objects)
+    params["constraintMode"], params["calibrationSnapshot"] = "calibrated", snap
+    result = stage.run_possession(ctx)
+    # Five frames of continuity then one candidate where the camera was carried; Unknown after.
+    assert result.summary["candidateFrames"] == 1
+    assert result.summary["reasons"]["calibration_unavailable"] == 4
+    assert ("declared", "inference/c/1/index.json") in ctx.client.asked and ("declared", "inference/c/1/c0.jsonl") in ctx.client.asked
+    assert result.summary["calibrationSnapshot"]["carried"] == snap["carried"]
+
+
+def test_calibrated_handler_refuses_a_run_other_than_pinned(fixture, monkeypatch):
+    from dtp_vision_worker import runner
+    from test_possession import clock
+    from test_carried_frames import carried_snapshot
+    ctx, params, index, tracks, balls, objects, uploads, repin = fixture
+    monkeypatch.setattr(runner, "download", lambda ctx, key, path: path.write_bytes(objects[key]) or len(objects[key]))
+    snap = carried_snapshot(clock())
+    snap["carried"] = carried_run(objects) | {"indexChecksum": "f" * 64}
+    params["constraintMode"], params["calibrationSnapshot"] = "calibrated", snap
+    with pytest.raises(StageRefusal):
+        stage.run_possession(ctx)
+    assert not uploads

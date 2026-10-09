@@ -59,7 +59,7 @@ export function validateEventInferenceArtifact(raw: unknown): { artifact: EventI
         if (event.type !== "carry" || event.actorMatchSquadPlayerId !== null || event.inPlay !== true || !Number.isSafeInteger(event.localTrackId) || Number(event.localTrackId) < 0
           || !Number.isSafeInteger(event.trajectoryId) || Number(event.trajectoryId) < 1 || typeof event.displacementM !== "number" || !Number.isFinite(event.displacementM) || event.displacementM < 2
           || Number(event.endMs) - Number(event.startMs) < 1000 || !camera || camera.kind !== "live_play" || Number(event.startMs) < camera.startMs || Number(event.endMs) > camera.endMs
-          || !p.calibrationSnapshot.segments.some((c) => c.cameraSegmentId === event.cameraSegmentId && ["good", "usable"].includes(String(c.quality)))) problems.push("Carry predictions need continuous calibrated live movement and an unnamed local track.");
+          || !p.calibrationSnapshot.segments.some((c) => c.cameraSegmentId === event.cameraSegmentId && ["good", "usable", "carried"].includes(String(c.quality)))) problems.push("Carry predictions need continuous calibrated live movement and an unnamed local track.");
       }
     }
   }

@@ -14,6 +14,7 @@ import logging
 from typing import Any
 
 from ..config import CONTRACT_VERSION
+from ..carried_frames import load as load_carried
 from ..gamestate import DEFAULT_CHUNK_MS, build, parse_anchors, parse_segments, parse_tracked_frames
 from ..jsonstream import JsonStreamError, fields, items
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
@@ -43,10 +44,22 @@ def _gamestate(ctx: StageContext) -> StageResult:
         raise StageRefusal(f"gamestate chunkMs must be a positive whole number of milliseconds; got {chunk_ms!r}")
     segments = parse_segments(raw_segments)
     anchors = parse_anchors(params.get("anchors") or [])
+    carried_ids = {s.camera_segment_id for s in segments if s.carried}
 
     ctx.progress.set("download")
+    bytes_read = 0
+    carried = None
+    if carried_ids:
+        # Keyframed segments: every frame's own homography, from the calibrate run the control plane pinned.
+        proxy = params.get("proxy") or {}
+        try:
+            carried, bytes_read = load_carried(ctx, params.get("carried"), carried_ids, proxy.get("fps"), proxy.get("sourceOffsetMs"))
+        except ValueError as exc:
+            raise StageRefusal(f"carried calibrations: {exc}") from exc
+    elif params.get("carried") is not None:
+        raise StageRefusal("a calibrate run is pinned but no segment is declared carried")
     tracks_path = ctx.work_dir / "tracks.json"
-    bytes_read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=key), tracks_path)
+    bytes_read += download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=key), tracks_path)
     # Two passes over the file, neither holding it: the small keys first, wherever the
     # writer put them, then the tracks one at a time. See jsonstream.
     try:
@@ -60,7 +73,7 @@ def _gamestate(ctx: StageContext) -> StageResult:
 
     ctx.progress.set("place")
     out_dir = ctx.work_dir / "gamestate"
-    index = build(items(tracks_path, "tracks"), segments, anchors, out_dir, int(chunk_ms), parse_tracked_frames(artifact.get("trackedFrames")))
+    index = build(items(tracks_path, "tracks"), segments, anchors, out_dir, int(chunk_ms), parse_tracked_frames(artifact.get("trackedFrames")), carried)
 
     ctx.progress.set("upload")
     artifacts: list[dict[str, Any]] = []

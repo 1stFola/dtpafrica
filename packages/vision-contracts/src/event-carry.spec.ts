@@ -47,6 +47,36 @@ describe("weight-free carry inference contract", () => {
     if (change === "superseded camera") p.calibrationSnapshot.segments[0].cameraSegmentId = "other";
     expect(validateEventInferenceArtifact(f).artifact).toBeNull();
   });
+  describe("on a moving camera's carried segment", () => {
+    const pin = () => ({ jobId: "calibrate", indexKey: "inference/calibrate/1/index.json", indexChecksum: "a".repeat(64), chunkKeys: ["inference/calibrate/1/c0.jsonl"] });
+    const carried = () => {
+      const f: any = carryArtifactFixture();
+      Object.assign(f.producer.calibrationSnapshot.segments[0], { calibrationId: null, homography: null, quality: "carried", keyframeIds: ["k1", "k2"] });
+      f.producer.calibrationSnapshot.carried = pin();
+      return f;
+    };
+    it("accepts a carry, its keyframes named and the calibrate run pinned", () => {
+      expect(validCarryProducer(carried().producer)).toBe(true);
+      expect(validateEventInferenceArtifact(carried()).artifact?.events).toHaveLength(1);
+    });
+    it.each(["no pin", "pin on still cameras", "a transform", "a calibration id", "no keyframes", "repeated keyframe", "no thresholds", "no pitch", "pin checksum", "no chunks", "repeated chunk", "pin job"])("refuses %s", (change) => {
+      const f = change === "pin on still cameras" ? carryArtifactFixture() as any : carried(), p = f.producer, s = p.calibrationSnapshot.segments[0];
+      if (change === "no pin") delete p.calibrationSnapshot.carried;
+      if (change === "pin on still cameras") p.calibrationSnapshot.carried = pin();
+      if (change === "a transform") s.homography = [.1,0,0,0,.1,0,0,0,1];
+      if (change === "a calibration id") s.calibrationId = "cal";
+      if (change === "no keyframes") s.keyframeIds = [];
+      if (change === "repeated keyframe") s.keyframeIds = ["k1", "k1"];
+      if (change === "no thresholds") s.thresholdsVersion = null;
+      if (change === "no pitch") s.pitch = null;
+      if (change === "pin checksum") p.calibrationSnapshot.carried.indexChecksum = "A".repeat(64);
+      if (change === "no chunks") p.calibrationSnapshot.carried.chunkKeys = [];
+      if (change === "repeated chunk") p.calibrationSnapshot.carried.chunkKeys = ["c", "c"];
+      if (change === "pin job") p.calibrationSnapshot.carried.jobId = "";
+      expect(validCarryProducer(p)).toBe(false);
+      expect(validateEventInferenceArtifact(f).artifact).toBeNull();
+    });
+  });
   it("allows wholly Unknown cameras without numerical evidence in an explicit zero-output run", () => {
     const f: any = carryArtifactFixture(); f.events = [];
     Object.assign(f.producer.calibrationSnapshot.segments[0], { calibrationId: null, quality: null, thresholdsVersion: null, homography: null, pitch: null });

@@ -113,7 +113,7 @@ export async function readPossessionEvidence(db: Pick<PrismaClient, "visionJob" 
       if (row.state === "candidate") {
         if (!count(row.localTrackId) || row.reason !== null || !confidence(row.evidenceConfidence) || row.trajectoryId === null || !camera || camera.kind !== "live_play" || Number(camera.startMs) > row.startMs || Number(camera.endMs) < row.endMs) throw bad("A candidate needs a track, observed trajectory and a wholly live camera window.");
         candidateFrames += row.frames;
-        if (calibrated && !calibrationRows.some((c) => c.cameraSegmentId === row.cameraSegmentId && ["good", "usable"].includes(String(c.quality)))) throw bad("A calibrated candidate requires a passing camera calibration.");
+        if (calibrated && !calibrationRows.some((c) => c.cameraSegmentId === row.cameraSegmentId && ["good", "usable", "carried"].includes(String(c.quality)))) throw bad("A calibrated candidate requires a passing or carried camera calibration.");
       } else if (row.state === "unknown") {
         if (row.localTrackId !== null || row.evidenceConfidence !== null || ![...POSSESSION_UNKNOWN_REASONS, ...(calibrated ? POSSESSION_CALIBRATED_REASONS : [])].includes(row.reason as never)) throw bad("Unknown segments cannot name a possessor or confidence.");
         if (row.reason === "ball_lost" ? row.trajectoryId !== null : row.trajectoryId === null || !camera || camera.kind !== "live_play") throw bad("Unknown reason and observed/lost trajectory evidence disagree.");

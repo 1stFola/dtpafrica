@@ -97,3 +97,34 @@ def test_refuses_incompatible_inputs_without_upload(fixture, change):
     if change == "chunk_sha": objects["chunk"] += b" "
     with pytest.raises(StageRefusal): stage.run_events(ctx)
     assert uploaded == {}
+
+
+def test_a_carry_on_a_moving_camera_is_judged_through_the_run_its_possession_was(fixture, monkeypatch):
+    from dtp_vision_worker import runner
+    ctx, params, index, tracks, rows, objects, uploaded, repin = fixture
+    # Carried for frames 0-39 only: the carry ends where the calibration does.
+    chunk = b"".join((json.dumps({"f": f, "cameraSegmentId": "cam", "H": [.1, 0, 0, 0, .1, 0, 0, 0, 1], "quality": "good"}) + "\n").encode() for f in range(40))
+    objects["c0"] = chunk
+    objects["cindex"] = json.dumps({"role": "calibration_frames", "proxy": {"fps": 25, "sourceOffsetMs": 0}, "chunks": [{"key": "c0", "sha256": hashlib.sha256(chunk).hexdigest()}]}).encode()
+    index["calibrationSnapshot"]["segments"][0] |= {"quality": "carried", "calibrationId": None, "homography": None, "keyframeIds": ["k1"]}
+    index["calibrationSnapshot"]["carried"] = {"jobId": "c", "indexKey": "cindex", "indexChecksum": hashlib.sha256(objects["cindex"]).hexdigest(), "chunkKeys": ["c0"]}
+    repin()
+    monkeypatch.setattr(runner, "download", lambda ctx, key, path: path.write_bytes(objects[key]) or len(objects[key]))
+    stage.run_events(ctx)
+    artifact = json.loads(uploaded["inference/events/1/events.json"])
+    assert [(e["startMs"], e["endMs"]) for e in artifact["events"]] == [(200, 1560)]
+    assert ("declared", "cindex") in ctx.client.asked and ("declared", "c0") in ctx.client.asked
+    assert artifact["producer"]["calibrationSnapshot"]["carried"] == index["calibrationSnapshot"]["carried"]
+
+
+def test_a_carried_possession_whose_run_changed_is_refused(fixture, monkeypatch):
+    from dtp_vision_worker import runner
+    ctx, params, index, tracks, rows, objects, uploaded, repin = fixture
+    objects["cindex"] = b"{}"
+    index["calibrationSnapshot"]["segments"][0] |= {"quality": "carried", "calibrationId": None, "homography": None, "keyframeIds": ["k1"]}
+    index["calibrationSnapshot"]["carried"] = {"jobId": "c", "indexKey": "cindex", "indexChecksum": "f" * 64, "chunkKeys": ["c0"]}
+    repin()
+    monkeypatch.setattr(runner, "download", lambda ctx, key, path: path.write_bytes(objects[key]) or len(objects[key]))
+    with pytest.raises(StageRefusal):
+        stage.run_events(ctx)
+    assert not uploaded

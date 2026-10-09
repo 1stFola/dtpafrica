@@ -6,7 +6,9 @@ from ..ball_trajectory import Smoother
 from ..event_carry import VERSION, MANIFEST_CHECKSUM, propose
 from ..jsonstream import fields, items, JsonStreamError
 from ..media import sha256_file
+from ..carried_frames import load as load_carried
 from ..possession import PlayerIndex
+from ..possession_constraints import carried_segment_ids
 from ..runner import StageRefusal, StageResult, download, upload
 
 MAX_BYTES = 256 * 1024
@@ -58,6 +60,11 @@ def run_events(ctx):
         if header.get("proxyDurationMs") != original.get("proxyDurationMs") or not isinstance(header.get("cameraCuts"), list) or any(s["startMs"] not in header["cameraCuts"] for s in clock.segments[1:]):
             raise ValueError("player evidence must break at every camera boundary")
         players = PlayerIndex(ctx.work_dir / "players.sqlite", clock, items(track_path, "tracks"))
+        carried = None
+        if carried_segment_ids(index["calibrationSnapshot"]):
+            # The possession run's pinned calibrate run: the same per-frame homographies it was judged with.
+            carried, carried_read = load_carried(ctx, index["calibrationSnapshot"].get("carried"), carried_segment_ids(index["calibrationSnapshot"]), clock.fps, clock.offset)
+            read += carried_read
 
         def rows():
             nonlocal read
@@ -81,7 +88,7 @@ def run_events(ctx):
             if count != index.get("segments"):
                 raise ValueError("possession index row count differs")
         ctx.progress.set("propose")
-        events = propose(clock, rows(), players, index["calibrationSnapshot"], index["footballConfig"])
+        events = propose(clock, rows(), players, index["calibrationSnapshot"], index["footballConfig"], carried)
         producer = {"algorithm": VERSION, "manifestChecksum": MANIFEST_CHECKSUM, "possessionJobId": source["jobId"], "possessionIndexChecksum": source["indexChecksum"],
                     "tracksChecksum": tracks["checksum"], "calibrationSnapshot": index["calibrationSnapshot"], "cameraSegments": index["cameraSegments"]}
         payload = {"schemaVersion": "event-inference/v2", "jobId": ctx.job.job_id, "attemptNumber": ctx.job.attempt_number, "videoAssetId": inputs["videoAssetId"],

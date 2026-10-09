@@ -75,6 +75,11 @@ class Segment:
     def passing(self) -> bool:
         return self.quality in PASSING_QUALITIES and self.homography is not None and len(self.homography) == 9
 
+    @property
+    def carried(self) -> bool:
+        """Calibrated by keyframes: each frame's homography is read from the pinned calibrate run."""
+        return self.quality == "carried"
+
 
 @dataclass(frozen=True)
 class Anchor:
@@ -158,8 +163,13 @@ def segment_at(segments: Sequence[Segment], source_ms: int) -> Segment | None:
     return SegmentIndex(segments).at(source_ms)
 
 
-def place_track(track: dict[str, Any], segments: SegmentIndex, anchors: Sequence[Anchor]) -> list[dict[str, Any]]:
-    """One flat row per position of one track, in the track's own order."""
+def place_track(track: dict[str, Any], segments: SegmentIndex, anchors: Sequence[Anchor], carried: Any = None) -> list[dict[str, Any]]:
+    """One flat row per position of one track, in the track's own order.
+
+    On a segment calibrated by keyframes the position is placed through its own
+    frame's carried homography (docs/vision/94); a frame no keyframe reached is
+    suppressed as `calibration_not_carried`.
+    """
     rows: list[dict[str, Any]] = []
     local_id = int(track["localTrackId"])
     cls = str(track.get("class", "player"))
@@ -182,15 +192,24 @@ def place_track(track: dict[str, Any], segments: SegmentIndex, anchors: Sequence
             "reason": None,
         }
         seg = segments.at(source_ms)
+        homography = None
+        if seg is not None and seg.carried:
+            homography = carried.at_ms(source_ms, seg.camera_segment_id) if carried is not None else None
+        elif seg is not None and seg.passing:
+            homography = seg.homography
         if seg is None:
             row["reason"] = "no_camera_segment"
-        elif not seg.passing:
+        elif seg.carried and homography is None:
+            row["camera_segment_id"] = seg.camera_segment_id
+            row["quality"] = seg.quality
+            row["reason"] = "calibration_not_carried"
+        elif not seg.carried and not seg.passing:
             row["camera_segment_id"] = seg.camera_segment_id
             row["quality"] = seg.quality
             row["reason"] = "calibration_failed" if seg.quality == "failed" else "segment_not_calibrated"
         else:
-            assert seg.homography is not None
-            point = project(seg.homography, float(box["x"]) + float(box["width"]) / 2, float(box["y"]) + float(box["height"]))
+            assert homography is not None
+            point = project(homography, float(box["x"]) + float(box["width"]) / 2, float(box["y"]) + float(box["height"]))
             row["camera_segment_id"] = seg.camera_segment_id
             row["quality"] = seg.quality
             if point is None:
@@ -369,6 +388,7 @@ def build(
     out_dir: Path,
     chunk_ms: int = DEFAULT_CHUNK_MS,
     tracked_frames: Sequence[tuple[int, int]] | None = None,
+    carried: Any = None,
 ) -> dict[str, Any]:
     """Place, chunk, write, and index. Returns the index, with chunk file names relative to `out_dir`.
 
@@ -393,7 +413,7 @@ def build(
     for t in tracks:
         track_count += 1
         groups: dict[int, list[list[Any]]] = {}
-        for row in place_track(t, index, anchors):
+        for row in place_track(t, index, anchors, carried):
             groups.setdefault(int(row["source_ms"]) // chunk_ms, []).append([row[name] for name in _COLUMNS])
         for chunk_index, batch in groups.items():
             touched.add(chunk_index)
