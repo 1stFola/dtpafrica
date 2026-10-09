@@ -76,6 +76,24 @@ BATCH_SIZE = 8
 #: The artifact role the control plane looks for (`DETECTION_ARTIFACT_ROLE`).
 ARTIFACT_ROLE = "detections"
 
+#: The detector configs a model version may name (`DETECTOR_CONFIGS` in
+#: packages/vision-contracts/src/jobs.ts). The worker runs no other: a version naming
+#: something else would otherwise be run as whatever this file defaults to.
+DETECTOR_CONFIG_BASE = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1"
+DETECTOR_CONFIG_BALL_TILES = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v1"
+DETECTOR_CONFIGS = (DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES)
+
+#: The ball-tiles pass (docs/vision/95). The ball on grassroots footage is ~14 px across;
+#: the detector resizes a 720p frame's shorter side to 800, and at that scale it found
+#: the ball on 2 of 32 frames of a shot where it lies in open grass. Four overlapping
+#: corner tiles, each 60% of the frame, are each resized the same way -- about 1.7x the
+#: ball -- and found it on 9. Only ball boxes come from the tiles, and only confident
+#: ones: every tiled box under 0.7 on the pilot was a boot, a leg or a head.
+BALL_TILE_FRACTION = 0.6
+BALL_TILE_MIN_SCORE = 0.7
+#: A tiled ball overlapping a ball the whole frame already found is the same ball.
+BALL_MERGE_IOU = 0.3
+
 #: One frame's raw detections, as the detector hands them back:
 #: [{label, score, box:[x1,y1,x2,y2]}]
 FrameDetections = list[dict[str, Any]]
@@ -210,6 +228,54 @@ def detect_frames(
     )
 
 
+def ball_tile_windows(width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """The four corner tiles (x0, y0, w, h), each BALL_TILE_FRACTION of the frame, overlapping in the middle."""
+    tw, th = int(width * BALL_TILE_FRACTION), int(height * BALL_TILE_FRACTION)
+    return [(x0, y0, tw, th) for x0 in (0, width - tw) for y0 in (0, height - th)]
+
+
+def _iou(a: Sequence[float], b: Sequence[float]) -> float:
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def merge_ball_tiles(whole: FrameDetections, tiled: FrameDetections) -> tuple[FrameDetections, int]:
+    """The whole frame's boxes, plus the confident tiled balls it did not already have.
+
+    `tiled` is in frame coordinates. Its people are ignored: the whole frame sees them
+    well, and a person cut by a tile edge would come back as a second, smaller person.
+    A tiled ball overlapping a kept ball (IoU >= BALL_MERGE_IOU) is that ball; the
+    whole frame's box is kept, so the tiles add frames with a ball, never move one.
+    """
+    kept = list(whole)
+    balls = [d["box"] for d in whole if d["label"] == "sports ball"]
+    added = 0
+    for d in sorted(tiled, key=lambda t: -t["score"]):
+        if d["label"] != "sports ball" or d["score"] < BALL_TILE_MIN_SCORE:
+            continue
+        if any(_iou(d["box"], b) >= BALL_MERGE_IOU for b in balls):
+            continue
+        kept.append(d)
+        balls.append(d["box"])
+        added += 1
+    return kept, added
+
+
+def detector_config(params: dict[str, Any]) -> str:
+    """The detector config the control plane named for this job's model version, or a refusal."""
+    detector = params.get("detector")
+    config = detector.get("configKey") if isinstance(detector, dict) else None
+    if config not in DETECTOR_CONFIGS:
+        raise StageRefusal(
+            f"detect needs params.detector.configKey, one of {', '.join(DETECTOR_CONFIGS)}; got {config!r}. "
+            "The control plane sends the config the model version names (contract 1.20.0)."
+        )
+    return config
+
+
 def run_detect(ctx: StageContext) -> StageResult:
     return _detect(ctx, detector=None)
 
@@ -260,6 +326,10 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     # ignored in favour of the default.
     params = inputs.get("params") or {}
     fps = float(params.get("sampleFps") or DETECT_SAMPLE_FPS)
+    # Before any download: a job naming a detector this worker cannot run is refused,
+    # not run as the plain detector under another version's name.
+    config = detector_config(params)
+    ball_tiles = config == DETECTOR_CONFIG_BALL_TILES
 
     ctx.progress.set("download")
     # The proxy, never the source: it is constant-frame-rate, so a frame index maps to
@@ -278,7 +348,7 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     log.info("sampled %d frames at %s fps", len(frames), fps)
 
     ctx.progress.set("detect")
-    run = detector or _torchvision_detector()
+    run = detector or _torchvision_detector(ball_tiles=ball_tiles)
     inference_started = time.perf_counter()
     outcome = detect_frames(
         frames,
@@ -301,6 +371,9 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     # then refuses any later completion whose hash differs. A test detector has none,
     # and reports none, rather than a plausible-looking fake.
     weights_sha256 = getattr(run, "weights_sha256", None)
+    # How many balls the tiles added: the measure of what the pass is worth on this footage.
+    tile_balls = getattr(run, "tile_balls_added", 0) if ball_tiles else None
+    tiles = {"fraction": BALL_TILE_FRACTION, "minScore": BALL_TILE_MIN_SCORE, "mergeIou": BALL_MERGE_IOU, "ballsAdded": tile_balls} if ball_tiles else None
 
     ctx.progress.set("upload")
     key = f"{ctx.job.output_prefix}detections.json"
@@ -318,6 +391,8 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
         "sourceChecksum": params.get("sourceChecksum"),
         "sampleFps": fps,
         "minScore": MIN_SCORE,
+        "detectorConfig": config,
+        "ballTiles": tiles,
         "classes": dict(DETECTION_CLASS_BY_LABEL),
         "detector": {"weightsSha256": weights_sha256, "device": device},
         "frames": outcome.frames,
@@ -345,6 +420,8 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
             "modelVersionId": model_version_id,
             "datasetVersionId": dataset_version_id,
             "weightsSha256": weights_sha256,
+            "detectorConfig": config,
+            "ballTiles": tiles,
             "proxyFps": proxy_fps,
             "sourceOffsetMs": source_offset_ms,
             "proxyChecksum": proxy_checksum,
@@ -365,8 +442,11 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     )
 
 
-def _torchvision_detector() -> Detector:
+def _torchvision_detector(ball_tiles: bool = False) -> Detector:
     """COCO-pretrained Faster R-CNN, on the GPU when there is one.
+
+    With `ball_tiles`, each frame is also run as four corner tiles and the confident
+    tiled balls are merged in (`merge_ball_tiles`): about five times the inference.
 
     Imported here rather than at module scope so the CPU image can load the stage
     registry without the torch stack installed.
@@ -393,34 +473,53 @@ def _torchvision_detector() -> Detector:
     categories = weights.meta["categories"]
     transforms = weights.transforms()
 
+    def kept(output: dict[str, Any], dx: int = 0, dy: int = 0) -> FrameDetections:
+        frame: FrameDetections = []
+        for box, label, score in zip(
+            output["boxes"].tolist(),
+            output["labels"].tolist(),
+            output["scores"].tolist(),
+            strict=True,
+        ):
+            if score < MIN_SCORE:
+                continue
+            name = categories[label]
+            if name not in KEEP_CLASSES:
+                continue
+            x1, y1, x2, y2 = (float(v) for v in box)
+            frame.append(
+                {
+                    "label": name,
+                    "score": round(float(score), 4),
+                    "box": [round(x1 + dx, 1), round(y1 + dy, 1), round(x2 + dx, 1), round(y2 + dy, 1)],
+                }
+            )
+        return frame
+
     def run(batch: Sequence[Path]) -> list[FrameDetections]:
         images = [transforms(read_image(str(path))).to(device) for path in batch]
         with torch.inference_mode():
             outputs = model(images)
+        results = [kept(output) for output in outputs]
+        if not ball_tiles:
+            return results
 
-        results: list[FrameDetections] = []
-        for output in outputs:
-            frame: FrameDetections = []
-            for box, label, score in zip(
-                output["boxes"].tolist(),
-                output["labels"].tolist(),
-                output["scores"].tolist(),
-                strict=True,
-            ):
-                if score < MIN_SCORE:
-                    continue
-                name = categories[label]
-                if name not in KEEP_CLASSES:
-                    continue
-                frame.append(
-                    {
-                        "label": name,
-                        "score": round(float(score), 4),
-                        "box": [round(float(v), 1) for v in box],
-                    }
-                )
-            results.append(frame)
-        return results
+        merged: list[FrameDetections] = []
+        for image, whole in zip(images, results, strict=True):
+            _, height, width = image.shape
+            windows = ball_tile_windows(width, height)
+            crops = [image[:, y0 : y0 + h, x0 : x0 + w] for x0, y0, w, h in windows]
+            with torch.inference_mode():
+                tiled_outputs = model(crops)
+            tiled: FrameDetections = []
+            for (x0, y0, _w, _h), output in zip(windows, tiled_outputs, strict=True):
+                tiled += kept(output, x0, y0)
+            frame, added = merge_ball_tiles(whole, tiled)
+            run.tile_balls_added += added  # type: ignore[attr-defined]
+            merged.append(frame)
+        return merged
+
+    run.tile_balls_added = 0  # type: ignore[attr-defined]
 
     # Read by `_detect` to decide whether the time it just measured was GPU time. An
     # attribute rather than a return value so `Detector` stays a plain callable and a test

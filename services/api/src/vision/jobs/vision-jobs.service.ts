@@ -10,6 +10,8 @@ import {
   DEFAULT_RESOURCE_CLASS,
   CAMERA_SEGMENT_KINDS,
   DETECTION_ARTIFACT_ROLE,
+  DETECTOR_CONFIGS,
+  type DetectJobParams,
   JOB_TYPE_PREREQUISITES,
   MIN_TRACK_SAMPLE_FPS,
   TRACK_ARTIFACT_ROLE,
@@ -111,6 +113,15 @@ export class VisionJobsService {
     await this.assertPrerequisitesMet(params.type, asset.id);
 
     const model = await this.models.resolveForJob(params.type, params.modelVersionId);
+    // Detect runs the config its version names, and only one a worker can run.
+    let detector: DetectJobParams | null = null;
+    if (params.type === "detect" && model) {
+      const configKey = model.configKey;
+      if (!configKey || !(DETECTOR_CONFIGS as readonly string[]).includes(configKey))
+        throw refusal(409, "DetectorConfigUnknown", `Model version ${model.id} names detector config ${JSON.stringify(configKey)}, which no worker runs.`,
+          `Register the version with one of: ${DETECTOR_CONFIGS.join(", ")}.`);
+      detector = { detector: { configKey: configKey as DetectJobParams["detector"]["configKey"] } };
+    }
     // Any stage that, however indirectly, follows transcode reads the proxy.
     const proxy = dependsOn(params.type, "transcode") ? await this.proxyClock(asset.id) : null;
     const track = params.type === "track" ? await this.trackInputs(asset.id, params.params) : null;
@@ -130,7 +141,7 @@ export class VisionJobsService {
     if (params.type === "calibrate" && resourceClass !== "cpu_small") throw refusal(400, "CalibrateCpuOnly", "Carrying calibrations along camera motion is matrix arithmetic on CPU.", "Use cpu_small.");
     if (params.type === "events" && resourceClass !== "cpu_small") throw refusal(400, "EventsCpuOnly", "Carry proposals transform original observations on CPU.", "Use cpu_small.");
 
-    return { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, resourceClass };
+    return { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, detector, resourceClass };
   }
 
   /**
@@ -177,7 +188,7 @@ export class VisionJobsService {
   }
 
   async enqueueForAsset(params: AssetJobRequest, actor?: AdminAuthContext): Promise<{ id: string }> {
-    const { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, resourceClass } = await this.prepareForAsset(params);
+    const { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, detector, resourceClass } = await this.prepareForAsset(params);
     // The id is generated here so the output prefix can be derived from it in the
     // same insert: an artifact key then names the job that produced it, with no
     // second write to correct.
@@ -206,6 +217,7 @@ export class VisionJobsService {
         ...(motion ?? {}),
         ...(carried ?? {}),
         ...(events ?? {}),
+        ...(detector ?? {}),
       },
       // Attempt 1 by construction; a retry writes to its own attempt prefix.
       outputPrefix: visionKeys.inferencePrefix(id, 1),
@@ -771,6 +783,7 @@ export const RESERVED_INPUT_KEYS = [
   "possessionSource",
   "windowStartMs",
   "windowEndMs",
+  "detector",
 ] as const;
 
 export function withoutReservedInputs(params: Record<string, unknown> | undefined): Record<string, unknown> {

@@ -1,6 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
+import { DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BASE, CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { VisionJobsService } from "./vision-jobs.service";
 
 /**
@@ -65,7 +65,7 @@ beforeEach(() => {
 
 describe("a model-bound job carries the version it must run", () => {
   it("writes the resolved version onto the job and into the audit record", async () => {
-    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect" });
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey: DETECTOR_CONFIG_BASE });
 
     await service.enqueueForAsset({ type: "detect", videoAssetId: ASSET });
 
@@ -75,9 +75,26 @@ describe("a model-bound job carries the version it must run", () => {
   });
 
   it("forwards an explicit version to the registry rather than deciding itself", async () => {
-    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect" });
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey: DETECTOR_CONFIG_BASE });
     await service.enqueueForAsset({ type: "detect", videoAssetId: ASSET, modelVersionId: MODEL_VERSION });
     expect(mockModels.resolveForJob).toHaveBeenCalledWith("detect", MODEL_VERSION);
+  });
+
+  it("tells detect the config its version names, which a caller cannot forge", async () => {
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey: DETECTOR_CONFIG_BALL_TILES });
+    await service.enqueueForAsset({ type: "detect", videoAssetId: ASSET, params: { detector: { configKey: DETECTOR_CONFIG_BASE } } });
+    expect(enqueued().inputSpec.detector).toEqual({ configKey: DETECTOR_CONFIG_BALL_TILES });
+  });
+
+  it("strips a detector config a caller puts on any other job: it is the control plane's", async () => {
+    await service.enqueueForAsset({ type: "probe", videoAssetId: ASSET, params: { detector: { configKey: DETECTOR_CONFIG_BALL_TILES } } });
+    expect(enqueued().inputSpec).not.toHaveProperty("detector");
+  });
+
+  it.each([null, "builtin/torchvision/retinanet/COCO_V1"])("refuses a detector version whose config no worker runs: %s", async (configKey) => {
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey });
+    await expect(service.enqueueForAsset({ type: "detect", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "DetectorConfigUnknown" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
   });
 
   it("queues nothing when the registry refuses", async () => {

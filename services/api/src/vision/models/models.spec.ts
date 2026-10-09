@@ -1,3 +1,4 @@
+import { DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BASE } from "@dtp/vision-contracts";
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -248,9 +249,11 @@ describe("resolving the model a job must run", () => {
 
 describe("verifying a completion's provenance", () => {
   const job = { id: "job-1", type: "detect" as const, modelVersionId: VERSION };
+  /** What a 1.20 detect worker reports: the config it ran. */
+  const RAN = { detectorConfig: DETECTOR_CONFIG_BASE };
 
   beforeEach(() => {
-    mockPrisma.visionModelVersion.findUnique.mockResolvedValue({ id: VERSION, weightsChecksum: null });
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue({ id: VERSION, weightsChecksum: null, configKey: DETECTOR_CONFIG_BASE });
   });
 
   it("accepts a stage that runs no model and reports none", async () => {
@@ -297,7 +300,7 @@ describe("verifying a completion's provenance", () => {
   it("accepts the dispatched version and notes an unreported checksum as a gap", async () => {
     const verdict = await service.verifyCompletion(job, {
       modelVersionIds: [VERSION],
-      summary: { modelVersionId: VERSION, weightsSha256: null },
+      summary: { ...RAN, modelVersionId: VERSION, weightsSha256: null },
     });
     expect(verdict).toEqual({ ok: true, modelVersionId: VERSION, weights: { outcome: "unreported", sha256: null } });
   });
@@ -305,7 +308,7 @@ describe("verifying a completion's provenance", () => {
   it("offers a first-seen checksum to be recorded, without writing it itself", async () => {
     const verdict = await service.verifyCompletion(job, {
       modelVersionIds: [VERSION],
-      summary: { modelVersionId: VERSION, weightsSha256: SHA.toUpperCase() },
+      summary: { ...RAN, modelVersionId: VERSION, weightsSha256: SHA.toUpperCase() },
     });
     expect(verdict).toEqual({ ok: true, modelVersionId: VERSION, weights: { outcome: "recorded", sha256: SHA } });
     // Read-only: the controller records after the job has succeeded, so a refused
@@ -314,19 +317,19 @@ describe("verifying a completion's provenance", () => {
   });
 
   it("verifies a checksum that matches the pinned one", async () => {
-    mockPrisma.visionModelVersion.findUnique.mockResolvedValue({ id: VERSION, weightsChecksum: SHA });
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue({ id: VERSION, weightsChecksum: SHA, configKey: DETECTOR_CONFIG_BASE });
     const verdict = await service.verifyCompletion(job, {
       modelVersionIds: [VERSION],
-      summary: { modelVersionId: VERSION, weightsSha256: SHA },
+      summary: { ...RAN, modelVersionId: VERSION, weightsSha256: SHA },
     });
     expect(verdict).toMatchObject({ ok: true, weights: { outcome: "verified" } });
   });
 
   it("refuses weights that differ from the pinned ones: a URL can serve different bytes", async () => {
-    mockPrisma.visionModelVersion.findUnique.mockResolvedValue({ id: VERSION, weightsChecksum: SHA });
+    mockPrisma.visionModelVersion.findUnique.mockResolvedValue({ id: VERSION, weightsChecksum: SHA, configKey: DETECTOR_CONFIG_BASE });
     const verdict = await service.verifyCompletion(job, {
       modelVersionIds: [VERSION],
-      summary: { modelVersionId: VERSION, weightsSha256: "b".repeat(64) },
+      summary: { ...RAN, modelVersionId: VERSION, weightsSha256: "b".repeat(64) },
     });
     expect(verdict).toMatchObject({ ok: false, error: "WeightsMismatch" });
   });
@@ -334,9 +337,17 @@ describe("verifying a completion's provenance", () => {
   it("refuses a checksum that is not a digest rather than recording garbage", async () => {
     const verdict = await service.verifyCompletion(job, {
       modelVersionIds: [VERSION],
-      summary: { modelVersionId: VERSION, weightsSha256: "not-a-digest" },
+      summary: { ...RAN, modelVersionId: VERSION, weightsSha256: "not-a-digest" },
     });
     expect(verdict).toMatchObject({ ok: false, error: "WeightsMismatch" });
+  });
+
+  it.each([
+    ["another config", { detectorConfig: DETECTOR_CONFIG_BALL_TILES }],
+    ["none: a worker older than 1.20", {}],
+  ])("refuses detections from a detector config other than the version's: %s", async (_label, ran) => {
+    const verdict = await service.verifyCompletion(job, { modelVersionIds: [VERSION], summary: { ...ran, modelVersionId: VERSION, weightsSha256: null } });
+    expect(verdict).toMatchObject({ ok: false, error: "ProvenanceMismatch" });
   });
 
   it("refuses a version that was deleted between dispatch and completion", async () => {

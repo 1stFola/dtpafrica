@@ -199,3 +199,12 @@ def test_every_stage_in_the_compatibility_table_is_served_by_this_image() -> Non
     mine = tuple(int(p) for p in CONTRACT_VERSION.split("."))
     for stage, since in entries.items():
         assert tuple(int(p) for p in since.split(".")) <= mine, f"{stage} changed in {since}; this image speaks {CONTRACT_VERSION}"
+
+
+def test_detector_configs_and_ball_tile_score_match_typescript() -> None:
+    from dtp_vision_worker.stages import detect
+
+    source = _read("jobs.ts")
+    for name in ("DETECTOR_CONFIG_BASE", "DETECTOR_CONFIG_BALL_TILES"):
+        assert re.search(rf'{name}\s*=\s*"{re.escape(getattr(detect, name))}"', source), name
+    assert re.search(rf"BALL_TILE_MIN_SCORE\s*=\s*{detect.BALL_TILE_MIN_SCORE}\b", source)

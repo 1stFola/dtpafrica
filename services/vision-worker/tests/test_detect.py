@@ -32,7 +32,8 @@ MODEL = "6a1b2c3d-0000-4000-8000-000000000001"
 DISPATCHED = {
     "videoAssetId": "asset-1",
     "modelVersionIds": [MODEL],
-    "params": {"videoAssetId": "asset-1", "proxy": {"fps": 25, "sourceOffsetMs": 0}, "sourceChecksum": "a" * 64},
+    "params": {"videoAssetId": "asset-1", "proxy": {"fps": 25, "sourceOffsetMs": 0}, "sourceChecksum": "a" * 64,
+               "detector": {"configKey": detect_stage.DETECTOR_CONFIG_BASE}},
 }
 
 
@@ -498,3 +499,73 @@ def test_the_real_detector_advertises_its_device_and_its_weights():
     assert "run.weights_sha256 = _loaded_weights_sha256(weights.url)" in body, (
         "_torchvision_detector must report the checksum of the weights it loaded."
     )
+
+
+# ── The detector config, and the ball-tiles pass (docs/vision/95) ─────────────
+
+
+@pytest.mark.parametrize("detector", [None, {}, {"configKey": "builtin/torchvision/retinanet/COCO_V1"}, "plain"])
+def test_refuses_a_detector_config_it_cannot_run_before_downloading(ctx, monkeypatch, detector):
+    params = {k: v for k, v in DISPATCHED["params"].items() if k != "detector"}
+    if detector is not None:
+        params["detector"] = detector
+    ctx.job = spec({**DISPATCHED, "params": params})
+    asked = []
+    monkeypatch.setattr(detect_stage, "download", lambda *_a: asked.append(1) or 0)
+    with pytest.raises(StageRefusal, match="detector.configKey"):
+        detect_stage._detect(ctx, detector=lambda batch: [[] for _ in batch])
+    assert not asked
+
+
+@pytest.mark.parametrize("config", ["DETECTOR_CONFIG_BASE", "DETECTOR_CONFIG_BALL_TILES"])
+def test_reports_the_config_it_ran_in_the_artifact_and_the_summary(ctx, monkeypatch, config):
+    stub_frames(monkeypatch, 2)
+    key = getattr(detect_stage, config)
+    ctx.job = spec(dispatched(detector={"configKey": key}))
+
+    def run(batch):
+        return [[] for _ in batch]
+    run.tile_balls_added = 3
+    result = detect_stage._detect(ctx, detector=run)
+    assert result.summary["detectorConfig"] == key == ctx.uploaded["payload"]["detectorConfig"]
+    tiles = result.summary["ballTiles"]
+    if config == "DETECTOR_CONFIG_BASE":
+        assert tiles is None
+    else:
+        assert tiles == {"fraction": 0.6, "minScore": 0.7, "mergeIou": 0.3, "ballsAdded": 3} == ctx.uploaded["payload"]["ballTiles"]
+
+
+def test_ball_tiles_are_four_overlapping_corners_covering_the_frame():
+    windows = detect_stage.ball_tile_windows(1280, 720)
+    assert windows == [(0, 0, 768, 432), (0, 288, 768, 432), (512, 0, 768, 432), (512, 288, 768, 432)]
+    # Every pixel is in some tile, and the middle in all four.
+    for x, y in [(0, 0), (1279, 719), (640, 360), (1279, 0), (0, 719)]:
+        assert any(x0 <= x < x0 + w and y0 <= y < y0 + h for x0, y0, w, h in windows)
+    assert all(x0 <= 640 < x0 + w and y0 <= 360 < y0 + h for x0, y0, w, h in windows)
+
+
+def ball(x, y, score, size=14):
+    return {"label": "sports ball", "score": score, "box": [x, y, x + size, y + size]}
+
+
+def test_tiles_add_a_confident_ball_the_whole_frame_missed():
+    person = {"label": "person", "score": 0.99, "box": [100, 100, 140, 200]}
+    merged, added = detect_stage.merge_ball_tiles([person], [ball(500, 400, 0.98)])
+    assert merged == [person, ball(500, 400, 0.98)] and added == 1
+
+
+def test_tiles_never_move_or_double_a_ball_the_whole_frame_found():
+    whole = [ball(500, 400, 0.5)]
+    merged, added = detect_stage.merge_ball_tiles(whole, [ball(502, 401, 0.99), ball(501, 400, 0.95)])
+    assert merged == whole and added == 0
+
+
+def test_tiles_keep_one_of_two_tiles_seeing_the_same_ball_the_more_confident():
+    merged, added = detect_stage.merge_ball_tiles([], [ball(501, 400, 0.8), ball(500, 400, 0.97)])
+    assert merged == [ball(500, 400, 0.97)] and added == 1
+
+
+def test_tiles_add_no_unconfident_ball_and_no_person():
+    tiled = [ball(500, 400, 0.69), {"label": "person", "score": 0.99, "box": [0, 0, 30, 90]}]
+    assert detect_stage.merge_ball_tiles([], tiled) == ([], 0)
+    assert detect_stage.merge_ball_tiles([], [ball(500, 400, 0.7)])[1] == 1

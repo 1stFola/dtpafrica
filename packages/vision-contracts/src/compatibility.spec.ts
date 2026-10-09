@@ -41,30 +41,36 @@ describe("which worker may serve which stage", () => {
   const allBut = (...withheld: string[]) => ({ compatible: true, stages: VISION_JOB_TYPES.filter((type) => !withheld.includes(type)) });
   // Since 1.19.0 possession, events and gamestate read keyframed calibrations frame by frame.
   const perFrame = ["possession", "events", "gamestate"];
+  // Since 1.20.0 detect runs the config its model version names, and reports it.
+  const configured = ["detect"];
 
   it("keeps older workers on their existing stages and withholds the new ball stage", () => {
-    expect(workerCompatibility("1.12.0", "1.13.0")).toEqual(allBut("ball_trajectory", "camera_motion", "calibrate", ...perFrame));
+    expect(workerCompatibility("1.12.0", "1.13.0")).toEqual(allBut("ball_trajectory", "camera_motion", "calibrate", ...perFrame, ...configured));
   });
   it("withholds possession from a worker that only knows ball trajectories", () => {
-    expect(workerCompatibility("1.13.0", "1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame));
+    expect(workerCompatibility("1.13.0", "1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
   });
   it("withholds changed possession inputs from a 1.14 worker, while other stages remain available", () => {
-    expect(workerCompatibility("1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame));
+    expect(workerCompatibility("1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
   });
   it("withholds carry inputs from a 1.15 worker while keeping its other stages", () => {
-    expect(workerCompatibility("1.15.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame));
+    expect(workerCompatibility("1.15.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
   });
   it("withholds camera motion from a 1.16 worker, which has no OpenCV and no such stage", () => {
-    expect(workerCompatibility("1.16.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame));
+    expect(workerCompatibility("1.16.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
     expect(workerCompatibility("1.17.0").stages).toContain("camera_motion");
   });
   it("withholds keyframe propagation from a 1.17 worker, whose calibrate was a GPU stage it never had", () => {
-    expect(workerCompatibility("1.17.0")).toEqual(allBut("calibrate", ...perFrame));
+    expect(workerCompatibility("1.17.0")).toEqual(allBut("calibrate", ...perFrame, ...configured));
     expect(workerCompatibility("1.18.0").stages).toContain("calibrate");
   });
   it("withholds the stages that read carried calibrations from a 1.18 worker, which would read a carried segment as uncalibrated", () => {
-    expect(workerCompatibility("1.18.0")).toEqual(allBut(...perFrame));
+    expect(workerCompatibility("1.18.0")).toEqual(allBut(...perFrame, ...configured));
     for (const stage of perFrame) expect(workerCompatibility("1.19.0").stages).toContain(stage);
+  });
+  it("withholds detect from a 1.19 worker, which would run the plain detector under a ball-tiles version's name", () => {
+    expect(workerCompatibility("1.19.0")).toEqual(allBut(...configured));
+    expect(workerCompatibility("1.20.0").stages).toContain("detect");
   });
 
   it("serves an older worker only the stages that have not changed since it was built", () => {

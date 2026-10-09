@@ -102,8 +102,29 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  * frame by frame: a `carried` segment names its keyframes and pitch, and the
  * calibrate run is pinned (`carried`) beside the segments. A frame no keyframe
  * reached is unplaced (`calibration_not_carried` in game state) (docs/vision/94).
+ *
+ * 1.20.0 -- `detect` is told which detector config it runs (`detector.configKey`,
+ * from the model version) and reports it back (`detectorConfig`). The ball-tiles
+ * config adds a tiled pass that keeps only confident ball boxes; an older worker
+ * would run the plain detector under that version's name, so detect needs 1.20
+ * (docs/vision/95).
  */
-export const VISION_CONTRACT_VERSION = "1.19.0";
+export const VISION_CONTRACT_VERSION = "1.20.0";
+
+/**
+ * The detectors a worker can run, named by the model version's config key. The
+ * worker runs nothing else: a version whose config is not here is refused at
+ * enqueue rather than run as whichever detector the worker happens to default to.
+ */
+export const DETECTOR_CONFIG_BASE = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1";
+/** The same weights, plus four overlapping corner tiles at 60% of the frame for the ball only (docs/vision/95). */
+export const DETECTOR_CONFIG_BALL_TILES = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v1";
+export const DETECTOR_CONFIGS = [DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES] as const;
+export type DetectorConfigKey = (typeof DETECTOR_CONFIGS)[number];
+/** A tiled ball box is kept only at or above this score: below it, on the pilot, were boots and heads. */
+export const BALL_TILE_MIN_SCORE = 0.7;
+/** What the control plane adds to a detect job: the config the model version names. */
+export type DetectJobParams = { detector: { configKey: DetectorConfigKey } };
 
 /**
  * Which worker may serve which stage (docs/vision/58).
@@ -127,7 +148,7 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   transcode: "1.12.0",
   cuts: "1.12.0",
   camera_motion: "1.17.0",
-  detect: "1.12.0",
+  detect: "1.20.0",
   track: "1.12.0",
   identify: "1.12.0",
   calibrate: "1.18.0",
