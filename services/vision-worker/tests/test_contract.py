@@ -199,3 +199,26 @@ def test_every_stage_in_the_compatibility_table_is_served_by_this_image() -> Non
     mine = tuple(int(p) for p in CONTRACT_VERSION.split("."))
     for stage, since in entries.items():
         assert tuple(int(p) for p in since.split(".")) <= mine, f"{stage} changed in {since}; this image speaks {CONTRACT_VERSION}"
+
+
+def test_detector_configs_and_ball_tile_score_match_typescript() -> None:
+    from dtp_vision_worker.stages import detect
+
+    source = _read("jobs.ts")
+    for name in ("DETECTOR_CONFIG_BASE", "DETECTOR_CONFIG_BALL_TILES"):
+        assert re.search(rf'{name}\s*=\s*"{re.escape(getattr(detect, name))}"', source), name
+    assert re.search(rf"BALL_TILE_MIN_SCORE\s*=\s*{detect.BALL_TILE_MIN_SCORE}\b", source)
+
+
+def test_ball_tiles_v2_and_the_parked_ball_match_typescript() -> None:
+    from dtp_vision_worker import ball_trajectory
+    from dtp_vision_worker.stages import ball_trajectory as ball_stage
+    from dtp_vision_worker.stages import detect
+
+    jobs = _read("jobs.ts")
+    assert re.search(rf'DETECTOR_CONFIG_BALL_TILES_V2\s*=\s*"{re.escape(detect.DETECTOR_CONFIG_BALL_TILES_V2)}"', jobs)
+    assert ball_stage.TILED_DETECTOR == detect.DETECTOR_CONFIG_BALL_TILES_V2
+    assert ball_trajectory.TILE_SOURCE == detect.BALL_TILE_SOURCE and re.search(r'source\?:\s*"ball_tiles"', _read("prediction.ts"))
+    trajectory = _read("ball-trajectory.ts")
+    assert re.search(rf"BALL_PARKED_MIN_FRAMES\s*=\s*{ball_trajectory.PARKED_MIN_FRAMES}\b", trajectory)
+    assert re.search(rf"BALL_PARKED_RADIUS_PX\s*=\s*{int(ball_trajectory.PARKED_RADIUS_PX)}\b", trajectory)

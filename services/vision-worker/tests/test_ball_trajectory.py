@@ -95,3 +95,46 @@ def test_chunked_rows_are_checksummed_and_coverage_counts_losses_honestly(tmp_pa
         body = (tmp_path / chunk["file"]).read_bytes()
         assert chunk["checksumSha256"] == hashlib.sha256(body).hexdigest()
         assert len([json.loads(line) for line in body.splitlines()]) == chunk["rows"]
+
+
+# ── The parked tiled ball (docs/vision/95) ─────────────────────────────────────
+
+
+def _still_camera(frames, cut_at=None):
+    import numpy as np
+    from dtp_vision_worker.calibration_propagation import chain
+
+    rows = [{"f": f, "status": "start" if f == 0 else "break" if f == cut_at else "tracked", "H": None if f in (0, cut_at) else [1, 0, 0, 0, 1, 0, 0, 0, 1]} for f in range(frames)]
+    return chain(iter(rows), frames)
+
+
+def _frames(n, *balls):
+    return [{"frameIndex": f, "detections": [{"class": "ball", "confidence": 0.9, "box": {"x": x, "y": y, "width": 10, "height": 10}, **({"source": "ball_tiles"} if tiled else {})}
+                                             for x, y, tiled in balls]} for f in range(n)]
+
+
+def test_only_tiled_balls_are_judged_parked_never_the_whole_frames():
+    from dtp_vision_worker.ball_trajectory import parked_tile_balls
+
+    transforms, shot = _still_camera(80)
+    # A plain ball and a tiled ball, both still for 80 frames: only the tiled one is dropped.
+    parked = parked_tile_balls(_frames(80, (100, 100, False), (600, 300, True)), transforms, shot)
+    assert parked == {(f, 1) for f in range(80)}
+
+
+def test_dwell_is_counted_within_one_shot():
+    from dtp_vision_worker.ball_trajectory import parked_tile_balls
+
+    # 80 frames on one spot, but a cut at 40: two shots of 40 frames, neither long enough.
+    transforms, shot = _still_camera(80, cut_at=40)
+    assert parked_tile_balls(_frames(80, (600, 300, True)), transforms, shot) == set()
+    transforms, shot = _still_camera(80)
+    assert len(parked_tile_balls(_frames(80, (600, 300, True)), transforms, shot)) == 80
+
+
+def test_without_removes_only_the_dropped_detections():
+    from dtp_vision_worker.ball_trajectory import without
+
+    frames = _frames(2, (100, 100, False), (600, 300, True))
+    out = list(without(frames, {(1, 1)}))
+    assert [len(f["detections"]) for f in out] == [2, 1] and out[1]["detections"][0]["box"]["x"] == 100

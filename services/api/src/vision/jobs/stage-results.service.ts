@@ -539,7 +539,11 @@ export class VisionStageResultsService {
       || s.frames !== Math.ceil((Number(s.windowEndMs) - proxy.sourceOffsetMs) * proxy.fps / 1000)
       || typeof s.indexChecksum !== "string" || !/^[a-f0-9]{64}$/i.test(s.indexChecksum))
       return { applied: false, detail: "ball trajectory coverage or source provenance differs from the queued inputs" };
-    return { applied: true, detail: `${s.observed} observed and ${s.lost} explicitly lost ball frames; image coordinates only, no possession or physical metric claim; index ${indices[0]!.key}` };
+    // Tiled balls were judged parked against the camera motion pinned at queue time, and only then (docs/vision/95).
+    const motion = obj(input.cameraMotion);
+    if (motion ? s.cameraMotionIndexChecksum !== motion.indexChecksum || !count(s.parkedTileBalls) : s.cameraMotionIndexChecksum !== undefined || s.parkedTileBalls !== undefined)
+      return { applied: false, detail: "ball trajectory did not report the parked-ball check against the camera motion it was pinned to" };
+    return { applied: true, detail: `${s.observed} observed and ${s.lost} explicitly lost ball frames${motion ? `, ${s.parkedTileBalls} parked tiled balls dropped` : ""}; image coordinates only, no possession or physical metric claim; index ${indices[0]!.key}` };
   }
 
   /** cuts → proposed camera segments, `source: scene_detect`. See `proposeSegments`. */

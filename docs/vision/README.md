@@ -8,7 +8,15 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: stages read the carried calibration** — possession, carry, game state and
+**Latest: a tiled ball pass, with colour and parked-ball checks** — detect runs the
+config its model version names. The ball-tiles/v2 config adds four corner tiles, keeps
+a tiled ball only if it is not yellow, orange or red, and marks it. Ball trajectory
+then drops a tiled ball that stays on one ground spot for 2.4 s, along pinned camera
+motion (contract 1.21.0). Offline on the pilot, observed ball frames went from 395 to
+446, almost all of the gain the match ball. Not yet run on a GPU
+([95](./95-BALL-TILES.md)).
+
+**Stages read the carried calibration** — possession, carry, game state and
 pitch positions place each frame of a moving camera through its own carried
 calibration, pinned to the current `calibrate` run, and say `calibration_not_carried`
 where no keyframe reached (contract 1.19.0). Fixes possession never queueing on a real

@@ -87,3 +87,71 @@ def test_bad_configuration_is_refused_before_any_download(fixture):
     params["trajectoryConfig"] = {"smoothingMs": True}
     with pytest.raises(StageRefusal): stage.run_ball_trajectory(context)
     assert context.client.asked == []
+
+
+# ── Ball-tiles/v2: tiled balls parked on one spot of the ground (docs/vision/95) ──
+
+V2 = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v2"
+
+
+def panning(tmp_path, monkeypatch, *, frames=100, config=V2, pin=True, tamper=False):
+    """A camera panning 2 px a frame. A plain match ball runs across the picture; a tiled
+    spare ball stays on one ground spot, so in the picture it drifts with the pan."""
+    sha = lambda b: hashlib.sha256(b).hexdigest()
+    ms = lambda i: i * 40
+    rows = [{"f": 0, "status": "start", "H": None}] + [{"f": i, "status": "tracked", "H": [1, 0, -2, 0, 1, 0, 0, 0, 1]} for i in range(1, frames)]
+    chunk = b"".join((json.dumps(r) + "\n").encode() for r in rows)
+    index = json.dumps({"role": "camera_motion", "proxyChecksum": "b" * 64, "proxy": {"fps": 25, "sourceOffsetMs": 0},
+                        "chunks": [{"key": "motion/0.jsonl", "sha256": sha(chunk), "rows": frames}]}).encode()
+    det = [{"frameIndex": i, "proxyTimeMs": ms(i), "sourceTimeMs": ms(i), "detections": [
+        {"class": "ball", "confidence": 0.9, "box": {"x": 300 + 3 * i, "y": 400, "width": 12, "height": 12}},
+        {"class": "ball", "confidence": 0.95, "box": {"x": 900 - 2 * i, "y": 200, "width": 12, "height": 12}, "source": "ball_tiles"}]} for i in range(frames)]
+    artifact = json.dumps({"role": "detections", "videoAssetId": "asset", "modelVersionId": "detector", "proxy": {"fps": 25, "sourceOffsetMs": 0}, "sampleFps": 25,
+                           "detector": {"weightsSha256": "c" * 64}, "detectorConfig": config, "sourceChecksum": "a" * 64, "proxyChecksum": "b" * 64,
+                           "proxyDurationMs": ms(frames), "imageWidth": 1280, "imageHeight": 720, "frames": det}).encode()
+    objects = {KEY: artifact, "motion/index.json": index, "motion/0.jsonl": chunk + (b"x" if tamper else b"")}
+    params = {"videoAssetId": "asset", "proxy": {"fps": 25, "sourceOffsetMs": 0}, "sourceChecksum": "a" * 64, "proxyChecksum": "b" * 64,
+              "sourceDurationMs": ms(frames), "proxyDurationMs": ms(frames), "imageWidth": 1280, "imageHeight": 720,
+              "detections": {"jobId": "detect-job", "key": KEY, "modelVersionId": "detector", "sampleFps": 25, "weightsChecksum": "c" * 64},
+              "segments": [{"cameraSegmentId": "live", "startMs": 0, "endMs": ms(frames), "kind": "live_play"}]}
+    if pin:
+        params["cameraMotion"] = {"jobId": "motion", "indexKey": "motion/index.json", "indexChecksum": sha(index)}
+    job = JobSpec.from_payload({"contractVersion": CONTRACT_VERSION, "jobId": "ball-job", "type": "ball_trajectory", "resourceClass": "cpu_small", "attemptNumber": 1,
+                                "inputs": {"videoAssetId": "asset", "params": params, "modelVersionIds": []}, "outputPrefix": "inference/ball-job/1/",
+                                "budget": {"maxRuntimeSeconds": 60, "maxCostUsdCents": 0}})
+    class Client:
+        asked = []
+        def input_url(self, job_id, role, key=None): self.asked.append(key); return key
+        def presign_output(self, job_id, key, content_type): return key
+    class Progress:
+        def set(self, *_a, **_k): pass
+    uploads = {}
+    monkeypatch.setattr(stage, "download", lambda ctx, key, path: path.write_bytes(objects[key]) or len(objects[key]))
+    monkeypatch.setattr(stage, "upload", lambda ctx, key, path, ct: uploads.__setitem__(key, path.read_bytes()) or path.stat().st_size)
+    return StageContext(job=job, work_dir=tmp_path, client=Client(), progress=Progress(), http=None), uploads
+
+
+def test_a_parked_tiled_ball_is_dropped_and_the_match_ball_followed(tmp_path, monkeypatch):
+    ctx, uploads = panning(tmp_path, monkeypatch)
+    result = stage.run_ball_trajectory(ctx)
+    # Without the parked ball every frame would be ambiguous; with it gone, all 100 follow the match ball.
+    assert result.summary["observed"] == 100 and result.summary["parkedTileBalls"] == 100
+    index = json.loads(uploads["inference/ball-job/1/ball-trajectory.json"])
+    assert index["cameraMotion"]["jobId"] == "motion" and index["parked"] == {"minFrames": 60, "radiusPx": 6.0}
+    rows = [json.loads(line) for line in uploads[index["chunks"][0]["key"]].splitlines()]
+    assert all(abs(r["rawPoint"]["y"] - 406 / 720) < 1e-9 for r in rows)
+    assert ctx.client.asked == [KEY, "motion/index.json", "motion/0.jsonl"]
+
+
+def test_a_tiled_ball_seen_for_less_than_the_dwell_is_kept(tmp_path, monkeypatch):
+    ctx, _ = panning(tmp_path, monkeypatch, frames=50)
+    result = stage.run_ball_trajectory(ctx)
+    assert result.summary["parkedTileBalls"] == 0 and result.summary["reasons"] == {"ambiguous": 50}
+
+
+@pytest.mark.parametrize("change", ["no pin for tiled", "pin for plain", "motion changed"])
+def test_refuses_tiled_detections_and_camera_motion_that_do_not_belong_together(tmp_path, monkeypatch, change):
+    ctx, uploads = panning(tmp_path, monkeypatch, pin=change != "no pin for tiled", config=None if change == "pin for plain" else V2, tamper=change == "motion changed")
+    with pytest.raises(StageRefusal):
+        stage.run_ball_trajectory(ctx)
+    assert not uploads

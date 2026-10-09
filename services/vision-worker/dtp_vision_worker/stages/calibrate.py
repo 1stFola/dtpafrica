@@ -14,11 +14,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Iterator
 from typing import Any
 
-from ..calibration_propagation import CALCULATION_VERSION, CHUNK_ROLE, INDEX_ROLE, chain, check_keyframes, drifts, parse_segments, propagate
-from ..camera_motion import INDEX_ROLE as MOTION_INDEX_ROLE
+from ..calibration_propagation import CALCULATION_VERSION, CHUNK_ROLE, INDEX_ROLE, check_keyframes, drifts, parse_segments, propagate
+from ..motion_pin import load_camera_motion
 from ..config import CONTRACT_VERSION
 from ..media import sha256_file
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
@@ -54,39 +53,11 @@ def run_calibrate(ctx: StageContext) -> StageResult:
         raise StageRefusal(f"invalid calibrations: {exc}") from exc
 
     ctx.progress.set("download")
-    index_path = ctx.work_dir / "camera-motion.json"
-    bytes_read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=motion["indexKey"]), index_path)
-    if sha256_file(index_path).lower() != motion["indexChecksum"].lower():
-        raise StageRefusal("the camera motion index is not the one pinned at queue time")
-    index = json.loads(index_path.read_text(encoding="utf-8"))
-    if index.get("role") != MOTION_INDEX_ROLE or str(index.get("proxyChecksum", "")).lower() != params["proxyChecksum"].lower():
-        raise StageRefusal("the camera motion was measured on another proxy")
-    if index.get("proxy", {}).get("fps") != fps or index.get("proxy", {}).get("sourceOffsetMs") != offset:
-        raise StageRefusal("the camera motion and the proxy clock disagree")
-    chunk_paths = []
-    for i, chunk in enumerate(index.get("chunks") or []):
-        if not isinstance(chunk, dict) or not isinstance(chunk.get("key"), str) or not _hash(chunk.get("sha256")):
-            raise StageRefusal("the camera motion index names a malformed chunk")
-        path = ctx.work_dir / f"motion-{i:04d}.jsonl"
-        bytes_read += download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=chunk["key"]), path)
-        if sha256_file(path).lower() != chunk["sha256"].lower():
-            raise StageRefusal(f"camera motion chunk {chunk['key']} does not match its checksum")
-        chunk_paths.append(path)
-    n_frames = sum(int(c.get("rows", 0)) for c in index["chunks"])
-    if n_frames < 1:
-        raise StageRefusal("the camera motion covers no frames")
+    transforms, shot, bytes_read, motion_chunks = load_camera_motion(ctx, motion, params["proxyChecksum"], fps, offset, download)
+    n_frames = len(shot)
 
     ctx.progress.set("chain")
-
-    def motion_rows() -> Iterator[dict]:
-        for path in chunk_paths:
-            with path.open("rb") as handle:
-                for line in handle:
-                    if line.strip():
-                        yield json.loads(line)
-
     try:
-        transforms, shot = chain(motion_rows(), n_frames)
         check_keyframes(segments, n_frames, float(fps), int(offset))
     except ValueError as exc:
         raise StageRefusal(f"cannot carry calibrations: {exc}") from exc
@@ -160,5 +131,5 @@ def run_calibrate(ctx: StageContext) -> StageResult:
         summary={"calculationVersion": CALCULATION_VERSION, **stats, "chunks": len(chunks), "segments": segment_rows,
                  "proxyChecksum": params["proxyChecksum"].lower(), "cameraMotionIndexChecksum": motion["indexChecksum"].lower(),
                  "indexChecksum": sha256_file(out_index)},
-        bytes_read=bytes_read, bytes_written=written, class_a_operations=len(artifacts), class_b_operations=1 + len(chunk_paths),
+        bytes_read=bytes_read, bytes_written=written, class_a_operations=len(artifacts), class_b_operations=1 + motion_chunks,
     )

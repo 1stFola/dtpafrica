@@ -1,6 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
+import { DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2, DETECTOR_CONFIG_BASE, CAMERA_MOTION_CHUNK_ROLE, CAMERA_MOTION_INDEX_ROLE, CAMERA_MOTION_VERSION, CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { VisionJobsService } from "./vision-jobs.service";
 
 /**
@@ -65,7 +65,7 @@ beforeEach(() => {
 
 describe("a model-bound job carries the version it must run", () => {
   it("writes the resolved version onto the job and into the audit record", async () => {
-    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect" });
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey: DETECTOR_CONFIG_BASE });
 
     await service.enqueueForAsset({ type: "detect", videoAssetId: ASSET });
 
@@ -75,9 +75,26 @@ describe("a model-bound job carries the version it must run", () => {
   });
 
   it("forwards an explicit version to the registry rather than deciding itself", async () => {
-    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect" });
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey: DETECTOR_CONFIG_BASE });
     await service.enqueueForAsset({ type: "detect", videoAssetId: ASSET, modelVersionId: MODEL_VERSION });
     expect(mockModels.resolveForJob).toHaveBeenCalledWith("detect", MODEL_VERSION);
+  });
+
+  it("tells detect the config its version names, which a caller cannot forge", async () => {
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey: DETECTOR_CONFIG_BALL_TILES });
+    await service.enqueueForAsset({ type: "detect", videoAssetId: ASSET, params: { detector: { configKey: DETECTOR_CONFIG_BASE } } });
+    expect(enqueued().inputSpec.detector).toEqual({ configKey: DETECTOR_CONFIG_BALL_TILES });
+  });
+
+  it("strips a detector config a caller puts on any other job: it is the control plane's", async () => {
+    await service.enqueueForAsset({ type: "probe", videoAssetId: ASSET, params: { detector: { configKey: DETECTOR_CONFIG_BALL_TILES } } });
+    expect(enqueued().inputSpec).not.toHaveProperty("detector");
+  });
+
+  it.each([null, "builtin/torchvision/retinanet/COCO_V1"])("refuses a detector version whose config no worker runs: %s", async (configKey) => {
+    mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey });
+    await expect(service.enqueueForAsset({ type: "detect", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "DetectorConfigUnknown" } });
+    expect(mockQueue.enqueue).not.toHaveBeenCalled();
   });
 
   it("queues nothing when the registry refuses", async () => {
@@ -290,6 +307,36 @@ describe("ball trajectory inputs are pinned before CPU dispatch", () => {
       segments: [{ cameraSegmentId: "camera", kind: "live_play" }], readKeys: [{ bucket: "derived", key: "inference/ball-detect/2/detections.json" }] });
     expect(mockPrisma.visionJob.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { videoAssetId: ASSET, type: "detect", state: "succeeded", id: "ball-detect" } }));
   });
+  describe("over ball-tiles/v2 detections", () => {
+    const motion = (over: Record<string, unknown> = {}) => ({ id: "motion", attemptNumber: 1, progress: {
+      summary: { calculationVersion: CAMERA_MOTION_VERSION, proxyChecksum: proxyHash, chunks: 1, indexChecksum: "E".repeat(64) },
+      artifacts: [{ key: "inference/motion/1/camera-motion.json", bucket: "derived", role: CAMERA_MOTION_INDEX_ROLE }, { key: "inference/motion/1/motion/motion-0000.jsonl", bucket: "derived", role: CAMERA_MOTION_CHUNK_ROLE }] }, ...over });
+    const tiled = () => { const row = detector(); (row.progress.summary as Record<string, unknown>).detectorConfig = DETECTOR_CONFIG_BALL_TILES_V2; return row; };
+    const runs = (rows: unknown[]) => mockPrisma.visionJob.findMany.mockImplementation(({ where }: { where: { type?: string } }) => Promise.resolve(where?.type === "camera_motion" ? rows : [{ type: "detect" }]));
+
+    it("pins the camera motion measured on the detections' proxy, and lets the stage read it", async () => {
+      mockPrisma.visionJob.findFirst.mockResolvedValue(tiled());
+      runs([motion({ id: "other", progress: { ...motion().progress, summary: { ...motion().progress.summary, proxyChecksum: "f".repeat(64) } } }), motion()]);
+      await service.enqueueForAsset({ type: "ball_trajectory", videoAssetId: ASSET, params: { cameraMotion: { indexKey: "forged" } } });
+      const spec = enqueued().inputSpec;
+      expect(spec.cameraMotion).toEqual({ jobId: "motion", indexKey: "inference/motion/1/camera-motion.json", indexChecksum: "e".repeat(64) });
+      expect(spec.readKeys).toEqual([{ bucket: "derived", key: "inference/ball-detect/2/detections.json" }, { bucket: "derived", key: "inference/motion/1/camera-motion.json" },
+        { bucket: "derived", key: "inference/motion/1/motion/motion-0000.jsonl" }]);
+    });
+
+    it("refuses without camera motion on that proxy, and pins none for plain detections", async () => {
+      mockPrisma.visionJob.findFirst.mockResolvedValue(tiled());
+      runs([motion({ progress: { ...motion().progress, summary: { ...motion().progress.summary, proxyChecksum: "f".repeat(64) } } })]);
+      await expect(service.enqueueForAsset({ type: "ball_trajectory", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "CameraMotionMissing" } });
+      runs([motion({ attemptNumber: 2 })]);
+      await expect(service.enqueueForAsset({ type: "ball_trajectory", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "CameraMotionMissing" } });
+      mockPrisma.visionJob.findFirst.mockResolvedValue(detector());
+      runs([motion()]);
+      await service.enqueueForAsset({ type: "ball_trajectory", videoAssetId: ASSET, params: { cameraMotion: { indexKey: "forged" } } });
+      expect(enqueued().inputSpec).not.toHaveProperty("cameraMotion");
+    });
+  });
+
   it("refuses missing provenance, stale source, sparse detections and old attempt pointers", async () => {
     for (const change of ["missing", "source", "sparse", "attempt", "geometry"]) {
       const row = detector();

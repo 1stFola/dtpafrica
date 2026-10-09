@@ -44,6 +44,8 @@ export type ResolvedModelVersion = {
   version: string;
   stage: string;
   datasetVersionId: string | null;
+  /** What the worker runs for this version; detect is told it and reports it back (docs/vision/95). */
+  configKey: string | null;
 };
 
 export type WeightsVerdict =
@@ -433,7 +435,7 @@ export class VisionModelsService {
 
     const version = await this.prisma.visionModelVersion.findUnique({
       where: { id: job.modelVersionId },
-      select: { id: true, weightsChecksum: true },
+      select: { id: true, weightsChecksum: true, configKey: true },
     });
     if (!version) {
       return {
@@ -441,6 +443,17 @@ export class VisionModelsService {
         error: "ProvenanceMismatch",
         message: `Model version ${job.modelVersionId} no longer exists.`,
         detail: "It was deleted between dispatch and completion.",
+      };
+    }
+
+    // A detector reports the config it ran; boxes from the plain pass recorded under a
+    // ball-tiles version (or the reverse) would compare two detectors as one (docs/vision/95).
+    if (job.type === "detect" && completion.summary.detectorConfig !== version.configKey) {
+      return {
+        ok: false,
+        error: "ProvenanceMismatch",
+        message: `Model version ${version.id} runs detector config ${version.configKey ?? "none"}; the worker reported ${JSON.stringify(completion.summary.detectorConfig ?? null)}.`,
+        detail: "A worker older than contract 1.20.0 does not read the config it is given.",
       };
     }
 
@@ -493,6 +506,7 @@ function toResolved(version: {
   version: string;
   stage: string;
   datasetVersionId: string | null;
+  configKey?: string | null;
   model: { id: string; key: string; task: string };
 }): ResolvedModelVersion {
   return {
@@ -503,6 +517,7 @@ function toResolved(version: {
     version: version.version,
     stage: version.stage,
     datasetVersionId: version.datasetVersionId,
+    configKey: version.configKey ?? null,
   };
 }
 

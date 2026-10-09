@@ -5,11 +5,15 @@ import json
 import math
 import re
 
-from ..ball_trajectory import CHUNK_ROLE, INDEX_ROLE, Config, Smoother, build
+from ..ball_trajectory import CHUNK_ROLE, INDEX_ROLE, PARKED_MIN_FRAMES, PARKED_RADIUS_PX, Config, Smoother, build, parked_tile_balls, without
 from ..config import CONTRACT_VERSION
 from ..jsonstream import JsonStreamError, fields, items
 from ..media import sha256_file
+from ..motion_pin import load_camera_motion
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
+
+#: Detections from this detector carry tiled balls marked for the parked check (docs/vision/95).
+TILED_DETECTOR = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v2"
 
 
 def run_ball_trajectory(ctx: StageContext) -> StageResult:
@@ -50,11 +54,26 @@ def run_ball_trajectory(ctx: StageContext) -> StageResult:
             raise StageRefusal("ball trajectory needs full-rate detections at the proxy frame rate")
         if sample_fps != declared.get("sampleFps") or artifact_proxy.get("fps") != proxy.get("fps") or artifact_proxy.get("sourceOffsetMs") != proxy.get("sourceOffsetMs"):
             raise StageRefusal("detect and trajectory clocks disagree")
+        # Tiled balls are tested for being parked along the camera motion pinned with them;
+        # a pin with plain detections, or tiled ones without a pin, is a wiring fault.
+        tiled = header.get("detectorConfig") == TILED_DETECTOR
+        motion = params.get("cameraMotion")
+        if tiled != (motion is not None):
+            raise StageRefusal("ball-tiles/v2 detections need the pinned camera motion, and only they use it")
+        parked: set[tuple[int, int]] = set()
+        if tiled:
+            ctx.progress.set("camera motion")
+            transforms, shot, motion_read, _ = load_camera_motion(ctx, motion, params["proxyChecksum"], proxy.get("fps"), proxy.get("sourceOffsetMs"), download)
+            bytes_read += motion_read
+            parked = parked_tile_balls(items(source, "frames"), transforms, shot)
         ctx.progress.set("smooth")
         out_dir = ctx.work_dir / "ball"
-        index = build(smoother, items(source, "frames"), out_dir, chunk_ms)
+        index = build(smoother, without(items(source, "frames"), parked), out_dir, chunk_ms)
     except (JsonStreamError, TypeError, ValueError, AttributeError) as exc:
         raise StageRefusal(f"invalid ball trajectory input: {exc}") from exc
+    if tiled:
+        index |= {"parkedTileBalls": len(parked), "parked": {"minFrames": PARKED_MIN_FRAMES, "radiusPx": PARKED_RADIUS_PX},
+                  "cameraMotion": {"jobId": motion.get("jobId"), "indexKey": motion["indexKey"], "indexChecksum": motion["indexChecksum"].lower()}}
     ctx.progress.set("upload")
     artifacts = []
     written = 0
@@ -75,5 +94,6 @@ def run_ball_trajectory(ctx: StageContext) -> StageResult:
     artifacts.append({"key": index_key, "bucket": "derived", "bytes": size, "contentType": "application/json", "role": INDEX_ROLE})
     return StageResult(artifacts=artifacts, summary={k: index[k] for k in ("calculationVersion", "frames", "observed", "lost", "observedFrameCoverage", "reasons", "windowStartMs", "windowEndMs")} | {
         "chunks": len(index["chunks"]), "detectorJobId": declared.get("jobId"), "detectorVersionId": declared.get("modelVersionId"),
-        "sourceChecksum": params["sourceChecksum"], "indexChecksum": sha256_file(path), "detectionsChecksum": payload["detectionsChecksum"]},
+        "sourceChecksum": params["sourceChecksum"], "indexChecksum": sha256_file(path), "detectionsChecksum": payload["detectionsChecksum"],
+        **({"parkedTileBalls": index["parkedTileBalls"], "cameraMotionIndexChecksum": index["cameraMotion"]["indexChecksum"]} if tiled else {})},
         bytes_read=bytes_read, bytes_written=written, class_a_operations=len(artifacts), class_b_operations=1)

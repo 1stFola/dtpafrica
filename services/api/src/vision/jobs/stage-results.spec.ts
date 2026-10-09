@@ -50,6 +50,15 @@ describe("ball trajectory remains derived image evidence", () => {
       expect((await service().apply("ball_trajectory", ASSET, { artifacts, summary: { ...summary(), ...patch } }, context)).applied).toBe(false);
     expect((await service().apply("ball_trajectory", ASSET, { artifacts: [], summary: summary() }, context)).applied).toBe(false);
   });
+  it("accepts the parked-ball check only against the camera motion it was pinned to, and only when pinned", async () => {
+    const pinned = { ...context, inputSpec: { ...context.inputSpec, cameraMotion: { jobId: "motion", indexKey: "inference/motion/1/camera-motion.json", indexChecksum: "e".repeat(64) } } };
+    const checked = { cameraMotionIndexChecksum: "e".repeat(64), parkedTileBalls: 79 };
+    const result = await service().apply("ball_trajectory", ASSET, { artifacts, summary: { ...summary(), ...checked } }, pinned);
+    expect(result).toMatchObject({ applied: true }); expect(result.detail).toContain("79 parked tiled balls dropped");
+    for (const patch of [{}, { cameraMotionIndexChecksum: "f".repeat(64), parkedTileBalls: 79 }, { cameraMotionIndexChecksum: "e".repeat(64) }, { cameraMotionIndexChecksum: "e".repeat(64), parkedTileBalls: -1 }])
+      expect((await service().apply("ball_trajectory", ASSET, { artifacts, summary: { ...summary(), ...patch } }, pinned)).applied).toBe(false);
+    expect((await service().apply("ball_trajectory", ASSET, { artifacts, summary: { ...summary(), ...checked } }, context)).applied).toBe(false);
+  });
 });
 
 describe("possession completion remains unreviewed image evidence", () => {
