@@ -102,10 +102,67 @@ Contract **1.20.0** (`DETECTOR_CONFIGS`, `DetectJobParams`):
   - frame 180: the plain pass's ball is kept unchanged;
   - frame 236: the boots seen in the experiment are not added.
 
+## The run on the pilot (9 October 2026)
+
+**Setup:**
+- **Image:** `dtp-vision-worker:gpu-fe55265` in private ECR. The first push dropped
+  mid-layer through Docker Desktop's proxy; the retry completed.
+- **Model:** version `0.2.0-coco-ball-tiles` (`f9537db9`, candidate), the same model
+  and weights as `929d327b`.
+- **Pod:** one RunPod pod, through a Cloudflare quick tunnel. It registered 9.5 minutes
+  after launch, the time going mostly to the image pull. Fola refreshed the registry
+  credential first, because ECR tokens last 12 hours.
+
+**Two runs on that pod:**
+- **Job `92f19c93`** was queued without `sampleFps` and so ran at the stage's default
+  of 2 fps (100 frames). It is not comparable with the plain run. It showed the config
+  and the weights checks working on a GPU, and the tiles added 20 balls in 11
+  GPU-seconds.
+- **Job `ccf2a171`** ran at 25 fps, as the plain run `801365f7` did: 1,244 frames in
+  139 GPU-seconds, with the weights hash verified.
+
+**Afterwards:** the capacity service retired the pod 5 minutes after its last job, and
+RunPod reported no pods on the account. The tunnel was closed. **Cost:** RunPod's
+balance went from $9.6615 to $9.4073, so **$0.25**. Phase 6 spend is now $0.57 of $4.
+
+**Frames with a ball, per shot:**
+
+| Shot (ms) | Frames | Plain (`801365f7`) | Ball tiles (`ccf2a171`) | Frames with 2+ "balls" |
+|---|---|---|---|---|
+| 0–1040 | 26 | 26 | 26 | 16 → 17 |
+| 1040–4120 | 77 | 67 | 67 | 48 → 49 |
+| 4120–14360 | 256 | 38 | **78** | 0 → 0 |
+| 14360–26000 | 291 | 154 | 166 | 28 → 31 |
+| 26000–31560 | 139 | 64 | 75 | 0 → **7** |
+| 31560–40360 | 220 | 61 | 72 | 1 → 2 |
+| 40360–44360 | 100 | 63 | 97 | 6 → **54** |
+| 44360–49706 | 134 | 74 | 118 | 3 → **53** |
+| **All** | 1,244 | 547 (44%) | **699 (56%)** | |
+
+**Integrity:** the plain pass's detections are identical, and first, in every frame;
+the tiles only add. No frame lost a ball.
+
+**What the added balls are.** I checked six crops per shot by eye:
+- **4.12–14.36 s:** the match ball in open grass, at 0.95–0.99. A real gain.
+- **40.36–44.36 s:** a real ball by the goal post. It only drifts as the camera pans,
+  so it is probably a second, stationary ball, not the one in play.
+- **44.36–49.71 s:** a player's yellow boots, at 0.81–0.97. False positives.
+- **26–31.56 s:** a red leg, then a seated player's orange boots, at 0.73–0.91. False
+  positives.
+
+**So the 0.7 cut-off does not hold across the clip.** On the 59-frame sample every
+false positive scored under 0.7. On the whole clip, brightly coloured boots score as
+high as the ball. The tiles find the ball where it is clear and small, and they also
+add confident boots and a second ball. The overall 44% → 56% overstates the gain.
+
 ## Next
 
-1. Build and push the GPU image at this commit.
-2. Register a new detector version with the ball-tiles config, pinned to that image.
-3. Re-run detect on the pilot. This is the one step that spends money: a few cents
-   against the $4 ceiling, with $0.31 spent so far.
-4. Compare ball coverage per shot with run `801365f7`.
+1. **Run ball trajectory on both detection sets** (CPU, $0). See whether continuity
+   follows the match ball and drops the stationary second ball and the boots. That is
+   the test that matters for possession.
+2. **If it does not:** filter tiled candidates before merging, for example by colour
+   (the match ball is mostly white), by size relative to nearby players, or by
+   requiring motion across frames. Or make the decision on a model trained on DTP
+   footage, which Phase 3 already plans.
+3. **Keep version `0.2.0-coco-ball-tiles` a candidate.** Nothing promotes it, and the
+   plain run stays the reference.
