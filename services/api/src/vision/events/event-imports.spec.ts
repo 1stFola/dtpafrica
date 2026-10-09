@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VisionEventImportsService } from "./event-imports.service";
 import { eventImportFixture } from "./event-import-fixture";
+import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
 
 async function fixture() {
   const f = eventImportFixture(); await f.write();
@@ -31,6 +32,23 @@ describe("immutable carry import", () => {
     expect(await q.service.importRun("asset", "job", q.actor)).toMatchObject({ imported: false, candidateIds: ["candidate"] });
     expect(q.db.visionEventCandidate.create).toHaveBeenCalledTimes(1);
     expect(q.db.visionAuditLog.create).toHaveBeenCalledTimes(1);
+  });
+  it("links a carry on a moving camera to the keyframes its frames were carried from", async () => {
+    const q = await fixture();
+    const prefix = visionKeys.inferencePrefix("job-c", 1);
+    const pin = { jobId: "job-c", indexKey: `${prefix}index.json`, indexChecksum: "a".repeat(64), chunkKeys: [`${prefix}c0.jsonl`] };
+    q.f.calibration.frameIndex = 3;
+    q.f.camera.calibrations.push({ ...q.f.calibration, id: "cal-2", frameIndex: 40 });
+    Object.assign(q.f.snapshot.segments[0], { calibrationId: null, homography: null, quality: "carried", keyframeIds: ["cal", "cal-2"] });
+    q.f.snapshot.carried = pin;
+    await q.f.write();
+    const run = { id: "job-c", attemptNumber: 1, finishedAt: new Date(), inputSpec: { proxyChecksum: q.f.transcode.progress.summary.proxy.checksumSha256,
+      segments: [{ cameraSegmentId: "cam", startMs: 0, endMs: 2000, kind: "live_play", calibrations: [{ calibrationId: "cal" }, { calibrationId: "cal-2" }] }] },
+      progress: { summary: { indexChecksum: pin.indexChecksum, chunks: 1, calculationVersion: CALIBRATION_PROPAGATION_VERSION },
+        artifacts: [{ role: CALIBRATION_FRAMES_INDEX_ROLE, bucket: "derived", key: pin.indexKey }, { role: CALIBRATION_FRAMES_CHUNK_ROLE, bucket: "derived", key: pin.chunkKeys[0] }] } };
+    q.db.visionJob.findFirst.mockImplementation(async ({ where }: any) => where.type === "transcode" ? q.f.transcode : where.type === "calibrate" ? run : q.f.job);
+    await q.service.importRun("asset", "job", q.actor);
+    expect(q.db.visionEvidenceLink.createMany.mock.calls[0][0].data.map((e: any) => [e.kind, e.targetId])).toEqual([["track", "track-row"], ["camera_segment", "cam"], ["calibration", "cal"], ["calibration", "cal-2"]]);
   });
   it("persists explicit zero output without inventing candidates", async () => {
     const q = await fixture(); q.f.artifact.events = []; await q.f.write();

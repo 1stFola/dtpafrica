@@ -137,6 +137,7 @@ describe("words", () => {
   it("describes a frame: placed, and not placed with the reason", () => {
     expect(describeFrame([])).toBe("no track on this frame");
     expect(describeFrame([row({}), row({ localTrackId: 2 })])).toBe("2 placed");
+    expect(describeFrame([row({}), row({ xM: null, yM: null, reason: "calibration_not_carried" })])).toBe("1 placed · 1 not placed: camera not followed here");
     expect(describeFrame([row({}), row({ xM: null, yM: null, reason: "calibration_failed" })])).toBe("1 placed · 1 not placed: calibration failed");
     expect(describeFrame([row({ xM: null, reason: "beyond_horizon" }), row({ xM: null, reason: "no_camera_segment" }), row({ xM: null, reason: "no_camera_segment" })])).toBe(
       "0 placed · 3 not placed: beyond the horizon (1), no camera segment (2)"

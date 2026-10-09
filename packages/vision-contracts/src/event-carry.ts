@@ -23,12 +23,22 @@ export function validCarryProducer(raw: unknown): raw is EventCarryProducer {
   if (!obj(s) || !count(s.proxyWidth) || !s.proxyWidth || !count(s.proxyHeight) || !s.proxyHeight || !id(s.proxyVariantId) || !id(s.proxyKey) || !hash(s.proxyChecksum)
     || !Array.isArray(cameras) || cameras.length > 200 || !Array.isArray(s.segments) || s.segments.length !== cameras.length) return false;
   const ids = new Set<string>();
+  let carried = false;
   for (let i = 0; i < cameras.length; i++) {
     const c = cameras[i], r = s.segments[i];
     if (!obj(c) || !id(c.cameraSegmentId) || ids.has(c.cameraSegmentId) || !count(c.startMs) || !count(c.endMs) || c.endMs <= c.startMs
       || typeof c.kind !== "string" || !["live_play", "replay", "intro", "halftime", "camera_cut", "unknown"].includes(c.kind) || (i > 0 && c.startMs < cameras[i - 1].endMs)
-      || !obj(r) || r.cameraSegmentId !== c.cameraSegmentId || r.startMs !== c.startMs || r.endMs !== c.endMs || ![null, "failed", "good", "usable"].includes(r.quality as never)) return false;
+      || !obj(r) || r.cameraSegmentId !== c.cameraSegmentId || r.startMs !== c.startMs || r.endMs !== c.endMs || ![null, "failed", "good", "usable", "carried"].includes(r.quality as never)) return false;
     ids.add(c.cameraSegmentId);
+    if (r.quality === "carried") {
+      // Calibrated by keyframes: no single transform, the keyframes named, the pitch given.
+      const keyframes = r.keyframeIds;
+      if (r.calibrationId !== null || r.homography !== null || !id(r.thresholdsVersion) || !Array.isArray(keyframes) || !keyframes.length || keyframes.length > 500
+        || keyframes.some((k) => !id(k)) || new Set(keyframes).size !== keyframes.length || !obj(r.pitch)
+        || [r.pitch.lengthM, r.pitch.widthM].some((v) => typeof v !== "number" || !Number.isFinite(v) || v <= 0 || v > 200)) return false;
+      carried = true;
+      continue;
+    }
     if (r.quality === null) { if ([r.calibrationId, r.thresholdsVersion, r.homography, r.pitch].some((v) => v !== null)) return false; }
     else if (!id(r.calibrationId) || !id(r.thresholdsVersion)) return false;
     if (r.quality === "failed") { if (r.homography !== null || r.pitch !== null) return false; }
@@ -40,5 +50,9 @@ export function validCarryProducer(raw: unknown): raw is EventCarryProducer {
       if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-14) return false;
     }
   }
-  return true;
+  // A carried segment needs its run pinned; a pin with no carried segment is evidence of nothing.
+  const pin = s.carried;
+  if (!carried) return pin === undefined;
+  return obj(pin) && id(pin.jobId) && id(pin.indexKey) && hash(pin.indexChecksum) && Array.isArray(pin.chunkKeys) && pin.chunkKeys.length > 0
+    && pin.chunkKeys.length <= 6000 && pin.chunkKeys.every((k) => id(k)) && new Set(pin.chunkKeys).size === pin.chunkKeys.length;
 }

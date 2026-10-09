@@ -13,6 +13,14 @@ describe("bounded possession review evidence", () => {
     calibratePossessionFixture(fixture); await fixture.write();
     expect((await read()).index.calculationVersion).toBe("possession-candidates/v2");
   });
+  it("accepts a calibrated candidate on a moving camera's carried segment", async () => {
+    calibratePossessionFixture(fixture);
+    const carried = { cameraSegmentId: "cam", startMs: 0, endMs: 400, calibrationId: null, homography: null, quality: "carried", thresholdsVersion: "provisional/v1", pitch: { lengthM: 105, widthM: 68 }, keyframeIds: ["k1"] };
+    const pin = { jobId: "job-c", indexKey: "inference/job-c/1/index.json", indexChecksum: "a".repeat(64), chunkKeys: ["inference/job-c/1/c0.jsonl"] };
+    for (const s of [fixture.index.calibrationSnapshot, fixture.input.calibrationSnapshot]) { s.segments = [structuredClone(carried)]; s.carried = structuredClone(pin); }
+    await fixture.write();
+    expect((await read() as any).index.calibrationSnapshot.segments[0].quality).toBe("carried");
+  });
   it.each(["snapshot", "proxy", "mode", "limits", "candidate calibration", "legacy reason"])("refuses calibrated inconsistencies: %s", async (change) => {
     calibratePossessionFixture(fixture);
     if (change === "snapshot") fixture.index.calibrationSnapshot.segments[0].calibrationId = "other";

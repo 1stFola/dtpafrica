@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { eventCarryInputs } from "./event-carry-inputs";
 import { calibratePossessionFixture, possessionFixture } from "../possession/possession-fixture";
 import { VisionJobsService } from "../jobs/vision-jobs.service";
+import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
 
 async function fixture() {
   const f = possessionFixture(); calibratePossessionFixture(f); await f.write();
@@ -71,6 +72,38 @@ describe("carry producer enqueue evidence", () => {
     expect(rights.canAnalyze).toHaveBeenCalled();
     await expect(service.enqueueForAsset({ type: "events", videoAssetId: "asset", resourceClass: "gpu_24gb" })).rejects.toMatchObject({ response: { error: "EventsCpuOnly" } });
     expect(queue.enqueue).toHaveBeenCalledTimes(1);
+  });
+  describe("on a moving camera", () => {
+    const prefix = visionKeys.inferencePrefix("job-c", 1);
+    const pin = { jobId: "job-c", indexKey: `${prefix}index.json`, indexChecksum: "a".repeat(64), chunkKeys: [`${prefix}c0.jsonl`] };
+    /** The possession run was judged with a carried calibration, and that calibrate run is still current. */
+    async function carriedFixture() {
+      const x = await fixture();
+      x.camera.calibrations = [{ id: "k1", frameIndex: 3, quality: "good", thresholdsVersion: "provisional/v1", homography: [.1,0,0,0,.1,0,0,0,1], points: [], pitchLengthM: 105, pitchWidthM: 68, createdAt: new Date("2026-10-02") }];
+      x.f.index.calibrationSnapshot.segments = [{ cameraSegmentId: "cam", startMs: 0, endMs: 400, calibrationId: null, homography: null, quality: "carried", thresholdsVersion: "provisional/v1", pitch: { lengthM: 105, widthM: 68 }, keyframeIds: ["k1"] }];
+      x.f.index.calibrationSnapshot.carried = pin;
+      x.f.input.calibrationSnapshot = structuredClone(x.f.index.calibrationSnapshot);
+      await x.f.write();
+      const run = { id: "job-c", attemptNumber: 1, finishedAt: new Date(), inputSpec: { proxyChecksum: "e".repeat(64), segments: [{ cameraSegmentId: "cam", startMs: 0, endMs: 400, kind: "live_play", calibrations: [{ calibrationId: "k1" }] }] },
+        progress: { summary: { indexChecksum: pin.indexChecksum, chunks: 1, calculationVersion: CALIBRATION_PROPAGATION_VERSION },
+          artifacts: [{ role: CALIBRATION_FRAMES_INDEX_ROLE, bucket: "derived", key: pin.indexKey }, { role: CALIBRATION_FRAMES_CHUNK_ROLE, bucket: "derived", key: pin.chunkKeys[0] }] } };
+      const transcode = await x.db.visionJob.findFirst({ where: { type: "transcode" } });
+      x.db.visionJob.findFirst.mockImplementation(async ({ where }: any) => where.type === "transcode" ? transcode : where.type === "calibrate" ? run : x.f.job);
+      const queue = { enqueue: vi.fn(async (data) => ({ id: data.id })) };
+      const service = new VisionJobsService(x.db, { canAnalyze: vi.fn().mockResolvedValue({ allowed: true }) } as never, { record: vi.fn() } as never, queue as never, { jobs: {} } as never, { resolveForJob: vi.fn().mockResolvedValue({ id: "model" }) } as never, x.f.store);
+      return { ...x, queue, service };
+    }
+    it("may read the calibrate run its possession was judged with", async () => {
+      const { service, queue } = await carriedFixture();
+      await service.enqueueForAsset({ type: "events", videoAssetId: "asset", modelVersionId: "model" });
+      expect(queue.enqueue.mock.calls[0][0].inputSpec.readKeys.slice(-2)).toEqual([{ bucket: "derived", key: pin.indexKey }, { bucket: "derived", key: pin.chunkKeys[0] }]);
+    });
+    it("is refused once a keyframe changed since, so the run is no longer current", async () => {
+      const { service, queue, camera } = await carriedFixture();
+      camera.calibrations.push({ ...camera.calibrations[0], id: "k2", frameIndex: 9 });
+      await expect(service.enqueueForAsset({ type: "events", videoAssetId: "asset", modelVersionId: "model" })).rejects.toMatchObject({ status: 409 });
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    });
   });
   it.each(["weighted", "unregistered", "missing commit", "missing image", "stale camera", "stale calibration", "stale proxy", "stale clock", "legacy", "tamper"])("refuses incompatible evidence: %s", async (change) => {
     const { f, model, camera, proxy, read } = await fixture();

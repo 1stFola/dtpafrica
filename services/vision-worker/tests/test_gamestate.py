@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -425,3 +426,45 @@ def test_the_stage_refuses_an_artifact_that_is_not_json(ctx, monkeypatch: pytest
     monkeypatch.setattr(gamestate_stage, "download", broken)
     with pytest.raises(StageRefusal, match="not readable"):
         gamestate_stage._gamestate(ctx)
+
+
+def carried_params(objects: dict[str, bytes], carried_frames: range) -> dict[str, Any]:
+    """seg-1 calibrated by keyframes, a calibrate run carrying `carried_frames`, pinned as the control plane pins it."""
+    chunk = b"".join((json.dumps({"f": f, "cameraSegmentId": "seg-1", "H": list(PIXEL_TO_PITCH), "quality": "good"}) + "\n").encode() for f in carried_frames)
+    objects["inference/c/1/c0.jsonl"] = chunk
+    objects["inference/c/1/index.json"] = json.dumps({"role": "calibration_frames", "proxy": {"fps": 25, "sourceOffsetMs": 0},
+                                                      "chunks": [{"key": "inference/c/1/c0.jsonl", "sha256": hashlib.sha256(chunk).hexdigest()}]}).encode()
+    params = spec().inputs["params"] | {"proxy": {"fps": 25, "sourceOffsetMs": 0},
+        "segments": [{"cameraSegmentId": "seg-1", "startMs": 0, "endMs": 60_000, "quality": "carried", "homography": None, "pitch": {"lengthM": 105, "widthM": 68}, "thresholdsVersion": "t", "keyframeIds": ["k1"]}],
+        "carried": {"jobId": "c", "indexKey": "inference/c/1/index.json", "indexChecksum": hashlib.sha256(objects["inference/c/1/index.json"]).hexdigest(), "chunkKeys": ["inference/c/1/c0.jsonl"]}}
+    return params
+
+
+def test_the_stage_places_a_moving_camera_through_the_pinned_runs_frames(ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+    from dtp_vision_worker import runner
+    raw: dict[str, bytes] = {}
+    ctx.job = spec(carried_params(raw, range(225, 245)))  # the first walk's first twenty frames
+    monkeypatch.setattr(runner, "download", lambda _c, url, target: target.write_bytes(raw[url.removeprefix("https://storage.test/")]) or len(raw[url.removeprefix("https://storage.test/")]))
+    result = gamestate_stage._gamestate(ctx)
+    assert ctx.client.asked == [("declared", "inference/c/1/index.json"), ("declared", "inference/c/1/c0.jsonl"), ("declared", TRK_KEY)]
+    # The second walk, from 70 s, is beyond the segment; the first walk's last 21 frames no keyframe reached.
+    assert result.summary["placed"] == 20
+    assert result.summary["reasons"] == {"calibration_not_carried": 21, "no_camera_segment": 41}
+
+
+@pytest.mark.parametrize("change", ["pin without carried segments", "no pin", "other bytes"])
+def test_the_stage_refuses_a_carried_declaration_it_cannot_read_as_pinned(ctx, monkeypatch: pytest.MonkeyPatch, change: str) -> None:
+    from dtp_vision_worker import runner
+    raw: dict[str, bytes] = {}
+    params = carried_params(raw, range(225, 245))
+    if change == "pin without carried segments":
+        params["segments"] = spec().inputs["params"]["segments"]
+    if change == "no pin":
+        del params["carried"]
+    if change == "other bytes":
+        raw["inference/c/1/c0.jsonl"] += b"\n"
+    ctx.job = spec(params)
+    monkeypatch.setattr(runner, "download", lambda _c, url, target: target.write_bytes(raw[url.removeprefix("https://storage.test/")]) or len(raw[url.removeprefix("https://storage.test/")]))
+    with pytest.raises(StageRefusal):
+        gamestate_stage._gamestate(ctx)
+    assert not ctx.uploaded

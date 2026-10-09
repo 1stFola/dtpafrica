@@ -121,7 +121,9 @@ export class VisionEventImportsService {
             cameraSegmentId: event.cameraSegmentId, inPlay: true, reviewState: "unreviewed", decidedBy: me, proposedBy: me, importRunId: run.id, importPredictionId: event.id,
             note: "Original automatic carry proposal; football control and roster actor need review." } });
           candidateIds.push(row.id);
-          await tx.visionEvidenceLink.createMany({ data: [{ kind: "track", targetId: track.id }, { kind: "camera_segment", targetId: event.cameraSegmentId! }, { kind: "calibration", targetId: calibration.calibrationId! }]
+          // A still camera's calibration, or the keyframes a moving camera's frames were carried from.
+          const calibrations = calibration.quality === "carried" ? (calibration.keyframeIds ?? []) : [calibration.calibrationId!];
+          await tx.visionEvidenceLink.createMany({ data: [{ kind: "track", targetId: track.id }, { kind: "camera_segment", targetId: event.cameraSegmentId! }, ...calibrations.map((id) => ({ kind: "calibration", targetId: id }))]
             .map((e) => ({ candidateId: row.id, ...e, note: "Pinned original carry input" })) });
         }
         await new VisionAuditService(tx as PrismaService).record({ action: "event.imported", targetKind: "vision_event_import_run", targetId: run.id, data: { inferenceJobId: jobId, eventCount: artifact.events.length, candidateIds } }, actor);

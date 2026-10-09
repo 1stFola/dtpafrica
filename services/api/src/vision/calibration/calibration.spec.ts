@@ -1,6 +1,8 @@
 import { ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
+import { createHash } from "node:crypto";
+import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION } from "@dtp/vision-contracts";
 import { InMemoryObjectStore } from "../storage/in-memory-object-store";
 import { VisionCalibrationService } from "./calibration.service";
 import { invert3, project, type Homography } from "./homography";
@@ -389,7 +391,53 @@ describe("the suppression rule", () => {
     expect(justBefore.cameraSegmentId).toBe("before");
     expect(onCut.cameraSegmentId).toBe("after");
     expect(onCut.xM).toBeCloseTo(justBefore.xM + 0.5 + 10, 1);
-    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toMatchObject({ where: { supersededBy: null }, orderBy: { createdAt: "desc" }, take: 1 });
+    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).toMatchObject({ where: { supersededBy: null }, orderBy: { createdAt: "desc" } });
+    expect(mockPrisma.visionCameraSegment.findMany.mock.calls[0]![0].include.calibrations).not.toHaveProperty("take");
+  });
+
+  describe("on a moving camera's segment", () => {
+    const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+    const keyframes = [{ id: "k1", frameIndex: 230, quality: "good", thresholdsVersion: "t", pitchLengthM: 100, pitchWidthM: 64 }];
+    /** A calibrate run carrying the camera to the walk's first twenty frames (225-244 at 25 fps), and no further. */
+    async function seedRun(over: { spec?: object } = {}) {
+      const rows = Array.from({ length: 41 }, (_, i) => (i < 20
+        ? { f: 225 + i, cameraSegmentId: SEGMENT, H: PIXEL_TO_PITCH, quality: "good", calibrationId: "k1" }
+        : { f: 225 + i, cameraSegmentId: SEGMENT, H: null, quality: null, reason: "beyond_reach" }));
+      const chunk = rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
+      const index = JSON.stringify({ chunks: [{ key: "inference/c/1/c0.jsonl", sha256: sha(chunk), firstFrame: 0, lastFrame: 300 }] });
+      await store.putSmallObject("derived", "inference/c/1/c0.jsonl", chunk, "application/x-ndjson");
+      await store.putSmallObject("derived", "inference/c/1/index.json", index, "application/json");
+      const spec = { proxyChecksum: "a".repeat(64), segments: [{ cameraSegmentId: SEGMENT, startMs: 0, endMs: 60_000, kind: "live_play", calibrations: [{ calibrationId: "k1" }] }], ...over.spec };
+      mockPrisma.visionJob.findFirst.mockImplementation(({ where }: { where: { type: string } }) => Promise.resolve(where.type === "calibrate"
+        ? { id: "c", attemptNumber: 1, finishedAt: new Date("2026-10-08"), inputSpec: spec, progress: { summary: { indexChecksum: sha(index), chunks: 1, calculationVersion: CALIBRATION_PROPAGATION_VERSION },
+          artifacts: [{ key: "inference/c/1/index.json", bucket: "derived", role: CALIBRATION_FRAMES_INDEX_ROLE }, { key: "inference/c/1/c0.jsonl", bucket: "derived", role: CALIBRATION_FRAMES_CHUNK_ROLE }] } }
+        : { progress: { summary: { proxy: { key: "proxy.mp4", checksumSha256: "a".repeat(64) } }, artifacts: [{ key: "proxy.mp4", role: "proxy" }] } }));
+      mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ id: "proxy", objectKey: "proxy.mp4", fps: 25, sourceOffsetMs: 0 });
+      mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, startMs: 0, endMs: 60_000, kind: "live_play", calibrations: keyframes }]);
+    }
+
+    it("places each frame the current run carried, at the keyframes' pitch size, and says which were not", async () => {
+      await seedRun();
+      const out = await service.pitchPositions(TRACK);
+      expect(out.summary).toEqual({ positions: 41, placed: 20, suppressed: 21, reasons: { calibration_not_carried: 21 } });
+      expect(out.positions[0]).toMatchObject({ xM: 10, yM: 34, cameraSegmentId: SEGMENT });
+      expect(out.positions[19]!.xM).toBeCloseTo(19.5, 1);
+      expect(out.pitch).toEqual({ lengthM: 100, widthM: 64 });
+      expect(out.distance).toMatchObject({ suppressed: true, reason: expect.stringContaining("calibration_not_carried") });
+    });
+
+    it("places nothing when no current run follows the keyframes: never run, or stale since", async () => {
+      await seedRun({ spec: { segments: [] } });
+      expect((await service.pitchPositions(TRACK)).summary).toMatchObject({ placed: 0, reasons: { calibration_not_carried: 41 } });
+      mockPrisma.visionJob.findFirst.mockImplementation(({ where }: { where: { type: string } }) => Promise.resolve(where.type === "calibrate" ? null : { progress: {} }));
+      expect((await service.pitchPositions(TRACK)).summary).toMatchObject({ placed: 0, reasons: { calibration_not_carried: 41 } });
+    });
+
+    it("does not read a keyframe as the segment's whole calibration", async () => {
+      await seedRun({ spec: { segments: [] } });
+      mockPrisma.visionCameraSegment.findMany.mockResolvedValue([{ id: SEGMENT, startMs: 0, endMs: 60_000, kind: "live_play", calibrations: [{ ...calibration("good"), id: "k1", frameIndex: 230, thresholdsVersion: "t" }] }]);
+      expect((await service.pitchPositions(TRACK)).summary.placed).toBe(0);
+    });
   });
 
   it("places through a matrix stored the other way round, by orienting it with its own points", async () => {

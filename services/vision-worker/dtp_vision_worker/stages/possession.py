@@ -10,7 +10,8 @@ from ..config import CONTRACT_VERSION
 from ..jsonstream import fields, items, JsonStreamError
 from ..media import sha256_file
 from ..possession import Config, PlayerIndex, build, INDEX_ROLE, CHUNK_ROLE
-from ..possession_constraints import Constraints, FootballConfig
+from ..carried_frames import load as load_carried
+from ..possession_constraints import Constraints, FootballConfig, carried_segment_ids
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
 
 
@@ -33,7 +34,12 @@ def run_possession(ctx: StageContext) -> StageResult:
         mode = params.get("constraintMode", "image")
         if mode not in {"image", "calibrated"} or (mode == "image" and ("footballConfig" in params or "calibrationSnapshot" in params)):
             raise ValueError("calibration evidence/configuration requires calibrated mode")
-        constraints = Constraints(clock, params.get("calibrationSnapshot"), FootballConfig.parse(params.get("footballConfig"))) if mode == "calibrated" else None
+        carried, carried_read = None, 0
+        snapshot = params.get("calibrationSnapshot")
+        if mode == "calibrated" and carried_segment_ids(snapshot):
+            # A moving camera calibrated by keyframes: every frame's own homography, from the pinned run.
+            carried, carried_read = load_carried(ctx, snapshot.get("carried"), carried_segment_ids(snapshot), clock.fps, clock.offset)
+        constraints = Constraints(clock, snapshot, FootballConfig.parse(params.get("footballConfig")), carried) if mode == "calibrated" else None
         if constraints and constraints.snapshot.get("proxyChecksum") != params["proxyChecksum"]:
             raise ValueError("calibration proxy bytes differ from the pinned observations")
         chunk_ms = params.get("chunkMs", 60_000)
@@ -44,7 +50,7 @@ def run_possession(ctx: StageContext) -> StageResult:
             raise ValueError("ball chunk keys must be explicit, distinct and bounded")
         ctx.progress.set("download")
         ball_path = ctx.work_dir / "ball-index.json"
-        read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=ball["key"]), ball_path)
+        read = carried_read + download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=ball["key"]), ball_path)
         if sha256_file(ball_path) != ball["indexChecksum"]:
             raise ValueError("ball index checksum changed")
         index = json.loads(ball_path.read_text(encoding="utf-8"))

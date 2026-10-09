@@ -213,6 +213,7 @@ const SUPPRESSION_WORDS: Record<(typeof GAMESTATE_SUPPRESSION_REASONS)[number], 
   no_camera_segment: "no camera segment",
   segment_not_calibrated: "segment not calibrated",
   calibration_failed: "calibration failed",
+  calibration_not_carried: "camera not followed here",
   beyond_horizon: "beyond the horizon",
   off_pitch: "far off the pitch",
 };

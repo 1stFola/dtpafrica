@@ -88,7 +88,9 @@ export function VisionMinimap({ state, status, rows, tracksByLocalId, selectedId
             {describeFrame(rows)}
             {qualityHere && ` · calibration ${qualityHere}`}
             {segmentHere && <span className="vision-mono"> · segment {segmentHere.slice(0, 8)}</span>}
-            {" · metres from the calibration of the segment at the playhead; a dot is a foot point the tracker saw"}
+            {qualityHere === "carried"
+              ? " · metres from this frame's calibration, carried from the segment's keyframes; a dot is a foot point the tracker saw"
+              : " · metres from the calibration of the segment at the playhead; a dot is a foot point the tracker saw"}
           </>
         )}
       </p>
