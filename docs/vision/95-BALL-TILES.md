@@ -234,7 +234,75 @@ the 272 tile-added balls.
 - **The spare ball is not.** In 40.36–44.36 s, 46 of 54 observed frames follow it.
   Colour cannot tell two balls apart.
 
+## A parked-ball check (offline, $0)
+
+**The method.**
+1. The production `camera_motion` rows for the pilot (run `28e82c23`, reference-frame
+   tracking) were chained within each shot to remove the camera's motion. The breaks
+   fall exactly on the six cuts. This puts every ball candidate in its shot's fixed
+   ground coordinates.
+2. A candidate's **dwell** is the number of frames in that shot with a ball within
+   6 px of the same ground spot.
+
+**Labelled boxes:**
+- **The spare ball by the post** (40.36–44.36 s) dwells **87 frames** of its 100-frame
+  shot.
+- **The match ball** never dwells more than **42**, even when nearly still for about
+  1.5 s before a kick (frames 112–178).
+- **Brief spare-ball sightings** by the stands dwell 1–3 frames. The check does not
+  catch them.
+
+**The rule:** a tile-added ball dwelling **60 frames (2.4 s) or more** is dropped as
+parked. It drops 79 tile balls. Plain-pass boxes are never dropped, so a match ball
+held still longer than 2.4 s at a set piece still has whatever the plain pass gave it.
+
+**Trajectory, colour filter and parked check together:**
+
+| Shot (ms) | Plain | Tiles | + colour | + colour + parked | Followed a tile box |
+|---|---|---|---|---|---|
+| 0–1040 | 14 | 14 | 14 | 14 | 0 |
+| 1040–4120 | 29 | 28 | 28 | 28 | 0 |
+| 4120–14360 | 26 | 66 | 63 | **63** | 37 |
+| 14360–26000 | 126 | 135 | 133 | **133** | 9 |
+| 26000–31560 | 57 | 62 | 58 | **58** | 1 |
+| 31560–40360 | 53 | 65 | 64 | **64** | 11 |
+| 40360–44360 | 38 | 50 | 54 | **40** | 3 |
+| 44360–49706 | 52 | 79 | 46 | **46** | 0 |
+| **All** | **395** | 499 | 460 | **446** | 61 |
+
+In 40.36–44.36 s the spare ball no longer takes the trajectory: 40 observed frames, no
+ambiguity.
+
+**What the remaining tile-followed frames are.** The 23 outside the 4.12–14.36 s shot
+were checked by eye:
+- 15 are the match ball;
+- 6 are spare balls seen too briefly to count as parked;
+- 2 are not balls (a leg, and one unclear).
+
+The 37 in 4.12–14.36 s are the match ball, as checked earlier.
+
+**Net against the plain pass:**
+- **51 more observed frames** (395 → 446), almost all of them the match ball.
+- **Still lost:** 6 frames in the boots shot, and 1 in 1.04–4.12 s, where a boot or
+  extra ball that slipped through makes a frame ambiguous.
+
+These rules were tuned and checked on this one clip, so they are a measurement on the
+pilot, not a validated filter.
+
 ## Next
+
+1. **Build the filters into the pipeline, if Fola wants this path:**
+   - **the colour check** belongs in the detect stage's tiled pass, which has the
+     pixels;
+   - **the parked check** belongs where camera motion is already pinned, which today is
+     `calibrate` and not `ball_trajectory`, so it needs a new input.
+
+   That would be a new detector config (`ball-tiles/v2`), and so a new candidate
+   version and one more GPU run.
+2. **Or wait for a ball model trained on DTP footage** (Phase 3), and keep this as
+   evidence that the ball is findable at this size.
+
+**Earlier options, now measured:**
 
 1. **The parked ball.** The spare ball's position stays fixed on the pitch: it moves in
    the picture only as the camera pans. `camera_motion` already measures that pan for
