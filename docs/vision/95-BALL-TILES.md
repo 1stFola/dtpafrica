@@ -188,14 +188,62 @@ costs that frame, and a false ball alone is followed as if it were the ball.
 Version `0.2.0-coco-ball-tiles` stays a candidate, and the plain run stays the
 reference.
 
+## A colour filter on the tiled balls (offline, $0)
+
+**The rule.** A tiled ball box is kept only if, inside its inner ellipse:
+- no pixel is warm: yellow, orange or red (OpenCV hue under 38 or over 165, saturation
+  over 50, value over 70);
+- at most 15% is grass green;
+- and the box is roughly square (aspect 0.85–1.3).
+
+Plain-pass boxes are never filtered.
+
+**How it was chosen and checked.** Every tile-added box was cropped and labelled by eye
+as match ball, spare ball or not a ball, before its scores were seen.
+- **Tuning set:** 48 boxes, 8 per shot. Brightness alone did not separate them: boots
+  with white socks scored as white as the ball. Warm colour did, once the hue range
+  included yellow.
+- **Held-out set:** 43 different boxes, labelled before the rule was applied.
+
+| | Match ball kept | Spare ball kept | Not a ball kept |
+|---|---|---|---|
+| Tuning set | 16 of 16 | 10 of 10 | 1 of 22 |
+| **Held-out set** | **11 of 12** | 10 of 11 | **2 of 20** |
+
+The held-out mistakes were a red player and one yellow boot let through, and one match
+ball rejected.
+
+**Trajectory with the filter applied to the whole clip.** The filter dropped 121 of
+the 272 tile-added balls.
+
+| Shot (ms) | Plain | Tiles | Tiles + filter | Followed a tile box |
+|---|---|---|---|---|
+| 0–1040 | 14 | 14 | 14 | 0 |
+| 1040–4120 | 29 | 28 | 28 | 0 |
+| 4120–14360 | 26 | 66 | **63** | 37: the match ball |
+| 14360–26000 | 126 | 135 | 133 | 9 |
+| 26000–31560 | 57 | 62 | 58 | 1 |
+| 31560–40360 | 53 | 65 | 64 | 11 |
+| 40360–44360 | 38 | 50 | 54 | **46: the spare ball** |
+| 44360–49706 | 52 | 79 | 46 | 0 |
+| **All** | 395 | 499 | **460** | |
+
+- **The boots are handled.** No observation in the boots shot (44.36–49.71 s) follows
+  a tile box any more. It still loses 6 frames against the plain pass, where a boot
+  that slipped through makes a frame ambiguous.
+- **The spare ball is not.** In 40.36–44.36 s, 46 of 54 observed frames follow it.
+  Colour cannot tell two balls apart.
+
 ## Next
 
-1. **Filter tiled candidates before merging.** Both kinds of false ball have a tell:
-   - **colour:** the boots are yellow and orange, and the match ball is mostly white;
-   - **motion:** the spare ball only moves with the camera.
-
-   A colour check on each tiled box can be measured offline against the frames already
-   checked by eye, at $0, before any new GPU run.
-2. **Or leave the ball to a model trained on DTP footage**, which Phase 3 already
-   plans. The tiles show the ball is findable at this size; what is missing is telling
-   it from boots.
+1. **The parked ball.** The spare ball's position stays fixed on the pitch: it moves in
+   the picture only as the camera pans. `camera_motion` already measures that pan for
+   every frame, so a candidate that stays put once the camera's motion is removed, over
+   many frames, can be flagged as a ball not in play. That can also be measured
+   offline at $0.
+2. **Or let trajectory choose by continuity** instead of calling every two-candidate
+   frame ambiguous. That would change the smoother's "Unknown beats wrong" rule, which
+   is a decision for Fola.
+3. **Until then,** version `0.2.0-coco-ball-tiles` stays a candidate. The colour rule
+   is an offline experiment (`colour_rule.py` in the QA scratch); it is not in the
+   worker.
