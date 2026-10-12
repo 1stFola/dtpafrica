@@ -62,10 +62,24 @@ be linked to this competition. Doc 74 found and fixed the same fault for match i
 text id is stored after the check; an unknown competition is refused before any row or
 audit record is written.
 
+## The match squad
+
+Gold labels can name players only from the match squad, which no 1XCup match sheet had
+filled. At Fola's request, the squad was filled from the two teams' registered players:
+23 for Divine Praise FC and 25 for Kiraa FA. It went through the ScoreBoard CSV upload
+(`POST /admin/scoreboard/matches/:id/squads/upload`), which matched every player to an
+existing team-squad row and created no new ones.
+
+**What this data does not know:**
+- **Who started.** The squad model records only starters and substitutes, and the
+  lineup for this match is unknown. So every player is recorded as `bench`, which is
+  not a claim that anyone came off the bench.
+- **Shirt numbers.** Neither team has any registered.
+
+If the real match sheet turns up, the starters should be entered from it. This is the
+local database only; nothing changed on the live ScoreBoard.
+
 ## Still open
 
-- **The match squad is not entered.** Gold labels can name players only from the match
-  squad, which 1XCup's match sheets have not filled. Divine Praise FC and Kiraa FA have
-  23 and 25 registered players to fill it from, if Fola wants that.
 - **No detection, tracking or ball run yet on this clip.** They follow once the shots
   are labelled and the pitch is marked.
