@@ -432,6 +432,10 @@ export class VisionSourcesService {
   ) {
     await this.requirePartner(dto.partnerId);
 
+    if (dto.sbCompetitionId) {
+      const competition = await this.prisma.sbCompetition.findUnique({ where: { id: dto.sbCompetitionId }, select: { id: true } });
+      if (!competition) throw notFound("competition", dto.sbCompetitionId);
+    }
     if (dto.sbMatchId) {
       const match = await this.prisma.sbMatch.findUnique({ where: { id: dto.sbMatchId }, select: { id: true, competitionId: true } });
       if (!match) throw notFound("match", dto.sbMatchId);

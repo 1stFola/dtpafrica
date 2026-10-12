@@ -8,7 +8,12 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: a tiled ball pass, with colour and parked-ball checks** — detect runs the
+**Latest: a second pilot clip** — 2 min 25 s of Divine Praise FC v Kiraa FA (1XCup
+2026), with clearer pitch markings than the first, ingested with its media agreement and
+cut into 12 shots. Footage can now be linked to a competition whose ScoreBoard id is not
+a UUID ([96](./96-SECOND-PILOT-CLIP.md)).
+
+**A tiled ball pass, with colour and parked-ball checks** — detect runs the
 config its model version names. The ball-tiles/v2 config adds four corner tiles, keeps
 a tiled ball only if it is not yellow, orange or red, and marks it. Ball trajectory
 then drops a tiled ball that stays on one ground spot for 2.4 s, along pinned camera
