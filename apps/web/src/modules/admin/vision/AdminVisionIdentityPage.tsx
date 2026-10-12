@@ -692,6 +692,7 @@ export function AdminVisionIdentityPage() {
         >
           What the public would see
         </button>
+        <Link to={`/admin/vision/workstation/calibration/${assetId}`}>Calibration</Link>
         <Link to="/admin/vision">Vision</Link>
       </div>
 
