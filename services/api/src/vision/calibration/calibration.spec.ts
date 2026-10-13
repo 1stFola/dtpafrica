@@ -191,6 +191,9 @@ describe("a person's calibration", () => {
     expect(service.preview([{ landmark: "the_dugout", px: 1, py: 1 }])).toMatchObject({ ok: false, reason: "unknown_landmark", detail: "the_dugout" });
     expect(service.preview(clicks(SIX.slice(0, 3)))).toMatchObject({ ok: false, reason: "too_few_points" });
     expect(service.preview(clicks(["corner_left_near", "halfway_near", "corner_right_near", "left_box_near_goalline"]))).toMatchObject({ ok: false, reason: "degenerate" });
+    // A centre-circle view with one side of the circle: four on the halfway line, one off it (docs/vision/97).
+    const centre = clicks(["centre_spot", "halfway_far", "centre_circle_near", "centre_circle_far", "centre_circle_left"]).map((p, i) => ({ ...p, px: p.px + (i % 2 ? 0.8 : -0.6), py: p.py + (i % 3 ? -0.7 : 0.5) }));
+    expect(service.preview(centre)).toMatchObject({ ok: false, reason: "degenerate" });
   });
 
   it("refuses dimensions no pitch has", () => {
@@ -225,6 +228,13 @@ describe("keyframes for a moving camera", () => {
   beforeEach(() => {
     mockPrisma.visionCameraSegment.findUnique.mockResolvedValue({ id: SEGMENT, videoAssetId: ASSET, startMs: 0, endMs: 4120 });
     mockPrisma.visionVideoVariant.findFirst.mockResolvedValue({ fps: 25, sourceOffsetMs: 0 });
+  });
+
+  it("refuses a keyframe whose landmarks are four on one line and one off it", async () => {
+    const centre = clicks(["centre_spot", "halfway_far", "centre_circle_near", "centre_circle_far", "centre_circle_left"]).map((p, i) => ({ ...p, px: p.px + (i % 2 ? 0.8 : -0.6), frameIndex: 50 }));
+    await expect(service.calibrate(SEGMENT, { points: centre, keyframe: true }, reviewer)).rejects.toMatchObject({ response: { error: "CalibrationDegenerate" } });
+    expect(mockPrisma.visionPitchCalibration.create).not.toHaveBeenCalled();
+    expect(mockAudit.record).not.toHaveBeenCalled();
   });
 
   it("files a keyframe on the one frame its points were placed on, replacing only that frame's and the whole-segment one", async () => {

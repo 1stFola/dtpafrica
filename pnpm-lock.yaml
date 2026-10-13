@@ -141,6 +141,9 @@ importers:
       bcrypt:
         specifier: ^5.1.1
         version: 5.1.1
+      body-parser:
+        specifier: 1.20.4
+        version: 1.20.4
       class-transformer:
         specifier: ^0.5.1
         version: 0.5.1
@@ -172,6 +175,9 @@ importers:
       '@types/bcrypt':
         specifier: ^5.0.2
         version: 5.0.2
+      '@types/body-parser':
+        specifier: 1.19.6
+        version: 1.19.6
       '@types/node':
         specifier: ^22.10.1
         version: 22.19.19
@@ -1266,6 +1272,12 @@ packages:
 
   '@types/bcrypt@5.0.2':
     resolution: {integrity: sha512-6atioO8Y75fNcbmj0G7UjI9lXN2pQ/IGJ2FWT4a/btd0Lk9lQalHLKhkgKVZ3r+spnmWUKfbMi1GEe9wyHQfNQ==}
+
+  '@types/body-parser@1.19.6':
+    resolution: {integrity: sha512-HLFeCYgz89uk22N5Qg3dvGvsv46B8GLvKKo1zKG4NybA8U2DiEO3w9lqGg29t/tfLRJpJ6iQxnVw4OnB7MoM9g==}
+
+  '@types/connect@3.4.38':
+    resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
@@ -3598,6 +3610,15 @@ snapshots:
       '@babel/types': 7.29.0
 
   '@types/bcrypt@5.0.2':
+    dependencies:
+      '@types/node': 22.19.19
+
+  '@types/body-parser@1.19.6':
+    dependencies:
+      '@types/connect': 3.4.38
+      '@types/node': 22.19.19
+
+  '@types/connect@3.4.38':
     dependencies:
       '@types/node': 22.19.19
 

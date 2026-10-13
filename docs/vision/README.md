@@ -8,7 +8,16 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: a second pilot clip** — 2 min 25 s of Divine Praise FC v Kiraa FA (1XCup
+**Latest: the second pilot clip, end to end** — machine-made shot labels and
+keyframes (filed under an account named as not a person) from a camera fitted to the
+painted lines: pitch about 100 × 76 m, 0.8–1.6 px median line fit, carried calibration
+on 40.5% of frames. Detect ran on the GPU, then track, ball, calibrated possession, game
+state and carry: possession found 2 frames, because its 0.25-player-height foot gate
+passes only 158 of 1,268 ball frames, so carry found no events. Worker completions may
+now exceed 100 kB, and a calibration whose landmarks cannot fix the view (four on the
+halfway line and one off it) is refused instead of rated usable ([97](./97-SECOND-PILOT-MACHINE-CALIBRATION-AND-RUN.md)).
+
+**A second pilot clip** — 2 min 25 s of Divine Praise FC v Kiraa FA (1XCup
 2026), with clearer pitch markings than the first, ingested with its media agreement and
 cut into 12 shots. Footage can now be linked to a competition whose ScoreBoard id is not
 a UUID ([96](./96-SECOND-PILOT-CLIP.md)).

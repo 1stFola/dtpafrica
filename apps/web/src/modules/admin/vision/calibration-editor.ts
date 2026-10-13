@@ -125,7 +125,7 @@ export function fitReason(reason: string, detail?: string): string {
     case "too_few_points":
       return "At least four landmarks are needed.";
     case "degenerate":
-      return "These landmarks lie on a line, or too nearly so, to fix a view. Pick one off it.";
+      return "Too many of these landmarks lie on one line to fix a view: it needs four with no three on a line. Add landmarks off that line, such as both sides of the centre circle.";
     case "duplicate_points":
       return "Two landmarks are on the same spot.";
     case "unknown_landmark":
