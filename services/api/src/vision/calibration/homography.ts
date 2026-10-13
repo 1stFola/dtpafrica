@@ -55,11 +55,26 @@ export type FitFailure = { reason: "too_few_points" | "degenerate" | "duplicate_
 
 export const MIN_POINTS = 4;
 
+/**
+ * How far, in metres on the pitch, a landmark must lie from the line through two
+ * others to count as off it. Less than that tells the fit almost nothing across the
+ * line: three landmarks spanning the pitch a few centimetres off one line pin it no
+ * better than three on it. A fit needs only some four landmarks clear of this, so
+ * extra near-collinear ones do no harm.
+ */
+export const COLLINEAR_TOLERANCE_M = 1;
+
 export function fitHomography(pairs: readonly Correspondence[]): Fit | FitFailure {
   if (pairs.length < MIN_POINTS) return { reason: "too_few_points" };
   if (hasDuplicates(pairs.map((p) => ({ x: p.px, y: p.py }))) || hasDuplicates(pairs.map((p) => ({ x: p.xM, y: p.yM })))) {
     return { reason: "duplicate_points" };
   }
+  // The solver below only notices exact degeneracy. Four landmarks on the halfway line
+  // and one off it give a system that is singular on the pitch but not quite in the
+  // clicked pixels, so it solves -- to a view metres wrong away from that line, with
+  // an error of millimetres at the points (docs/vision/97). The landmarks are exact,
+  // so ask them directly.
+  if (!inGeneralPosition(pairs.map((p) => ({ x: p.xM, y: p.yM })))) return { reason: "degenerate" };
 
   const src = normalise(pairs.map((p) => ({ x: p.px, y: p.py })));
   const dst = normalise(pairs.map((p) => ({ x: p.xM, y: p.yM })));
@@ -260,6 +275,33 @@ function solve(matrix: number[][], rhs: number[]): number[] | null {
     x[r] = sum / a[r]![r]!;
   }
   return x.every((v) => Number.isFinite(v)) ? x : null;
+}
+
+/**
+ * Whether some four of the points have no three on one line: what a homography
+ * needs to be fixed by them. Exported for its test.
+ */
+export function inGeneralPosition(points: readonly Point[], toleranceM = COLLINEAR_TOLERANCE_M): boolean {
+  const n = points.length;
+  const off = (a: number, b: number, c: number) => {
+    const p = points[a]!, q = points[b]!, r = points[c]!;
+    const base = Math.hypot(q.x - p.x, q.y - p.y);
+    // The distance of each from the line through the other two; the triple is collinear if any is small.
+    const area2 = Math.abs((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+    const longest = Math.max(base, Math.hypot(r.x - p.x, r.y - p.y), Math.hypot(r.x - q.x, r.y - q.y));
+    return longest > 0 && area2 / longest > toleranceM;
+  };
+  for (let a = 0; a < n; a += 1) {
+    for (let b = a + 1; b < n; b += 1) {
+      for (let c = b + 1; c < n; c += 1) {
+        if (!off(a, b, c)) continue;
+        for (let d = c + 1; d < n; d += 1) {
+          if (off(a, b, d) && off(a, c, d) && off(b, c, d)) return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function hasDuplicates(points: readonly Point[]): boolean {

@@ -69,9 +69,36 @@ line, and usually only one of the circle's left or right points is in view.
 
 **What was filed instead:** only frame 1700, where both sides of the circle show.
 
-**What a person clicking the same points would get:** the same misleading "usable". The
-calibration check should refuse near-collinear points, or the catalogue should offer
-centre-view points off the halfway line. This is still open.
+**What a person clicking the same points would have got:** the same misleading
+"usable". That is now fixed (below).
+
+### The fix: landmarks must fix the view
+
+**Why the old check missed it:** the fit refused only exact degeneracy, which its
+solver notices. Clicked pixels are never exactly collinear, so the system was
+ill-conditioned rather than singular, and it solved.
+
+**The new check** (`inGeneralPosition`, in `homography.ts`):
+- It runs on the landmarks' pitch positions, which are exact.
+- It needs some four landmarks with no three within 1 m of one line.
+- A set without them is refused as `degenerate`, both in the editor's preview and when
+  filing a calibration or keyframe (409 `CalibrationDegenerate`).
+- Extra near-collinear landmarks do no harm, as long as four clear the bar.
+- The editor now says what to add: landmarks off the line, such as both sides of the
+  centre circle.
+
+**Checked against the live API with this run's points:**
+- frames 1000 and 375 (centre circle, one side) are refused;
+- frames 1700 and 2875, which were filed, still fit as `good`.
+
+**Tests:**
+- the centre-view case is refused under five different sets of pixel noise, and with
+  exact clicks;
+- once both sides of the circle are in view, it fits and places a far point to within
+  1 cm;
+- penalty-area, goal and six-landmark sets still pass;
+- a keyframe of the centre-view set is refused before any row or audit record is written.
+- With the check disabled, the three new refusal tests fail.
 
 ## Following the camera
 
@@ -160,8 +187,9 @@ job failed. The first pilot clip was 49.7 s, short enough to fit.
 - **Gold:** two independent people label the clip's events.
 - **Possession:** decide the foot-distance gate for this footage, after looking at frames
   where the ball is at a player's feet but is refused.
-- **Centre-circle keyframes:** refuse near-collinear points, or add landmarks off the
-  halfway line.
+- **Centre-circle views with one side of the circle** are now refused, not fitted
+  wrongly. Calibrating them would need more landmarks in the catalogue, for example
+  points on the circle off the halfway line.
 - **Carried quality:** a carried frame should lose quality with distance from its
   keyframe. The 3 m drift at 10 s is still labelled `good`.
 - **The editor header** says "0s calibrated" when the shots have keyframes. It counts

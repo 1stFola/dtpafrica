@@ -14,7 +14,8 @@ painted lines: pitch about 100 × 76 m, 0.8–1.6 px median line fit, carried ca
 on 40.5% of frames. Detect ran on the GPU, then track, ball, calibrated possession, game
 state and carry: possession found 2 frames, because its 0.25-player-height foot gate
 passes only 158 of 1,268 ball frames, so carry found no events. Worker completions may
-now exceed 100 kB ([97](./97-SECOND-PILOT-MACHINE-CALIBRATION-AND-RUN.md)).
+now exceed 100 kB, and a calibration whose landmarks cannot fix the view (four on the
+halfway line and one off it) is refused instead of rated usable ([97](./97-SECOND-PILOT-MACHINE-CALIBRATION-AND-RUN.md)).
 
 **A second pilot clip** — 2 min 25 s of Divine Praise FC v Kiraa FA (1XCup
 2026), with clearer pitch markings than the first, ingested with its media agreement and
