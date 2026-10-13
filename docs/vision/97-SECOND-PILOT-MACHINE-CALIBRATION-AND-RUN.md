@@ -182,11 +182,137 @@ job failed. The first pilot clip was 49.7 s, short enough to fit.
 - small bodies parse everywhere;
 - a body over 16 MB is refused even on a worker route.
 
+## The possession gate, looked at
+
+Requested by Fola after the run. The judgements below are Claude's, from looking at crops
+of the frames; no person has reviewed them.
+
+**What was looked at.** For every frame where the ball was observed, the distance from the
+ball to the nearest confirmed player's foot point (bottom centre of the box), in player
+heights. 54 frames were sampled across that range and cropped with the ball, the box and
+the foot point drawn on.
+
+| Distance (player heights) | Frames | What the crops show |
+|---|---|---|
+| under 0.25 (the gate) | 158 | ball at the player's feet |
+| 0.25–0.40 | 250 | about 23 or 24 of 24 sampled show a player on the ball, often dribbling it a stride ahead |
+| 0.40–0.50 | about 150 | about 15 of 24; the misses are loose balls and bench staff or officials beside the pitch |
+| over 0.6 | about 500 | loose balls and balls in the air |
+
+**Re-running possession** (CPU only):
+
+| Run | Gate | Continuity | Mode | Candidate frames |
+|---|---|---|---|---|
+| `046ad8ee` | 0.25 | 200 ms | calibrated | 2 |
+| `097ef21a` | 0.40 | 200 ms | calibrated | 13 |
+| `24236f00` | 0.40 | 80 ms | calibrated | 51 |
+| `d120e805` | 0.40 | 80 ms | image only | 155 |
+
+**The gate is not the main limit; the ball is.** The ball is observed in 35% of frames,
+in bursts with a median length of 2 frames. Only 73 bursts reach 5 frames. Continuity
+restarts at every missed frame, so:
+- even the loosest calibrated run covers 1.4% of frames;
+- its longest unbroken possession is 9 frames (0.36 s);
+- the carry rule needs 1 s and 2 m, so carry (`e57664a6`) still found **0 events**.
+
+**What would change it** (Fola's choice):
+- bridge short ball gaps inside a trajectory (ball trajectory or possession continuity);
+- a ball detector that sees the ball in more consecutive frames;
+- the gate itself: 0.40 looks right for this camera, but it only matters once the ball is
+  continuous.
+
+### A fix: evidence a unit in the last place apart
+
+**The problem:** carry refused the 51-frame run.
+- The run's coverage, 51/3615, is `0.014107883817427386` in the worker's index but
+  `0.01410788381742739` in the job row. A 17-digit float loses a digit on the way into the
+  jsonb column (Postgres keeps 17 digits when given them directly, so the loss is on the
+  write path).
+- The API compared evidence as JSON strings, and the worker compared the queued index
+  with `!=`, so a sound run was refused.
+- The 2-frame run passed only because 2/3615 fits in 16 digits.
+
+**The fix:**
+- Evidence is now compared by value, in the API (`sameEvidence`) and the worker
+  (`evidence.same_evidence`). Key order is free, numbers may differ by 1e-12 relatively,
+  and nothing else is loosened (booleans are not numbers, and NaN matches nothing).
+- The worker still pins the index bytes by checksum. It then uses those pinned bytes,
+  not the queued copy.
+
+**Tests:**
+- the 51/3615 pair is accepted on a whole possession run (API) and a whole carry run
+  (worker);
+- a genuinely different coverage is still refused;
+- with exact comparison put back, the new tests fail.
+
+Checked live with the fixed worker code mounted into the CPU image: carry completed on
+the 51-frame run.
+
+## Option A: bridging short ball gaps
+
+Fola chose to bridge short gaps first (option A), then start on a better ball detector
+(option B).
+
+**Simulated first**, on this clip's ball and track data, at the 0.40 gate and 200 ms
+continuity:
+
+| Gap allowed | Candidate frames | Stretches of 1 s or more |
+|---|---|---|
+| none | 54 | 0 |
+| 6 frames | 187 | 2 |
+| 15 frames | 203 | 4 |
+
+So A alone was expected to give one or two carries here. The detector, not the bridging,
+is the main limit.
+
+**What was built.** Neither change gives a lost frame a coordinate.
+- **Possession**, `possessionConfig.maxBallGapMs` (0–1000 ms, default 0, so unchanged
+  unless set):
+  - a loss the detector caused (no detection, low confidence, ambiguous, missing frame)
+    no longer restarts the same player's continuity, if it lasts no longer than the gap;
+  - continuity is then keyed on camera and player, since the ball's trajectory restarts
+    after any loss;
+  - gap frames stay Unknown with no point;
+  - a jump, a cut, non-play or another player still resets it.
+- **Carry `event-carry/v2`**, manifest `e06c0cf7…`, which adds `maxBallGapMs: 240`:
+  - a carry stays open across Unknown `ball_lost` rows that short, for the same camera
+    and player;
+  - the ball's trajectory may change only across such a gap;
+  - displacement and speed still come from the player's own position, frame by frame.
+- **Registry:** model version 0.2.0 (`93b4cff6`), image `dtp-vision-engine:cpu-d868758`,
+  built from commit d868758.
+
+**Tests:**
+- possession: a short gap holds the player; a long gap, a cut, another player and a
+  motion jump each still reset it; the setting is bounded;
+- carry: it survives a short loss; it ends on a long gap, a non-ball reason or another
+  player; a trajectory change with no gap still never joins;
+- the API passes the setting through, and refuses values out of range.
+
+**Live run** on the clip, CPU only:
+
+| Job | Settings | Result |
+|---|---|---|
+| Possession `ee333102` | calibrated, 0.40, 200 ms, 240 ms gap | 87 candidate frames (13 without the gap) |
+| Carry `84008b01` | `event-carry/v2` | **1 carry** |
+
+**The carry:** 01:20.3 to 01:23.1, track 3767, 3.4 m.
+- Looking at the frames, it is a real carry: a Divine Praise player, shirt 8, dribbling
+  the ball.
+- In two frames the detector missed the ball, which was plainly at his feet. Those are the
+  gaps the bridge spans.
+- It is 7–10 s from the nearest keyframe, where calibration drift was measured at up to
+  3 m. The 3.4 m figure is therefore uncertain.
+
+This is Claude's reading of the frames, not a person's review. The gold labels will
+score it.
+
 ## Still open
 
 - **Gold:** two independent people label the clip's events.
-- **Possession:** decide the foot-distance gate for this footage, after looking at frames
-  where the ball is at a player's feet but is refused.
+- **The ball detector (option B):** the ball is found in 35% of frames, and most misses
+  are frames with no ball detection at all. Bridging (option A, above) gives one carry;
+  a football-specific detector is the main lever.
 - **Centre-circle views with one side of the circle** are now refused, not fitted
   wrongly. Calibrating them would need more landmarks in the catalogue, for example
   points on the circle off the halfway line.

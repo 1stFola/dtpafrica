@@ -7,6 +7,7 @@ from ..event_carry import VERSION, MANIFEST_CHECKSUM, propose
 from ..jsonstream import fields, items, JsonStreamError
 from ..media import sha256_file
 from ..carried_frames import load as load_carried
+from ..evidence import same_evidence
 from ..possession import PlayerIndex
 from ..possession_constraints import carried_segment_ids
 from ..runner import StageRefusal, StageResult, download, upload
@@ -42,8 +43,12 @@ def run_events(ctx):
         ctx.progress.set("download")
         path = ctx.work_dir / "possession.json"
         read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=source["key"]), path)
-        if path.stat().st_size > 1024 * 1024 or sha256_file(path) != source["indexChecksum"] or json.loads(path.read_bytes()) != index:
+        if path.stat().st_size > 1024 * 1024 or sha256_file(path) != source["indexChecksum"]:
             raise ValueError("original possession index changed")
+        pinned = json.loads(path.read_bytes())
+        if not same_evidence(pinned, index):
+            raise ValueError("original possession index changed")
+        index = pinned  # the checksum-pinned bytes, with the producer's own digits
         chunks = index.get("chunks")
         if not isinstance(chunks, list) or not chunks or len(chunks) > 256:
             raise ValueError("possession chunks must be explicit and bounded")

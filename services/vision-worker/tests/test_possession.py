@@ -149,3 +149,42 @@ def test_segments_cover_exact_original_window_with_unknown_loss_and_checksum(tmp
 def test_empty_player_output_still_produces_explicit_unknown_segments(tmp_path):
     c = clock()
     assert all(r["reason"] == "no_player" for r in process(tmp_path, c, tracks=[]))
+
+
+def test_a_short_ball_gap_holds_the_same_player_when_bridging_is_on(tmp_path):
+    # docs/vision/97: the ball is often lost for a frame or two between sightings.
+    c = clock(600)
+    b = balls(c, lost=(6, 7))
+    bridged = process(tmp_path, c, ball_rows=b, config=Config(maxBallGapMs=120))
+    # The gap frames stay Unknown with no point; continuity counted from frame 0 carries on.
+    assert [r["state"] for r in bridged[5:10]] == ["candidate", "unknown", "unknown", "candidate", "candidate"]
+    assert bridged[6]["reason"] == bridged[7]["reason"] == "ball_lost" and bridged[6]["localTrackId"] is None
+    # Without bridging the loss restarts the count, as before.
+    (tmp_path / "plain").mkdir()
+    plain = process(tmp_path / "plain", c, ball_rows=b)
+    assert [r["state"] for r in plain[8:13]] == ["unknown"] * 5 and plain[13]["state"] == "candidate"
+
+
+@pytest.mark.parametrize("cause", ["too_long", "camera", "other_player", "not_a_detector_miss"])
+def test_bridging_never_spans_a_long_gap_a_cut_another_player_or_a_lost_reason_beyond_the_detector(tmp_path, cause):
+    segments = [{"cameraSegmentId": "a", "startMs": 0, "endMs": 280, "kind": "live_play"}, {"cameraSegmentId": "b", "startMs": 280, "endMs": 800, "kind": "live_play"}]
+    c = clock(800, segments if cause == "camera" else None)
+    lost = (6, 7, 8, 9) if cause == "too_long" else (6,)
+    b = balls(c, lost=lost, changes=(7,) if cause == "camera" else None)
+    if cause == "not_a_detector_miss":
+        b[6]["reason"] = "motion_jump"
+    tracks = [track(c)]
+    if cause == "other_player":
+        tracks = [track(c, missing=range(7, c.frames)), track(c, local_id=2, missing=range(7))]
+    result = process(tmp_path, c, tracks, b, config=Config(maxBallGapMs=120))
+    after = lost[-1] + 1
+    # The count restarts after the gap: five frames pending before a candidate again.
+    assert all(r["state"] == "unknown" for r in result[after:after + 5])
+    assert result[after + 5]["state"] == "candidate"
+
+
+def test_ball_gap_configuration_is_bounded(tmp_path):
+    assert Config.parse({"maxBallGapMs": 240}).maxBallGapMs == 240
+    for bad in (-1, 1001, 1.5, True):
+        with pytest.raises(ValueError):
+            Config.parse({"maxBallGapMs": bad})

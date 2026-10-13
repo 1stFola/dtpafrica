@@ -9,12 +9,12 @@ import type { ObjectStore } from "../storage/object-store";
 /** Resolve only original stored outputs. Review decisions and manual edits never become producer inputs. */
 export async function eventCarryInputs(db: Pick<PrismaClient, "visionJob" | "visionJobEvent" | "visionModelVersion" | "visionCameraSegment" | "visionVideoVariant">,
   store: ObjectStore, asset: { id: string; checksumSha256: string; durationMs: number | null }, modelVersionId: string, requested?: Record<string, unknown>) {
-  const bad = (message: string) => refusal(409, "EventCarryEvidenceMissing", message, "Complete current calibrated possession on a clip of at most five minutes; explicitly select a registered event-carry/v1 algorithm version.");
+  const bad = (message: string) => refusal(409, "EventCarryEvidenceMissing", message, "Complete current calibrated possession on a clip of at most five minutes; explicitly select a registered event-carry/v2 algorithm version.");
   const selected = requested?.possessionJobId;
   if (selected !== undefined && (typeof selected !== "string" || !selected.trim() || selected.length > 100)) throw refusal(400, "InvalidEventCarryInput", "Select a completed possession job ID.", "Use possessionJobId or omit it to select the latest completed run.");
   const model = await db.visionModelVersion.findUnique({ where: { id: modelVersionId }, select: { id: true, configKey: true, gitCommit: true, workerImage: true, weightsKey: true, weightsChecksum: true, model: { select: { task: true } } } });
   if (!model || model.model.task !== "event" || model.configKey !== EVENT_CARRY_VERSION || model.weightsKey !== null || model.weightsChecksum !== null || !model.gitCommit?.trim() || !model.workerImage?.trim())
-    throw bad("This producer requires a weight-free event-carry/v1 registry version with commit and worker image provenance.");
+    throw bad("This producer requires a weight-free event-carry/v2 registry version with commit and worker image provenance.");
   const job = await db.visionJob.findFirst({ where: { videoAssetId: asset.id, type: "possession", state: "succeeded", ...(typeof selected === "string" ? { id: selected } : {}) }, orderBy: { finishedAt: "desc" } });
   if (!job) throw bad("No completed possession run exists for this asset.");
   const evidence = await readPossessionEvidence(db, store, asset, job.id);
