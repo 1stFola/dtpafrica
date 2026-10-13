@@ -17,12 +17,29 @@ export const frameMs = (frame: number, fps: number) => { const value = frame * 1
 export const bad = (message: string) => refusal(409, "PossessionEvidenceInvalid", message, "Choose a complete possession run with compatible pinned evidence. Use shorter footage or larger chunks if the review import exceeds its limits.");
 export const checksum = (body: Buffer) => createHash("sha256").update(body).digest("hex");
 const keys = ["calculationVersion", "frames", "candidateFrames", "unknownFrames", "candidateFrameCoverage", "reasons", "segments", "windowStartMs", "windowEndMs", "sourceChecksum", "ballJobId", "trackJobId", "ballIndexChecksum", "tracksChecksum", "chunks", "coordinateBasis", "reviewState"];
-const canonical = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
-  return JSON.stringify(value) ?? "undefined";
+/**
+ * Within this much of each other, relatively, two numbers are the same evidence. A
+ * float the worker wrote with 17 digits can come back from a jsonb column with 16,
+ * a unit in the last place away (51/3615: ...427386 in the artifact, ...42739 in the
+ * job row; docs/vision/97), and string equality then refused a sound run.
+ */
+const RELATIVE_TOLERANCE = 1e-12;
+
+const sameNumber = (a: number, b: number) =>
+  a === b || (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= RELATIVE_TOLERANCE * Math.max(Math.abs(a), Math.abs(b)));
+
+/** Equal as JSON evidence: key order ignored (Postgres reorders jsonb keys), numbers to the last few digits, all else exactly. */
+export const sameEvidence = (a: unknown, b: unknown): boolean => {
+  if (typeof a === "number" && typeof b === "number") return sameNumber(a, b);
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => sameEvidence(v, b[i]));
+  }
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
+    return ka.length === kb.length && ka.every((k, i) => k === kb[i] && sameEvidence((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+  }
+  return a === b;
 };
-export const sameEvidence = (a: unknown, b: unknown) => canonical(a) === canonical(b);
 
 /** No media or dense track data enters the API: only bounded index/segment JSON. */
 export async function readPossessionEvidence(db: Pick<PrismaClient, "visionJob" | "visionJobEvent">, store: ObjectStore,

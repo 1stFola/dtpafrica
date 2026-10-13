@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { frameMs, MAX_POSSESSION_INDEX_BYTES, readPossessionEvidence } from "./possession-evidence";
+import { frameMs, MAX_POSSESSION_INDEX_BYTES, readPossessionEvidence, sameEvidence } from "./possession-evidence";
 import { calibratePossessionFixture, possessionFixture } from "./possession-fixture";
 import { SmallObjectTooLargeError } from "../storage/object-store";
 
@@ -94,6 +94,31 @@ describe("bounded possession review evidence", () => {
     expect(spy).toHaveBeenCalledWith("derived", "inference/job/1/possession.json", MAX_POSSESSION_INDEX_BYTES);
     await fixture.store.putSmallObject("derived", "inference/job/1/possession.json", "tampered", "application/json");
     await expect(read()).rejects.toMatchObject({ response: { error: "PossessionEvidenceInvalid" } });
+  });
+  it("accepts a coverage the job row holds a unit in the last place off the artifact's (docs/vision/97)", async () => {
+    // 51/3615 as the worker wrote it, and as it came back from the jsonb job row.
+    expect(0.014107883817427386).not.toBe(0.01410788381742739);
+    expect(sameEvidence(0.014107883817427386, 0.01410788381742739)).toBe(true);
+    // The same on a whole run: the index keeps the worker's double, the row and the log the next one up.
+    await fixture.write();
+    const exact = fixture.index.candidateFrameCoverage as number;
+    const stored = exact + Number.EPSILON * exact;
+    expect(stored).not.toBe(exact);
+    fixture.job.progress.summary.candidateFrameCoverage = stored;
+    fixture.log.data.summary.candidateFrameCoverage = stored;
+    expect((await read()).index.candidateFrameCoverage).toBe(exact);
+  });
+  it("compares evidence by value: key order free, numbers to the last digits, nothing else loosened", () => {
+    expect(sameEvidence({ a: 1, b: [1, { c: "x" }] }, { b: [1, { c: "x" }], a: 1 })).toBe(true);
+    expect(sameEvidence(0.1 + 0.2, 0.3)).toBe(true);
+    expect(sameEvidence(0.3, 0.3001)).toBe(false);
+    expect(sameEvidence(1, 1 + 1e-9)).toBe(false);
+    expect(sameEvidence({ a: 1 }, { a: 1, b: undefined })).toBe(false);
+    expect(sameEvidence([1, 2], [2, 1])).toBe(false);
+    expect(sameEvidence(null, undefined)).toBe(false);
+    expect(sameEvidence("1", 1)).toBe(false);
+    expect(sameEvidence(Number.NaN, null)).toBe(false);
+    expect(sameEvidence({}, [])).toBe(false);
   });
   it("uses the producer's round-to-even source milliseconds", () => { expect(frameMs(1, 16)).toBe(62); expect(frameMs(3, 16)).toBe(188); expect(frameMs(1, 25)).toBe(40); });
 });

@@ -128,3 +128,24 @@ def test_a_carried_possession_whose_run_changed_is_refused(fixture, monkeypatch)
     with pytest.raises(StageRefusal):
         stage.run_events(ctx)
     assert not uploaded
+
+
+def test_a_queued_index_a_unit_in_the_last_place_off_its_artifact_is_the_same_evidence(fixture):
+    # docs/vision/97: 51/3615 came back from the job row with 16 digits, not the artifact's 17.
+    ctx, params, index, tracks, rows, objects, uploaded, repin = fixture
+    index["candidateFrameCoverage"] = 0.014107883817427386
+    repin()
+    queued = json.loads(json.dumps(index)); queued["candidateFrameCoverage"] = 0.01410788381742739
+    assert queued["candidateFrameCoverage"] != index["candidateFrameCoverage"]
+    params["possessionIndex"] = queued
+    assert stage.run_events(ctx).summary["eventCount"] == 1
+
+
+def test_a_queued_index_that_really_differs_is_still_refused(fixture):
+    ctx, params, index, tracks, rows, objects, uploaded, repin = fixture
+    index["candidateFrameCoverage"] = 0.0141
+    repin()
+    queued = json.loads(json.dumps(index)); queued["candidateFrameCoverage"] = 0.0142
+    params["possessionIndex"] = queued
+    with pytest.raises(StageRefusal): stage.run_events(ctx)
+    assert uploaded == {}
