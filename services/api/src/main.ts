@@ -3,12 +3,15 @@ import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { LiveAudioCommentaryService } from "./scoreboard/live-audio-commentary.service";
+import { applyBodyLimits } from "./shared/body-limits";
 import { loadApiEnv } from "./shared/load-dotenv";
 
 loadApiEnv();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Body parsing is ours: worker routes take larger bodies than the rest (shared/body-limits).
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  applyBodyLimits(app);
   app.setGlobalPrefix("api/v1");
   app.enableCors({ origin: true });
   app.useGlobalPipes(
