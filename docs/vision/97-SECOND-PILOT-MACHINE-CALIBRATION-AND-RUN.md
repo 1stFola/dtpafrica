@@ -248,12 +248,71 @@ restarts at every missed frame, so:
 Checked live with the fixed worker code mounted into the CPU image: carry completed on
 the 51-frame run.
 
+## Option A: bridging short ball gaps
+
+Fola chose to bridge short gaps first (option A), then start on a better ball detector
+(option B).
+
+**Simulated first**, on this clip's ball and track data, at the 0.40 gate and 200 ms
+continuity:
+
+| Gap allowed | Candidate frames | Stretches of 1 s or more |
+|---|---|---|
+| none | 54 | 0 |
+| 6 frames | 187 | 2 |
+| 15 frames | 203 | 4 |
+
+So A alone was expected to give one or two carries here. The detector, not the bridging,
+is the main limit.
+
+**What was built.** Neither change gives a lost frame a coordinate.
+- **Possession**, `possessionConfig.maxBallGapMs` (0–1000 ms, default 0, so unchanged
+  unless set):
+  - a loss the detector caused (no detection, low confidence, ambiguous, missing frame)
+    no longer restarts the same player's continuity, if it lasts no longer than the gap;
+  - continuity is then keyed on camera and player, since the ball's trajectory restarts
+    after any loss;
+  - gap frames stay Unknown with no point;
+  - a jump, a cut, non-play or another player still resets it.
+- **Carry `event-carry/v2`**, manifest `e06c0cf7…`, which adds `maxBallGapMs: 240`:
+  - a carry stays open across Unknown `ball_lost` rows that short, for the same camera
+    and player;
+  - the ball's trajectory may change only across such a gap;
+  - displacement and speed still come from the player's own position, frame by frame.
+- **Registry:** model version 0.2.0 (`93b4cff6`), image `dtp-vision-engine:cpu-d868758`,
+  built from commit d868758.
+
+**Tests:**
+- possession: a short gap holds the player; a long gap, a cut, another player and a
+  motion jump each still reset it; the setting is bounded;
+- carry: it survives a short loss; it ends on a long gap, a non-ball reason or another
+  player; a trajectory change with no gap still never joins;
+- the API passes the setting through, and refuses values out of range.
+
+**Live run** on the clip, CPU only:
+
+| Job | Settings | Result |
+|---|---|---|
+| Possession `ee333102` | calibrated, 0.40, 200 ms, 240 ms gap | 87 candidate frames (13 without the gap) |
+| Carry `84008b01` | `event-carry/v2` | **1 carry** |
+
+**The carry:** 01:20.3 to 01:23.1, track 3767, 3.4 m.
+- Looking at the frames, it is a real carry: a Divine Praise player, shirt 8, dribbling
+  the ball.
+- In two frames the detector missed the ball, which was plainly at his feet. Those are the
+  gaps the bridge spans.
+- It is 7–10 s from the nearest keyframe, where calibration drift was measured at up to
+  3 m. The 3.4 m figure is therefore uncertain.
+
+This is Claude's reading of the frames, not a person's review. The gold labels will
+score it.
+
 ## Still open
 
 - **Gold:** two independent people label the clip's events.
-- **Possession:** the ball is seen in bursts too short for possession to hold. Bridging
-  short ball gaps, or a better ball detector, comes before the gate. 0.40 is the gate this
-  footage suggests.
+- **The ball detector (option B):** the ball is found in 35% of frames, and most misses
+  are frames with no ball detection at all. Bridging (option A, above) gives one carry;
+  a football-specific detector is the main lever.
 - **Centre-circle views with one side of the circle** are now refused, not fitted
   wrongly. Calibrating them would need more landmarks in the catalogue, for example
   points on the circle off the halfway line.

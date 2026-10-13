@@ -8,7 +8,13 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: the second pilot clip, end to end** — machine-made shot labels and
+**Latest: bridging short ball gaps** — possession can hold a player through a ball lost
+for up to 240 ms, and carry `event-carry/v2` stays open across it, without giving a lost
+frame a coordinate. On the 1XCup clip possession went from 13 to 87 frames and carry
+found its first event, a 3 s dribble. The ball detector, which finds the ball in 35% of
+frames, is the next limit ([97](./97-SECOND-PILOT-MACHINE-CALIBRATION-AND-RUN.md)).
+
+**The second pilot clip, end to end** — machine-made shot labels and
 keyframes (filed under an account named as not a person) from a camera fitted to the
 painted lines: pitch about 100 × 76 m, 0.8–1.6 px median line fit, carried calibration
 on 40.5% of frames. Detect ran on the GPU, then track, ball, calibrated possession, game
