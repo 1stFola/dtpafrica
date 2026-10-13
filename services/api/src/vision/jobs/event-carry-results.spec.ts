@@ -6,9 +6,9 @@ import { possessionFixture, calibratePossessionFixture } from "../possession/pos
 describe("carry completion has no ledger side effects", () => {
   function fixture() {
     const f = possessionFixture(); calibratePossessionFixture(f);
-    const producer = { algorithm: "event-carry/v1", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, possessionJobId: "possession", possessionIndexChecksum: "a".repeat(64), tracksChecksum: "c".repeat(64), calibrationSnapshot: f.index.calibrationSnapshot, cameraSegments: f.cameras };
+    const producer = { algorithm: "event-carry/v2", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, possessionJobId: "possession", possessionIndexChecksum: "a".repeat(64), tracksChecksum: "c".repeat(64), calibrationSnapshot: f.index.calibrationSnapshot, cameraSegments: f.cameras };
     const summary: any = { producer, modelVersionId: "model", weightsSha256: null, sourceChecksum: "a".repeat(64), windowStartMs: 0, windowEndMs: 400, eventCount: 0, eventArtifactSha256: "f".repeat(64), reviewState: "unreviewed" };
-    const context = { modelVersionId: "model", inputSpec: { eventAlgorithm: { modelVersionId: "model", configKey: "event-carry/v1", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, weightsChecksum: null, gitCommit: "commit", workerImage: "image" }, sourceChecksum: "a".repeat(64), windowStartMs: 0, windowEndMs: 400, possession: { jobId: "possession", indexChecksum: "a".repeat(64) }, possessionIndex: f.index, tracks: { checksum: "c".repeat(64) } } };
+    const context = { modelVersionId: "model", inputSpec: { eventAlgorithm: { modelVersionId: "model", configKey: "event-carry/v2", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, weightsChecksum: null, gitCommit: "commit", workerImage: "image" }, sourceChecksum: "a".repeat(64), windowStartMs: 0, windowEndMs: 400, possession: { jobId: "possession", indexChecksum: "a".repeat(64) }, possessionIndex: f.index, tracks: { checksum: "c".repeat(64) } } };
     const artifacts: any[] = [{ role: "event_inference", key: "inference/events/1/events.json", bucket: "derived", contentType: "application/json", bytes: 2000 }];
     // An empty DB object would fail immediately if the producer attempted writes.
     const service = new VisionStageResultsService({} as never, {} as never);

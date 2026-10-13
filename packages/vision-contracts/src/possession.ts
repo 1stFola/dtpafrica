@@ -43,7 +43,7 @@ export type PossessionJobParams = {
   constraintMode?: "image" | "calibrated";
   calibrationSnapshot?: PossessionCalibrationSnapshot;
   footballConfig?: PossessionFootballConfig;
-  possessionConfig?: { minBallConfidence?: number; minPlayerConfidence?: number; maxFootDistanceHeights?: number; minContinuityMs?: number };
+  possessionConfig?: { minBallConfidence?: number; minPlayerConfidence?: number; maxFootDistanceHeights?: number; minContinuityMs?: number; maxBallGapMs?: number };
   chunkMs?: number;
   readKeys: { bucket: "derived"; key: string }[];
 };

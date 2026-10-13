@@ -11,8 +11,10 @@ from .ball_trajectory import integer, number
 from .gamestate import project
 from .possession_constraints import Constraints, FootballConfig
 
-VERSION = "event-carry/v1"
-MANIFEST = {"algorithm": VERSION, "minDurationMs": 1000, "minDisplacementM": 2, "maxPlayerSpeedMps": 12, "maxEvents": 200}
+VERSION = "event-carry/v2"
+#: v2 adds maxBallGapMs: a carry survives the ball being lost for that long, as long as
+#: the same player is still followed frame by frame (docs/vision/97).
+MANIFEST = {"algorithm": VERSION, "minDurationMs": 1000, "minDisplacementM": 2, "maxPlayerSpeedMps": 12, "maxEvents": 200, "maxBallGapMs": 240}
 MANIFEST_CHECKSUM = hashlib.sha256(json.dumps(MANIFEST, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -46,7 +48,13 @@ def propose(clock, segments, players, snapshot, football_config, carried=None):
         if state == "unknown":
             if row.get("localTrackId") is not None or row.get("evidenceConfidence") is not None:
                 raise ValueError("Unknown cannot name a possessor")
-            flush()
+            # A short loss of the ball holds the carry open; it closes when the possessor is seen
+            # again later than the gap allows, or when anything other than the ball goes missing.
+            gap_ms = row["endMs"] - pending["lastMs"] if pending else None
+            if pending and row.get("reason") == "ball_lost" and row.get("cameraSegmentId") == pending["identity"][0] and gap_ms <= MANIFEST["maxBallGapMs"] + 1000 / clock.fps:
+                pending["held"] = True
+            else:
+                flush()
         else:
             local, trajectory = row.get("localTrackId"), row.get("trajectoryId")
             score = row.get("evidenceConfidence")
@@ -75,16 +83,19 @@ def propose(clock, segments, players, snapshot, football_config, carried=None):
                 if point is None or any(not math.isfinite(v) for v in point) or not (0 <= point[0] <= pitch["lengthM"] and 0 <= point[1] <= pitch["widthM"]):
                     flush()
                     continue
-                if pending and pending["identity"] != identity:
+                # The ball's trajectory restarts after a loss, so it may change only across a gap this
+                # carry held open; the camera and the player never change within one carry.
+                if pending and ((pending["identity"][0], pending["identity"][2]) != (identity[0], identity[2])
+                                or (pending["trajectory"] != trajectory and not pending["held"])):
                     flush()
                 if pending:
                     dt = (ms - pending["lastMs"]) / 1000
                     if dt <= 0 or math.dist(point, pending["last"]) / dt > min(MANIFEST["maxPlayerSpeedMps"], constraints.config.maxPlayerSpeedMps):
                         flush()
                 if pending is None:
-                    pending = {"identity": identity, "startMs": ms, "lastMs": ms, "first": point, "last": point, "confidence": min(score, player[4])}
+                    pending = {"identity": identity, "trajectory": trajectory, "held": False, "startMs": ms, "lastMs": ms, "first": point, "last": point, "confidence": min(score, player[4])}
                 else:
-                    pending.update(lastMs=ms, last=point, confidence=min(pending["confidence"], score, player[4]))
+                    pending.update(lastMs=ms, last=point, trajectory=trajectory, held=False, confidence=min(pending["confidence"], score, player[4]))
         frames = end_frame
     if frames != clock.frames:
         raise ValueError("possession evidence ends before complete source coverage")

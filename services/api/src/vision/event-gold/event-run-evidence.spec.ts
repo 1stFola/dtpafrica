@@ -29,13 +29,13 @@ beforeEach(async () => {
 });
 describe("event run evidence", () => {
   async function carry() {
-    model.weightsChecksum = null; model.weightsKey = null; model.configKey = "event-carry/v1";
-    artifact.schemaVersion = "event-inference/v2"; artifact.weightsChecksum = null; artifact.configKey = "event-carry/v1";
+    model.weightsChecksum = null; model.weightsKey = null; model.configKey = "event-carry/v2";
+    artifact.schemaVersion = "event-inference/v2"; artifact.weightsChecksum = null; artifact.configKey = "event-carry/v2";
     const snapshot = { proxyWidth: 1000, proxyHeight: 500, proxyVariantId: "proxy", proxyKey: "proxy.mp4", proxyChecksum: "e".repeat(64),
       segments: [{ cameraSegmentId: "cam", startMs: 0, endMs: 5000, calibrationId: "cal", thresholdsVersion: "test", quality: "good", homography: [.1,0,0,0,.1,0,0,0,1], pitch: { lengthM: 105, widthM: 68 } }] };
     const cameras = [{ cameraSegmentId: "cam", startMs: 0, endMs: 5000, kind: "live_play" }];
-    artifact.producer = { algorithm: "event-carry/v1", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, possessionJobId: "possession", possessionIndexChecksum: "c".repeat(64), tracksChecksum: "d".repeat(64), calibrationSnapshot: snapshot, cameraSegments: cameras };
-    Object.assign(job.inputSpec, { eventAlgorithm: { modelVersionId: "model", configKey: "event-carry/v1", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, weightsChecksum: null, gitCommit: "commit", workerImage: "image" },
+    artifact.producer = { algorithm: "event-carry/v2", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, possessionJobId: "possession", possessionIndexChecksum: "c".repeat(64), tracksChecksum: "d".repeat(64), calibrationSnapshot: snapshot, cameraSegments: cameras };
+    Object.assign(job.inputSpec, { eventAlgorithm: { modelVersionId: "model", configKey: "event-carry/v2", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, weightsChecksum: null, gitCommit: "commit", workerImage: "image" },
       possession: { jobId: "possession", indexChecksum: "c".repeat(64) }, tracks: { checksum: "d".repeat(64) }, possessionIndex: { calibrationSnapshot: snapshot, cameraSegments: cameras } });
     artifact.events = [{ id: "carry-1", type: "carry", startMs: 1000, endMs: 3000, actorMatchSquadPlayerId: null, localTrackId: 1, trajectoryId: 1, cameraSegmentId: "cam", inPlay: true, confidence: .8, displacementM: 3 }];
     await writeArtifact();

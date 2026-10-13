@@ -336,9 +336,9 @@ export class VisionJobsService {
     if (!sameEvidence(segments, input.segments) || !Array.isArray(t.cameraCuts) || segments.slice(1).some((s) => !(t.cameraCuts as unknown[]).includes(s.startMs))) throw fail();
     const config = requested?.possessionConfig;
     if (config !== undefined) {
-      const ranges: Record<string, [number, number]> = { minBallConfidence: [0, 1], minPlayerConfidence: [0, 1], maxFootDistanceHeights: [Number.MIN_VALUE, 0.5], minContinuityMs: [80, 2000] };
-      if (!config || typeof config !== "object" || Array.isArray(config) || Object.entries(config).some(([key, value]) => !ranges[key] || typeof value !== "number" || !Number.isFinite(value) || value < ranges[key]![0] || value > ranges[key]![1] || (key === "minContinuityMs" && !Number.isInteger(value))))
-        throw refusal(400, "InvalidPossessionConfig", "Invalid possession confidence, foot distance or continuity configuration.", "Use supported finite values; continuity is an integer from 80 to 2000 ms.");
+      const ranges: Record<string, [number, number]> = { minBallConfidence: [0, 1], minPlayerConfidence: [0, 1], maxFootDistanceHeights: [Number.MIN_VALUE, 0.5], minContinuityMs: [80, 2000], maxBallGapMs: [0, 1000] };
+      if (!config || typeof config !== "object" || Array.isArray(config) || Object.entries(config).some(([key, value]) => !ranges[key] || typeof value !== "number" || !Number.isFinite(value) || value < ranges[key]![0] || value > ranges[key]![1] || ((key === "minContinuityMs" || key === "maxBallGapMs") && !Number.isInteger(value))))
+        throw refusal(400, "InvalidPossessionConfig", "Invalid possession confidence, foot distance or continuity configuration.", "Use supported finite values; continuity is an integer from 80 to 2000 ms, a ball gap an integer from 0 to 1000 ms.");
     }
     if (requested?.chunkMs !== undefined && (!positive(requested.chunkMs) || requested.chunkMs < 10000 || requested.chunkMs > 600000)) throw refusal(400, "InvalidPossessionConfig", "Possession chunks must be 10000–600000 ms.", "Use the default 60000 ms chunks.");
     const mode = requested?.constraintMode ?? "image";

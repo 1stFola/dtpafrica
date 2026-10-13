@@ -6,7 +6,7 @@ import { CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATI
 
 async function fixture() {
   const f = possessionFixture(); calibratePossessionFixture(f); await f.write();
-  const model: any = { id: "model", model: { task: "event" }, configKey: "event-carry/v1", weightsKey: null, weightsChecksum: null, gitCommit: "commit", workerImage: "image" };
+  const model: any = { id: "model", model: { task: "event" }, configKey: "event-carry/v2", weightsKey: null, weightsChecksum: null, gitCommit: "commit", workerImage: "image" };
   const camera: any = { id: "cam", startMs: 0, endMs: 400, kind: "live_play", calibrations: [{ id: "cal", quality: "good", thresholdsVersion: "provisional/v1", homography: [.1,0,0,0,.1,0,0,0,1], points: [], pitchLengthM: 105, pitchWidthM: 68, createdAt: new Date("2026-10-02") }] };
   const proxy: any = { id: "proxy", objectKey: "proxy.mp4", width: 1000, height: 500, fps: 25, sourceOffsetMs: 0, createdAt: new Date("2026-10-01") };
   const db: any = {
@@ -66,7 +66,7 @@ describe("carry producer enqueue evidence", () => {
     const spec = queue.enqueue.mock.calls[0][0];
     expect(spec.modelVersionId).toBe("model");
     expect(spec.inputSpec.possessionIndex).toEqual(f.index);
-    expect(spec.inputSpec.eventAlgorithm).toMatchObject({ configKey: "event-carry/v1", weightsChecksum: null });
+    expect(spec.inputSpec.eventAlgorithm).toMatchObject({ configKey: "event-carry/v2", weightsChecksum: null });
     expect(spec.inputSpec.windowStartMs).toBe(0);
     expect(spec.inputSpec.readKeys).toEqual([{ bucket: "derived", key: "inference/job/1/possession.json" }, { bucket: "derived", key: "inference/job/1/possession/000.jsonl" }, { bucket: "derived", key: "inference/track/1/tracks.json" }]);
     expect(rights.canAnalyze).toHaveBeenCalled();

@@ -6,8 +6,8 @@ import { VISION_EVENT_TAXONOMY_VERSION } from "./events";
 
 export function carryArtifactFixture() {
   return { schemaVersion: "event-inference/v2", jobId: "job", attemptNumber: 1, videoAssetId: "asset", sourceChecksum: "a".repeat(64), modelVersionId: "model", weightsChecksum: null,
-    configKey: "event-carry/v1", gitCommit: "commit", workerImage: "image", taxonomyVersion: VISION_EVENT_TAXONOMY_VERSION, coverage: { startMs: 0, endMs: 2000, complete: true },
-    producer: { algorithm: "event-carry/v1", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, possessionJobId: "possession", possessionIndexChecksum: "c".repeat(64), tracksChecksum: "d".repeat(64),
+    configKey: "event-carry/v2", gitCommit: "commit", workerImage: "image", taxonomyVersion: VISION_EVENT_TAXONOMY_VERSION, coverage: { startMs: 0, endMs: 2000, complete: true },
+    producer: { algorithm: "event-carry/v2", manifestChecksum: EVENT_CARRY_MANIFEST_CHECKSUM, possessionJobId: "possession", possessionIndexChecksum: "c".repeat(64), tracksChecksum: "d".repeat(64),
       cameraSegments: [{ cameraSegmentId: "cam", startMs: 0, endMs: 2000, kind: "live_play" }], calibrationSnapshot: { proxyWidth: 1000, proxyHeight: 500, proxyVariantId: "proxy", proxyKey: "proxy.mp4", proxyChecksum: "b".repeat(64),
       segments: [{ cameraSegmentId: "cam", startMs: 0, endMs: 2000, quality: "good", calibrationId: "cal", thresholdsVersion: "test", homography: [.1,0,0,0,.1,0,0,0,1], pitch: { lengthM: 105, widthM: 68 } }] } },
     events: [{ id: "carry-1", type: "carry", startMs: 200, endMs: 1960, actorMatchSquadPlayerId: null, localTrackId: 1, trajectoryId: 1, cameraSegmentId: "cam", confidence: .8, inPlay: true, displacementM: 4.4 }] };

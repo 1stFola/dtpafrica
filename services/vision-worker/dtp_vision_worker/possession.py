@@ -22,6 +22,9 @@ CHUNK_ROLE = "possession_chunk"
 UNKNOWN_REASONS = ("ball_lost", "weak_ball", "no_player", "no_near_player", "ambiguous_players", "weak_player", "continuity_pending")
 MAX_PLAYER_ROWS = 10_000_000
 MAX_PLAYERS_PER_FRAME = 100
+#: Ball losses a gap may bridge: the detector missed or doubted the ball. A jump, a cut,
+#: an unknown camera or non-play ends possession whatever its length.
+BRIDGEABLE_BALL_REASONS = frozenset({"no_detection", "low_confidence", "ambiguous", "missing_frame"})
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,9 @@ class Config:
     minPlayerConfidence: float = 0.5
     maxFootDistanceHeights: float = 0.25
     minContinuityMs: int = 200
+    #: A ball lost for at most this long, then seen again by the same player, does not
+    #: end that player's continuity (docs/vision/97). 0 keeps every loss a reset.
+    maxBallGapMs: int = 0
 
     @classmethod
     def parse(cls, raw: Any) -> Config:
@@ -38,7 +44,7 @@ class Config:
         if not isinstance(raw, dict) or set(raw) - set(asdict(cls())):
             raise ValueError("possessionConfig contains unsupported fields")
         config = cls(**raw)
-        if not number(config.minBallConfidence) or not 0 <= config.minBallConfidence <= 1 or not number(config.minPlayerConfidence) or not 0 <= config.minPlayerConfidence <= 1 or not number(config.maxFootDistanceHeights) or not 0 < config.maxFootDistanceHeights <= 0.5 or not integer(config.minContinuityMs) or not 80 <= config.minContinuityMs <= 2000:
+        if not number(config.minBallConfidence) or not 0 <= config.minBallConfidence <= 1 or not number(config.minPlayerConfidence) or not 0 <= config.minPlayerConfidence <= 1 or not number(config.maxFootDistanceHeights) or not 0 < config.maxFootDistanceHeights <= 0.5 or not integer(config.minContinuityMs) or not 80 <= config.minContinuityMs <= 2000 or not integer(config.maxBallGapMs) or not 0 <= config.maxBallGapMs <= 1000:
             raise ValueError("invalid possession confidence, foot distance or continuity configuration")
         return config
 
@@ -99,8 +105,9 @@ class PlayerIndex:
 
 
 def rows(clock: Smoother, balls: Iterable[dict[str, Any]], players: PlayerIndex, config: Config = Config(), constraints=None) -> Iterator[dict[str, Any]]:
-    pending: tuple[str, int, int] | None = None
+    pending: tuple | None = None
     since = 0
+    last_seen_ms = 0  # the last frame the pending player was seen near the ball
     previous_trajectory: int | None = None
     previous_camera: str | None = None
     previous_observed = False
@@ -162,14 +169,21 @@ def rows(clock: Smoother, balls: Iterable[dict[str, Any]], players: PlayerIndex,
                     reason = constraints.check(ms, camera_id, trajectory, (bx, by), nearby[0])
                     if reason:
                         chosen, confidence = None, None
-        if constraints and chosen is None and reason not in {"metric_distance", "implausible_motion"}:
+        # A short gap in the ball itself, inside the same camera, holds the pending player:
+        # the gap frame stays Unknown and carries no point, but does not restart the count.
+        bridged = (config.maxBallGapMs > 0 and chosen is None and state == "lost" and ball.get("reason") in BRIDGEABLE_BALL_REASONS
+                   and pending is not None and pending[0] == camera_id and ms - last_seen_ms <= config.maxBallGapMs)
+        if constraints and chosen is None and not bridged and reason not in {"metric_distance", "implausible_motion"}:
             constraints.clear()
         if chosen is None:
-            pending = None
+            if not bridged:
+                pending = None
         else:
-            identity = (camera_id, trajectory, chosen)
+            # Bridging spans a lost ball, whose trajectory then restarts: the possessor is the identity.
+            identity = (camera_id, chosen) if config.maxBallGapMs > 0 else (camera_id, trajectory, chosen)
             if identity != pending:
                 pending, since = identity, ms
+            last_seen_ms = ms
             if ms - since < config.minContinuityMs:
                 chosen = None
                 confidence = None

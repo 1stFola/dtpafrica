@@ -559,8 +559,12 @@ describe("possession candidates require compatible, pinned ball and player evide
     await expect(service.enqueueForAsset({ type: "possession", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "PossessionEvidenceMismatch" } });
     expect(mockQueue.enqueue).not.toHaveBeenCalled();
   });
+  it("passes a bounded ball gap through to the worker (docs/vision/97)", async () => {
+    await service.enqueueForAsset({ type: "possession", videoAssetId: ASSET, params: { possessionConfig: { maxFootDistanceHeights: 0.4, maxBallGapMs: 240 } } });
+    expect(enqueued().inputSpec.possessionConfig).toEqual({ maxFootDistanceHeights: 0.4, maxBallGapMs: 240 });
+  });
   it("refuses unsupported configuration and GPU overrides", async () => {
-    for (const params of [{ possessionConfig: { minBallConfidence: true } }, { possessionConfig: { minContinuityMs: 0 } }, { possessionConfig: { maxFootDistanceHeights: 1 } }, { possessionConfig: { unrecognised: true } }, { chunkMs: 1 }])
+    for (const params of [{ possessionConfig: { minBallConfidence: true } }, { possessionConfig: { minContinuityMs: 0 } }, { possessionConfig: { maxFootDistanceHeights: 1 } }, { possessionConfig: { unrecognised: true } }, { possessionConfig: { maxBallGapMs: -1 } }, { possessionConfig: { maxBallGapMs: 1001 } }, { possessionConfig: { maxBallGapMs: 12.5 } }, { chunkMs: 1 }])
       await expect(service.enqueueForAsset({ type: "possession", videoAssetId: ASSET, params })).rejects.toMatchObject({ response: { error: "InvalidPossessionConfig" } });
     await expect(service.enqueueForAsset({ type: "possession", videoAssetId: ASSET, resourceClass: "gpu_24gb" })).rejects.toMatchObject({ response: { error: "PossessionCpuOnly" } });
     expect(mockQueue.enqueue).not.toHaveBeenCalled();

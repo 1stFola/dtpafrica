@@ -72,7 +72,7 @@ export class VisionEventImportsService {
 
   async importRun(videoAssetId: string, jobId: unknown, actor?: AdminAuthContext) {
     const me = person(actor, "import event evidence").userId;
-    if (typeof jobId !== "string" || !jobId.trim() || jobId.length > 100) throw refusal(400, "InvalidEventJob", "Select a completed carry job.", "Use a completed event-carry/v1 job on this footage.");
+    if (typeof jobId !== "string" || !jobId.trim() || jobId.length > 100) throw refusal(400, "InvalidEventJob", "Select a completed carry job.", "Use a completed event-carry/v2 job on this footage.");
     const asset = await this.asset(videoAssetId); await this.allowed(videoAssetId);
     if (!asset.sbMatchId) throw refusal(409, "AssetNotLinked", "Event evidence must be linked to a match.", "Link the source to its match first.");
     const job = await this.db.visionJob.findFirst({ where: { id: jobId, videoAssetId, type: "events", state: "succeeded" } });

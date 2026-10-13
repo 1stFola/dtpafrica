@@ -1,8 +1,9 @@
 /** First automatic event rule. No learned weights, roster guesses or human edits. */
-export const EVENT_CARRY_VERSION = "event-carry/v1";
-export const EVENT_CARRY_MANIFEST = { algorithm: EVENT_CARRY_VERSION, minDurationMs: 1000, minDisplacementM: 2, maxPlayerSpeedMps: 12, maxEvents: 200 } as const;
+export const EVENT_CARRY_VERSION = "event-carry/v2";
+/** v2 adds maxBallGapMs: a carry survives a short loss of the ball while its player is still followed (docs/vision/97). */
+export const EVENT_CARRY_MANIFEST = { algorithm: EVENT_CARRY_VERSION, minDurationMs: 1000, minDisplacementM: 2, maxPlayerSpeedMps: 12, maxEvents: 200, maxBallGapMs: 240 } as const;
 /** SHA-256 of the sorted compact UTF-8 manifest; this is not a weights checksum. */
-export const EVENT_CARRY_MANIFEST_CHECKSUM = "0618c52603b92990d68b65f0e854a1762ca84b82da84fbdbb83ac0dfd0751581";
+export const EVENT_CARRY_MANIFEST_CHECKSUM = "e06c0cf7d33a712e99f9ea15ac8a08c03b13f2990deda0f6131e47de62cfbe12";
 export type EventCarryProducer = {
   algorithm: typeof EVENT_CARRY_VERSION;
   manifestChecksum: string;

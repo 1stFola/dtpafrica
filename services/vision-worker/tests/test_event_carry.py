@@ -25,7 +25,7 @@ def test_carry_is_observed_displacement_not_a_held_interval():
     events = propose(clock, rows, players, snapshot, {})
     assert events == [{"id": "carry-1", "type": "carry", "startMs": 1000, "endMs": 2960, "actorMatchSquadPlayerId": None, "localTrackId": 1,
                        "cameraSegmentId": "camera", "trajectoryId": 1, "confidence": .8, "inPlay": True, "displacementM": pytest.approx(4.9)}]
-    assert MANIFEST_CHECKSUM == "0618c52603b92990d68b65f0e854a1762ca84b82da84fbdbb83ac0dfd0751581"
+    assert MANIFEST_CHECKSUM == "e06c0cf7d33a712e99f9ea15ac8a08c03b13f2990deda0f6131e47de62cfbe12"
 
 
 @pytest.mark.parametrize("change", ["stationary", "too_short", "unknown", "missing", "weak", "unconfirmed", "jump", "off_pitch", "horizon"])
@@ -79,3 +79,33 @@ def test_invalid_or_manual_evidence_is_refused(change):
     if change == "failed": snapshot["segments"][0].update(quality="failed", homography=None, pitch=None)
     if change == "negative_track": rows[0]["localTrackId"] = -1
     with pytest.raises(ValueError): propose(clock, rows, players, snapshot, {})
+
+
+def _split(rows, gap_frames, reason="ball_lost", trajectory_after=2):
+    """One 50-frame candidate row cut by an Unknown gap at frame 20; the ball's trajectory restarts after it."""
+    row = rows[0]
+    start, ms = row["startMs"], lambda f: row["startMs"] + f * 40
+    before = {**row, "frames": 20, "endMs": ms(20)}
+    gap = {**row, "state": "unknown", "reason": reason, "localTrackId": None, "trajectoryId": None, "evidenceConfidence": None,
+           "frames": gap_frames, "startMs": ms(20), "endMs": ms(20 + gap_frames)}
+    after = {**row, "frames": 50 - 20 - gap_frames, "startMs": ms(20 + gap_frames), "trajectoryId": trajectory_after}
+    return [before, gap, after]
+
+
+def test_a_carry_survives_a_short_loss_of_the_ball():
+    # docs/vision/97: the ball drops out for a few frames while the same player runs on with it.
+    clock, rows, players, snapshot = fixture()
+    events = propose(clock, _split(rows, 5), players, snapshot, {})
+    assert len(events) == 1
+    assert events[0]["startMs"] == 1000 and events[0]["endMs"] == 2960 and events[0]["trajectoryId"] == 1 and events[0]["localTrackId"] == 1
+
+
+@pytest.mark.parametrize("change", ["too_long", "not_the_ball", "other_player"])
+def test_a_carry_does_not_survive_a_long_gap_a_lost_player_or_a_change_of_possessor(change):
+    clock, rows, players, snapshot = fixture()
+    split = _split(rows, 10 if change == "too_long" else 5, reason="no_near_player" if change == "not_the_ball" else "ball_lost")
+    if change == "other_player":
+        split[2]["localTrackId"] = 2
+        players.at = lambda i: [(1 if i < 25 else 2, 10 + i * .1, 20, 5, .9, True)]
+    # Each side alone is under a second, so no carry may come out.
+    assert propose(clock, split, players, snapshot, {}) == []
