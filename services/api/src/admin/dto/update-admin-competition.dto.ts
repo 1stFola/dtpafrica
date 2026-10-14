@@ -43,4 +43,14 @@ export class UpdateAdminCompetitionDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  /** Empty string clears the crest. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isFeatured?: boolean;
 }

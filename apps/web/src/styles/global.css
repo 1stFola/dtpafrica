@@ -10079,6 +10079,87 @@ a {
   font-size: 0.78rem;
 }
 
+/* Records-page dialogs: the result list sits in the dialog's flow so a modal
+   cannot clip it, and the chosen option is restated underneath. */
+.admin-sb-search-select .admin-player-search-picker__list {
+  position: static;
+  margin-top: 0.35rem;
+  max-height: 240px;
+  box-shadow: none;
+}
+
+.admin-sb-search-select .admin-player-search-picker__list button {
+  display: grid;
+  gap: 0.1rem;
+  align-content: start;
+  min-height: 0;
+  height: auto;
+}
+
+.admin-sb-search-select .admin-player-search-picker__list button > * {
+  margin: 0;
+  line-height: 1.3;
+}
+
+.admin-sb-search-select .admin-player-search-picker__list li.is-active button {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.admin-sb-search-select .admin-player-search-picker__list li.is-selected button {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.admin-sb-search-select__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.admin-sb-search-select__badge {
+  font-style: normal;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.admin-sb-search-select__chosen {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
+}
+
+.admin-sb-merge-plan {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  font-size: 0.9rem;
+}
+
+.admin-sb-merge-plan ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.admin-sb-comp-logo-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-sb-comp-logo-preview {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+
 .admin-pagination {
   display: flex;
   flex-wrap: wrap;

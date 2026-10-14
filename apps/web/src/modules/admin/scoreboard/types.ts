@@ -38,6 +38,8 @@ export type AdminSbCompetition = {
   isPublished: boolean;
   isFeatured: boolean;
   logoUrl: string | null;
+  /** Without the "[featured]" token, which the API reads into isFeatured. */
+  description?: string;
 };
 
 export type AdminSbCompetitionInput = {
@@ -50,6 +52,9 @@ export type AdminSbCompetitionInput = {
   country?: string;
   description?: string;
   isPublished?: boolean;
+  /** Empty string clears the crest. */
+  logoUrl?: string;
+  isFeatured?: boolean;
 };
 
 export type AdminSbTeamInput = {
@@ -87,6 +92,41 @@ export type AdminSbTeam = {
   groupKey: string | null;
   competition: { id: string; name: string; slug: string };
   squadCount: number;
+};
+
+export type AdminSbTeamMergePlan = {
+  /** absorb: same competition, the duplicate is folded in and deleted. link: different competitions, both kept as one club. */
+  mode: "absorb" | "link";
+  source: { id: string; name: string; competition: string };
+  target: { id: string; name: string; competition: string };
+  blocked: string | null;
+  counts: {
+    fixtures: number;
+    squad: number;
+    events: number;
+    matchSquadPlayers: number;
+    headToHead: number;
+  };
+  /** Same-competition merges only: numbers two players would share, and combined players whose numbers differed. */
+  shirtNumbers: {
+    clashes: Array<{ number: number; kept: string; incoming: string }>;
+    renumbered: Array<{ name: string; kept: number; dropped: number }>;
+  };
+};
+
+export type AdminSbTeamMergeOutcome = AdminSbTeamMergePlan & {
+  moved: {
+    homeFixtures: number;
+    awayFixtures: number;
+    squadMoved: number;
+    squadFolded: number;
+    events: number;
+    matchSquadPlayers: number;
+    rosters: number;
+    visionTeamSides: number;
+    visionIdentityAssignments: number;
+    visionEventCandidates: number;
+  };
 };
 
 export type AdminSbPlayerDirectoryRow = {

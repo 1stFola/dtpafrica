@@ -13,6 +13,8 @@ import type {
   CompetitionTemplatePreview,
   MatchdayRoster,
   SpotterOps,
+  AdminSbTeamMergeOutcome,
+  AdminSbTeamMergePlan,
 } from "../modules/admin/scoreboard/types";
 import type { SbMatchListItem } from "./scoreboard";
 
@@ -183,6 +185,18 @@ export const adminScoreboardApi = {
   updateTeam: (teamId: string, body: AdminSbTeamInput) =>
     sbFetch<AdminSbTeam>(`/admin/scoreboard/teams/${teamId}`, {
       method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  previewTeamMerge: (body: { sourceTeamId: string; targetTeamId: string }) =>
+    sbFetch<AdminSbTeamMergePlan>("/admin/scoreboard/teams/merge/preview", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  mergeTeams: (body: { sourceTeamId: string; targetTeamId: string }) =>
+    sbFetch<AdminSbTeamMergeOutcome>("/admin/scoreboard/teams/merge", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
