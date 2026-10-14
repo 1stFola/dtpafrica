@@ -1736,7 +1736,42 @@ export function AdminScoreboardEntitiesPage() {
                         </li>
                         <li>{teamMergePlan.counts.events} match event(s) move</li>
                         <li>{teamMergePlan.counts.matchSquadPlayers} match-day squad entries move</li>
+                        <li>
+                          Match-day squads keep the shirt number each player wore in that match
+                        </li>
                       </ul>
+                      {teamMergePlan.shirtNumbers.clashes.length > 0 ? (
+                        <div className="admin-sb-warning-note">
+                          <strong>
+                            Shirt number clashes ({teamMergePlan.shirtNumbers.clashes.length}): two
+                            players would share these numbers.
+                          </strong>{" "}
+                          A goal entered by number would stay unattributed until one is changed in
+                          the squad.
+                          <ul>
+                            {teamMergePlan.shirtNumbers.clashes.map((c) => (
+                              <li key={`${c.number}-${c.incoming}`}>
+                                #{c.number}: {c.kept} (kept) and {c.incoming} (moving)
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <p className="muted">No shirt number clashes.</p>
+                      )}
+                      {teamMergePlan.shirtNumbers.renumbered.length > 0 ? (
+                        <div className="admin-sb-warning-note">
+                          <strong>Players on both teams with different numbers:</strong> the kept
+                          team&apos;s number stays.
+                          <ul>
+                            {teamMergePlan.shirtNumbers.renumbered.map((r) => (
+                              <li key={r.name}>
+                                {r.name}: keeps #{r.kept} (#{r.dropped} on the duplicate)
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <>
@@ -1751,6 +1786,10 @@ export function AdminScoreboardEntitiesPage() {
                           its logo.
                         </li>
                         <li>No fixtures, squads or events move between competitions.</li>
+                        <li>
+                          Shirt numbers are untouched: each competition keeps its own squad and
+                          numbers.
+                        </li>
                       </ul>
                     </>
                   )}

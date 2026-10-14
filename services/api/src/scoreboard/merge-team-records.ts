@@ -23,6 +23,14 @@
  * An absorb is refused when the two teams have played each other: the fixture
  * would become a team against itself. That fixture has to be dealt with first.
  *
+ * **Shirt numbers.** A link never touches a squad: each competition keeps its own
+ * numbers. An absorb puts two squads of one competition together, so the plan
+ * lists, before anything is written, every number two different players would
+ * then share (the number lookup refuses to guess between them, so a goal recorded
+ * as "No. 7" would stay unattributed until one is changed) and every combined
+ * player whose two entries carried different numbers (the kept team's number
+ * stays; the match-day squads keep the number actually worn in each match).
+ *
  * The caller supplies the transaction; a half-merged team is worse than either
  * of the two it came from.
  */
@@ -55,6 +63,11 @@ export type TeamMergePlan = {
     matchSquadPlayers: number;
     /** Fixtures between the two teams: an absorb would make each one a team v itself. */
     headToHead: number;
+  };
+  /** Absorb only; always empty for a link, which leaves both squads alone. */
+  shirtNumbers: {
+    clashes: Array<{ number: number; kept: string; incoming: string }>;
+    renumbered: Array<{ name: string; kept: number; dropped: number }>;
   };
 };
 
@@ -149,6 +162,36 @@ async function planFor(db: Db, source: TeamRow, target: TeamRow): Promise<TeamMe
       },
     }),
   ]);
+  const shirtNumbers: TeamMergePlan["shirtNumbers"] = { clashes: [], renumbered: [] };
+  if (mode === "absorb") {
+    const [sourceSquad, targetSquad] = await Promise.all([
+      db.sbTeamSquad.findMany({ where: { teamId: source.id } }),
+      db.sbTeamSquad.findMany({ where: { teamId: target.id } }),
+    ]);
+    for (const row of sourceSquad) {
+      const same = sameSquadMember(row, targetSquad);
+      if (same) {
+        if (same.shirtNumber != null && row.shirtNumber != null && same.shirtNumber !== row.shirtNumber) {
+          shirtNumbers.renumbered.push({
+            name: same.displayName,
+            kept: same.shirtNumber,
+            dropped: row.shirtNumber,
+          });
+        }
+        continue;
+      }
+      if (row.shirtNumber == null) continue;
+      const holder = targetSquad.find((t) => t.shirtNumber === row.shirtNumber);
+      if (holder) {
+        shirtNumbers.clashes.push({
+          number: row.shirtNumber,
+          kept: holder.displayName,
+          incoming: row.displayName,
+        });
+      }
+    }
+    shirtNumbers.clashes.sort((a, b) => a.number - b.number);
+  }
   const blocked =
     mode === "absorb" && headToHead > 0
       ? `${source.name} and ${target.name} have ${headToHead} fixture(s) against each other. ` +
@@ -160,7 +203,19 @@ async function planFor(db: Db, source: TeamRow, target: TeamRow): Promise<TeamMe
     target: { id: target.id, name: target.name, competition: target.competition.name },
     blocked,
     counts: { fixtures, squad, events, matchSquadPlayers, headToHead },
+    shirtNumbers,
   };
+}
+
+type SquadMember = { playerId: string | null; displayName: string };
+
+/** The kept squad's row for the same person: same profile, or same name where neither has one. */
+function sameSquadMember<T extends SquadMember>(row: SquadMember, squad: T[]): T | undefined {
+  return squad.find((t) =>
+    row.playerId
+      ? t.playerId === row.playerId
+      : !t.playerId && squadNameKey(t.displayName) === squadNameKey(row.displayName)
+  );
 }
 
 type StatsWithRosters = { matchdayRosters?: Record<string, { teamId?: string } & Record<string, unknown>> };
@@ -235,11 +290,7 @@ export async function mergeTeamRecords(
     tx.sbTeamSquad.findMany({ where: { teamId: target.id } }),
   ]);
   for (const row of sourceSquad) {
-    const same = targetSquad.find((t) =>
-      row.playerId
-        ? t.playerId === row.playerId
-        : !t.playerId && squadNameKey(t.displayName) === squadNameKey(row.displayName)
-    );
+    const same = sameSquadMember(row, targetSquad);
     if (!same) {
       await tx.sbTeamSquad.update({ where: { id: row.id }, data: { teamId: target.id } });
       moved.squadMoved += 1;

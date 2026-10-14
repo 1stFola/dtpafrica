@@ -107,6 +107,11 @@ export type AdminSbTeamMergePlan = {
     matchSquadPlayers: number;
     headToHead: number;
   };
+  /** Same-competition merges only: numbers two players would share, and combined players whose numbers differed. */
+  shirtNumbers: {
+    clashes: Array<{ number: number; kept: string; incoming: string }>;
+    renumbered: Array<{ name: string; kept: number; dropped: number }>;
+  };
 };
 
 export type AdminSbTeamMergeOutcome = AdminSbTeamMergePlan & {
