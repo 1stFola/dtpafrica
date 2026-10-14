@@ -12,10 +12,11 @@ import { seedLagosQueensCup2026 } from "./seed-lagos-queens-cup-2026";
 import { seedDslLeaguePlayers } from "./seed-dsl-league-players-2026";
 import { seedRakLeague2026 } from "./seed-rak-league-2026";
 import { seedTrainingCup } from "./seed-training-cup";
+import { seedUnitedFootballChampionshipLeague2026 } from "./seed-united-football-championship-league-2026";
 import { syncScoreboardEventPlayerLinks } from "./sync-scoreboard-event-player-links";
 import { syncScoreboardTimelinePlayerProfiles } from "./sync-scoreboard-timeline-player-profiles";
 
-/** ScoreBoard seed: Jagaban Cup 2026, Ex Internationals Cup 2026, Lagos Queens Cup 2026, 1XCup 2026 (incl. its group stage), RAK BDFA League, Dynasty Scouting League, Coal City Scouting Tournament 2026, JOEMARK Oto-Awori Super League 2026, DTP Training Cup. */
+/** ScoreBoard seed: Jagaban Cup 2026, Ex Internationals Cup 2026, Lagos Queens Cup 2026, 1XCup 2026 (incl. its group stage), RAK BDFA League, Dynasty Scouting League, Coal City Scouting Tournament 2026, JOEMARK Oto-Awori Super League 2026, United Football Championship League 2026, DTP Training Cup. */
 export async function seedScoreboard(prisma: PrismaClient, _seedPlayerId?: string) {
   const preBackfill = await backfillMissingMatchSlugs(prisma);
   if (preBackfill > 0) {
@@ -66,6 +67,12 @@ export async function seedScoreboard(prisma: PrismaClient, _seedPlayerId?: strin
   // or had events recorded is left alone.
   await step("JOEMARK Oto-Awori Super League 2026", () =>
     seedJoemarkOtoAworiSuperLeague2026(prisma)
+  );
+  // New league: teams and fixtures are not live yet, so this one seeds them.
+  // Every write is an upsert on a fixed id, and a match that has kicked off or
+  // had events recorded is left alone.
+  await step("United Football Championship League 2026", () =>
+    seedUnitedFootballChampionshipLeague2026(prisma)
   );
   await step("DTP Training Cup", () => seedTrainingCup(prisma));
   const goalkeeperProfiles = await seedGoalkeeperProfiles(prisma);
