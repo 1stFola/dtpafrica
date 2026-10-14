@@ -800,11 +800,12 @@ export type CameraShot = { startFrame: number; endFrame: number; startMs: number
 
 // ── Calibration carried to every frame ──────────────────────────────────────
 
-export const CALIBRATION_PROPAGATION_VERSION = "calibration-propagation/v1";
+/** v2 checks every carried frame against its own picture and withholds it `off_paint` when its lines miss the paint (docs/vision/97). */
+export const CALIBRATION_PROPAGATION_VERSION = "calibration-propagation/v2";
 export const CALIBRATION_FRAMES_INDEX_ROLE = "calibration_frames";
 export const CALIBRATION_FRAMES_CHUNK_ROLE = "calibration_frames_chunk";
 /** Why a frame has no carried calibration. */
-export const CALIBRATION_FRAME_REASONS = ["no_camera_segment", "segment_not_calibrated", "calibration_failed", "no_keyframe_in_shot", "beyond_reach", "keyframe_failed", "motion_unknown"] as const;
+export const CALIBRATION_FRAME_REASONS = ["no_camera_segment", "segment_not_calibrated", "calibration_failed", "no_keyframe_in_shot", "beyond_reach", "keyframe_failed", "motion_unknown", "off_paint"] as const;
 export type CalibrationFrameReason = (typeof CALIBRATION_FRAME_REASONS)[number];
 
 /** One calibration as the control plane pins it for `calibrate`: a whole-segment one (frameIndex null) or a keyframe. */
@@ -821,6 +822,8 @@ export type PinnedCalibration = {
 
 export type CalibrateJobParams = {
   proxyChecksum: string;
+  /** The pinned proxy's object key: the stage checks each carried frame against its own picture. */
+  proxyKey: string;
   cameraMotion: { jobId: string; indexKey: string; indexChecksum: string };
   segments: { cameraSegmentId: string; startMs: number; endMs: number; kind: string; calibrations: PinnedCalibration[] }[];
   reachMs?: number;

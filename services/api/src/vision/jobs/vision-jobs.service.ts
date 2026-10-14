@@ -422,9 +422,11 @@ export class VisionJobsService {
       throw refusal(409, "NoCalibration", "No segment of this footage has a calibration to carry.", "File a calibration, or keyframes, on a camera segment first.");
     return {
       proxyChecksum: pinned.checksum,
+      proxyKey: pinned.key,
       cameraMotion: motion.pin,
       segments: pinnedSegments,
-      readKeys: motion.readKeys,
+      // The proxy too: every carried frame is checked against its own picture (docs/vision/97).
+      readKeys: [...motion.readKeys, { bucket: "derived" as const, key: pinned.key }],
     };
   }
 

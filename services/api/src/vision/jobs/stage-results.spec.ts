@@ -797,7 +797,7 @@ describe("calibrate results are checked, not stored", () => {
     { key: `inference/${JOB}/1/frames/frames-0000.jsonl`, bucket: "derived", role: "calibration_frames_chunk" },
     { key: `inference/${JOB}/1/calibration-frames.json`, bucket: "derived", role: "calibration_frames" },
   ];
-  const summary = (over: Record<string, unknown> = {}) => ({ calculationVersion: "calibration-propagation/v1", chunks: 1, frames: 1244, covered: 600, proxyChecksum,
+  const summary = (over: Record<string, unknown> = {}) => ({ calculationVersion: "calibration-propagation/v2", chunks: 1, frames: 1244, covered: 600, proxyChecksum,
     cameraMotionIndexChecksum: motionChecksum, indexChecksum: "c".repeat(64), segments: [{ drift: [{ medianM: 0.4 }, { medianM: 1.2 }] }], ...over });
   const context = { jobId: JOB, modelVersionId: null, inputSpec: { proxyChecksum, cameraMotion: { indexChecksum: motionChecksum } } };
 

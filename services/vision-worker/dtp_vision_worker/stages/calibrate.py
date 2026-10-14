@@ -1,12 +1,16 @@
 """calibrate — every frame's pitch calibration, carried from a person's keyframes along camera motion.
 
-A CPU stage; no model and no video read. It reads the `camera_motion` artifact the
+A CPU stage; no model. It reads the `camera_motion` artifact the
 control plane pinned (index and chunks, each checked against the checksums the index
 and the queue recorded) and the segments with their current calibrations, as they
 stood at queue time. Each frame gets its segment's whole-segment calibration, or its
 nearest keyframe in the same shot carried along the measured motion, or a reason it
 has none. Rows go to one-minute JSONL chunks; the index carries coverage, reasons and
 the drift measured between keyframes that share a shot. See docs/vision/93.
+
+Since calibration-propagation/v2 it also reads the pinned proxy, and checks every
+carried frame against its own picture: a frame whose drawn markings miss the painted
+lines loses its calibration, with the reason `off_paint` (paint_check, docs/vision/97).
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from typing import Any
 
 from ..calibration_propagation import CALCULATION_VERSION, CHUNK_ROLE, INDEX_ROLE, check_keyframes, drifts, parse_segments, propagate
 from ..motion_pin import load_camera_motion
+from ..paint_check import PARAMS as PAINT_PARAMS, check as paint_check, markings, paint_distance
 from ..config import CONTRACT_VERSION
 from ..media import sha256_file
 from ..runner import StageContext, StageRefusal, StageResult, download, upload
@@ -43,6 +48,8 @@ def run_calibrate(ctx: StageContext) -> StageResult:
     motion = params.get("cameraMotion") or {}
     if not isinstance(motion.get("indexKey"), str) or not _hash(motion.get("indexChecksum")) or not _hash(params.get("proxyChecksum")):
         raise StageRefusal("calibrate needs the pinned camera motion index and proxy checksum")
+    if not isinstance(params.get("proxyKey"), str) or not params["proxyKey"].strip():
+        raise StageRefusal("calibrate needs the pinned proxy, to check each carried frame against its paint")
     reach_ms = params.get("reachMs", 10_000)
     chunk_ms = params.get("chunkMs", 60_000)
     if not _whole(reach_ms) or not 1_000 <= reach_ms <= 120_000 or not _whole(chunk_ms) or not 10_000 <= chunk_ms <= 600_000:
@@ -55,6 +62,13 @@ def run_calibrate(ctx: StageContext) -> StageResult:
     ctx.progress.set("download")
     transforms, shot, bytes_read, motion_chunks = load_camera_motion(ctx, motion, params["proxyChecksum"], fps, offset, download)
     n_frames = len(shot)
+    proxy_path = ctx.work_dir / "proxy.mp4"
+    bytes_read += download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=params["proxyKey"]), proxy_path)
+    if sha256_file(proxy_path).lower() != params["proxyChecksum"].lower():
+        raise StageRefusal("the proxy is not the one the camera motion was measured on")
+    # Each keyframe's pitch, for drawing its markings back onto the frames it reaches.
+    pitches = {c["calibrationId"]: c.get("pitch") for s in params.get("segments") or [] for c in s.get("calibrations") or [] if isinstance(c, dict)}
+    samples: dict[tuple, Any] = {}
 
     ctx.progress.set("chain")
     try:
@@ -73,7 +87,28 @@ def run_calibrate(ctx: StageContext) -> StageResult:
     per_segment: dict[str, dict[str, int]] = {}
     handle = None
     digest = None
+    paint_counts: Counter[str] = Counter()
+    import cv2  # noqa: PLC0415 -- the CPU image has it
+
+    video = cv2.VideoCapture(str(proxy_path))
+    if not video.isOpened():
+        raise StageRefusal("the proxy cannot be decoded")
     for row in propagate(transforms, shot, segments, float(fps), int(offset), reach_frames):
+        ok, picture = video.read()  # rows come one per proxy frame, in order
+        if not ok:
+            raise StageRefusal(f"the proxy ends before frame {row['f']}")
+        if row["H"] is not None:
+            pitch = pitches.get(row["calibrationId"]) or {}
+            if not all(isinstance(pitch.get(k), (int, float)) and pitch[k] > 0 for k in ("lengthM", "widthM")):
+                raise StageRefusal(f"calibration {row['calibrationId']} has no pitch to draw")
+            dims = (float(pitch["lengthM"]), float(pitch["widthM"]))
+            if dims not in samples:
+                samples[dims] = markings(*dims)
+            row["paint"] = paint_check(paint_distance(picture), row["H"], pitch, samples[dims])
+            paint_counts[row["paint"]["verdict"]] += 1
+            if row["paint"]["verdict"] == "off_paint":
+                row["H"] = None
+                row["reason"] = "off_paint"
         if row["f"] % frames_per_chunk == 0:
             if handle is not None:
                 handle.close()
@@ -97,6 +132,7 @@ def run_calibrate(ctx: StageContext) -> StageResult:
             seg_counts["frames"] += 1
             seg_counts["covered"] += 1 if row["H"] is not None else 0
     handle.close()
+    video.release()
     chunks[-1]["sha256"] = digest.hexdigest()
     measured = drifts(transforms, shot, segments)
 
@@ -114,7 +150,8 @@ def run_calibrate(ctx: StageContext) -> StageResult:
                      "calibrationIds": [s.whole.calibration_id] if s.whole else [k.calibration_id for k in s.keyframes],
                      **per_segment.get(s.segment_id, {"frames": 0, "covered": 0}), "drift": measured.get(s.segment_id, [])} for s in segments]
     stats = {"frames": n_frames, "covered": covered, "coverage": round(covered / n_frames, 4), "reasons": dict(sorted(reasons.items())),
-             "reachMs": reach_ms, "shots": int(shot.max()) + 1}
+             "reachMs": reach_ms, "shots": int(shot.max()) + 1,
+             "paintCheck": {**PAINT_PARAMS, "verdicts": dict(sorted(paint_counts.items()))}}
     payload = {"contractVersion": CONTRACT_VERSION, "role": INDEX_ROLE, "calculationVersion": CALCULATION_VERSION,
                "videoAssetId": inputs.get("videoAssetId"), "proxy": {"fps": fps, "sourceOffsetMs": offset},
                "proxyChecksum": params["proxyChecksum"].lower(), "cameraMotion": {"jobId": motion.get("jobId"), "indexKey": motion["indexKey"], "indexChecksum": motion["indexChecksum"].lower()},

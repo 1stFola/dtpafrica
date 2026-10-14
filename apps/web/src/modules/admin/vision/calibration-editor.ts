@@ -155,6 +155,7 @@ const CARRIED_REASON_WORDS: Record<string, string> = {
   beyond_reach: "too far from any keyframe in this shot",
   keyframe_failed: "the nearest keyframe failed",
   motion_unknown: "the camera's motion here was not measured",
+  off_paint: "the carried pitch lines miss the painted lines here",
 };
 
 /** The carried calibration at the playhead, in words: where it came from and how far, or why there is none. */
