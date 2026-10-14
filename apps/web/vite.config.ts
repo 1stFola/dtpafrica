@@ -28,6 +28,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    /* Hosts beyond localhost the dev server answers, comma-separated: set only while a
+       temporary link lets a remote reviewer in (docs/vision/97). Unset, Vite's own
+       localhost-only check applies. */
+    ...(process.env.VITE_ALLOWED_HOSTS ? { allowedHosts: process.env.VITE_ALLOWED_HOSTS.split(",").map((h) => h.trim()).filter(Boolean) } : {}),
     proxy: {
       "/api": {
         target: process.env.VITE_API_PROXY ?? "http://localhost:3000",

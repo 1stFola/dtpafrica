@@ -31,12 +31,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-CALCULATION_VERSION = "calibration-propagation/v1"
+CALCULATION_VERSION = "calibration-propagation/v2"
 INDEX_ROLE = "calibration_frames"
 CHUNK_ROLE = "calibration_frames_chunk"
 
 #: Why a frame has no calibration.
-REASONS = ("no_camera_segment", "segment_not_calibrated", "calibration_failed", "no_keyframe_in_shot", "beyond_reach", "keyframe_failed", "motion_unknown")
+#: `off_paint` (v2): carried, but the markings it draws miss the painted lines (paint_check).
+REASONS = ("no_camera_segment", "segment_not_calibrated", "calibration_failed", "no_keyframe_in_shot", "beyond_reach", "keyframe_failed", "motion_unknown", "off_paint")
 
 PASSING = ("good", "usable")
 

@@ -465,7 +465,9 @@ describe("calibrate carries a person's calibrations along the pinned motion", ()
     expect(job.resourceClass).toBe("cpu_small");
     expect(job.modelVersionId).toBeNull();
     expect(job.inputSpec.cameraMotion).toEqual({ jobId: "motion", indexKey: "inference/motion/1/camera-motion.json", indexChecksum: "c".repeat(64) });
-    expect(job.inputSpec.readKeys).toEqual([{ bucket: "derived", key: "inference/motion/1/camera-motion.json" }, { bucket: "derived", key: "inference/motion/1/motion/motion-0000.jsonl" }]);
+    // The proxy too, so each carried frame can be checked against its own picture (docs/vision/97).
+    expect(job.inputSpec.proxyKey).toBe("proxy.mp4");
+    expect(job.inputSpec.readKeys).toEqual([{ bucket: "derived", key: "inference/motion/1/camera-motion.json" }, { bucket: "derived", key: "inference/motion/1/motion/motion-0000.jsonl" }, { bucket: "derived", key: "proxy.mp4" }]);
     expect(job.inputSpec.reachMs).toBe(5000);
     const [one, two, three] = job.inputSpec.segments;
     expect(one.calibrations.map((c: { calibrationId: string; frameIndex: number }) => [c.calibrationId, c.frameIndex])).toEqual([["k90", 90], ["k10", 10]]);

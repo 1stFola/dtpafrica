@@ -307,6 +307,63 @@ is the main limit.
 This is Claude's reading of the frames, not a person's review. The gold labels will
 score it.
 
+## Checking carried frames against the paint
+
+**What Fola saw.** On 14 October 2026 Fola did job 1 of the manual. From 01:21.6 to
+01:40 the blue lines did not sit on the centre circle.
+
+**Measured on every fifth carried frame:** the share of the drawn markings within 3 px of
+white paint.
+- About 30% of carried frames had drifted off the paint in four stretches: 01:15.4–01:16.7,
+  01:22.2–01:23.6, 01:31.2–01:40 and 01:44.8–01:49.2. Each is a fast pan.
+- All of them were still labelled `good`.
+- Drift could start 1.2 s after a keyframe, so a shorter reach would not have fixed it.
+
+**Fola's choice: an automatic paint check (`calibration-propagation/v2`).**
+- `calibrate` now reads the pinned proxy, and its checksum must match.
+- For every carried frame it draws the pitch's markings back through the carried
+  calibration, sampled every 10 cm. It scores each sample by its distance to paint: pixels
+  brighter than the surrounding grass (a top-hat filter) and unsaturated. It ignores the top
+  22% of the picture: stands, boards and the score bug.
+- A frame **fails** when fewer than half its samples are within 3 px of paint **and** the
+  median sample is more than 2 px from paint. The row then loses its transform, with the
+  reason `off_paint`, but keeps its keyframe and the check's numbers.
+- With fewer than 100 samples in view (about 10 m of marking), the frame is not judged and
+  keeps its calibration.
+- The API pins the proxy key and lets the stage read it. The editor explains the new
+  reason in plain words.
+
+**First live run** (`3b58119a`, samples every 0.5 m, a minimum of 40):
+- it dropped 307 frames;
+- but 01:45–01:48 came back "unjudged": too few samples in a far view.
+
+**Second run** (`f8961b09`, every 10 cm, a minimum of 100):
+
+| Verdict | Frames |
+|---|---|
+| On the paint | 1,067 |
+| Off the paint | 384 |
+| Not judged | 13 |
+
+- **Coverage:** 29.9% of frames, down from 40.5%.
+- **Re-measured:** of the 213 calibrated frames re-measured, one is borderline, the
+  last frame before a drop (01:15.4: 47% on paint, 3.7 px).
+- **Calibrated stretches now:** 00:58–01:15.4, 01:20–01:22, 01:23.8–01:31,
+  01:49.4–02:02 and 02:03.8–02:06.
+
+**Downstream, rerun on the checked calibration:**
+- possession `ef672789`: 64 candidate frames (87 before);
+- game state `656efd88`: 16,143 positions placed, 29.9% coverage;
+- carry `e399df53`: 1 event.
+
+**Tests:**
+- the stage, on a synthetic camera rendered to video: every frame passes when the
+  picture matches; after an unmeasured 25 px pan, the 15 frames past it are withheld
+  `off_paint`, with the keyframe still named;
+- missing or altered proxy bytes are refused;
+- the check: a 1 px error passes, a 20 px shift fails, too little in view is not judged;
+- the API pins the proxy as a declared input.
+
 ## Still open
 
 - **Gold:** two independent people label the clip's events.
@@ -316,7 +373,7 @@ score it.
 - **Centre-circle views with one side of the circle** are now refused, not fitted
   wrongly. Calibrating them would need more landmarks in the catalogue, for example
   points on the circle off the halfway line.
-- **Carried quality:** a carried frame should lose quality with distance from its
-  keyframe. The 3 m drift at 10 s is still labelled `good`.
+- **Carried frames in fast pans** are now withheld when their lines miss the paint (above).
+  More keyframes inside those pans would win some of them back.
 - **The editor header** says "0s calibrated" when the shots have keyframes. It counts
   whole-segment calibrations only.
