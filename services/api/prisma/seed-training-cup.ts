@@ -12,7 +12,7 @@
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "dtp-training-cup";
 const COMP_ID = "7ac1f0de-0000-4000-8aaa-000000000001";
@@ -128,11 +128,11 @@ export async function seedTrainingCup(prisma: PrismaClient) {
     teamIds[team.slug] = row.id;
   }
 
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   for (const match of MATCHES) {
     if (await shouldPreserveSbMatch(prisma, match.id)) continue;
     const shared = {
-      slug: allocateMatchSlug(match.slugBase[0], match.slugBase[1], usedMatchSlugs),
+      slug: slugFor(match.id, match.slugBase[0], match.slugBase[1]),
       homeTeamId: teamIds[match.homeSlug],
       awayTeamId: teamIds[match.awaySlug],
       status: "scheduled",

@@ -18,7 +18,7 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 export const COMP_SLUG = "united-football-championship-league-2026";
 const COMP_ID = "422fc25d-bf3d-46a2-a5e8-82da10a91a00";
@@ -183,18 +183,10 @@ export async function seedUnitedFootballChampionshipLeague2026(prisma: PrismaCli
     teamIds[team.slug] = row.id;
   }
 
-  /* A match that already exists keeps its slug. allocateMatchSlug treats the
-     match's own current slug as taken, so re-allocating on every run would move
-     each URL to "-2" and back on alternate runs. */
-  const existingSlugs = new Map(
-    (
-      await prisma.sbMatch.findMany({
-        where: { id: { in: MATCHES.map((m) => m.id) } },
-        select: { id: true, slug: true },
-      })
-    ).map((r) => [r.id, r.slug])
+  const slugFor = await createSeedMatchSlugAllocator(
+    prisma,
+    MATCHES.map((m) => m.id)
   );
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
   let seeded = 0;
   let preserved = 0;
   for (const match of MATCHES) {
@@ -204,9 +196,7 @@ export async function seedUnitedFootballChampionshipLeague2026(prisma: PrismaCli
       continue;
     }
     const shared = {
-      slug:
-        existingSlugs.get(match.id) ??
-        allocateMatchSlug(match.homeSlug, match.awaySlug, usedMatchSlugs),
+      slug: slugFor(match.id, match.homeSlug, match.awaySlug),
       /* Left empty on purpose: the ScoreBoard pages title a numbered matchday
          "Day N", and a game week here spans up to three dates. With no matchday
          the fixtures group under roundLabel instead, as JOEMARK's do. */

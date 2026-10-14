@@ -29,7 +29,7 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "joemark-oto-awori-super-league-2026";
 const COMP_ID = "81361545-73c4-5dcc-82f8-7bd4a13944b0";
@@ -837,7 +837,7 @@ export async function seedJoemarkOtoAworiSuperLeague2026(prisma: PrismaClient) {
     }
   }
 
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   let seeded = 0;
   let preserved = 0;
   for (const match of MATCHES) {
@@ -849,7 +849,7 @@ export async function seedJoemarkOtoAworiSuperLeague2026(prisma: PrismaClient) {
       continue;
     }
     const shared = {
-      slug: allocateMatchSlug(match.homeSlug, match.awaySlug, usedMatchSlugs),
+      slug: slugFor(match.id, match.homeSlug, match.awaySlug),
       homeTeamId: teamIds[match.homeSlug],
       awayTeamId: teamIds[match.awaySlug],
       status: match.status,

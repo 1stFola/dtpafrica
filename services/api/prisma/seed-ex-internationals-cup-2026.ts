@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { COMPETITION_TEMPLATES, normalizeClubName } from "@dtp/engines";
 import * as bcrypt from "bcrypt";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 /** Shared dev password for all Ex Internationals seeded academy accounts. */
 export const EX_INTL_ACADEMY_SEED_PASSWORD = "ExIntl-Cup2026";
@@ -1208,7 +1208,7 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
 
   const r32StageId = stageByKey.get("r32");
   let eventCount = 0;
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   for (const m of MATCHES) {
     const preserve = await shouldPreserveSbMatch(prisma, m.id);
     const status = m.status ?? "scheduled";
@@ -1231,7 +1231,7 @@ export async function seedExInternationalsCup2026(prisma: PrismaClient) {
     };
     const roundLabel =
       m.roundLabel ?? (leg === "second_leg" ? `${roundBase} — Leg 2` : roundBase);
-    const slug = allocateMatchSlug(m.homeSlug, m.awaySlug, usedMatchSlugs, leg);
+    const slug = slugFor(m.id, m.homeSlug, m.awaySlug, leg);
 
     if (!preserve) {
       await prisma.sbMatch.upsert({

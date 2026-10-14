@@ -4,10 +4,9 @@
  *   pnpm --filter @dtp/api db:seed:ufc-league          # report only
  *   pnpm --filter @dtp/api db:seed:ufc-league --apply  # write
  *
- * The league is also part of the full ScoreBoard seed, but that runs every
- * competition's seed, and several of them re-allocate the slugs of their scheduled
- * matches on each run. This runs only the UFC seed, which keeps an existing
- * match's slug, so creating the league moves no other competition's URLs.
+ * The league is also part of the full ScoreBoard seed, which writes every
+ * competition. This writes only the UFC rows and reads them back, so it can be
+ * run on live without touching any other league's data.
  *
  * Safe to run twice: every write is an upsert on a fixed id, and a match that has
  * kicked off or had events recorded is left alone.
