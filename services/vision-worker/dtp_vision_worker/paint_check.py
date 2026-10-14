@@ -4,7 +4,7 @@ A calibration carried along camera motion drifts, fastest in a quick pan: on the
 pilot clip the drawn pitch left the paint about a second after a keyframe in some pans
 and stayed on it for ten in others (docs/vision/97). So every carried frame is checked
 against its own picture: the pitch's markings are drawn through the carried calibration
-and sampled every half metre, and each sample is scored by how far it falls from white
+and sampled every 10 cm, and each sample is scored by how far it falls from white
 paint. A frame whose markings mostly miss the paint loses its calibration, with the
 reason `off_paint`. Unknown beats wrong.
 
@@ -22,15 +22,18 @@ import numpy as np
 #: A sample within this many pixels of paint is on it: half a painted line on a 720p proxy,
 #: plus the fit's own error.
 ON_PAINT_PX = 3.0
-#: Fewer samples than this in view and below the stands: too little to judge, so the frame keeps its calibration.
-MIN_SAMPLES = 40
+#: Fewer samples than this in view and below the stands (about 10 m of marking): too little to
+#: judge, so the frame keeps its calibration.
+MIN_SAMPLES = 100
 #: A frame fails when under this share of its samples is on paint ...
 MIN_ON_PAINT = 0.5
 #: ... and its median sample is further than this from paint. Both, so one bad line cannot fail a frame.
 MAX_MEDIAN_PX = 2.0
 #: The top of a broadcast picture is stands, boards and the score bug: not pitch, and full of false paint.
 TOP_EXCLUDED = 0.22
-SAMPLE_M = 0.5
+#: Every 10 cm: a far view shows only a few pixels per metre, and coarser sampling left drifted
+#: far views with too few samples to judge (docs/vision/97).
+SAMPLE_M = 0.1
 R_CIRCLE = 9.15
 
 PARAMS = {"onPaintPx": ON_PAINT_PX, "minSamples": MIN_SAMPLES, "minOnPaint": MIN_ON_PAINT, "maxMedianPx": MAX_MEDIAN_PX, "topExcluded": TOP_EXCLUDED, "sampleM": SAMPLE_M}
