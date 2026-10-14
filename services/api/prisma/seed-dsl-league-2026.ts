@@ -13,7 +13,7 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "dsl-league-2026";
 const COMP_ID = "dd158044-8193-4804-80f6-74ac90cad8c2";
@@ -718,11 +718,11 @@ export async function seedDslLeague2026(prisma: PrismaClient) {
     teamIds[team.slug] = row.id;
   }
 
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   for (const match of MATCHES) {
     if (await shouldPreserveSbMatch(prisma, match.id)) continue;
     const shared = {
-      slug: allocateMatchSlug(match.homeSlug, match.awaySlug, usedMatchSlugs),
+      slug: slugFor(match.id, match.homeSlug, match.awaySlug),
       matchday: match.matchday,
       homeTeamId: teamIds[match.homeSlug],
       awayTeamId: teamIds[match.awaySlug],

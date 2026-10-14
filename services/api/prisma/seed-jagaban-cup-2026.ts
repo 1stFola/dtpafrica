@@ -12,7 +12,7 @@ import {
 } from "@dtp/engines";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
 import { JAGABAN_MATCH_MEDIA } from "./seed-jagaban-media-data";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 import { resolveUniquePlayerSlug } from "../src/players/player-slug";
 
 const COMP_SLUG = "jagaban-cup-2026";
@@ -1045,11 +1045,11 @@ export async function seedJagabanCup2026(prisma: PrismaClient) {
   await seedSquads(prisma, teamIds);
 
   let eventCount = 0;
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   for (const m of MATCHES) {
     const preserve = await shouldPreserveSbMatch(prisma, m.id);
     const stageId = stageByKey.get(m.stageKey);
-    const slug = allocateMatchSlug(m.homeSlug, m.awaySlug, usedMatchSlugs);
+    const slug = slugFor(m.id, m.homeSlug, m.awaySlug);
 
     if (!preserve) {
       await prisma.sbMatch.upsert({

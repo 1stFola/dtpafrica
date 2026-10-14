@@ -2,7 +2,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "lagos-queens-cup-2026";
 const COMP_ID = "00000000-0000-4000-8lqc-000000000000";
@@ -303,11 +303,11 @@ export async function seedLagosQueensCup2026(prisma: PrismaClient) {
     teamIds[team.slug] = row.id;
   }
 
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   for (const match of MATCHES) {
     if (await shouldPreserveSbMatch(prisma, match.id)) continue;
     const stageKey = `group_${match.groupKey.toLowerCase()}`;
-    const slug = allocateMatchSlug(match.homeSlug, match.awaySlug, usedMatchSlugs);
+    const slug = slugFor(match.id, match.homeSlug, match.awaySlug);
     await prisma.sbMatch.upsert({
       where: { id: match.id },
       update: {

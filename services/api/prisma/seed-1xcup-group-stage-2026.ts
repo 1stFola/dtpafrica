@@ -24,7 +24,7 @@
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "1xcup-2026";
 const STAGE_KEY = "group_stage";
@@ -185,7 +185,7 @@ export async function seed1XCupGroupStage2026(prisma: PrismaClient) {
     );
   }
 
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   let seeded = 0;
   let preserved = 0;
   for (const match of MATCHES) {
@@ -197,7 +197,7 @@ export async function seed1XCupGroupStage2026(prisma: PrismaClient) {
     const away = resolve(match.away);
     if (!home || !away) continue;
     const shared = {
-      slug: allocateMatchSlug(home.slug, away.slug, usedMatchSlugs),
+      slug: slugFor(match.id, home.slug, away.slug),
       stageId: stage.id,
       /* `group_a` … `group_f`: the app identifies group matches by this prefix,
          and the letter is read back off it. */

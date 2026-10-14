@@ -20,6 +20,7 @@
     "db:repair:player-stats": "tsx scripts/repair-player-stats.ts",
     "db:repair:player-display-names": "tsx scripts/repair-player-display-names.ts",
     "db:repair:competition-status": "tsx scripts/repair-competition-status.ts",
+    "db:repair:match-slug-drift": "tsx scripts/repair-match-slug-drift.ts",
     "db:purge:gate-litter": "tsx scripts/purge-vision-gate-litter.ts",
     "db:purge:placeholder-players": "tsx scripts/purge-placeholder-players.ts",
     "db:push": "prisma db push --accept-data-loss",

@@ -12,7 +12,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeClubName } from "@dtp/engines";
 import { shouldPreserveSbMatch } from "../src/seed/seed-options";
-import { allocateMatchSlug, loadExistingMatchSlugs } from "../src/scoreboard/match-slug";
+import { createSeedMatchSlugAllocator } from "../src/scoreboard/match-slug";
 
 const COMP_SLUG = "rak-league-2025-2026";
 const COMP_ID = "c8b8c71d-8274-47c1-8e61-625f96a7a429";
@@ -1408,11 +1408,11 @@ export async function seedRakLeague2026(prisma: PrismaClient) {
     teamIds[team.slug] = row.id;
   }
 
-  const usedMatchSlugs = await loadExistingMatchSlugs(prisma);
+  const slugFor = await createSeedMatchSlugAllocator(prisma, MATCHES.map((m) => m.id));
   for (const match of MATCHES) {
     if (await shouldPreserveSbMatch(prisma, match.id)) continue;
     const shared = {
-      slug: allocateMatchSlug(match.homeSlug, match.awaySlug, usedMatchSlugs),
+      slug: slugFor(match.id, match.homeSlug, match.awaySlug),
       stageKey: stageKeyFor(match.groupKey),
       stageId: stageByGroup.get(match.groupKey),
       matchday: match.matchday,
