@@ -26,6 +26,12 @@ import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
 import type { CreateCompetitionFromTemplateInput } from "../scoreboard/competition-engine.service";
 import type { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
 import { linkTeamsToClubsQuietly } from "../academy/club-sync";
+import { readCompetitionDescription, writeCompetitionDescription } from "./competition-featured";
+import {
+  mergeTeamRecords,
+  planTeamMerge,
+  TeamMergeError,
+} from "../scoreboard/merge-team-records";
 import { runBulk } from "./bulk-records";
 import {
   academyFieldsForTeamSync,
@@ -539,9 +545,10 @@ export class AdminScoreboardService {
           matchesCount: c._count.matches,
           status: readCompetitionStatus((c as { status?: string }).status) ?? status,
           isPublished: c.isPublished,
-          isFeatured: (c.description ?? "").includes("[featured]"),
+          isFeatured: readCompetitionDescription(c.description).featured,
           formatType: c.formatType,
-          logoUrl: null as string | null,
+          logoUrl: c.logoUrl,
+          description: readCompetitionDescription(c.description).text,
         };
       })
       .filter((c) => !filters?.status || c.status === filters.status);
@@ -573,8 +580,17 @@ export class AdminScoreboardService {
     if (dto.status !== undefined) (data as { status?: SbCompetitionStatus }).status = normalizeCompetitionStatus(dto.status);
     if (dto.formatType !== undefined) data.formatType = dto.formatType.trim() || null;
     if (dto.country !== undefined) data.country = dto.country.trim() || null;
-    if (dto.description !== undefined) data.description = dto.description.trim() || null;
+    /* The featured flag lives inside the description, so either field changing
+       rewrites it, keeping whichever half was not sent. */
+    if (dto.description !== undefined || dto.isFeatured !== undefined) {
+      const current = readCompetitionDescription(existing.description);
+      data.description = writeCompetitionDescription(
+        dto.description ?? current.text,
+        dto.isFeatured ?? current.featured
+      );
+    }
     if (dto.isPublished !== undefined) data.isPublished = dto.isPublished;
+    if (dto.logoUrl !== undefined) data.logoUrl = this.validateTeamLogoUrl(dto.logoUrl);
 
     try {
       const row = await this.prisma.sbCompetition.update({
@@ -596,9 +612,10 @@ export class AdminScoreboardService {
           ? readCompetitionStatus((row as { status?: string }).status)
           : deriveCompetitionStatus(row.isPublished, []),
         isPublished: row.isPublished,
-        isFeatured: (row.description ?? "").includes("[featured]"),
+        isFeatured: readCompetitionDescription(row.description).featured,
         formatType: row.formatType,
-        logoUrl: null as string | null,
+        logoUrl: row.logoUrl,
+        description: readCompetitionDescription(row.description).text,
       };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -826,6 +843,58 @@ export class AdminScoreboardService {
     await this.prisma.sbTeam.delete({ where: { id: teamId } });
     this.statsCache = null;
     return { ok: true };
+  }
+
+  /** What merging one team into another would do; writes nothing. */
+  async previewTeamMerge(sourceTeamId: string, targetTeamId: string) {
+    try {
+      return await planTeamMerge(this.prisma, { sourceTeamId, targetTeamId });
+    } catch (err) {
+      throw this.teamMergeHttpError(err);
+    }
+  }
+
+  /** See merge-team-records.ts for what each kind of merge does. */
+  async mergeTeams(sourceTeamId: string, targetTeamId: string) {
+    let outcome;
+    try {
+      outcome = await this.prisma.$transaction(
+        (tx) => mergeTeamRecords(tx, { sourceTeamId, targetTeamId }),
+        { timeout: 60_000 }
+      );
+    } catch (err) {
+      throw this.teamMergeHttpError(err);
+    }
+    this.statsCache = null;
+    if (outcome.needsClubLink) {
+      await linkTeamsToClubsQuietly(
+        this.prisma,
+        outcome.mode === "link" ? [outcome.target.id, outcome.source.id] : [outcome.target.id]
+      );
+    }
+    /* The stored table names the deleted team; rebuild it from the fixtures. A
+       failure here leaves the old snapshot, which the next result refreshes. */
+    if (outcome.mode === "absorb") {
+      const target = await this.prisma.sbTeam.findUnique({
+        where: { id: outcome.target.id },
+        select: { competition: { select: { id: true, standingsSnapshot: true } } },
+      });
+      if (target?.competition.standingsSnapshot) {
+        await this.lifecycle
+          .refreshCompetitionStandings(target.competition.id)
+          .catch((e) => console.error("Standings refresh after team merge failed:", e));
+      }
+    }
+    return outcome;
+  }
+
+  private teamMergeHttpError(err: unknown) {
+    if (err instanceof TeamMergeError) {
+      if (err.kind === "not_found") return new NotFoundException(err.message);
+      if (err.kind === "conflict") return new ConflictException(err.message);
+      return new BadRequestException(err.message);
+    }
+    return err;
   }
 
   /**

@@ -36,6 +36,7 @@ import { CreateFriendlyMatchDto } from "./dto/create-friendly-match.dto";
 import { PatchMatchGamedayDto } from "./dto/patch-match-gameday.dto";
 import { PatchMatchScoreDto } from "./dto/patch-match-score.dto";
 import { UpsertAdminTeamDto } from "./dto/upsert-admin-team.dto";
+import { MergeTeamsDto } from "./dto/merge-teams.dto";
 import { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
 import { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
 import { UpdateMatchStatsDto } from "./dto/update-match-stats.dto";
@@ -167,6 +168,18 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.read")
   getTeam(@Param("teamId") teamId: string) {
     return this.sb.getTeam(teamId);
+  }
+
+  @Post("teams/merge/preview")
+  @RequirePermissions("scoreboard.records.manage")
+  previewTeamMerge(@Body() dto: MergeTeamsDto) {
+    return this.sb.previewTeamMerge(dto.sourceTeamId, dto.targetTeamId);
+  }
+
+  @Post("teams/merge")
+  @RequirePermissions("scoreboard.records.manage")
+  mergeTeams(@Body() dto: MergeTeamsDto) {
+    return this.sb.mergeTeams(dto.sourceTeamId, dto.targetTeamId);
   }
 
   @Post("teams")

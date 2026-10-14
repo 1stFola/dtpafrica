@@ -22,6 +22,7 @@ import { FixtureFormModal } from "../components/FixtureFormModal";
 import { TeamFormModal } from "../components/TeamFormModal";
 import { CsvDropzone } from "../components/CsvDropzone";
 import { StatusBadge } from "../components/StatusBadge";
+import { SearchSelect } from "../components/SearchSelect";
 import { RecordsBulkBar, type BulkAction } from "../components/RecordsBulkBar";
 import { confirmBulk, reportBulk, runInBatches, type Noun } from "../bulk-actions";
 import {
@@ -64,6 +65,7 @@ import {
   type AdminSbPlayerDirectoryRow,
   type AdminSbSquadRowInput,
   type AdminSbTeam,
+  type AdminSbTeamMergePlan,
 } from "../types";
 
 type Tab = "competitions" | "teams" | "fixtures" | "players" | "nameQa" | "seeders";
@@ -90,6 +92,11 @@ type MergePlayersState = {
   source: AdminSbPlayerDirectoryRow;
   targetPlayerId: string;
   removeSource: boolean;
+};
+
+type MergeTeamsState = {
+  source: AdminSbTeam;
+  targetTeamId: string;
 };
 
 type MergeTargetOption = {
@@ -151,6 +158,12 @@ export function AdminScoreboardEntitiesPage() {
   const [competitionSaving, setCompetitionSaving] = useState(false);
   const [squadSaving, setSquadSaving] = useState(false);
   const [mergeSaving, setMergeSaving] = useState(false);
+  const [mergingTeams, setMergingTeams] = useState<MergeTeamsState | null>(null);
+  const [teamMergeQ, setTeamMergeQ] = useState("");
+  const [teamMergePlan, setTeamMergePlan] = useState<AdminSbTeamMergePlan | null>(null);
+  const [teamMergePlanError, setTeamMergePlanError] = useState("");
+  const [teamMergePlanLoading, setTeamMergePlanLoading] = useState(false);
+  const [teamMergeSaving, setTeamMergeSaving] = useState(false);
   const [teamModal, setTeamModal] = useState<"create" | "edit" | null>(null);
   const [editingTeam, setEditingTeam] = useState<AdminSbTeam | null>(null);
   const [competitionOptions, setCompetitionOptions] = useState<
@@ -264,8 +277,10 @@ export function AdminScoreboardEntitiesPage() {
         status: competition.status,
         formatType: competition.formatType ?? "",
         country: competition.region ?? "",
-        description: "",
+        description: competition.description ?? "",
         isPublished: competition.isPublished,
+        logoUrl: competition.logoUrl ?? "",
+        isFeatured: competition.isFeatured,
       },
     });
   };
@@ -291,14 +306,14 @@ export function AdminScoreboardEntitiesPage() {
       return;
     }
     const sourceKey = normalizeNameKey(source.displayName);
-    const suggestedTarget =
-      players.find(
-        (player) =>
-          player.playerId &&
-          player.playerId !== source.playerId &&
-          normalizeNameKey(player.displayName) === sourceKey
-      ) ??
-      players.find((player) => player.playerId && player.playerId !== source.playerId);
+    /* Only a same-name profile is offered in advance. Falling back to "any other
+       player" pre-selected someone unrelated, one click away from a wrong merge. */
+    const suggestedTarget = players.find(
+      (player) =>
+        player.playerId &&
+        player.playerId !== source.playerId &&
+        normalizeNameKey(player.displayName) === sourceKey
+    );
     setMergingPlayers({
       source,
       targetPlayerId: suggestedTarget?.playerId ?? "",
@@ -327,7 +342,9 @@ export function AdminScoreboardEntitiesPage() {
         status: draft.status,
         formatType: draft.formatType?.trim() || undefined,
         country: draft.country?.trim() || undefined,
-        description: draft.description?.trim() || undefined,
+        /* Sent even when empty, so clearing the description or the crest sticks. */
+        description: draft.description?.trim() ?? "",
+        logoUrl: draft.logoUrl?.trim() ?? "",
       });
       toast.success("Competition updated");
       setEditingCompetition(null);
@@ -418,6 +435,43 @@ export function AdminScoreboardEntitiesPage() {
       toast.error(formatAdminScoreboardError(e));
     } finally {
       setMergeSaving(false);
+    }
+  };
+
+  const openTeamMerge = (source: AdminSbTeam) => {
+    setMergingTeams({ source, targetTeamId: "" });
+    /* Starts on the club's own name, so its other entries are the first offered. */
+    setTeamMergeQ(source.name.replace(/\b(f\.?c|fa|sc)\b\.?/gi, "").trim() || source.name);
+    setTeamMergePlan(null);
+    setTeamMergePlanError("");
+  };
+
+  const saveTeamMerge = async () => {
+    if (!mergingTeams?.targetTeamId || !teamMergePlan || teamMergePlan.blocked) return;
+    setTeamMergeSaving(true);
+    try {
+      const result = await adminScoreboardApi.mergeTeams({
+        sourceTeamId: mergingTeams.source.id,
+        targetTeamId: mergingTeams.targetTeamId,
+      });
+      toast.success(
+        result.mode === "absorb"
+          ? `Merged ${result.source.name} into ${result.target.name}: ${
+              result.moved.homeFixtures + result.moved.awayFixtures
+            } fixture(s), ${result.moved.squadMoved + result.moved.squadFolded} squad row(s) and ${
+              result.moved.events
+            } event(s) moved.`
+          : `${result.source.name} (${result.source.competition}) is now linked to ${result.target.name} as one club.`
+      );
+      setMergingTeams(null);
+      loadedRef.current.teams = false;
+      void loadTeams();
+      if (optionsLoadedRef.current.teams) void loadTeamOptions();
+      void refreshStats();
+    } catch (e) {
+      toast.error(formatAdminScoreboardError(e));
+    } finally {
+      setTeamMergeSaving(false);
     }
   };
 
@@ -548,6 +602,30 @@ export function AdminScoreboardEntitiesPage() {
       cancelled = true;
     };
   }, [debouncedMergeTargetQ, mergingPlayers?.source.displayName]);
+
+  useEffect(() => {
+    const sourceTeamId = mergingTeams?.source.id;
+    const targetTeamId = mergingTeams?.targetTeamId;
+    setTeamMergePlan(null);
+    setTeamMergePlanError("");
+    if (!sourceTeamId || !targetTeamId) return;
+    let cancelled = false;
+    setTeamMergePlanLoading(true);
+    adminScoreboardApi
+      .previewTeamMerge({ sourceTeamId, targetTeamId })
+      .then((plan) => {
+        if (!cancelled) setTeamMergePlan(plan);
+      })
+      .catch((e) => {
+        if (!cancelled) setTeamMergePlanError(formatAdminScoreboardError(e));
+      })
+      .finally(() => {
+        if (!cancelled) setTeamMergePlanLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mergingTeams?.source.id, mergingTeams?.targetTeamId]);
 
   useEffect(() => {
     if (tab !== "players" && tab !== "nameQa") return;
@@ -980,6 +1058,38 @@ export function AdminScoreboardEntitiesPage() {
     });
   }, [mergeMasterTargets, mergingPlayers?.source.displayName, mergingPlayers?.source.playerId, players]);
 
+  const teamMergeOptions = useMemo(() => {
+    const source = mergingTeams?.source;
+    if (!source) return [];
+    /* Same competition first: those are the true duplicates, merged into one. */
+    return teams
+      .filter((t) => t.id !== source.id)
+      .map((t) => ({
+        id: t.id,
+        label: t.name,
+        detail: `${t.competition.name} · ${t.slug} · ${t.squadCount} in squad`,
+        badge: t.competition.id === source.competition.id ? "Same competition" : undefined,
+        sameCompetition: t.competition.id === source.competition.id,
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.sameCompetition) - Number(a.sameCompetition) || a.label.localeCompare(b.label)
+      );
+  }, [mergingTeams?.source, teams]);
+
+  const mergeTargetSearchOptions = useMemo(
+    () =>
+      mergeTargetOptions.map((player) => ({
+        id: player.playerId,
+        label: player.positionPrimary
+          ? `${player.displayName} (${player.positionPrimary})`
+          : player.displayName,
+        detail: player.context,
+        badge: player.source === "players" ? "Player database" : undefined,
+      })),
+    [mergeTargetOptions]
+  );
+
   return (
     <section className="admin-sb-section">
       <AdminSbPageHeader
@@ -1188,7 +1298,7 @@ export function AdminScoreboardEntitiesPage() {
               <label className="admin-sb-field">
                 <span>Status</span>
                 <select
-                  value={editingCompetition.draft.status ?? "upcoming"}
+                  value={editingCompetition.draft.status ?? "scheduled"}
                   onChange={(e) =>
                     setEditingCompetition((current) =>
                       current
@@ -1222,6 +1332,65 @@ export function AdminScoreboardEntitiesPage() {
                     )
                   }
                 />
+              </label>
+              <div className="admin-sb-field">
+                <span>Logo URL</span>
+                <div className="admin-sb-team-cell">
+                  {editingCompetition.draft.logoUrl?.trim() ? (
+                    <img
+                      src={editingCompetition.draft.logoUrl.trim()}
+                      alt="Logo preview"
+                      className="admin-sb-comp-logo-preview"
+                    />
+                  ) : null}
+                  <input
+                    type="url"
+                    inputMode="url"
+                    className="admin-sb-comp-logo-input"
+                    aria-label="Logo URL"
+                    value={editingCompetition.draft.logoUrl ?? ""}
+                    onChange={(e) =>
+                      setEditingCompetition((current) =>
+                        current
+                          ? { ...current, draft: { ...current.draft, logoUrl: e.target.value } }
+                          : current
+                      )
+                    }
+                    placeholder="https://… (leave empty for no logo)"
+                  />
+                </div>
+              </div>
+              <label className="admin-sb-field">
+                <span>Description</span>
+                <textarea
+                  rows={4}
+                  value={editingCompetition.draft.description ?? ""}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? { ...current, draft: { ...current.draft, description: e.target.value } }
+                        : current
+                    )
+                  }
+                  placeholder="A short public description of the competition"
+                />
+              </label>
+              <label className="admin-sb-check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editingCompetition.draft.isFeatured)}
+                  onChange={(e) =>
+                    setEditingCompetition((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: { ...current.draft, isFeatured: e.target.checked },
+                          }
+                        : current
+                    )
+                  }
+                />
+                Featured
               </label>
               <label className="admin-sb-check">
                 <input
@@ -1432,47 +1601,20 @@ export function AdminScoreboardEntitiesPage() {
                   </small>
                 </div>
               </div>
-              <label className="admin-sb-field">
-                <span>Find canonical target profile</span>
-                <input
-                  type="search"
-                  value={mergeTargetQ}
-                  onChange={(e) => setMergeTargetQ(e.target.value)}
-                  placeholder="Search all master players, including profiles with no ScoreBoard history"
-                  disabled={mergeSaving}
-                />
-                <small className="muted">
-                  This searches the full `/admin/players` database, so the target can have no
-                  ScoreBoard events yet and can use a different listed position.
-                </small>
-              </label>
-              <label className="admin-sb-field">
-                <span>Canonical target profile</span>
-                <select
-                  value={mergingPlayers.targetPlayerId}
-                  onChange={(e) =>
-                    setMergingPlayers((current) =>
-                      current ? { ...current, targetPlayerId: e.target.value } : current
-                    )
-                  }
-                  required
-                >
-                  <option value="">Select the profile to keep...</option>
-                  {mergeTargetOptions.map((player) => (
-                    <option key={player.playerId} value={player.playerId}>
-                      {player.displayName}
-                      {player.positionPrimary ? ` (${player.positionPrimary})` : ""}
-                      {` - ${player.context}`}
-                      {player.source === "players" ? " - no ScoreBoard link required" : ""}
-                    </option>
-                  ))}
-                </select>
-                {mergeTargetsLoading ? (
-                  <small className="muted">Searching master player profiles...</small>
-                ) : mergeTargetOptions.length === 0 ? (
-                  <small className="muted">No merge target found. Try a broader name search.</small>
-                ) : null}
-              </label>
+              <SearchSelect
+                label="Canonical target profile"
+                options={mergeTargetSearchOptions}
+                value={mergingPlayers.targetPlayerId}
+                onChange={(playerId) =>
+                  setMergingPlayers((current) => (current ? { ...current, targetPlayerId: playerId } : current))
+                }
+                query={mergeTargetQ}
+                onQueryChange={setMergeTargetQ}
+                loading={mergeTargetsLoading}
+                disabled={mergeSaving}
+                placeholder="Type a name, club or competition…"
+                hint="Searches every ScoreBoard player and the full player database, so the profile to keep can have no ScoreBoard history yet."
+              />
               <label className="admin-sb-check">
                 <input
                   type="checkbox"
@@ -1503,6 +1645,142 @@ export function AdminScoreboardEntitiesPage() {
                   disabled={mergeSaving || !mergingPlayers.targetPlayerId}
                 >
                   {mergeSaving ? "Merging..." : "Merge players"}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {mergingTeams && (
+        <div
+          className="admin-sb-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!teamMergeSaving) setMergingTeams(null);
+          }}
+        >
+          <div
+            className="admin-sb-modal"
+            role="dialog"
+            aria-labelledby="team-merge-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="admin-sb-modal__header">
+              <h2 id="team-merge-title">Merge duplicate team</h2>
+              <button
+                type="button"
+                className="admin-sb-modal__close"
+                onClick={() => setMergingTeams(null)}
+                disabled={teamMergeSaving}
+                aria-label="Close merge team dialog"
+              >
+                ×
+              </button>
+            </header>
+            <form
+              className="admin-sb-modal__body"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveTeamMerge();
+              }}
+            >
+              <div className="admin-sb-merge-summary">
+                <div>
+                  <span className="muted">Duplicate</span>
+                  <strong>{mergingTeams.source.name}</strong>
+                  <small>
+                    {mergingTeams.source.competition.name} · {mergingTeams.source.slug} ·{" "}
+                    {mergingTeams.source.squadCount} in squad
+                  </small>
+                </div>
+                <div>
+                  <span className="muted">What happens</span>
+                  <strong>Depends on the competition</strong>
+                  <small>
+                    Same competition: its fixtures, squad and events move to the team you keep, and the
+                    duplicate is deleted. Another competition: both entries stay, linked as one club,
+                    and the duplicate takes the kept team&apos;s name and logo.
+                  </small>
+                </div>
+              </div>
+              <SearchSelect
+                label="Team to keep"
+                options={teamMergeOptions}
+                value={mergingTeams.targetTeamId}
+                onChange={(teamId) =>
+                  setMergingTeams((current) => (current ? { ...current, targetTeamId: teamId } : current))
+                }
+                query={teamMergeQ}
+                onQueryChange={setTeamMergeQ}
+                disabled={teamMergeSaving}
+                placeholder="Type a club name or competition…"
+              />
+              {teamMergePlanLoading ? (
+                <p className="muted">Checking what this merge would change…</p>
+              ) : teamMergePlanError ? (
+                <p className="admin-sb-warning-note">{teamMergePlanError}</p>
+              ) : teamMergePlan ? (
+                <div className="admin-sb-merge-plan" aria-live="polite">
+                  {teamMergePlan.mode === "absorb" ? (
+                    <>
+                      <strong>
+                        Fold {teamMergePlan.source.name} into {teamMergePlan.target.name} and delete
+                        the duplicate
+                      </strong>
+                      <ul>
+                        <li>{teamMergePlan.counts.fixtures} fixture(s) move</li>
+                        <li>
+                          {teamMergePlan.counts.squad} squad row(s) move; a player already in the kept
+                          squad is combined, not listed twice
+                        </li>
+                        <li>{teamMergePlan.counts.events} match event(s) move</li>
+                        <li>{teamMergePlan.counts.matchSquadPlayers} match-day squad entries move</li>
+                      </ul>
+                    </>
+                  ) : (
+                    <>
+                      <strong>
+                        Link as one club: {teamMergePlan.source.name} ({teamMergePlan.source.competition})
+                        and {teamMergePlan.target.name} ({teamMergePlan.target.competition})
+                      </strong>
+                      <ul>
+                        <li>Both entries stay. Each competition needs its own for its fixtures and table.</li>
+                        <li>
+                          The duplicate is renamed to &ldquo;{teamMergePlan.target.name}&rdquo; and takes
+                          its logo.
+                        </li>
+                        <li>No fixtures, squads or events move between competitions.</li>
+                      </ul>
+                    </>
+                  )}
+                  {teamMergePlan.blocked ? (
+                    <p className="admin-sb-warning-note">{teamMergePlan.blocked}</p>
+                  ) : null}
+                </div>
+              ) : null}
+              <p className="admin-sb-warning-note">
+                Review carefully: this changes the database and cannot be undone from here.
+              </p>
+              <footer className="admin-sb-modal__footer">
+                <button type="button" onClick={() => setMergingTeams(null)} disabled={teamMergeSaving}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={
+                    teamMergeSaving ||
+                    teamMergePlanLoading ||
+                    !teamMergePlan ||
+                    Boolean(teamMergePlan.blocked)
+                  }
+                >
+                  {teamMergeSaving
+                    ? "Merging…"
+                    : teamMergePlan?.mode === "link"
+                      ? "Link as one club"
+                      : "Merge teams"}
                 </button>
               </footer>
             </form>
@@ -1720,7 +1998,21 @@ export function AdminScoreboardEntitiesPage() {
                       selection: competitionSel,
                       onToggle: (id) => setCompetitionSel((sel) => toggleSelection(sel, id)),
                     })}
-                    <td>{c.name}</td>
+                    <td>
+                      <div className="admin-sb-team-cell">
+                        {c.logoUrl ? (
+                          <img src={c.logoUrl} alt="" className="admin-sb-team-crest" />
+                        ) : (
+                          <span className="admin-sb-team-crest admin-sb-team-crest--empty" aria-hidden>
+                            {c.name.slice(0, 2)}
+                          </span>
+                        )}
+                        <span>
+                          {c.name}
+                          <small className="muted admin-sb-code">{c.slug}</small>
+                        </span>
+                      </div>
+                    </td>
                     <td>{c.type}</td>
                     <td>
                       <code className="admin-sb-code">{c.formatType ?? "—"}</code>
@@ -1873,6 +2165,14 @@ export function AdminScoreboardEntitiesPage() {
                         }}
                       >
                         Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-inline-button"
+                        onClick={() => openTeamMerge(t)}
+                        title="Merge this team into another, or link it to the same club in another competition"
+                      >
+                        Merge
                       </button>
                       <button
                         type="button"
