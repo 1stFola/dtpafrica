@@ -151,7 +151,7 @@ export function StoppedRecordingsPanel() {
 }
 
 /** `20 minutes`, or `35 days` once a recording has been sitting for a month. */
-function formatQuiet(minutes: number): string {
+export function formatQuiet(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
   if (minutes < 1440) {
     const hours = Math.floor(minutes / 60);

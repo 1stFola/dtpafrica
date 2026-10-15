@@ -35,6 +35,8 @@ export type SectionPermissions = {
   canEdit: boolean;
   canSubmit: boolean;
   canApproveThis: boolean;
+  /** An approver looking at a recording the idle sweep stopped. */
+  canReleaseIdleLock?: boolean;
 };
 
 export type SectionAudit = {
@@ -92,7 +94,9 @@ export type SheetLogAction =
   | "sent_back"
   | "correction_requested"
   | "correction_approved"
-  | "correction_declined";
+  | "correction_declined"
+  | "idle_locked"
+  | "idle_released";
 
 export type SheetLogEntry = {
   id: string;
@@ -166,6 +170,8 @@ export type MatchStatsSheet = {
   /** True once the clock reaches full time; edits need a correction approved. */
   lockedAtFullTime: boolean;
   correctionRequest: CorrectionRequest | null;
+  /** Set when the idle sweep stopped this recording: no event for twenty minutes. */
+  idleLock?: { lockedAt: string; quietSinceAt: string; quietMinutes: number } | null;
   events: RecordedEvent[];
   /** Live scoreline implied by the logged goal events. */
   derivedScore: { home: number; away: number };

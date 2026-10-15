@@ -70,6 +70,15 @@ export class AdminMatchStatsController {
     return this.stats.myTotals(req.adminAuth);
   }
 
+  /** Every recording the idle sweep has stopped. Feeds the dashboard and match-stats
+   *  panels. Declared above `GET :matchId`, which would otherwise take "idle-locked"
+   *  as a match id and answer every request with a missing match. */
+  @Get("idle-locked")
+  @RequirePermissions("scoreboard.stats.approve")
+  listIdleLocked(@Req() req: AdminRequest) {
+    return this.stats.listIdleLocked(req.adminAuth);
+  }
+
   /* Practice matches. Declared above the ":matchId" routes so "training" is
      never swallowed as a match id. */
   @Post("training")
@@ -197,13 +206,6 @@ export class AdminMatchStatsController {
     @Req() req: AdminRequest
   ) {
     return this.stats.declineCorrection(matchId, dto.note, req.adminAuth);
-  }
-
-  /** Every recording the idle sweep has stopped. Feeds the dashboard panel. */
-  @Get("idle-locked")
-  @RequirePermissions("scoreboard.stats.approve")
-  listIdleLocked(@Req() req: AdminRequest) {
-    return this.stats.listIdleLocked(req.adminAuth);
   }
 
   /** Release a stopped recording. The note is required: it is the only record of why. */

@@ -7,6 +7,8 @@ import {
   type MatchStatsTotals,
 } from "../../../api/adminMatchStats";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminAuth } from "../AdminAuthContext";
+import { StoppedRecordingsPanel } from "../components/StoppedRecordingsPanel";
 import { FeedbackSettings } from "./FeedbackSettings";
 
 /** Fixtures worth offering a sheet for: recent enough to have been played,
@@ -33,6 +35,7 @@ function kickoffLabel(value: string | null): string {
 
 export function AdminMatchStatsPage() {
   usePageTitle("Match statistics");
+  const { hasPermission } = useAdminAuth();
   const [queue, setQueue] = useState<MatchStatsQueueItem[] | null>(null);
   const [fixtures, setFixtures] = useState<MatchStatsFixture[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +140,10 @@ export function AdminMatchStatsPage() {
           </div>
         </dl>
       )}
+
+      {/* Same panel as the dashboard. Match supervisors can release a stopped recording
+          but land here rather than on the dashboard, so without it they never see one. */}
+      {hasPermission("scoreboard.stats.approve") && <StoppedRecordingsPanel />}
 
       <FeedbackSettings />
 

@@ -31,6 +31,7 @@ import {
   useMatchClock,
 } from "./useMatchClock";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { formatQuiet } from "../components/StoppedRecordingsPanel";
 import {
   EVENT_LABELS,
   type SbMatchEvent,
@@ -985,6 +986,7 @@ export function AdminMatchStatsConsolePage() {
   const [showTrainingLive, setShowTrainingLive] = useState(false);
   const [correctionNote, setCorrectionNote] = useState("");
   const [askCorrection, setAskCorrection] = useState(false);
+  const [releaseNote, setReleaseNote] = useState("");
   /* Entry controls live here rather than in the Events tab so they can sit in
      the frozen header — they are needed constantly while the grid scrolls. */
   const [side, setSide] = useState<Side | null>(null);
@@ -1623,6 +1625,46 @@ export function AdminMatchStatsConsolePage() {
           {sheet.correctionRequest
             ? " A correction request is with the ScoreBoard admin."
             : " Request a correction if something needs changing."}
+        </div>
+      )}
+
+      {/* Stopped by the idle sweep. The recorder can only wait; an approver can release
+          it here, with the same required note as the dashboard panel. */}
+      {sheet.idleLock && (
+        <div className="mcx-callout mcx-callout--warn">
+          <strong>Recording stopped.</strong> No event was filed for{" "}
+          {formatQuiet(sheet.idleLock.quietMinutes)}, so the live broadcast was ended and this
+          sheet is locked.
+          {perms?.canReleaseIdleLock
+            ? " Release it to let the recorder carry on."
+            : " A ScoreBoard admin can release it."}
+          {perms?.canReleaseIdleLock && (
+            <div className="mcx-review">
+              <textarea
+                className="mcx-note"
+                value={releaseNote}
+                onChange={(e) => setReleaseNote(e.target.value)}
+                placeholder="Why release it? (kept with the sheet's history)"
+                aria-label="Why are you releasing this recording?"
+                rows={2}
+                maxLength={500}
+              />
+              <div className="mcx-review__buttons">
+                <button
+                  type="button"
+                  className="mcx-btn mcx-btn--approve"
+                  disabled={busy || !releaseNote.trim()}
+                  onClick={() =>
+                    act(() => matchStatsApi.releaseIdleLock(matchId, releaseNote.trim())).then(
+                      () => setReleaseNote("")
+                    )
+                  }
+                >
+                  Release recording
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
