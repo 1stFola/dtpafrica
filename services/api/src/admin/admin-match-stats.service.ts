@@ -1983,8 +1983,12 @@ export class AdminMatchStatsService {
       !sheet?.recorderId || !ctx.userId || sheet.recorderId === ctx.userId;
 
     const recorded = readEvents(sheet?.events);
+    /* The idle lock is the one the recorder cannot lift, so the console needs to say so
+       and offer the release to whoever can. Same training exemption as the save guard. */
+    const idleLockedAt = !isTrainingCompetition(match.competition) ? sheet?.idleLockedAt ?? null : null;
+    const idleSince = idleLockedAt ? sheet?.idleLockedSinceAt ?? idleLockedAt : null;
     const lockedForEditing = !isTrainingCompetition(match.competition) &&
-      isFullTime(readClock(sheet?.clock));
+      (isFullTime(readClock(sheet?.clock)) || Boolean(idleLockedAt));
 
     return {
       matchId: match.id,
@@ -2033,6 +2037,15 @@ export class AdminMatchStatsService {
             note: sheet.correctionRequestNote,
           }
         : null,
+      /** Set when the idle sweep stopped this recording; null otherwise. */
+      idleLock:
+        idleLockedAt && idleSince
+          ? {
+              lockedAt: idleLockedAt,
+              quietSinceAt: idleSince,
+              quietMinutes: quietMinutes(idleLockedAt.getTime() - idleSince.getTime()),
+            }
+          : null,
       /** Mirrors the server rules exactly, so the UI never offers a control
        *  the API would reject. */
       permissions: {
@@ -2041,6 +2054,7 @@ export class AdminMatchStatsService {
         canEdit: canRecord && status !== "approved" && ownsSheet && !lockedForEditing,
         canSubmit: canRecord && status !== "approved" && ownsSheet,
         canApproveThis: canApprove && status === "submitted",
+        canReleaseIdleLock: canApprove && Boolean(idleLockedAt),
       },
       match: {
         id: match.id,
