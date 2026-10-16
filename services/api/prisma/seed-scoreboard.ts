@@ -13,6 +13,7 @@ import { seedDslLeaguePlayers } from "./seed-dsl-league-players-2026";
 import { seedRakLeague2026 } from "./seed-rak-league-2026";
 import { seedTrainingCup } from "./seed-training-cup";
 import { seedUnitedFootballChampionshipLeague2026 } from "./seed-united-football-championship-league-2026";
+import { seedUnitedFootballChampionshipLeague2026Squads } from "./seed-united-football-championship-league-2026-squads";
 import { syncScoreboardEventPlayerLinks } from "./sync-scoreboard-event-player-links";
 import { syncScoreboardTimelinePlayerProfiles } from "./sync-scoreboard-timeline-player-profiles";
 
@@ -73,6 +74,12 @@ export async function seedScoreboard(prisma: PrismaClient, _seedPlayerId?: strin
   // had events recorded is left alone.
   await step("United Football Championship League 2026", () =>
     seedUnitedFootballChampionshipLeague2026(prisma)
+  );
+  // The clubs' registered squads, added once the league's teams exist. Players
+  // are resolved or created the way the admin squad import does it; a row is
+  // only ever added or given its missing player link, never reset.
+  await step("United Football Championship League 2026 squads", () =>
+    seedUnitedFootballChampionshipLeague2026Squads(prisma)
   );
   await step("DTP Training Cup", () => seedTrainingCup(prisma));
   const goalkeeperProfiles = await seedGoalkeeperProfiles(prisma);
