@@ -22,6 +22,7 @@
     "db:repair:competition-status": "tsx scripts/repair-competition-status.ts",
     "db:repair:match-slug-drift": "tsx scripts/repair-match-slug-drift.ts",
     "db:seed:ufc-league": "tsx scripts/seed-ufc-league-2026.ts",
+    "db:seed:ufc-squads": "tsx scripts/seed-ufc-league-2026-squads.ts",
     "db:purge:gate-litter": "tsx scripts/purge-vision-gate-litter.ts",
     "db:purge:placeholder-players": "tsx scripts/purge-placeholder-players.ts",
     "db:push": "prisma db push --accept-data-loss",
