@@ -11,7 +11,7 @@ import { Throttle, ThrottlerGuard, type ThrottlerModuleOptions } from "@nestjs/t
  *
  * Two windows on every throttled route: a per-minute one that stops a burst, and a per-hour one
  * that stops a slow, steady guesser the minute window would let through. Limits are per client
- * address; see TRUSTED_PROXIES for how that address is found behind CloudFront and nginx.
+ * address; see TRUSTED_PROXIES for how that address is found behind the CDN and nginx.
  *
  * A request from the machine itself is not limited. That is the Vision DB gates and local
  * development, which sign in a dozen accounts a run against localhost. Deployed, every request
@@ -60,8 +60,8 @@ export const PublicFormThrottle = () =>
  * Which hops Express may believe about the client address (`trust proxy`).
  *
  * The API is reached only through nginx in the web container, on Docker's private network.
- * nginx has already resolved the visitor's address from CloudFront's X-Forwarded-For (it
- * trusts CloudFront's ranges only; infra/nginx.staging.conf) and appends it as the last entry.
+ * nginx has already resolved the visitor's address from the CDN's X-Forwarded-For
+ * (infra/nginx.staging.conf) and appends it as the last entry.
  * Trusting private and loopback hops makes `req.ip` that last entry; a connection from any
  * public address is taken at its own address and its X-Forwarded-For is ignored.
  */
