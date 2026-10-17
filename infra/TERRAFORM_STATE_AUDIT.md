@@ -66,50 +66,48 @@ CloudFront and no ACM certificate. **There is no newer local state file anywhere
 
 ## Question 2 — How were the certificate and CloudFront distribution made?
 
-**Both were attempted through Terraform via the CD pipeline, not the AWS console or CLI.**
+**CloudFront was not implemented. We are using Namecheap's CDN, configured in September
+by Mr Fola and the team.**
 
-Here is the exact sequence of events reconstructed from git history:
+The Namecheap CDN sits in front of the server at `54.225.155.75` and serves `dtp.africa`
+through Namecheap's edge network. No CloudFront distribution is serving this site.
 
-### August 20 — First CloudFront attempt
-Commit `01be3b3` (`feat: uncomment Terraform job for CDN provisioning`) re-enabled the
-Terraform job in the CD workflow. This triggered `terraform apply` which:
+The AWS-based CloudFront work (commits from August) was attempted but abandoned:
 
-1. Read the June state file (serial 9, 8 resources)
+### August 20 — First CloudFront attempt via Terraform/CD
+Commit `01be3b3` re-enabled the Terraform job in the CD workflow. This triggered
+`terraform apply` which:
+
+1. Read the June state file (serial 9, 8 resources).
 2. The CD had a **path bug**: the workflow saved state to `terraform.tfstate` at the
-   repository root, but restored it from `infra/terraform/terraform.tfstate`. So it
-   restored the correct June state but saved updates to the wrong path, where they were
-   never found on the next run.
-3. Because of this, the reconcile step found no instance in state and cleared all state
-   entries before applying.
-4. Terraform then tried to create everything from scratch: new VPC, subnet, IGW, security
-   group, EC2 instance, EIP — **and a new CloudFront distribution using a raw IP address
-   as the origin, which AWS rejected** (`InvalidArgument: The parameter origin name cannot
-   be an IP address`).
-5. Result: all EC2/network resources were created (new duplicates), CloudFront was **not**
-   created. These duplicate resources were deleted manually using AWS CLI.
+   repository root, but restored it from `infra/terraform/terraform.tfstate`. Every run
+   after the first therefore started with no state.
+3. Terraform treated everything as new and created a second VPC, EC2, EIP.
+4. CloudFront creation **failed** — `InvalidArgument: The parameter origin name cannot be
+   an IP address`. A raw IP was used as origin, which AWS does not accept.
+5. The duplicate resources were deleted manually via AWS CLI.
 
-### August 21 — Second CloudFront attempt
-The Terraform code was updated to use `aws_instance.server.public_dns` as the CloudFront
-origin (correct) and to add an ACM certificate for `dtp.africa`. The CD ran again:
+### August 21 — Second attempt
+The code was corrected to use the EC2 public DNS as origin and added an ACM certificate.
+The CD ran again:
+- Created another duplicate VPC, EC2, EIP.
+- Created the **ACM certificate** (`arn:aws:acm:us-east-1:148761651145:certificate/39e1723f-...`).
+- CloudFront creation began but the run timed out or was abandoned.
+- Duplicate resources were again deleted manually.
+- The ACM certificate DNS validation CNAME records were never added to the domain, so the
+  certificate is likely still in `PENDING_VALIDATION`.
 
-1. Again started with no valid state (same path bug).
-2. Created another new VPC, subnet, IGW, security group, EC2 instance, EIP — and this time
-   also created the **ACM certificate** (`arn:aws:acm:...:certificate/39e1723f-...`).
-3. CloudFront creation began (`aws_cloudfront_distribution.app: Creating...`) but the run
-   was either interrupted or timed out — the distribution's final status is unknown.
-4. These duplicate resources were again deleted manually.
+**In September, the team switched to Namecheap's CDN instead**, which is simpler to
+manage for a team without a dedicated AWS infrastructure engineer and does not require
+Terraform.
 
-**Therefore:**
-- The ACM certificate was created by Terraform via the CD pipeline on ~21 August.
-- The CloudFront distribution may or may not exist — its creation was in progress when logs
-  end. It needs to be verified in the AWS console.
-- No `CNAMEAlreadyExists` error was observed in any run logs.
-- The DNS validation CNAME records for the ACM certificate were never added (no domain
-  registrar action was taken), so the certificate is likely in `PENDING_VALIDATION` status.
-- No CloudFront distribution is serving `dtp.africa` — the site currently serves directly
-  from the EC2 instance.
+**What this means for the state file:** The ACM certificate exists in AWS but is not in
+the state file. CloudFront does not exist. Before resuming Terraform, the orphaned ACM
+certificate should either be imported into state or deleted from the AWS console to avoid
+confusion.
 
----
+No `CNAMEAlreadyExists` error was encountered. No console or CLI changes were made to
+CloudFront or ACM outside of what the CD pipeline created.
 
 ## Question 3 — Was anything changed by hand since June?
 
@@ -175,48 +173,144 @@ aws ec2 describe-instance-credit-specifications \
 
 ### Immediate (before any Terraform runs)
 
-1. **Verify CloudFront in the AWS console.** Check whether
-   `aws_cloudfront_distribution.app` (tagged `dtp-staging-cdn`) actually exists.
-   If it does, note its distribution ID and domain name.
-
-2. **Check the ACM certificate status.** Find certificate
+1. **Verify and delete the orphaned ACM certificate.** Find
    `arn:aws:acm:us-east-1:148761651145:certificate/39e1723f-9516-4d23-9465-079a39b5558a`
-   in the console. If it exists and is `PENDING_VALIDATION`, either add the validation
-   CNAME records or delete it (Terraform will recreate it cleanly).
+   in the AWS console. Since we are using Namecheap's CDN (not CloudFront), this
+   certificate serves no purpose. Delete it to keep the account clean.
+
+2. **Remove CloudFront and ACM resources from `main.tf`.** The Terraform code currently
+   defines `aws_cloudfront_distribution.app` and `aws_acm_certificate.app`. Since the
+   team uses Namecheap's CDN instead, these blocks should be removed from `main.tf` and
+   `outputs.tf` to prevent Terraform from trying to create them on the next apply.
 
 3. **Fix the disk size in Terraform code.** Change `root_volume_size` default from `20`
-   to `100` in `infra/terraform/variables.tf` **before** any plan runs. This prevents
-   Terraform from detecting drift and attempting to resize the live disk.
+   to `100` in `infra/terraform/variables.tf` before any plan runs. The disk was grown to
+   100 GiB on 4 October. If Terraform runs against the old value it will detect drift and
+   attempt to resize the disk, requiring an instance stop.
 
-4. **Move the state file to a private S3 bucket** as planned. Enable versioning and
-   server-side encryption on the bucket. Delete the `terraform-state` branch once the
-   migration is confirmed.
+4. **Move the state file to a private S3 bucket.** Enable versioning and server-side
+   encryption. Delete the `terraform-state` branch once the migration is confirmed.
 
-5. **Fix the state file path bug.** The CD workflow restored state from
-   `infra/terraform/terraform.tfstate` but saved it to `terraform.tfstate` (repo root).
-   Both the restore and save steps must use the same path. The working-directory is
-   already set to `infra/terraform`, so the save step should reference just
-   `terraform.tfstate` with no path prefix.
+5. **Fix the state file path bug in the CD workflow.** The restore and save steps must
+   both reference the same path. The working-directory is set to `infra/terraform`, so
+   both should use `terraform.tfstate` with no prefix.
 
 ### Before resuming CloudWatch alarms and snapshots
 
 6. **Import existing resources into a fresh state file.** With the S3 backend in place,
    run `terraform import` for each live resource (VPC, subnet, IGW, route table,
-   security group, EC2, EIP, and any CloudFront/ACM resources that exist) to build an
-   accurate state before running any plan.
+   security group, EC2, EIP) to build an accurate baseline before running any plan.
 
-7. **Confirm CPU credit mode** (see Question 5 above) and adjust the alarm threshold
-   accordingly.
+7. **Confirm CPU credit mode** and adjust the alarm threshold accordingly:
+   ```bash
+   aws ec2 describe-instance-credit-specifications \
+     --instance-ids i-08eadc0c132acb0ef \
+     --region us-east-1 \
+     --query 'InstanceCreditSpecifications[0].CpuCredits' \
+     --output text
+   ```
 
-8. **Protect the Postgres data.** The database lives on the EC2 root disk. Before any
-   Terraform change that touches the instance, take a manual EBS snapshot as a backup.
-   The nightly backup script added in commit `8b2a85f` should be verified as running.
+---
+
+## Database Protection — Current State and Steps to Complete
+
+The database is a PostgreSQL 16 container running on the EC2 root disk. If the instance
+is terminated or replaced, the data is gone. This is the most critical risk in the current
+architecture.
+
+### What already exists in the codebase
+
+A full nightly backup system was built in commit `8b2a85f` and is part of the Ansible
+deploy. It includes:
+
+- **`infra/backup/dtp-backup.py`** — a Python script that dumps Postgres inside the
+  container (client always matches server version), compresses with `pg_dump -Fc`,
+  verifies the archive, uploads to an S3-compatible bucket off AWS, and prunes old copies.
+- **Cloudflare R2 as the off-box store** — backups leave AWS entirely, so an AWS account
+  compromise or accidental instance termination does not destroy them.
+- **Dead man's switch via healthchecks.io** — if a backup fails or the timer stops firing,
+  an alert is sent by email.
+- **`dtp-backup verify latest`** — restores the newest backup into a throwaway Postgres
+  container and counts rows, proving the backup is actually usable.
+- **Systemd timer** — runs nightly, separate from the Docker stack.
+
+### Steps to activate (if not already done)
+
+The `STAGING-MANUAL-SETUP.md` file has the full checklist. The short version:
+
+**B1 — Create the R2 bucket**
+1. Log into Cloudflare → R2 → Create bucket → name: `dtp-db-backups`
+2. Create an R2 API token scoped only to that bucket (Object Read & Write)
+3. Copy the Access Key ID, Secret Access Key, and Account ID
+
+**B2 — Create healthchecks.io monitors**
+1. Create a check named `dtp-db-backup` with period 1 day, grace 3 hours
+2. Create a check named `dtp-disk` with period 15 minutes, grace 30 minutes
+3. Enable email alerts on both
+
+**B3 — Add the secrets to AWS Secrets Manager (`dtp/staging/app`)**
+
+| Key | Value |
+|---|---|
+| `BACKUP_S3_ENDPOINT` | `https://<cloudflare_account_id>.r2.cloudflarestorage.com` |
+| `BACKUP_S3_BUCKET` | `dtp-db-backups` |
+| `BACKUP_S3_ACCESS_KEY_ID` | from B1 |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | from B1 |
+| `BACKUP_HEARTBEAT_URL` | ping URL from the `dtp-db-backup` check |
+| `DISK_HEARTBEAT_URL` | ping URL from the `dtp-disk` check |
+
+**B4 — Trigger a deploy and verify**
+```bash
+# After the next deploy, SSH to the server and run:
+systemctl list-timers dtp-backup.timer dtp-disk-check.timer  # both should appear
+sudo systemctl start dtp-backup.service                       # run a backup now
+sudo dtp-backup verify latest                                  # prove it restores
+```
+If `verify latest` prints a row count and exits 0, the backup is working end to end.
+
+### Additional data-loss prevention measures
+
+**Before any Terraform change that touches the EC2 instance:**
+```bash
+# Take a manual EBS snapshot before any risky maintenance
+aws ec2 create-snapshot \
+  --volume-id $(aws ec2 describe-instances \
+    --instance-ids i-08eadc0c132acb0ef \
+    --query 'Reservations[0].Instances[0].BlockDeviceMappings[0].Ebs.VolumeId' \
+    --output text) \
+  --description "pre-terraform-$(date +%F)" \
+  --region us-east-1
+```
+
+**Move the database off the root disk (longer term).** The root disk is deleted when the
+instance is terminated. A dedicated EBS data volume (`/dev/sdf` mounted at `/data/postgres`)
+survives instance replacement. This is the safest architectural change — it decouples the
+database from the server lifecycle. The Terraform code already has a commented-out version
+of this from the original two-instance plan.
+
+**Enable EBS automated snapshots via AWS Data Lifecycle Manager.** Once Terraform is
+running again, `snapshots.tf` (referenced in `STAGING-MANUAL-SETUP.md`) can automate 7
+daily EBS snapshots with a 7-day retention policy. Until then, take manual snapshots
+before any maintenance.
+
+**Summary of current data-loss risk:**
+
+| Risk | Current protection | Gap |
+|---|---|---|
+| Bad migration / app bug | `dtp-backup` nightly R2 dump (if activated) | None if B1–B4 are done |
+| Instance terminated | R2 dump (off-box) | EBS snapshot not yet automated |
+| AWS region outage | R2 on Cloudflare (different infra) | No cross-region replica |
+| Postgres disk corruption | R2 dump + verify | EBS snapshot for point-in-time |
+| Accidental `docker volume rm` | R2 dump | EBS snapshot |
 
 ---
 
 ## What I Confirm Did Not Happen
 
 - No `terraform apply` was run directly from my local machine against staging.
-- No AWS console changes were made to CloudFront, security groups, or the Elastic IP.
+- No AWS console changes were made to CloudFront, the ACM certificate, security groups,
+  or the Elastic IP.
 - No state was committed or pushed intentionally after June 5.
 - The S3 bucket and DynamoDB table from the old backend config were never created.
+- CloudFront was never successfully provisioned. The site is served through Namecheap's
+  CDN, configured in September by Mr Fola and the team.
