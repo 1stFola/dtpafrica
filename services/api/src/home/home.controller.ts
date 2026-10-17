@@ -9,6 +9,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { AdsConfigService } from "../ads/ads-config.service";
+import { PublicFormThrottle } from "../shared/throttle";
 import { ContactDto } from "./dto/contact.dto";
 import { NewsletterDto } from "./dto/newsletter.dto";
 import { RegisterPlayerDto } from "./dto/register-player.dto";
@@ -43,16 +44,19 @@ export class HomeController {
   }
 
   @Post("register")
+  @PublicFormThrottle()
   register(@Body() dto: RegisterPlayerDto) {
     return this.home.register(dto);
   }
 
   @Post("contact")
+  @PublicFormThrottle()
   contact(@Body() dto: ContactDto) {
     return this.home.submitContact(dto);
   }
 
   @Post("newsletter")
+  @PublicFormThrottle()
   newsletter(@Body() dto: NewsletterDto) {
     return this.home.subscribeNewsletter(dto);
   }

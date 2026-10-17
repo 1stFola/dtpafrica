@@ -8,9 +8,8 @@ import { academyJwtSecret } from "./academy-auth.util";
 
 @Module({
   imports: [
-    JwtModule.register({
-      secret: academyJwtSecret(),
-      signOptions: { expiresIn: "7d" },
+    JwtModule.registerAsync({
+      useFactory: () => ({ secret: academyJwtSecret(), signOptions: { expiresIn: "7d" } }),
     }),
   ],
   controllers: [AcademyAuthController],

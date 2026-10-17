@@ -5,6 +5,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+import { safeEqual } from "../../shared/safe-equal";
 import { AdminAuthService } from "../auth/admin-auth.service";
 
 /**
@@ -27,7 +28,7 @@ export class AdminAuthGuard implements CanActivate {
       typeof apiKeyHeader === "string" ? apiKeyHeader.trim() : null;
     const expected = process.env.ADMIN_API_KEY?.trim();
 
-    if (apiKey && expected && apiKey === expected) {
+    if (apiKey && expected && safeEqual(apiKey, expected)) {
       req.adminAuth = this.adminAuth.apiKeyContext();
       return true;
     }

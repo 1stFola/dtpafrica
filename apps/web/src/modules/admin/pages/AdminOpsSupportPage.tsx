@@ -8,6 +8,7 @@ import {
   type SupportTriagePacket,
 } from "../../../api/admin";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { safeHref } from "../../../lib/safe-href";
 import { useAdminToast } from "../components/AdminToast";
 
 const STATUSES = ["open", "triaged", "waiting_on_human", "resolved", "closed"] as const;
@@ -269,6 +270,8 @@ function SupportReportCard({
   onChanged: () => void;
 }) {
   const toast = useAdminToast();
+  // Typed by an anonymous reporter: never put it in an href unchecked.
+  const pageHref = safeHref(report.pageUrl);
   const [status, setStatus] = useState(report.status);
   const [notes, setNotes] = useState(report.adminNotes ?? "");
   const [resolutionSummary, setResolutionSummary] = useState(report.resolutionSummary ?? "");
@@ -323,8 +326,8 @@ function SupportReportCard({
         </span>
       </header>
       <p>{report.description}</p>
-      {report.pageUrl && (
-        <a href={report.pageUrl} className="text-link" target="_blank" rel="noreferrer">
+      {pageHref && (
+        <a href={pageHref} className="text-link" target="_blank" rel="noreferrer">
           Open reported page
         </a>
       )}

@@ -10,6 +10,7 @@ import {
   type ClubShowcaseTeamRef,
 } from "../../../api/client";
 import { matchCenterPath } from "../../scoreboard/utils/matchPath";
+import { safeHref } from "../../../lib/safe-href";
 import { clubInitials, stableHue } from "../../../utils/identity";
 
 /**
@@ -183,6 +184,7 @@ export function ClubShowcaseModal({ club, partnerLoginHref, onClose }: Props) {
   }, []);
 
   const profile = data?.club ?? club;
+  const websiteHref = safeHref(profile.websiteUrl);
   const competitions = profile.competitions ?? [];
   const record = data?.record;
   const location = [profile.city, profile.country].filter(Boolean).join(", ");
@@ -438,8 +440,8 @@ export function ClubShowcaseModal({ club, partnerLoginHref, onClose }: Props) {
         )}
 
         <footer className="club-sc__foot">
-          {profile.websiteUrl && (
-            <a href={profile.websiteUrl} target="_blank" rel="noopener noreferrer" className="club-sc__link">
+          {websiteHref && (
+            <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="club-sc__link">
               Club website ↗
             </a>
           )}

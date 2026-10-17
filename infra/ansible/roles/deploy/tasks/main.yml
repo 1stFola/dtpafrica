@@ -13,6 +13,8 @@
       POSTGRES_DB:       "{{ postgres_db }}"
     app_creds:
       ADMIN_API_KEY: "{{ admin_api_key }}"
+      ADMIN_JWT_SECRET: "{{ admin_jwt_secret }}"
+      ACADEMY_JWT_SECRET: "{{ academy_jwt_secret }}"
       VISION_ENABLED: "{{ vision_enabled | default('') }}"
       VISION_STORAGE_BACKEND: "{{ vision_storage_backend | default('') }}"
       VISION_COMPUTE_PROVIDER: "{{ vision_compute_provider | default('') }}"

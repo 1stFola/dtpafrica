@@ -390,12 +390,22 @@ jobs:
           secret = {
               "postgres_password": text(db["POSTGRES_PASSWORD"]),
               "admin_api_key": text(app["ADMIN_API_KEY"]),
+              "admin_jwt_secret": text(app.get("ADMIN_JWT_SECRET")),
+              "academy_jwt_secret": text(app.get("ACADEMY_JWT_SECRET")),
               "vision_r2_access_key_id": text(app.get("VISION_R2_ACCESS_KEY_ID")),
               "vision_r2_secret_access_key": text(app.get("VISION_R2_SECRET_ACCESS_KEY")),
           }
           for value in secret.values():
               if value:
                   print(f"::add-mask::{value}", flush=True)
+
+          # The API will not start in production without its session signing keys
+          # (services/api/src/shared/jwt-secrets.ts). Stop here, before the server is
+          # touched, rather than deploy containers that crash on boot.
+          missing = [name for name in ("ADMIN_JWT_SECRET", "ACADEMY_JWT_SECRET") if not text(app.get(name)).strip()]
+          if missing:
+              print(f"::error::dtp/staging/app is missing {', '.join(missing)}. Add each as its own value (openssl rand -hex 32) and re-run.", flush=True)
+              raise SystemExit(1)
 
           # Vision Engine keys are optional in the secret: absent means off (docs/vision/15).
           plain = {

@@ -1,3 +1,5 @@
+import { safeHref } from "../lib/safe-href";
+
 export type AdBannerFormat = "leaderboard" | "square" | "mobile-banner" | "inline";
 
 export type AdBannerProps = {
@@ -24,6 +26,8 @@ export function AdBanner({
     normalizedLabel && normalizedLabel !== "Demo · Sidebar sponsor"
       ? normalizedLabel
       : "Advertisement";
+  // Admin-entered, but shown on public pages: only an http(s) link becomes clickable.
+  const href = safeHref(destinationUrl);
 
   return (
     <aside
@@ -35,13 +39,23 @@ export function AdBanner({
       <span className="ad-banner__label">{displayLabel}</span>
       <div className="ad-banner__frame">
         <div className="ad-banner__slot" data-slot={slotId}>
-          <a
-            href={destinationUrl}
-            target="_blank"
-            rel="noreferrer sponsored"
-            className="ad-banner__link"
-            title={sizeHint}
-          >
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer sponsored"
+              className="ad-banner__link"
+              title={sizeHint}
+            >
+              <img
+                src={fallbackImageUrl}
+                alt="Sponsored"
+                className="ad-banner__image"
+                loading="lazy"
+                title={sizeHint}
+              />
+            </a>
+          ) : (
             <img
               src={fallbackImageUrl}
               alt="Sponsored"
@@ -49,7 +63,7 @@ export function AdBanner({
               loading="lazy"
               title={sizeHint}
             />
-          </a>
+          )}
         </div>
       </div>
       {sizeHint && <p className="ad-banner__size-hint muted">{sizeHint}</p>}

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Inject, Post, Req, UseGuards } from "@nestjs/common";
+import { LoginThrottle } from "../shared/throttle";
 import type { AcademyJwtPayload } from "./academy-auth.service";
 import { AcademyLoginDto } from "./dto/academy-login.dto";
 import { AcademyAuthGuard } from "./guards/academy-auth.guard";
@@ -11,6 +12,7 @@ export class AcademyAuthController {
   ) {}
 
   @Post("auth/login")
+  @LoginThrottle()
   login(@Body() dto: AcademyLoginDto) {
     return this.academyAuth.login(dto.username, dto.password);
   }

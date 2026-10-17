@@ -29,23 +29,25 @@ API: http://localhost:3000/api/v1/health
 |--------|------|-------------|
 | GET | `/api/v1/health` | Health check |
 | GET | `/api/v1/players` | List players |
-| POST | `/api/v1/players` | Create player |
+| POST | `/api/v1/players` | Create player (admin: `players.write`) |
 | GET | `/api/v1/players/:id` | Player detail |
 | GET | `/api/v1/players/:id/tactical-scores` | Tactical scores |
 | GET | `/api/v1/players/:id/position-fit` | Position fit |
 | GET | `/api/v1/players/:id/tactical-profile` | Combined profile |
-| POST | `/api/v1/sip/players/:id/match-metrics` | Ingest match metrics (+ auto recalc) |
-| POST | `/api/v1/sip/players/:id/recalculate` | Re-run tactical pipeline |
+| POST | `/api/v1/sip/players/:id/match-metrics` | Ingest match metrics (+ auto recalc) (admin: `players.write`) |
+| POST | `/api/v1/sip/players/:id/recalculate` | Re-run tactical pipeline (admin: `players.calibrate`) |
 | GET | `/api/v1/scouting/tactical-search` | Filter players by tactical scores |
 | GET | `/api/v1/benchmarks` | List tactical benchmarks |
-| POST | `/api/v1/benchmarks` | Create benchmark |
+| POST/PUT/DELETE | `/api/v1/benchmarks[/:id]` | Create, edit, remove benchmark (admin: `players.calibrate`) |
+
+Admin routes take `x-admin-api-key: $ADMIN_API_KEY` or `Authorization: Bearer <admin session token>`.
 
 Phase 2 stubs: `/api/v1/scouting/philosophy-fit`, `strong-xi`, `player-comparison`.
 
 ## After seed — recalculate sample player
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/sip/players/00000000-0000-4000-8000-000000000001/recalculate
+curl -X POST -H "x-admin-api-key: $ADMIN_API_KEY" http://localhost:3000/api/v1/sip/players/00000000-0000-4000-8000-000000000001/recalculate
 ```
 
 ## Engines

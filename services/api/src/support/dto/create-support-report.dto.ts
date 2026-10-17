@@ -1,4 +1,5 @@
 import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsHttpUrl } from "../../shared/http-url";
 
 export const SUPPORT_AUDIENCES = [
   "internal_admin",
@@ -59,5 +60,6 @@ export class CreateSupportReportDto {
   @IsOptional()
   @IsString()
   @MaxLength(1000)
+  @IsHttpUrl()
   pageUrl?: string;
 }
