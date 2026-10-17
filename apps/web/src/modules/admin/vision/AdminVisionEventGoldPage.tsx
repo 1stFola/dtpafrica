@@ -35,6 +35,9 @@ export function AdminVisionEventGoldPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /* Where a reconciliation draft starts: the current proposal or your own list, or the other
+     reviewer's. Starting from theirs means only the disagreements need editing (docs/vision/97). */
+  const [startFrom, setStartFrom] = useState<"mine" | "other">("mine");
   const video = useRef<HTMLVideoElement | null>(null);
   const request = useRef(0);
   const listRequest = useRef(0);
@@ -60,6 +63,7 @@ export function AdminVisionEventGoldPage() {
   const own = reference?.submissions.find((row) => row.reviewerId === reference.me);
   const assigned = reference && [reference.reviewerAId, reference.reviewerBId].includes(reference.me);
   const both = reference?.submissions.length === 2;
+  const other = reference?.submissions.find((row) => row.reviewerId !== reference.me);
   return <div className="vision-page">
     {error && <p className="vision-panel vision-panel--error" role="alert">{error}</p>}
     {notice && <p className="vision-panel vision-panel--ok" role="status">{notice}</p>}
@@ -104,7 +108,12 @@ export function AdminVisionEventGoldPage() {
         {reference.proposal ? <p>Non-play windows: {reference.proposal.nonPlayAgreement ? "reviewers agree" : "reviewers differ; resolve explicitly"}.</p> : <p>Propose a reconciliation and resolve non-play windows explicitly. Keep a written reason even if both submissions agree.</p>}
       </Panel>}
       {both && !reference.frozenAt && assigned && <Panel title="Reconcile and propose">
-        <EventGoldEditor key={`reconcile-${id}-${reference.proposal?.id ?? "new"}`} reference={reference} initial={reference.proposal?.labels ?? own?.labels ?? undefined} sourceMs={sourceMs} busy={busy} reconciliation onSubmit={async (labels, reason) => { await run(async () => { setReference(await reconcileVisionEventGold(id, labels, reason)); setNotice("Reconciliation proposed. The other reviewer must approve it."); }); }} />
+        {other?.labels && <fieldset className="vision-gold-start-from"><legend>Start the reconciled list from</legend>
+          <label><input type="radio" name="gold-start-from" checked={startFrom === "mine"} onChange={() => setStartFrom("mine")} /> {reference.proposal ? "the current proposal" : "your list"}</label>
+          <label><input type="radio" name="gold-start-from" checked={startFrom === "other"} onChange={() => setStartFrom("other")} /> the other reviewer's list</label>
+          <p className="muted">Switching starts the draft again: edits not yet proposed are lost.</p>
+        </fieldset>}
+        <EventGoldEditor key={`reconcile-${id}-${reference.proposal?.id ?? "new"}-${startFrom}`} reference={reference} initial={(startFrom === "other" ? other?.labels : null) ?? reference.proposal?.labels ?? own?.labels ?? undefined} sourceMs={sourceMs} busy={busy} reconciliation onSubmit={async (labels, reason) => { await run(async () => { setReference(await reconcileVisionEventGold(id, labels, reason)); setNotice("Reconciliation proposed. The other reviewer must approve it."); }); }} />
       </Panel>}
       {reference.proposal && <Panel title="Current reconciled reference"><LabelSummary labels={reference.proposal.labels} roster={reference.roster} /><p>Reason: {reference.proposal.reason}</p>
         {!reference.frozenAt && assigned && reference.proposal.proposedBy !== reference.me && <button type="button" disabled={busy} onClick={() => void run(async () => { setReference(await freezeVisionEventGold(id, reference.proposal!.id)); setNotice("Reference approved and frozen."); })}>Approve reconciliation and freeze</button>}
