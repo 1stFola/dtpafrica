@@ -42,15 +42,23 @@ async function report(label: string) {
     select: {
       slug: true,
       name: true,
-      squad: { select: { playerId: true, displayName: true } },
+      squad: {
+        select: {
+          playerId: true,
+          displayName: true,
+          player: { select: { playerPhotoUrl: true } },
+        },
+      },
     },
   });
   console.log(`${label}: ${comp.name} — ${teams.length} teams`);
   for (const t of teams) {
     const unlinked = t.squad.filter((s) => !s.playerId).length;
+    const noPhoto = t.squad.filter((s) => !s.player?.playerPhotoUrl).length;
     console.log(
       `  ${t.name.padEnd(36)} ${String(t.squad.length).padStart(3)} in squad` +
-        (unlinked ? `, ${unlinked} without a player link` : "")
+        (unlinked ? `, ${unlinked} without a player link` : "") +
+        (noPhoto ? `, ${noPhoto} without a photo` : "")
     );
   }
   return { comp, teams };
