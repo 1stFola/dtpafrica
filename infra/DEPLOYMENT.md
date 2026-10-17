@@ -73,9 +73,15 @@ role to switch on. Nothing is waiting here to be enabled.
   **`dtp/staging/app`**
   ```json
   {
-    "ADMIN_API_KEY": "<strong-random-key>"
+    "ADMIN_API_KEY": "<strong-random-key>",
+    "ADMIN_JWT_SECRET": "<openssl rand -hex 32>",
+    "ACADEMY_JWT_SECRET": "<a second, different openssl rand -hex 32>"
   }
   ```
+  The two `*_JWT_SECRET` keys sign admin and academy sessions. The deploy stops if either is
+  missing, and the API refuses to start in production if either is shorter than 32
+  characters, equals `ADMIN_API_KEY` or equals the other. Changing one signs everybody of
+  that kind out once.
 
 - [ ] Create an IAM user for GitHub Actions with these policies:
   - `AmazonEC2FullAccess`

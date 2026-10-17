@@ -630,7 +630,7 @@ jobs:
           throwaway() { openssl rand -hex 24; }
 
           set +e
-          output=$(docker run --rm --entrypoint sh             -e DATABASE_URL="postgresql://ci:$(throwaway)@192.0.2.1:5432/none?connect_timeout=2"             -e ADMIN_API_KEY="$(throwaway)"             -e ADMIN_JWT_SECRET="$(throwaway)"             dtp-api:ci -c 'cd /app/services/api && timeout 120 node dist/services/api/src/main.js 2>&1')
+          output=$(docker run --rm --entrypoint sh             -e DATABASE_URL="postgresql://ci:$(throwaway)@192.0.2.1:5432/none?connect_timeout=2"             -e ADMIN_API_KEY="$(throwaway)"             -e ADMIN_JWT_SECRET="$(throwaway)"             -e ACADEMY_JWT_SECRET="$(throwaway)"             dtp-api:ci -c 'cd /app/services/api && timeout 120 node dist/services/api/src/main.js 2>&1')
           set -e
 
           # Herestrings rather than pipes: `echo "$output" | tail` makes the shell

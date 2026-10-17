@@ -37,6 +37,10 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-dtp}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dtp_africa}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?set ADMIN_API_KEY}
+      # Session signing keys, each its own value. NODE_ENV=production refuses to start
+      # without them rather than signing with a fallback.
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?set ADMIN_JWT_SECRET}
+      ACADEMY_JWT_SECRET: ${ACADEMY_JWT_SECRET:?set ACADEMY_JWT_SECRET}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.5}
       OCR_SPACE_API_KEY: ${OCR_SPACE_API_KEY:-}

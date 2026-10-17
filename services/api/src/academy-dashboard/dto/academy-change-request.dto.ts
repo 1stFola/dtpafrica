@@ -6,6 +6,7 @@ import {
   Max,
   Min,
 } from "class-validator";
+import { IsHttpUrl, NormalizeWebsiteUrl } from "../../shared/http-url";
 
 export class AcademyProfileChangeRequestDto {
   @IsOptional()
@@ -31,7 +32,9 @@ export class AcademyProfileChangeRequestDto {
   logoUrl?: string;
 
   @IsOptional()
+  @NormalizeWebsiteUrl()
   @IsString()
+  @IsHttpUrl()
   websiteUrl?: string;
 }
 

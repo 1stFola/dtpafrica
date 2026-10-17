@@ -43,7 +43,9 @@ Create two secrets exactly as shown:
 **Secret name:** `dtp/staging/app`
 ```json
 {
-  "ADMIN_API_KEY": "your-strong-admin-key-here"
+  "ADMIN_API_KEY": "your-strong-admin-key-here",
+  "ADMIN_JWT_SECRET": "openssl rand -hex 32",
+  "ACADEMY_JWT_SECRET": "a second, different openssl rand -hex 32"
 }
 ```
 

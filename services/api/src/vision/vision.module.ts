@@ -111,7 +111,9 @@ const computeRegistryProvider: Provider = {
     // Promotion adds a goal through ScoreBoard's own lifecycle: the scorer's totals and the table.
     ScoreboardModule,
     // Same secret and lifetime as AdminModule, so one admin session works across both.
-    JwtModule.register({ secret: adminJwtSecret(), signOptions: { expiresIn: "7d" } }),
+    JwtModule.registerAsync({
+      useFactory: () => ({ secret: adminJwtSecret(), signOptions: { expiresIn: "7d" } }),
+    }),
   ],
   controllers: [
     VisionStatusController,

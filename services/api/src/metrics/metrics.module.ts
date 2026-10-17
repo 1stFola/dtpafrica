@@ -1,10 +1,11 @@
 import { Module } from "@nestjs/common";
+import { AdminGuardsModule } from "../admin/admin-guards.module";
 import { SipModule } from "../sip/sip.module";
 import { MetricsController } from "./metrics.controller";
 import { MetricsService } from "./metrics.service";
 
 @Module({
-  imports: [SipModule],
+  imports: [AdminGuardsModule, SipModule],
   controllers: [MetricsController],
   providers: [MetricsService],
 })

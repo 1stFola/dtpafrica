@@ -1,4 +1,5 @@
 import type { Academy } from "@prisma/client";
+import { jwtSecret } from "../shared/jwt-secrets";
 
 export type PublicAcademy = Omit<Academy, "passwordHash">;
 
@@ -9,11 +10,7 @@ export function sanitizeAcademy<T extends { passwordHash?: string | null }>(
   return rest;
 }
 
+/** Signs and verifies academy sessions. Required in production; see shared/jwt-secrets.ts. */
 export function academyJwtSecret(): string {
-  return (
-    process.env.ACADEMY_JWT_SECRET?.trim() ||
-    process.env.JWT_SECRET?.trim() ||
-    process.env.ADMIN_API_KEY?.trim() ||
-    "dtp-dev-academy-jwt-change-me"
-  );
+  return jwtSecret("ACADEMY_JWT_SECRET");
 }

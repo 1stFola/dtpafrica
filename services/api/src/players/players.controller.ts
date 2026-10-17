@@ -1,4 +1,7 @@
-import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { RequirePermissions } from "../admin/decorators/require-permissions.decorator";
+import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
+import { PermissionsGuard } from "../admin/guards/permissions.guard";
 import { CreatePlayerDto } from "./dto/create-player.dto";
 import { PlayersService } from "./players.service";
 
@@ -12,6 +15,8 @@ export class PlayersController {
   }
 
   @Post()
+  @UseGuards(AdminAuthGuard, PermissionsGuard)
+  @RequirePermissions("players.write")
   create(@Body() dto: CreatePlayerDto) {
     return this.players.create(dto);
   }

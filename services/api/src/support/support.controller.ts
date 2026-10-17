@@ -1,4 +1,5 @@
-import { Body, Controller, Post, Req } from "@nestjs/common";
+import { Body, Controller, Inject, Post, Req } from "@nestjs/common";
+import { PublicFormThrottle } from "../shared/throttle";
 import { CreateSupportReportDto } from "./dto/create-support-report.dto";
 import { SupportService } from "./support.service";
 
@@ -8,9 +9,10 @@ type SupportRequest = {
 
 @Controller("support")
 export class SupportController {
-  constructor(private readonly support: SupportService) {}
+  constructor(@Inject(SupportService) private readonly support: SupportService) {}
 
   @Post("reports")
+  @PublicFormThrottle()
   createReport(@Body() dto: CreateSupportReportDto, @Req() request: SupportRequest) {
     return this.support.createReport(dto, {
       userAgent: request.headers["user-agent"] ?? null,

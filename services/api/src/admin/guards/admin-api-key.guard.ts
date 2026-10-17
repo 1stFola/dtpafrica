@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+import { safeEqual } from "../../shared/safe-equal";
 
 @Injectable()
 export class AdminApiKeyGuard implements CanActivate {
@@ -16,7 +17,7 @@ export class AdminApiKeyGuard implements CanActivate {
         "ADMIN_API_KEY is not configured on the server"
       );
     }
-    if (!header || header !== expected) {
+    if (typeof header !== "string" || !header || !safeEqual(header, expected)) {
       throw new UnauthorizedException("Invalid admin API key");
     }
     return true;

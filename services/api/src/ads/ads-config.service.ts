@@ -11,6 +11,7 @@ import {
   isAdBannerFormat,
   isAdSlotKey,
 } from "./ads.constants";
+import { isHttpUrl } from "../shared/http-url";
 import { PatchAdsConfigDto } from "./dto/patch-ads-config.dto";
 
 type StoredAdsConfig = {
@@ -89,7 +90,12 @@ export class AdsConfigService {
       out.fallbackImageUrl = String(patch.fallbackImageUrl);
     }
     if ("destinationUrl" in patch && patch.destinationUrl != null) {
-      out.destinationUrl = String(patch.destinationUrl);
+      const destinationUrl = String(patch.destinationUrl).trim();
+      // Rendered as the banner's link on public pages: only http(s), never javascript:.
+      if (destinationUrl && !isHttpUrl(destinationUrl)) {
+        throw new BadRequestException(`Slot "${key}".destinationUrl must be an http or https link`);
+      }
+      out.destinationUrl = destinationUrl;
     }
     if ("label" in patch && patch.label != null) {
       out.label = String(patch.label);

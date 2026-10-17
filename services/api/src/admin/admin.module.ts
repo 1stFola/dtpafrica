@@ -35,9 +35,8 @@ import { PermissionsGuard } from "./guards/permissions.guard";
     ScoreboardModule,
     SipModule,
     SupportModule,
-    JwtModule.register({
-      secret: adminJwtSecret(),
-      signOptions: { expiresIn: "7d" },
+    JwtModule.registerAsync({
+      useFactory: () => ({ secret: adminJwtSecret(), signOptions: { expiresIn: "7d" } }),
     }),
   ],
   controllers: [

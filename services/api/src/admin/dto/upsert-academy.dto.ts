@@ -1,4 +1,5 @@
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Min, MinLength } from "class-validator";
+import { IsHttpUrl, NormalizeWebsiteUrl } from "../../shared/http-url";
 
 export class UpsertAcademyDto {
   @IsString()
@@ -43,7 +44,9 @@ export class UpsertAcademyDto {
   logoUrl?: string;
 
   @IsOptional()
+  @NormalizeWebsiteUrl()
   @IsString()
+  @IsHttpUrl()
   websiteUrl?: string;
 
   @IsOptional()
