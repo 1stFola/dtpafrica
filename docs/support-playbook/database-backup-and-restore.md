@@ -11,7 +11,7 @@ elsewhere, how to get it back, and what tells you when something is wrong.
 | `pg_dump` (custom format) | R2 bucket, `postgres/daily/` | nightly 02:30 UTC | newest 14 | the database, into any Postgres 16 |
 | Same dump, promoted | R2 bucket, `postgres/weekly/` | once a week | newest 8 (about 2 months) | the same |
 | Same dump, local copy | `/var/backups/dtp-db` on the box | nightly | newest 2 | quick undo of a bad migration |
-| EBS snapshot (DLM) | AWS, outlives the instance | daily 03:30 UTC | 7 | the whole box, as it was |
+| EBS snapshot (DLM) | AWS, outlives the instance | daily 03:30 UTC | 7 | the whole box, as it was. **Not active:** Terraform applies are on hold |
 
 - Nightly job: `/usr/local/bin/dtp-backup run`, from `dtp-backup.timer`. Installed by
   `infra/ansible/roles/backup` on every deploy. Source: `infra/backup/dtp-backup.py`.
@@ -27,8 +27,8 @@ elsewhere, how to get it back, and what tells you when something is wrong.
 | Uptime | `https://dtp.africa/api/v1/health/ready` | not 200, or no `"db":"ok"` | external monitor (one-time setup) |
 | Backup heartbeat | `dtp-backup run` | `/fail` ping, or no success ping in a day | healthchecks.io |
 | Disk heartbeat | `dtp-disk-check`, every 15 min | root volume at or above 80%, or no ping for 30 min | healthchecks.io |
-| CPU credits | CloudWatch `CPUCreditBalance` | under 30 for 10 min | `infra/terraform/alerts.tf` |
-| Status checks | CloudWatch `StatusCheckFailed` | failing for 5 min, or no data | `infra/terraform/alerts.tf` |
+| CPU credits | CloudWatch `CPUCreditBalance` | under 30 for 10 min | `infra/terraform/alerts.tf` (**not active:** Terraform applies are on hold) |
+| Status checks | CloudWatch `StatusCheckFailed` | failing for 5 min, or no data | `infra/terraform/alerts.tf` (**not active:** Terraform applies are on hold) |
 
 `/api/v1/health` is liveness only and never touches the database: the deploy's smoke test
 uses it. `/api/v1/health/ready` runs `SELECT 1` with a 3 s limit and returns 503
@@ -168,7 +168,7 @@ very little (see *Cost*).
 4. **Uptime.** Create an HTTP keyword monitor on any free external service (UptimeRobot
    and Better Stack both have one): URL `https://dtp.africa/api/v1/health/ready`,
    keyword `"db":"ok"`, every 5 minutes, alerts by email.
-5. **Terraform** (`alerts.tf`, `snapshots.tf`). Set `alert_email` in a tfvars file,
+5. **Terraform. On hold since 17 October 2026; skip this step until applies resume.** (`alerts.tf`, `snapshots.tf`). Set `alert_email` in a tfvars file,
    then `terraform plan`. The plan must say only *to add* (an SNS topic and
    subscription, two alarms, an IAM role and attachment, a DLM policy) with
    **0 to change, 0 to destroy**. If it wants to change or replace anything that
