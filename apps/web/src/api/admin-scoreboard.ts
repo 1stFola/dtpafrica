@@ -77,6 +77,39 @@ export type AdminHighlightRow = {
   } | null;
 };
 
+/** A row on the admin Live streams page; see `SbLiveStream` on the API. */
+export type AdminLiveStreamRow = {
+  id: string;
+  title: string;
+  youtubeUrl: string;
+  matchId: string | null;
+  competitionId: string | null;
+  isPublished: boolean;
+  sortOrder: number;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  competition: { id: string; name: string; slug: string } | null;
+  match: {
+    id: string;
+    slug: string | null;
+    status: string;
+    kickoffAt: string | null;
+    homeTeam: { name: string };
+    awayTeam: { name: string };
+  } | null;
+};
+
+export type LiveStreamInput = {
+  title: string;
+  youtubeUrl: string;
+  /** Empty string clears the link. */
+  matchId?: string;
+  /** Empty string clears the link. */
+  competitionId?: string;
+  sortOrder?: number;
+};
+
 async function sbFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const key = getAdminApiKey();
   const jwt = getAdminJwt();
@@ -583,6 +616,32 @@ export const adminScoreboardApi = {
 
   deleteHighlight: (id: string) =>
     sbFetch<{ ok: boolean }>(`/admin/scoreboard/highlights/${id}`, {
+      method: "DELETE",
+    }),
+
+  // Live streams (YouTube broadcasts on the public Live Games page)
+  listLiveStreams: () => sbFetch<AdminLiveStreamRow[]>("/admin/scoreboard/live-streams"),
+
+  createLiveStream: (body: LiveStreamInput) =>
+    sbFetch<AdminLiveStreamRow>("/admin/scoreboard/live-streams", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateLiveStream: (id: string, body: Partial<LiveStreamInput>) =>
+    sbFetch<AdminLiveStreamRow>(`/admin/scoreboard/live-streams/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  publishLiveStream: (id: string, isPublished: boolean) =>
+    sbFetch<AdminLiveStreamRow>(`/admin/scoreboard/live-streams/${id}/publish`, {
+      method: "PATCH",
+      body: JSON.stringify({ isPublished }),
+    }),
+
+  deleteLiveStream: (id: string) =>
+    sbFetch<{ ok: boolean }>(`/admin/scoreboard/live-streams/${id}`, {
       method: "DELETE",
     }),
 

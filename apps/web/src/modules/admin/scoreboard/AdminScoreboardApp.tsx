@@ -4,6 +4,7 @@ import { AdminScoreboardLayout } from "./AdminScoreboardLayout";
 import { AdminScoreboardHighlightsManagerPage } from "./pages/AdminScoreboardHighlightsManagerPage";
 import { AdminScoreboardHighlightsPage } from "./pages/AdminScoreboardHighlightsPage";
 import { AdminScoreboardHubPage } from "./pages/AdminScoreboardHubPage";
+import { AdminScoreboardLiveStreamsPage } from "./pages/AdminScoreboardLiveStreamsPage";
 import { AdminScoreboardMatchCenterPage } from "./pages/AdminScoreboardMatchCenterPage";
 import { AdminScoreboardRosterPage } from "./pages/AdminScoreboardRosterPage";
 import { AdminScoreboardSquadManagementPage } from "./pages/AdminScoreboardSquadManagementPage";
@@ -27,6 +28,16 @@ export function AdminScoreboardApp() {
         <Route path="roster" element={<AdminScoreboardRosterPage />} />
         <Route path="highlights" element={<AdminScoreboardHighlightsPage />} />
         <Route path="highlights-manager" element={<AdminScoreboardHighlightsManagerPage />} />
+        <Route
+          element={
+            <AdminRequirePermission
+              permission="scoreboard.live.write"
+              redirectTo="/admin/scoreboard"
+            />
+          }
+        >
+          <Route path="live-streams" element={<AdminScoreboardLiveStreamsPage />} />
+        </Route>
         <Route path="match-center" element={<AdminScoreboardMatchCenterPage />} />
         <Route path="*" element={<Navigate to="/admin/scoreboard" replace />} />
       </Route>

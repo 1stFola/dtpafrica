@@ -397,6 +397,7 @@ model SbCompetition {
   teams            SbTeam[]
   matches          SbMatch[]
   highlights       SbHighlight[]
+  liveStreams      SbLiveStream[]
   stages           SbCompetitionStage[]
   playerStats      SbPlayerCompetitionStats[]
   scopedAdminUsers AdminUser[]
@@ -554,6 +555,7 @@ model SbMatch {
   awayTeam        SbTeam               @relation("SbAwayTeam", fields: [awayTeamId], references: [id])
   events          SbMatchEvent[]
   highlights      SbHighlight[]
+  liveStreams     SbLiveStream[]
   ingestAudits    SbSipIngestAudit[]
   squadPlayers    SbMatchSquadPlayer[]
   statisticsSheet SbMatchStatistics?
@@ -843,6 +845,35 @@ model SbHighlight {
 
   @@index([eventId])
   @@map("sb_highlights")
+}
+
+/**
+ * A YouTube live broadcast an admin puts on the public Live Games page.
+ *
+ * Deliberately not a field on the match: a match only reads as live once its recorder
+ * kicks off or an admin passes the roster guard, and a stream link that waited on either
+ * would never show. A stream is its own record, published by hand like a highlight, and
+ * optionally points at the fixture or competition it covers.
+ */
+model SbLiveStream {
+  id            String    @id @default(uuid())
+  title         String
+  youtubeUrl    String    @map("youtube_url")
+  matchId       String?   @map("match_id")
+  competitionId String?   @map("competition_id")
+  isPublished   Boolean   @default(false) @map("is_published")
+  sortOrder     Int       @default(0) @map("sort_order")
+  publishedAt   DateTime? @map("published_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  match       SbMatch?       @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  competition SbCompetition? @relation(fields: [competitionId], references: [id], onDelete: SetNull)
+
+  @@index([isPublished, sortOrder])
+  @@index([matchId])
+  @@index([competitionId])
+  @@map("sb_live_streams")
 }
 
 // —— Admin RBAC ——

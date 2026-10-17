@@ -67,21 +67,24 @@ export function isYoutubeUrl(url: string): boolean {
   return youtubeVideoId(url) != null;
 }
 
-/** Extract a YouTube video id from common URL shapes (watch, youtu.be, embed). */
+/**
+ * Extract a YouTube video id from common URL shapes: watch, youtu.be, embed, shorts, and
+ * the `/live/<id>` share link YouTube hands out for a live broadcast. A live broadcast
+ * has an ordinary video id behind that path, so it embeds and thumbnails like any other.
+ */
 export function youtubeVideoId(url: string): string | null {
   if (!url) return null;
   try {
     const u = new URL(url.trim());
-    const host = u.hostname.replace(/^www\./, "");
+    const host = u.hostname.replace(/^www\./, "").replace(/^m\./, "");
     if (host === "youtu.be") {
       return u.pathname.slice(1).split("/")[0] || null;
     }
     if (host.includes("youtube.com") || host.includes("youtube-nocookie.com")) {
-      if (u.pathname.startsWith("/embed/")) {
-        return u.pathname.split("/embed/")[1]?.split("/")[0] ?? null;
-      }
-      if (u.pathname.startsWith("/shorts/")) {
-        return u.pathname.split("/shorts/")[1]?.split("/")[0] ?? null;
+      for (const prefix of ["/embed/", "/shorts/", "/live/"]) {
+        if (u.pathname.startsWith(prefix)) {
+          return u.pathname.slice(prefix.length).split("/")[0] || null;
+        }
       }
       return u.searchParams.get("v");
     }

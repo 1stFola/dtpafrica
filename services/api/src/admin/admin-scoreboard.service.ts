@@ -8,6 +8,7 @@ import {
 import { normalizeClubName, normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import { isAllowedImageMediaUrl, normalizeVideoMediaUrl } from "../shared/media-url";
 import type { CreateAdminHighlightDto } from "./dto/create-admin-highlight.dto";
+import type { CreateLiveStreamDto, UpdateLiveStreamDto } from "./dto/live-stream.dto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -2762,6 +2763,118 @@ export class AdminScoreboardService {
     const existing = await this.prisma.sbHighlight.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Highlight not found");
     await this.prisma.sbHighlight.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  // —— Live streams: YouTube broadcasts shown on the public Live Games page ——
+
+  private liveStreamInclude = {
+    competition: { select: { id: true, name: true, slug: true } },
+    match: {
+      select: {
+        id: true,
+        slug: true,
+        status: true,
+        kickoffAt: true,
+        homeTeam: { select: { name: true } },
+        awayTeam: { select: { name: true } },
+      },
+    },
+  } as const;
+
+  async listLiveStreams() {
+    return this.prisma.sbLiveStream.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      include: this.liveStreamInclude,
+    });
+  }
+
+  /**
+   * The fixture and competition a stream points at. Either may be omitted (left as is on
+   * an update) or sent empty to clear it. A stream given a fixture takes that fixture's
+   * competition unless one is named alongside, so the public card can always say what
+   * competition a game belongs to.
+   */
+  private async liveStreamLinks(body: { matchId?: string; competitionId?: string }) {
+    const data: { matchId?: string | null; competitionId?: string | null } = {};
+    if (body.matchId !== undefined) {
+      const matchId = body.matchId.trim();
+      if (!matchId) {
+        data.matchId = null;
+      } else {
+        const match = await this.prisma.sbMatch.findUnique({
+          where: { id: matchId },
+          select: { id: true, competitionId: true },
+        });
+        if (!match) throw new BadRequestException("Match not found");
+        data.matchId = match.id;
+        if (body.competitionId === undefined) data.competitionId = match.competitionId;
+      }
+    }
+    if (body.competitionId !== undefined) {
+      const competitionId = body.competitionId.trim();
+      if (!competitionId) {
+        data.competitionId = null;
+      } else {
+        const competition = await this.prisma.sbCompetition.findUnique({
+          where: { id: competitionId },
+          select: { id: true },
+        });
+        if (!competition) throw new BadRequestException("Competition not found");
+        data.competitionId = competition.id;
+      }
+    }
+    return data;
+  }
+
+  /** Created unpublished, like a highlight: the admin publishes it when the broadcast is up. */
+  async createLiveStream(body: CreateLiveStreamDto) {
+    const links = await this.liveStreamLinks(body);
+    return this.prisma.sbLiveStream.create({
+      data: {
+        title: body.title.trim(),
+        youtubeUrl: body.youtubeUrl.trim(),
+        sortOrder: body.sortOrder ?? 0,
+        isPublished: false,
+        ...links,
+      },
+      include: this.liveStreamInclude,
+    });
+  }
+
+  async updateLiveStream(id: string, body: UpdateLiveStreamDto) {
+    const existing = await this.prisma.sbLiveStream.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Live stream not found");
+    const links = await this.liveStreamLinks(body);
+    return this.prisma.sbLiveStream.update({
+      where: { id },
+      data: {
+        title: body.title?.trim(),
+        youtubeUrl: body.youtubeUrl?.trim(),
+        sortOrder: body.sortOrder,
+        ...links,
+      },
+      include: this.liveStreamInclude,
+    });
+  }
+
+  async setLiveStreamPublished(id: string, isPublished: boolean) {
+    const existing = await this.prisma.sbLiveStream.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Live stream not found");
+    return this.prisma.sbLiveStream.update({
+      where: { id },
+      data: {
+        isPublished,
+        publishedAt: isPublished ? new Date() : existing.publishedAt,
+      },
+      include: this.liveStreamInclude,
+    });
+  }
+
+  async deleteLiveStream(id: string) {
+    const existing = await this.prisma.sbLiveStream.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Live stream not found");
+    await this.prisma.sbLiveStream.delete({ where: { id } });
     return { ok: true };
   }
 

@@ -14,6 +14,12 @@ const subLinks = [
   },
   { to: "/admin/scoreboard/roster", label: "Matchday roster", icon: "☰" },
   { to: "/admin/scoreboard/match-center", label: "Match center", icon: "⏱" },
+  {
+    to: "/admin/scoreboard/live-streams",
+    label: "Live streams",
+    icon: "●",
+    permission: "scoreboard.live.write",
+  },
   { to: "/admin/scoreboard/highlights-manager", label: "Latest videos", icon: "▶" },
   { to: "/admin/scoreboard/highlights", label: "Match clips", icon: "⎘" },
 ];

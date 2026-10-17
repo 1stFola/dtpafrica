@@ -37,6 +37,13 @@ const cards: Array<{
     tag: "Live ops",
   },
   {
+    to: "/admin/scoreboard/live-streams",
+    title: "Live streams",
+    desc: "YouTube broadcasts that play on the public Live Games page — publish when the stream is up.",
+    tag: "Live ops",
+    publicPreview: "/scoreboard/live",
+  },
+  {
     to: "/admin/scoreboard/highlights",
     title: "Match clips",
     desc: "Attach YouTube clips with timeline minutes to specific fixtures.",

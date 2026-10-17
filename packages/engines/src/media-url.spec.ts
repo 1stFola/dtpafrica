@@ -8,6 +8,8 @@ import {
   isGoogleDriveUrl,
   isAllowedVideoMediaUrl,
   isAllowedImageMediaUrl,
+  videoEmbedUrl,
+  youtubeVideoId,
 } from "./media-url";
 
 describe("Media URL Utilities", () => {
@@ -93,6 +95,20 @@ describe("Media URL Utilities", () => {
       expect(info.mediaType).toBe("youtube");
     });
 
+    it("reads the video id behind a /live/ broadcast link so it embeds like a watch URL", async () => {
+      await allure.epic("Engines");
+      await allure.feature("Media URL");
+
+      const info = normalizeVideoMediaUrl("https://www.youtube.com/live/jfKfPfyJRdk?feature=share");
+      expect(info.mediaType).toBe("youtube");
+      expect(info.thumbnailUrl).toBe("https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg");
+      expect(videoEmbedUrl("https://youtube.com/live/jfKfPfyJRdk", "youtube")).toBe(
+        "https://www.youtube.com/embed/jfKfPfyJRdk"
+      );
+      expect(youtubeVideoId("https://m.youtube.com/watch?v=jfKfPfyJRdk")).toBe("jfKfPfyJRdk");
+      expect(youtubeVideoId("https://youtu.be/jfKfPfyJRdk?t=12")).toBe("jfKfPfyJRdk");
+    });
+
     it("classifies unknown video URLs as external", async () => {
       await allure.epic("Engines");
       await allure.feature("Media URL");
@@ -109,6 +125,10 @@ describe("Media URL Utilities", () => {
 
     it("returns true for youtu.be short URL", () => {
       expect(isYoutubeUrl("https://youtu.be/abc")).toBe(true);
+    });
+
+    it("returns true for a youtube.com/live broadcast link", () => {
+      expect(isYoutubeUrl("https://www.youtube.com/live/abc123?si=share")).toBe(true);
     });
 
     it("returns false for Google Drive URL", () => {

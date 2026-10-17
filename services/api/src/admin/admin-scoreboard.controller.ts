@@ -22,6 +22,7 @@ import {
 import { readBulkIds } from "./bulk-records";
 import { CreateAdminHighlightDto } from "./dto/create-admin-highlight.dto";
 import { CreateLandingHighlightDto } from "./dto/create-landing-highlight.dto";
+import { CreateLiveStreamDto, UpdateLiveStreamDto } from "./dto/live-stream.dto";
 import { PublishHighlightDto } from "./dto/publish-highlight.dto";
 import { UpdateAdminHighlightDto } from "./dto/update-admin-highlight.dto";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
@@ -529,6 +530,38 @@ export class AdminScoreboardController {
   @RequirePermissions("scoreboard.highlights.write")
   deleteHighlight(@Param("id") id: string) {
     return this.sb.deleteHighlight(id);
+  }
+
+  // —— Live streams: YouTube broadcasts on the public Live Games page ——
+
+  @Get("live-streams")
+  @RequirePermissions("scoreboard.live.write", "scoreboard.read")
+  listLiveStreams() {
+    return this.sb.listLiveStreams();
+  }
+
+  @Post("live-streams")
+  @RequirePermissions("scoreboard.live.write")
+  createLiveStream(@Body() dto: CreateLiveStreamDto) {
+    return this.sb.createLiveStream(dto);
+  }
+
+  @Patch("live-streams/:id")
+  @RequirePermissions("scoreboard.live.write")
+  updateLiveStream(@Param("id") id: string, @Body() dto: UpdateLiveStreamDto) {
+    return this.sb.updateLiveStream(id, dto);
+  }
+
+  @Patch("live-streams/:id/publish")
+  @RequirePermissions("scoreboard.live.write")
+  publishLiveStream(@Param("id") id: string, @Body() dto: PublishHighlightDto) {
+    return this.sb.setLiveStreamPublished(id, dto.isPublished);
+  }
+
+  @Delete("live-streams/:id")
+  @RequirePermissions("scoreboard.live.write")
+  deleteLiveStream(@Param("id") id: string) {
+    return this.sb.deleteLiveStream(id);
   }
 
   @Get("competitions/:competitionId/squad/export")
