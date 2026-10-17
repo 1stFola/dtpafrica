@@ -1,0 +1,48 @@
+name: CodeQL
+
+# GitHub's static analysis, free on a public repository. Findings appear under
+# Security > Code scanning. This workflow fails only when the analysis itself cannot run,
+# never because of a finding: whether an alert blocks a merge is a branch-protection
+# setting (Settings > Rules), not something this file decides.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays, 05:17 UTC: new queries reach code nobody has touched.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # No build step for any of these: CodeQL reads TypeScript, Python and the
+        # workflow files from source.
+        language: [javascript-typescript, python, actions]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

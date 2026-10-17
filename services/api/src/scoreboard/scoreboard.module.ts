@@ -6,10 +6,11 @@ import { ScoreboardController } from "./scoreboard.controller";
 import { ScoreboardLifecycleService } from "./scoreboard-lifecycle.service";
 import { ScoreboardService } from "./scoreboard.service";
 import { LiveAudioCommentaryService } from "./live-audio-commentary.service";
+import { TimeController } from "./time.controller";
 
 @Module({
   imports: [SipModule],
-  controllers: [ScoreboardController],
+  controllers: [ScoreboardController, TimeController],
   providers: [
     ScoreboardService,
     LiveAudioCommentaryService,

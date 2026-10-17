@@ -81,6 +81,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Known advisories in what ships (devDependencies left out). Reported, not enforced:
+      # an advisory published overnight should not block an unrelated merge, and through
+      # CD's gate on this workflow, a deploy. Dependabot opens the upgrade pull requests
+      # (.github/dependabot.yml); this puts the same news on every run's summary.
+      - name: Audit production dependencies (advisory)
+        continue-on-error: true
+        run: |
+          if ! pnpm audit --prod; then
+            echo "::warning title=pnpm audit::Production dependencies have known advisories. See this step's log."
+            exit 1
+          fi
+
       - name: Generate Prisma client
         run: pnpm --filter @dtp/api prisma:generate
 
@@ -325,6 +337,17 @@ jobs:
           set -euo pipefail
           psql -h localhost -U shadow -d shadow -c "CREATE DATABASE fromzero;"
           DATABASE_URL="postgresql://shadow:shadow@localhost:5432/fromzero" pnpm exec prisma migrate deploy
+
+      # The API's per-statement ceiling (src/prisma/statement-timeout.ts) rides in the
+      # connection string's `options`. This is the job with a Postgres, so it is where the
+      # spec's live half runs: Postgres must report the setting and cancel a slow statement.
+      - name: The API's statement timeout reaches Postgres
+        working-directory: services/api
+        env:
+          TEST_DATABASE_URL: postgresql://shadow:shadow@localhost:5432/fromzero
+        run: |
+          pnpm exec prisma generate
+          pnpm exec vitest run src/prisma/statement-timeout.spec.ts
 
   # ── Vision gates ──────────────────────────────────────────────────────────
   #

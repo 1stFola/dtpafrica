@@ -12,6 +12,53 @@ import type { VisionResourceClass } from "@dtp/vision-contracts";
 
 export type HttpClient = typeof fetch;
 
+/**
+ * How long one call to a provider's API may take, answer included, before it is abandoned.
+ *
+ * `fetch` has no timeout of its own. A provider that accepted the connection and never
+ * answered held the dispatcher's tick on that await indefinitely, and the same tick is
+ * what reaps idle GPU pods: a hung status call kept paid capacity running. Thirty seconds
+ * is far beyond a healthy answer (well under one) and short of the dispatcher's interval.
+ */
+export const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
+
+/** A provider call abandoned at its timeout. The dispatcher treats it like any failed call. */
+export class ProviderTimeoutError extends Error {
+  constructor(
+    readonly method: string,
+    readonly path: string,
+    readonly timeoutMs: number,
+    options?: { cause?: unknown }
+  ) {
+    super(`provider did not answer ${method} ${path} within ${timeoutMs} ms`, options);
+    this.name = "ProviderTimeoutError";
+  }
+}
+
+/**
+ * `http(url, init)` with a deadline. The signal covers the whole exchange, reading the body
+ * included, so callers must read the body before returning, as both adapters do.
+ */
+export async function requestWithTimeout(
+  http: HttpClient,
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  label: { method: string; path: string }
+): Promise<Response> {
+  try {
+    return await http(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    if (isTimeout(error)) throw new ProviderTimeoutError(label.method, label.path, timeoutMs, { cause: error });
+    throw error;
+  }
+}
+
+/** Reading a timed-out body rejects too; both are reported the same way. */
+export function isTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
 export type RunPodConfig = {
   apiKey: string | null;
   baseUrl: string;
@@ -30,6 +77,7 @@ export type RunPodConfig = {
    * through this API; null pulls anonymously, which only a public image allows.
    */
   registryAuthId: string | null;
+  requestTimeoutMs: number;
 };
 
 export type LambdaConfig = {
@@ -46,6 +94,7 @@ export type LambdaConfig = {
   sshKeyNames: string[];
   instanceTypes: Record<VisionResourceClass, string[]>;
   filesystemNames: string[];
+  requestTimeoutMs: number;
 };
 
 const DEFAULT_RUNPOD_GPUS: Record<VisionResourceClass, string[]> = {
@@ -90,6 +139,7 @@ export function loadRunPodConfig(env: NodeJS.ProcessEnv = process.env): RunPodCo
     containerDiskGb: positiveNumber(env.VISION_RUNPOD_DISK_GB, 60),
     cloudType: env.VISION_RUNPOD_CLOUD_TYPE?.trim() === "COMMUNITY" ? "COMMUNITY" : "SECURE",
     registryAuthId: env.VISION_RUNPOD_REGISTRY_AUTH_ID?.trim() || null,
+    requestTimeoutMs: positiveNumber(env.VISION_PROVIDER_REQUEST_TIMEOUT_MS, DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS),
   };
 }
 
@@ -106,5 +156,6 @@ export function loadLambdaConfig(env: NodeJS.ProcessEnv = process.env): LambdaCo
       gpu_80gb: list(env.VISION_LAMBDA_TYPES_80GB, DEFAULT_LAMBDA_TYPES.gpu_80gb),
     },
     filesystemNames: list(env.VISION_LAMBDA_FILESYSTEMS, []),
+    requestTimeoutMs: positiveNumber(env.VISION_PROVIDER_REQUEST_TIMEOUT_MS, DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS),
   };
 }

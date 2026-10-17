@@ -436,12 +436,10 @@ jobs:
       # there exhausted its CPU credits and left it unable to answer SSH or HTTP
       # for hours. ECR is used rather than GHCR because the AWS credentials above
       # already exist — no new secret, and same-region pulls are fast and free.
-      - name: Build and push images to ECR
+      - name: Prepare the ECR repositories
         id: images
-        # This job sets `working-directory: infra/ansible` for every run step, which
-        # is right for ansible-playbook and wrong for docker build: the Dockerfiles
-        # and the build context are at the repository root, and without this the
-        # build fails with "lstat infra: no such file or directory".
+        # The job's default is infra/ansible; nothing here reads the tree, and the
+        # build steps below take their paths from the repository root.
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
@@ -466,21 +464,55 @@ jobs:
               --lifecycle-policy-text "$LIFECYCLE" >/dev/null
           done
 
+          # Buildx pushes with the credentials this writes to ~/.docker/config.json.
           aws ecr get-login-password --region "$REGION" \
             | docker login --username AWS --password-stdin "$REGISTRY"
 
-          docker build -f infra/api.Dockerfile -t "$REGISTRY/dtp-api:$TAG" .
-          docker build -f infra/web.Dockerfile -t "$REGISTRY/dtp-web:$TAG" .
-          # The CPU worker (services/vision-worker/Dockerfile): FFmpeg and the worker
-          # package, no CUDA. The same image a hosted CPU pod would run; on the box it
-          # is started by the `vision` compose profile and provisions its own token.
-          docker build -t "$REGISTRY/dtp-vision-worker:$TAG" services/vision-worker
-          docker push "$REGISTRY/dtp-api:$TAG"
-          docker push "$REGISTRY/dtp-web:$TAG"
-          docker push "$REGISTRY/dtp-vision-worker:$TAG"
-
           echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+
+      # Buildx, for the GitHub Actions cache, as ci.yml builds. Plain `docker build`
+      # started from nothing on every deploy: pnpm install and `apt-get install ffmpeg`
+      # each time. Each image has its own cache scope; sharing the default one, each
+      # build would overwrite the last one's cache.
+      #
+      # `context: .` (the checkout of DEPLOY_SHA), never the action's default, which
+      # fetches the repository again at the workflow's own ref: under workflow_run that is
+      # main's tip, not the commit CI verified.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/api.Dockerfile
+          tags: ${{ steps.images.outputs.registry }}/dtp-api:${{ steps.images.outputs.tag }}
+          push: true
+          cache-from: type=gha,scope=cd-dtp-api
+          cache-to: type=gha,scope=cd-dtp-api,mode=max
+
+      - name: Build and push the web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/web.Dockerfile
+          tags: ${{ steps.images.outputs.registry }}/dtp-web:${{ steps.images.outputs.tag }}
+          push: true
+          cache-from: type=gha,scope=cd-dtp-web
+          cache-to: type=gha,scope=cd-dtp-web,mode=max
+
+      # The CPU worker (services/vision-worker/Dockerfile): FFmpeg and the worker
+      # package, no CUDA. The same image a hosted CPU pod would run; on the box it
+      # is started by the `vision` compose profile and provisions its own token.
+      - name: Build and push the worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/vision-worker
+          tags: ${{ steps.images.outputs.registry }}/dtp-vision-worker:${{ steps.images.outputs.tag }}
+          push: true
+          cache-from: type=gha,scope=cd-dtp-vision-worker
+          cache-to: type=gha,scope=cd-dtp-vision-worker,mode=max
 
       # The server needs no AWS CLI and no AWS credentials of its own: the runner
       # mints a registry token here and hands it to Ansible. It is valid 12 hours.
@@ -569,6 +601,38 @@ jobs:
           else
             echo "Health check failed — got HTTP $HTTP"
             exit 1
+          fi
+
+      # ── Tell CloudFront the HTML changed ────────────────────────────────────
+      #
+      # CloudFront keeps HTML up to an hour (default_ttl in infra/terraform/main.tf), so
+      # after a deploy visitors were still handed the old index.html, which names the old
+      # hashed bundles. /assets/* needs nothing: new builds have new file names.
+      #
+      # The first 1,000 invalidation paths a month are free; this uses two per deploy.
+      # Deep links (/scoreboard, /players/...) are cached under their own paths and still
+      # age out on the hour; "/*" would clear them too, and counts as one path, but empties
+      # the year-long /assets cache with it.
+      #
+      # Only after the deploy verified. Set the repository variable
+      # CLOUDFRONT_DISTRIBUTION_ID (Settings > Secrets and variables > Actions > Variables;
+      # `terraform output cloudfront_id`). Unset skips this. A failure warns and does not
+      # fail a deploy that is already live; the deploy user needs
+      # cloudfront:CreateInvalidation.
+      - name: Invalidate the CloudFront HTML cache
+        if: steps.verify.outcome == 'success'
+        env:
+          DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          if [ -z "${DISTRIBUTION_ID}" ]; then
+            echo "CLOUDFRONT_DISTRIBUTION_ID is not set; skipping the invalidation. HTML refreshes within the hour."
+            exit 0
+          fi
+          if ID=$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+              --paths "/index.html" "/" --query 'Invalidation.Id' --output text); then
+            echo "Invalidation $ID created for /index.html and /"
+          else
+            echo "::warning::CloudFront invalidation failed. The deploy is live; HTML refreshes within the hour."
           fi
 
       # ── If it did not come up, put back what was there ──────────────────────
