@@ -7,7 +7,13 @@ import {
 } from "../../prisma/seed-united-football-championship-league-2026-squads";
 import { TEAMS } from "../../prisma/seed-united-football-championship-league-2026";
 
-type Player = { id: string; displayName: string; normalizedName: string | null; slug: string };
+type Player = {
+  id: string;
+  displayName: string;
+  normalizedName: string | null;
+  slug: string;
+  playerPhotoUrl: string | null;
+};
 type Squad = {
   id: string;
   teamId: string;
@@ -59,7 +65,7 @@ function makePrisma(options: { players?: Player[]; squad?: Squad[] } = {}) {
         return row;
       },
       create: async ({ data }: any) => {
-        const row = { id: `player-${++seq}`, ...data };
+        const row = { id: `player-${++seq}`, playerPhotoUrl: null, ...data };
         players.push(row);
         return row;
       },
@@ -126,15 +132,21 @@ describe("UFC 2026 registered squads", () => {
       {
         teamSlug: "ablaze-fc",
         players: [
-          { shirt: 1, name: "Yusuf Murtala", position: "AM" },
-          { shirt: 2, name: "YUSUF  MURTALA", position: "ST" },
+          { shirt: 1, name: "Yusuf Murtala", position: "AM", photo: null },
+          { shirt: 2, name: "YUSUF  MURTALA", position: "ST", photo: "http://plain.example/a.jpg" },
         ],
       },
       { teamSlug: "not-a-club", players: [] },
     ];
     const problems = rosterProblems(bad);
     expect(problems).toContain("ablaze-fc: YUSUF  MURTALA is listed twice (also as Yusuf Murtala)");
+    expect(problems).toContain("ablaze-fc: YUSUF  MURTALA has a photo link that is not https");
     expect(problems).toContain("not-a-club is not a UFC club");
+  });
+
+  it("carries a registration photo for everyone except the one player who sent none", () => {
+    const without = ROSTERS.flatMap((r) => r.players.filter((p) => !p.photo).map((p) => p.name));
+    expect(without).toEqual(["Teslim Umar"]);
   });
 
   it("never stores a name that shouts: every roster name has a lowercase letter", () => {
@@ -160,7 +172,12 @@ describe("UFC 2026 registered squads", () => {
     expect(prisma.players.find((p) => p.id === row.playerId)).toMatchObject({
       displayName: "Eguakun Lucky",
       normalizedName: "eguakun lucky",
+      playerPhotoUrl: expect.stringMatching(/^https:\/\/storage\.tally\.so\//),
     });
+    expect(result.photosAdded).toBe(listed - 2);
+    expect(prisma.players.filter((p) => !p.playerPhotoUrl).map((p) => p.displayName)).toEqual([
+      "Teslim Umar",
+    ]);
   });
 
   it("is additive: a second run writes nothing, and admin edits to a row survive", async () => {
@@ -175,6 +192,7 @@ describe("UFC 2026 registered squads", () => {
 
     expect(again.created).toBe(0);
     expect(again.linked).toBe(0);
+    expect(again.photosAdded).toBe(0);
     expect(again.unchanged).toBe(listed - 1);
     expect(prisma.players).toHaveLength(playersBefore);
     expect(row).toMatchObject({ shirtNumber: 99, position: "GK" });
@@ -201,10 +219,16 @@ describe("UFC 2026 registered squads", () => {
     expect(rows[0].playerId).toBeTruthy();
   });
 
-  it("reuses a player already in the directory rather than minting a duplicate", async () => {
+  it("reuses a player already in the directory rather than minting a duplicate, and keeps their photo", async () => {
     const prisma = makePrisma({
       players: [
-        { id: "known", displayName: "AMINU IBRAHIM", normalizedName: "aminu ibrahim", slug: "aminu-ibrahim" },
+        {
+          id: "known",
+          displayName: "AMINU IBRAHIM",
+          normalizedName: "aminu ibrahim",
+          slug: "aminu-ibrahim",
+          playerPhotoUrl: "https://lh3.googleusercontent.com/chosen-in-admin",
+        },
       ],
     });
     await run(prisma);
@@ -212,5 +236,8 @@ describe("UFC 2026 registered squads", () => {
     const row = prisma.squad.find((s) => s.displayName === "Aminu ibrahim")!;
     expect(row.playerId).toBe("known");
     expect(prisma.players.filter((p) => p.normalizedName === "aminu ibrahim")).toHaveLength(1);
+    expect(prisma.players.find((p) => p.id === "known")!.playerPhotoUrl).toBe(
+      "https://lh3.googleusercontent.com/chosen-in-admin"
+    );
   });
 });
