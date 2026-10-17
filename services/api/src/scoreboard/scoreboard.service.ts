@@ -25,7 +25,7 @@ import {
 import { resolvePlayerBySlugOrId } from "../players/player-resolve";
 import { resolveMatchBySlugOrId } from "./match-resolve";
 import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
-import { presentHighlight, presentMatchDetail } from "./present-media";
+import { presentHighlight, presentLiveStream, presentMatchDetail } from "./present-media";
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
 import { assertMatchReadyForLiveEvents } from "./roster-guard";
@@ -1970,6 +1970,32 @@ export class ScoreboardService {
       },
     });
     return presentScoreboardPayload(rows.map((row) => presentHighlight(row)));
+  }
+
+  /**
+   * Published broadcasts for the Live Games page, in the admin's order. Not tied to a
+   * match reading as live: the admin publishes a stream when the broadcast is up and
+   * unpublishes it afterwards, which is the one switch a stream link needs.
+   */
+  async liveStreams() {
+    const rows = await this.prisma.sbLiveStream.findMany({
+      where: { isPublished: true },
+      orderBy: [{ sortOrder: "asc" }, { publishedAt: "desc" }],
+      include: {
+        match: {
+          select: {
+            id: true,
+            slug: true,
+            status: true,
+            kickoffAt: true,
+            homeTeam: { select: { id: true, name: true, shortName: true } },
+            awayTeam: { select: { id: true, name: true, shortName: true } },
+          },
+        },
+        competition: { select: { id: true, name: true, slug: true } },
+      },
+    });
+    return presentScoreboardPayload(rows.map((row) => presentLiveStream(row)));
   }
 
   async addEvent(matchId: string, dto: CreateMatchEventDto) {

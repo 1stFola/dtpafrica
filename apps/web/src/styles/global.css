@@ -8438,6 +8438,64 @@ a {
   border-top: 1px solid var(--color-hairline);
 }
 
+/* —— Live Games: admin-published YouTube broadcasts above the live match list —— */
+.sb-live-streams {
+  margin: 0 0 1.75rem;
+}
+
+.sb-live-streams__grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+/* Two broadcasts sit side by side on a wide screen; three or more wrap in pairs. */
+@media (min-width: 960px) {
+  .sb-live-streams__grid[data-count="2"] {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.sb-live-stream {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sb-live-stream__player {
+  border: 0;
+  border-radius: 0;
+}
+
+.sb-live-stream__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.sb-live-stream__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.3;
+}
+
+.sb-live-stream__context,
+.sb-live-stream__open {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.sb-live-stream__context {
+  flex-basis: 100%;
+}
+
 .sb-hl-card--inline {
   gap: 0.75rem;
   padding: 0;

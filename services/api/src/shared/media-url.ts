@@ -5,6 +5,7 @@ export {
   isAllowedVideoMediaUrl,
   isGoogleDriveUrl,
   isGooglePhotosUrl,
+  isYoutubeUrl,
   normalizeVideoMediaUrl,
   parseGoogleDriveFileId,
   toGoogleDriveEmbedUrl,

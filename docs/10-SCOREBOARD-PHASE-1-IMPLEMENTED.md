@@ -27,6 +27,7 @@ Seed player can appear on a team squad (links DTP `players.id`).
 | GET | `/matches/:id` | Match center (timeline) |
 | GET | `/standings/:competitionId` | Points table (computed) |
 | GET | `/highlights` | Published videos |
+| GET | `/live-streams` | Published YouTube broadcasts for the Live Games page (`SbLiveStream`; admin CRUD under `/admin/scoreboard/live-streams`, permission `scoreboard.live.write`) |
 | GET | `/supervisor/live` | Live matches for monitor |
 | POST | `/matches/:id/events` | Add event (operator; auth later) |
 | PATCH | `/matches/:id` | Update score / status / minute |
@@ -35,7 +36,7 @@ Seed player can appear on a team squad (links DTP `players.id`).
 
 - **Overview** — live match cards + competitions
 - **Live ribbon** — scrolling public scoreboard ribbon across ScoreBoard pages
-- **Live** — auto-refresh live list
+- **Live** — admin-published YouTube broadcasts (embedded, muted autoplay) above the auto-refresh live list. A stream is its own record, not a match field, because a match only reads as live once a recorder kicks off or the roster guard is satisfied; the admin publishes a stream when the broadcast is up and unpublishes it after (`/admin/scoreboard/live-streams`).
 - **Browse** — unified search over competitions, teams, matches, and linked players
 - **Jagaban Cup** — standings / teams / matchdays tabs
 - **Team profile** — `/scoreboard/team/:id` roster, form, recent matches

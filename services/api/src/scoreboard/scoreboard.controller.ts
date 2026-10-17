@@ -154,6 +154,13 @@ export class ScoreboardController {
     return this.sb.highlights(competitionId);
   }
 
+  /** Published YouTube broadcasts for the Live Games page; an unpublish must land at once. */
+  @Get("live-streams")
+  @Header("Cache-Control", "no-store")
+  liveStreams() {
+    return this.sb.liveStreams();
+  }
+
   @Get("supervisor/live")
   @UseGuards(AdminApiKeyGuard)
   supervisorLive() {

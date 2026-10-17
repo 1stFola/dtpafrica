@@ -517,6 +517,32 @@ export function fetchHighlights(competitionId?: string) {
   return apiGet<SbHighlight[]>(`/scoreboard/highlights${q}`);
 }
 
+/** A YouTube broadcast an admin has published to the Live Games page. */
+export type SbLiveStream = {
+  id: string;
+  title: string;
+  youtubeUrl: string;
+  /** The YouTube video id behind the link, or null when it could not be read. */
+  videoId: string | null;
+  embedUrl: string | null;
+  thumbnailUrl: string | null;
+  sortOrder: number;
+  publishedAt: string | null;
+  match: {
+    id: string;
+    slug: string | null;
+    status: string;
+    kickoffAt: string | null;
+    homeTeam: { id: string; name: string; shortName: string | null };
+    awayTeam: { id: string; name: string; shortName: string | null };
+  } | null;
+  competition: { id: string; name: string; slug: string } | null;
+};
+
+export function fetchLiveStreams(signal?: AbortSignal) {
+  return apiGet<SbLiveStream[]>("/scoreboard/live-streams", signal, { cache: "no-store" });
+}
+
 function adminHeaders() {
   const key = getAdminApiKey();
   const jwt = getAdminJwt();

@@ -3,6 +3,8 @@ import {
   highlightThumbnailUrl,
   type VideoMediaType,
   videoEmbedUrl,
+  youtubeThumbnail,
+  youtubeVideoId,
 } from "../shared/media-url";
 
 export type PresentedHighlight = {
@@ -45,6 +47,22 @@ export function presentHighlight<T extends { youtubeUrl: string; mediaType?: str
     mediaType,
     videoEmbedUrl: videoEmbedUrl(row.youtubeUrl, mediaType),
     thumbnailUrl: highlightThumbnailUrl(row.youtubeUrl, explicitThumb),
+  };
+}
+
+/**
+ * A live stream as the Live Games page plays it: the YouTube id behind whatever link the
+ * admin pasted, the embed URL for the player, and a poster for the moment before it loads.
+ */
+export function presentLiveStream<T extends { youtubeUrl: string }>(
+  row: T
+): T & { videoId: string | null; embedUrl: string | null; thumbnailUrl: string | null } {
+  const videoId = youtubeVideoId(row.youtubeUrl);
+  return {
+    ...row,
+    videoId,
+    embedUrl: videoId ? videoEmbedUrl(row.youtubeUrl, "youtube") : null,
+    thumbnailUrl: youtubeThumbnail(row.youtubeUrl),
   };
 }
 
