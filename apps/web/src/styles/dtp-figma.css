@@ -3391,7 +3391,8 @@ a.mvce-card:focus-visible {
    page that is its own stacking root, and the photo and its fade extend by
    --dtp-hero-bleed. Nothing overlaps the hero's own box, so its links stay
    clickable. */
-.dtp-page:has(> .dtp-hero--bleed) {
+.dtp-page:has(> .dtp-hero--bleed),
+.dtp-page:has(> .sb-hero-fold .dtp-hero--bleed) {
   isolation: isolate;
   background: var(--dtp-ink);
 }
@@ -3458,6 +3459,57 @@ a.mvce-card:focus-visible {
 /* First line ends "…and historical", as drawn. */
 .scoreboard-module .dtp-hero--stack .dtp-hero__lead { max-width: 26.5em; }
 .scoreboard-module .dtp-hero--stack .sb-hero-actions { margin-top: 28px; }
+
+/* The ScoreBoard hero folds away off the Overview and Competitions roots (see
+   hero-visibility.ts). The fold is a one-row grid whose track eases between
+   1fr and 0fr, so the ticker and tabs slide up as the banner closes instead of
+   jumping into its place, and the banner fades as it goes. The hero's negative
+   top margin -- it sits under the floating nav pill -- moves onto the fold and
+   eases to zero with the track, so a shut fold leaves no pull under the nav
+   and no gap below it. `visibility` goes at the end of the close, which also
+   takes the banner's links out of the tab order. */
+.sb-hero-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-top: calc(-1 * (var(--dtp-nav-top) + var(--dtp-nav-h) + var(--dtp-space-2) + 8px));
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows 480ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top 480ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 360ms ease 120ms,
+    visibility 0s linear 0s;
+}
+
+.sb-hero-fold .dtp-hero { margin-top: 0; }
+
+.sb-hero-fold__inner { min-height: 0; }
+
+/* Clip while shut or still opening; once open the photo bleed runs on behind
+   the ticker and tabs as the frame draws it. */
+.sb-hero-fold[data-state="closed"] .sb-hero-fold__inner,
+.sb-hero-fold[data-state="opening"] .sb-hero-fold__inner {
+  overflow: hidden;
+}
+
+.sb-hero-fold[data-state="closed"] {
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 480ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top 480ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 280ms ease,
+    visibility 0s linear 480ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-hero-fold,
+  .sb-hero-fold[data-state="closed"] {
+    transition: none;
+  }
+}
 
 /* Scouting Hub (Figma 118:1711 at 1440): the three tool tiles at y692-838,
    on the photo, which fades out by y1070. */
