@@ -11,6 +11,8 @@ elsewhere, how to get it back, and what tells you when something is wrong.
 | `pg_dump` (custom format) | R2 bucket, `postgres/daily/` | nightly 02:30 UTC | newest 14 | the database, into any Postgres 16 |
 | Same dump, promoted | R2 bucket, `postgres/weekly/` | once a week | newest 8 (about 2 months) | the same |
 | Same dump, local copy | `/var/backups/dtp-db` on the box | nightly | newest 2 | quick undo of a bad migration |
+| Pre-deploy restore point | R2 bucket, `postgres/pre-deploy/` | every deploy, just before migrations | newest 10 | the database as it was moments before a migration |
+| Same, local copy | `/var/backups/dtp-db/pre-deploy-*.dump` | every deploy | newest 3 | the same, with no bucket needed |
 | EBS snapshot (DLM) | AWS, outlives the instance | daily 03:30 UTC | 7 | the whole box, as it was. **Not active:** Terraform applies are on hold |
 
 - Nightly job: `/usr/local/bin/dtp-backup run`, from `dtp-backup.timer`. Installed by
@@ -18,6 +20,13 @@ elsewhere, how to get it back, and what tells you when something is wrong.
 - Each run dumps inside the Postgres container, checks the archive with
   `pg_restore --list`, uploads it, confirms the uploaded size, records a sha256, and
   then prunes. It never prunes if it cannot see the object it just uploaded.
+- Every deploy that migrates (`run_migrations`, so not the rollback) runs
+  `dtp-backup run --pre-deploy` just before `prisma migrate deploy`. It keeps its own
+  folder and counts, so deploys never push a nightly out of `daily/`, and it sends no
+  heartbeat, so a deploy cannot hide a nightly that stopped. If the dump fails, the
+  deploy stops there with the old release still serving; if only the upload fails, the
+  deploy goes on with the local copy and says so. The deploy log's *Report the restore
+  point* line names the object. A new box with no tables yet skips it.
 - Media is not here. It is in R2 already (the `VISION_R2_BUCKET_*` buckets).
 
 ## Alerts
@@ -59,7 +68,7 @@ timer has stopped.
 On the box, with the settings Ansible wrote in `/etc/dtp-backup/backup.env`:
 
 ```bash
-sudo dtp-backup list                    # bucket (daily/, weekly/) and local copies
+sudo dtp-backup list                    # bucket (daily/, weekly/, pre-deploy/) and local copies
 sudo systemctl start dtp-backup.service # back up now, as the timer would
 journalctl -u dtp-backup -n 50
 sudo dtp-backup fetch latest -o /tmp/latest.dump   # download, sha256 checked
@@ -78,8 +87,9 @@ EOF
 DTP_BACKUP_CONFIG=backup.env python3 infra/backup/dtp-backup.py verify latest
 ```
 
-`SOURCE` for `fetch`, `verify` and `restore-live` is `latest`, a key as `list` prints it
-(`daily/dtp_africa-2026-10-17T023012Z.dump`), or a local `.dump` file.
+`SOURCE` for `fetch`, `verify` and `restore-live` is `latest` (the newest of all three
+folders), a key as `list` prints it (`daily/dtp_africa-2026-10-17T023012Z.dump`,
+`pre-deploy/dtp_africa-2026-10-17T144312Z.dump`), or a local `.dump` file.
 
 ## Restores
 
@@ -93,6 +103,31 @@ The tool starts a scratch `postgres:16-alpine`, restores in one transaction (any
 fails it), prints every table's row count and the latest Prisma migration, then deletes
 the container. Exit 0 means the backup is good. Add `--keep` to leave the container up
 and query it.
+
+### A deploy's migration went wrong
+
+The deploy took a restore point moments before it migrated. Its log names it, under
+*Report the restore point*: `pre-deploy/dtp_africa-<stamp>.dump`, with the release and the
+last migration applied before it. `sudo dtp-backup list` shows the same.
+
+1. Check it: `sudo dtp-backup verify pre-deploy/dtp_africa-<stamp>.dump`. The latest
+   migration it prints should be the one before the bad one.
+2. Restore it (needs approval, see below):
+
+   ```bash
+   sudo dtp-backup restore-live pre-deploy/dtp_africa-<stamp>.dump --confirm dtp_africa
+   ```
+
+   With the bucket unreachable, use the local copy instead:
+   `/var/backups/dtp-db/pre-deploy-dtp_africa-<stamp>.dump`.
+3. Revert the commit that added the migration and let CD deploy the revert. Its
+   `migrate deploy` finds nothing new, because the restored database is at the schema the
+   previous release expects. **Do not re-run the deploy of the bad commit**: it would
+   apply the same migration again. Until the revert is live, the newer release is
+   running against the older schema.
+
+Anything written between the restore point and the restore is in the kept
+`dtp_africa_before_restore_<stamp>` database, if it needs to be copied across.
 
 ### Bad data or a bad migration; the box is fine
 
@@ -207,6 +242,30 @@ S3 mock standing in for R2, and the script run from Ubuntu 22.04 with its packag
 - The Ansible roles were applied to a systemd Ubuntu 22.04 container: both timers
   scheduled, `systemd-analyze verify` clean, the second run `changed=0`, and the disk
   check exits 1 over its threshold.
+
+### The pre-deploy restore point (17 October 2026)
+
+The same way, against a fresh copy of the dev database (81 tables, plus a planted
+`_prisma_migrations` so the schema field is exercised):
+
+- An empty database: *nothing to protect*, exit 0.
+- `run --pre-deploy --release <tag>`: dump, archive check, upload to `pre-deploy/` with the
+  release and latest migration recorded, local `pre-deploy-*.dump`. No heartbeat ping.
+- Retention: with 13 planted under `pre-deploy/` it kept the newest 10 and the newest 3
+  local. Three nightly runs alongside left `pre-deploy/` and the local pre-deploy copies
+  alone, and the pre-deploy runs left `daily/`, `weekly/` and the nightly local copies
+  alone.
+- No bucket configured, or the bucket unreachable: the local copy is made, exit 0, with
+  a warning. Postgres stopped: exit 1.
+- With the lock held by a nightly run, it waited and then ran. The nightly still refuses
+  to start while the lock is held.
+- A bad migration (3,474 rows deleted, a migration recorded) was undone with
+  `restore-live pre-deploy/...`: every row and the previous latest migration back.
+  `verify latest` picked the pre-deploy dump as the newest, and a local pre-deploy file
+  verifies as a `SOURCE`.
+- The deploy role's two tasks, run by ansible-core: a deploy takes and reports the
+  restore point; `run_migrations=false` and `pre_deploy_backup=false` skip it; with
+  Postgres stopped the play fails at the dump and never reaches the migration.
 
 ## Human Approval Required
 
