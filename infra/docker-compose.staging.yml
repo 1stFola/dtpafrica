@@ -1,9 +1,21 @@
 name: dtp-staging
 
+# Every service logs through this. Docker's json-file driver keeps a container's logs
+# for ever by default, on the same root volume as Postgres, and Postgres on a full disk
+# stops accepting writes. 10 MB x 5 files caps each service at 50 MB; `docker compose
+# logs` still reads them. Changing it recreates the containers, Postgres included, on
+# the next `up` (a few seconds; the data is on the volume).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dtp}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
@@ -29,6 +41,7 @@ services:
       context: ..
       dockerfile: infra/api.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +81,7 @@ services:
       context: ..
       dockerfile: infra/web.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - api
     ports:
@@ -89,6 +103,7 @@ services:
       context: ../services/vision-worker
     profiles: ["vision"]
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - api
     entrypoint: ["python", "-m", "dtp_vision_worker.bootstrap"]

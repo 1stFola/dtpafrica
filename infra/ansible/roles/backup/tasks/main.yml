@@ -1,0 +1,71 @@
+---
+# backup role: a nightly pg_dump of the compose Postgres, shipped off the box.
+#
+# The database lives in a container on the root volume, which is deleted with the
+# instance. This installs infra/backup/dtp-backup.py as /usr/local/bin/dtp-backup and a
+# systemd timer that runs it nightly: dump inside the Postgres container, check the
+# archive, upload to the bucket, keep 14 daily and 8 weekly, ping the heartbeat.
+# The restore side, and the runbook: docs/support-playbook/database-backup-and-restore.md
+
+- name: Create the backup config directory
+  ansible.builtin.file:
+    path: /etc/dtp-backup
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Write the backup settings (bucket credentials included)
+  ansible.builtin.template:
+    src: backup.env.j2
+    dest: /etc/dtp-backup/backup.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Create the local backup directory
+  ansible.builtin.file:
+    path: "{{ backup_local_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install the backup and restore tool
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../backup/dtp-backup.py"
+    dest: /usr/local/bin/dtp-backup
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the backup service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - dtp-backup.service
+    - dtp-backup.timer
+  notify: Reload systemd
+
+- name: Load the unit files before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the nightly backup timer
+  ansible.builtin.systemd:
+    name: dtp-backup.timer
+    enabled: true
+    state: started
+
+- name: Say so when backups have nowhere to go
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: no backup bucket is configured (the BACKUP_S3_* keys of the
+      dtp/staging/app secret). The nightly job will dump to {{ backup_local_dir }} on
+      this box and then fail, because a copy on the box is lost with the box. See
+      docs/support-playbook/database-backup-and-restore.md, "One-time setup".
+  when: not (backup_s3_endpoint and backup_s3_bucket and backup_s3_access_key_id and backup_s3_secret_access_key)

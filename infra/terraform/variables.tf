@@ -71,3 +71,23 @@ variable "root_volume_size" {
   type        = number
   default     = 100
 }
+
+# ── Backups and alerts (snapshots.tf, alerts.tf) ─────────────────────────────
+
+variable "ebs_snapshot_retain_days" {
+  description = "Daily EBS snapshots of the server to keep (Data Lifecycle Manager). 0 creates no policy."
+  type        = number
+  default     = 7
+}
+
+variable "alert_email" {
+  description = "Where CloudWatch alarms are emailed. Empty creates no topic and no alarms."
+  type        = string
+  default     = ""
+}
+
+variable "cpu_credit_alarm_threshold" {
+  description = "Alarm when the t3 CPU credit balance falls below this (576 is full)."
+  type        = number
+  default     = 30
+}

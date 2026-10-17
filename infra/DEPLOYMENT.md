@@ -548,21 +548,17 @@ has understood the data differently from you.
 `--apply` and writes straight away, because it runs unattended on every container
 start from the `api.Dockerfile` CMD. There is no dry run to reach for.
 
-### Manual database backup
+### Database backups and restores
+
+Nightly, off the box, installed by the deploy (`roles/backup`). The runbook, including
+restoring when the box is lost: `docs/support-playbook/database-backup-and-restore.md`.
 
 ```bash
 # On the server
-docker compose -f /opt/dtp-app/repo/infra/docker-compose.staging.yml \
-  exec postgres pg_dump -U dtp dtp_africa \
-  | gzip > ~/backup-$(date +%F).sql.gz
-```
-
-### Restore from backup
-
-```bash
-gunzip -c ~/backup-<date>.sql.gz \
-  | docker compose -f /opt/dtp-app/repo/infra/docker-compose.staging.yml \
-    exec -T postgres psql -U dtp dtp_africa
+sudo dtp-backup list                     # what exists, in R2 and on this disk
+sudo systemctl start dtp-backup.service  # back up now (e.g. before risky maintenance)
+sudo dtp-backup verify latest            # prove the newest backup restores
+sudo dtp-backup restore-live <source> --confirm dtp_africa
 ```
 
 ### Check resource usage

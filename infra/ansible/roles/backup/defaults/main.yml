@@ -1,0 +1,24 @@
+---
+# Off-box storage for the nightly Postgres dump: any S3-compatible bucket. For
+# Cloudflare R2 the endpoint is https://<account id>.r2.cloudflarestorage.com.
+# The CD workflow fills these from the BACKUP_* keys of the dtp/staging/app secret.
+# Empty leaves the timer installed and failing every night (and its heartbeat with
+# it): a dump that never leaves the box is not a backup of a box that can be lost.
+backup_s3_endpoint: ""
+backup_s3_bucket: ""
+backup_s3_prefix: "postgres/"
+backup_s3_access_key_id: ""
+backup_s3_secret_access_key: ""
+
+# Dead man's switch (healthchecks.io, or anything that takes GET <url>, GET <url>/start
+# and POST <url>/fail). Empty sends nothing.
+backup_heartbeat_url: ""
+
+backup_keep_daily: 14
+backup_keep_weekly: 8
+backup_local_keep: 2
+backup_local_dir: /var/backups/dtp-db
+
+# 02:30 UTC is 03:30 in Lagos: the quietest hour, and the CPU credits a t3.small
+# earns overnight cover a pg_dump many times over.
+backup_on_calendar: "*-*-* 02:30:00"
