@@ -394,6 +394,13 @@ jobs:
               "academy_jwt_secret": text(app.get("ACADEMY_JWT_SECRET")),
               "vision_r2_access_key_id": text(app.get("VISION_R2_ACCESS_KEY_ID")),
               "vision_r2_secret_access_key": text(app.get("VISION_R2_SECRET_ACCESS_KEY")),
+              # Off-box backups and the dead man's switches (roles/backup, roles/monitoring).
+              # Optional: absent installs the timers with nowhere to send, and says so.
+              # A heartbeat URL is a secret: anyone holding it can silence the alert.
+              "backup_s3_access_key_id": text(app.get("BACKUP_S3_ACCESS_KEY_ID")),
+              "backup_s3_secret_access_key": text(app.get("BACKUP_S3_SECRET_ACCESS_KEY")),
+              "backup_heartbeat_url": text(app.get("BACKUP_HEARTBEAT_URL")),
+              "disk_heartbeat_url": text(app.get("DISK_HEARTBEAT_URL")),
           }
           for value in secret.values():
               if value:
@@ -419,6 +426,8 @@ jobs:
               "vision_r2_bucket_derived": text(app.get("VISION_R2_BUCKET_DERIVED")),
               "vision_r2_bucket_models": text(app.get("VISION_R2_BUCKET_MODELS")),
               "vision_r2_bucket_clips": text(app.get("VISION_R2_BUCKET_CLIPS")),
+              "backup_s3_endpoint": text(app.get("BACKUP_S3_ENDPOINT")),
+              "backup_s3_bucket": text(app.get("BACKUP_S3_BUCKET")),
           }
 
           path = os.path.join(os.environ["RUNNER_TEMP"], "deploy-secrets.json")

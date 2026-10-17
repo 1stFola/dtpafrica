@@ -1,0 +1,7 @@
+---
+# Dead man's switch for the box itself (healthchecks.io or similar): pinged every
+# 15 minutes while the root volume is below the threshold, sent to <url>/fail when it
+# is not. Silence (box down, timer gone) alerts as well. Empty sends nothing and the
+# check only writes to the journal.
+disk_heartbeat_url: ""
+disk_alert_percent: 80

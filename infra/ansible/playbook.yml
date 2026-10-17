@@ -4,6 +4,8 @@
 # Runs all roles against the one EC2 server:
 #   common  → OS hardening, packages, UFW, fail2ban
 #   docker  → Docker CE + Compose v2
+#   backup     → nightly pg_dump to an off-box bucket (systemd timer)
+#   monitoring → root-volume heartbeat (systemd timer)
 #   deploy  → secrets, Node 20, pnpm, repo clone, env files, containers
 #
 # Run manually:
@@ -38,4 +40,7 @@
   roles:
     - common
     - docker
+    # Before deploy, so a deploy that fails part-way still leaves the box backed up.
+    - backup
+    - monitoring
     - deploy

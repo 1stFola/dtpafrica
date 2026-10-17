@@ -1,0 +1,24 @@
+#!/bin/bash
+# Root-volume check for the DTP box (roles/monitoring). Postgres, Docker's images and
+# the containers' logs all share /, and Postgres on a full disk stops taking writes,
+# which looks like the site breaking for no reason. This reports before that.
+set -uo pipefail
+
+threshold="${DISK_ALERT_PERCENT:-80}"
+url="${DISK_HEARTBEAT_URL:-}"
+
+used=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+report=$(printf 'root volume %s%% used (alert at %s%%)\n\n%s\n\n%s\n' \
+  "$used" "$threshold" "$(df -h /)" "$(docker system df 2>/dev/null)")
+
+if [ "$used" -ge "$threshold" ]; then
+  echo "$report"
+  [ -n "$url" ] && curl -fsS -m 10 --retry 3 --data-raw "$report" "${url%/}/fail" >/dev/null
+  exit 1
+fi
+
+echo "root volume ${used}% used (alert at ${threshold}%)"
+if [ -n "$url" ]; then
+  curl -fsS -m 10 --retry 3 --data-raw "$report" "${url%/}" >/dev/null
+fi
+exit 0

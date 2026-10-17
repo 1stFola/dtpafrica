@@ -23,6 +23,7 @@ The support agent is **recommend-only**. It may diagnose, collect context, and s
 9. [CI Prisma constraint failure](./ci-prisma-constraint.md)
 10. [Deployment health check timeout](./deployment-health-timeout.md)
 11. [Deployment missing environment variable](./deployment-env-missing.md)
+12. [Database backup, restore and alerts](./database-backup-and-restore.md)
 
 ## Learning Loop
 

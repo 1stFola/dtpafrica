@@ -1,0 +1,43 @@
+---
+# monitoring role: the on-box half of the alerting. The rest lives off the box, where
+# a dead box cannot silence it: CloudWatch alarms in infra/terraform/alerts.tf (CPU
+# credits, status checks) and an uptime check on /api/v1/health/ready.
+# docs/support-playbook/database-backup-and-restore.md, "Alerts".
+
+- name: Write the disk check settings
+  ansible.builtin.template:
+    src: dtp-disk-check.env.j2
+    dest: /etc/dtp-disk-check.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install the disk check
+  ansible.builtin.copy:
+    src: dtp-disk-check
+    dest: /usr/local/bin/dtp-disk-check
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the disk check service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - dtp-disk-check.service
+    - dtp-disk-check.timer
+  notify: Reload systemd
+
+- name: Load the unit files before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the disk check timer
+  ansible.builtin.systemd:
+    name: dtp-disk-check.timer
+    enabled: true
+    state: started
