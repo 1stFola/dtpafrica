@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ClockState } from "../../../api/adminMatchStats";
+import { serverNow, syncServerClock } from "../../../lib/server-clock";
 
 /** Clock ticks once a second; anything finer is wasted work pitch-side. */
 const TICK_MS = 1000;
@@ -40,6 +41,10 @@ export function displayMinute(minute: number, added: number | null): string {
  * Keeping it derived is what lets the clock survive switching tabs, reloading
  * the page, the phone locking, and background timer throttling — none of which
  * can lose time that was never being counted in the first place.
+ *
+ * Anchors are stamped and read on the server's clock (lib/server-clock), not this
+ * device's: the public match page counts from the same anchors on other devices, and a
+ * recorder's phone running a minute off would otherwise put every viewer a minute out.
  */
 export function useMatchClock(
   clock: ClockState | null,
@@ -47,6 +52,10 @@ export function useMatchClock(
 ) {
   const state = clock ?? DEFAULT_CLOCK;
   const { halfLength, half, phase } = state;
+
+  useEffect(() => {
+    void syncServerClock();
+  }, []);
 
   /* A bare counter purely to re-render each second; elapsed always comes from
      the anchor below, never from this tick. It IS a dependency of that memo,
@@ -68,7 +77,7 @@ export function useMatchClock(
     if (!anchor) return 0;
     const started = new Date(anchor).getTime();
     if (!Number.isFinite(started)) return 0;
-    const raw = Math.floor((Date.now() - started) / 1000);
+    const raw = Math.floor((serverNow() - started) / 1000);
     const ceiling =
       phase === "awaiting_added"
         ? halfLength * 60
@@ -128,7 +137,7 @@ export function useMatchClock(
         halfLength: chosenHalfLength,
         half: 1,
         phase: "running",
-        firstHalfStartedAt: new Date().toISOString(),
+        firstHalfStartedAt: new Date(serverNow()).toISOString(),
       }),
     [patch]
   );
@@ -151,7 +160,7 @@ export function useMatchClock(
   );
 
   const startSecondHalf = useCallback(
-    () => patch({ half: 2, phase: "running", secondHalfStartedAt: new Date().toISOString() }),
+    () => patch({ half: 2, phase: "running", secondHalfStartedAt: new Date(serverNow()).toISOString() }),
     [patch]
   );
 

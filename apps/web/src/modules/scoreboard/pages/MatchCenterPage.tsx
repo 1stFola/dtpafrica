@@ -18,6 +18,7 @@ import { isMatchUuid, matchCenterPath } from "../utils/matchPath";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { liveAudioSocketUrl } from "../../../api/liveAudio";
+import { serverNow, syncServerClock } from "../../../lib/server-clock";
 
 type MatchTab = "timeline" | "stats" | "video" | "photos" | "squads";
 
@@ -247,16 +248,20 @@ function liveClockSeconds(
     return halfLengthSeconds * 2 + addedSecondSeconds;
   }
   if (clock.half === 2 && Number.isFinite(secondStarted)) {
-    return halfLengthSeconds + Math.max(0, Math.floor((Date.now() - secondStarted) / 1000));
+    return halfLengthSeconds + Math.max(0, Math.floor((serverNow() - secondStarted) / 1000));
   }
   if (!Number.isFinite(firstStarted)) return null;
-  return Math.max(0, Math.floor((Date.now() - firstStarted) / 1000));
+  return Math.max(0, Math.floor((serverNow() - firstStarted) / 1000));
 }
 
 function useLiveClockLabel(
   clock: NonNullable<SbMatchDetail["liveSheet"]>["clock"] | null | undefined
 ): string | null {
   const [tick, setTick] = useState(0);
+  // The anchors were stamped on the server's clock; count from them on it too.
+  useEffect(() => {
+    void syncServerClock();
+  }, []);
   useEffect(() => {
     if (!clock || clock.phase === "finished" || clock.phase === "penalty_shootout") return;
     const id = window.setInterval(() => setTick((value) => value + 1), 1000);

@@ -5,6 +5,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { LiveAudioCommentaryService } from "./scoreboard/live-audio-commentary.service";
 import { applyBodyLimits } from "./shared/body-limits";
+import { corsOrigins } from "./shared/cors";
 import { assertJwtSecrets } from "./shared/jwt-secrets";
 import { loadApiEnv } from "./shared/load-dotenv";
 import { TRUSTED_PROXIES } from "./shared/throttle";
@@ -20,7 +21,8 @@ async function bootstrap() {
   app.set("trust proxy", TRUSTED_PROXIES);
   applyBodyLimits(app);
   app.setGlobalPrefix("api/v1");
-  app.enableCors({ origin: true });
+  // Production's two hostnames (and Vite's, in development); CORS_ORIGINS overrides (shared/cors).
+  app.enableCors({ origin: corsOrigins() });
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true })
   );

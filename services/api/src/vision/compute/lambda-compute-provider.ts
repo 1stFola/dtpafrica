@@ -8,7 +8,7 @@ import {
 } from "@dtp/vision-contracts";
 import type { ComputeProvider } from "./compute-provider";
 import { ProviderCapacityUnavailableError } from "./compute-provider";
-import type { HttpClient, LambdaConfig } from "./provider-config";
+import { isTimeout, ProviderTimeoutError, requestWithTimeout, type HttpClient, type LambdaConfig } from "./provider-config";
 import { ProviderHttpError } from "./runpod-compute-provider";
 import { estimateUsdCents, parseRateOverrides } from "./resource-rates";
 
@@ -102,6 +102,9 @@ export class LambdaComputeProvider implements ComputeProvider {
         const id = res?.instance_ids?.[0];
         if (id) return { providerRef: id };
       } catch (error) {
+        // A launch that timed out may have started a VM all the same. Trying the next type
+        // could start a second, so stop here; the first reaps itself (cloudInit, below).
+        if (error instanceof ProviderTimeoutError) throw error;
         lastError = error;
       }
     }
@@ -195,20 +198,31 @@ export class LambdaComputeProvider implements ComputeProvider {
       );
     }
 
-    const res = await this.http(`${this.config.baseUrl}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.config.apiKey}`,
-        "Content-Type": "application/json",
+    const label = { method, path };
+    const timeoutMs = this.config.requestTimeoutMs;
+    const res = await requestWithTimeout(
+      this.http,
+      `${this.config.baseUrl}${path}`,
+      {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      timeoutMs,
+      label
+    );
+    // The deadline covers the body too, so a stalled body is reported as a timeout.
+    const text = await res.text().catch((error: unknown) => {
+      throw isTimeout(error) ? new ProviderTimeoutError(method, path, timeoutMs, { cause: error }) : error;
     });
 
     if (res.status === 404) throw new ProviderHttpError(404, "not found");
-    if (!res.ok) throw new ProviderHttpError(res.status, (await res.text()).slice(0, 500));
+    if (!res.ok) throw new ProviderHttpError(res.status, text.slice(0, 500));
     if (res.status === 204) return null;
 
-    const text = await res.text();
     return text ? (JSON.parse(text) as T) : null;
   }
 }

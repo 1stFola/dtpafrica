@@ -1,0 +1,45 @@
+# Weekly dependency updates, grouped so a week's worth arrives as a few pull requests
+# rather than dozens. Minor and patch updates are grouped per ecosystem; a major version
+# gets its own pull request, because that is where the breaking changes are.
+#
+# Every pull request runs CI like any other, and nothing merges itself.
+version: 2
+updates:
+  # The pnpm workspace: Dependabot's npm ecosystem reads pnpm-lock.yaml and updates every
+  # package under apps/, packages/ and services/ from the root.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  # The Vision worker (services/vision-worker/pyproject.toml).
+  - package-ecosystem: pip
+    directory: /services/vision-worker
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  # The actions the workflows use (actions/checkout, docker/build-push-action, ...).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(ci)"

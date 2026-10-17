@@ -33,7 +33,7 @@ leads to commands that fail on the server. What runs:
 | `infra/ansible/roles/deploy/` | everything that matters: repo clone, env files, image pull, stack start, health checks |
 | `infra/docker-compose.staging.yml` | the live stack. Images come from ECR, tagged with the commit SHA |
 | `infra/api.Dockerfile`, `infra/web.Dockerfile` | what CI builds and pushes to ECR; also what `deploy.sh` (repo root) builds on the box for the manual path |
-| `infra/nginx.staging.conf` | baked into the web image; serves the React build and proxies `/api/` |
+| `infra/nginx.staging.conf` | baked into the web image; serves the React build, proxies `/api/`, sets the security headers |
 | `infra/docker-compose.yml` | Postgres on its own, for local development. `deploy.sh` also starts it, which the CD path does not |
 
 **There is one deployed stack, and this is it.** Those three roles are all the
@@ -433,6 +433,47 @@ empty until the secret holds it, so a deploy without them changes nothing.
    which is a volume on the box's disk since docs/vision/52 (it was a 2 GB tmpfs, which is
    RAM). The worker is held to 768 MB and one CPU. Check the disk has room for twice the
    file, and test with short clips first (docs/vision/46).
+
+## Security headers, cache invalidation and API limits
+
+### Security headers
+
+nginx adds these to every response (`infra/nginx.staging.conf`, which explains each CSP
+directive): `Content-Security-Policy`, `Strict-Transport-Security` (one year, this host
+only), `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` and
+`Referrer-Policy: strict-origin-when-cross-origin`. A feature that loads something from a
+new host (a new embed, a font, an analytics script) must add that host to the CSP, or the
+browser blocks it and logs a CSP violation in the console.
+
+CloudFront caches responses with their headers: a header change reaches visitors as the
+cache turns over, or at once after an invalidation.
+
+### Cache invalidation after a deploy
+
+After a deploy passes its health check, `cd.yml` invalidates `/index.html` and `/`, so
+visitors get the new build at once instead of within the hour. It needs:
+
+- the repository **variable** `CLOUDFRONT_DISTRIBUTION_ID` (Settings > Secrets and
+  variables > Actions > Variables; the ID is in the CloudFront console, or
+  `terraform output cloudfront_id`). Unset, the step says so and skips;
+- `cloudfront:CreateInvalidation` on the deploy user. Without it the step logs a warning
+  and the deploy still succeeds.
+
+Two paths per deploy, well inside the 1,000 free each month. Deep links such as
+`/scoreboard` are cached under their own paths and still refresh within the hour.
+
+### API settings with safe defaults
+
+Nothing to set for production; these exist to override.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CORS_ORIGINS` | `https://dtp.africa,https://www.dtp.africa` | Origins a browser may call the API from. Development adds Vite's localhost origins. |
+| `DATABASE_STATEMENT_TIMEOUT_MS` | `60000` | Postgres cancels any one API statement that runs longer. `0` turns it off. Migrations, scripts and gates are not affected. |
+| `VISION_PROVIDER_REQUEST_TIMEOUT_MS` | `30000` | How long a call to RunPod or Lambda may take before it is abandoned. |
+
+To change one on the box, add it to the `api` service's `environment` in
+`docker-compose.staging.yml` and to `staging.env.j2`.
 
 ## Day-2 Operations
 
