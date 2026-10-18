@@ -141,6 +141,26 @@ export class VisionAnnotationController {
     return jsonSafe(await this.annotation.enqueue(dto, auth));
   }
 
+  @Get("hard-frames")
+  @RequirePermissions("vision.read")
+  async hardFrameRuns() {
+    return jsonSafe(await this.annotation.hardFrameRuns());
+  }
+
+  /** Queue the frames a hard_frames job picked, with their pre-labels (docs/vision/99). */
+  @Post("queue/hard-frames/:jobId")
+  @RequirePermissions("vision.datasets.manage")
+  async queueHardFrames(@Param("jobId") jobId: string, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.annotation.queueHardFrames(jobId, auth));
+  }
+
+  /** The detector's boxes a task opens on, each marked as a model's. */
+  @Get("tasks/:id/prelabels")
+  @RequirePermissions("vision.read")
+  async preLabels(@Param("id") id: string) {
+    return jsonSafe(await this.annotation.preLabels(id));
+  }
+
   @Post("queue/:id/convert")
   @RequirePermissions("vision.datasets.manage")
   async convert(

@@ -28,6 +28,7 @@ import { RightsPolicyService } from "../rights/rights-policy.service";
 import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { notFound, refusal } from "../shared/refusals";
+import { readHardFrames } from "./hard-frames-artifact";
 
 /**
  * Annotation: the human work that produces DTP's only irreplaceable training data.
@@ -66,6 +67,8 @@ export type TaskInput = {
   endMs: number;
   assignedTo?: string;
   preLabelModelVersionId?: string;
+  /** The hard_frames job whose artifact holds the pre-labels, when the task came from one. */
+  preLabelJobId?: string;
 };
 
 /**
@@ -294,6 +297,7 @@ export class VisionAnnotationService {
         // that. An unmarked pre-label is an anchoring-bias machine.
         preLabelled: Boolean(dto.preLabelModelVersionId),
         preLabelModelVersionId: dto.preLabelModelVersionId ?? null,
+        preLabelJobId: dto.preLabelJobId ?? null,
       },
     });
 
@@ -767,6 +771,61 @@ export class VisionAnnotationService {
     });
   }
 
+  /**
+   * Queue the frames a hard_frames job picked, each as a one-frame window that remembers the
+   * job and the detector, so the task made from it opens with the detector's boxes. A
+   * deliberate step: picking is the machine's, putting frames in front of people is not.
+   * Queueing the same job twice adds nothing (docs/vision/99).
+   */
+  async queueHardFrames(jobId: string, actor?: AdminAuthContext) {
+    const { job, artifact, frames, frameDurationMs } = await readHardFrames(this.prisma, this.store, jobId);
+    const videoAssetId = job.videoAssetId!;
+    const decision = await this.rights.canAnalyze({ videoAssetId });
+    if (!decision.allowed) {
+      throw new ForbiddenException({ statusCode: 403, error: "RightsDenied", message: "This footage may not be analysed, so it may not be queued for a human.", reason: decision.reason, remediation: decision.remediation });
+    }
+    const asset = await this.prisma.visionVideoAsset.findUnique({ where: { id: videoAssetId }, select: { sbMatchId: true } });
+    const reserved = await this.prisma.visionEventGoldSet.findFirst({
+      where: { OR: [{ videoAssetId }, ...(asset?.sbMatchId ? [{ videoAsset: { sbMatchId: asset.sbMatchId } }] : [])] }, select: { label: true },
+    });
+    if (reserved) throw refusal(409, "FootageHeldOut", `This match is held out as the answer key "${reserved.label}", so its frames are not labelled for training.`, "Queue frames from training footage: another match.");
+    const already = await this.prisma.visionActiveLearningItem.count({ where: { sourceJobId: jobId } });
+    if (already) return { jobId, queued: 0, alreadyQueued: already };
+    await this.prisma.visionActiveLearningItem.createMany({
+      data: frames.map((f) => ({ videoAssetId, startMs: f.sourceTimeMs, endMs: f.sourceTimeMs + frameDurationMs, reason: f.reason, score: f.score,
+        state: "queued", sourceJobId: jobId, preLabelModelVersionId: artifact.detectorVersionId })),
+    });
+    await this.audit.record({ action: "annotation.queue.hard_frames", targetKind: "vision_job", targetId: jobId,
+      data: { videoAssetId, frames: frames.length, detectorVersionId: artifact.detectorVersionId } }, actor);
+    return { jobId, queued: frames.length, alreadyQueued: 0 };
+  }
+
+  /**
+   * A task's pre-labels: the detector's boxes on the frames inside its window, each marked
+   * with the model that drew it. None for a task that did not come from hard_frames.
+   */
+  async preLabels(taskId: string) {
+    const task = await this.prisma.visionAnnotationTask.findUnique({ where: { id: taskId }, select: { startMs: true, endMs: true, preLabelJobId: true, preLabelModelVersionId: true } });
+    if (!task) throw notFound("annotation task", taskId);
+    if (!task.preLabelJobId || !task.preLabelModelVersionId) return { taskId, boxes: [] };
+    const { frames } = await readHardFrames(this.prisma, this.store, task.preLabelJobId);
+    const boxes = frames.filter((f) => f.sourceTimeMs >= task.startMs && f.sourceTimeMs < task.endMs)
+      .flatMap((f) => f.boxes.map((b) => ({ sourceTimeMs: f.sourceTimeMs, class: b.class, x: b.x, y: b.y, width: b.width, height: b.height, fromModelVersionId: task.preLabelModelVersionId })));
+    return { taskId, boxes };
+  }
+
+  /** Succeeded hard_frames runs, newest first, with how many frames each has already queued. */
+  async hardFrameRuns(limit = 20) {
+    const jobs = await this.prisma.visionJob.findMany({ where: { type: "hard_frames", state: "succeeded" }, orderBy: { finishedAt: "desc" }, take: Math.min(Math.max(limit, 1), 100),
+      select: { id: true, videoAssetId: true, finishedAt: true, progress: true } });
+    const queued = await this.prisma.visionActiveLearningItem.groupBy({ by: ["sourceJobId"], where: { sourceJobId: { in: jobs.map((j) => j.id) } }, _count: { _all: true } });
+    const byJob = new Map(queued.map((q) => [q.sourceJobId, q._count._all]));
+    return { runs: jobs.map((j) => {
+      const s = ((j.progress as { summary?: Record<string, unknown> } | null)?.summary ?? {}) as Record<string, unknown>;
+      return { jobId: j.id, videoAssetId: j.videoAssetId, finishedAt: j.finishedAt, frames: typeof s.frames === "number" ? s.frames : null, causes: s.causes ?? null, queued: byJob.get(j.id) ?? 0 };
+    }) };
+  }
+
   /** Highest-scoring queued windows first. */
   async listQueue(limit = 50) {
     return {
@@ -805,6 +864,9 @@ export class VisionAnnotationService {
         startMs: item.startMs,
         endMs: item.endMs,
         assignedTo: dto.assignedTo,
+        // A window hard_frames picked carries the detector's boxes: the task opens on them,
+        // marked as a model's (docs/vision/99).
+        ...(item.sourceJobId && item.preLabelModelVersionId ? { preLabelJobId: item.sourceJobId, preLabelModelVersionId: item.preLabelModelVersionId } : {}),
       },
       actor
     );

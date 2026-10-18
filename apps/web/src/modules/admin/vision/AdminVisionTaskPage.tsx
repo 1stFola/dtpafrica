@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   fetchVisionAnnotationPayload,
   fetchVisionTask,
+  fetchVisionTaskPreLabels,
   reviewVisionAnnotation,
   submitVisionAnnotation,
   type RejectionReason,
@@ -133,6 +134,15 @@ export function AdminVisionTaskPage() {
         } catch {
           // The previous attempt's labels are missing or tampered with. The screen
           // still works; the export is what refuses such a version.
+          setBoxes([]);
+        }
+      } else if (result.task.preLabelled) {
+        /* The first attempt on a pre-labelled task starts from the detector's boxes, each
+           marked as a model's, so a person corrects rather than draws (docs/vision/99). */
+        try {
+          const pre = await fetchVisionTaskPreLabels(taskId);
+          setBoxes(parseStoredBoxes({ boxes: pre.boxes }));
+        } catch {
           setBoxes([]);
         }
       } else {

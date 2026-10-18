@@ -8,7 +8,15 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: the training plan** — the first scored run gave 0 of 43 events, and every part
+**Latest: pre-labels and hard-frame mining** — a CPU stage, `hard_frames`, picks the
+frames worth labelling. These are balls missed between sightings, weak balls and
+tile-only balls, plus a third of ordinary play, at least 1 s apart. Each comes with the
+detector's boxes as pre-labels, so people correct rather than draw. Queueing them for
+people is a deliberate, audited step, and held-out footage is refused. A dry run on the
+1XCup clip picked 105 frames (70 misses, 35 random) with 2,812 pre-label boxes
+([99](./99-PRE-LABELS-AND-HARD-FRAMES.md)).
+
+**The training plan** — the first scored run gave 0 of 43 events, and every part
 of the engine that sees is a general model. Plan: footage from 8–10 matches across
 competitions (the held-out match is barred automatically), pre-labelled tasks and hard-frame
 mining, about 3,000 ball frames labelled first, a `train` stage and trained weights in
