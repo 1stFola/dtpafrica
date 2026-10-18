@@ -1,6 +1,10 @@
 # Weekly dependency updates, grouped so a week's worth arrives as a few pull requests
-# rather than dozens. Minor and patch updates are grouped per ecosystem; a major version
-# gets its own pull request, because that is where the breaking changes are.
+# rather than dozens. Minor and patch updates are grouped per ecosystem.
+#
+# npm major versions are ignored. Dependabot raises one package per pull request, but a
+# framework major has to move as a set (react with react-dom, every @nestjs/* together,
+# vitest with vite and its plugins), so each of those pull requests failed CI on its own.
+# Majors are planned upgrades instead: docs/UPGRADE-PLAN-2026-Q4.md.
 #
 # Every pull request runs CI like any other, and nothing merges itself.
 version: 2
@@ -16,6 +20,9 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
 
