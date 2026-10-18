@@ -26,7 +26,7 @@
     "lint": "echo ok"
   },
   "devDependencies": {
-    "@types/node": "^22.10.1",
+    "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^5.0.4",
     "allure-js-commons": "^3.13.0",
     "allure-vitest": "^3.13.0",
