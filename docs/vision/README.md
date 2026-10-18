@@ -8,7 +8,14 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: bridging short ball gaps** — possession can hold a player through a ball lost
+**Latest: the training plan** — the first scored run gave 0 of 43 events, and every part
+of the engine that sees is a general model. Plan: footage from 8–10 matches across
+competitions (the held-out match is barred automatically), pre-labelled tasks and hard-frame
+mining, about 3,000 ball frames labelled first, a `train` stage and trained weights in
+detect, then a Faster R-CNN baseline before RF-DETR after licence review
+([98](./98-TRAINING-PLAN.md)).
+
+**Bridging short ball gaps** — possession can hold a player through a ball lost
 for up to 240 ms, and carry `event-carry/v2` stays open across it, without giving a lost
 frame a coordinate. On the 1XCup clip possession went from 13 to 87 frames and carry
 found its first event, a 3 s dribble. The ball detector, which finds the ball in 35% of
