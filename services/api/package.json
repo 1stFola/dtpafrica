@@ -81,7 +81,7 @@
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "^6.1.0",
     "bcrypt": "^5.1.1",
-    "body-parser": "1.20.4",
+    "body-parser": "2.3.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "openai": "^6.45.0",
