@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EventGoldLabels, GoldEvent } from "@dtp/vision-contracts";
-import { scoreEvents, type EventPrediction } from "./event-score";
+import { scoreEvents, widerTolerances, type EventPrediction } from "./event-score";
 const label = (id: string, startMs: number, actor: string | null = null): GoldEvent => ({ id, type: "shot", startMs, endMs: startMs, actorMatchSquadPlayerId: actor });
 const pred = (id: string, startMs: number, actor: string | null = null): EventPrediction => ({ ...label(id, startMs, actor), inPlay: true });
 const gold = (...events: GoldEvent[]): EventGoldLabels => ({ events, nonPlayWindows: [] });
@@ -64,5 +64,19 @@ describe("event scoring", () => {
       expect(actual.all.tp).toBe(bestCount);
       expect(actual.pairs.reduce((sum, pair) => sum + pair.startErrorMs + pair.endErrorMs, 0)).toBe(bestError);
     }
+  });
+  it("also scores at wider timing windows, for reading, without touching the official score (docs/vision/98)", () => {
+    // The 1XCup clip: the answer key's carry 79.1-83.0 s, the engine's 80.28-83.12 s.
+    const carry = (id: string, startMs: number, endMs: number): GoldEvent => ({ id, type: "carry", startMs, endMs, actorMatchSquadPlayerId: null });
+    const key = gold(carry("g", 79_100, 83_000), label("pass", 90_000));
+    const engine: EventPrediction[] = [{ ...carry("p", 80_280, 83_120), inPlay: true }];
+    expect(scoreEvents(key, engine, 500).all.tp).toBe(0);
+    const wider = widerTolerances(key, engine, 500);
+    expect(wider.map((w) => w.toleranceMs)).toEqual([1000, 2000]);
+    expect(wider[0]!.all.tp).toBe(0);
+    expect(wider[1]!.all).toMatchObject({ tp: 1, fp: 0, fn: 1, recall: 0.5 });
+    expect(wider[1]!.byType.find((row) => row.type === "carry")).toMatchObject({ tp: 1, reference: 1 });
+    // A reference already at 2 s or wider has nothing wider to show.
+    expect(widerTolerances(key, engine, 2000)).toEqual([]);
   });
 });

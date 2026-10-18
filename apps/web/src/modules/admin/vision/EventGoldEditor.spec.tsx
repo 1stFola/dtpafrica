@@ -33,5 +33,11 @@ describe("event gold reviewer UI", () => {
     expect(html).not.toContain("100.0%");
     expect(html).toContain("Actor recall");
     expect(html).toContain("before actor accuracy is measured");
+    expect(html).not.toContain("At wider timing windows");
+    const withWider = { ...report, widerTolerances: [{ toleranceMs: 2000, all: { reference: 8, predictions: 1, tp: 1, fp: 0, fn: 7, precision: 1, recall: 0.125, f1: 0.22 }, byType: [{ type: "carry", reference: 8, predictions: 1, tp: 1, fp: 0, fn: 7, precision: 1, recall: 0.125, f1: 0.22 }] }] } as unknown as VisionEventScore;
+    const wide = renderToStaticMarkup(<EventScoreReport report={withWider} />);
+    expect(wide).toContain("At wider timing windows");
+    expect(wide).toContain("the official score above stays at 500ms");
+    expect(wide).toContain("carry 1 of 8");
   });
 });

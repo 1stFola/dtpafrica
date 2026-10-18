@@ -14,6 +14,13 @@ export function EventScoreReport({ report }: { report: VisionEventScore }) {
     </tr></thead><tbody>{rows.map((row) => <tr key={row.type}><th scope="row">{row.type.replace(/_/g, " ")}</th>
       <td>{row.reference}</td><td>{row.predictions}</td><td>{row.tp}</td><td>{row.fp}</td><td>{row.fn}</td><td>{percent(row.precision)}</td><td>{percent(row.recall)}</td><td>{percent(row.f1)}</td><td>{percent(row.actorAccuracy)}</td><td>{percent(row.actorRecall)}</td>
     </tr>)}</tbody></table></div>
+    {report.widerTolerances && report.widerTolerances.length > 0 && <div className="vision-score-wider">
+      <h4>At wider timing windows</h4>
+      <p className="muted">For reading only: the official score above stays at {report.toleranceMs}ms. Where an event starts is a judgement call, so this shows how much of the gap is timing and how much is events not found.</p>
+      <div className="admin-sb-table-wrap"><table className="vision-table"><thead><tr><th>Both boundaries within</th><th>Matched</th><th>Extra</th><th>Missed</th><th>Precision</th><th>Recall</th><th>Matched by type</th></tr></thead>
+        <tbody>{report.widerTolerances.map((wider) => <tr key={wider.toleranceMs}><th scope="row">{wider.toleranceMs / 1000} s</th><td>{wider.all.tp}</td><td>{wider.all.fp}</td><td>{wider.all.fn}</td><td>{percent(wider.all.precision)}</td><td>{percent(wider.all.recall)}</td>
+          <td>{wider.byType.filter((row) => row.tp > 0).map((row) => `${row.type.replace(/_/g, " ")} ${row.tp} of ${row.reference}`).join(", ") || "none"}</td></tr>)}</tbody></table></div>
+    </div>}
     <p className="muted">Actor accuracy covers matched events with a known reference actor; actor recall also counts missed events. Unknown reference actors never count as correct guesses. Mean boundary errors: start {report.all.meanStartErrorMs?.toFixed(1) ?? "—"}ms, end {report.all.meanEndErrorMs?.toFixed(1) ?? "—"}ms.</p>
     <p>Extra duplicate candidates: {report.duplicatePredictionIds.length}. Suppressed non-play candidates: {report.suppressedPredictionIds.length}.</p>
     {report.nonPlayErrors.length > 0 && <ul>{report.nonPlayErrors.map((range, index) => <li key={index}>{range.kind}: {range.startMs / 1000}–{range.endMs / 1000}s — {range.predictionIds.length} unsuppressed candidate(s)</li>)}</ul>}

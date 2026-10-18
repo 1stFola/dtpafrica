@@ -9,7 +9,7 @@ import { RightsPolicyService } from "../rights/rights-policy.service";
 import { OBJECT_STORE, type ObjectStore } from "../storage/object-store";
 import { notFound, personFor, refusal } from "../shared/refusals";
 import { lockGoldReservations } from "./gold-lock";
-import { scoreEvents, type EventPrediction } from "./event-score";
+import { scoreEvents, widerTolerances, type EventPrediction } from "./event-score";
 import { EVENT_SCORE_MODEL_SELECT, readEventRunEvidence } from "./event-run-evidence";
 
 const person = personFor("EventGoldNeedsAPerson", "Independent reference labels must be attributable to a person.");
@@ -182,7 +182,7 @@ export class VisionEventGoldService {
       scope, model, inference: inference?.provenance ?? null, interpretation: inference ? "One completed event-run artifact against a frozen human reference. The worker reports complete source-window coverage; this does not establish representative accuracy or satisfy the production model gate."
         : model ? "Original proposals from one event model version, including corrected and rejected originals. Candidate evidence only: inference completeness and representative coverage are not established; this is not a production model gate."
         : "Candidate snapshot against a human reference; not a production model gate or accuracy claim for this match.",
-      methods: inference ? ["model"] : [...new Set(rows.map((row) => row.method))], modelVersionIds: inference ? [inference.model.id] : [...new Set(rows.flatMap((row) => row.modelVersionId ? [row.modelVersionId] : []))], ...scoreEvents(gold.labels, rows as EventPrediction[], set.toleranceMs) };
+      methods: inference ? ["model"] : [...new Set(rows.map((row) => row.method))], modelVersionIds: inference ? [inference.model.id] : [...new Set(rows.flatMap((row) => row.modelVersionId ? [row.modelVersionId] : []))], ...scoreEvents(gold.labels, rows as EventPrediction[], set.toleranceMs), widerTolerances: widerTolerances(gold.labels, rows as EventPrediction[], set.toleranceMs) };
     const runId = randomUUID();
     const snapshot = await this.write(id, `runs/${runId}/snapshot`, { ...this.context(set), requestedBy: me, scope, model, inference: inference?.provenance ?? null, rows });
     const scored = await this.write(id, `runs/${runId}/report`, { ...report, snapshotChecksum: snapshot.payloadChecksum });
