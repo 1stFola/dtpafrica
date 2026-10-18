@@ -70,8 +70,8 @@
     "db:report:player-stat-drift": "tsx scripts/report-player-stat-drift.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1140.0",
-    "@aws-sdk/s3-request-presigner": "^3.1140.0",
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@dtp/engines": "workspace:*",
     "@dtp/vision-contracts": "workspace:*",
     "@nestjs/common": "^10.4.15",
@@ -83,11 +83,11 @@
     "bcrypt": "^5.1.1",
     "body-parser": "1.20.4",
     "class-transformer": "^0.5.1",
-    "class-validator": "^0.14.1",
+    "class-validator": "^0.15.1",
     "openai": "^6.45.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "ws": "^8.21.3"
+    "ws": "^8.22.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -95,15 +95,15 @@
   "devDependencies": {
     "@nestjs/testing": "^10.4.22",
     "@swc-node/register": "^1.12.1",
-    "@swc/core": "^1.16.2",
+    "@swc/core": "^1.16.18",
     "@types/bcrypt": "^5.0.2",
     "@types/body-parser": "1.19.6",
     "@types/node": "^22.10.1",
     "@vitest/coverage-v8": "^2.1.0",
-    "allure-js-commons": "^3.10.2",
-    "allure-vitest": "^3.10.2",
+    "allure-js-commons": "^3.13.0",
+    "allure-vitest": "^3.13.0",
     "prisma": "^6.1.0",
-    "tsx": "^4.19.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.3",
     "vitest": "^2.1.0"
   }
