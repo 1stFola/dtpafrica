@@ -59,13 +59,13 @@ jobs:
 
   #   steps:
   #     - name: Checkout source code
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v7
   #       with:
   #         token: ${{ secrets.GITHUB_TOKEN }}
   #         fetch-depth: 0
 
   #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v4
+  #       uses: aws-actions/configure-aws-credentials@v6
   #       with:
   #         aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
   #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -251,14 +251,14 @@ jobs:
           echo "Deploying ${DEPLOY_SHA} from ${DEPLOY_REF}"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # The verified commit, not the branch tip. They differ whenever something merged
           # while CI was still running -- which is exactly when a deploy is riskiest.
           ref: ${{ env.DEPLOY_SHA }}
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -489,10 +489,10 @@ jobs:
       # fetches the repository again at the workflow's own ref: under workflow_run that is
       # main's tip, not the commit CI verified.
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and push the API image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/api.Dockerfile
@@ -502,7 +502,7 @@ jobs:
           cache-to: type=gha,scope=cd-dtp-api,mode=max
 
       - name: Build and push the web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/web.Dockerfile
@@ -515,7 +515,7 @@ jobs:
       # package, no CUDA. The same image a hosted CPU pod would run; on the box it
       # is started by the `vision` compose profile and provisions its own token.
       - name: Build and push the worker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: services/vision-worker
           tags: ${{ steps.images.outputs.registry }}/dtp-vision-worker:${{ steps.images.outputs.tag }}
