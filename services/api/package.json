@@ -99,7 +99,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/body-parser": "1.19.6",
     "@types/node": "^22.10.1",
-    "@vitest/coverage-v8": "^2.1.0",
+    "@vitest/coverage-v8": "^5.0.4",
     "allure-js-commons": "^3.13.0",
     "allure-vitest": "^3.13.0",
     "prisma": "^6.1.0",
