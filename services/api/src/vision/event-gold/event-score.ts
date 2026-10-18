@@ -73,3 +73,19 @@ export function scoreEvents(gold: EventGoldLabels, predictions: readonly EventPr
     missedReferenceIds: missed.map((row) => row.id), falsePositiveIds: falsePositives.map((row) => row.id), suppressedPredictionIds: predictions.filter((row) => !row.inPlay).map((row) => row.id),
     duplicatePredictionIds: falsePositives.filter((pred) => refs.some((ref) => eligible(ref, pred))).map((row) => row.id), nonPlayErrors };
 }
+
+/** The wider timing windows a benchmark report also shows, beside its official tolerance. */
+export const WIDER_TOLERANCES_MS = [1000, 2000] as const;
+
+/**
+ * The same predictions scored again at wider timing windows, for reading only: the official
+ * score stays the reference's own tolerance. Where an event starts is a judgement call (a
+ * carry's start most of all), and two reviewers timing to the second rarely agree within
+ * 500 ms; this shows how much of a score is timing and how much is missing (docs/vision/98).
+ */
+export function widerTolerances(gold: EventGoldLabels, predictions: readonly EventPrediction[], officialMs: number) {
+  return WIDER_TOLERANCES_MS.filter((ms) => ms > officialMs).map((toleranceMs) => {
+    const score = scoreEvents(gold, predictions, toleranceMs);
+    return { toleranceMs, all: score.all, byType: score.byType.map(({ type, reference, predictions: predicted, tp, fp, fn, precision, recall, f1 }) => ({ type, reference, predictions: predicted, tp, fp, fn, precision, recall, f1 })) };
+  });
+}
