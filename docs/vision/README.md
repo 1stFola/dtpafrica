@@ -15,7 +15,7 @@ mining, about 3,000 ball frames labelled first, a `train` stage and trained weig
 detect, then a Faster R-CNN baseline before RF-DETR after licence review
 ([98](./98-TRAINING-PLAN.md)).
 
-** bridging short ball gaps** — possession can hold a player through a ball lost
+**Bridging short ball gaps** — possession can hold a player through a ball lost
 for up to 240 ms, and carry `event-carry/v2` stays open across it, without giving a lost
 frame a coordinate. On the 1XCup clip possession went from 13 to 87 frames and carry
 found its first event, a 3 s dribble. The ball detector, which finds the ball in 35% of
