@@ -62,6 +62,7 @@ export const VISION_AUDIT_ACTIONS = [
   "annotation.submitted",
   "annotation.reviewed",
   "annotation.approved",
+  "annotation.queue.hard_frames",
   "dataset.version.created",
   "dataset.member.added",
   "dataset.split.generated",

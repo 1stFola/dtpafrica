@@ -2064,6 +2064,8 @@ model VisionAnnotationTask {
   /// see this — an unmarked pre-label is an anchoring-bias machine.
   preLabelled          Boolean @default(false) @map("pre_labelled")
   preLabelModelVersionId String? @map("pre_label_model_version_id")
+  /// The hard_frames job whose artifact holds this task's pre-labels, when it came from one.
+  preLabelJobId        String? @map("pre_label_job_id")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -2139,6 +2141,10 @@ model VisionActiveLearningItem {
   score        Float
   state        String   @default("queued")
   createdAt    DateTime @default(now()) @map("created_at")
+  /// The hard_frames job that queued this window, whose artifact holds its pre-labels (docs/vision/99).
+  sourceJobId  String?  @map("source_job_id")
+  /// The detector that drew those pre-labels.
+  preLabelModelVersionId String? @map("pre_label_model_version_id")
 
   videoAsset VisionVideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
 

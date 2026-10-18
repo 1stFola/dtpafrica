@@ -44,37 +44,44 @@ describe("which worker may serve which stage", () => {
   // Since 1.21.0 detect runs (and colour-checks) the config its version names, and ball
   // trajectory drops parked tiled balls along pinned camera motion.
   const configured = ["detect", "ball_trajectory"];
+  // Since 1.22.0 hard_frames picks frames for labelling, with the detector's boxes as pre-labels.
+  const mining = ["hard_frames"];
 
   it("keeps older workers on their existing stages and withholds the new ball stage", () => {
-    expect(workerCompatibility("1.12.0", "1.13.0")).toEqual(allBut("ball_trajectory", "camera_motion", "calibrate", ...perFrame, ...configured));
+    expect(workerCompatibility("1.12.0", "1.13.0")).toEqual(allBut("ball_trajectory", "camera_motion", "calibrate", ...perFrame, ...configured, ...mining));
   });
   it("withholds possession from a worker that only knows ball trajectories", () => {
-    expect(workerCompatibility("1.13.0", "1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
+    expect(workerCompatibility("1.13.0", "1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured, ...mining));
   });
   it("withholds changed possession inputs from a 1.14 worker, while other stages remain available", () => {
-    expect(workerCompatibility("1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
+    expect(workerCompatibility("1.14.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured, ...mining));
   });
   it("withholds carry inputs from a 1.15 worker while keeping its other stages", () => {
-    expect(workerCompatibility("1.15.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
+    expect(workerCompatibility("1.15.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured, ...mining));
   });
   it("withholds camera motion from a 1.16 worker, which has no OpenCV and no such stage", () => {
-    expect(workerCompatibility("1.16.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured));
+    expect(workerCompatibility("1.16.0")).toEqual(allBut("camera_motion", "calibrate", ...perFrame, ...configured, ...mining));
     expect(workerCompatibility("1.17.0").stages).toContain("camera_motion");
   });
   it("withholds keyframe propagation from a 1.17 worker, whose calibrate was a GPU stage it never had", () => {
-    expect(workerCompatibility("1.17.0")).toEqual(allBut("calibrate", ...perFrame, ...configured));
+    expect(workerCompatibility("1.17.0")).toEqual(allBut("calibrate", ...perFrame, ...configured, ...mining));
     expect(workerCompatibility("1.18.0").stages).toContain("calibrate");
   });
   it("withholds the stages that read carried calibrations from a 1.18 worker, which would read a carried segment as uncalibrated", () => {
-    expect(workerCompatibility("1.18.0")).toEqual(allBut(...perFrame, ...configured));
+    expect(workerCompatibility("1.18.0")).toEqual(allBut(...perFrame, ...configured, ...mining));
     for (const stage of perFrame) expect(workerCompatibility("1.19.0").stages).toContain(stage);
   });
   it("withholds detect from a 1.19 worker, which would run the plain detector under a ball-tiles version's name", () => {
-    expect(workerCompatibility("1.19.0")).toEqual(allBut(...configured));
+    expect(workerCompatibility("1.19.0")).toEqual(allBut(...configured, ...mining));
   });
   it("withholds detect and ball trajectory from a 1.20 worker, which knows neither the colour check nor the parked ball", () => {
-    expect(workerCompatibility("1.20.0")).toEqual(allBut(...configured));
+    expect(workerCompatibility("1.20.0")).toEqual(allBut(...configured, ...mining));
     for (const stage of configured) expect(workerCompatibility("1.21.0").stages).toContain(stage);
+  });
+
+  it("withholds hard_frames from a 1.21 worker, which has no such stage", () => {
+    expect(workerCompatibility("1.21.0")).toEqual(allBut(...mining));
+    expect(workerCompatibility("1.22.0").stages).toContain("hard_frames");
   });
 
   it("serves an older worker only the stages that have not changed since it was built", () => {

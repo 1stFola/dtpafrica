@@ -114,8 +114,14 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  * trajectory, given such detections, is pinned to the current camera motion
  * (`cameraMotion`) and drops a tiled ball that stays on one spot of the ground for
  * 2.4 s: a ball not in play. Both stages need 1.21 (docs/vision/95).
+ *
+ * 1.22.0 -- `hard_frames`: a CPU stage over a pinned detect run and its ball
+ * trajectory that picks the frames worth labelling (the ball missed between two
+ * sightings, a low-confidence ball, a ball only the tiled pass found, and a share of
+ * ordinary play) and writes the detector's boxes for each as pre-labels. No model
+ * runs (docs/vision/99).
  */
-export const VISION_CONTRACT_VERSION = "1.21.0";
+export const VISION_CONTRACT_VERSION = "1.22.0";
 
 /**
  * The detectors a worker can run, named by the model version's config key. The
@@ -162,6 +168,7 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   calibrate: "1.18.0",
   gamestate: "1.19.0",
   ball_trajectory: "1.21.0",
+  hard_frames: "1.22.0",
   possession: "1.19.0",
   events: "1.19.0",
   clip: "1.12.0",
@@ -222,6 +229,7 @@ export const VISION_JOB_TYPES = [
   "calibrate",
   "gamestate",
   "ball_trajectory",
+  "hard_frames",
   "possession",
   "events",
   "clip",
@@ -264,6 +272,8 @@ export const DEFAULT_RESOURCE_CLASS: Record<VisionJobType, VisionResourceClass> 
   calibrate: "cpu_small",
   gamestate: "cpu_small",
   ball_trajectory: "cpu_small",
+  // Picking frames from stored detections and ball rows: arithmetic, no model, no video.
+  hard_frames: "cpu_small",
   possession: "cpu_small",
   events: "cpu_small",
   vlm: "cpu_small",
@@ -312,6 +322,7 @@ export const JOB_TYPE_PREREQUISITES: Record<VisionJobType, readonly VisionJobTyp
   calibrate: ["camera_motion"],
   gamestate: ["track"],
   ball_trajectory: ["detect"],
+  hard_frames: ["ball_trajectory"],
   possession: ["ball_trajectory", "track"],
   events: ["possession", "track"],
   clip: ["transcode"],
@@ -516,6 +527,7 @@ export const OUTPUT_BUCKET_BY_JOB_TYPE: Record<VisionJobType, "derived" | "model
   calibrate: "derived",
   gamestate: "derived",
   ball_trajectory: "derived",
+  hard_frames: "derived",
   possession: "derived",
   events: "derived",
   vlm: "derived",

@@ -396,6 +396,17 @@ export function claimVisionTask(samplingStrategy?: SamplingStrategy) {
   );
 }
 
+export type VisionHardFrameRun = { jobId: string; videoAssetId: string; finishedAt: string | null; frames: number | null; causes: Record<string, number> | null; queued: number };
+export function fetchVisionHardFrameRuns() {
+  return adminFetch<{ runs: VisionHardFrameRun[] }>("/vision/annotation/hard-frames");
+}
+export function queueVisionHardFrames(jobId: string) {
+  return adminFetch<{ jobId: string; queued: number; alreadyQueued: number }>(`/vision/annotation/queue/hard-frames/${encodeURIComponent(jobId)}`, { method: "POST" });
+}
+/** The detector's boxes a pre-labelled task opens on (docs/vision/99). */
+export function fetchVisionTaskPreLabels(taskId: string) {
+  return adminFetch<{ taskId: string; boxes: unknown[] }>(`/vision/annotation/tasks/${encodeURIComponent(taskId)}/prelabels`);
+}
 export function fetchVisionTask(id: string) {
   return adminFetch<{ task: VisionAnnotationTask; media: VisionTaskMedia }>(
     `/vision/annotation/tasks/${id}`

@@ -27,6 +27,8 @@ import {
   BALL_TRAJECTORY_CHUNK_ROLE,
   BALL_TRAJECTORY_VERSION,
   type PossessionJobParams,
+  type HardFramesJobParams,
+  MAX_HARD_FRAMES,
   type GameStateJobParams,
   type IdentifyJobParams,
   type TrackJobParams,
@@ -130,6 +132,7 @@ export class VisionJobsService {
     const gamestate = params.type === "gamestate" ? await this.gamestateInputs(asset.id, params.params) : null;
     const ball = params.type === "ball_trajectory" ? await this.ballInputs(asset, params.params) : null;
     const possession = params.type === "possession" ? await this.possessionInputs(asset, params.params) : null;
+    const hardFrames = params.type === "hard_frames" ? await this.hardFramesInputs(asset, params.params) : null;
     const motion = params.type === "camera_motion" ? await this.cameraMotionInputs(asset, params.params) : null;
     const carried = params.type === "calibrate" ? await this.calibrateInputs(asset, params.params) : null;
     const events = params.type === "events" && model && this.store ? await eventCarryInputs(this.prisma, this.store, asset, model.id, params.params) : null;
@@ -138,11 +141,12 @@ export class VisionJobsService {
     const resourceClass = params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type];
     if (params.type === "ball_trajectory" && resourceClass !== "cpu_small") throw refusal(400, "BallTrajectoryCpuOnly", "Ball trajectory is a CPU transformation of stored detections.", "Use the default cpu_small resource class.");
     if (params.type === "possession" && resourceClass !== "cpu_small") throw refusal(400, "PossessionCpuOnly", "Possession candidates transform stored observations on CPU.", "Use cpu_small.");
+    if (params.type === "hard_frames" && resourceClass !== "cpu_small") throw refusal(400, "HardFramesCpuOnly", "Picking frames from stored detections is arithmetic on CPU.", "Use cpu_small.");
     if (params.type === "camera_motion" && resourceClass !== "cpu_small") throw refusal(400, "CameraMotionCpuOnly", "Camera motion is corner tracking over the proxy on CPU; a GPU adds cost, not speed.", "Use cpu_small.");
     if (params.type === "calibrate" && resourceClass !== "cpu_small") throw refusal(400, "CalibrateCpuOnly", "Carrying calibrations along camera motion is matrix arithmetic on CPU.", "Use cpu_small.");
     if (params.type === "events" && resourceClass !== "cpu_small") throw refusal(400, "EventsCpuOnly", "Carry proposals transform original observations on CPU.", "Use cpu_small.");
 
-    return { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, detector, resourceClass };
+    return { asset, model, proxy, track, identify, gamestate, ball, possession, hardFrames, motion, carried, events, detector, resourceClass };
   }
 
   /**
@@ -189,7 +193,7 @@ export class VisionJobsService {
   }
 
   async enqueueForAsset(params: AssetJobRequest, actor?: AdminAuthContext): Promise<{ id: string }> {
-    const { asset, model, proxy, track, identify, gamestate, ball, possession, motion, carried, events, detector, resourceClass } = await this.prepareForAsset(params);
+    const { asset, model, proxy, track, identify, gamestate, ball, possession, hardFrames, motion, carried, events, detector, resourceClass } = await this.prepareForAsset(params);
     // The id is generated here so the output prefix can be derived from it in the
     // same insert: an artifact key then names the job that produced it, with no
     // second write to correct.
@@ -215,6 +219,7 @@ export class VisionJobsService {
         ...(gamestate ?? {}),
         ...(ball ?? {}),
         ...(possession ?? {}),
+        ...(hardFrames ?? {}),
         ...(motion ?? {}),
         ...(carried ?? {}),
         ...(events ?? {}),
@@ -297,6 +302,50 @@ export class VisionJobsService {
       detections: { jobId: job.id, key: artifact.key, modelVersionId: job.modelVersionId, sampleFps },
       ...(cuts.length ? { cuts } : {}),
       readKeys: [{ bucket: "derived", key: artifact.key }],
+    };
+  }
+
+  /**
+   * What a hard_frames job reads: the latest (or named) succeeded ball trajectory, the detect
+   * run under it, both pinned to their bytes. Refused on footage held out as an answer key:
+   * labels there could never be trained on, so a person's time would be spent for nothing
+   * (docs/vision/99).
+   */
+  private async hardFramesInputs(asset: { id: string; sbMatchId: string | null; checksumSha256: string }, requested?: Record<string, unknown>): Promise<HardFramesJobParams> {
+    const fail = () => refusal(409, "HardFramesEvidenceMissing", "Hard frames need a succeeded ball trajectory over a pinned detect run on this footage.", "Run detect and ball_trajectory for this asset first.");
+    const hash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/i.test(v);
+    const whole = (v: unknown, lo: number, hi: number) => typeof v === "number" && Number.isSafeInteger(v) && v >= lo && v <= hi;
+    const reserved = await this.prisma.visionEventGoldSet.findFirst({
+      where: { OR: [{ videoAssetId: asset.id }, ...(asset.sbMatchId ? [{ videoAsset: { sbMatchId: asset.sbMatchId } }] : [])] }, select: { id: true, label: true },
+    });
+    if (reserved) throw refusal(409, "FootageHeldOut", `This match is held out as the answer key "${reserved.label}", so it can never be trained on.`, "Pick frames from training footage: another match.");
+    if (requested?.maxFrames !== undefined && !whole(requested.maxFrames, 1, MAX_HARD_FRAMES)) throw refusal(400, "InvalidHardFramesConfig", `maxFrames must be a whole number from 1 to ${MAX_HARD_FRAMES}.`, "Leave it out for 200.");
+    if (requested?.minGapMs !== undefined && !whole(requested.minGapMs, 0, 60_000)) throw refusal(400, "InvalidHardFramesConfig", "minGapMs must be a whole number from 0 to 60000.", "Leave it out for one second.");
+    if (requested?.randomShare !== undefined && !(typeof requested.randomShare === "number" && requested.randomShare >= 0 && requested.randomShare <= 1)) throw refusal(400, "InvalidHardFramesConfig", "randomShare must be from 0 to 1.", "Leave it out for a third.");
+    const ball = await this.prisma.visionJob.findFirst({ where: { videoAssetId: asset.id, type: "ball_trajectory", state: "succeeded", ...(typeof requested?.ballJobId === "string" ? { id: requested.ballJobId } : {}) }, orderBy: { finishedAt: "desc" } });
+    const bp = ball?.progress as { summary?: Record<string, unknown>; artifacts?: { key: string; bucket: string; role: string }[] } | null;
+    const b = bp?.summary, input = ball?.inputSpec as Record<string, unknown> | null;
+    const detector = input?.detections as Record<string, unknown> | undefined;
+    const artifacts = (role: string) => Array.isArray(bp?.artifacts) ? bp!.artifacts!.filter((a) => a && a.role === role && a.bucket === "derived") : [];
+    const indices = artifacts(BALL_TRAJECTORY_INDEX_ROLE), chunks = artifacts(BALL_TRAJECTORY_CHUNK_ROLE);
+    if (!ball || !b || !input || !detector || indices.length !== 1 || !chunks.length || chunks.length !== b.chunks || b.calculationVersion !== BALL_TRAJECTORY_VERSION
+      || !hash(b.indexChecksum) || !hash(b.detectionsChecksum) || b.sourceChecksum !== asset.checksumSha256 || input.sourceChecksum !== asset.checksumSha256
+      || typeof detector.jobId !== "string" || typeof detector.key !== "string" || typeof detector.modelVersionId !== "string"
+      || !whole(input.imageWidth, 1, 100_000) || !whole(input.imageHeight, 1, 100_000) || [...indices, ...chunks].some((a) => !a.key.startsWith(visionKeys.inferencePrefix(ball.id, ball.attemptNumber))))
+      throw fail();
+    const proxy = input.proxy as { fps?: unknown; sourceOffsetMs?: unknown } | undefined;
+    if (!proxy || typeof proxy.fps !== "number" || typeof proxy.sourceOffsetMs !== "number") throw fail();
+    return {
+      detections: { jobId: detector.jobId, key: detector.key, checksum: String(b.detectionsChecksum).toLowerCase(), modelVersionId: detector.modelVersionId },
+      ball: { jobId: ball.id, key: indices[0]!.key, indexChecksum: String(b.indexChecksum).toLowerCase(), chunkKeys: chunks.map((c) => c.key) },
+      proxy: { fps: proxy.fps, sourceOffsetMs: proxy.sourceOffsetMs },
+      imageWidth: input.imageWidth as number,
+      imageHeight: input.imageHeight as number,
+      sourceChecksum: asset.checksumSha256,
+      ...(requested?.maxFrames !== undefined ? { maxFrames: requested.maxFrames as number } : {}),
+      ...(requested?.randomShare !== undefined ? { randomShare: requested.randomShare as number } : {}),
+      ...(requested?.minGapMs !== undefined ? { minGapMs: requested.minGapMs as number } : {}),
+      readKeys: [{ bucket: "derived", key: detector.key }, { bucket: "derived", key: indices[0]!.key }, ...chunks.map((c) => ({ bucket: "derived" as const, key: c.key }))],
     };
   }
 

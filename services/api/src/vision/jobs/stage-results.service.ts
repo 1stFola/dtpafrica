@@ -5,6 +5,7 @@ import { BALL_TRAJECTORY_CHUNK_ROLE, BALL_TRAJECTORY_INDEX_ROLE, BALL_TRAJECTORY
 import { CALIBRATED_POSSESSION_VERSION, POSSESSION_CALIBRATED_REASONS, POSSESSION_CHUNK_ROLE, POSSESSION_INDEX_ROLE, POSSESSION_VERSION, POSSESSION_UNKNOWN_REASONS } from "@dtp/vision-contracts";
 import { sameEvidence } from "../possession/possession-evidence";
 import { EVENT_CARRY_VERSION, EVENT_CARRY_MANIFEST_CHECKSUM, EVENT_INFERENCE_ARTIFACT_ROLE, MAX_EVENT_INFERENCE_BYTES, validCarryProducer } from "@dtp/vision-contracts";
+import { HARD_FRAMES_ARTIFACT_ROLE, HARD_FRAMES_VERSION, MAX_HARD_FRAMES, MAX_HARD_FRAMES_BYTES } from "@dtp/vision-contracts";
 import { VisionBenchmarksService } from "../models/benchmarks.service";
 
 /**
@@ -51,7 +52,7 @@ export type ApplyContext = {
 };
 
 /** Stages whose findings land on a video asset. The rest belong to a dataset or a model. */
-const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "camera_motion", "calibrate", "detect", "track", "identify", "gamestate", "ball_trajectory", "possession", "events"];
+const ASSET_STAGES: readonly VisionJobType[] = ["probe", "fingerprint", "transcode", "cuts", "camera_motion", "calibrate", "detect", "track", "identify", "gamestate", "ball_trajectory", "hard_frames", "possession", "events"];
 
 @Injectable()
 export class VisionStageResultsService {
@@ -99,6 +100,8 @@ export class VisionStageResultsService {
           return this.applyBallTrajectory(completion, context);
         case "possession":
           return this.applyPossession(completion, context);
+        case "hard_frames":
+          return this.applyHardFrames(completion, context);
         case "events":
           return this.applyEvents(completion, context);
         default:
@@ -117,6 +120,23 @@ export class VisionStageResultsService {
         .catch(() => undefined);
       return { applied: false, detail: message };
     }
+  }
+
+  /**
+   * hard_frames -> nothing in Postgres. The picked frames stay in the artifact until a person
+   * queues them (POST /vision/annotation/queue/hard-frames/:jobId); the completion must name
+   * the detections and ball run it was queued with (docs/vision/99).
+   */
+  private applyHardFrames(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const s = completion.summary, input = context.inputSpec ?? {}, det = obj(input.detections) ?? {}, ball = obj(input.ball) ?? {};
+    const refs = completion.artifacts.filter((a) => a.role === HARD_FRAMES_ARTIFACT_ROLE && a.bucket === "derived");
+    const jobPrefix = context.jobId ? visionKeys.inferencePrefix(context.jobId, 1).replace(/1\/$/, "") : null;
+    if (refs.length !== 1 || completion.artifacts.length !== 1 || s.calculationVersion !== HARD_FRAMES_VERSION || (jobPrefix !== null && !refs[0]!.key.startsWith(jobPrefix))
+      || refs[0]!.contentType !== "application/json" || !Number.isSafeInteger(refs[0]!.bytes) || Number(refs[0]!.bytes) < 1 || Number(refs[0]!.bytes) > MAX_HARD_FRAMES_BYTES
+      || s.detectJobId !== det.jobId || s.detectorVersionId !== det.modelVersionId || s.ballJobId !== ball.jobId || s.sourceChecksum !== input.sourceChecksum
+      || !Number.isSafeInteger(s.frames) || Number(s.frames) < 0 || Number(s.frames) > MAX_HARD_FRAMES || typeof s.artifactChecksum !== "string" || !/^[a-f0-9]{64}$/.test(s.artifactChecksum))
+      return { applied: false, detail: "hard_frames artifact, version or inputs differ from the queued job; nothing queued" };
+    return { applied: true, detail: `${s.frames} frame(s) picked with pre-labels; queue them for labelling to put them in front of people` };
   }
 
   /** A completion declares an immutable artifact; it never imports event rows. */

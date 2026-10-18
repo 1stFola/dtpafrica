@@ -10,5 +10,6 @@ export * from "./event-gold";
 export * from "./event-inference";
 export * from "./event-carry";
 export * from "./ball-trajectory";
+export * from "./hard-frames";
 export * from "./possession";
 export * from "./clock";

@@ -6,7 +6,10 @@ import {
   fetchVisionAnnotationQueue,
   fetchVisionLabelSchemas,
   fetchVisionMixReport,
+  fetchVisionHardFrameRuns,
+  queueVisionHardFrames,
   type SamplingStrategy,
+  type VisionHardFrameRun,
   type VisionActiveLearningItem,
   type VisionLabelSchema,
   type VisionMixReport,
@@ -56,20 +59,25 @@ export function AdminVisionAnnotationPage() {
 
   const [mix, setMix] = useState<VisionMixReport | null>(null);
   const [queue, setQueue] = useState<VisionActiveLearningItem[]>([]);
+  const [runs, setRuns] = useState<VisionHardFrameRun[]>([]);
   const [schemas, setSchemas] = useState<VisionLabelSchema[]>([]);
   const [strategy, setStrategy] = useState<SamplingStrategy | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /* Shown inside the picked-frames panel, beside the button, not at the top of the page. */
+  const [runMessage, setRunMessage] = useState<{ error: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [mixReport, queueResult, schemaResult] = await Promise.all([
+      const [mixReport, queueResult, schemaResult, runResult] = await Promise.all([
         fetchVisionMixReport(),
         fetchVisionAnnotationQueue(50),
         fetchVisionLabelSchemas(),
+        fetchVisionHardFrameRuns(),
       ]);
+      setRuns(runResult.runs);
       setMix(mixReport);
       setQueue(queueResult.items);
       setSchemas(schemaResult.schemas);
@@ -220,6 +228,45 @@ export function AdminVisionAnnotationPage() {
           Claiming is atomic, so two people opening this at the same moment are given
           different windows.
         </p>
+      </section>
+
+      <section className="vision-panel">
+        <h2 className="vision-panel__title">Frames picked for labelling</h2>
+        <p className="vision-footnote">
+          Each hard_frames run picked the frames where the detector most likely failed, plus a
+          share of ordinary play, with the detector's boxes as a starting point. Queueing a run
+          puts its frames below; a task made from one opens with those boxes, marked as a model's.
+        </p>
+        {runs.length === 0 ? (
+          <p className="vision-footnote">No hard_frames run yet. Queue one from the pipeline after detect and ball trajectory.</p>
+        ) : (
+          <table className="vision-table">
+            <thead><tr><th scope="col">Run</th><th scope="col">Asset</th><th scope="col">Frames</th><th scope="col">Why picked</th><th scope="col"></th></tr></thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.jobId}>
+                  <td className="vision-mono">{run.jobId.slice(0, 8)}</td>
+                  <td className="vision-mono">{run.videoAssetId.slice(0, 8)}</td>
+                  <td>{run.frames ?? "—"}</td>
+                  <td>{run.causes ? Object.entries(run.causes).map(([cause, n]) => `${cause.replace(/_/g, " ")} ${n}`).join(", ") : "—"}</td>
+                  <td>
+                    {run.queued > 0 ? <span className="vision-footnote">{run.queued} queued</span> : (
+                      <button type="button" disabled={busy} onClick={async () => {
+                        setBusy(true); setRunMessage(null);
+                        try { const r = await queueVisionHardFrames(run.jobId); setRunMessage({ error: false, text: `${r.queued} frame(s) queued for labelling.` }); await load(); }
+                        catch (cause) { setRunMessage({ error: true, text: cause instanceof Error ? cause.message : String(cause) }); }
+                        finally { setBusy(false); }
+                      }}>Queue {run.frames ?? ""} frames</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {runMessage && (
+          <p className={runMessage.error ? "vision-panel vision-panel--error" : "vision-footnote"} role={runMessage.error ? "alert" : "status"}>{runMessage.text}</p>
+        )}
       </section>
 
       <section className="vision-panel">
