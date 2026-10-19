@@ -32,6 +32,9 @@
       "@dtp/engines/placeholder-names": [
         "../../packages/engines/src/scoreboard/placeholder-names.ts"
       ],
+      "@dtp/engines/squad-number-lookup": [
+        "../../packages/engines/src/scoreboard/squad-number-lookup.ts"
+      ],
       "@dtp/vision-contracts": ["../../packages/vision-contracts/src/index.ts"]
     }
   },

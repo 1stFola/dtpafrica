@@ -36,6 +36,12 @@ export type NumberedEvent = {
 export type DanglingNumber = {
   side: "home" | "away";
   number: number;
+  /**
+   * Who holds the number when more than one player does, which is why it names nobody;
+   * empty when nobody in the squad wears it. The fix differs: a missing player is added,
+   * a shared number is taken off all but one.
+   */
+  sharedBy: string[];
   /** Where it was first used, so the console can point at it. */
   eventType: string;
   minute: number;
@@ -45,12 +51,18 @@ export type DanglingNumber = {
  * Every shirt number the events use that resolves to no named player, once per side
  * and number.
  *
- * `find` is the publish lookup. Zero and negative numbers are not shirt numbers (the
- * lookup ignores them too), so they cannot dangle.
+ * `resolve` is the publish lookup's `resolve`. Zero and negative numbers are not shirt
+ * numbers (the lookup ignores them too), so they cannot dangle.
  */
 export function danglingNumbers(
   events: NumberedEvent[],
-  find: (side: "home" | "away", number: number) => { playerName: string } | undefined
+  resolve: (
+    side: "home" | "away",
+    number: number
+  ) =>
+    | { kind: "named"; player: { playerName: string } }
+    | { kind: "shared"; names: string[] }
+    | { kind: "unknown" }
 ): DanglingNumber[] {
   const seen = new Set<string>();
   const out: DanglingNumber[] = [];
@@ -60,8 +72,15 @@ export function danglingNumbers(
       const key = `${event.side}:${number}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      if (find(event.side, number)?.playerName.trim()) continue;
-      out.push({ side: event.side, number, eventType: event.type, minute: event.minute });
+      const found = resolve(event.side, number);
+      if (found.kind === "named" && found.player.playerName.trim()) continue;
+      out.push({
+        side: event.side,
+        number,
+        sharedBy: found.kind === "shared" ? found.names : [],
+        eventType: event.type,
+        minute: event.minute,
+      });
     }
   }
   return out;

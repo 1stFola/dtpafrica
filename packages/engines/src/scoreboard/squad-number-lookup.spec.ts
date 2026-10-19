@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNumberLookup, squadNumberLabel, type SquadRow } from "./squad-number-lookup";
+import { buildNumberLookup, samePersonKey, squadNumberLabel, type SquadRow } from "./squad-number-lookup";
 
 /**
  * Resolving a shirt number to a person.
@@ -294,5 +294,75 @@ describe("one person in two spellings, one linked and one not", () => {
       matchSquad: [],
     });
     expect(lookup.ambiguous).toEqual([]);
+  });
+});
+
+describe("samePersonKey", () => {
+  it("ignores word order and case", () => {
+    expect(samePersonKey("YUSUF OLASUNKANMI")).toBe(samePersonKey("Olasunkanmi Yusuf"));
+    expect(samePersonKey("Okwara Godwin")).toBe(samePersonKey("Godwin Okwara"));
+  });
+
+  it("does not forgive spelling", () => {
+    expect(samePersonKey("Sulainon Taiye")).not.toBe(samePersonKey("Taiye Sulaimon"));
+  });
+
+  it("keeps different people apart", () => {
+    expect(samePersonKey("Oghidi Kelvin")).not.toBe(samePersonKey("OLANIYI BOLAJI"));
+  });
+});
+
+describe("a number held under one name typed in two orders", () => {
+  /* HIGHKLASS SA's 7 on live, 19 Oct 2026. */
+  const lookup = buildNumberLookup({
+    teamSquad: [
+      { teamId: "hk", number: 7, playerName: "YUSUF OLASUNKANMI", playerId: null },
+      { teamId: "hk", number: 7, playerName: "Olasunkanmi Yusuf", playerId: "p7" },
+    ],
+    matchSquad: [],
+  });
+
+  it("is one player, the linked row", () => {
+    expect(lookup.find("hk", 7)).toMatchObject({ playerName: "Olasunkanmi Yusuf", playerId: "p7" });
+    expect(lookup.ambiguous).toEqual([]);
+  });
+});
+
+describe("resolve", () => {
+  const lookup = buildNumberLookup({
+    teamSquad: [
+      { teamId: "t", number: 9, playerName: "OLANIYI BOLAJI", playerId: null },
+      { teamId: "t", number: 9, playerName: "Oghidi Kelvin", playerId: "p9" },
+      { teamId: "t", number: 4, playerName: "Ade Bola", playerId: null },
+      { teamId: "t", number: 6, playerName: "Two A", playerId: null },
+      { teamId: "t", number: 6, playerName: "Two B", playerId: null },
+    ],
+    matchSquad: [
+      { teamId: "t", number: 6, playerName: "Matchday Six", playerId: null },
+      { teamId: "t", number: 8, playerName: "Eight A", playerId: null },
+      { teamId: "t", number: 8, playerName: "Eight B", playerId: null },
+    ],
+  });
+
+  it("names a number one player wears", () => {
+    expect(lookup.resolve("t", 4)).toMatchObject({ kind: "named", player: { playerName: "Ade Bola" } });
+  });
+
+  it("says who shares a number, one spelling each", () => {
+    expect(lookup.resolve("t", 9)).toEqual({ kind: "shared", names: ["OLANIYI BOLAJI", "Oghidi Kelvin"] });
+  });
+
+  it("names a number the matchday squad settles when the team squad cannot", () => {
+    expect(lookup.resolve("t", 6)).toMatchObject({ kind: "named", player: { playerName: "Matchday Six" } });
+  });
+
+  it("reports a number shared only in the matchday squad", () => {
+    expect(lookup.resolve("t", 8)).toEqual({ kind: "shared", names: ["Eight A", "Eight B"] });
+  });
+
+  it("reports a number nobody wears, and no number at all", () => {
+    expect(lookup.resolve("t", 23)).toEqual({ kind: "unknown" });
+    expect(lookup.resolve("t", null)).toEqual({ kind: "unknown" });
+    expect(lookup.resolve("t", 0)).toEqual({ kind: "unknown" });
   });
 });

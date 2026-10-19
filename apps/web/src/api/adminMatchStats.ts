@@ -70,8 +70,17 @@ export type AutoApproveBlock =
 export type AutoApproval = {
   dueAt: string | null;
   blocks: AutoApproveBlock[];
-  /** Shirt numbers on the sheet that name nobody in either squad. */
-  dangling: Array<{ side: "home" | "away"; number: number; eventType: string; minute: number }>;
+  /**
+   * Shirt numbers on the sheet that name nobody: either no squad row wears it
+   * (`sharedBy` empty) or several players do (`sharedBy` names them).
+   */
+  dangling: Array<{
+    side: "home" | "away";
+    number: number;
+    sharedBy: string[];
+    eventType: string;
+    minute: number;
+  }>;
 };
 export type Half = "1st" | "2nd";
 export type Side = "home" | "away";
