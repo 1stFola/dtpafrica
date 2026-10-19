@@ -396,7 +396,9 @@ export function claimVisionTask(samplingStrategy?: SamplingStrategy) {
   );
 }
 
-export type VisionHardFrameRun = { jobId: string; videoAssetId: string; finishedAt: string | null; frames: number | null; causes: Record<string, number> | null; queued: number };
+export type VisionHardFrameRun = { jobId: string; videoAssetId: string; finishedAt: string | null; frames: number | null; causes: Record<string, number> | null; queued: number;
+  /** Another run over the same footage and detect run whose frames are already queued: this run picked the same frames. */
+  alreadyQueuedAs: string | null };
 export function fetchVisionHardFrameRuns() {
   return adminFetch<{ runs: VisionHardFrameRun[] }>("/vision/annotation/hard-frames");
 }
