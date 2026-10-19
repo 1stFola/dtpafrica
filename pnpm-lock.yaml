@@ -63,8 +63,8 @@ importers:
         specifier: ^22.20.5
         version: 22.20.5
       '@vitest/coverage-v8':
-        specifier: ^5.0.4
-        version: 5.0.4(vitest@2.1.9(@types/node@22.20.5))
+        specifier: ^5.0.5
+        version: 5.0.5(vitest@2.1.9(@types/node@22.20.5))
       allure-js-commons:
         specifier: ^3.13.0
         version: 3.13.0
@@ -185,8 +185,8 @@ importers:
         specifier: ^22.20.5
         version: 22.20.5
       '@vitest/coverage-v8':
-        specifier: ^5.0.4
-        version: 5.0.4(vitest@2.1.9(@types/node@22.20.5))
+        specifier: ^5.0.5
+        version: 5.0.5(vitest@2.1.9(@types/node@22.20.5))
       allure-js-commons:
         specifier: ^3.13.0
         version: 3.13.0
@@ -1327,11 +1327,11 @@ packages:
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
 
-  '@vitest/coverage-v8@5.0.4':
-    resolution: {integrity: sha512-P5YcQY8Y6RmoE9xRXI38rT8pssbcubEzqtYTM2XQoxOXMDn04nRaTI1SM8qCl9/NfW3ag9GlzdSXu7IwO5Ft8A==}
+  '@vitest/coverage-v8@5.0.5':
+    resolution: {integrity: sha512-4KpkGdIrSqBihx/JyP/e+S+IKB98etg1XDQiLAxksLfcShnwi1VReGeOT9NI43hLHbknosKp/1CCLn9Zgcs8mg==}
     peerDependencies:
-      '@vitest/browser': 5.0.4
-      vitest: 5.0.4
+      '@vitest/browser': 5.0.5
+      vitest: 5.0.5
     peerDependenciesMeta:
       '@vitest/browser':
         optional: true
@@ -3588,7 +3588,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@5.0.4(vitest@2.1.9(@types/node@22.20.5))':
+  '@vitest/coverage-v8@5.0.5(vitest@2.1.9(@types/node@22.20.5))':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
       '@vitest/istanbul-lib-coverage': 1.0.2
