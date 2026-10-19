@@ -1,6 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  buildNumberLookup,
+  type NumberResolution,
+} from "@dtp/engines/squad-number-lookup";
+import {
   matchStatsApi,
   type ClockState,
   type Half,
@@ -205,33 +209,36 @@ function teamRef(team: MatchStatsSheet["match"]["homeTeam"]): SbTeamRef {
   };
 }
 
-function playerLookupKey(teamId: string, jerseyNumber: number | null): string | null {
-  return jerseyNumber ? `${teamId}:${jerseyNumber}` : null;
+/**
+ * Shirt number -> player, through the API's own lookup (`buildNumberLookup` in
+ * `@dtp/engines`), so the recorder sees exactly the name that will be published.
+ *
+ * The console used to keep its own copy that let the last row win. When two players in a
+ * squad shared a number it showed one of them, while the API -- refusing to guess --
+ * published a bare `No. 9` and held the sheet back from auto-approval for a missing name
+ * nobody could see was missing. A shared number now says so.
+ */
+function matchNumberLookup(match: MatchStatsSheet["match"]) {
+  const rows = (source: MatchStatsSheet["match"]["squadPlayers"]) =>
+    (source ?? []).map((p) => ({
+      teamId: p.teamId,
+      number: p.jerseyNumber,
+      playerName: p.playerName,
+      playerId: p.playerId,
+    }));
+  return buildNumberLookup({
+    teamSquad: rows(match.teamSquad),
+    matchSquad: rows(match.squadPlayers),
+  });
 }
 
-/**
- * Shirt number -> player, team squad first and matchday squad second.
- *
- * The same precedence the server applies in `squad-number-lookup.ts`, so the
- * recorder sees while typing exactly the name that will be written on publish.
- * This read `squadPlayers` alone -- the matchday squad -- and most fixtures have
- * none, so every number showed as `No. 7`.
- *
- * The matchday entries are laid down first and the team squad written over them,
- * which is what gives the team squad precedence in one pass.
- */
-function matchSquadLookup(match: MatchStatsSheet["match"]) {
-  const byNumber = new Map<
-    string,
-    { teamId: string; playerId: string | null; playerName: string; jerseyNumber: number | null }
-  >();
-  for (const source of [match.squadPlayers ?? [], match.teamSquad ?? []]) {
-    for (const player of source) {
-      if (player.jerseyNumber == null) continue;
-      byNumber.set(`${player.teamId}:${player.jerseyNumber}`, player);
-    }
+/** The label a number reads as, naming who shares it when nobody can be chosen. */
+function numberLabel(resolution: NumberResolution, jerseyNumber: number): string {
+  if (resolution.kind === "named") return `No. ${jerseyNumber} ${resolution.player.playerName}`;
+  if (resolution.kind === "shared") {
+    return `No. ${jerseyNumber} (shared by ${resolution.names.join(" and ")}, so no name is published)`;
   }
-  return byNumber;
+  return `No. ${jerseyNumber}`;
 }
 
 function playerLabelForNumber(
@@ -239,11 +246,8 @@ function playerLabelForNumber(
   teamId: string,
   jerseyNumber: number | null
 ): string | null {
-  const key = playerLookupKey(teamId, jerseyNumber);
-  const player = key ? matchSquadLookup(match).get(key) : undefined;
-  if (player?.playerName && jerseyNumber) return `No. ${jerseyNumber} ${player.playerName}`;
-  if (player?.playerName) return player.playerName;
-  return jerseyNumber ? `No. ${jerseyNumber}` : null;
+  if (!jerseyNumber) return null;
+  return numberLabel(matchNumberLookup(match).resolve(teamId, jerseyNumber), jerseyNumber);
 }
 
 function formatEventMinute(minute: number, addedMinute: number | null): string {
@@ -868,29 +872,56 @@ function AutoApprovalNote({
   const reasons = autoApproval.blocks
     .filter((b): b is keyof typeof AUTO_APPROVE_BLOCK_TEXT => b in AUTO_APPROVE_BLOCK_TEXT)
     .map((b) => AUTO_APPROVE_BLOCK_TEXT[b]);
-  const dangling = autoApproval.dangling;
+  /* Two different fixes, so two lists: a number nobody wears needs the player added to
+     the squad; a number two players wear needs it taken off all but one of them. */
+  const teamName = (side: "home" | "away") => (side === "home" ? homeName : awayName);
+  const where = (d: AutoApproval["dangling"][number]) =>
+    `${d.eventType.replace(/_/g, " ")}, ${d.minute}′`;
+  const missing = autoApproval.dangling.filter((d) => !d.sharedBy?.length);
+  const shared = autoApproval.dangling.filter((d) => d.sharedBy?.length);
   return (
     <div className="mcx-submitted__note">
       <p className="mcx-submitted__note">
         Will not approve itself
         {reasons.length ? `: ${reasons.join("; ")}.` : "."} It needs an approver.
       </p>
-      {dangling.length > 0 && (
+      {missing.length > 0 && (
         <>
           <p className="mcx-submitted__note">
-            {dangling.length === 1 ? "This shirt number names" : "These shirt numbers name"} no
-            player in the squad. Add {dangling.length === 1 ? "it" : "them"} to the squad and the
-            sheet approves itself at the next check after {due}:
+            No player in the squad wears {missing.length === 1 ? "this number" : "these numbers"}.
+            Add {missing.length === 1 ? "the player" : "the players"} to the squad:
           </p>
           <ul className="mcx-submitted__note">
-            {dangling.map((d) => (
+            {missing.map((d) => (
               <li key={`${d.side}:${d.number}`}>
-                {d.side === "home" ? homeName : awayName} No. {d.number} (
-                {d.eventType.replace(/_/g, " ")}, {d.minute}&prime;)
+                {teamName(d.side)} No. {d.number} ({where(d)})
               </li>
             ))}
           </ul>
         </>
+      )}
+      {shared.length > 0 && (
+        <>
+          <p className="mcx-submitted__note">
+            More than one player in the squad wears{" "}
+            {shared.length === 1 ? "this number" : "each of these numbers"}, so no name can be
+            published for it. Keep the number on the player who wore it and change or remove it
+            for the others:
+          </p>
+          <ul className="mcx-submitted__note">
+            {shared.map((d) => (
+              <li key={`${d.side}:${d.number}`}>
+                {teamName(d.side)} No. {d.number}: {d.sharedBy.join(", ")} ({where(d)})
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {autoApproval.dangling.length > 0 && (
+        <p className="mcx-submitted__note">
+          Once every number names one player, the sheet approves itself at the next check
+          after {due}.
+        </p>
       )}
     </div>
   );
@@ -1415,12 +1446,16 @@ export function AdminMatchStatsConsolePage() {
     if (!sheet) return new Map<string, string>();
     /* Built from the same lookup as everything else, so this list and the event
        rows can never disagree about who wears a number. */
-    return new Map(
-      [...matchSquadLookup(sheet.match)].map(([key, player]) => [
-        key,
-        `No. ${player.jerseyNumber} ${player.playerName}`,
-      ])
-    );
+    const lookup = matchNumberLookup(sheet.match);
+    const labels = new Map<string, string>();
+    for (const p of [...(sheet.match.squadPlayers ?? []), ...(sheet.match.teamSquad ?? [])]) {
+      if (p.jerseyNumber == null || p.jerseyNumber <= 0) continue;
+      const key = `${p.teamId}:${p.jerseyNumber}`;
+      if (!labels.has(key)) {
+        labels.set(key, numberLabel(lookup.resolve(p.teamId, p.jerseyNumber), p.jerseyNumber));
+      }
+    }
+    return labels;
   }, [sheet]);
 
   const totals = useMemo(() => {

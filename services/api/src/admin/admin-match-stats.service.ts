@@ -1363,7 +1363,7 @@ export class AdminMatchStatsService {
   ) {
     const lookup = this.numberLookupFor(match);
     const dangling = danglingNumbers(readEvents(sheet?.events), (side, number) =>
-      lookup.find(side === "home" ? match.homeTeamId : match.awayTeamId, number)
+      lookup.resolve(side === "home" ? match.homeTeamId : match.awayTeamId, number)
     );
     const verdict = assessAutoApprove(
       {

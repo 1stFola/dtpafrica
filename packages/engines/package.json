@@ -11,6 +11,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./squad-number-lookup": {
+      "types": "./dist/scoreboard/squad-number-lookup.d.ts",
+      "import": "./dist/scoreboard/squad-number-lookup.js",
+      "default": "./dist/scoreboard/squad-number-lookup.js"
+    },
     "./placeholder-names": {
       "types": "./dist/scoreboard/placeholder-names.d.ts",
       "import": "./dist/scoreboard/placeholder-names.js",

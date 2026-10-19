@@ -8,6 +8,7 @@ import {
   type NumberedEvent,
 } from "./sheet-auto-approve";
 import { SheetAutoApproveService } from "./sheet-auto-approve.service";
+import { buildNumberLookup, type SquadRow } from "../scoreboard/squad-number-lookup";
 
 /**
  * When a submitted sheet publishes itself.
@@ -112,7 +113,7 @@ describe("assessAutoApprove: condition 2, submitted by the recorder", () => {
 describe("assessAutoApprove: condition 1, every number named", () => {
   it("holds a sheet with a dangling shirt number", () => {
     const dangling = sheet({
-      dangling: [{ side: "home", number: 7, eventType: "goal", minute: 23 }],
+      dangling: [{ side: "home", number: 7, sharedBy: [], eventType: "goal", minute: 23 }],
     });
     expect(assessAutoApprove(dangling, after(60)).blocks).toEqual(["dangling_numbers"]);
   });
@@ -135,7 +136,7 @@ describe("assessAutoApprove: other holds", () => {
     const everything = sheet({
       autoSubmittedAt: SUBMITTED,
       idleLockedAt: after(-40),
-      dangling: [{ side: "away", number: 4, eventType: "foul", minute: 50 }],
+      dangling: [{ side: "away", number: 4, sharedBy: [], eventType: "foul", minute: 50 }],
     });
     expect(assessAutoApprove(everything, after(60)).blocks).toEqual([
       "submitted_by_clock",
@@ -147,9 +148,11 @@ describe("assessAutoApprove: other holds", () => {
 
 describe("danglingNumbers", () => {
   const squad: Record<string, string> = { "home:9": "Ade Bola", "away:11": "Musa Ibe" };
-  const find = (side: "home" | "away", number: number) => {
+  const resolve = (side: "home" | "away", number: number) => {
     const playerName = squad[`${side}:${number}`];
-    return playerName === undefined ? undefined : { playerName };
+    return playerName === undefined
+      ? ({ kind: "unknown" } as const)
+      : ({ kind: "named", player: { playerName } } as const);
   };
   const event = (over: Partial<NumberedEvent>): NumberedEvent => ({
     type: "goal",
@@ -161,26 +164,26 @@ describe("danglingNumbers", () => {
   });
 
   it("is empty when every number names somebody", () => {
-    expect(danglingNumbers([event({}), event({ side: "away", playerNumber: 11 })], find)).toEqual(
-      []
-    );
+    expect(
+      danglingNumbers([event({}), event({ side: "away", playerNumber: 11 })], resolve)
+    ).toEqual([]);
   });
 
   it("reports a number nobody in that side's squad wears", () => {
-    expect(danglingNumbers([event({ playerNumber: 7, minute: 23 })], find)).toEqual([
-      { side: "home", number: 7, eventType: "goal", minute: 23 },
+    expect(danglingNumbers([event({ playerNumber: 7, minute: 23 })], resolve)).toEqual([
+      { side: "home", number: 7, sharedBy: [], eventType: "goal", minute: 23 },
     ]);
   });
 
   it("checks the assist and the incoming substitute too", () => {
-    expect(danglingNumbers([event({ secondaryPlayerNumber: 14 })], find)).toEqual([
-      { side: "home", number: 14, eventType: "goal", minute: 10 },
+    expect(danglingNumbers([event({ secondaryPlayerNumber: 14 })], resolve)).toEqual([
+      { side: "home", number: 14, sharedBy: [], eventType: "goal", minute: 10 },
     ]);
   });
 
   it("reads the number against the event's own side", () => {
     /* Home 11 is not away 11. */
-    expect(danglingNumbers([event({ playerNumber: 11 })], find)).toHaveLength(1);
+    expect(danglingNumbers([event({ playerNumber: 11 })], resolve)).toHaveLength(1);
   });
 
   it("reports each number once, where it was first used", () => {
@@ -188,20 +191,96 @@ describe("danglingNumbers", () => {
       event({ playerNumber: 7, minute: 5, type: "shot" }),
       event({ playerNumber: 7, minute: 40 }),
     ];
-    expect(danglingNumbers(events, find)).toEqual([
-      { side: "home", number: 7, eventType: "shot", minute: 5 },
+    expect(danglingNumbers(events, resolve)).toEqual([
+      { side: "home", number: 7, sharedBy: [], eventType: "shot", minute: 5 },
     ]);
   });
 
   it("treats a squad row with a blank name as no name", () => {
-    const blank = () => ({ playerName: "  " });
+    const blank = () => ({ kind: "named", player: { playerName: "  " } }) as const;
     expect(danglingNumbers([event({})], blank)).toHaveLength(1);
   });
 
   it("ignores events with no number, and zero", () => {
-    expect(danglingNumbers([event({ playerNumber: null }), event({ playerNumber: 0 })], find)).toEqual(
-      []
-    );
+    expect(
+      danglingNumbers([event({ playerNumber: null }), event({ playerNumber: 0 })], resolve)
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The fixture that exposed it: HIGHKLASS SA v ROYAL FC, submitted on live on 19 Oct 2026
+ * and held for five "unnamed" numbers the console showed names for. These are the live
+ * team-squad rows for those numbers, read from the public team endpoint, so the test
+ * is the case and not a guess at it.
+ */
+describe("danglingNumbers with the live HIGHKLASS SA v ROYAL FC squads", () => {
+  const HOME = "highklass";
+  const AWAY = "royal";
+  const row = (teamId: string, number: number, playerName: string, playerId: string | null = null): SquadRow => ({
+    teamId,
+    number,
+    playerName,
+    playerId,
+  });
+  const lookup = buildNumberLookup({
+    teamSquad: [
+      row(HOME, 1, "EKANEM DANIEL"),
+      row(HOME, 1, "Ekanem Daniel", "p-ekanem"),
+      row(HOME, 7, "Olasunkanmi Yusuf", "p-olasunkanmi"),
+      row(HOME, 7, "YUSUF OLASUNKANMI"),
+      row(HOME, 9, "OLANIYI BOLAJI"),
+      row(HOME, 9, "Oghidi Kelvin", "p-oghidi"),
+      row(HOME, 11, "SAMUEL OSBERT"),
+      row(HOME, 11, "Samuel Osbert", "p-osbert"),
+      row(HOME, 19, "ABRAHAM CHUKWUDI", "p-abraham"),
+      row(HOME, 19, "ADEWALE ENIOLA"),
+      row(AWAY, 5, "Ebuka Godwin"),
+      row(AWAY, 10, "Alexander Nwachukwu"),
+      row(AWAY, 10, "Emeka Kingsley"),
+      row(AWAY, 11, "Sulainon Taiye"),
+      row(AWAY, 11, "Taiye Sulaimon", "p-taiye"),
+      row(AWAY, 13, "Olajide Abiola"),
+      row(AWAY, 13, "Olajide Abiola", "p-olajide"),
+    ],
+    matchSquad: [],
+  });
+  const resolve = (side: "home" | "away", number: number) =>
+    lookup.resolve(side === "home" ? HOME : AWAY, number);
+  const ev = (side: "home" | "away", playerNumber: number, minute: number): NumberedEvent => ({
+    type: "goal",
+    minute,
+    side,
+    playerNumber,
+    secondaryPlayerNumber: null,
+  });
+
+  it("names a player whose name was typed in the other order", () => {
+    /* HIGHKLASS 7: one boy, two spellings. Resolves to the linked row. */
+    expect(lookup.find(HOME, 7)?.playerName).toBe("Olasunkanmi Yusuf");
+    expect(danglingNumbers([ev("home", 7, 6)], resolve)).toEqual([]);
+  });
+
+  it("still names numbers held twice by one person in two cases", () => {
+    expect(danglingNumbers([ev("home", 1, 3), ev("home", 11, 13), ev("away", 13, 15)], resolve)).toEqual([]);
+  });
+
+  it("holds numbers two different players wear, and says who", () => {
+    expect(
+      danglingNumbers([ev("home", 9, 32), ev("home", 19, 8), ev("away", 10, 29)], resolve)
+    ).toEqual([
+      { side: "home", number: 9, sharedBy: ["OLANIYI BOLAJI", "Oghidi Kelvin"], eventType: "goal", minute: 32 },
+      { side: "home", number: 19, sharedBy: ["ABRAHAM CHUKWUDI", "ADEWALE ENIOLA"], eventType: "goal", minute: 8 },
+      { side: "away", number: 10, sharedBy: ["Alexander Nwachukwu", "Emeka Kingsley"], eventType: "goal", minute: 29 },
+    ]);
+  });
+
+  it("does not forgive a spelling difference", () => {
+    /* ROYAL 11: Sulainon / Sulaimon. Probably one person, but a guess is how a goal is
+       given to the wrong player; the squad is fixed instead. */
+    expect(danglingNumbers([ev("away", 11, 22)], resolve)).toEqual([
+      { side: "away", number: 11, sharedBy: ["Sulainon Taiye", "Taiye Sulaimon"], eventType: "goal", minute: 22 },
+    ]);
   });
 });
 

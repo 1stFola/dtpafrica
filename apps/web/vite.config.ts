@@ -19,6 +19,12 @@ export default defineConfig({
         __dirname,
         "../../packages/engines/src/scoreboard/placeholder-names.ts"
       ),
+      /* Shirt number -> player, the function the API publishes with, so the recorder
+         console shows the name that will be published (see squad-number-lookup.ts). */
+      "@dtp/engines/squad-number-lookup": path.resolve(
+        __dirname,
+        "../../packages/engines/src/scoreboard/squad-number-lookup.ts"
+      ),
       "@dtp/engines": path.resolve(__dirname, "../../packages/engines/src/media-url.ts"),
       /* The Vision contracts, from source: constants and types with no imports of their own,
          so the browser takes them as they are and nothing has to be built first. The screens
