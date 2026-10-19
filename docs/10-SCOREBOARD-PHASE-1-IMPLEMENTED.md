@@ -36,7 +36,7 @@ Seed player can appear on a team squad (links DTP `players.id`).
 
 - **Overview** — live match cards + competitions
 - **Live ribbon** — scrolling public scoreboard ribbon across ScoreBoard pages
-- **Live** — admin-published YouTube broadcasts (embedded, muted autoplay) above the auto-refresh live list. A stream is its own record, not a match field, because a match only reads as live once a recorder kicks off or the roster guard is satisfied; the admin publishes a stream when the broadcast is up and unpublishes it after (`/admin/scoreboard/live-streams`).
+- **Live** — admin-published YouTube broadcasts (embedded, muted autoplay) above the auto-refresh live list. A stream is its own record, not a match field, because a match only reads as live once a recorder kicks off or the roster guard is satisfied; a stream linked to a fixture publishes itself 10 minutes before kickoff and unpublishes 10 minutes after full time (`LiveStreamScheduleService`, a 30-second sweep), and the admin publishes any other stream by hand (`/admin/scoreboard/live-streams`). A manual unpublish during the game, or a republish after it, is left alone.
 - **Browse** — unified search over competitions, teams, matches, and linked players
 - **Jagaban Cup** — standings / teams / matchdays tabs
 - **Team profile** — `/scoreboard/team/:id` roster, form, recent matches

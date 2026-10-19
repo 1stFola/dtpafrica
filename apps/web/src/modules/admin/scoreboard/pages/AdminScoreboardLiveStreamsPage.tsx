@@ -17,7 +17,9 @@ import { isYoutubeUrl } from "../../../../utils/media-url";
  * Live streams are managed the way Latest videos are, not as a field on the match: a
  * match only reads as live once its recorder kicks off or an admin passes the roster
  * guard, and a stream link that waited on either would never show. Here the admin pastes
- * the YouTube link, publishes it when the broadcast is up, and unpublishes it after.
+ * the YouTube link. A stream linked to a fixture with a kickoff publishes itself ten
+ * minutes before kickoff and unpublishes ten minutes after full time (the API's
+ * `live-stream-schedule.ts`); any other stream the admin publishes and unpublishes.
  */
 
 type FormState = {
@@ -43,6 +45,28 @@ function matchOptionLabel(match: SbMatchListItem) {
     .join(" - ");
 }
 
+function shortTime(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+/** What the schedule will do with this stream next, for the Auto column. */
+function scheduleLabel(row: AdminLiveStreamRow, now: number): { main: string; note?: string } {
+  const schedule = row.schedule;
+  if (!schedule) return { main: "Manual", note: "Link a fixture with a kickoff" };
+  const opens = new Date(schedule.opensAt).getTime();
+  const closes = new Date(schedule.closesAt).getTime();
+  const down =
+    schedule.closesBy === "full_time"
+      ? `Unpublishes ${shortTime(schedule.closesAt)}`
+      : `Unpublishes 10 min after full time (by ${shortTime(schedule.closesAt)})`;
+  if (now >= closes) return { main: "Ended", note: `Unpublished ${shortTime(schedule.closesAt)}` };
+  if (now >= opens) return { main: "In window", note: down };
+  return { main: `Publishes ${shortTime(schedule.opensAt)}`, note: down };
+}
+
 /** What the public card will say the stream is about. */
 function linkedToLabel(row: AdminLiveStreamRow) {
   if (row.match) return `${row.match.homeTeam.name} vs ${row.match.awayTeam.name}`;
@@ -63,6 +87,7 @@ export function AdminScoreboardLiveStreamsPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editId, setEditId] = useState<string | null>(null);
   const [matchSearch, setMatchSearch] = useState("");
+  const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,6 +98,7 @@ export function AdminScoreboardLiveStreamsPage() {
         adminScoreboardApi.matches(),
       ]);
       setRows(streams);
+      setNow(Date.now());
       setCompetitions(picker);
       setMatches(matchRows);
     } catch (e) {
@@ -86,6 +112,23 @@ export function AdminScoreboardLiveStreamsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* The API flips scheduled streams on its own, so the table re-reads the streams every
+     thirty seconds while it is open. Quietly: a failed refresh leaves the last rows. */
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      /* The clock moves with the rows, so the Auto column never says "Ended" beside a
+         Status the next sweep has not caught up with yet. */
+      adminScoreboardApi
+        .listLiveStreams()
+        .then((next) => {
+          setRows(next);
+          setNow(Date.now());
+        })
+        .catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   /* The fixture list follows the chosen competition, and the search narrows it further.
      Scheduled and live fixtures come first: those are the ones a broadcast is about. */
@@ -145,8 +188,14 @@ export function AdminScoreboardLiveStreamsPage() {
         await adminScoreboardApi.updateLiveStream(editId, body);
         toast.success("Live stream updated");
       } else {
-        await adminScoreboardApi.createLiveStream(body);
-        toast.success("Live stream created (hidden until you publish it)");
+        const created = await adminScoreboardApi.createLiveStream(body);
+        toast.success(
+          created.isPublished
+            ? "Live stream created and published: kickoff is less than 10 minutes away"
+            : created.schedule
+              ? `Live stream created. It publishes itself at ${shortTime(created.schedule.opensAt)}`
+              : "Live stream created (hidden until you publish it)"
+        );
       }
       resetForm();
       await load();
@@ -183,7 +232,7 @@ export function AdminScoreboardLiveStreamsPage() {
     <section className="admin-sb-section">
       <AdminSbPageHeader
         title="Live streams"
-        description="YouTube broadcasts that play on the public Live Games page. Publish when the stream is up and unpublish when it ends."
+        description="YouTube broadcasts that play on the public Live Games page. A stream linked to a fixture publishes itself 10 minutes before kickoff and unpublishes 10 minutes after full time; publish and unpublish any other stream yourself."
         crumbs={[{ label: "Live streams" }]}
         actions={
           <a href="/scoreboard/live" target="_blank" rel="noreferrer" className="text-link">
@@ -265,7 +314,9 @@ export function AdminScoreboardLiveStreamsPage() {
             ))}
           </select>
           <span className="muted admin-sb-field-hint">
-            Linking a fixture puts its teams and a Match Centre link on the card.
+            Linking a fixture puts its teams and a Match Centre link on the card, and publishes the
+            stream 10 minutes before kickoff and unpublishes it 10 minutes after full time. You
+            can still publish or unpublish it by hand.
           </span>
         </label>
         <label className="admin-sb-field">
@@ -313,8 +364,8 @@ export function AdminScoreboardLiveStreamsPage() {
             loading={loading}
             empty={!loading && rows.length === 0}
             emptyTitle="No live streams yet"
-            emptyHint="Add a stream above — it stays hidden until you publish it."
-            columns={6}
+            emptyHint="Add a stream above — it stays hidden until kickoff is 10 minutes away, or until you publish it."
+            columns={7}
           >
             <table className="admin-table admin-sb-table">
               <thead>
@@ -323,6 +374,7 @@ export function AdminScoreboardLiveStreamsPage() {
                   <th>Linked to</th>
                   <th>Order</th>
                   <th>Status</th>
+                  <th>Auto</th>
                   <th>Published</th>
                   <th>Actions</th>
                 </tr>
@@ -351,6 +403,22 @@ export function AdminScoreboardLiveStreamsPage() {
                     </td>
                     <td>
                       <StatusBadge status={row.isPublished ? "ongoing" : "draft"} />
+                    </td>
+                    <td>
+                      {(() => {
+                        const label = scheduleLabel(row, now);
+                        return (
+                          <>
+                            {label.main}
+                            {label.note && (
+                              <>
+                                <br />
+                                <span className="muted">{label.note}</span>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="muted">
                       {row.publishedAt ? new Date(row.publishedAt).toLocaleString() : "—"}
