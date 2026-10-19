@@ -236,6 +236,8 @@ export function AdminVisionAnnotationPage() {
           Each hard_frames run picked the frames where the detector most likely failed, plus a
           share of ordinary play, with the detector's boxes as a starting point. Queueing a run
           puts its frames below; a task made from one opens with those boxes, marked as a model's.
+          A second run over the same footage and detect run picks the same frames, so once one is
+          queued the others are not.
         </p>
         {runs.length === 0 ? (
           <p className="vision-footnote">No hard_frames run yet. Queue one from the pipeline after detect and ball trajectory.</p>
@@ -250,7 +252,8 @@ export function AdminVisionAnnotationPage() {
                   <td>{run.frames ?? "—"}</td>
                   <td>{run.causes ? Object.entries(run.causes).map(([cause, n]) => `${cause.replace(/_/g, " ")} ${n}`).join(", ") : "—"}</td>
                   <td>
-                    {run.queued > 0 ? <span className="vision-footnote">{run.queued} queued</span> : (
+                    {run.queued > 0 ? <span className="vision-footnote">{run.queued} queued</span>
+                      : run.alreadyQueuedAs ? <span className="vision-footnote" title={`Run ${run.alreadyQueuedAs} picked these frames from the same footage and detect run, and its frames are queued.`}>already queued as <span className="vision-mono">{run.alreadyQueuedAs.slice(0, 8)}</span></span> : (
                       <button type="button" disabled={busy} onClick={async () => {
                         setBusy(true); setRunMessage(null);
                         try { const r = await queueVisionHardFrames(run.jobId); setRunMessage({ error: false, text: `${r.queued} frame(s) queued for labelling.` }); await load(); }

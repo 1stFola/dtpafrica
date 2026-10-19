@@ -20,10 +20,10 @@ const artifact = (over: Record<string, unknown> = {}) => ({
 });
 
 const prisma = {
-  visionJob: { findUnique: vi.fn() },
+  visionJob: { findUnique: vi.fn(), findMany: vi.fn() },
   visionVideoAsset: { findUnique: vi.fn() },
   visionEventGoldSet: { findFirst: vi.fn() },
-  visionActiveLearningItem: { count: vi.fn(), createMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+  visionActiveLearningItem: { count: vi.fn(), createMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), groupBy: vi.fn() },
   visionAnnotationTask: { findUnique: vi.fn(), create: vi.fn() },
   visionLabelSchemaVersion: { findUnique: vi.fn() },
 };
@@ -47,6 +47,8 @@ beforeEach(async () => {
   prisma.visionVideoAsset.findUnique.mockResolvedValue({ id: ASSET, sbMatchId: "match-1", durationMs: 2_700_000, variants: [{ id: "v" }] });
   prisma.visionEventGoldSet.findFirst.mockResolvedValue(null);
   prisma.visionActiveLearningItem.count.mockResolvedValue(0);
+  prisma.visionActiveLearningItem.groupBy.mockResolvedValue([]);
+  prisma.visionJob.findMany.mockResolvedValue([]);
   await publish(artifact());
 });
 
@@ -66,6 +68,21 @@ describe("queueing picked frames", () => {
     expect(prisma.visionActiveLearningItem.createMany).not.toHaveBeenCalled();
   });
 
+  it("refuses a second run over the same footage and detect run once the first is queued, naming it", async () => {
+    prisma.visionActiveLearningItem.groupBy.mockResolvedValue([{ sourceJobId: "hf-earlier", _count: { _all: 143 } }]);
+    prisma.visionJob.findMany.mockResolvedValue([{ id: "hf-earlier", videoAssetId: ASSET, progress: { summary: { detectJobId: "det" } } }]);
+    await expect(service.queueHardFrames(JOB)).rejects.toMatchObject({ response: { statusCode: 409, error: "HardFramesAlreadyQueued", queuedJobId: "hf-earlier", message: expect.stringContaining("hf-earli") } });
+    expect(prisma.visionActiveLearningItem.groupBy).toHaveBeenCalledWith(expect.objectContaining({ where: { videoAssetId: { in: [ASSET] }, sourceJobId: { not: null } } }));
+    expect(prisma.visionActiveLearningItem.createMany).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it("queues a run over the same footage when the queued one came from another detect run", async () => {
+    prisma.visionActiveLearningItem.groupBy.mockResolvedValue([{ sourceJobId: "hf-earlier", _count: { _all: 143 } }]);
+    prisma.visionJob.findMany.mockResolvedValue([{ id: "hf-earlier", videoAssetId: ASSET, progress: { summary: { detectJobId: "det-old" } } }]);
+    await expect(service.queueHardFrames(JOB)).resolves.toEqual({ jobId: JOB, queued: 2, alreadyQueued: 0 });
+  });
+
   it("refuses footage held out as an answer key, and footage that may not be analysed", async () => {
     prisma.visionEventGoldSet.findFirst.mockResolvedValue({ label: "Divine Praise vs Kiraa" });
     await expect(service.queueHardFrames(JOB)).rejects.toMatchObject({ response: { error: "FootageHeldOut" } });
@@ -82,6 +99,29 @@ describe("queueing picked frames", () => {
     await expect(service.queueHardFrames(JOB)).rejects.toMatchObject({ response: { error: "HardFramesEvidenceInvalid" } });
     await publish(artifact({ frames: [{ ...artifact().frames[0], reason: "uniform_random" }] }));
     await expect(service.queueHardFrames(JOB)).rejects.toMatchObject({ response: { error: "HardFramesEvidenceInvalid" } });
+    await publish(artifact({ detectJobId: undefined }));
+    await expect(service.queueHardFrames(JOB)).rejects.toMatchObject({ response: { error: "HardFramesEvidenceInvalid" } });
+  });
+});
+
+describe("the list of runs", () => {
+  const run = (id: string, asset: string, detect: string) => ({ id, videoAssetId: asset, finishedAt: null, progress: { summary: { frames: 143, detectJobId: detect } } });
+
+  it("marks a run whose footage and detect run were already queued by another run, and only that one", async () => {
+    prisma.visionJob.findMany
+      .mockResolvedValueOnce([run("hf-again", ASSET, "det"), run("hf-new-detect", ASSET, "det-2"), run("hf-first", ASSET, "det"), run("hf-other", "asset-2", "det")])
+      .mockResolvedValueOnce([{ id: "hf-first", videoAssetId: ASSET, progress: { summary: { detectJobId: "det" } } }]);
+    prisma.visionActiveLearningItem.groupBy.mockResolvedValue([{ sourceJobId: "hf-first", _count: { _all: 143 } }]);
+    const { runs } = await service.hardFrameRuns();
+    expect(runs.map((r) => [r.jobId, r.queued, r.alreadyQueuedAs])).toEqual([
+      ["hf-again", 0, "hf-first"], ["hf-new-detect", 0, null], ["hf-first", 143, null], ["hf-other", 0, null],
+    ]);
+    expect(prisma.visionActiveLearningItem.groupBy).toHaveBeenCalledWith(expect.objectContaining({ where: { videoAssetId: { in: [ASSET, "asset-2"] }, sourceJobId: { not: null } } }));
+  });
+
+  it("asks nothing more when there is no run", async () => {
+    await expect(service.hardFrameRuns()).resolves.toEqual({ runs: [] });
+    expect(prisma.visionActiveLearningItem.groupBy).not.toHaveBeenCalled();
   });
 });
 

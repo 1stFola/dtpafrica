@@ -94,6 +94,9 @@ function assertOneOf<T extends string>(
   return value as T;
 }
 
+/** The summary a job's completion logged, or nothing. */
+const summaryOf = (progress: unknown) => ((progress as { summary?: Record<string, unknown> } | null)?.summary ?? {}) as Record<string, unknown>;
+
 /** The longest window a single task may cover. */
 const MAX_TASK_WINDOW_MS = 10 * 60 * 1000;
 
@@ -791,6 +794,15 @@ export class VisionAnnotationService {
     if (reserved) throw refusal(409, "FootageHeldOut", `This match is held out as the answer key "${reserved.label}", so its frames are not labelled for training.`, "Queue frames from training footage: another match.");
     const already = await this.prisma.visionActiveLearningItem.count({ where: { sourceJobId: jobId } });
     if (already) return { jobId, queued: 0, alreadyQueued: already };
+    // A second run over the same footage and detect run picks the same frames again, so
+    // queueing it would put every one of them in front of people twice (docs/vision/100).
+    const twin = (await this.queuedHardFrameRuns([videoAssetId])).find((r) => r.detectJobId === artifact.detectJobId);
+    if (twin) {
+      throw refusal(409, "HardFramesAlreadyQueued",
+        `Frames from hard_frames run ${twin.jobId.slice(0, 8)} over this footage and detect run are already queued, so this run's would be shown to people a second time.`,
+        "Label the frames already queued. Queue frames from another clip, or from a new detect run over this one.",
+        { queuedJobId: twin.jobId });
+    }
     await this.prisma.visionActiveLearningItem.createMany({
       data: frames.map((f) => ({ videoAssetId, startMs: f.sourceTimeMs, endMs: f.sourceTimeMs + frameDurationMs, reason: f.reason, score: f.score,
         state: "queued", sourceJobId: jobId, preLabelModelVersionId: artifact.detectorVersionId })),
@@ -814,16 +826,36 @@ export class VisionAnnotationService {
     return { taskId, boxes };
   }
 
-  /** Succeeded hard_frames runs, newest first, with how many frames each has already queued. */
+  /**
+   * Succeeded hard_frames runs, newest first, with how many frames each has already queued
+   * and, for one that has none, the run over the same footage and detect run that has
+   * (`alreadyQueuedAs`): that run's frames are these frames, so this one is not queued.
+   */
   async hardFrameRuns(limit = 20) {
     const jobs = await this.prisma.visionJob.findMany({ where: { type: "hard_frames", state: "succeeded" }, orderBy: { finishedAt: "desc" }, take: Math.min(Math.max(limit, 1), 100),
       select: { id: true, videoAssetId: true, finishedAt: true, progress: true } });
-    const queued = await this.prisma.visionActiveLearningItem.groupBy({ by: ["sourceJobId"], where: { sourceJobId: { in: jobs.map((j) => j.id) } }, _count: { _all: true } });
-    const byJob = new Map(queued.map((q) => [q.sourceJobId, q._count._all]));
+    const queuedRuns = await this.queuedHardFrameRuns([...new Set(jobs.flatMap((j) => (j.videoAssetId ? [j.videoAssetId] : [])))]);
+    const byJob = new Map(queuedRuns.map((q) => [q.jobId, q.queued]));
     return { runs: jobs.map((j) => {
-      const s = ((j.progress as { summary?: Record<string, unknown> } | null)?.summary ?? {}) as Record<string, unknown>;
-      return { jobId: j.id, videoAssetId: j.videoAssetId, finishedAt: j.finishedAt, frames: typeof s.frames === "number" ? s.frames : null, causes: s.causes ?? null, queued: byJob.get(j.id) ?? 0 };
+      const s = summaryOf(j.progress);
+      const queued = byJob.get(j.id) ?? 0;
+      const twin = queued ? undefined : queuedRuns.find((q) => q.videoAssetId === j.videoAssetId && q.detectJobId !== null && q.detectJobId === s.detectJobId);
+      return { jobId: j.id, videoAssetId: j.videoAssetId, finishedAt: j.finishedAt, frames: typeof s.frames === "number" ? s.frames : null, causes: s.causes ?? null, queued,
+        alreadyQueuedAs: twin?.jobId ?? null };
     }) };
+  }
+
+  /** The hard_frames runs over this footage whose frames are queued (in any state), with the detect run each picked from. */
+  private async queuedHardFrameRuns(videoAssetIds: string[]) {
+    if (videoAssetIds.length === 0) return [];
+    const queued = await this.prisma.visionActiveLearningItem.groupBy({ by: ["sourceJobId"], where: { videoAssetId: { in: videoAssetIds }, sourceJobId: { not: null } }, _count: { _all: true } });
+    const counts = new Map(queued.map((q) => [q.sourceJobId!, q._count._all]));
+    const jobs = await this.prisma.visionJob.findMany({ where: { id: { in: [...counts.keys()] }, type: "hard_frames" }, orderBy: { finishedAt: "asc" },
+      select: { id: true, videoAssetId: true, progress: true } });
+    return jobs.map((j) => {
+      const detectJobId = summaryOf(j.progress).detectJobId;
+      return { jobId: j.id, videoAssetId: j.videoAssetId, detectJobId: typeof detectJobId === "string" ? detectJobId : null, queued: counts.get(j.id) ?? 0 };
+    });
   }
 
   /** Highest-scoring queued windows first. */

@@ -40,7 +40,7 @@ export async function readHardFrames(db: Pick<PrismaClient, "visionJob">, store:
   if (createHash("sha256").update(body).digest("hex") !== summary.artifactChecksum) throw bad("The hard_frames artifact changed after its job completed.");
   const raw = JSON.parse(body.toString("utf8")) as Partial<HardFramesArtifact>;
   if (raw.role !== HARD_FRAMES_ARTIFACT_ROLE || raw.calculationVersion !== HARD_FRAMES_VERSION || raw.videoAssetId !== job.videoAssetId
-    || typeof raw.detectorVersionId !== "string" || !whole(raw.frameDurationMs) || raw.frameDurationMs < 1 || !Array.isArray(raw.frames) || raw.frames.length > MAX_HARD_FRAMES)
+    || typeof raw.detectorVersionId !== "string" || typeof raw.detectJobId !== "string" || !whole(raw.frameDurationMs) || raw.frameDurationMs < 1 || !Array.isArray(raw.frames) || raw.frames.length > MAX_HARD_FRAMES)
     throw bad("The hard_frames artifact is not a complete hard-frames/v1 record for this footage.");
   const frames: HardFrame[] = raw.frames.map((f) => {
     if (!f || !whole(f.frameIndex) || !whole(f.sourceTimeMs) || !(HARD_FRAME_CAUSES as readonly string[]).includes(f.cause) || f.reason !== HARD_FRAME_REASON[f.cause]
