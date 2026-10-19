@@ -26,6 +26,7 @@ import {
   squadNumberLabel,
 } from "../scoreboard/squad-number-lookup";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
+import { assessAutoApprove, danglingNumbers } from "./sheet-auto-approve";
 import {
   canAccessCompetition,
   competitionScopeWhere,
@@ -736,6 +737,21 @@ function actorName(ctx: AdminAuthContext): string {
   return ctx.displayName || ctx.email || ctx.roleName || "Admin";
 }
 
+/**
+ * Who the sheet history and the approved-by columns name when the clock approves.
+ *
+ * No `userId`, so the approved-by id stays empty the way `autoSubmittedAt` leaves the
+ * submitted-by id empty, and the name says what happened instead of naming a person.
+ * Holds only the approve permission.
+ */
+const AUTO_APPROVER: AdminAuthContext = {
+  method: "jwt",
+  roleSlug: "system",
+  roleName: "System",
+  permissions: [APPROVE_PERMISSION],
+  displayName: "Auto-approval",
+};
+
 
 @Injectable()
 export class AdminMatchStatsService {
@@ -1303,6 +1319,83 @@ export class AdminMatchStatsService {
       );
     }
 
+    return this.publishSheet(match, sheet, ctx, null);
+  }
+
+  /**
+   * Approve a submitted sheet as the clock, when `sheet-auto-approve.ts` says it may.
+   *
+   * Called by `SheetAutoApproveService`. The rule is judged again here on a fresh read,
+   * so an approver who acted, a recorder who asked for a correction, or a squad edit
+   * since the sweep listed the sheet all count. Returns whether it published.
+   */
+  async autoApprove(matchId: string, now = new Date()): Promise<boolean> {
+    const match = await this.loadMatch(matchId, AUTO_APPROVER);
+    const sheet = await this.requireSheet(matchId);
+    if (!this.autoApproval(match, sheet, now).approve) return false;
+    await this.publishSheet(match, sheet, AUTO_APPROVER, now);
+    return true;
+  }
+
+  /** Shirt number -> named player from the squads `loadMatch` carries, as `approve` resolves it. */
+  private numberLookupFor(match: Awaited<ReturnType<AdminMatchStatsService["loadMatch"]>>) {
+    return buildNumberLookup({
+      teamSquad: [...match.homeTeam.squad, ...match.awayTeam.squad].map((row) => ({
+        teamId: row.teamId,
+        number: row.shirtNumber,
+        playerName: row.displayName,
+        playerId: row.playerId,
+      })),
+      matchSquad: match.squadPlayers.map((row) => ({
+        teamId: row.teamId,
+        number: row.jerseyNumber,
+        playerName: row.playerName,
+        playerId: row.playerId,
+      })),
+    });
+  }
+
+  /** Whether, and when, this sheet approves itself, and what holds it back. */
+  private autoApproval(
+    match: Awaited<ReturnType<AdminMatchStatsService["loadMatch"]>>,
+    sheet: Awaited<ReturnType<PrismaService["sbMatchStatistics"]["findUnique"]>>,
+    now: Date
+  ) {
+    const lookup = this.numberLookupFor(match);
+    const dangling = danglingNumbers(readEvents(sheet?.events), (side, number) =>
+      lookup.find(side === "home" ? match.homeTeamId : match.awayTeamId, number)
+    );
+    const verdict = assessAutoApprove(
+      {
+        sheetStatus: sheetStatus(sheet as SheetRow | null),
+        submittedAt: sheet?.submittedAt ?? null,
+        submittedById: sheet?.submittedById ?? null,
+        recorderId: sheet?.recorderId ?? null,
+        autoSubmittedAt: sheet?.autoSubmittedAt ?? null,
+        idleLockedAt: sheet?.idleLockedAt ?? null,
+        idleReleasedAt: sheet?.idleReleasedAt ?? null,
+        correctionRequested: Boolean(sheet?.correctionRequestedSection),
+        isTraining: isTrainingCompetition(match.competition),
+        dangling,
+      },
+      now
+    );
+    return { ...verdict, dangling };
+  }
+
+  /**
+   * Publish a submitted sheet: the timeline, the figures and the score, in one
+   * transaction. Shared by an approver's `approve` and the clock's `autoApprove`, so a
+   * sheet the clock approves lands exactly as one a person approves.
+   */
+  private async publishSheet(
+    match: Awaited<ReturnType<AdminMatchStatsService["loadMatch"]>>,
+    sheet: Awaited<ReturnType<AdminMatchStatsService["requireSheet"]>>,
+    ctx: AdminAuthContext,
+    /** Set when the clock approves; null clears an earlier auto-approval. */
+    autoApprovedAt: Date | null
+  ) {
+    const matchId = match.id;
     const tallies = normaliseTallies(sheet.tallies);
     const recorded = readEvents(sheet.events);
 
@@ -1409,6 +1502,7 @@ export class AdminMatchStatsService {
       stamp[col.approvedByName] = actorName(ctx);
       stamp[col.approvedAt] = new Date();
     }
+    stamp.autoApprovedAt = autoApprovedAt;
 
     /* One approval publishes both artefacts, in one transaction. The timeline
        and the figures derived from it now reach the public site together or
@@ -1482,6 +1576,9 @@ export class AdminMatchStatsService {
       ReturnType<PrismaService["sbMatchStatistics"]["update"]>
     >;
     await this.log(sheet, WHOLE_SHEET, "approved", ctx, {
+      note: autoApprovedAt
+        ? "Approved automatically ten minutes after the recorder submitted it, with every shirt number named."
+        : null,
       summary: this.summarise(sheet) as Prisma.InputJsonValue,
     });
 
@@ -2024,6 +2121,9 @@ export class AdminMatchStatsService {
         submittedAt: sheet?.submittedAt ?? null,
         approvedByName: sheet?.approvedByName ?? null,
         approvedAt: sheet?.approvedAt ?? null,
+        /** Set when the clock approved it; the console says so instead of naming a person. */
+        autoApprovedAt: sheet?.autoApprovedAt ?? null,
+        autoSubmittedAt: sheet?.autoSubmittedAt ?? null,
         sentBackByName: sheet?.sentBackByName ?? null,
         sentBackAt: sheet?.sentBackAt ?? null,
         sentBackNote: sheet?.sentBackNote ?? null,
@@ -2037,6 +2137,14 @@ export class AdminMatchStatsService {
             note: sheet.correctionRequestNote,
           }
         : null,
+      /**
+       * Whether this submitted sheet will approve and publish itself ten minutes after
+       * submission, and if not, why not. See `sheet-auto-approve.ts`.
+       */
+      autoApproval: (() => {
+        const verdict = this.autoApproval(match, sheet, new Date());
+        return { dueAt: verdict.dueAt, blocks: verdict.blocks, dangling: verdict.dangling };
+      })(),
       /** Set when the idle sweep stopped this recording; null otherwise. */
       idleLock:
         idleLockedAt && idleSince

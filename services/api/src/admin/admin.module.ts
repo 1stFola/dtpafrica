@@ -21,6 +21,7 @@ import { AdminRbacService } from "./admin-rbac.service";
 import { AdminMatchStatsController } from "./admin-match-stats.controller";
 import { AdminMatchStatsService } from "./admin-match-stats.service";
 import { RecorderIdleService } from "./recorder-idle.service";
+import { SheetAutoApproveService } from "./sheet-auto-approve.service";
 import { LiveStreamScheduleService } from "./live-stream-schedule.service";
 import { AdminScoreboardController } from "./admin-scoreboard.controller";
 import { AdminScoreboardService } from "./admin-scoreboard.service";
@@ -58,6 +59,7 @@ import { PermissionsGuard } from "./guards/permissions.guard";
     AdminScoreboardService,
     AdminMatchStatsService,
     RecorderIdleService,
+    SheetAutoApproveService,
     LiveStreamScheduleService,
     AdminSeedService,
     AdminAuthService,

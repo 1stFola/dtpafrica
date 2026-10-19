@@ -47,6 +47,31 @@ export type SectionAudit = {
   sentBackByName: string | null;
   sentBackAt: string | null;
   sentBackNote: string | null;
+  /** Set when the clock approved the sheet rather than an approver. */
+  autoApprovedAt?: string | null;
+  /** Set when the clock submitted the sheet at full time rather than the recorder. */
+  autoSubmittedAt?: string | null;
+};
+
+/** Why a submitted sheet will not approve itself; see `sheet-auto-approve.ts` on the API. */
+export type AutoApproveBlock =
+  | "not_submitted"
+  | "training"
+  | "submitted_by_clock"
+  | "not_submitted_by_recorder"
+  | "idle_locked"
+  | "correction_requested"
+  | "dangling_numbers";
+
+/**
+ * Whether a submitted sheet approves and publishes itself ten minutes after submission.
+ * No `blocks` means it will, at `dueAt`.
+ */
+export type AutoApproval = {
+  dueAt: string | null;
+  blocks: AutoApproveBlock[];
+  /** Shirt numbers on the sheet that name nobody in either squad. */
+  dangling: Array<{ side: "home" | "away"; number: number; eventType: string; minute: number }>;
 };
 export type Half = "1st" | "2nd";
 export type Side = "home" | "away";
@@ -172,6 +197,7 @@ export type MatchStatsSheet = {
   correctionRequest: CorrectionRequest | null;
   /** Set when the idle sweep stopped this recording: no event for twenty minutes. */
   idleLock?: { lockedAt: string; quietSinceAt: string; quietMinutes: number } | null;
+  autoApproval?: AutoApproval;
   events: RecordedEvent[];
   /** Live scoreline implied by the logged goal events. */
   derivedScore: { home: number; away: number };
