@@ -8,6 +8,8 @@ import {
   type MatchStatsSheet,
   type RecordedEvent,
   type SectionAudit,
+  type AutoApproval,
+  type AutoApproveBlock,
   type SectionPermissions,
   type SheetSection,
   type SheetLogEntry,
@@ -823,6 +825,77 @@ function LiveAudioCommentaryControl({
   );
 }
 
+/** What each hold on auto-approval means, in the words the console shows. */
+const AUTO_APPROVE_BLOCK_TEXT: Record<Exclude<AutoApproveBlock, "not_submitted" | "dangling_numbers">, string> = {
+  training: "practice matches are approved by hand",
+  submitted_by_clock: "it was submitted automatically at full time, not by the recorder",
+  not_submitted_by_recorder: "it was not submitted by the recorder who kicked it off",
+  idle_locked: "the recording was stopped for having no events for twenty minutes",
+  correction_requested: "a correction request is pending",
+};
+
+/**
+ * Whether this submitted sheet will approve and publish itself, and if not, why not.
+ *
+ * The server decides (`sheet-auto-approve.ts`); this only says what it decided, so an
+ * approver knows whether the sheet is waiting on them and a recorder knows which shirt
+ * numbers need a name.
+ */
+function AutoApprovalNote({
+  autoApproval,
+  homeName,
+  awayName,
+}: {
+  autoApproval: AutoApproval | undefined;
+  homeName: string;
+  awayName: string;
+}) {
+  if (!autoApproval?.dueAt || autoApproval.blocks.includes("not_submitted")) return null;
+  const due = new Date(autoApproval.dueAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (autoApproval.blocks.length === 0) {
+    return (
+      <p className="mcx-submitted__note">
+        Approves and publishes itself at about {due}, ten minutes after submission, unless it
+        is approved or sent back first.
+      </p>
+    );
+  }
+
+  const reasons = autoApproval.blocks
+    .filter((b): b is keyof typeof AUTO_APPROVE_BLOCK_TEXT => b in AUTO_APPROVE_BLOCK_TEXT)
+    .map((b) => AUTO_APPROVE_BLOCK_TEXT[b]);
+  const dangling = autoApproval.dangling;
+  return (
+    <div className="mcx-submitted__note">
+      <p className="mcx-submitted__note">
+        Will not approve itself
+        {reasons.length ? `: ${reasons.join("; ")}.` : "."} It needs an approver.
+      </p>
+      {dangling.length > 0 && (
+        <>
+          <p className="mcx-submitted__note">
+            {dangling.length === 1 ? "This shirt number names" : "These shirt numbers name"} no
+            player in the squad. Add {dangling.length === 1 ? "it" : "them"} to the squad and the
+            sheet approves itself at the next check after {due}:
+          </p>
+          <ul className="mcx-submitted__note">
+            {dangling.map((d) => (
+              <li key={`${d.side}:${d.number}`}>
+                {d.side === "home" ? homeName : awayName} No. {d.number} (
+                {d.eventType.replace(/_/g, " ")}, {d.minute}&prime;)
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Submit / approve / send-back controls for one track. */
 /**
  * Submit, approve and send-back for the whole sheet.
@@ -834,6 +907,9 @@ function SheetActions({
   status,
   permissions,
   audit,
+  autoApproval,
+  homeName,
+  awayName,
   busy,
   clock,
   onSubmit,
@@ -843,6 +919,9 @@ function SheetActions({
   status: SheetStatus;
   permissions: SectionPermissions;
   audit: SectionAudit;
+  autoApproval: AutoApproval | undefined;
+  homeName: string;
+  awayName: string;
   busy: boolean;
   /** The clock, so the submit button knows whether the second half is under way. */
   clock: ClockState | null;
@@ -892,6 +971,7 @@ function SheetActions({
             {audit.submittedAt ? ` · ${new Date(audit.submittedAt).toLocaleString()}` : ""}.
             {permissions.canEdit && " You can still correct a mis-tap until it is approved."}
           </p>
+          <AutoApprovalNote autoApproval={autoApproval} homeName={homeName} awayName={awayName} />
           {permissions.canEdit && (
             <button type="button" className="mcx-btn" disabled={busy} onClick={onSubmit}>
               Re-submit corrections
@@ -902,7 +982,9 @@ function SheetActions({
 
       {status === "approved" && (
         <p className="mcx-submitted__note">
-          Approved{audit.approvedByName ? ` by ${audit.approvedByName}` : ""}
+          {audit.autoApprovedAt
+            ? "Approved automatically, ten minutes after submission"
+            : `Approved${audit.approvedByName ? ` by ${audit.approvedByName}` : ""}`}
           {audit.approvedAt ? ` · ${new Date(audit.approvedAt).toLocaleString()}` : ""}. Final
           statistics are published.
         </p>
@@ -1140,6 +1222,25 @@ export function AdminMatchStatsConsolePage() {
       clearInterval(id);
     };
   }, [flush]);
+
+  /* A submitted sheet can be approved by the clock, or by an approver elsewhere, while
+     this console sits open. Re-read it every thirty seconds until it is decided, taking
+     the server's status and audit but keeping the recorder's own tallies and events, as
+     a save does, so a correction being typed is never overwritten. */
+  const sheetStatusNow = sheet?.status;
+  useEffect(() => {
+    if (!matchId || sheetStatusNow !== "submitted") return;
+    const id = setInterval(() => {
+      if (pending.current) return;
+      matchStatsApi
+        .open(matchId)
+        .then((next) =>
+          setSheet((prev) => (prev ? { ...next, tallies: prev.tallies, events: prev.events } : next))
+        )
+        .catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [matchId, sheetStatusNow]);
 
   // Flush anything outstanding when leaving the page.
   useEffect(() => {
@@ -1885,6 +1986,9 @@ export function AdminMatchStatsConsolePage() {
           status={status}
           permissions={perms}
           audit={audit}
+          autoApproval={sheet.autoApproval}
+          homeName={sheet.match.homeTeam.name}
+          awayName={sheet.match.awayTeam.name}
           clock={clock}
           busy={busy}
           onSubmit={() => act(() => matchStatsApi.submit(matchId))}

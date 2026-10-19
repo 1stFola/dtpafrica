@@ -683,6 +683,12 @@ model SbMatchStatistics {
   autoSubmittedAt DateTime? @map("auto_submitted_at")
 
   /**
+   * Set when the sheet was approved and published by the clock, ten minutes after the
+   * recorder submitted it, rather than by an approver. See `sheet-auto-approve.ts`.
+   */
+  autoApprovedAt DateTime? @map("auto_approved_at")
+
+  /**
    * Set by the idle sweep when a running clock goes 20 minutes with no event.
    *
    * A second kind of lock, and stored rather than derived: full time is a fact about
