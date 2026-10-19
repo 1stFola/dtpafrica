@@ -1974,8 +1974,9 @@ export class ScoreboardService {
 
   /**
    * Published broadcasts for the Live Games page, in the admin's order. Not tied to a
-   * match reading as live: the admin publishes a stream when the broadcast is up and
-   * unpublishes it afterwards, which is the one switch a stream link needs.
+   * match reading as live: `isPublished` is the one switch a stream link needs. A stream
+   * linked to a fixture has it flipped on ten minutes before kickoff and off ten minutes
+   * after full time (`admin/live-stream-schedule.ts`); the admin can still flip it.
    */
   async liveStreams() {
     const rows = await this.prisma.sbLiveStream.findMany({

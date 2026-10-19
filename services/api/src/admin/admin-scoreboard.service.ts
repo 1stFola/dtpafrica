@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { normalizeClubName, normalizePlayerName, playerLookupKey } from "@dtp/engines";
 import { isAllowedImageMediaUrl, normalizeVideoMediaUrl } from "../shared/media-url";
@@ -21,6 +22,8 @@ import { CompetitionEngineService } from "../scoreboard/competition-engine.servi
 import { ScoreboardService } from "../scoreboard/scoreboard.service";
 import { ScoreboardLifecycleService } from "../scoreboard/scoreboard-lifecycle.service";
 import { LiveAudioCommentaryService } from "../scoreboard/live-audio-commentary.service";
+import { liveStreamWindow } from "./live-stream-schedule";
+import { LiveStreamScheduleService } from "./live-stream-schedule.service";
 import { videoGoals, withVideoGoals } from "../scoreboard/video-goals";
 import { CreateMatchEventDto } from "../scoreboard/dto/create-event.dto";
 import { UpdateMatchDto } from "../scoreboard/dto/update-match.dto";
@@ -451,7 +454,10 @@ export class AdminScoreboardService {
     @Inject(LiveAudioCommentaryService)
     private readonly liveAudio: LiveAudioCommentaryService,
     @Inject(ScoreboardLifecycleService)
-    private readonly lifecycle: ScoreboardLifecycleService
+    private readonly lifecycle: ScoreboardLifecycleService,
+    @Optional()
+    @Inject(LiveStreamScheduleService)
+    private readonly liveStreamSchedule?: LiveStreamScheduleService
   ) {}
 
   async stats() {
@@ -2776,17 +2782,55 @@ export class AdminScoreboardService {
         slug: true,
         status: true,
         kickoffAt: true,
+        updatedAt: true,
         homeTeam: { select: { name: true } },
         awayTeam: { select: { name: true } },
+        statisticsSheet: { select: { fullTimeAt: true } },
       },
     },
   } as const;
 
+  /** Each row carries the window the schedule will publish it in, for the admin table. */
   async listLiveStreams() {
-    return this.prisma.sbLiveStream.findMany({
+    const rows = await this.prisma.sbLiveStream.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       include: this.liveStreamInclude,
     });
+    return rows.map((row) => this.presentLiveStreamRow(row));
+  }
+
+  private presentLiveStreamRow<
+    T extends {
+      match: {
+        status: string;
+        kickoffAt: Date | null;
+        updatedAt: Date;
+        statisticsSheet: { fullTimeAt: Date | null } | null;
+      } | null;
+    },
+  >(row: T) {
+    const schedule = row.match
+      ? liveStreamWindow({
+          status: row.match.status,
+          kickoffAt: row.match.kickoffAt,
+          updatedAt: row.match.updatedAt,
+          fullTimeAt: row.match.statisticsSheet?.fullTimeAt ?? null,
+        })
+      : null;
+    return { ...row, schedule };
+  }
+
+  /**
+   * Run the schedule at once after a stream is made or relinked, so one created inside
+   * its window goes up now rather than at the next sweep; then read the row back.
+   */
+  private async applyLiveStreamSchedule(id: string) {
+    await this.liveStreamSchedule?.sweep();
+    const row = await this.prisma.sbLiveStream.findUniqueOrThrow({
+      where: { id },
+      include: this.liveStreamInclude,
+    });
+    return this.presentLiveStreamRow(row);
   }
 
   /**
@@ -2827,10 +2871,14 @@ export class AdminScoreboardService {
     return data;
   }
 
-  /** Created unpublished, like a highlight: the admin publishes it when the broadcast is up. */
+  /**
+   * Created unpublished, like a highlight. A stream linked to a fixture with a kickoff is
+   * then published and unpublished by the schedule (`live-stream-schedule.ts`); any other
+   * stream waits for the admin.
+   */
   async createLiveStream(body: CreateLiveStreamDto) {
     const links = await this.liveStreamLinks(body);
-    return this.prisma.sbLiveStream.create({
+    const created = await this.prisma.sbLiveStream.create({
       data: {
         title: body.title.trim(),
         youtubeUrl: body.youtubeUrl.trim(),
@@ -2838,15 +2886,16 @@ export class AdminScoreboardService {
         isPublished: false,
         ...links,
       },
-      include: this.liveStreamInclude,
+      select: { id: true },
     });
+    return this.applyLiveStreamSchedule(created.id);
   }
 
   async updateLiveStream(id: string, body: UpdateLiveStreamDto) {
     const existing = await this.prisma.sbLiveStream.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Live stream not found");
     const links = await this.liveStreamLinks(body);
-    return this.prisma.sbLiveStream.update({
+    await this.prisma.sbLiveStream.update({
       where: { id },
       data: {
         title: body.title?.trim(),
@@ -2854,14 +2903,14 @@ export class AdminScoreboardService {
         sortOrder: body.sortOrder,
         ...links,
       },
-      include: this.liveStreamInclude,
     });
+    return this.applyLiveStreamSchedule(id);
   }
 
   async setLiveStreamPublished(id: string, isPublished: boolean) {
     const existing = await this.prisma.sbLiveStream.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Live stream not found");
-    return this.prisma.sbLiveStream.update({
+    const row = await this.prisma.sbLiveStream.update({
       where: { id },
       data: {
         isPublished,
@@ -2869,6 +2918,7 @@ export class AdminScoreboardService {
       },
       include: this.liveStreamInclude,
     });
+    return this.presentLiveStreamRow(row);
   }
 
   async deleteLiveStream(id: string) {
