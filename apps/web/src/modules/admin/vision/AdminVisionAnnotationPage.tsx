@@ -7,13 +7,16 @@ import {
   fetchVisionLabelSchemas,
   fetchVisionMixReport,
   fetchVisionHardFrameRuns,
+  fetchVisionAnnotationReviewQueue,
   queueVisionHardFrames,
   type SamplingStrategy,
   type VisionHardFrameRun,
+  type VisionAnnotationReviewTask,
   type VisionActiveLearningItem,
   type VisionLabelSchema,
   type VisionMixReport,
 } from "../../../api/vision";
+import { useAdminAuth } from "../AdminAuthContext";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { formatClock } from "./annotation-time";
@@ -56,8 +59,12 @@ const STATE_LABELS: Record<string, string> = {
 export function AdminVisionAnnotationPage() {
   usePageTitle("Annotation queue");
   const navigate = useNavigate();
+  const { hasPermission } = useAdminAuth();
+  /* Reviewing needs vision.review; the API refuses the list to anyone without it. */
+  const canReview = hasPermission("vision.review");
 
   const [mix, setMix] = useState<VisionMixReport | null>(null);
+  const [review, setReview] = useState<{ waiting: number; yours: number; tasks: VisionAnnotationReviewTask[] } | null>(null);
   const [queue, setQueue] = useState<VisionActiveLearningItem[]>([]);
   const [runs, setRuns] = useState<VisionHardFrameRun[]>([]);
   const [schemas, setSchemas] = useState<VisionLabelSchema[]>([]);
@@ -71,12 +78,14 @@ export function AdminVisionAnnotationPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [mixReport, queueResult, schemaResult, runResult] = await Promise.all([
+      const [mixReport, queueResult, schemaResult, runResult, reviewResult] = await Promise.all([
         fetchVisionMixReport(),
         fetchVisionAnnotationQueue(50),
         fetchVisionLabelSchemas(),
         fetchVisionHardFrameRuns(),
+        canReview ? fetchVisionAnnotationReviewQueue(50) : Promise.resolve(null),
       ]);
+      setReview(reviewResult);
       setRuns(runResult.runs);
       setMix(mixReport);
       setQueue(queueResult.items);
@@ -84,7 +93,7 @@ export function AdminVisionAnnotationPage() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, []);
+  }, [canReview]);
 
   useEffect(() => {
     void load();
@@ -229,6 +238,40 @@ export function AdminVisionAnnotationPage() {
           different windows.
         </p>
       </section>
+
+      {canReview && review && (
+        <section className="vision-panel">
+          <h2 className="vision-panel__title">Waiting for your review</h2>
+          <p className="vision-footnote">
+            Submitted work, oldest first. Only approved work enters a training set, and nobody may
+            approve their own: {review.yours > 0 ? `${review.yours} of yours wait for someone else.` : "none of these is yours."}
+          </p>
+          {review.tasks.length === 0 ? (
+            <p className="vision-footnote">Nothing waiting for review.</p>
+          ) : (
+            <>
+              <table className="vision-table">
+                <thead><tr><th scope="col">Submitted</th><th scope="col">By</th><th scope="col">Footage</th><th scope="col">Window</th><th scope="col">Why sampled</th><th scope="col" /></tr></thead>
+                <tbody>
+                  {review.tasks.map((task) => (
+                    <tr key={task.taskId}>
+                      <td>{new Date(task.submittedAt).toLocaleString()}</td>
+                      <td>{task.annotator ?? "—"}</td>
+                      <td>{task.source ?? <span className="vision-mono">{task.videoAssetId.slice(0, 8)}</span>}</td>
+                      <td>{formatClock(task.startMs)}</td>
+                      <td>{STRATEGY_LABELS[task.samplingStrategy] ?? task.samplingStrategy}</td>
+                      <td><button type="button" onClick={() => navigate(`/admin/vision/workstation/${task.taskId}`)}>Review</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {review.waiting > review.tasks.length && (
+                <p className="vision-footnote">Showing the oldest {review.tasks.length} of {review.waiting}.</p>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       <section className="vision-panel">
         <h2 className="vision-panel__title">Frames picked for labelling</h2>

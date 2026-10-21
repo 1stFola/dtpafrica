@@ -10,6 +10,8 @@ whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchan
 
 **Latest: the train stage** — contract 1.23.0 adds `train`: a run, asked for with its own budget, fine-tunes the torchvision Faster R-CNN baseline on a frozen dataset's train split (negatives kept, uncertain frames left out), scores its val split with the benchmark's evaluation, and writes weights, config and metrics to the models bucket. A person registers a candidate version from a succeeded run. Detect loading those weights comes next. See [102](102-TRAIN-STAGE.md).
 
+**Previously: labelling set up, and a review queue** — ten more 1XCup matches (20 clips) went through hard-frame mining on RTX 4090 pods for $2.31, adding 3,010 picked frames (3,437 in all). All became tasks under label schema ball-2026.1, the freelancer reaches only a built copy of the site, and the Annotation page now lists submitted work under "Waiting for your review". See [101](101-LABELLING-SETUP-AND-REVIEW-QUEUE.md).
+
 **Previously: the first hard frames on training footage** — four 185 s clips of a 1XCup
 match (Emiloju FC v JP Young Stars FC, under the 1XCup media rights agreement). They ran
 through the CPU stages, and 82 shots were declared live play. Detector v2 ran on a RunPod

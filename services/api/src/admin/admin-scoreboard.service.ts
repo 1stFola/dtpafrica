@@ -59,7 +59,7 @@ import {
   type MatchSlugLeg,
 } from "../scoreboard/match-slug";
 import { parseKickoffAtIso, parseWatKickoff } from "../shared/wat-datetime";
-import { parseMatchSquadCsv, type ParsedMatchSquadCsvRow } from "./match-squad-csv";
+import { matchSquadCsvRows, parseMatchSquadCsv } from "./match-squad-csv";
 import type { UpdateAdminCompetitionDto } from "./dto/update-admin-competition.dto";
 import type { UpsertScoreboardSquadRowDto } from "./dto/upsert-scoreboard-squad-row.dto";
 import { CreateFriendlyMatchDto } from "./dto/create-friendly-match.dto";
@@ -373,11 +373,11 @@ const SQUAD_CSV_MAX_ROWS = 200;
 const SQUAD_CSV_MAX_REPORTED_ERRORS = 10;
 
 /** Rejects a squad file as a whole, listing the first few problems by row. */
-function squadImportRejected(errors: string[]): BadRequestException {
+function squadImportRejected(errors: string[], label = "Squad import"): BadRequestException {
   const shown = errors.slice(0, SQUAD_CSV_MAX_REPORTED_ERRORS);
   const more = errors.length - shown.length;
   return csvError(
-    "Squad import",
+    label,
     `nothing was imported. ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}`
   );
 }
@@ -2232,21 +2232,56 @@ export class AdminScoreboardService {
       throw new BadRequestException("Team not in this match");
     }
 
+    /* The sheet is matched to the squad this team already holds and never adds to it --
+       see `matchSquadCsvRows`. A name nobody in the squad answers to fails the upload
+       before anything is written, so the uploader fixes the spelling or registers the
+       player in Squad Management, rather than a stray record being made for them. */
+    const squad = await this.prisma.sbTeamSquad.findMany({
+      where: { teamId },
+      select: {
+        id: true,
+        displayName: true,
+        shirtNumber: true,
+        position: true,
+        playerId: true,
+        player: { select: { displayName: true } },
+      },
+    });
+    const { matched, errors, warnings } = matchSquadCsvRows(rows, squad);
+    if (errors.length) throw squadImportRejected(errors, "Matchday squad upload");
+
+    let jerseyNumbersFilled = 0;
     const roster = await this.prisma.$transaction(async (tx) => {
-      const slots = await Promise.all(
-        rows.map(async (row) => {
-          const squad = await this.findOrCreateTeamSquadRow(tx, teamId, row);
-          return {
-            squadId: squad.id,
-            displayName: squad.displayName,
-            position: squad.position,
-            shirtNumber: squad.shirtNumber,
-            playerId: squad.playerId,
-            playerSlug: null,
-            role: row.isStarter ? "xi" : "sub",
-          } satisfies MatchdayRosterSlot;
-        })
-      );
+      const slots: MatchdayRosterSlot[] = [];
+      for (const { row, squad: member, shirtNumber } of matched) {
+        // A blank cell keeps what is already recorded rather than wiping it.
+        const position = row.position ?? member.position;
+        if (shirtNumber !== member.shirtNumber) jerseyNumbersFilled++;
+        if (position !== member.position || shirtNumber !== member.shirtNumber) {
+          await tx.sbTeamSquad.update({
+            where: { id: member.id },
+            data: { position, shirtNumber },
+          });
+        }
+        if (member.playerId && (row.dateOfBirth || row.imageUrl)) {
+          await tx.player.update({
+            where: { id: member.playerId },
+            data: {
+              ...(row.dateOfBirth ? { dateOfBirth: row.dateOfBirth } : {}),
+              ...(row.imageUrl ? { playerPhotoUrl: row.imageUrl } : {}),
+            },
+          });
+        }
+        slots.push({
+          squadId: member.id,
+          displayName: member.displayName,
+          position,
+          shirtNumber,
+          playerId: member.playerId,
+          playerSlug: null,
+          role: row.isStarter ? "xi" : "sub",
+        });
+      }
 
       const resolved: MatchdayRosterPayload = {
         teamId,
@@ -2292,128 +2327,10 @@ export class AdminScoreboardService {
       imported: rows.length,
       starters: roster.xi.length,
       bench: roster.subs.length,
+      jerseyNumbersFilled,
+      /** Non-blocking notes, e.g. a jersey number left blank because it is taken. */
+      warnings,
     };
-  }
-
-  private async findOrCreateTeamSquadRow(
-    tx: Prisma.TransactionClient,
-    teamId: string,
-    row: ParsedMatchSquadCsvRow
-  ) {
-    const player = await this.findOrCreateCsvSquadPlayer(tx, row);
-    const targetTeam = await tx.sbTeam.findUnique({
-      where: { id: teamId },
-      select: { competitionId: true, name: true },
-    });
-    if (!targetTeam) throw new NotFoundException("Target team not found");
-
-    const activeSquad = await tx.sbTeamSquad.findFirst({
-      where: {
-        playerId: player.id,
-        team: { competitionId: targetTeam.competitionId },
-      },
-      include: { team: true },
-    });
-    if (activeSquad && activeSquad.teamId !== teamId) {
-      throw new BadRequestException(
-        `${player.displayName} is already registered for ${normalizeClubName(
-          activeSquad.team.name
-        )} in this competition. Remove that squad row before assigning another team.`
-      );
-    }
-    if (activeSquad) {
-      return tx.sbTeamSquad.update({
-        where: { id: activeSquad.id },
-        data: {
-          displayName: row.playerName,
-          position: row.position,
-          shirtNumber: row.jerseyNumber,
-        },
-      });
-    }
-    const existing = await tx.sbTeamSquad.findFirst({
-      where: {
-        teamId,
-        displayName: { equals: row.playerName, mode: "insensitive" },
-        ...(row.jerseyNumber == null ? {} : { shirtNumber: row.jerseyNumber }),
-      },
-    });
-    if (existing) {
-      if (existing.position !== row.position || existing.shirtNumber !== row.jerseyNumber) {
-        return tx.sbTeamSquad.update({
-          where: { id: existing.id },
-          data: {
-            playerId: player.id,
-            position: row.position,
-            shirtNumber: row.jerseyNumber,
-          },
-        });
-      }
-      if (existing.playerId !== player.id) {
-        return tx.sbTeamSquad.update({
-          where: { id: existing.id },
-          data: { playerId: player.id },
-        });
-      }
-      return existing;
-    }
-
-    return tx.sbTeamSquad.create({
-      data: {
-        teamId,
-        playerId: player.id,
-        displayName: row.playerName,
-        position: row.position,
-        shirtNumber: row.jerseyNumber,
-      },
-    });
-  }
-
-  private async findOrCreateCsvSquadPlayer(
-    tx: Prisma.TransactionClient,
-    row: ParsedMatchSquadCsvRow
-  ) {
-    const displayName = normalizePlayerName(row.playerName);
-    const normalizedName = playerLookupKey(displayName);
-    const nameParts = splitPlayerName(displayName);
-    const existing = await tx.player.findUnique({ where: { normalizedName } });
-    const data = {
-      firstName: nameParts.firstName,
-      lastName: nameParts.lastName,
-      displayName,
-      positionPrimary: row.position || "MF",
-      ...(row.dateOfBirth ? { dateOfBirth: row.dateOfBirth } : {}),
-      ...(row.imageUrl ? { playerPhotoUrl: row.imageUrl } : {}),
-      registrationStatus: "approved",
-      isPublic: true,
-    };
-
-    if (existing) {
-      return tx.player.update({
-        where: { id: existing.id },
-        data,
-      });
-    }
-
-    return tx.player.create({
-      data: {
-        ...data,
-        normalizedName,
-        slug: await this.resolveUniqueCsvPlayerSlug(tx, displayName),
-      },
-    });
-  }
-
-  private async resolveUniqueCsvPlayerSlug(tx: Prisma.TransactionClient, displayName: string) {
-    const base = slugify(displayName) || "player";
-    let slug = base;
-    let n = 0;
-    while (true) {
-      const clash = await tx.player.findFirst({ where: { slug }, select: { id: true } });
-      if (!clash) return slug;
-      n += 1;
-      slug = `${base}-${n}`;
-    }
   }
 
   private async syncMatchSquadPlayers(

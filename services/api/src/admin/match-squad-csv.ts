@@ -1,4 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
+import { normalizePlayerName, playerLookupKey } from "@dtp/engines";
+import { reorderKey } from "../players/duplicate-detection";
 import { isAllowedImageMediaUrl } from "../shared/media-url";
 
 export type ParsedMatchSquadCsvRow = {
@@ -142,4 +144,113 @@ export function parseMatchSquadCsv(csv: string): ParsedMatchSquadCsvRow[] {
       ),
     };
   });
+}
+
+/** The parts of a team's squad row a matchday CSV is matched against. */
+export type TeamSquadCandidate = {
+  id: string;
+  displayName: string;
+  shirtNumber: number | null;
+  position: string | null;
+  playerId: string | null;
+  player: { displayName: string } | null;
+};
+
+export type MatchedSquadCsvRow<T extends TeamSquadCandidate = TeamSquadCandidate> = {
+  rowNumber: number;
+  row: ParsedMatchSquadCsvRow;
+  squad: T;
+  /**
+   * The jersey number this upload may write: the CSV's, only where the squad row has
+   * none and no other player in the team already wears it. Otherwise the squad row's.
+   */
+  shirtNumber: number | null;
+};
+
+/**
+ * Map each CSV row to the player the team's squad already holds.
+ *
+ * A matchday sheet names people the team registered; it does not register anybody.
+ * Every row that created a `Player` here became a person everywhere in the product --
+ * goals, charts, a public profile -- and a misspelt name on a team sheet is the most
+ * common way a second record of the same boy got started. So a row that matches no one
+ * in this team is an error the uploader fixes, never a new record.
+ *
+ * Matched on the dedupe key, against both the squad row's name and its player's, then
+ * on the same words in any order: within one squad no two players share a first or last
+ * name even swapped (the rule `squad-duplicates.ts` merges on), so `Nwosu Henry` on the
+ * sheet is the `Henry Nwosu` in the squad.
+ *
+ * The jersey number on the sheet is never used to match and never replaces a number the
+ * squad already holds -- a team sheet's numbers drift from match to match, and a wrong
+ * number moves future `No. 7` events onto the wrong person. It only fills a blank.
+ */
+export function matchSquadCsvRows<T extends TeamSquadCandidate>(
+  rows: ParsedMatchSquadCsvRow[],
+  squad: T[]
+) {
+  const byKey = new Map<string, Set<T>>();
+  const byWords = new Map<string, Set<T>>();
+  const index = (map: Map<string, Set<T>>, key: string, member: T) => {
+    if (!key) return;
+    const held = map.get(key) ?? new Set<T>();
+    held.add(member);
+    map.set(key, held);
+  };
+  for (const member of squad) {
+    for (const name of [member.displayName, member.player?.displayName]) {
+      if (!name) continue;
+      const tidy = normalizePlayerName(name);
+      index(byKey, playerLookupKey(tidy), member);
+      index(byWords, reorderKey(tidy), member);
+    }
+  }
+
+  const matched: MatchedSquadCsvRow<T>[] = [];
+  const errors: string[] = [];
+  const rowBySquadId = new Map<string, number>();
+
+  rows.forEach((row, i) => {
+    const rowNumber = i + 2;
+    const tidy = normalizePlayerName(row.playerName);
+    const hits = byKey.get(playerLookupKey(tidy)) ?? byWords.get(reorderKey(tidy));
+    if (!hits?.size) {
+      errors.push(`row ${rowNumber}: ${row.playerName} is not in this team's squad`);
+      return;
+    }
+    if (hits.size > 1) {
+      const names = [...hits].map((member) => member.displayName).join(", ");
+      errors.push(`row ${rowNumber}: ${row.playerName} matches more than one squad player (${names})`);
+      return;
+    }
+    const [member] = hits;
+    const earlier = rowBySquadId.get(member.id);
+    if (earlier !== undefined) {
+      errors.push(`row ${rowNumber}: ${row.playerName} is the same player as row ${earlier}`);
+      return;
+    }
+    rowBySquadId.set(member.id, rowNumber);
+    matched.push({ rowNumber, row, squad: member, shirtNumber: member.shirtNumber });
+  });
+
+  /* Blanks filled only with a number nobody else in the team holds, and that no
+     earlier row of this sheet has just claimed. */
+  const warnings: string[] = [];
+  const worn = new Set(
+    squad.map((member) => member.shirtNumber).filter((n): n is number => n !== null)
+  );
+  for (const entry of matched) {
+    const incoming = entry.row.jerseyNumber;
+    if (entry.squad.shirtNumber !== null || incoming === null) continue;
+    if (worn.has(incoming)) {
+      warnings.push(
+        `row ${entry.rowNumber}: #${incoming} is already worn in this squad, so ${entry.squad.displayName} was left without a number`
+      );
+      continue;
+    }
+    worn.add(incoming);
+    entry.shirtNumber = incoming;
+  }
+
+  return { matched, errors, warnings };
 }
