@@ -454,6 +454,10 @@ export const adminScoreboardApi = {
       imported: number;
       starters: number;
       bench: number;
+      /** Squad players who had no jersey number and took the CSV's. */
+      jerseyNumbersFilled: number;
+      /** Non-blocking notes, e.g. a jersey number left blank because it is taken. */
+      warnings: string[];
     }>(`/admin/scoreboard/matches/${matchId}/squads/upload`, {
       method: "POST",
       body: JSON.stringify({ teamId, csv }),

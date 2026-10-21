@@ -141,6 +141,13 @@ export class VisionAnnotationController {
     return jsonSafe(await this.annotation.enqueue(dto, auth));
   }
 
+  /** Submitted work waiting for a second person; the caller's own work is counted, not listed. */
+  @Get("review-queue")
+  @RequirePermissions("vision.review")
+  async reviewQueue(@AdminAuth() auth: AdminAuthContext, @Query("limit") limit?: string) {
+    return jsonSafe(await this.annotation.reviewQueue(auth, limit ? Number(limit) : undefined));
+  }
+
   @Get("hard-frames")
   @RequirePermissions("vision.read")
   async hardFrameRuns() {

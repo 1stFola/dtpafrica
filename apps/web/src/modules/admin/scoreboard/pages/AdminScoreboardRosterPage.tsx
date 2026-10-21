@@ -285,9 +285,13 @@ export function AdminScoreboardRosterPage() {
         });
       }
       const result = await adminScoreboardApi.uploadMatchSquadsCsv(matchId, teamId, csv);
+      const filled = result.jerseyNumbersFilled
+        ? `; ${result.jerseyNumbersFilled} jersey number${result.jerseyNumbersFilled === 1 ? "" : "s"} filled in`
+        : "";
       toast.success(
-        `Imported ${result.imported} players (${result.starters} starters, ${result.bench} bench)`
+        `Matched ${result.imported} squad players (${result.starters} starters, ${result.bench} bench)${filled}`
       );
+      for (const warning of result.warnings) toast.info(warning);
       loadRoster();
     } catch (e) {
       toast.error(formatAdminScoreboardError(e));
@@ -467,9 +471,11 @@ export function AdminScoreboardRosterPage() {
           <div>
             <h3>Upload matchday squad CSV</h3>
             <p className="muted">
-              Replaces the selected team's matchday squad for this fixture. Required columns:
-              jersey_number, player_name, position, is_starter. Optional columns: date_of_birth,
-              image_url.
+              Replaces the selected team's matchday squad for this fixture. Each row is matched by
+              name to a player already in the team's squad; no new players are created, so add
+              anyone missing in Squad Management first. A jersey number is only used where the
+              squad player has none. Required columns: jersey_number, player_name, position,
+              is_starter. Optional columns: date_of_birth, image_url.
             </p>
           </div>
           <div className="admin-sb-squad-upload__actions">

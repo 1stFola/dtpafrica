@@ -845,6 +845,37 @@ export class VisionAnnotationService {
     }) };
   }
 
+  /**
+   * Submitted work waiting for a second person, oldest submission first. Work whose latest
+   * attempt is the caller's own is counted but not listed: they may not review it.
+   */
+  async reviewQueue(actor?: AdminAuthContext, limit = 50) {
+    const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 50, 1), 200);
+    const tasks = await this.prisma.visionAnnotationTask.findMany({
+      where: { state: "submitted" },
+      orderBy: { updatedAt: "asc" },
+      select: { id: true, videoAssetId: true, startMs: true, endMs: true, samplingStrategy: true, preLabelled: true, updatedAt: true,
+        videoAsset: { select: { sourceVideoRecord: { select: { title: true } } } },
+        versions: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, annotatorId: true, createdAt: true } } },
+    });
+    const userId = actor?.userId ?? null;
+    const own = tasks.filter((t) => userId && t.versions[0]?.annotatorId === userId);
+    const others = tasks.filter((t) => !own.includes(t)).slice(0, take);
+    const annotatorIds = [...new Set(others.flatMap((t) => (t.versions[0]?.annotatorId ? [t.versions[0].annotatorId] : [])))];
+    const people = annotatorIds.length ? await this.prisma.adminUser.findMany({ where: { id: { in: annotatorIds } }, select: { id: true, name: true, email: true } }) : [];
+    const who = new Map(people.map((p) => [p.id, p.name || p.email]));
+    return {
+      waiting: tasks.length - own.length,
+      yours: own.length,
+      tasks: others.map((t) => ({
+        taskId: t.id, videoAssetId: t.videoAssetId, source: t.videoAsset.sourceVideoRecord?.title ?? null,
+        startMs: t.startMs, endMs: t.endMs, samplingStrategy: t.samplingStrategy, preLabelled: t.preLabelled,
+        versionId: t.versions[0]?.id ?? null, submittedAt: t.versions[0]?.createdAt ?? t.updatedAt,
+        annotator: t.versions[0]?.annotatorId ? (who.get(t.versions[0].annotatorId) ?? t.versions[0].annotatorId) : null,
+      })),
+    };
+  }
+
   /** The hard_frames runs over this footage whose frames are queued (in any state), with the detect run each picked from. */
   private async queuedHardFrameRuns(videoAssetIds: string[]) {
     if (videoAssetIds.length === 0) return [];

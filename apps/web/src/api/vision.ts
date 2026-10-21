@@ -405,6 +405,13 @@ export function fetchVisionHardFrameRuns() {
 export function queueVisionHardFrames(jobId: string) {
   return adminFetch<{ jobId: string; queued: number; alreadyQueued: number }>(`/vision/annotation/queue/hard-frames/${encodeURIComponent(jobId)}`, { method: "POST" });
 }
+/** A submitted task waiting for a second person (docs/vision/101). */
+export type VisionAnnotationReviewTask = { taskId: string; videoAssetId: string; source: string | null; startMs: number; endMs: number;
+  samplingStrategy: SamplingStrategy; preLabelled: boolean; versionId: string | null; submittedAt: string; annotator: string | null };
+/** Oldest submission first. `yours` counts work the signed-in person submitted: they may not review it. */
+export function fetchVisionAnnotationReviewQueue(limit = 50) {
+  return adminFetch<{ waiting: number; yours: number; tasks: VisionAnnotationReviewTask[] }>(`/vision/annotation/review-queue?limit=${limit}`);
+}
 /** The detector's boxes a pre-labelled task opens on (docs/vision/99). */
 export function fetchVisionTaskPreLabels(taskId: string) {
   return adminFetch<{ taskId: string; boxes: unknown[] }>(`/vision/annotation/tasks/${encodeURIComponent(taskId)}/prelabels`);
