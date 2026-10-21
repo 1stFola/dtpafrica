@@ -9,11 +9,14 @@ import { VisionBenchmarksService } from "./benchmarks.service";
 import {
   ApprovePromotionDto,
   CreateModelDto,
+  RegisterFromTrainingDto,
   RegisterModelVersionDto,
   RejectPromotionDto,
   RequestBenchmarkDto,
+  RequestTrainingDto,
 } from "./dto/models.dto";
 import { VisionModelsService } from "./models.service";
+import { VisionTrainingService } from "./training.service";
 import { VisionPromotionsService } from "./promotions.service";
 
 /**
@@ -30,7 +33,8 @@ export class VisionModelsController {
   constructor(
     @Inject(VisionModelsService) private readonly models: VisionModelsService,
     @Inject(VisionBenchmarksService) private readonly benchmarks: VisionBenchmarksService,
-    @Inject(VisionPromotionsService) private readonly promotions: VisionPromotionsService
+    @Inject(VisionPromotionsService) private readonly promotions: VisionPromotionsService,
+    @Inject(VisionTrainingService) private readonly training: VisionTrainingService
   ) {}
 
   @Get()
@@ -116,6 +120,20 @@ export class VisionModelsController {
   @RequirePermissions("vision.models.train")
   async create(@Body() dto: CreateModelDto, @AdminAuth() auth: AdminAuthContext) {
     return jsonSafe(await this.models.createModel(dto, auth));
+  }
+
+  /** A fine-tuning run on a frozen dataset (docs/vision/102); its budget is approved with the request. */
+  @Post("training")
+  @RequirePermissions("vision.models.train")
+  async requestTraining(@Body() dto: RequestTrainingDto, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.training.request(dto, auth));
+  }
+
+  /** A candidate version from a succeeded run: weights, checksum, dataset and config come from the run. */
+  @Post(":id/versions/from-training")
+  @RequirePermissions("vision.models.train")
+  async registerFromTraining(@Param("id") id: string, @Body() dto: RegisterFromTrainingDto, @AdminAuth() auth: AdminAuthContext) {
+    return jsonSafe(await this.training.registerFromRun(id, dto, auth));
   }
 
   @Post(":id/versions")

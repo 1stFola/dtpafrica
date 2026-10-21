@@ -534,9 +534,36 @@ describe("benchmark results reach the ledger", () => {
   });
 
   it("still says so for an asset-less job of another type", async () => {
-    const outcome = await service().apply("train", null, { artifacts: [], summary: {} });
+    const outcome = await service().apply("vlm", null, { artifacts: [], summary: {} });
     expect(outcome.applied).toBe(false);
     expect(outcome.detail).toMatch(/no video asset/);
+  });
+
+  describe("train (docs/vision/102)", () => {
+    const pinned = "c".repeat(64);
+    const weightsKey = "inference/job-train/1/weights.pt";
+    const completion = (summary: Record<string, unknown> = {}, artifacts = [{ key: weightsKey, bucket: "models", role: "weights" }]) => ({
+      artifacts,
+      summary: { version: "train-fasterrcnn/v1", configKey: "trained/torchvision/fasterrcnn_resnet50_fpn/v1", weightsSha256: "a".repeat(64), weightsKey,
+        exportChecksum: pinned, frames: { train: 120, val: 30 }, val: { ballRecall: 0.61 }, ...summary },
+    });
+    const context = { modelVersionId: null, inputSpec: { export: { key: "datasets/d/export/samples.json", checksum: pinned } } };
+
+    it("accepts a run a version can be registered from, and writes nothing", async () => {
+      const outcome = await service().apply("train", null, completion(), context);
+      expect(outcome).toEqual({ applied: true, detail: "train run: 120 train and 30 val frames, val ball recall 0.61" });
+    });
+
+    it("refuses a run that trained on another export than the one pinned", async () => {
+      const outcome = await service().apply("train", null, completion({ exportChecksum: "d".repeat(64) }), context);
+      expect(outcome.applied).toBe(false);
+      expect(outcome.detail).toMatch(/another export/);
+    });
+
+    it("refuses weights that are not among the artifacts", async () => {
+      const outcome = await service().apply("train", null, completion({}, [{ key: weightsKey, bucket: "derived", role: "weights" }]), context);
+      expect(outcome.detail).toMatch(/not among the artifacts/);
+    });
   });
 });
 

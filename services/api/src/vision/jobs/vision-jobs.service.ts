@@ -685,6 +685,8 @@ export class VisionJobsService {
       priority?: number;
       budgetSeconds?: number;
       budgetUsdCents?: number;
+      /** Overrides the type's default class: a training run may ask for the cheaper 24 GB card. */
+      resourceClass?: VisionResourceClass;
     },
     actor?: AdminAuthContext
   ): Promise<{ id: string }> {
@@ -695,7 +697,7 @@ export class VisionJobsService {
     const created = await this.queue.enqueue({
       id,
       type: params.type,
-      resourceClass: DEFAULT_RESOURCE_CLASS[params.type],
+      resourceClass: params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type],
       priority: params.priority,
       videoAssetId: null,
       datasetVersionId: params.datasetVersionId,
@@ -713,7 +715,7 @@ export class VisionJobsService {
         targetId: created.id,
         data: {
           type: params.type,
-          resourceClass: DEFAULT_RESOURCE_CLASS[params.type],
+          resourceClass: params.resourceClass ?? DEFAULT_RESOURCE_CLASS[params.type],
           datasetVersionId: params.datasetVersionId,
           modelVersionId: params.modelVersionId ?? null,
         },

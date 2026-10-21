@@ -8,7 +8,9 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: the first hard frames on training footage** — four 185 s clips of a 1XCup
+**Latest: the train stage** — contract 1.23.0 adds `train`: a run, asked for with its own budget, fine-tunes the torchvision Faster R-CNN baseline on a frozen dataset's train split (negatives kept, uncertain frames left out), scores its val split with the benchmark's evaluation, and writes weights, config and metrics to the models bucket. A person registers a candidate version from a succeeded run. Detect loading those weights comes next. See [102](102-TRAIN-STAGE.md).
+
+**Previously: the first hard frames on training footage** — four 185 s clips of a 1XCup
 match (Emiloju FC v JP Young Stars FC, under the 1XCup media rights agreement). They ran
 through the CPU stages, and 82 shots were declared live play. Detector v2 ran on a RunPod
 4090 for clips 1–3, for $0.734, and Phase 6 spend is about $1.97 of a raised $8 ceiling.

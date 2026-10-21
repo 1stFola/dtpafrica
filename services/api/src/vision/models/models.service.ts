@@ -256,7 +256,7 @@ export class VisionModelsService {
     return version;
   }
 
-  private async assertDatasetCanBackAModel(datasetVersionId: string) {
+  async assertDatasetCanBackAModel(datasetVersionId: string) {
     const dataset = await this.prisma.visionDatasetVersion.findUnique({
       where: { id: datasetVersionId },
       select: { id: true, label: true, frozenAt: true, containsRevokedMembers: true },

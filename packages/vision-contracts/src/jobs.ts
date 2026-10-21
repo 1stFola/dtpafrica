@@ -120,8 +120,14 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  * sightings, a low-confidence ball, a ball only the tiled pass found, and a share of
  * ordinary play) and writes the detector's boxes for each as pre-labels. No model
  * runs (docs/vision/99).
+ *
+ * 1.23.0 -- `train`: a GPU stage that fine-tunes the torchvision Faster R-CNN baseline
+ * on a frozen dataset's export (its train split; its val split is scored with the
+ * benchmark's own evaluation) and writes the weights, their config and the metrics to
+ * the models bucket. The control plane pins the export's checksum and lists every
+ * proxy the stage may read (docs/vision/102).
  */
-export const VISION_CONTRACT_VERSION = "1.22.0";
+export const VISION_CONTRACT_VERSION = "1.23.0";
 
 /**
  * The detectors a worker can run, named by the model version's config key. The
@@ -173,7 +179,7 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   events: "1.19.0",
   clip: "1.12.0",
   vlm: "1.12.0",
-  train: "1.12.0",
+  train: "1.23.0",
   benchmark: "1.12.0",
 };
 

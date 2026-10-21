@@ -28,6 +28,7 @@ from .hard_frames import run_hard_frames
 from .identify import run_identify
 from .probe import run_probe
 from .track import run_track
+from .train import run_train
 from .transcode import run_transcode
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -64,6 +65,8 @@ STAGES: dict[str, StageHandler] = {
     # GPU. Imports torch lazily inside the handler, so the CPU image can load this
     # registry without the model stack installed.
     "detect": run_detect,
+    # GPU. Fine-tunes the detector on a frozen dataset; torch is imported only inside it.
+    "train": run_train,
 }
 
 #: Stages that never touch a GPU.
@@ -74,7 +77,7 @@ STAGES: dict[str, StageHandler] = {
 CPU_STAGES = frozenset({"probe", "fingerprint", "transcode", "benchmark", "track", "identify", "cuts", "camera_motion", "calibrate", "gamestate", "ball_trajectory", "hard_frames", "possession", "events"})
 
 #: Stages that need CUDA and the model stack, and so only run on the GPU image.
-GPU_STAGES = frozenset({"detect"})
+GPU_STAGES = frozenset({"detect", "train"})
 
 # Every stage is one or the other. A stage in neither would be routed by whatever the
 # contract happened to say, unchecked.
@@ -96,5 +99,6 @@ __all__ = [
     "run_identify",
     "run_probe",
     "run_track",
+    "run_train",
     "run_transcode",
 ]

@@ -43,6 +43,7 @@ import { PostgresJobQueue } from "./jobs/postgres-job-queue";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { VisionBenchmarksService } from "./models/benchmarks.service";
+import { VisionTrainingService } from "./models/training.service";
 import { VisionModelsController } from "./models/models.controller";
 import { VisionModelsService } from "./models/models.service";
 import { VisionPromotionsService } from "./models/promotions.service";
@@ -152,6 +153,7 @@ const computeRegistryProvider: Provider = {
     VisionAnnotationService,
     VisionModelsService,
     VisionBenchmarksService,
+    VisionTrainingService,
     VisionPromotionsService,
     VisionIdentityService,
     VisionCalibrationService,

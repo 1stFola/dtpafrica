@@ -6,6 +6,7 @@ import { CALIBRATED_POSSESSION_VERSION, POSSESSION_CALIBRATED_REASONS, POSSESSIO
 import { sameEvidence } from "../possession/possession-evidence";
 import { EVENT_CARRY_VERSION, EVENT_CARRY_MANIFEST_CHECKSUM, EVENT_INFERENCE_ARTIFACT_ROLE, MAX_EVENT_INFERENCE_BYTES, validCarryProducer } from "@dtp/vision-contracts";
 import { HARD_FRAMES_ARTIFACT_ROLE, HARD_FRAMES_VERSION, MAX_HARD_FRAMES, MAX_HARD_FRAMES_BYTES } from "@dtp/vision-contracts";
+import { TRAIN_ARTIFACT_ROLES, TRAIN_VERSION, TRAINED_DETECTOR_CONFIG } from "@dtp/vision-contracts";
 import { VisionBenchmarksService } from "../models/benchmarks.service";
 
 /**
@@ -70,6 +71,7 @@ export class VisionStageResultsService {
     context: ApplyContext = { modelVersionId: null }
   ): Promise<ApplyOutcome> {
     if (jobType === "benchmark") return this.applyBenchmark(completion, context);
+    if (jobType === "train") return this.applyTrain(completion, context);
     if (!videoAssetId || !ASSET_STAGES.includes(jobType)) {
       return { applied: false, detail: videoAssetId ? `no domain effect for ${jobType}` : "job has no video asset" };
     }
@@ -850,6 +852,29 @@ export class VisionStageResultsService {
       await this.benchmarks.fail(runId, `applying the completion failed: ${message}`);
       return { applied: false, detail: message };
     }
+  }
+
+  /**
+   * A training run (docs/vision/102) writes nothing to Postgres: its weights and metrics
+   * stay on the job until a person registers a version from it. What is checked here is
+   * that the completion is one a version could be registered from -- the export it
+   * trained on is the one pinned, and the weights it names are among its artifacts.
+   */
+  private applyTrain(completion: StageCompletion, context: ApplyContext): ApplyOutcome {
+    const s = completion.summary ?? {};
+    const pinned = (context.inputSpec?.export as { checksum?: unknown } | undefined)?.checksum;
+    const weights = completion.artifacts.find((a) => a.role === TRAIN_ARTIFACT_ROLES.weights);
+    const problems = [
+      s.version !== TRAIN_VERSION && `version ${String(s.version)} is not ${TRAIN_VERSION}`,
+      s.configKey !== TRAINED_DETECTOR_CONFIG && `configKey ${String(s.configKey)} is not ${TRAINED_DETECTOR_CONFIG}`,
+      !(typeof s.weightsSha256 === "string" && /^[a-f0-9]{64}$/.test(s.weightsSha256)) && "no weights checksum",
+      !(weights && weights.bucket === "models" && weights.key === s.weightsKey) && "the weights named are not among the artifacts",
+      (typeof pinned !== "string" || s.exportChecksum !== pinned) && "it trained on another export than the one pinned",
+    ].filter(Boolean);
+    if (problems.length) return { applied: false, detail: `train completion not registrable: ${problems.join("; ")}` };
+    const frames = (s.frames ?? {}) as { train?: unknown; val?: unknown };
+    const val = (s.val ?? {}) as { ballRecall?: unknown };
+    return { applied: true, detail: `train run: ${String(frames.train)} train and ${String(frames.val)} val frames, val ball recall ${String(val.ballRecall)}` };
   }
 
   /** A benchmark job that will not run again: the run says so, with the reason. */

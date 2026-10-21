@@ -796,9 +796,11 @@ when a route has neither a permission nor a token guard.
 | `GET` | `/vision/models` | `vision.read` | `models/models.controller.ts` |
 | `POST` | `/vision/models` | `vision.models.train` | `models/models.controller.ts` |
 | `POST` | `/vision/models/:id/versions` | `vision.models.train` | `models/models.controller.ts` |
+| `POST` | `/vision/models/:id/versions/from-training` | `vision.models.train` | `models/models.controller.ts` |
 | `GET` | `/vision/models/benchmarks/:id` | `vision.read` | `models/models.controller.ts` |
 | `GET` | `/vision/models/promotions/:id` | `vision.read` | `models/models.controller.ts` |
 | `POST` | `/vision/models/promotions/:id/reject` | `vision.models.promote` | `models/models.controller.ts` |
+| `POST` | `/vision/models/training` | `vision.models.train` | `models/models.controller.ts` |
 | `GET` | `/vision/models/versions/:id` | `vision.read` | `models/models.controller.ts` |
 | `POST` | `/vision/models/versions/:id/benchmark` | `vision.models.train` | `models/models.controller.ts` |
 | `GET` | `/vision/models/versions/:id/benchmarks` | `vision.read` | `models/models.controller.ts` |
