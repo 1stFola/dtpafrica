@@ -14,6 +14,7 @@ import { StatLeadersWidget } from "../components/StatLeadersWidget";
 import { TeamCrest } from "../components/TeamCrest";
 import { CompetitionCrest } from "../components/CompetitionCrest";
 import { matchCenterPath } from "../utils/matchPath";
+import { deriveTournamentTotals, type TournamentTotals } from "../tournament-totals";
 import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { playerDisplayName } from "../../../lib/player-display-name";
@@ -857,6 +858,25 @@ function KnockoutBracketSection({ imageUrl }: { imageUrl: string }) {
   );
 }
 
+function TotalsCards({ totals }: { totals: TournamentTotals }) {
+  const cards = [
+    { label: "Matches", value: totals.matches },
+    { label: "Goals", value: totals.goals },
+    { label: "Matches Played", value: totals.matchesPlayed },
+    { label: "Goals / Match", value: totals.goalsPerMatch },
+  ];
+  return (
+    <div className="sbc-totals">
+      {cards.map((card) => (
+        <div key={card.label} className="sbc-total">
+          <span className="sbc-total__value">{card.value}</span>
+          <span className="sbc-total__label">{card.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function NarrativeHighlight({ match }: { match: SbMatchListItem }) {
   const narrative = matchNarrative(match);
   if (!narrative) return null;
@@ -1008,10 +1028,7 @@ export function CompetitionPage() {
   const groupedFixtures = useMemo(() => groupFixtures(fixtureMatches), [fixtureMatches]);
   const placements = useMemo(() => derivePlacements(matches), [matches]);
   const topScorers = useMemo(() => deriveTopScorers(matches), [matches]);
-  const totalGoals = useMemo(
-    () => matches.reduce((sum, m) => sum + m.homeScore + m.awayScore, 0),
-    [matches]
-  );
+  const totals = useMemo(() => deriveTournamentTotals(matches), [matches]);
   const isKnockoutFormat =
     formatType === "KNOCKOUT_CUP" || slug === "ex-internationals-cup-2026";
   const isGroupFormat =
@@ -1241,26 +1258,7 @@ export function CompetitionPage() {
       {!loading && matches.length > 0 && (
         <section className="sbc-block">
           <h2 className="sbc-block__title">Tournament Totals</h2>
-          <div className="sbc-totals">
-            <div className="sbc-total">
-              <span className="sbc-total__value">{matches.length}</span>
-              <span className="sbc-total__label">Matches</span>
-            </div>
-            <div className="sbc-total">
-              <span className="sbc-total__value">{totalGoals}</span>
-              <span className="sbc-total__label">Goals</span>
-            </div>
-            <div className="sbc-total">
-              <span className="sbc-total__value">{teams.length}</span>
-              <span className="sbc-total__label">Teams</span>
-            </div>
-            <div className="sbc-total">
-              <span className="sbc-total__value">
-                {matches.length ? (totalGoals / matches.length).toFixed(1) : "0.0"}
-              </span>
-              <span className="sbc-total__label">Goals / Match</span>
-            </div>
-          </div>
+          <TotalsCards totals={totals} />
         </section>
       )}
 
@@ -1492,26 +1490,7 @@ export function CompetitionPage() {
         {matches.length > 0 && (
           <section className="sbc-block">
             <h2 className="sbc-block__title">Edition Stats</h2>
-            <div className="sbc-totals">
-              <div className="sbc-total">
-                <span className="sbc-total__value">{matches.length}</span>
-                <span className="sbc-total__label">Matches</span>
-              </div>
-              <div className="sbc-total">
-                <span className="sbc-total__value">{totalGoals}</span>
-                <span className="sbc-total__label">Goals</span>
-              </div>
-              <div className="sbc-total">
-                <span className="sbc-total__value">{teams.length}</span>
-                <span className="sbc-total__label">Teams</span>
-              </div>
-              <div className="sbc-total">
-                <span className="sbc-total__value">
-                  {matches.length ? (totalGoals / matches.length).toFixed(1) : "0.0"}
-                </span>
-                <span className="sbc-total__label">Goals / Match</span>
-              </div>
-            </div>
+            <TotalsCards totals={totals} />
           </section>
         )}
 
