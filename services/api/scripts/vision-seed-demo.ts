@@ -540,7 +540,8 @@ async function main() {
    * and rejected one. If this seed ever needs `targeted_event`, give the gate a
    * different strategy in the same change.
    */
-  // Waiting, so "Claim next window" has something to hand out.
+  // Waiting, so the queue shows open work. "Claim next window" never hands these out
+  // (it skips schemas ending in DEMO_SCHEMA_SUFFIX), so open them by their task URL.
   await task({ samplingStrategy: "new_domain_slice" });
   await task({ samplingStrategy: "stage_disagreement" });
   // Pre-labelled, so the anchoring-bias warning is visible on the workstation.

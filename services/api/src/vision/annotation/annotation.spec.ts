@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadVisionConfig } from "../config/vision.config";
 import { InMemoryObjectStore } from "../storage/in-memory-object-store";
-import { VisionAnnotationService } from "./annotation.service";
+import { DEMO_SCHEMA_SUFFIX, VisionAnnotationService } from "./annotation.service";
 
 /**
  * Annotation.
@@ -267,6 +267,18 @@ describe("claiming", () => {
     const sql = String(mockPrisma.$queryRaw.mock.calls[0]?.[0]?.join?.("?") ?? "");
     expect(sql).toContain("FOR UPDATE SKIP LOCKED");
     expect(sql).toContain("UPDATE vision_annotation_tasks");
+  });
+
+  it("never hands out a demo-seed task or one under a retired schema", async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    await service.claimNextTask("ann-1");
+
+    const [strings, ...values] = mockPrisma.$queryRaw.mock.calls[0]! as [string[], ...unknown[]];
+    const sql = strings.join("?");
+    expect(sql).toMatch(/label_schema_version_id IN \(\s*SELECT id FROM vision_label_schema_versions/);
+    expect(sql).toContain("superseded_at IS NULL");
+    expect(sql).toContain("version NOT LIKE ?");
+    expect(values).toContain(`%${DEMO_SCHEMA_SUFFIX}`);
   });
 
   it("returns null when the queue is empty rather than throwing", async () => {
