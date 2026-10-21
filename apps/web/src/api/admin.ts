@@ -60,8 +60,11 @@ export function clearAdminApiKey() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
-/* The last session the API confirmed, so a reload with no signal can carry on with it
-   rather than signing the recorder out. The API still checks the token on every call. */
+/* What the last confirmed session allowed, so a reload with no signal can carry on with it
+   rather than signing the recorder out. The API still checks the token on every call.
+
+   Role and permissions only: enough to draw the admin pages, nothing that identifies the
+   person. Email, name and user id are not needed offline, so they are not written down. */
 const SESSION_STORAGE_KEY = "dtp_admin_session";
 
 export function readCachedAdminSession(): AdminSession | null {
@@ -74,8 +77,17 @@ export function readCachedAdminSession(): AdminSession | null {
 }
 
 export function cacheAdminSession(session: AdminSession) {
+  const allowed: AdminSession = {
+    ok: session.ok,
+    method: session.method,
+    roleSlug: session.roleSlug,
+    roleName: session.roleName,
+    permissions: session.permissions,
+    competitionIds: session.competitionIds,
+    competitionNames: session.competitionNames,
+  };
   try {
-    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(allowed));
   } catch {
     /* Storage unavailable: the session is simply checked again next time. */
   }

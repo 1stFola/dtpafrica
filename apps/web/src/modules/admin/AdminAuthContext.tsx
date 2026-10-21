@@ -78,7 +78,8 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const loginWithPassword = useCallback(async (email: string, password: string) => {
     const result = await adminLoginWithPassword(email, password);
     setAdminJwt(result.token);
-    cacheAdminSession(result.session);
+    /* Not cached from the login response: the first page load after signing in verifies the
+       session and caches what it allows from that. */
     setSession(result.session);
     setIsAuthenticated(true);
   }, []);
