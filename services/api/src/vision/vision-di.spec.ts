@@ -35,6 +35,7 @@ import { VisionPossessionService } from "./possession/possession.service";
 import { VisionStageResultsService } from "./jobs/stage-results.service";
 import { VisionJobsService } from "./jobs/vision-jobs.service";
 import { VisionBenchmarksService } from "./models/benchmarks.service";
+import { VisionTrainingService } from "./models/training.service";
 import { VisionModelsController } from "./models/models.controller";
 import { VisionModelsService } from "./models/models.service";
 import { VisionPromotionsService } from "./models/promotions.service";
@@ -83,6 +84,7 @@ const PROVIDERS = [
   VisionAnnotationService,
   VisionModelsService,
   VisionBenchmarksService,
+  VisionTrainingService,
   VisionPromotionsService,
   VisionIdentityService,
   VisionCalibrationService,
@@ -131,6 +133,7 @@ const SERVICES = [
   VisionAnnotationService,
   VisionModelsService,
   VisionBenchmarksService,
+  VisionTrainingService,
   VisionPromotionsService,
   VisionIdentityService,
   VisionCalibrationService,

@@ -11,5 +11,6 @@ export * from "./event-inference";
 export * from "./event-carry";
 export * from "./ball-trajectory";
 export * from "./hard-frames";
+export * from "./train";
 export * from "./possession";
 export * from "./clock";

@@ -1,6 +1,10 @@
 import {
   IsIn,
+  IsInt,
+  IsObject,
   IsOptional,
+  Max,
+  Min,
   IsString,
   IsUUID,
   Matches,
@@ -110,4 +114,45 @@ export class RejectPromotionDto {
   @MinLength(3)
   @MaxLength(2000)
   reason!: string;
+}
+
+/** A fine-tuning run (docs/vision/102). The budget is given every time: training is approved per run. */
+export class RequestTrainingDto {
+  @IsUUID()
+  datasetVersionId!: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(2000)
+  budgetUsdCents!: number;
+
+  @IsOptional()
+  @IsIn(["gpu_24gb", "gpu_48gb"])
+  resourceClass?: string;
+
+  /** Any of epochs, batchSize, learningRate, seed, minSize, maxSize; the rest default. Bounds are checked by the service. */
+  @IsOptional()
+  @IsObject()
+  hyperparameters?: Record<string, number>;
+}
+
+/** A candidate version from a succeeded run: the run supplies weights, checksum, dataset and config. */
+export class RegisterFromTrainingDto {
+  @IsUUID()
+  jobId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9._+-]*$/)
+  version!: string;
+
+  @IsString()
+  @Matches(/^[0-9a-f]{7,64}$/i, { message: "gitCommit must be a hex commit id" })
+  gitCommit!: string;
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(8000)
+  licenceNote!: string;
 }
