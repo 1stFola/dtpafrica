@@ -17,7 +17,7 @@ import { matchCenterPath } from "../utils/matchPath";
 import { deriveTournamentTotals, type TournamentTotals } from "../tournament-totals";
 import { isAbortError } from "../../../api/client";
 import { usePageTitle } from "../../../hooks/usePageTitle";
-import { playerDisplayName } from "../../../lib/player-display-name";
+import { namesAPerson, playerDisplayName } from "../../../lib/player-display-name";
 
 type CompetitionTab = "overview" | "fixtures" | "teams" | "history";
 
@@ -373,8 +373,12 @@ function deriveTopScorers(matches: SbMatchListItem[]): Scorer[] {
       hasGoalEvents = true;
       /* Without this the same scorer tallies twice: once as `Wasiu Yayah` from a
          linked event and again as `No. 9 Wasiu Yayah` from an unlinked one. */
-      const name = event.player?.displayName ?? playerDisplayName(event.playerLabel);
-      if (!name || /^(unknown|player\s*[12])$/i.test(name.trim())) continue;
+      /* A bare `No. 8` survives the strip unchanged, so the label has to name a person
+         before it ranks; it was listing shirt numbers among the top scorers. */
+      const label = event.player?.displayName ?? event.playerLabel;
+      if (!namesAPerson(label)) continue;
+      const name = playerDisplayName(label);
+      if (!name) continue;
       const team =
         event.teamId === match.homeTeam.id
           ? match.homeTeam
