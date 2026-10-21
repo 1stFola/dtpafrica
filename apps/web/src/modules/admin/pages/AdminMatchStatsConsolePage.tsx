@@ -28,7 +28,19 @@ import { capturedFromEvents } from "./eventStatCapture";
 import { MatchSheetHistory, latestActionBanner } from "./MatchSheetHistory";
 import { EventTimeline } from "../../scoreboard/components/EventTimeline";
 import { MatchStatsBars } from "../../scoreboard/components/MatchStatsBars";
-import { clearDraft, draftIsAhead, markSynced, readDraft, writeDraft } from "./matchSheetDraft";
+import {
+  clearDraft,
+  draftIsAhead,
+  eventsNotOnServer,
+  markSynced,
+  pruneStoredSheets,
+  readDraft,
+  readServerCopy,
+  removedSince,
+  writeDraft,
+  writeServerCopy,
+} from "./matchSheetDraft";
+import { isNetworkFailure } from "../../../api/admin";
 import {
   HALF_LENGTH_CHOICES,
   TRAINING_HALF_LENGTH_CHOICES,
@@ -54,6 +66,9 @@ const HALVES: Half[] = ["1st", "2nd"];
 const AUTOSAVE_DELAY_MS = 700;
 /* How often to retry a failed sync while the network is down. */
 const RETRY_DELAY_MS = 8000;
+/* How often to try again when the server answered and refused -- a locked sheet. Each try
+   is cheap, and the first one after an admin lifts the lock sends everything. */
+const REFUSED_RETRY_MS = 30_000;
 const LIVE_AUDIO_CHUNK_MS = 700;
 
 function isSplit(value: TallyValue | undefined): value is SplitTally {
@@ -1099,7 +1114,16 @@ export function AdminMatchStatsConsolePage() {
   const [half, setHalf] = useState<Half>("1st");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "pending">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "pending" | "refused">(
+    "idle"
+  );
+  /* Opened from the copy on this device because the server could not be reached. */
+  const [fromDevice, setFromDevice] = useState(false);
+  /* The device would not store the draft: the taps exist only in this open page. */
+  const [storageFull, setStorageFull] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  /* Bumped to try opening the sheet again after the first attempt found no signal. */
+  const [openAttempt, setOpenAttempt] = useState(0);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [busy, setBusy] = useState(false);
   const [pendingHalfLength, setPendingHalfLength] = useState(45);
@@ -1134,9 +1158,15 @@ export function AdminMatchStatsConsolePage() {
   const pending = useRef<{
     tallies: Record<string, TallyValue>;
     events: RecordedEvent[];
+    /** Deleted here, not yet sent: the server keeps whatever a save leaves out. */
+    removedEventIds: string[];
     clock: ClockState | null;
     kits: KitColours;
   } | null>(null);
+  /* The log as the server last confirmed it, to count what has not reached it yet. */
+  const serverEvents = useRef<RecordedEvent[]>([]);
+  const fromDeviceRef = useRef(false);
+  const lastFailure = useRef<{ refused: boolean; at: number } | null>(null);
 
   /* Competitions can declare their own half length; the training cup uses 5. */
   const suggestedHalfLength = sheet?.match.competition.halfLengthMinutes ?? null;
@@ -1150,7 +1180,44 @@ export function AdminMatchStatsConsolePage() {
     setEvents(next.events ?? []);
     setClock(next.clock ?? null);
     if (next.kits) setKits(next.kits);
+    serverEvents.current = next.events ?? [];
   }, []);
+
+  /**
+   * Put back what this device recorded and never got onto the server.
+   *
+   * Those taps exist nowhere else, so they outrank the server's copy -- and they are put
+   * back whatever state the sheet is in. They used to be left out when the sheet could
+   * not be edited (stopped by the idle sweep during an outage, or locked at full time),
+   * and the next action on the page, a correction request say, then deleted them.
+   */
+  const restoreUnsent = useCallback(
+    (server: MatchStatsSheet) => {
+      const draft = readDraft(matchId);
+      if (!draft || !draftIsAhead(draft)) return;
+      /* Except the clock of a reopened record, which is the server's: a draft from match
+         day would put the running clock back. The API keeps its own either way. */
+      const draftClock = server.clock?.phase === "correction" ? server.clock : draft.clock;
+      setTallies(draft.tallies);
+      setEvents(draft.events);
+      setClock(draftClock);
+      setKits(draft.kits);
+      pending.current = {
+        tallies: draft.tallies,
+        events: draft.events,
+        removedEventIds: draft.removedEventIds,
+        clock: draftClock,
+        kits: draft.kits,
+      };
+      setSaveState("pending");
+    },
+    [matchId]
+  );
+
+  const markFromDevice = (value: boolean) => {
+    fromDeviceRef.current = value;
+    setFromDevice(value);
+  };
 
   useEffect(() => {
     if (!matchId) return;
@@ -1160,47 +1227,44 @@ export function AdminMatchStatsConsolePage() {
       .open(matchId)
       .then((data) => {
         if (!active) return;
+        writeServerCopy(matchId, data);
+        pruneStoredSheets(matchId);
         applySheet(data);
-        /* A draft this device never managed to sync outranks the server copy —
-           those taps exist nowhere else. */
-        const draft = readDraft(matchId);
-        if (data.permissions.canEdit && draftIsAhead(draft) && draft) {
-          /* Except the clock of a reopened record, which is the server's: a draft from match
-             day would put the running clock back. The API keeps its own either way. */
-          const draftClock = data.clock?.phase === "correction" ? data.clock : draft.clock;
-          setTallies(draft.tallies);
-          setEvents(draft.events);
-          setClock(draftClock);
-          setKits(draft.kits);
-          pending.current = {
-            tallies: draft.tallies,
-            events: draft.events,
-            clock: draftClock,
-            kits: draft.kits,
-          };
-          setSaveState("pending");
-        }
+        restoreUnsent(data);
+        markFromDevice(false);
         setError(null);
       })
       .catch((e) => {
         if (!active) return;
-        /* Offline on open: fall back to whatever this device holds so the
-           recorder can keep working regardless of signal. */
-        const draft = readDraft(matchId);
-        if (draft) {
-          setTallies(draft.tallies);
-          setEvents(draft.events);
-          setClock(draft.clock);
-          setKits(draft.kits);
-          setSaveState("pending");
+        /* No signal on open: carry on from the last copy the server sent this device, with
+           whatever was recorded here since on top. Recording does not wait for the network. */
+        const copy = readServerCopy(matchId);
+        if (copy) {
+          applySheet(copy);
+          restoreUnsent(copy);
+          markFromDevice(true);
+          setError(isNetworkFailure(e) ? null : String(e instanceof Error ? e.message : e));
+          return;
         }
-        setError(String(e instanceof Error ? e.message : e));
+        setError(
+          isNetworkFailure(e)
+            ? "No connection to the server."
+            : String(e instanceof Error ? e.message : e)
+        );
       })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [matchId, applySheet]);
+  }, [matchId, applySheet, restoreUnsent, openAttempt]);
+
+  /* Opened with no signal and no copy on the device: keep trying rather than leave the
+     recorder on an error page. */
+  useEffect(() => {
+    if (sheet || loading) return;
+    const id = setInterval(() => setOpenAttempt((n) => n + 1), RETRY_DELAY_MS);
+    return () => clearInterval(id);
+  }, [sheet, loading]);
 
   const loadHistory = useCallback(() => {
     if (!matchId) return;
@@ -1215,7 +1279,44 @@ export function AdminMatchStatsConsolePage() {
 
   useEffect(() => loadHistory(), [loadHistory]);
 
-  const savingRef = useRef<Promise<void> | null>(null);
+  /**
+   * Take the server's status, audit and permissions without its recorded data, which this
+   * device may be ahead of. Used whenever the server is read while changes are outstanding.
+   */
+  const takeServerState = useCallback(
+    (next: MatchStatsSheet) => {
+      writeServerCopy(matchId, next);
+      setSheet((prev) => (prev ? { ...next, tallies: prev.tallies, events: prev.events } : next));
+      /* Except the clock when the server has reopened the match for corrections: that phase
+         is the server's to set, and a page left open with its running clock would go on
+         reading the match as live. */
+      if (next.clock?.phase === "correction") {
+        setClock(next.clock);
+        if (pending.current) pending.current = { ...pending.current, clock: next.clock };
+      }
+    },
+    [matchId]
+  );
+
+  /* Back in signal after opening from the device's copy: read the server again so the
+     console stops working from a copy that may be out of date. */
+  const refreshFromServer = useCallback(async () => {
+    if (!matchId) return;
+    try {
+      const next = await matchStatsApi.open(matchId);
+      markFromDevice(false);
+      if (pending.current) takeServerState(next);
+      else {
+        writeServerCopy(matchId, next);
+        applySheet(next);
+      }
+      setError(null);
+    } catch {
+      /* Still no signal; the next retry tries again. */
+    }
+  }, [matchId, applySheet, takeServerState]);
+
+  const savingRef = useRef<Promise<boolean> | null>(null);
   const flush = useCallback(async (): Promise<void> => {
     if (savingRef.current) {
       await savingRef.current;
@@ -1224,55 +1325,100 @@ export function AdminMatchStatsConsolePage() {
     if (!pending.current || !matchId) return;
     const payload = pending.current;
     setSaveState("saving");
-    const save = async () => {
+    const save = async (): Promise<boolean> => {
     try {
       const next = await matchStatsApi.save(matchId, payload.tallies, {
         events: payload.events,
+        removedEventIds: payload.removedEventIds,
         clock: payload.clock,
         kits: payload.kits,
       });
+      lastFailure.current = null;
+      setLastSyncedAt(Date.now());
+      serverEvents.current = next.events ?? [];
       // Only clear the queue once the API has actually accepted this payload.
       if (pending.current === payload) {
         pending.current = null;
-        markSynced(matchId);
+        /* The server merges the log by id, so its copy can hold events another device
+           filed. Nothing newer was tapped here meanwhile, so take it. */
+        markSynced(matchId, next.events);
+        setEvents(next.events ?? payload.events);
       }
       // Keep the server's status/audit but not the recorded data: the recorder
       // may have tapped again while this request was in flight.
-      setSheet((prev) => (prev ? { ...next, tallies: prev.tallies, events: prev.events } : next));
+      takeServerState(next);
       setSaveState(pending.current ? "pending" : "saved");
+      setError(null);
+      if (fromDeviceRef.current) void refreshFromServer();
+      return true;
     } catch (e) {
       /* Keep the payload queued. The draft is already on the device, so
          nothing is lost — this just retries until the network returns. */
-      setSaveState("pending");
-      setError(e instanceof Error ? e.message : String(e));
+      const refused = !isNetworkFailure(e);
+      lastFailure.current = { refused, at: Date.now() };
+      setSaveState(refused ? "refused" : "pending");
+      /* No signal is said by the save line, which keeps counting what is waiting. The
+         message itself is a gateway's error page, not something to show a recorder. */
+      setError(refused ? (e instanceof Error ? e.message : String(e)) : null);
+      /* A refusal usually means the sheet was locked meanwhile -- the idle sweep stops a
+         recording whose events stopped arriving, which is what an outage looks like.
+         Read it again so the console shows the lock instead of a bare error. */
+      if (refused) {
+        matchStatsApi.open(matchId).then(takeServerState).catch(() => undefined);
+      }
+      return false;
     }
     };
     savingRef.current = save();
+    let saved = false;
     try {
-      await savingRef.current;
+      saved = await savingRef.current;
     } finally {
       savingRef.current = null;
     }
-  }, [matchId]);
+    /* Taps made while that request was out were queued behind it, and their own timer
+       found it busy. Send them now rather than at the next retry. */
+    if (saved && pending.current) void flush();
+  }, [matchId, takeServerState, refreshFromServer]);
 
   /* Retry loop and online listener: the sync catches up by itself. */
   useEffect(() => {
     const goOnline = () => {
       setOnline(true);
-      void flush();
+      if (pending.current) void flush();
+      else if (fromDeviceRef.current) void refreshFromServer();
     };
     const goOffline = () => setOnline(false);
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
     const id = setInterval(() => {
-      if (pending.current && navigator.onLine) void flush();
+      if (!navigator.onLine) return;
+      if (pending.current) {
+        const failure = lastFailure.current;
+        if (failure?.refused && Date.now() - failure.at < REFUSED_RETRY_MS) return;
+        void flush();
+      } else if (fromDeviceRef.current) {
+        void refreshFromServer();
+      }
     }, RETRY_DELAY_MS);
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
       clearInterval(id);
     };
-  }, [flush]);
+  }, [flush, refreshFromServer]);
+
+  /* Leaving with changes the server has not got: they are safe on this device, but only
+     this device, so a recorder about to switch phones should know. */
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!pending.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
 
   /* A submitted sheet can be approved by the clock, or by an approver elsewhere, while
      this console sits open. Re-read it every thirty seconds until it is decided, taking
@@ -1283,15 +1429,10 @@ export function AdminMatchStatsConsolePage() {
     if (!matchId || sheetStatusNow !== "submitted") return;
     const id = setInterval(() => {
       if (pending.current) return;
-      matchStatsApi
-        .open(matchId)
-        .then((next) =>
-          setSheet((prev) => (prev ? { ...next, tallies: prev.tallies, events: prev.events } : next))
-        )
-        .catch(() => undefined);
+      matchStatsApi.open(matchId).then(takeServerState).catch(() => undefined);
     }, 30_000);
     return () => clearInterval(id);
-  }, [matchId, sheetStatusNow]);
+  }, [matchId, sheetStatusNow, takeServerState]);
 
   // Flush anything outstanding when leaving the page.
   useEffect(() => {
@@ -1304,7 +1445,16 @@ export function AdminMatchStatsConsolePage() {
   const perms = sheet?.permissions;
   /* One permission set for the whole sheet — statistics and events are
      submitted and approved together, so they lock and unlock together too. */
-  const editable = Boolean(perms?.canEdit);
+  const serverEditable = Boolean(perms?.canEdit);
+  /* Except an idle lock, which happened *to* the recorder -- and a phone that loses signal
+     for twenty minutes is exactly what trips it. The server still refuses every save until a
+     ScoreBoard admin releases the sheet, but the recorder keeps recording onto the phone
+     meanwhile, and it is all sent the moment the lock is lifted. Locking the page here lost
+     the rest of the match. Full time and approval still lock it: those are decisions. */
+  const recordsThroughIdleLock = Boolean(
+    sheet?.idleLock && perms?.canSubmit && !sheet.lockedAtFullTime && sheet.status === "live"
+  );
+  const editable = serverEditable || recordsThroughIdleLock;
 
   /** Queue a debounced save, and mirror to the device immediately. */
   const queueSave = useCallback(
@@ -1314,15 +1464,20 @@ export function AdminMatchStatsConsolePage() {
       clock?: ClockState | null;
       kits?: KitColours;
     }) => {
+      const before = pending.current?.events ?? events;
+      const waiting = pending.current?.removedEventIds ?? [];
       const next = {
         tallies: patch.tallies ?? pending.current?.tallies ?? tallies,
-        events: patch.events ?? pending.current?.events ?? events,
+        events: patch.events ?? before,
+        /* The server keeps any event a save leaves out, so what was deleted here is sent
+           by id -- worked out from the change itself, whichever control made it. */
+        removedEventIds: patch.events ? removedSince(before, patch.events, waiting) : waiting,
         clock: patch.clock !== undefined ? patch.clock : pending.current?.clock ?? clock,
         kits: patch.kits ?? pending.current?.kits ?? kits,
       };
       pending.current = next;
       // Written before the network is even attempted — this is the real copy.
-      writeDraft(matchId, { ...next, synced: false });
+      setStorageFull(!writeDraft(matchId, { ...next, synced: false }));
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => void flush(), AUTOSAVE_DELAY_MS);
     },
@@ -1424,15 +1579,33 @@ export function AdminMatchStatsConsolePage() {
     });
   };
 
-  const act = async (fn: () => Promise<MatchStatsSheet>) => {
+  /**
+   * Run a sheet action. `needsSync` for the ones that act on the recorded data -- submit and
+   * approve -- which must not go ahead without what this device has not sent yet.
+   *
+   * The others (asking for a correction, releasing a lock, sending back) do not wait for a
+   * sync that a locked sheet would refuse, and never discard what is still unsent: they used
+   * to clear the device's draft whatever it held.
+   */
+  const act = async (fn: () => Promise<MatchStatsSheet>, options: { needsSync?: boolean } = {}) => {
     setBusy(true);
     setError(null);
     try {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       await flush();
-      if (pending.current) throw new Error("Your latest changes have not saved yet. Wait for them to sync before continuing.");
-      applySheet(await fn());
-      clearDraft(matchId);
+      if (pending.current && options.needsSync) {
+        throw new Error(
+          "Your latest changes have not reached the server yet. They are kept on this device; wait for them to sync before continuing."
+        );
+      }
+      const next = await fn();
+      if (pending.current) {
+        takeServerState(next);
+      } else {
+        writeServerCopy(matchId, next);
+        applySheet(next);
+        clearDraft(matchId);
+      }
       loadHistory();
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
@@ -1509,13 +1682,30 @@ export function AdminMatchStatsConsolePage() {
 
   if (loading) return <div className="mcx-page mcx-page--center">Loading match console…</div>;
   if (!sheet) {
+    const held = readDraft(matchId);
     return (
       <div className="mcx-page mcx-page--center">
         <p className="mcx-error">{error ?? "Match console unavailable."}</p>
+        <p className="muted">
+          This phone has no saved copy of this match to open without a connection. Trying again
+          every few seconds.
+          {held && draftIsAhead(held)
+            ? ` The ${held.events.length} event(s) recorded on this phone are kept and will be sent once it opens.`
+            : ""}
+        </p>
+        <button type="button" className="mcx-btn" onClick={() => setOpenAttempt((n) => n + 1)}>
+          Try again now
+        </button>
         <Link to="/admin/match-stats" className="mcx-backlink">← Back to match statistics</Link>
       </div>
     );
   }
+
+  const notOnServer = pending.current ? eventsNotOnServer(events, serverEvents.current) : 0;
+  const syncedLabel = lastSyncedAt
+    ? ` · last synced ${new Date(lastSyncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    : "";
+  const unsentLabel = notOnServer > 0 ? ` · ${notOnServer} event(s) not on the server yet` : "";
 
   const { match, audit, status } = sheet;
   const banner = latestActionBanner(history);
@@ -1556,7 +1746,7 @@ export function AdminMatchStatsConsolePage() {
           <LiveAudioCommentaryControl
             matchId={matchId}
             disabled={
-              !editable ||
+              !serverEditable ||
               matchClock.phase === "finished" ||
               correcting ||
               (!match.competition.isTraining && (!liveFeatureEnabled || !liveAudioEnabled))
@@ -1809,15 +1999,46 @@ export function AdminMatchStatsConsolePage() {
           </div>
         )}
 
-        <span className={`mcx-savestate mcx-savestate--${online ? saveState : "offline"}`}>
-          {!online && "Offline — saved on this device, will sync automatically"}
-          {online && saveState === "saving" && "Saving…"}
-          {online && saveState === "saved" && "All changes saved"}
-          {online && saveState === "pending" && "Saved on this device — retrying sync…"}
+        <span
+          className={`mcx-savestate mcx-savestate--${online ? saveState : "offline"}`}
+          role="status"
+        >
+          {!online && `Offline — saved on this device, will sync automatically${unsentLabel}`}
+          {online && saveState === "saving" && `Saving…${unsentLabel}`}
+          {online && saveState === "saved" && `All changes saved${syncedLabel}`}
+          {online && saveState === "pending" && `Saved on this device — retrying sync…${unsentLabel}`}
+          {online && saveState === "refused" && `Saved on this device — the server is not accepting changes${unsentLabel}`}
         </span>
       </div>
 
-      {error && <p className="mcx-error" role="alert">{error}</p>}
+      {storageFull && (
+        <div className="mcx-callout mcx-callout--danger" role="alert">
+          <strong>This phone's storage is full.</strong> New taps are only in this open page until
+          they reach the server. Do not close or reload it until it says “All changes saved”.
+        </div>
+      )}
+
+      {fromDevice && (
+        <div className="mcx-callout mcx-callout--warn">
+          <strong>No connection.</strong> Showing the copy saved on this phone. Keep recording:
+          everything is kept here and sent as soon as the signal returns.
+        </div>
+      )}
+
+      {saveState === "refused" && !editable && notOnServer > 0 && (
+        <div className="mcx-callout mcx-callout--warn">
+          <strong>
+            {notOnServer} event(s) recorded on this phone have not reached the server.
+          </strong>{" "}
+          The sheet is locked, so the server is not taking them yet. They are kept here and sent
+          automatically once it is open for editing again — keep this page or this phone.
+        </div>
+      )}
+
+      {/* The idle-lock refusal is the callout below, said once. */}
+      {error && !(recordsThroughIdleLock && saveState === "refused") && (
+        <p className="mcx-error" role="alert">{error}</p>
+      )}
 
       {/* The banner always reflects the most recent action, not a stale note. */}
       {banner && (
@@ -1846,6 +2067,8 @@ export function AdminMatchStatsConsolePage() {
           {perms?.canReleaseIdleLock
             ? " Release it to let the recorder carry on."
             : " A ScoreBoard admin can release it."}
+          {recordsThroughIdleLock &&
+            " Keep recording: everything is saved on this phone and sent once it is released."}
           {perms?.canReleaseIdleLock && (
             <div className="mcx-review">
               <textarea
@@ -2102,8 +2325,8 @@ export function AdminMatchStatsConsolePage() {
           clock={clock}
           correcting={correcting}
           busy={busy}
-          onSubmit={() => act(() => matchStatsApi.submit(matchId))}
-          onApprove={() => act(() => matchStatsApi.approve(matchId))}
+          onSubmit={() => act(() => matchStatsApi.submit(matchId), { needsSync: true })}
+          onApprove={() => act(() => matchStatsApi.approve(matchId), { needsSync: true })}
           onSendBack={(note) => act(() => matchStatsApi.sendBack(matchId, note))}
         />
       )}

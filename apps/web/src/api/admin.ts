@@ -57,6 +57,40 @@ export function setAdminApiKey(key: string) {
 export function clearAdminApiKey() {
   sessionStorage.removeItem(STORAGE_KEY);
   sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+/* What the last confirmed session allowed, so a reload with no signal can carry on with it
+   rather than signing the recorder out. The API still checks the token on every call.
+
+   Role and permissions only: enough to draw the admin pages, nothing that identifies the
+   person. Email, name and user id are not needed offline, so they are not written down. */
+const SESSION_STORAGE_KEY = "dtp_admin_session";
+
+export function readCachedAdminSession(): AdminSession | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as AdminSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function cacheAdminSession(session: AdminSession) {
+  const allowed: AdminSession = {
+    ok: session.ok,
+    method: session.method,
+    roleSlug: session.roleSlug,
+    roleName: session.roleName,
+    permissions: session.permissions,
+    competitionIds: session.competitionIds,
+    competitionNames: session.competitionNames,
+  };
+  try {
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(allowed));
+  } catch {
+    /* Storage unavailable: the session is simply checked again next time. */
+  }
 }
 
 export function getAdminJwt(): string | null {
@@ -131,6 +165,26 @@ export class AdminApiError extends Error {
   }
 }
 
+/**
+ * The API answered and refused the credentials, as opposed to not answering at all.
+ *
+ * Only this is a reason to sign somebody out. A dropped connection, a timeout or a gateway
+ * error says nothing about the token, and treating it as a refusal signed recorders out
+ * mid-match whenever the page reloaded in a dead spot.
+ */
+export function isAuthRefusal(e: unknown): boolean {
+  return e instanceof AdminApiError && (e.status === 401 || e.status === 403);
+}
+
+/**
+ * No usable answer: offline, timed out, a gateway with nothing behind it, or the server
+ * failing. Worth retrying soon, as opposed to a 4xx, where the server answered and said no.
+ */
+export function isNetworkFailure(e: unknown): boolean {
+  if (e instanceof AdminApiError) return e.status >= 500;
+  return true;
+}
+
 /** A failure as a person should read it: what went wrong, then what to do about it. */
 export function describeFailure(e: unknown): string {
   if (e instanceof AdminApiError) return e.remediation ? `${e.message} ${e.remediation}` : e.message;
@@ -139,21 +193,40 @@ export function describeFailure(e: unknown): string {
 
 export async function adminFetch<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit & {
+    /**
+     * Give up after this long. On a weak signal a request can hang for minutes, and a
+     * caller that waits for it -- the recorder's sync -- waits with it.
+     */
+    timeoutMs?: number;
+  }
 ): Promise<T> {
   const key = getAdminApiKey();
   const jwt = getAdminJwt();
   // A FormData body carries its own multipart boundary; setting the type by hand breaks it.
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const { timeoutMs, ...requestInit } = init ?? {};
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   const res = await fetch(`/api/v1${path}`, {
-    ...init,
+    ...requestInit,
+    ...(controller ? { signal: controller.signal } : {}),
     headers: {
       ...(multipart ? {} : { "Content-Type": "application/json" }),
       ...(key ? { "x-admin-api-key": key } : {}),
       ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
-      ...init?.headers,
+      ...requestInit.headers,
     },
-  });
+  })
+    .catch((e: unknown) => {
+      if (controller?.signal.aborted) {
+        throw new Error("The server did not answer in time. Your changes are kept on this device.");
+      }
+      throw e;
+    })
+    .finally(() => {
+      if (timer) clearTimeout(timer);
+    });
   if (!res.ok) {
     const text = await res.text();
     throw new AdminApiError(text || res.statusText, res.status);

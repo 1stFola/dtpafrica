@@ -326,23 +326,32 @@ export type IdleLockedRecording = {
   lastEventAt: string | null;
   clockPhase: string | null;
 };
+/* How long the console waits for the server before giving up and retrying. A hung request
+   held every later save behind it; the device keeps the changes meanwhile. */
+const SHEET_TIMEOUT_MS = 20_000;
+
 export const matchStatsApi = {
-  open: (matchId: string) => adminFetch<MatchStatsSheet>(`${base}/${matchId}`),
+  open: (matchId: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}`, { timeoutMs: SHEET_TIMEOUT_MS }),
 
   save: (
     matchId: string,
     tallies: Record<string, TallyValue>,
     extras?: {
       events?: RecordedEvent[];
+      /** Events deleted since the last save that landed: the server merges the log by id. */
+      removedEventIds?: string[];
       clock?: ClockState | null;
       kits?: KitColours | null;
     }
   ) =>
     adminFetch<MatchStatsSheet>(`${base}/${matchId}`, {
       method: "PUT",
+      timeoutMs: SHEET_TIMEOUT_MS,
       body: JSON.stringify({
         tallies,
         ...(extras?.events ? { events: extras.events } : {}),
+        ...(extras?.removedEventIds?.length ? { removedEventIds: extras.removedEventIds } : {}),
         ...(extras?.clock ? { clock: extras.clock } : {}),
         ...(extras?.kits ? { kits: extras.kits } : {}),
       }),
