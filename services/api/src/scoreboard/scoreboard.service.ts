@@ -57,6 +57,7 @@ import {
 } from "./public-live-state";
 import { generateEventComments, type RecordedEventInput } from "../admin/match-event-comments";
 import { isPlaceholderName } from "../players/placeholder-names";
+import { mergeSameNameLeaders, statLeaderName } from "./stat-leader-names";
 
 const MATCH_INCLUDE = {
   homeTeam: {
@@ -1162,7 +1163,7 @@ export class ScoreboardService {
       });
 
       for (const event of events) {
-        const name = event.assistPlayer?.displayName ?? event.assistLabel?.trim();
+        const name = statLeaderName(event.assistPlayer, event.assistLabel);
         if (!name || isPlaceholderName(name)) continue;
         const playerId = event.assistPlayerId;
         const playerSlug = event.assistPlayer?.slug ?? slugifyPlayerName(name);
@@ -1194,8 +1195,9 @@ export class ScoreboardService {
            linked yet -- and wrong for `Unknown`, `Player` or `No. 9`, which are
            what somebody wrote when the scorer was not known. Those were ranking:
            `Player` sat second in the Ex Internationals Cup with five goals and
-           `Unknown` fourth with four. */
-        const name = event.player?.displayName ?? event.playerLabel?.trim();
+           `Unknown` fourth with four. The shirt number a match sheet writes in front of
+           the name comes off too: see `statLeaderName`. */
+        const name = statLeaderName(event.player, event.playerLabel);
         if (!name || isPlaceholderName(name)) continue;
         const playerId = event.playerId;
         const playerSlug = event.player?.slug ?? slugifyPlayerName(name);
@@ -1267,7 +1269,7 @@ export class ScoreboardService {
       }
     }
 
-    const leaders = [...byKey.values()]
+    const leaders = mergeSameNameLeaders([...byKey.values()])
       .sort(
         (a, b) =>
           b.count - a.count || a.playerName.localeCompare(b.playerName)
