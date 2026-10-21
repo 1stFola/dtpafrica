@@ -2153,32 +2153,23 @@ export class ScoreboardService {
       );
     };
 
-    for (const ev of parsed) {
-      const teamId = ev.teamName ? resolveTeamId(ev.teamName) : null;
-      await this.resolveOrCreateTimelinePlayer({
-        label: ev.playerLabel,
-        teamId,
-        role: "primary",
-        eventType: ev.type,
-      });
-      await this.resolveOrCreateTimelinePlayer({
-        label: ev.assistLabel,
-        teamId,
-        role: "assist",
-        eventType: ev.type,
-      });
-    }
-
+    /* Labels are matched to the players these two squads already hold, and a name
+       nobody answers to stays a label on its event. A CSV used to create a public
+       player for every unknown name it carried -- see `match-squad-csv.ts` on why an
+       upload must not register anybody. */
     const playerResolver = await this.buildMatchEventPlayerResolver(matchId, [
       match.homeTeamId,
       match.awayTeamId,
     ]);
 
+    // Every team name checked before the first event is written, so a bad row fails the file.
+    const teamIds = parsed.map((ev) => (ev.teamName ? resolveTeamId(ev.teamName) : null));
+
     const createdEvents: SbMatchEvent[] = [];
     let skippedDuplicates = 0;
 
-    for (const ev of parsed) {
-      const teamId = ev.teamName ? resolveTeamId(ev.teamName) : null;
+    for (const [i, ev] of parsed.entries()) {
+      const teamId = teamIds[i];
 
       const resolvedPlayerId = playerResolver.resolvePrimary(ev.playerLabel, teamId);
       const resolvedAssistPlayerId = playerResolver.resolveAssist(ev.assistLabel, teamId);
@@ -2330,33 +2321,10 @@ export class ScoreboardService {
       narrative: parsed.narrative,
     });
 
-    for (const ev of parsed.events) {
-      const teamId = ev.teamSide
-        ? ev.teamSide === "home"
-          ? match.homeTeamId
-          : match.awayTeamId
-        : null;
-      const secondaryTeamId = this.inferSecondaryTeamId(ev.type, teamId, match);
-      await this.resolveOrCreateTimelinePlayer({
-        label: ev.playerLabel,
-        teamId,
-        role: "primary",
-        eventType: ev.type,
-      });
-      await this.resolveOrCreateTimelinePlayer({
-        label: ev.assistLabel,
-        teamId,
-        role: "assist",
-        eventType: ev.type,
-      });
-      await this.resolveOrCreateTimelinePlayer({
-        label: ev.playerLabel2,
-        teamId: secondaryTeamId,
-        role: "secondary",
-        eventType: ev.type,
-      });
-    }
-
+    /* Labels are matched to the players these two squads already hold, and a name
+       nobody answers to stays a label on its event. A CSV used to create a public
+       player for every unknown name it carried -- see `match-squad-csv.ts` on why an
+       upload must not register anybody. */
     const playerResolver = await this.buildMatchEventPlayerResolver(matchId, [
       match.homeTeamId,
       match.awayTeamId,
