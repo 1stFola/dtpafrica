@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { applyBodyLimits, WORKER_ROUTE_PREFIX } from "./body-limits";
+import { applyBodyLimits, MATCH_SHEET_ROUTE_PREFIX, WORKER_ROUTE_PREFIX } from "./body-limits";
 
 type Handler = (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => void;
 
@@ -65,6 +65,32 @@ describe("body limits", () => {
       expect(res.status).toBe(200);
       expect((await res.json()).bytes).toBe(JSON.stringify({ ok: true }).length);
     }
+  });
+
+  it("lets a recorder save a long match's event log past 100 kB", async () => {
+    const events = Array.from({ length: 900 }, (_, i) => ({
+      id: `accurate_cross-17925462758${i}-6qr1t`,
+      type: "accurate_cross",
+      minute: i % 90,
+      addedMinute: null,
+      side: "away",
+      playerNumber: 11,
+      secondaryPlayerNumber: null,
+      half: 2,
+    }));
+    const sheet = JSON.stringify({ tallies: {}, events });
+    expect(sheet.length).toBeGreaterThan(100 * 1024);
+    const res = await fetch(`${base}${MATCH_SHEET_ROUTE_PREFIX}match-1`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: sheet,
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("keeps the rest of the admin API at 100 kB", async () => {
+    expect((await post("/api/v1/admin/scoreboard/matches", big)).status).toBe(413);
+    expect((await post("/api/v1/admin/scoreboard/match-statsx/1", big)).status).toBe(413);
   });
 
   it("refuses a worker body past its own limit", async () => {

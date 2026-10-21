@@ -1,4 +1,11 @@
-import { IsArray, IsObject, IsOptional, IsString, MaxLength } from "class-validator";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from "class-validator";
 
 export class SaveMatchStatsDto {
   /**
@@ -12,6 +19,17 @@ export class SaveMatchStatsDto {
   @IsOptional()
   @IsArray()
   events?: unknown[];
+
+  /**
+   * Events the recorder deleted since the last save that reached the server. The log is
+   * merged by id, so an event missing from `events` is kept; deleting one has to be said.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  removedEventIds?: string[];
 
   /** Match clock state (half length, current half, added time). */
   @IsOptional()

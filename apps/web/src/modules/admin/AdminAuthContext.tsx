@@ -9,7 +9,10 @@ import {
 } from "react";
 import {
   adminLoginWithPassword,
+  cacheAdminSession,
   clearAdminApiKey,
+  isAuthRefusal,
+  readCachedAdminSession,
   getAdminApiKey,
   getAdminJwt,
   setAdminApiKey,
@@ -44,10 +47,19 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       const next = await verifyAdminSession();
+      cacheAdminSession(next);
       setSession(next);
       setIsAuthenticated(true);
       return true;
-    } catch {
+    } catch (e) {
+      /* Only the API refusing the token signs somebody out. No answer at all -- a reload in
+         a dead spot -- keeps the token and the last session it confirmed, so a recorder can
+         carry on from the copy on their phone; every call is still checked by the API. */
+      if (!isAuthRefusal(e)) {
+        setSession(readCachedAdminSession());
+        setIsAuthenticated(true);
+        return true;
+      }
       clearAdminApiKey();
       setIsAuthenticated(false);
       setSession(null);
@@ -58,6 +70,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (apiKey: string) => {
     setAdminApiKey(apiKey.trim());
     const next = await verifyAdminSession();
+    cacheAdminSession(next);
     setSession(next);
     setIsAuthenticated(true);
   }, []);
@@ -65,6 +78,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const loginWithPassword = useCallback(async (email: string, password: string) => {
     const result = await adminLoginWithPassword(email, password);
     setAdminJwt(result.token);
+    cacheAdminSession(result.session);
     setSession(result.session);
     setIsAuthenticated(true);
   }, []);

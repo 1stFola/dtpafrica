@@ -1701,7 +1701,14 @@
 /* --- Sync state --- */
 
 .mcx-savestate--pending,
+.mcx-savestate--refused,
 .mcx-savestate--offline { color: var(--mcx-away); }
+
+.mcx-callout--danger {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--color-text);
+}
 
 /* --- Half toggle: the half not in play is not selectable --- */
 

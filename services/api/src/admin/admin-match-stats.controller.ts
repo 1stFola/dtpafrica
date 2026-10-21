@@ -173,6 +173,7 @@ export class AdminMatchStatsController {
   ) {
     return this.stats.saveTallies(matchId, dto.tallies, req.adminAuth, {
       events: dto.events,
+      removedEventIds: dto.removedEventIds,
       clock: dto.clock,
       kits: dto.kits,
     });

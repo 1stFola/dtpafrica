@@ -28,6 +28,7 @@ import {
 } from "../scoreboard/squad-number-lookup";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
 import { assessAutoApprove, danglingNumbers } from "./sheet-auto-approve";
+import { mergeRecordedEvents } from "./sheet-event-merge";
 import {
   canAccessCompetition,
   competitionScopeWhere,
@@ -1164,7 +1165,7 @@ export class AdminMatchStatsService {
     matchId: string,
     talliesInput: unknown,
     ctx: AdminAuthContext,
-    extras?: { events?: unknown; clock?: unknown; kits?: unknown }
+    extras?: { events?: unknown; removedEventIds?: string[]; clock?: unknown; kits?: unknown }
   ) {
     this.assertCanRecord(ctx);
     const match = await this.loadMatch(matchId, ctx);
@@ -1214,6 +1215,20 @@ export class AdminMatchStatsService {
       throw new BadRequestException("Kickoff cannot be cleared after recording has started.");
     }
     const kickedOff = Boolean(nextClock?.firstHalfStartedAt);
+    /* Merged by id, never replaced: a console that has not seen everything on the server
+       -- a second phone, or one coming back from a dead spot -- must not wipe what it has
+       not seen. A deletion arrives as an id in `removedEventIds`. See sheet-event-merge.ts. */
+    const storedEvents = readEvents(sheet.events);
+    const merged =
+      extras?.events !== undefined
+        ? mergeRecordedEvents(storedEvents, readEvents(extras.events), extras.removedEventIds ?? [])
+        : null;
+    if (merged?.kept.length) {
+      this.logger.warn(
+        `Match ${matchId}: kept ${merged.kept.length} recorded event(s) the save did not carry ` +
+          "(another device, or a console that had not seen them yet)."
+      );
+    }
     const result = await this.prisma.sbMatchStatistics.updateMany({
       // A competing kickoff or supervisor action must not be overwritten.
       where: { matchId, updatedAt: sheet.updatedAt },
@@ -1223,14 +1238,14 @@ export class AdminMatchStatsService {
               recorderName: kickedOff ? actorName(ctx) : null }
           : {}),
         tallies: normaliseTallies(talliesInput) as Prisma.InputJsonValue,
-        ...(extras?.events !== undefined
+        ...(merged
           ? {
-              events: readEvents(extras.events) as unknown as Prisma.InputJsonValue,
+              events: merged.events as unknown as Prisma.InputJsonValue,
               /* Only when the log actually grew. Saving the same events again -- which
                  the console does on any change, including a tally -- must not look like
                  somebody filing one, or the idle guard would never trip for a recorder
                  tapping counts. */
-              ...(readEvents(extras.events).length > readEvents(sheet.events).length
+              ...(merged.events.length > storedEvents.length
                 ? { lastEventAt: new Date() }
                 : {}),
             }
