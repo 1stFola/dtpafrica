@@ -8,7 +8,9 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: the first hard frames on training footage** — four 185 s clips of a 1XCup
+**Latest: labelling set up, and a review queue** — ten more 1XCup matches (20 clips) went through hard-frame mining on RTX 4090 pods for $2.31, adding 3,010 picked frames (3,437 in all). All became tasks under label schema ball-2026.1, the freelancer reaches only a built copy of the site, and the Annotation page now lists submitted work under "Waiting for your review". See [101](101-LABELLING-SETUP-AND-REVIEW-QUEUE.md).
+
+**Previously: the first hard frames on training footage** — four 185 s clips of a 1XCup
 match (Emiloju FC v JP Young Stars FC, under the 1XCup media rights agreement). They ran
 through the CPU stages, and 82 shots were declared live play. Detector v2 ran on a RunPod
 4090 for clips 1–3, for $0.734, and Phase 6 spend is about $1.97 of a raised $8 ceiling.
