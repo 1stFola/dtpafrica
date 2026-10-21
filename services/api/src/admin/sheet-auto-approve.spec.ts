@@ -32,6 +32,7 @@ function sheet(over: Partial<AutoApproveCandidate> = {}): AutoApproveCandidate {
     idleLockedAt: null,
     idleReleasedAt: null,
     correctionRequested: false,
+    correcting: false,
     isTraining: false,
     dangling: [],
     ...over,
@@ -123,6 +124,14 @@ describe("assessAutoApprove: other holds", () => {
   it("holds a sheet with a correction request pending", () => {
     expect(assessAutoApprove(sheet({ correctionRequested: true }), after(60)).blocks).toEqual([
       "correction_requested",
+    ]);
+  });
+
+  it("holds a finished match reopened for corrections", () => {
+    /* A published result changing after the fact is what the full-time lock exists to
+       make somebody sign off. */
+    expect(assessAutoApprove(sheet({ correcting: true }), after(60)).blocks).toEqual([
+      "correcting",
     ]);
   });
 

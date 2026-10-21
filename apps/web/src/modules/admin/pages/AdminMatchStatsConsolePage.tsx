@@ -36,6 +36,7 @@ import {
   mmss,
   useMatchClock,
 } from "./useMatchClock";
+import { checkTypedMinute } from "./correctionMinute";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { formatQuiet } from "../components/StoppedRecordingsPanel";
 import {
@@ -836,6 +837,7 @@ const AUTO_APPROVE_BLOCK_TEXT: Record<Exclude<AutoApproveBlock, "not_submitted" 
   not_submitted_by_recorder: "it was not submitted by the recorder who kicked it off",
   idle_locked: "the recording was stopped for having no events for twenty minutes",
   correction_requested: "a correction request is pending",
+  correcting: "corrections to a finished match are approved by hand",
 };
 
 /**
@@ -943,6 +945,7 @@ function SheetActions({
   awayName,
   busy,
   clock,
+  correcting,
   onSubmit,
   onApprove,
   onSendBack,
@@ -956,6 +959,8 @@ function SheetActions({
   busy: boolean;
   /** The clock, so the submit button knows whether the second half is under way. */
   clock: ClockState | null;
+  /** Reopened after full time; the corrections can be sent whichever half the clock was in. */
+  correcting: boolean;
   onSubmit: () => void;
   onApprove: () => void;
   onSendBack: (note: string) => void;
@@ -967,7 +972,7 @@ function SheetActions({
      approver sees a plausible record with forty-five minutes missing. The server refuses
      it too -- a disabled button is a suggestion, not a rule -- so this is here to explain
      rather than to enforce. */
-  const secondHalfStarted = clock?.half === 2;
+  const secondHalfStarted = clock?.half === 2 || correcting;
 
   return (
     <footer className="mcx-actions">
@@ -984,8 +989,16 @@ function SheetActions({
                 : "Available once the second half is under way"
             }
           >
-            Submit statistics &amp; events for approval
+            {correcting
+              ? "Submit corrections for approval"
+              : "Submit statistics & events for approval"}
           </button>
+          {correcting && (
+            <p className="mcx-hint muted">
+              Corrections to a finished match are never approved automatically. Nothing changed
+              here reaches the public site until a ScoreBoard admin reviews and approves it.
+            </p>
+          )}
           {!secondHalfStarted && (
             <p className="mcx-hint muted">
               This can be sent for approval once the second half is under way. At full time
@@ -1094,6 +1107,10 @@ export function AdminMatchStatsConsolePage() {
   const [addedInput, setAddedInput] = useState("2");
   /** Minute captured by step 1, held until an event is logged. */
   const [captured, setCaptured] = useState<{ minute: number; added: number | null } | null>(null);
+  /* Step 1 for a match reopened after full time: there is no running clock to read a
+     minute from, so it is typed. */
+  const [typedMinute, setTypedMinute] = useState("");
+  const [typedAdded, setTypedAdded] = useState("");
   const [history, setHistory] = useState<SheetLogEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showTrainingLive, setShowTrainingLive] = useState(false);
@@ -1148,14 +1165,17 @@ export function AdminMatchStatsConsolePage() {
            those taps exist nowhere else. */
         const draft = readDraft(matchId);
         if (data.permissions.canEdit && draftIsAhead(draft) && draft) {
+          /* Except the clock of a reopened record, which is the server's: a draft from match
+             day would put the running clock back. The API keeps its own either way. */
+          const draftClock = data.clock?.phase === "correction" ? data.clock : draft.clock;
           setTallies(draft.tallies);
           setEvents(draft.events);
-          setClock(draft.clock);
+          setClock(draftClock);
           setKits(draft.kits);
           pending.current = {
             tallies: draft.tallies,
             events: draft.events,
-            clock: draft.clock,
+            clock: draftClock,
             kits: draft.kits,
           };
           setSaveState("pending");
@@ -1319,6 +1339,16 @@ export function AdminMatchStatsConsolePage() {
 
   const matchClock = useMatchClock(clock, handleClockChange);
   const previousClockHalf = useRef(matchClock.half);
+  const correcting = matchClock.correcting;
+  const typedCheck = correcting
+    ? checkTypedMinute(typedMinute, typedAdded, matchClock.halfLength)
+    : null;
+  /* What step 1 hands the events tab: the tapped minute live, the typed one in a correction. */
+  const entryMinute = correcting
+    ? typedCheck?.ok
+      ? { minute: typedCheck.minute, added: typedCheck.added, half: typedCheck.half }
+      : null
+    : captured;
 
   useEffect(() => {
     if (previousClockHalf.current === matchClock.half) return;
@@ -1528,13 +1558,14 @@ export function AdminMatchStatsConsolePage() {
             disabled={
               !editable ||
               matchClock.phase === "finished" ||
+              correcting ||
               (!match.competition.isTraining && (!liveFeatureEnabled || !liveAudioEnabled))
             }
             trainingPreview={Boolean(match.competition.isTraining)}
           />
-          <span className={`mcx-status mcx-status--${activeStatus}`}>
+          <span className={`mcx-status mcx-status--${activeStatus}${correcting ? " mcx-status--correcting" : ""}`}>
             <span className="mcx-status__dot" />
-            {STATUS_COPY[activeStatus]}
+            {correcting && activeStatus === "live" ? "Correcting" : STATUS_COPY[activeStatus]}
           </span>
         </div>
 
@@ -1560,16 +1591,57 @@ export function AdminMatchStatsConsolePage() {
               {matchClock.started ? mmss(matchClock.displayElapsed) : "--:--"}
             </span>
             <span className="mcx-clock__meta">
-              {matchClock.started
-                ? `${matchClock.half === 1 ? "1st" : "2nd"} half · ${displayMinute(
-                    matchClock.liveMinute,
-                    matchClock.liveAdded
-                  )}`
-                : "Not started"}
+              {correcting
+                ? "Full time · clock stopped"
+                : matchClock.started
+                  ? `${matchClock.half === 1 ? "1st" : "2nd"} half · ${displayMinute(
+                      matchClock.liveMinute,
+                      matchClock.liveAdded
+                    )}`
+                  : "Not started"}
             </span>
           </div>
 
-          {matchClock.started ? (
+          {correcting ? (
+            <div
+              className={`mcx-capture mcx-capture--typed${typedCheck?.ok ? " is-set" : ""}`}
+              aria-disabled={!editable}
+            >
+              <div className="mcx-capture__inputs">
+                <span className="mcx-step__n mcx-step__n--inline">1</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={matchClock.halfLength * 2}
+                  inputMode="numeric"
+                  placeholder="Min"
+                  value={typedMinute}
+                  onChange={(e) => setTypedMinute(e.target.value)}
+                  disabled={!editable}
+                  aria-label="Minute of the event"
+                />
+                <span className="mcx-capture__plus" aria-hidden="true">+</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={30}
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={typedAdded}
+                  onChange={(e) => setTypedAdded(e.target.value)}
+                  disabled={!editable}
+                  aria-label="Added time, in minutes"
+                />
+              </div>
+              <span className="mcx-capture__hint" role={typedCheck && !typedCheck.ok && typedMinute ? "alert" : undefined}>
+                {typedCheck?.ok
+                  ? `${typedCheck.half === 1 ? "1st" : "2nd"} half · ${displayMinute(typedCheck.minute, typedCheck.added)}`
+                  : typedMinute.trim() !== "" && typedCheck && !typedCheck.ok
+                    ? typedCheck.reason
+                    : "type the minute of the event"}
+              </span>
+            </div>
+          ) : matchClock.started ? (
             <button
               type="button"
               className={captured ? "mcx-capture is-set" : "mcx-capture"}
@@ -1900,8 +1972,9 @@ export function AdminMatchStatsConsolePage() {
             <>
               <div className="mcx-halves" role="group" aria-label="Half being recorded">
                 {HALVES.map((h) => {
-                  // Locked to the clock: the other half is not in play.
-                  const allowed = h === clockHalf;
+                  /* Locked to the clock: the other half is not in play. Once the match is
+                     over and reopened, both halves are history and either can be fixed. */
+                  const allowed = correcting || h === clockHalf;
                   return (
                     <button
                       key={h}
@@ -1994,13 +2067,15 @@ export function AdminMatchStatsConsolePage() {
             editable={editable}
             events={events}
             kits={kits}
-            captured={captured}
+            captured={entryMinute}
             side={side}
             playerNumber={playerNumber}
             onCapturedUsed={() => {
               // Reset the whole entry: the next event starts at step 1 with no
               // side pre-selected, so a side is never inherited by accident.
               setCaptured(null);
+              setTypedMinute("");
+              setTypedAdded("");
               setSide(null);
               setPlayerNumber("");
             }}
@@ -2025,6 +2100,7 @@ export function AdminMatchStatsConsolePage() {
           homeName={sheet.match.homeTeam.name}
           awayName={sheet.match.awayTeam.name}
           clock={clock}
+          correcting={correcting}
           busy={busy}
           onSubmit={() => act(() => matchStatsApi.submit(matchId))}
           onApprove={() => act(() => matchStatsApi.approve(matchId))}
@@ -2049,7 +2125,10 @@ export function AdminMatchStatsConsolePage() {
         {audit.recorderName && (
           <div><dt>Recorded by</dt><dd>{audit.recorderName}</dd></div>
         )}
-        <div><dt>Statistics &amp; events</dt><dd>{STATUS_COPY[status]}</dd></div>
+        <div>
+          <dt>Statistics &amp; events</dt>
+          <dd>{correcting && status === "live" ? "Correcting" : STATUS_COPY[status]}</dd>
+        </div>
       </dl>
 
       {showKickoffStarter && (

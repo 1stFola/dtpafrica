@@ -61,6 +61,7 @@ export type AutoApproveBlock =
   | "not_submitted_by_recorder"
   | "idle_locked"
   | "correction_requested"
+  | "correcting"
   | "dangling_numbers";
 
 /**
@@ -166,7 +167,9 @@ export type ClockPhase =
   | "awaiting_second_half"
   | "awaiting_full_time"
   | "penalty_shootout"
-  | "finished";
+  | "finished"
+  /** A finished match reopened for corrections: the clock is stopped and minutes are typed. */
+  | "correction";
 
 /**
  * Match clock. Holds wall-clock anchors rather than an elapsed count, so the

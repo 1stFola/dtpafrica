@@ -14,8 +14,10 @@
  *    even one an admin later released. Each of those is a sheet where the person who
  *    watched the match did not say "this is complete".
  *
- * Also held back: a sheet with a correction request pending, and practice matches,
- * which the idle and auto-submit sweeps leave alone too.
+ * Also held back: a sheet with a correction request pending, a finished match reopened
+ * for corrections (a published result changing after the fact is what the full-time lock
+ * exists to make somebody sign off), and practice matches, which the idle and
+ * auto-submit sweeps leave alone too.
  *
  * Takes `now` as an argument, like `recorder-idle.ts`, so the rule is tested without
  * waiting ten minutes.
@@ -95,6 +97,8 @@ export type AutoApproveCandidate = {
   idleLockedAt: Date | null;
   idleReleasedAt: Date | null;
   correctionRequested: boolean;
+  /** Reopened after full time; the clock is in its `correction` phase. */
+  correcting: boolean;
   isTraining: boolean;
   dangling: DanglingNumber[];
 };
@@ -107,6 +111,7 @@ export type AutoApproveBlock =
   | "not_submitted_by_recorder"
   | "idle_locked"
   | "correction_requested"
+  | "correcting"
   | "dangling_numbers";
 
 export type AutoApproveVerdict = {
@@ -144,6 +149,7 @@ export function assessAutoApprove(sheet: AutoApproveCandidate, now: Date): AutoA
   }
   if (sheet.idleLockedAt || sheet.idleReleasedAt) blocks.push("idle_locked");
   if (sheet.correctionRequested) blocks.push("correction_requested");
+  if (sheet.correcting) blocks.push("correcting");
   if (sheet.dangling.length) blocks.push("dangling_numbers");
 
   const dueAt = new Date(sheet.submittedAt.getTime() + AUTO_APPROVE_DELAY_MS);

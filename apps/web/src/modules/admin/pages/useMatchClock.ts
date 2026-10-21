@@ -83,7 +83,8 @@ export function useMatchClock(
         ? halfLength * 60
         : phase === "awaiting_second_half" ||
             phase === "penalty_shootout" ||
-            phase === "finished"
+            phase === "finished" ||
+            phase === "correction"
           ? (halfLength + addedAllowance) * 60
           : Number.POSITIVE_INFINITY;
     return Math.max(0, Math.min(raw, ceiling));
@@ -190,6 +191,8 @@ export function useMatchClock(
     liveMinute,
     liveAdded,
     started: phase !== "pre_kickoff",
+    /** Reopened after full time: the clock stays stopped and every minute is typed. */
+    correcting: phase === "correction",
     kickOff,
     confirmAddedTime,
     startSecondHalf,

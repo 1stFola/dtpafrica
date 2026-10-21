@@ -88,6 +88,11 @@ export function publicLiveState(input: PublicLiveInput): PublicLiveState | null 
      before the whistle is not a game in progress. */
   if (!hasKickedOff(clock)) return null;
 
+  /* A finished match reopened for corrections is not live, and the sheet being corrected
+     is not approved. The row -- finished, at the score last published -- speaks until the
+     corrected sheet is approved. */
+  if (clock.phase === "correction") return null;
+
   /* Full time and a submitted sheet are read before the idle lock, because they are facts
      about a game that has ended and a lock does not unsay them. The lock only suppresses the
      states that claim a game is still being played. */

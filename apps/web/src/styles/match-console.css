@@ -1645,6 +1645,34 @@
 
 .mcx-capture__value { font-size: inherit; font-weight: 800; line-height: 1; }
 
+/* Step 1 in a correction: the minute is typed, so the capture target becomes two fields. */
+.mcx-capture--typed { cursor: default; padding: 0.35rem 0.5rem; }
+.mcx-capture--typed[aria-disabled="true"] { opacity: 0.4; }
+.mcx-capture__inputs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.mcx-capture__inputs input {
+  width: 72px;
+  min-height: 40px;
+  border: 1px solid var(--mcx-line);
+  border-radius: 8px;
+  background: var(--mcx-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.mcx-capture__inputs input + .mcx-capture__plus + input { width: 56px; }
+.mcx-capture__plus { font-size: 1.1rem; opacity: 0.7; }
+.mcx-capture--typed .mcx-capture__hint { text-align: center; text-transform: none; letter-spacing: 0; }
+.mcx-status--correcting { color: var(--mcx-away); }
+.mcx-status--correcting .mcx-status__dot { animation: none; }
+
 .mcx-kickoff--inline {
   flex: 1;
   flex-direction: column;

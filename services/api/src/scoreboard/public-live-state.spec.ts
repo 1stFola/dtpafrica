@@ -160,6 +160,20 @@ describe("publicLiveState and the admin's switch", () => {
     expect(state({ sheetStatus: "approved", clock: running })).toBeNull();
     expect(state({ matchStatus: "finished", clock: running })).toBeNull();
   });
+
+  it("says nothing while a finished match is reopened for corrections", () => {
+    /* Not live, and the sheet being corrected is not approved: the row, at the result
+       last published, speaks until the corrections are. Whatever the row still says. */
+    const correcting = clock({
+      phase: "correction",
+      half: 2,
+      firstHalfStartedAt: new Date(KICKOFF_AT - 3 * 3600_000).toISOString(),
+      secondHalfStartedAt: new Date(KICKOFF_AT - 2 * 3600_000).toISOString(),
+    });
+    expect(state({ clock: correcting })).toBeNull();
+    expect(state({ clock: correcting, sheetStatus: "submitted" })).toBeNull();
+    expect(state({ clock: correcting, matchStatus: "live" })).toBeNull();
+  });
 });
 
 describe("publicLiveState and a recording the idle sweep stopped", () => {
