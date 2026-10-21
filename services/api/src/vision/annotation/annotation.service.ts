@@ -100,6 +100,15 @@ const summaryOf = (progress: unknown) => ((progress as { summary?: Record<string
 /** The longest window a single task may cover. */
 const MAX_TASK_WINDOW_MS = 10 * 60 * 1000;
 
+/**
+ * The suffix `vision:seed-demo` puts on its label schema ("demo-2026.1 (demo)").
+ *
+ * Claiming skips tasks under such a schema. The seed's tasks are older than any real
+ * queue, so oldest-first handed a labeller the five-second test pattern before a
+ * single real frame (20 Oct 2026, with 3,436 real frames waiting).
+ */
+export const DEMO_SCHEMA_SUFFIX = "(demo)";
+
 @Injectable()
 export class VisionAnnotationService {
   constructor(
@@ -350,6 +359,15 @@ export class VisionAnnotationService {
            OR (assigned_to IS NULL AND state = 'queued')
         )
           AND (${strategy}::text IS NULL OR sampling_strategy = ${strategy}::text)
+          -- Only real work under live definitions: never a demo-seed task, and never
+          -- one whose schema was retired. A subquery rather than a join, because
+          -- FOR UPDATE would lock the joined schema row too, and SKIP LOCKED would
+          -- then hand the second of two simultaneous claimers nothing at all.
+          AND label_schema_version_id IN (
+            SELECT id FROM vision_label_schema_versions
+            WHERE superseded_at IS NULL
+              AND version NOT LIKE ${"%" + DEMO_SCHEMA_SUFFIX}
+          )
         ORDER BY (assigned_to IS NOT NULL) DESC, created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
