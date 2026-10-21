@@ -11,6 +11,7 @@ import {
   CAMERA_SEGMENT_KINDS,
   DETECTION_ARTIFACT_ROLE,
   DETECTOR_CONFIGS,
+  DETECTOR_CONFIG_TRAINED,
   DETECTOR_CONFIG_BALL_TILES_V2,
   type DetectJobParams,
   JOB_TYPE_PREREQUISITES,
@@ -124,6 +125,20 @@ export class VisionJobsService {
         throw refusal(409, "DetectorConfigUnknown", `Model version ${model.id} names detector config ${JSON.stringify(configKey)}, which no worker runs.`,
           `Register the version with one of: ${DETECTOR_CONFIGS.join(", ")}.`);
       detector = { detector: { configKey: configKey as DetectJobParams["detector"]["configKey"] } };
+      // Trained weights (docs/vision/103): the version's own file and checksum, and the
+      // training config written beside it, both declared so the worker may read them.
+      if (configKey === DETECTOR_CONFIG_TRAINED) {
+        const weightsKey = model.weightsKey;
+        const checksum = model.weightsChecksum;
+        if (!weightsKey || !weightsKey.endsWith("/weights.pt") || !checksum || !/^[a-f0-9]{64}$/i.test(checksum))
+          throw refusal(409, "TrainedWeightsMissing", `Model version ${model.id} runs trained weights but records no weights file and checksum.`,
+            "Register the version from its training run (POST /vision/models/:id/versions/from-training).");
+        const trainConfigKey = weightsKey.replace(/weights\.pt$/, "train-config.json");
+        detector = {
+          detector: { configKey: DETECTOR_CONFIG_TRAINED, weights: { key: weightsKey, checksum: checksum.toLowerCase(), configKey: trainConfigKey } },
+          readKeys: [{ bucket: "models", key: trainConfigKey }, { bucket: "models", key: weightsKey }],
+        };
+      }
     }
     // Any stage that, however indirectly, follows transcode reads the proxy.
     const proxy = dependsOn(params.type, "transcode") ? await this.proxyClock(asset.id) : null;

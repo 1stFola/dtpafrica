@@ -126,8 +126,14 @@ import { DEFAULT_PITCH_LENGTH_M, DEFAULT_PITCH_WIDTH_M, type BoundingBox, type D
  * benchmark's own evaluation) and writes the weights, their config and the metrics to
  * the models bucket. The control plane pins the export's checksum and lists every
  * proxy the stage may read (docs/vision/102).
+ *
+ * 1.24.0 -- detect runs trained weights: a version whose config is
+ * `trained/torchvision/fasterrcnn_resnet50_fpn/v1` names its weights and their training
+ * config in the models bucket, and the job carries both as declared reads with the
+ * weights' checksum. The worker checks the bytes before loading them, and a trained
+ * model reports goalkeeper and referee as themselves (docs/vision/103).
  */
-export const VISION_CONTRACT_VERSION = "1.23.0";
+export const VISION_CONTRACT_VERSION = "1.24.0";
 
 /**
  * The detectors a worker can run, named by the model version's config key. The
@@ -139,12 +145,22 @@ export const DETECTOR_CONFIG_BASE = "builtin/torchvision/fasterrcnn_resnet50_fpn
 export const DETECTOR_CONFIG_BALL_TILES = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v1";
 /** Ball tiles plus a colour check on each tiled ball, and the tiled balls marked for ball trajectory's parked check (docs/vision/95). */
 export const DETECTOR_CONFIG_BALL_TILES_V2 = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v2";
-export const DETECTOR_CONFIGS = [DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2] as const;
+/** Weights a `train` run produced on DTP footage: the same architecture with a head for the contract's classes (docs/vision/102, /103). */
+export const DETECTOR_CONFIG_TRAINED = "trained/torchvision/fasterrcnn_resnet50_fpn/v1";
+export const DETECTOR_CONFIGS = [DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2, DETECTOR_CONFIG_TRAINED] as const;
 export type DetectorConfigKey = (typeof DETECTOR_CONFIGS)[number];
 /** A tiled ball box is kept only at or above this score: below it, on the pilot, were boots and heads. */
 export const BALL_TILE_MIN_SCORE = 0.7;
 /** What the control plane adds to a detect job: the config the model version names. */
-export type DetectJobParams = { detector: { configKey: DetectorConfigKey } };
+/**
+ * What the control plane adds to a detect job: the config the model version names, and for
+ * trained weights where they are, their checksum, and the training config beside them
+ * (both listed in readKeys, in the models bucket).
+ */
+export type DetectJobParams = {
+  detector: { configKey: DetectorConfigKey; weights?: { key: string; checksum: string; configKey: string } };
+  readKeys?: { bucket: "models"; key: string }[];
+};
 
 /**
  * Which worker may serve which stage (docs/vision/58).
@@ -168,7 +184,7 @@ export const STAGE_CONTRACT_SINCE: Record<VisionJobType, string> = {
   transcode: "1.12.0",
   cuts: "1.12.0",
   camera_motion: "1.17.0",
-  detect: "1.21.0",
+  detect: "1.24.0",
   track: "1.12.0",
   identify: "1.12.0",
   calibrate: "1.18.0",

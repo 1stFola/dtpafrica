@@ -11,6 +11,7 @@ a prediction with no model version behind it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -496,7 +497,7 @@ def test_the_real_detector_advertises_its_device_and_its_weights():
         "_torchvision_detector must advertise its device; _detect reads it to decide "
         "whether the time it measured was GPU time."
     )
-    assert "run.weights_sha256 = _loaded_weights_sha256(weights.url)" in body, (
+    assert "run.weights_sha256 = trained.sha256 if trained else _loaded_weights_sha256(weights.url)" in body, (
         "_torchvision_detector must report the checksum of the weights it loaded."
     )
 
@@ -622,3 +623,75 @@ def test_v2_reports_its_colour_settings_and_what_they_rejected(ctx, monkeypatch)
     tiles = detect_stage._detect(ctx, detector=run).summary["ballTiles"]
     assert tiles["ballsAdded"] == 4 and tiles["colourRejected"] == 7 and tiles["source"] == "ball_tiles"
     assert tiles["colourCheck"] == {"ellipse": 0.4, "warmHueBelow": 38, "warmHueAbove": 165, "warmMinSaturation": 50, "warmMinValue": 70, "maxGreen": 0.15, "aspect": [0.85, 1.3]}
+
+
+# ── Trained weights (docs/vision/103) ──────────────────────────────────────────
+
+TRAINED_WEIGHTS = b"fine-tuned state dict"
+TRAINED_SHA = hashlib.sha256(TRAINED_WEIGHTS).hexdigest()
+
+
+def trained_job(**weights_over: Any) -> JobSpec:
+    weights = {"key": "inference/train-1/1/weights.pt", "checksum": TRAINED_SHA, "configKey": "inference/train-1/1/train-config.json", **weights_over}
+    return spec(dispatched(detector={"configKey": detect_stage.DETECTOR_CONFIG_TRAINED, "weights": weights}))
+
+
+def serve_trained(ctx: StageContext, monkeypatch: pytest.MonkeyPatch, config: dict[str, Any] | None = None, weights: bytes = TRAINED_WEIGHTS) -> list[str]:
+    """Downloads by key: the training config, the weights, then the proxy."""
+    body = json.dumps(config if config is not None else {"configKey": detect_stage.DETECTOR_CONFIG_TRAINED, "weightsSha256": TRAINED_SHA,
+                                                         "classes": list(detect_stage.TRAINED_CLASSES), "minSize": 720, "maxSize": 1280}).encode()
+    fetched: list[str] = []
+    ctx.client.input_url = lambda _job, role, key=None: f"https://storage.test/{key or role}"  # type: ignore[method-assign]
+
+    def fake_download(_ctx, url, path):
+        fetched.append(url.rsplit("/", 1)[-1])
+        data = body if url.endswith("train-config.json") else weights if url.endswith("weights.pt") else b"x" * 4096
+        path.write_bytes(data)
+        return len(data)
+
+    monkeypatch.setattr(detect_stage, "download", fake_download)
+    return fetched
+
+
+def test_a_trained_version_reports_its_own_classes_and_the_checksum_it_checked(ctx, monkeypatch):
+    ctx.job = trained_job()
+    fetched = serve_trained(ctx, monkeypatch)
+    stub_frames(monkeypatch, 1)
+    keeper = {"label": "goalkeeper", "score": 0.8, "box": [0.0, 0.0, 10.0, 30.0]}
+    result = detect_stage._detect(ctx, detector=detector_returning([keeper, {"label": "ball", "score": 0.6, "box": [1.0, 1.0, 4.0, 4.0]}]))
+    assert fetched == ["train-config.json", "weights.pt", "proxy"]  # weights checked before the proxy is fetched
+    payload = ctx.uploaded["payload"]  # type: ignore[attr-defined]
+    assert payload["classes"] == {c: c for c in detect_stage.TRAINED_CLASSES}
+    assert [d["class"] for d in payload["frames"][0]["detections"]] == ["goalkeeper", "ball"]
+    assert payload["detector"]["weightsSha256"] == TRAINED_SHA
+    assert result.summary["weightsSha256"] == TRAINED_SHA
+    assert result.summary["detectorConfig"] == detect_stage.DETECTOR_CONFIG_TRAINED
+
+
+@pytest.mark.parametrize("weights_over,match", [({"checksum": None}, "needs params.detector.weights"), ({"configKey": None}, "needs params.detector.weights")])
+def test_refuses_a_trained_version_without_its_weights(ctx, monkeypatch, weights_over, match):
+    ctx.job = trained_job(**weights_over)
+    serve_trained(ctx, monkeypatch)
+    with pytest.raises(StageRefusal, match=match):
+        detect_stage._detect(ctx, detector=detector_returning())
+
+
+def test_refuses_weights_whose_bytes_are_not_the_versions(ctx, monkeypatch):
+    ctx.job = trained_job()
+    fetched = serve_trained(ctx, monkeypatch, weights=b"someone else's weights")
+    with pytest.raises(StageRefusal, match="hash to"):
+        detect_stage._detect(ctx, detector=detector_returning())
+    assert "proxy" not in fetched
+
+
+@pytest.mark.parametrize("config,match", [
+    ({"configKey": "builtin/other", "weightsSha256": TRAINED_SHA, "classes": list(("player", "goalkeeper", "referee", "ball")), "minSize": 720, "maxSize": 1280}, "is for"),
+    ({"configKey": "trained/torchvision/fasterrcnn_resnet50_fpn/v1", "weightsSha256": "0" * 64, "classes": ["player", "goalkeeper", "referee", "ball"], "minSize": 720, "maxSize": 1280}, "other weights"),
+    ({"configKey": "trained/torchvision/fasterrcnn_resnet50_fpn/v1", "weightsSha256": TRAINED_SHA, "classes": ["player", "ball"], "minSize": 720, "maxSize": 1280}, "trained on classes"),
+    ({"configKey": "trained/torchvision/fasterrcnn_resnet50_fpn/v1", "weightsSha256": TRAINED_SHA, "classes": ["player", "goalkeeper", "referee", "ball"]}, "no image sizes"),
+])
+def test_refuses_a_training_config_that_does_not_match(ctx, monkeypatch, config, match):
+    ctx.job = trained_job()
+    serve_trained(ctx, monkeypatch, config=config)
+    with pytest.raises(StageRefusal, match=match):
+        detect_stage._detect(ctx, detector=detector_returning())

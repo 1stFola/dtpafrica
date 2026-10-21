@@ -82,7 +82,13 @@ ARTIFACT_ROLE = "detections"
 DETECTOR_CONFIG_BASE = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1"
 DETECTOR_CONFIG_BALL_TILES = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v1"
 DETECTOR_CONFIG_BALL_TILES_V2 = "builtin/torchvision/fasterrcnn_resnet50_fpn/COCO_V1+ball-tiles/v2"
-DETECTOR_CONFIGS = (DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2)
+#: Weights a `train` run produced on DTP footage (docs/vision/102, /103): the same
+#: architecture with a head for the contract's four classes, loaded from the models bucket.
+DETECTOR_CONFIG_TRAINED = "trained/torchvision/fasterrcnn_resnet50_fpn/v1"
+DETECTOR_CONFIGS = (DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2, DETECTOR_CONFIG_TRAINED)
+#: A trained model's labels, in its label-id order (1-based; 0 is background). They are the
+#: contract's classes, so goalkeeper and referee come through as themselves.
+TRAINED_CLASSES = ("player", "goalkeeper", "referee", "ball")
 
 #: The ball-tiles pass (docs/vision/95). The ball on grassroots footage is ~14 px across;
 #: the detector resizes a 720p frame's shorter side to 800, and at that scale it found
@@ -146,7 +152,7 @@ def to_prediction(raw: dict[str, Any]) -> dict[str, Any]:
     output would turn that bug into a quietly emptier artifact.
     """
     label = raw["label"]
-    cls = DETECTION_CLASS_BY_LABEL.get(label)
+    cls = DETECTION_CLASS_BY_LABEL.get(label) or (label if label in TRAINED_CLASSES else None)
     if cls is None:
         raise RuntimeError(f"detector returned label {label!r}, which maps to no contract class")
     x1, y1, x2, y2 = (float(v) for v in raw["box"])
@@ -316,6 +322,50 @@ def detector_config(params: dict[str, Any]) -> str:
     return config
 
 
+@dataclass(frozen=True)
+class TrainedWeights:
+    """Trained weights on local disk, checked against the version's checksum, and how they were trained."""
+
+    path: Path
+    sha256: str
+    classes: tuple[str, ...]
+    min_size: int
+    max_size: int
+
+
+def trained_weights(ctx: StageContext, params: dict[str, Any]) -> TrainedWeights:
+    """Download a trained version's training config and weights, by declared key, and check them.
+
+    Refused, before the proxy is fetched: weights the job does not name, a config that is
+    not this detector's or that records other weights, classes other than the contract's,
+    and above all bytes whose checksum is not the version's. Loading unchecked weights
+    would run whatever happened to be at that key under the version's name.
+    """
+    weights = (params.get("detector") or {}).get("weights") or {}
+    key, checksum, config_key = weights.get("key"), weights.get("checksum"), weights.get("configKey")
+    if not isinstance(key, str) or not isinstance(config_key, str) or not isinstance(checksum, str) or len(checksum) != 64:
+        raise StageRefusal("a trained detector needs params.detector.weights {key, checksum, configKey}; the control plane sends them from the model version")
+    checksum = checksum.lower()
+    config_path = ctx.work_dir / "train-config.json"
+    download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=config_key), config_path)
+    config = json.loads(config_path.read_bytes())
+    if config.get("configKey") != DETECTOR_CONFIG_TRAINED:
+        raise StageRefusal(f"the training config at {config_key} is for {config.get('configKey')!r}, not {DETECTOR_CONFIG_TRAINED}")
+    if str(config.get("weightsSha256") or "").lower() != checksum:
+        raise StageRefusal("the training config records other weights than the model version names")
+    if tuple(config.get("classes") or ()) != TRAINED_CLASSES:
+        raise StageRefusal(f"the weights were trained on classes {config.get('classes')!r}, not {list(TRAINED_CLASSES)}")
+    sizes = (config.get("minSize"), config.get("maxSize"))
+    if not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in sizes):
+        raise StageRefusal(f"the training config records no image sizes: {sizes!r}")
+    weights_path = ctx.work_dir / "weights.pt"
+    download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=key), weights_path)
+    actual = sha256_file(weights_path)
+    if actual != checksum:
+        raise StageRefusal(f"the weights at {key} hash to {actual}, not the version's {checksum}")
+    return TrainedWeights(weights_path, actual, TRAINED_CLASSES, int(sizes[0]), int(sizes[1]))
+
+
 def run_detect(ctx: StageContext) -> StageResult:
     return _detect(ctx, detector=None)
 
@@ -371,6 +421,8 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     config = detector_config(params)
     ball_tiles = config in (DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2)
     colour = config == DETECTOR_CONFIG_BALL_TILES_V2
+    # Trained weights are fetched and checked before the proxy: a mismatch costs no decode.
+    trained = trained_weights(ctx, params) if config == DETECTOR_CONFIG_TRAINED else None
 
     ctx.progress.set("download")
     # The proxy, never the source: it is constant-frame-rate, so a frame index maps to
@@ -389,7 +441,7 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     log.info("sampled %d frames at %s fps", len(frames), fps)
 
     ctx.progress.set("detect")
-    run = detector or _torchvision_detector(ball_tiles=ball_tiles, colour=colour)
+    run = detector or _torchvision_detector(ball_tiles=ball_tiles, colour=colour, trained=trained)
     inference_started = time.perf_counter()
     outcome = detect_frames(
         frames,
@@ -411,7 +463,8 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     # control plane records that hash on the model version the first time it is seen,
     # then refuses any later completion whose hash differs. A test detector has none,
     # and reports none, rather than a plausible-looking fake.
-    weights_sha256 = getattr(run, "weights_sha256", None)
+    # For trained weights, the checksum of the bytes this job downloaded and checked.
+    weights_sha256 = trained.sha256 if trained else getattr(run, "weights_sha256", None)
     # How many balls the tiles added: the measure of what the pass is worth on this footage.
     tile_balls = getattr(run, "tile_balls_added", 0) if ball_tiles else None
     tiles = {"fraction": BALL_TILE_FRACTION, "minScore": BALL_TILE_MIN_SCORE, "mergeIou": BALL_MERGE_IOU, "ballsAdded": tile_balls} if ball_tiles else None
@@ -439,7 +492,7 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
         "minScore": MIN_SCORE,
         "detectorConfig": config,
         "ballTiles": tiles,
-        "classes": dict(DETECTION_CLASS_BY_LABEL),
+        "classes": {c: c for c in TRAINED_CLASSES} if trained else dict(DETECTION_CLASS_BY_LABEL),
         "detector": {"weightsSha256": weights_sha256, "device": device},
         "frames": outcome.frames,
     }
@@ -488,7 +541,7 @@ def _detect(ctx: StageContext, detector: Detector | None) -> StageResult:
     )
 
 
-def _torchvision_detector(ball_tiles: bool = False, colour: bool = False) -> Detector:
+def _torchvision_detector(ball_tiles: bool = False, colour: bool = False, trained: TrainedWeights | None = None) -> Detector:
     """COCO-pretrained Faster R-CNN, on the GPU when there is one.
 
     With `ball_tiles`, each frame is also run as four corner tiles and the confident
@@ -505,7 +558,13 @@ def _torchvision_detector(ball_tiles: bool = False, colour: bool = False) -> Det
     )
 
     weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-    model = fasterrcnn_resnet50_fpn(weights=weights)
+    if trained:
+        # The fine-tuned architecture, filled from the checked file: no COCO download.
+        model = fasterrcnn_resnet50_fpn(weights=None, weights_backbone=None, num_classes=len(trained.classes) + 1,
+                                        min_size=trained.min_size, max_size=trained.max_size)
+        model.load_state_dict(torch.load(trained.path, map_location="cpu", weights_only=True))
+    else:
+        model = fasterrcnn_resnet50_fpn(weights=weights)
     model.eval()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -516,7 +575,8 @@ def _torchvision_detector(ball_tiles: bool = False, colour: bool = False) -> Det
         log.warning("no CUDA device visible; detecting on CPU will be far slower")
     model.to(device)
 
-    categories = weights.meta["categories"]
+    categories = ["__background__", *trained.classes] if trained else weights.meta["categories"]
+    keep = frozenset(trained.classes) if trained else KEEP_CLASSES
     transforms = weights.transforms()
 
     def kept(output: dict[str, Any], dx: int = 0, dy: int = 0) -> FrameDetections:
@@ -530,7 +590,7 @@ def _torchvision_detector(ball_tiles: bool = False, colour: bool = False) -> Det
             if score < MIN_SCORE:
                 continue
             name = categories[label]
-            if name not in KEEP_CLASSES:
+            if name not in keep:
                 continue
             x1, y1, x2, y2 = (float(v) for v in box)
             frame.append(
@@ -585,7 +645,7 @@ def _torchvision_detector(ball_tiles: bool = False, colour: bool = False) -> Det
     # The checkpoint torchvision just loaded, hashed from the file it cached. Reported so
     # the control plane can pin a model version to the bytes that actually ran rather
     # than to a URL that may one day serve something else.
-    run.weights_sha256 = _loaded_weights_sha256(weights.url)  # type: ignore[attr-defined]
+    run.weights_sha256 = trained.sha256 if trained else _loaded_weights_sha256(weights.url)  # type: ignore[attr-defined]
     return run
 
 

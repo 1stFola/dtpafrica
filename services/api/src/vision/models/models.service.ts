@@ -46,6 +46,9 @@ export type ResolvedModelVersion = {
   datasetVersionId: string | null;
   /** What the worker runs for this version; detect is told it and reports it back (docs/vision/95). */
   configKey: string | null;
+  /** Trained weights in the models bucket and their checksum; detect loads them for a trained config (docs/vision/103). */
+  weightsKey: string | null;
+  weightsChecksum: string | null;
 };
 
 export type WeightsVerdict =
@@ -507,6 +510,8 @@ function toResolved(version: {
   stage: string;
   datasetVersionId: string | null;
   configKey?: string | null;
+  weightsKey?: string | null;
+  weightsChecksum?: string | null;
   model: { id: string; key: string; task: string };
 }): ResolvedModelVersion {
   return {
@@ -518,6 +523,8 @@ function toResolved(version: {
     stage: version.stage,
     datasetVersionId: version.datasetVersionId,
     configKey: version.configKey ?? null,
+    weightsKey: version.weightsKey ?? null,
+    weightsChecksum: version.weightsChecksum ?? null,
   };
 }
 

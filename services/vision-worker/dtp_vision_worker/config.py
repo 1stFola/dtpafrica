@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "1.23.0"
+CONTRACT_VERSION = "1.24.0"
 
 DEFAULT_POLL_SECONDS = 5.0
 DEFAULT_HEARTBEAT_SECONDS = 30.0
