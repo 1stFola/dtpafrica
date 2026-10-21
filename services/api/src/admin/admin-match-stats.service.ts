@@ -19,6 +19,7 @@ import { PlayerDirectoryService } from "../scoreboard/player-directory.service";
 import { addSquadMembersFromTimeline } from "../scoreboard/squad-from-timeline";
 import { planFinalScoreSync } from "./final-score-sync";
 import { linkMatchGoals } from "../scoreboard/link-match-goals";
+import { hasKickedOff } from "../scoreboard/public-live-state";
 import { videoGoals, withVideoGoals } from "../scoreboard/video-goals";
 import { reapplyEnrichment } from "../vision/events/reapply-enrichment";
 import {
@@ -274,7 +275,11 @@ export type ClockPhase =
   | "awaiting_second_half"
   | "awaiting_full_time"
   | "penalty_shootout"
-  | "finished";
+  | "finished"
+  /* A finished match reopened for corrections. The clock stays stopped at the full-time
+     reading and the recorder types each minute, because there is no live play to read
+     one from. Only the server enters it (a send-back) and only approval leaves it. */
+  | "correction";
 
 export type ClockState = {
   halfLength: number;
@@ -393,6 +398,7 @@ const CLOCK_PHASES = new Set<string>([
   "awaiting_full_time",
   "penalty_shootout",
   "finished",
+  "correction",
 ]);
 
 export function readClock(input: unknown): ClockState | null {
@@ -731,6 +737,22 @@ export type SheetLogAction =
  */
 function isFullTime(clock: ClockState | null): boolean {
   return clock?.phase === "finished";
+}
+
+/**
+ * A finished match reopened for corrections.
+ *
+ * Not full time for the lock (the point of reopening is to edit), but full time for
+ * everything else: the clock does not run, nothing is live, and the record still
+ * describes a match that has ended.
+ */
+export function isCorrecting(clock: ClockState | null): boolean {
+  return clock?.phase === "correction";
+}
+
+/** The match has ended: at full time, or reopened after it to be corrected. */
+function matchIsOver(clock: ClockState | null): boolean {
+  return isFullTime(clock) || isCorrecting(clock);
 }
 
 function actorName(ctx: AdminAuthContext): string {
@@ -1128,7 +1150,7 @@ export class AdminMatchStatsService {
     if (!options.allowWhenPublicLiveOff && !liveFeature.audioEnabled) {
       throw new ForbiddenException("Live audio commentary must be approved before it can start");
     }
-    if (!options.allowAfterFullTime && isFullTime(readClock(sheet.clock))) {
+    if (!options.allowAfterFullTime && matchIsOver(readClock(sheet.clock))) {
       throw new BadRequestException("Live audio commentary is closed after full time");
     }
   }
@@ -1176,8 +1198,19 @@ export class AdminMatchStatsService {
       );
     }
 
-    const nextClock = extras?.clock !== undefined ? readClock(extras.clock) : readClock(sheet.clock);
-    if (readClock(sheet.clock)?.firstHalfStartedAt && !nextClock?.firstHalfStartedAt) {
+    const storedClock = readClock(sheet.clock);
+    /* The clock of a reopened record is the server's, not the console's. A device holding a
+       draft from match day would otherwise send its running clock back and restart the
+       match, and a console cannot put itself into correction mode to type its own minutes
+       and submit early. Either way the stored clock stands. */
+    const sentClock =
+      extras?.clock === undefined
+        ? undefined
+        : isCorrecting(storedClock) || isCorrecting(readClock(extras.clock))
+          ? storedClock
+          : readClock(extras.clock);
+    const nextClock = sentClock !== undefined ? sentClock : storedClock;
+    if (storedClock?.firstHalfStartedAt && !nextClock?.firstHalfStartedAt) {
       throw new BadRequestException("Kickoff cannot be cleared after recording has started.");
     }
     const kickedOff = Boolean(nextClock?.firstHalfStartedAt);
@@ -1202,13 +1235,13 @@ export class AdminMatchStatsService {
                 : {}),
             }
           : {}),
-        ...(extras?.clock !== undefined
+        ...(sentClock !== undefined
           ? {
-              clock: (readClock(extras.clock) ?? undefined) as Prisma.InputJsonValue,
+              clock: (sentClock ?? undefined) as Prisma.InputJsonValue,
               /* Stamped on the transition into full time and only then. Inferring it
                  from `updatedAt` works only for as long as nothing else writes to the
                  row, which is not a property to depend on. */
-              ...(isFullTime(readClock(extras.clock)) && !isFullTime(readClock(sheet.clock))
+              ...(isFullTime(sentClock) && !isFullTime(storedClock)
                 ? { fullTimeAt: new Date() }
                 : {}),
             }
@@ -1375,6 +1408,7 @@ export class AdminMatchStatsService {
         idleLockedAt: sheet?.idleLockedAt ?? null,
         idleReleasedAt: sheet?.idleReleasedAt ?? null,
         correctionRequested: Boolean(sheet?.correctionRequestedSection),
+        correcting: isCorrecting(readClock(sheet?.clock)),
         isTraining: isTrainingCompetition(match.competition),
         dangling,
       },
@@ -1511,7 +1545,14 @@ export class AdminMatchStatsService {
        console's, survives the rewrite below, and stays on the public timeline. */
     const score = withVideoGoals(scoreFromEvents(recorded), await videoGoals(this.prisma, match));
     const penaltyShootout = penaltyShootoutFromEvents(recorded);
-    const finished = isFullTime(readClock(sheet.clock));
+    /* A corrected record is a finished match too: re-approving it must mark the match
+       finished and refresh the standings for the corrected score, as the first approval did. */
+    const finished = matchIsOver(readClock(sheet.clock));
+    /* Approval closes the correction. The record locks at full time again, so a further
+       change goes back through a correction request. */
+    if (isCorrecting(readClock(sheet.clock))) {
+      stamp.clock = { ...readClock(sheet.clock), phase: "finished" };
+    }
     const nextMeta = { ...existingMeta };
     if (penaltyShootout) {
       nextMeta.penaltyShootout = penaltyShootout;
@@ -1751,7 +1792,11 @@ export class AdminMatchStatsService {
     const sheet = await this.requireSheet(matchId);
 
     const current = sheetStatus(sheet);
-    if (current === "live") {
+    const answersCorrection = Boolean(sheet.correctionRequestedSection);
+    /* Except to answer a correction request. A record locks at full time while still
+       `live`, and a pending request holds back the auto-submit, so refusing here left a
+       request nobody could approve. */
+    if (current === "live" && !answersCorrection) {
       throw new BadRequestException("This sheet is already open for edits");
     }
 
@@ -1778,7 +1823,14 @@ export class AdminMatchStatsService {
       stamp[col.submittedAt] = null;
     }
 
-    const answersCorrection = Boolean(sheet.correctionRequestedSection);
+    /* The match is over, so it reopens for corrections rather than for recording. It used
+       to go back to `running` on its original anchors: the clock then read hours past full
+       time, jumped straight to the added-time prompt, and the public page could show the
+       match as live again. An approved sheet is a finished match even when its clock never
+       reached full time, since approving published the result. */
+    const clock = readClock(sheet.clock);
+    const reopensForCorrection =
+      isFullTime(clock) || (wasApproved && hasKickedOff(clock) && !isCorrecting(clock));
 
     const updated = await this.prisma.sbMatchStatistics.update({
       where: { matchId },
@@ -1795,8 +1847,8 @@ export class AdminMatchStatsService {
               correctionRequestNote: null,
             }
           : {}),
-        ...(isFullTime(readClock(sheet.clock))
-          ? { clock: { ...readClock(sheet.clock), phase: "running" } as Prisma.InputJsonValue }
+        ...(reopensForCorrection && clock
+          ? { clock: { ...clock, phase: "correction" } as Prisma.InputJsonValue }
           : {}),
       } as Prisma.SbMatchStatisticsUpdateInput,
     });

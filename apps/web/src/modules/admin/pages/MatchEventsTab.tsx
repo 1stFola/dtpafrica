@@ -19,6 +19,7 @@ import {
   shootoutScore,
   shootoutStartingSide,
 } from "./shootout";
+import { checkTypedMinute, closesTheMatch, placeChronologically } from "./correctionMinute";
 
 /**
  * Event types that need a second player before they can be logged: the incoming
@@ -61,7 +62,8 @@ export function MatchEventsTab({
   editable: boolean;
   events: RecordedEvent[];
   kits: KitColours;
-  captured: { minute: number; added: number | null } | null;
+  /** `half` is set when the minute was typed (a correction) rather than read off the clock. */
+  captured: { minute: number; added: number | null; half?: 1 | 2 } | null;
   /** Null until step 2 is answered — no side is ever inherited. */
   side: Side | null;
   playerNumber: string;
@@ -111,6 +113,8 @@ export function MatchEventsTab({
     return playerLabelsByKey?.get(`${teamId}:${number}`) ?? `No. ${number}`;
   };
   const stepsEnabled = editable && clock.started;
+  /* Reopened after full time: the minute is typed in step 1 and can be changed on edit. */
+  const correcting = clock.correcting;
   const hasSide = Boolean(side);
   const hasPlayerNumber = playerNumber.trim() !== "";
   /* Every earlier step must be answered before step 4 unlocks: no event can be
@@ -143,9 +147,9 @@ export function MatchEventsTab({
       side,
       playerNumber: playerNumber ? Number(playerNumber) : null,
       secondaryPlayerNumber: secondary,
-      half: clock.half,
+      half: captured.half ?? clock.half,
     };
-    onChange({ events: [...events, next] });
+    onChange({ events: correcting ? placeChronologically(events, next) : [...events, next] });
     setPendingType(null);
     setSecondNumber("");
     // Clear the entry so the next event starts from a clean step 1.
@@ -181,26 +185,41 @@ export function MatchEventsTab({
     return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
   };
 
+  /* Live, the minute, added time and half are the clock's and stay as filed. In a
+     correction they are typed, held to the shape the clock would have produced. */
+  const editMinute =
+    correcting && editing
+      ? checkTypedMinute(editDraft.minute, editDraft.addedMinute, clock.halfLength, {
+          allowZero: editing.minute === 0,
+        })
+      : null;
+
   const saveEdit = () => {
     if (!editable || !editing) return;
+    if (editMinute && !editMinute.ok) return;
     const needsSecond = Boolean(SECOND_PLAYER_PROMPT[editDraft.type]);
     const next: RecordedEvent = {
       ...editing,
       type: editDraft.type,
-      minute: parseMinute(editDraft.minute),
-      addedMinute: parsePositiveInt(editDraft.addedMinute),
+      minute: editMinute?.ok ? editMinute.minute : parseMinute(editDraft.minute),
+      addedMinute: editMinute?.ok ? editMinute.added : parsePositiveInt(editDraft.addedMinute),
       side: editDraft.side,
       playerNumber: parsePositiveInt(editDraft.playerNumber),
       secondaryPlayerNumber: needsSecond
         ? parsePositiveInt(editDraft.secondaryPlayerNumber)
         : null,
-      half: editDraft.half === "2" ? 2 : 1,
+      half: editMinute?.ok ? editMinute.half : editDraft.half === "2" ? 2 : 1,
     };
-    onChange({
-      events: normalizeShootoutSides(
-        events.map((event) => (event.id === editing.id ? next : event))
-      ),
-    });
+    /* A corrected minute moves the event to where it now happened. Full time and the
+       shootout keep their place: their order is the match's ending. */
+    const retimed =
+      correcting && !closesTheMatch(next)
+        ? placeChronologically(
+            events.filter((event) => event.id !== editing.id),
+            next
+          )
+        : events.map((event) => (event.id === editing.id ? next : event));
+    onChange({ events: normalizeShootoutSides(retimed) });
     setEditing(null);
   };
 
@@ -292,6 +311,17 @@ export function MatchEventsTab({
 
   return (
     <div className="mcx-events">
+      {correcting && (
+        <p className="mcx-callout mcx-callout--action">
+          <span>
+            <strong>Correcting a finished match.</strong> The clock is stopped at full time.
+            Type the minute in step 1, then the team, the jersey number and the event as
+            usual. Use <strong>Edit</strong> on any logged event to change its minute, team,
+            players or type.
+          </span>
+        </p>
+      )}
+
       {!clock.started && (
         <p className="mcx-callout">
           Set the half length and tap <strong>Kick Off</strong> above to start recording.
@@ -305,7 +335,11 @@ export function MatchEventsTab({
             <span className="mcx-step__label">
               Tap the event to capture
               {!captured ? (
-                <em className="mcx-step__gate"> — log a minute first (step 1)</em>
+                <em className="mcx-step__gate">
+                  {correcting
+                    ? " — enter the minute first (step 1)"
+                    : " — log a minute first (step 1)"}
+                </em>
               ) : !side ? (
                 <em className="mcx-step__gate"> — choose home or away first (step 2)</em>
               ) : playerNumber.trim() === "" ? (
@@ -382,7 +416,9 @@ export function MatchEventsTab({
           <div className="mcx-prompt__card mcx-prompt__card--wide">
             <h3>Edit event</h3>
             <p className="muted">
-              Correct the event before the sheet is submitted or approved.
+              {correcting
+                ? "Correct the event, then submit the corrections for approval."
+                : "Correct the event before the sheet is submitted or approved."}
             </p>
             <div className="mcx-edit-grid">
               <label>
@@ -420,7 +456,10 @@ export function MatchEventsTab({
                   max={130}
                   inputMode="numeric"
                   value={editDraft.minute}
-                  disabled
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, minute: event.target.value }))
+                  }
+                  disabled={!correcting}
                 />
               </label>
               <label>
@@ -431,14 +470,18 @@ export function MatchEventsTab({
                   max={30}
                   inputMode="numeric"
                   value={editDraft.addedMinute}
+                  onChange={(event) =>
+                    setEditDraft((draft) => ({ ...draft, addedMinute: event.target.value }))
+                  }
                   placeholder="0"
-                  disabled
+                  disabled={!correcting}
                 />
               </label>
               <label>
                 <span>Half</span>
+                {/* Follows the minute in a correction, so the two cannot disagree. */}
                 <select
-                  value={editDraft.half}
+                  value={editMinute?.ok ? String(editMinute.half) : editDraft.half}
                   disabled
                 >
                   <option value="1">1st half</option>
@@ -480,11 +523,19 @@ export function MatchEventsTab({
                 </label>
               )}
             </div>
+            {editMinute && !editMinute.ok && (
+              <p className="mcx-error" role="alert">{editMinute.reason}</p>
+            )}
             <div className="mcx-prompt__actions">
               <button type="button" className="mcx-btn" onClick={() => setEditing(null)}>
                 Cancel
               </button>
-              <button type="button" className="mcx-btn mcx-btn--primary" onClick={saveEdit}>
+              <button
+                type="button"
+                className="mcx-btn mcx-btn--primary"
+                onClick={saveEdit}
+                disabled={Boolean(editMinute && !editMinute.ok)}
+              >
                 Save changes
               </button>
             </div>

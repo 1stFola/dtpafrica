@@ -1684,6 +1684,11 @@ export class ScoreboardService {
     const clock = readClock(sheet.clock);
     if (!hasKickedOff(clock)) return null;
 
+    /* Reopened after full time for corrections. Those edits are not approved, and the
+       match centre would read this snapshot as a game in progress; the public keeps the
+       published result until the corrected sheet is approved over it. */
+    if (clock.phase === "correction") return null;
+
     const events = readEvents(sheet.events);
     const tallies = normaliseTallies(sheet.tallies);
     const totals = totalsFor(effectiveTallies(tallies, events));

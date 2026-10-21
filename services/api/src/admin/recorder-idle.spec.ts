@@ -229,6 +229,11 @@ describe("when a sheet may be sent for approval", () => {
     }
   });
 
+  it("allows a record reopened for corrections, whichever half its clock was left in", () => {
+    expect(canSubmitYet({ half: 1, phase: "correction" })).toBe(true);
+    expect(canSubmitYet({ half: 2, phase: "correction" })).toBe(true);
+  });
+
   it("refuses during the first half, however far in", () => {
     /* A sheet submitted at half-time is half a match: the approver sees a plausible
        record with forty-five minutes missing, and the recorder has to ask for it back

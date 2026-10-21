@@ -152,7 +152,9 @@ export function assessAutoSubmit(
  */
 export function canSubmitYet(clock: { half: 1 | 2; phase: string } | null): boolean {
   if (!clock) return false;
-  return clock.half === 2;
+  /* A record reopened for corrections is a whole match, whichever half its clock was
+     left in -- an approved sheet can be reopened before its clock reached the second. */
+  return clock.half === 2 || clock.phase === "correction";
 }
 
 /** Why the button is off, said the way the recorder would ask it. */

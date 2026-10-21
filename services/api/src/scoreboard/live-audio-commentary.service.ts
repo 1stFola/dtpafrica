@@ -361,7 +361,7 @@ export class LiveAudioCommentaryService implements OnModuleDestroy {
     if (!match) return { ok: false, reason: "Match not found" };
     if (!match.isPublished) return { ok: false, reason: "Match is not published" };
     const clock = match.statisticsSheet?.clock as { firstHalfStartedAt?: unknown; phase?: unknown } | null;
-    if (!clock?.firstHalfStartedAt || clock.phase === "finished") {
+    if (!clock?.firstHalfStartedAt || clock.phase === "finished" || clock.phase === "correction") {
       return { ok: false, reason: "Live audio recording is not active" };
     }
     const liveFeature = readLiveFeature(match.stats);
