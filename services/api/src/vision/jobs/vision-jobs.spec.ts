@@ -1,6 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2, DETECTOR_CONFIG_BASE, CAMERA_MOTION_CHUNK_ROLE, CAMERA_MOTION_INDEX_ROLE, CAMERA_MOTION_VERSION, CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
+import { DETECTOR_CONFIG_BALL_TILES, DETECTOR_CONFIG_BALL_TILES_V2, DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_TRAINED, CAMERA_MOTION_CHUNK_ROLE, CAMERA_MOTION_INDEX_ROLE, CAMERA_MOTION_VERSION, CALIBRATION_FRAMES_CHUNK_ROLE, CALIBRATION_FRAMES_INDEX_ROLE, CALIBRATION_PROPAGATION_VERSION, visionKeys } from "@dtp/vision-contracts";
 import { VisionJobsService } from "./vision-jobs.service";
 
 /**
@@ -95,6 +95,27 @@ describe("a model-bound job carries the version it must run", () => {
     mockModels.resolveForJob.mockResolvedValue({ id: MODEL_VERSION, task: "detect", configKey });
     await expect(service.enqueueForAsset({ type: "detect", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "DetectorConfigUnknown" } });
     expect(mockQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  describe("trained weights (docs/vision/103)", () => {
+    const sha = "f".repeat(64);
+    const trained = (over: Record<string, unknown> = {}) => ({ id: MODEL_VERSION, task: "detect", configKey: DETECTOR_CONFIG_TRAINED,
+      weightsKey: "inference/train-1/1/weights.pt", weightsChecksum: sha.toUpperCase(), ...over });
+
+    it("hands detect the version's weights, checksum and training config, and declares both reads", async () => {
+      mockModels.resolveForJob.mockResolvedValue(trained());
+      await service.enqueueForAsset({ type: "detect", videoAssetId: ASSET, params: { readKeys: [{ bucket: "models", key: "someone/else.pt" }] } });
+      const spec = enqueued().inputSpec;
+      expect(spec.detector).toEqual({ configKey: DETECTOR_CONFIG_TRAINED,
+        weights: { key: "inference/train-1/1/weights.pt", checksum: sha, configKey: "inference/train-1/1/train-config.json" } });
+      expect(spec.readKeys).toEqual([{ bucket: "models", key: "inference/train-1/1/train-config.json" }, { bucket: "models", key: "inference/train-1/1/weights.pt" }]);
+    });
+
+    it.each([{ weightsKey: null }, { weightsChecksum: null }, { weightsKey: "somewhere/else.bin" }])("refuses a trained version that records no weights: %o", async (over) => {
+      mockModels.resolveForJob.mockResolvedValue(trained(over));
+      await expect(service.enqueueForAsset({ type: "detect", videoAssetId: ASSET })).rejects.toMatchObject({ response: { error: "TrainedWeightsMissing" } });
+      expect(mockQueue.enqueue).not.toHaveBeenCalled();
+    });
   });
 
   it("queues nothing when the registry refuses", async () => {

@@ -52,3 +52,23 @@ def test_one_epoch_on_four_frames(tmp_path: Path) -> None:
     model, _ = trainer.build_model(len(CLASSES), 96, 128)
     model.load_state_dict(torch.load(result.weights, map_location="cpu", weights_only=True))
     assert model.roi_heads.box_predictor.cls_score.out_features == len(CLASSES) + 1
+
+
+def test_detect_loads_what_train_wrote(tmp_path: Path) -> None:
+    """The round trip of docs/vision/103: train's weights, through detect's real loader."""
+    from dtp_vision_worker.media import sha256_file
+    from dtp_vision_worker.stages import detect
+
+    items = [Item("a", 1, frame(tmp_path / "a1.jpg", (20, 30)), ((20.0, 30.0, 28.0, 38.0),), (4,)),
+             Item("a", 2, frame(tmp_path / "a2.jpg", (70, 40)), ((70.0, 40.0, 78.0, 48.0),), (4,))]
+    result = trainer.fit(items, items[:1], CLASSES, epochs=1, batch_size=2, learning_rate=0.005, seed=5,
+                         min_size=96, max_size=128, out_dir=tmp_path / "out")
+    weights = detect.TrainedWeights(result.weights, sha256_file(result.weights), detect.TRAINED_CLASSES, 96, 128)
+    run = detect._torchvision_detector(trained=weights)
+    assert run.weights_sha256 == weights.sha256
+    frames = run([tmp_path / "a1.jpg", tmp_path / "a2.jpg"])
+    assert len(frames) == 2
+    for found in frames:
+        for d in found:
+            assert d["label"] in detect.TRAINED_CLASSES
+            assert detect.to_prediction(d)["class"] == d["label"]

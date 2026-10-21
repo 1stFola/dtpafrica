@@ -13,12 +13,12 @@
  * uncertain window, is left out of both splits: an unsure label is neither a positive
  * nor a negative.
  */
-import { DETECTOR_CONFIG_BASE } from "./jobs";
+import { DETECTOR_CONFIG_BASE, DETECTOR_CONFIG_TRAINED } from "./jobs";
 import type { DetectionClass } from "./prediction";
 
 export const TRAIN_VERSION = "train-fasterrcnn/v1";
 /** The config key a version registered from a run carries; detect learns to load it next. */
-export const TRAINED_DETECTOR_CONFIG = "trained/torchvision/fasterrcnn_resnet50_fpn/v1";
+export const TRAINED_DETECTOR_CONFIG = DETECTOR_CONFIG_TRAINED;
 export const TRAIN_ARTIFACT_ROLES = { weights: "weights", config: "train_config", metrics: "train_metrics" } as const;
 export const TRAIN_SPLITS = ["train", "val"] as const;
 export type TrainSplit = (typeof TRAIN_SPLITS)[number];
