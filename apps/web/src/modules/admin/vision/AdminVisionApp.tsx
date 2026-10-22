@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminVisionPossessionPage } from "./AdminVisionPossessionPage";
 import { AdminRequirePermission } from "../AdminRequirePermission";
 import { AdminVisionAnnotationPage } from "./AdminVisionAnnotationPage";
+import { ANNOTATION_SCREEN_PERMISSIONS } from "./annotation-access";
 import { AdminVisionAuditPage } from "./AdminVisionAuditPage";
 import { AdminVisionDatasetsPage } from "./AdminVisionDatasetsPage";
 import { AdminVisionEventsPage } from "./AdminVisionEventsPage";
@@ -30,8 +31,8 @@ export function AdminVisionApp() {
           <Route path="review" element={<AdminVisionReviewPage />} />
           <Route path="event-gold" element={<AdminVisionEventGoldPage />} />
         </Route>
-        {/* Claiming and labelling need `vision.annotate`; the workstation itself mounts outside the shell (App.tsx). */}
-        <Route element={<AdminRequirePermission permission="vision.annotate" />}>
+        {/* Labellers claim here and reviewers find submitted work here; the workstation itself mounts outside the shell (App.tsx). */}
+        <Route element={<AdminRequirePermission permission={ANNOTATION_SCREEN_PERMISSIONS} />}>
           <Route path="annotation" element={<AdminVisionAnnotationPage />} />
         </Route>
         <Route path="datasets" element={<AdminVisionDatasetsPage />} />

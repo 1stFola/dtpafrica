@@ -12,6 +12,8 @@ import {
   type VisionTaskMedia,
 } from "../../../api/vision";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useAdminAuth } from "../AdminAuthContext";
+import { sentBackReview } from "./annotation-access";
 import { usePictureRect } from "./use-picture-rect";
 import {
   clampToWindow,
@@ -80,6 +82,10 @@ const REJECTION_LABELS: Record<RejectionReason, string> = {
 export function AdminVisionTaskPage() {
   const { taskId = "" } = useParams();
   usePageTitle("Annotation workstation");
+  const { hasPermission } = useAdminAuth();
+  /* The route lets in labellers and reviewers; each sees only the controls the API will accept from them. */
+  const canAnnotate = hasPermission("vision.annotate");
+  const canReview = hasPermission("vision.review");
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [task, setTask] = useState<VisionAnnotationTask | null>(null);
@@ -90,6 +96,8 @@ export function AdminVisionTaskPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState("");
+  /** The reviewer's note to the labeller: its own box, so it never ends up in the labels' "what made this hard". */
+  const [reviewNote, setReviewNote] = useState("");
   const [uncertain, setUncertain] = useState(false);
 
   /** The boxes, as they will be submitted, keyed for the screen. */
@@ -410,6 +418,7 @@ export function AdminVisionTaskPage() {
   }, [media]);
 
   const latestVersion = task?.versions?.[0] ?? null;
+  const sentBack = sentBackReview(task);
 
   async function submit() {
     if (!task || !media) return;
@@ -455,8 +464,9 @@ export function AdminVisionTaskPage() {
       await reviewVisionAnnotation(latestVersion.id, {
         decision,
         rejectionReason,
-        notes: notes.trim() || undefined,
+        notes: reviewNote.trim() || undefined,
       });
+      setReviewNote("");
       setNotice(
         decision === "rejected"
           ? "Sent back, and the window has been re-queued for another look."
@@ -515,6 +525,12 @@ export function AdminVisionTaskPage() {
         </div>
       )}
       {notice && <div className="vision-panel">{notice}</div>}
+      {sentBack && (
+        <div className="vision-panel" role="status">
+          <strong>Sent back: {sentBack.rejectionReason ? REJECTION_LABELS[sentBack.rejectionReason] ?? sentBack.rejectionReason : "no reason given"}.</strong>{" "}
+          {sentBack.notes ? <>Reviewer&apos;s note: &ldquo;{sentBack.notes}&rdquo;.</> : "The reviewer left no note."} Fix it, then submit again.
+        </div>
+      )}
 
       <div className="vision-workstation__body">
         <section className="vision-workstation__video">
@@ -704,6 +720,7 @@ export function AdminVisionTaskPage() {
             <p className="vision-footnote">No schema loaded.</p>
           )}
 
+          {canAnnotate && <>
           <h2 className="vision-subhead">Your note</h2>
           <label className="vision-check">
             <input
@@ -725,6 +742,7 @@ export function AdminVisionTaskPage() {
               {busy ? "Saving…" : "Submit labels"}
             </button>
           </div>
+          </>}
 
           <h2 className="vision-subhead">Attempts</h2>
           {!task.versions?.length ? (
@@ -748,6 +766,7 @@ export function AdminVisionTaskPage() {
                     <div key={r.id}>
                       {r.decision}
                       {r.rejectionReason && ` — ${REJECTION_LABELS[r.rejectionReason] ?? r.rejectionReason}`}
+                      {r.notes && <div className="vision-footnote">{r.notes}</div>}
                     </div>
                   ))}
                 </li>
@@ -755,13 +774,27 @@ export function AdminVisionTaskPage() {
             </ol>
           )}
 
-          {latestVersion && (
+          {canReview && latestVersion && task.state !== "submitted" && (
+            /* A verdict stays put: the buttons used to stay live after one, so a second click
+               recorded a second approval of the same attempt. */
+            <p className="vision-footnote">
+              {task.state === "approved" ? "Approved. Nothing left to review here." : task.state === "rejected" ? "Sent back; it returns here when the labeller submits again." : "Nothing to review until the labeller submits."}
+            </p>
+          )}
+          {canReview && latestVersion && task.state === "submitted" && (
             <>
               <h2 className="vision-subhead">Review the latest attempt</h2>
               <p className="vision-footnote">
                 You cannot approve your own work — the second pair of eyes is the whole
                 control.
               </p>
+              <textarea
+                value={reviewNote}
+                onChange={(event) => setReviewNote(event.target.value)}
+                rows={3}
+                placeholder="Note for the labeller: what to fix (shown to them when it comes back)"
+                aria-label="Note for the labeller"
+              />
               <div className="vision-actions">
                 <button type="button" onClick={() => review("approved")} disabled={busy}>
                   Approve

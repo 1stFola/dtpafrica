@@ -3,6 +3,7 @@ import { NavLink, Outlet, useOutletContext } from "react-router-dom";
 import { fetchVisionOverview, type VisionOverview } from "../../../api/vision";
 import { useAdminAuth } from "../AdminAuthContext";
 import { useCollapsedMenu } from "../useCollapsedMenu";
+import { ANNOTATION_SCREEN_PERMISSIONS } from "./annotation-access";
 
 /**
  * The Vision environment: its own shell beside ScoreBoard's, with a section
@@ -19,7 +20,7 @@ const sections = [
   { to: "/admin/vision/pipeline", label: "Pipeline", icon: "⚙" },
   { to: "/admin/vision/review", label: "Review", icon: "☑", permission: "vision.review" },
   { to: "/admin/vision/event-gold", label: "Event gold", icon: "◇", permission: "vision.review" },
-  { to: "/admin/vision/annotation", label: "Annotation", icon: "✎", permission: "vision.annotate" },
+  { to: "/admin/vision/annotation", label: "Annotation", icon: "✎", permission: ANNOTATION_SCREEN_PERMISSIONS },
   { to: "/admin/vision/datasets", label: "Datasets", icon: "⛁" },
   { to: "/admin/vision/models", label: "Models", icon: "◉" },
   { to: "/admin/vision/events", label: "Events", icon: "⚑" },
