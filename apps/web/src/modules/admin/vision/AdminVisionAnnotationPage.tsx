@@ -8,7 +8,9 @@ import {
   fetchVisionMixReport,
   fetchVisionHardFrameRuns,
   fetchVisionAnnotationReviewQueue,
+  fetchVisionLabellerProgress,
   queueVisionHardFrames,
+  type VisionLabellerProgress,
   type SamplingStrategy,
   type VisionHardFrameRun,
   type VisionAnnotationReviewTask,
@@ -69,6 +71,7 @@ export function AdminVisionAnnotationPage() {
 
   const [mix, setMix] = useState<VisionMixReport | null>(null);
   const [review, setReview] = useState<{ waiting: number; yours: number; tasks: VisionAnnotationReviewTask[] } | null>(null);
+  const [labellers, setLabellers] = useState<VisionLabellerProgress[] | null>(null);
   const [queue, setQueue] = useState<VisionActiveLearningItem[]>([]);
   const [runs, setRuns] = useState<VisionHardFrameRun[]>([]);
   const [schemas, setSchemas] = useState<VisionLabelSchema[]>([]);
@@ -82,14 +85,16 @@ export function AdminVisionAnnotationPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [mixReport, queueResult, schemaResult, runResult, reviewResult] = await Promise.all([
+      const [mixReport, queueResult, schemaResult, runResult, reviewResult, progressResult] = await Promise.all([
         fetchVisionMixReport(),
         fetchVisionAnnotationQueue(50),
         fetchVisionLabelSchemas(),
         fetchVisionHardFrameRuns(),
         canReview ? fetchVisionAnnotationReviewQueue(50) : Promise.resolve(null),
+        canReview ? fetchVisionLabellerProgress() : Promise.resolve(null),
       ]);
       setReview(reviewResult);
+      setLabellers(progressResult?.labellers ?? null);
       setRuns(runResult.runs);
       setMix(mixReport);
       setQueue(queueResult.items);
@@ -273,6 +278,45 @@ export function AdminVisionAnnotationPage() {
                 <p className="vision-footnote">Showing the oldest {review.tasks.length} of {review.waiting}.</p>
               )}
             </>
+          )}
+        </section>
+      )}
+
+      {canReview && labellers && (
+        <section className="vision-panel">
+          <h2 className="vision-panel__title">Labellers</h2>
+          <p className="vision-footnote">
+            Each person&apos;s output and pace. Minutes are medians per attempt, so one frame left open
+            does not skew them; &ldquo;recent&rdquo; is the latest 20. A frame counts for whoever made its latest attempt.
+          </p>
+          {labellers.length === 0 ? (
+            <p className="vision-footnote">Nobody has claimed or submitted anything yet.</p>
+          ) : (
+            <table className="vision-table">
+              <thead>
+                <tr>
+                  <th scope="col">Labeller</th><th scope="col">Frames</th><th scope="col">Approved</th><th scope="col">Waiting review</th>
+                  <th scope="col">Sent back</th><th scope="col">Holding</th><th scope="col">Min a frame</th><th scope="col">Last submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {labellers.map((l) => (
+                  <tr key={l.annotatorId}>
+                    <td>{l.name}</td>
+                    <td>{l.frames}{l.attempts > l.frames && <span className="vision-footnote"> ({l.attempts} attempts)</span>}</td>
+                    <td>{l.approved}</td>
+                    <td>{l.awaitingReview}</td>
+                    <td>{l.sentBack}</td>
+                    <td title="Claimed and not submitted, plus sent back and not yet fixed">{l.claimed + l.toFix}{l.toFix > 0 && <span className="vision-footnote"> ({l.toFix} to fix)</span>}</td>
+                    <td>
+                      {l.medianMinutes === null ? "—" : l.medianMinutes}
+                      {l.recentMedianMinutes !== null && l.attempts > 20 && <span className="vision-footnote"> (recent {l.recentMedianMinutes})</span>}
+                    </td>
+                    <td>{l.lastSubmittedAt ? new Date(l.lastSubmittedAt).toLocaleString() : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </section>
       )}
