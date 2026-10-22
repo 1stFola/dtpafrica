@@ -1198,6 +1198,23 @@ export function MatchCenterPage() {
         )}
       </div>
 
+      {match.recordedVideo && (
+        <div className="sbm-recorded">
+          <a
+            className="sbm-recorded__button"
+            href={match.recordedVideo.youtubeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={match.recordedVideo.title}
+          >
+            <span className="sbm-recorded__icon" aria-hidden="true">
+              ▶
+            </span>
+            Watch Recorded Video
+          </a>
+        </div>
+      )}
+
       <AdPlacement slotKey="matchCenterInline" />
 
       {goalAlert && (

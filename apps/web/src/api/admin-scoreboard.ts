@@ -99,8 +99,8 @@ export type AdminLiveStreamRow = {
     awayTeam: { name: string };
   } | null;
   /**
-   * When the API will publish and unpublish this stream on its own: ten minutes before
-   * kickoff to ten minutes after full time. Null without a linked fixture and kickoff.
+   * When the API will publish and unpublish this stream on its own: five minutes before
+   * kickoff to full time. Null without a linked fixture and kickoff.
    * `closesBy: "ceiling"` means the game has no result yet, so `closesAt` is the latest
    * it will come down (four hours after kickoff) rather than the expected time.
    */

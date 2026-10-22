@@ -2,7 +2,8 @@
  * When a live stream linked to a fixture goes up on the Live Games page, and when it
  * comes down.
  *
- * The window opens ten minutes before kickoff and closes ten minutes after full time.
+ * The window opens five minutes before kickoff and closes at full time: once the game is
+ * over the stream comes down, and the match centre offers it as the recorded video.
  * The sweep in `live-stream-schedule.service.ts` acts on the two edges only, so an admin
  * who takes a stream down early, or puts one back up after the game, is not overruled:
  *
@@ -18,10 +19,10 @@
  */
 
 /** The window opens this long before kickoff. */
-export const PUBLISH_LEAD_MS = 10 * 60_000;
+export const PUBLISH_LEAD_MS = 5 * 60_000;
 
-/** The window closes this long after full time. */
-export const UNPUBLISH_TAIL_MS = 10 * 60_000;
+/** The window closes this long after full time: none, so it comes down with the whistle. */
+export const UNPUBLISH_TAIL_MS = 0;
 
 /**
  * When nothing says the game is over, the window closes this long after kickoff.

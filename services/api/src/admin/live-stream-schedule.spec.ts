@@ -49,9 +49,9 @@ function finishedAt(minutesAfterKickoff: number, over: Partial<LiveStreamSchedul
 }
 
 describe("the constants say what was asked for", () => {
-  it("is ten minutes either side", () => {
-    expect(PUBLISH_LEAD_MS).toBe(10 * MIN);
-    expect(UNPUBLISH_TAIL_MS).toBe(10 * MIN);
+  it("is five minutes before kickoff and nothing after full time", () => {
+    expect(PUBLISH_LEAD_MS).toBe(5 * MIN);
+    expect(UNPUBLISH_TAIL_MS).toBe(0);
   });
 });
 
@@ -61,13 +61,13 @@ describe("liveStreamWindow", () => {
     expect(liveStreamWindow({ ...stream().match!, kickoffAt: null })).toBeNull();
   });
 
-  it("opens ten minutes before kickoff", () => {
-    expect(liveStreamWindow(stream().match)!.opensAt).toEqual(at(-10));
+  it("opens five minutes before kickoff", () => {
+    expect(liveStreamWindow(stream().match)!.opensAt).toEqual(at(-5));
   });
 
-  it("closes ten minutes after the recorded full-time whistle", () => {
+  it("closes at the recorded full-time whistle", () => {
     const window = liveStreamWindow(finishedAt(112).match)!;
-    expect(window.closesAt).toEqual(at(122));
+    expect(window.closesAt).toEqual(at(112));
     expect(window.closesBy).toBe("full_time");
   });
 
@@ -78,7 +78,7 @@ describe("liveStreamWindow", () => {
       updatedAt: at(50),
       fullTimeAt: at(100),
     })!;
-    expect(window.closesAt).toEqual(at(110));
+    expect(window.closesAt).toEqual(at(100));
   });
 
   it("uses the last write to a finished match when no whistle is on record", () => {
@@ -88,7 +88,7 @@ describe("liveStreamWindow", () => {
       updatedAt: at(105),
       fullTimeAt: null,
     })!;
-    expect(window.closesAt).toEqual(at(115));
+    expect(window.closesAt).toEqual(at(105));
     expect(window.closesBy).toBe("full_time");
   });
 
@@ -99,7 +99,7 @@ describe("liveStreamWindow", () => {
       updatedAt: at(3 * 24 * 60),
       fullTimeAt: null,
     })!;
-    expect(window.closesAt).toEqual(new Date(at(0).getTime() + NO_RESULT_CEILING_MS + 10 * MIN));
+    expect(window.closesAt).toEqual(new Date(at(0).getTime() + NO_RESULT_CEILING_MS));
   });
 
   it("closes at the ceiling for a game nobody records", () => {
@@ -112,21 +112,21 @@ describe("liveStreamWindow", () => {
     const window = liveStreamWindow({
       status: "postponed",
       kickoffAt: KICKOFF,
-      updatedAt: at(-5),
+      updatedAt: at(-3),
       fullTimeAt: null,
     })!;
-    expect(window.closesAt).toEqual(at(5));
+    expect(window.closesAt).toEqual(at(-3));
   });
 });
 
 describe("assessLiveStream: publishing", () => {
-  it("does nothing more than ten minutes before kickoff", () => {
-    expect(assessLiveStream(stream(), at(-11)).action).toBeNull();
-    expect(assessLiveStream(stream(), new Date(at(-10).getTime() - 1)).action).toBeNull();
+  it("does nothing more than five minutes before kickoff", () => {
+    expect(assessLiveStream(stream(), at(-6)).action).toBeNull();
+    expect(assessLiveStream(stream(), new Date(at(-5).getTime() - 1)).action).toBeNull();
   });
 
-  it("publishes at ten minutes before kickoff", () => {
-    expect(assessLiveStream(stream(), at(-10)).action).toBe("publish");
+  it("publishes at five minutes before kickoff", () => {
+    expect(assessLiveStream(stream(), at(-5)).action).toBe("publish");
   });
 
   it("publishes a stream created after kickoff, while the game is on", () => {
@@ -135,20 +135,20 @@ describe("assessLiveStream: publishing", () => {
 
   it("leaves a stream that is already up", () => {
     expect(
-      assessLiveStream(stream({ isPublished: true, publishedAt: at(-60) }), at(-5)).action
+      assessLiveStream(stream({ isPublished: true, publishedAt: at(-60) }), at(-2)).action
     ).toBeNull();
   });
 
   it("does not republish a stream the admin took down during the window", () => {
-    /* Auto-published at -10, unpublished by hand at +20: publishedAt is inside the window. */
-    const takenDown = stream({ isPublished: false, publishedAt: at(-10) });
+    /* Auto-published at -5, unpublished by hand at +20: publishedAt is inside the window. */
+    const takenDown = stream({ isPublished: false, publishedAt: at(-5) });
     expect(assessLiveStream(takenDown, at(25)).action).toBeNull();
   });
 
   it("publishes a stream last up for an earlier fixture or kickoff", () => {
     /* Relinked to this game, or the game was moved: the old publish predates the window. */
     const reused = stream({ isPublished: false, publishedAt: at(-7 * 24 * 60) });
-    expect(assessLiveStream(reused, at(-10)).action).toBe("publish");
+    expect(assessLiveStream(reused, at(-5)).action).toBe("publish");
   });
 
   it("does not publish a stream whose game is already over", () => {
@@ -159,7 +159,7 @@ describe("assessLiveStream: publishing", () => {
     const postponed = stream({
       match: { status: "postponed", kickoffAt: KICKOFF, updatedAt: at(-120), fullTimeAt: null },
     });
-    expect(assessLiveStream(postponed, at(-10)).action).toBeNull();
+    expect(assessLiveStream(postponed, at(-5)).action).toBeNull();
   });
 
   it("does nothing for a stream with no fixture", () => {
@@ -171,22 +171,22 @@ describe("assessLiveStream: publishing", () => {
 });
 
 describe("assessLiveStream: unpublishing", () => {
-  const up = { isPublished: true, publishedAt: at(-10) };
+  const up = { isPublished: true, publishedAt: at(-5) };
 
-  it("keeps the stream up until ten minutes after full time", () => {
-    expect(assessLiveStream(finishedAt(110, up), at(119)).action).toBeNull();
+  it("keeps the stream up until full time", () => {
+    expect(assessLiveStream(finishedAt(110, up), at(109)).action).toBeNull();
     expect(
-      assessLiveStream(finishedAt(110, up), new Date(at(120).getTime() - 1)).action
+      assessLiveStream(finishedAt(110, up), new Date(at(110).getTime() - 1)).action
     ).toBeNull();
   });
 
-  it("unpublishes ten minutes after full time", () => {
-    expect(assessLiveStream(finishedAt(110, up), at(120)).action).toBe("unpublish");
+  it("unpublishes the moment full time is blown", () => {
+    expect(assessLiveStream(finishedAt(110, up), at(110)).action).toBe("unpublish");
   });
 
   it("unpublishes a stream the admin put up by hand before the game", () => {
     const manual = finishedAt(110, { isPublished: true, publishedAt: at(-90) });
-    expect(assessLiveStream(manual, at(125)).action).toBe("unpublish");
+    expect(assessLiveStream(manual, at(111)).action).toBe("unpublish");
   });
 
   it("leaves a stream the admin republished after the game, such as a replay", () => {
@@ -195,7 +195,7 @@ describe("assessLiveStream: unpublishing", () => {
   });
 
   it("does nothing to a stream already down", () => {
-    const down = finishedAt(110, { isPublished: false, publishedAt: at(-10) });
+    const down = finishedAt(110, { isPublished: false, publishedAt: at(-5) });
     expect(assessLiveStream(down, at(125)).action).toBeNull();
   });
 
@@ -209,9 +209,9 @@ describe("assessLiveStream: unpublishing", () => {
   it("unpublishes a stream that went up before the game was postponed", () => {
     const postponed = stream({
       ...up,
-      match: { status: "postponed", kickoffAt: KICKOFF, updatedAt: at(-5), fullTimeAt: null },
+      match: { status: "postponed", kickoffAt: KICKOFF, updatedAt: at(-3), fullTimeAt: null },
     });
-    expect(assessLiveStream(postponed, at(5)).action).toBe("unpublish");
+    expect(assessLiveStream(postponed, at(-2)).action).toBe("unpublish");
   });
 });
 
@@ -234,7 +234,7 @@ describe("assessLiveStream over a whole match", () => {
       if (action === "unpublish") row = { ...row, isPublished: false };
       if (action) actions.push(`${action}@${m}`);
     }
-    expect(actions).toEqual(["publish@-10", "unpublish@118"]);
+    expect(actions).toEqual(["publish@-5", "unpublish@108"]);
   });
 });
 
