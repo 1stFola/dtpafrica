@@ -3282,6 +3282,11 @@ export class AdminScoreboardService {
           created++;
         }
       }
+      /* A registered squad publishes its players; see `publishRegisteredPlayers`. */
+      await this.playerDirectory.publishRegisteredPlayers(
+        resolved.map((row) => row.playerId),
+        tx
+      );
     });
 
     this.statsCache = null;

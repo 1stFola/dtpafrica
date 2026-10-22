@@ -133,5 +133,26 @@ describe("creating a player from a timeline label", () => {
         data: expect.objectContaining({ registrationStatus: "draft", isPublic: false }),
       })
     );
+  });});
+
+describe("publishing the players on a registered squad", () => {
+  it("promotes only drafts, through the client it is given", async () => {
+    /* `pending` is somebody's own registration awaiting review, and an admin may have hidden
+       an approved player; a squad upload decides neither. */
+    const tx = { player: { updateMany: vi.fn(async () => ({ count: 2 })) } };
+    const { svc } = service();
+    const count = await svc.publishRegisteredPlayers(["a", "b", "c"], tx as never);
+    expect(count).toBe(2);
+    expect(tx.player.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["a", "b", "c"] }, registrationStatus: "draft" },
+      data: { registrationStatus: "approved", isPublic: true },
+    });
+  });
+
+  it("writes nothing for an empty squad", async () => {
+    const tx = { player: { updateMany: vi.fn() } };
+    const { svc } = service();
+    expect(await svc.publishRegisteredPlayers([], tx as never)).toBe(0);
+    expect(tx.player.updateMany).not.toHaveBeenCalled();
   });
 });

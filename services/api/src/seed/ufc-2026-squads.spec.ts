@@ -13,6 +13,8 @@ type Player = {
   normalizedName: string | null;
   slug: string;
   playerPhotoUrl: string | null;
+  registrationStatus?: string;
+  isPublic?: boolean;
 };
 type Squad = {
   id: string;
@@ -68,6 +70,13 @@ function makePrisma(options: { players?: Player[]; squad?: Squad[] } = {}) {
         const row = { id: `player-${++seq}`, playerPhotoUrl: null, ...data };
         players.push(row);
         return row;
+      },
+      updateMany: async ({ where, data }: any) => {
+        const rows = players.filter(
+          (p) => where.id.in.includes(p.id) && p.registrationStatus === where.registrationStatus
+        );
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
       },
     },
     sbTeamSquad: {
@@ -175,6 +184,9 @@ describe("UFC 2026 registered squads", () => {
       playerPhotoUrl: expect.stringMatching(/^https:\/\/storage\.tally\.so\//),
     });
     expect(result.photosAdded).toBe(listed - 2);
+    /* A registered squad is public: these opened as "Profile verification in progress". */
+    expect(result.published).toBe(listed - 1);
+    expect(prisma.players.filter((p) => p.registrationStatus !== "approved" || !p.isPublic)).toEqual([]);
     expect(prisma.players.filter((p) => !p.playerPhotoUrl).map((p) => p.displayName)).toEqual([
       "Teslim Umar",
     ]);
@@ -193,6 +205,7 @@ describe("UFC 2026 registered squads", () => {
     expect(again.created).toBe(0);
     expect(again.linked).toBe(0);
     expect(again.photosAdded).toBe(0);
+    expect(again.published).toBe(0);
     expect(again.unchanged).toBe(listed - 1);
     expect(prisma.players).toHaveLength(playersBefore);
     expect(row).toMatchObject({ shirtNumber: 99, position: "GK" });
