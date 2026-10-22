@@ -216,6 +216,16 @@ export type SbMatchDetail = Omit<SbMatchListItem, "homeTeam" | "awayTeam"> & {
   events: SbMatchEvent[];
   highlights: SbHighlight[];
   photos?: SbMatchPhoto[];
+  /**
+   * The fixture's live stream once it is off the Live Games page, for "Watch Recorded
+   * Video" (the API's `recorded-video.ts`). Null while it is still live or there is none.
+   */
+  recordedVideo?: {
+    id: string;
+    title: string;
+    youtubeUrl: string;
+    thumbnailUrl: string | null;
+  } | null;
   liveSheet?: {
     status: "live" | "submitted";
     updatedAt: string;

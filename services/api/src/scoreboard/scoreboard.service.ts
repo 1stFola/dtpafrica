@@ -26,6 +26,7 @@ import { resolvePlayerBySlugOrId } from "../players/player-resolve";
 import { resolveMatchBySlugOrId } from "./match-resolve";
 import { resolveUniquePlayerSlug, slugifyPlayerName } from "../players/player-slug";
 import { presentHighlight, presentLiveStream, presentMatchDetail } from "./present-media";
+import { pickRecordedVideo } from "./recorded-video";
 import { presentScoreboardPayload } from "./present-scoreboard";
 import { CompetitionEngineService } from "./competition-engine.service";
 import { assertMatchReadyForLiveEvents } from "./roster-guard";
@@ -1791,11 +1792,26 @@ export class ScoreboardService {
           ? { isPublished: true, competition: { isPublished: true } }
           : {}),
       },
-      include: MATCH_INCLUDE,
+      include: {
+        ...MATCH_INCLUDE,
+        /* For "Watch Recorded Video": the fixture's broadcast once it is off the Live
+           Games page (`recorded-video.ts`). */
+        liveStreams: {
+          select: {
+            id: true,
+            title: true,
+            youtubeUrl: true,
+            isPublished: true,
+            publishedAt: true,
+            createdAt: true,
+          },
+        },
+      },
     });
     if (!match) throw new NotFoundException("Match not found");
     const liveSheet = await this.liveSheetSnapshot(match);
-    const { statisticsSheet: _sheet, ...matchPayload } = match;
+    const { statisticsSheet: _sheet, liveStreams, ...matchPayload } = match;
+    const recordedVideo = pickRecordedVideo(liveStreams ?? [], match.status);
     const stats =
       match.stats && typeof match.stats === "object" && !Array.isArray(match.stats)
         ? (match.stats as Record<string, unknown>)
@@ -1811,6 +1827,7 @@ export class ScoreboardService {
         homeScore: publicScore.home,
         awayScore: publicScore.away,
         liveSheet,
+        recordedVideo,
         stats: {
           ...stats,
           spotter: {
@@ -1982,8 +1999,9 @@ export class ScoreboardService {
   /**
    * Published broadcasts for the Live Games page, in the admin's order. Not tied to a
    * match reading as live: `isPublished` is the one switch a stream link needs. A stream
-   * linked to a fixture has it flipped on ten minutes before kickoff and off ten minutes
-   * after full time (`admin/live-stream-schedule.ts`); the admin can still flip it.
+   * linked to a fixture has it flipped on five minutes before kickoff and off at full
+   * time (`admin/live-stream-schedule.ts`); the admin can still flip it. Once it is off,
+   * the match centre offers it as the recorded video (`recorded-video.ts`).
    */
   async liveStreams() {
     const rows = await this.prisma.sbLiveStream.findMany({

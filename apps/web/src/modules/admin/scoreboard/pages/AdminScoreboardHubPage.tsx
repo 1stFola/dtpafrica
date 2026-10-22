@@ -39,7 +39,7 @@ const cards: Array<{
   {
     to: "/admin/scoreboard/live-streams",
     title: "Live streams",
-    desc: "YouTube broadcasts that play on the public Live Games page — publish when the stream is up.",
+    desc: "YouTube broadcasts that play on the public Live Games page — a fixture's stream goes up 5 minutes before kickoff and comes down at full time.",
     tag: "Live ops",
     publicPreview: "/scoreboard/live",
   },

@@ -9,8 +9,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { assessLiveStream } from "./live-stream-schedule";
 
 /**
- * Puts a fixture's live stream up ten minutes before kickoff and takes it down ten
- * minutes after full time.
+ * Puts a fixture's live stream up five minutes before kickoff and takes it down at full
+ * time.
  *
  * A sweep for the same reason as `RecorderIdleService`: kickoff arrives without a request
  * to hang a check on. The rule lives in `live-stream-schedule.ts`; this file is the timer,
@@ -22,8 +22,9 @@ export class LiveStreamScheduleService implements OnModuleInit, OnModuleDestroy 
   private timer: NodeJS.Timeout | null = null;
 
   /**
-   * Thirty seconds, so a stream goes up between ten minutes and nine and a half before
-   * kickoff. The query reads a table of a few dozen admin-made rows.
+   * Thirty seconds, so a stream goes up between five minutes and four and a half before
+   * kickoff, and comes down within thirty seconds of full time. The query reads a table
+   * of a few dozen admin-made rows.
    */
   private static readonly INTERVAL_MS = 30_000;
 

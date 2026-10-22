@@ -17,9 +17,10 @@ import { isYoutubeUrl } from "../../../../utils/media-url";
  * Live streams are managed the way Latest videos are, not as a field on the match: a
  * match only reads as live once its recorder kicks off or an admin passes the roster
  * guard, and a stream link that waited on either would never show. Here the admin pastes
- * the YouTube link. A stream linked to a fixture with a kickoff publishes itself ten
- * minutes before kickoff and unpublishes ten minutes after full time (the API's
- * `live-stream-schedule.ts`); any other stream the admin publishes and unpublishes.
+ * the YouTube link. A stream linked to a fixture with a kickoff publishes itself five
+ * minutes before kickoff and unpublishes at full time (the API's
+ * `live-stream-schedule.ts`); any other stream the admin publishes and unpublishes. Once
+ * a fixture's stream is down, its match centre offers it as "Watch Recorded Video".
  */
 
 type FormState = {
@@ -61,7 +62,7 @@ function scheduleLabel(row: AdminLiveStreamRow, now: number): { main: string; no
   const down =
     schedule.closesBy === "full_time"
       ? `Unpublishes ${shortTime(schedule.closesAt)}`
-      : `Unpublishes 10 min after full time (by ${shortTime(schedule.closesAt)})`;
+      : `Unpublishes at full time (by ${shortTime(schedule.closesAt)})`;
   if (now >= closes) return { main: "Ended", note: `Unpublished ${shortTime(schedule.closesAt)}` };
   if (now >= opens) return { main: "In window", note: down };
   return { main: `Publishes ${shortTime(schedule.opensAt)}`, note: down };
@@ -191,7 +192,7 @@ export function AdminScoreboardLiveStreamsPage() {
         const created = await adminScoreboardApi.createLiveStream(body);
         toast.success(
           created.isPublished
-            ? "Live stream created and published: kickoff is less than 10 minutes away"
+            ? "Live stream created and published: kickoff is less than 5 minutes away"
             : created.schedule
               ? `Live stream created. It publishes itself at ${shortTime(created.schedule.opensAt)}`
               : "Live stream created (hidden until you publish it)"
@@ -232,7 +233,7 @@ export function AdminScoreboardLiveStreamsPage() {
     <section className="admin-sb-section">
       <AdminSbPageHeader
         title="Live streams"
-        description="YouTube broadcasts that play on the public Live Games page. A stream linked to a fixture publishes itself 10 minutes before kickoff and unpublishes 10 minutes after full time; publish and unpublish any other stream yourself."
+        description="YouTube broadcasts that play on the public Live Games page. A stream linked to a fixture publishes itself 5 minutes before kickoff and unpublishes at full time, when it becomes the match centre's recorded video; publish and unpublish any other stream yourself."
         crumbs={[{ label: "Live streams" }]}
         actions={
           <a href="/scoreboard/live" target="_blank" rel="noreferrer" className="text-link">
@@ -315,8 +316,9 @@ export function AdminScoreboardLiveStreamsPage() {
           </select>
           <span className="muted admin-sb-field-hint">
             Linking a fixture puts its teams and a Match Centre link on the card, and publishes the
-            stream 10 minutes before kickoff and unpublishes it 10 minutes after full time. You
-            can still publish or unpublish it by hand.
+            stream 5 minutes before kickoff and unpublishes it at full time. Once it is
+            unpublished, the match centre shows it as Watch Recorded Video. You can still
+            publish or unpublish it by hand.
           </span>
         </label>
         <label className="admin-sb-field">
@@ -364,7 +366,7 @@ export function AdminScoreboardLiveStreamsPage() {
             loading={loading}
             empty={!loading && rows.length === 0}
             emptyTitle="No live streams yet"
-            emptyHint="Add a stream above — it stays hidden until kickoff is 10 minutes away, or until you publish it."
+            emptyHint="Add a stream above — it stays hidden until kickoff is 5 minutes away, or until you publish it."
             columns={7}
           >
             <table className="admin-table admin-sb-table">
