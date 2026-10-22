@@ -97,6 +97,15 @@ function assertOneOf<T extends string>(
 /** The summary a job's completion logged, or nothing. */
 const summaryOf = (progress: unknown) => ((progress as { summary?: Record<string, unknown> } | null)?.summary ?? {}) as Record<string, unknown>;
 
+/** The middle value, or null when there is none; minutes to one decimal. */
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const value = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return Math.round(value * 10) / 10;
+}
+
 /** The longest window a single task may cover. */
 const MAX_TASK_WINDOW_MS = 10 * 60 * 1000;
 
@@ -891,6 +900,81 @@ export class VisionAnnotationService {
         versionId: t.versions[0]?.id ?? null, submittedAt: t.versions[0]?.createdAt ?? t.updatedAt,
         annotator: t.versions[0]?.annotatorId ? (who.get(t.versions[0].annotatorId) ?? t.versions[0].annotatorId) : null,
       })),
+    };
+  }
+
+  /**
+   * Each labeller's output, pace and how often their work came back.
+   *
+   * What a team of labellers is run on: who is fast, who is careful, and whether pace
+   * improves after the first hour. Minutes are medians, because one frame left open over
+   * lunch would drag an average for a week. The recent median covers the latest 20
+   * attempts, so a learning curve shows.
+   */
+  async labellerProgress() {
+    const [versions, held] = await Promise.all([
+      this.prisma.visionAnnotationVersion.findMany({
+        // An abandoned window's work was thrown away, so it is nobody's output.
+        where: { annotatorId: { not: null }, task: { state: { not: "abandoned" } } },
+        orderBy: { createdAt: "desc" },
+        select: { annotatorId: true, effortMinutes: true, createdAt: true, taskId: true, reviews: { select: { decision: true } } },
+      }),
+      // Claimed and not yet submitted, or sent back and waiting for them to fix it.
+      this.prisma.visionAnnotationTask.groupBy({ by: ["assignedTo", "state"], where: { assignedTo: { not: null }, state: { in: ["assigned", "rejected"] } }, _count: { _all: true } }),
+    ]);
+    const taskIds = [...new Set(versions.map((v) => v.taskId))];
+    const tasks = taskIds.length
+      ? await this.prisma.visionAnnotationTask.findMany({ where: { id: { in: taskIds } },
+          select: { id: true, state: true, versions: { orderBy: { createdAt: "desc" }, take: 1, select: { annotatorId: true } } } })
+      : [];
+
+    type Row = { attempts: number; frames: Set<string>; approved: number; awaitingReview: number; sentBack: number; claimed: number; toFix: number; minutes: number[]; lastSubmittedAt: Date | null };
+    const rows = new Map<string, Row>();
+    const row = (id: string) => {
+      let r = rows.get(id);
+      if (!r) rows.set(id, (r = { attempts: 0, frames: new Set(), approved: 0, awaitingReview: 0, sentBack: 0, claimed: 0, toFix: 0, minutes: [], lastSubmittedAt: null }));
+      return r;
+    };
+    for (const v of versions) {
+      const r = row(v.annotatorId!);
+      r.attempts += 1;
+      r.frames.add(v.taskId);
+      r.sentBack += v.reviews.filter((x) => x.decision === "rejected").length;
+      if (v.effortMinutes !== null) r.minutes.push(v.effortMinutes);
+      if (!r.lastSubmittedAt || v.createdAt > r.lastSubmittedAt) r.lastSubmittedAt = v.createdAt;
+    }
+    // A frame counts for whoever made its latest attempt: a correction by someone else is theirs.
+    for (const t of tasks) {
+      const by = t.versions[0]?.annotatorId;
+      if (!by) continue;
+      if (t.state === "approved") row(by).approved += 1;
+      if (t.state === "submitted") row(by).awaitingReview += 1;
+    }
+    for (const h of held) {
+      if (h.state === "assigned") row(h.assignedTo!).claimed += h._count._all;
+      else row(h.assignedTo!).toFix += h._count._all;
+    }
+
+    const people = rows.size ? await this.prisma.adminUser.findMany({ where: { id: { in: [...rows.keys()] } }, select: { id: true, name: true, email: true } }) : [];
+    const who = new Map(people.map((p) => [p.id, p.name || p.email]));
+    return {
+      labellers: [...rows.entries()]
+        .map(([id, r]) => ({
+          annotatorId: id,
+          name: who.get(id) ?? `Removed account (${id.slice(0, 8)})`,
+          frames: r.frames.size,
+          attempts: r.attempts,
+          approved: r.approved,
+          awaitingReview: r.awaitingReview,
+          sentBack: r.sentBack,
+          claimed: r.claimed,
+          toFix: r.toFix,
+          // versions are newest first, so the first 20 timed attempts are the latest.
+          medianMinutes: median(r.minutes),
+          recentMedianMinutes: median(r.minutes.slice(0, 20)),
+          lastSubmittedAt: r.lastSubmittedAt,
+        }))
+        .sort((a, b) => b.frames - a.frames || a.name.localeCompare(b.name)),
     };
   }
 

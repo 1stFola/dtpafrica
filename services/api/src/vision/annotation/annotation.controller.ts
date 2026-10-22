@@ -148,6 +148,13 @@ export class VisionAnnotationController {
     return jsonSafe(await this.annotation.reviewQueue(auth, limit ? Number(limit) : undefined));
   }
 
+  /** Each labeller's output, pace and send-backs: read by whoever reviews them, not by labellers about each other. */
+  @Get("labellers")
+  @RequirePermissions("vision.review")
+  async labellers() {
+    return jsonSafe(await this.annotation.labellerProgress());
+  }
+
   @Get("hard-frames")
   @RequirePermissions("vision.read")
   async hardFrameRuns() {

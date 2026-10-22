@@ -412,6 +412,24 @@ export type VisionAnnotationReviewTask = { taskId: string; videoAssetId: string;
 export function fetchVisionAnnotationReviewQueue(limit = 50) {
   return adminFetch<{ waiting: number; yours: number; tasks: VisionAnnotationReviewTask[] }>(`/vision/annotation/review-queue?limit=${limit}`);
 }
+export type VisionLabellerProgress = {
+  annotatorId: string;
+  name: string;
+  frames: number;
+  attempts: number;
+  approved: number;
+  awaitingReview: number;
+  sentBack: number;
+  claimed: number;
+  toFix: number;
+  medianMinutes: number | null;
+  recentMedianMinutes: number | null;
+  lastSubmittedAt: string | null;
+};
+/** Each labeller's output, pace and send-backs; needs vision.review. */
+export function fetchVisionLabellerProgress() {
+  return adminFetch<{ labellers: VisionLabellerProgress[] }>(`/vision/annotation/labellers`);
+}
 /** The detector's boxes a pre-labelled task opens on (docs/vision/99). */
 export function fetchVisionTaskPreLabels(taskId: string) {
   return adminFetch<{ taskId: string; boxes: unknown[] }>(`/vision/annotation/tasks/${encodeURIComponent(taskId)}/prelabels`);

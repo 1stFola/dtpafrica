@@ -740,6 +740,7 @@ when a route has neither a permission nor a token guard.
 | Method | Path | Access | Controller |
 |---|---|---|---|
 | `GET` | `/vision/annotation/hard-frames` | `vision.read` | `annotation/annotation.controller.ts` |
+| `GET` | `/vision/annotation/labellers` | `vision.review` | `annotation/annotation.controller.ts` |
 | `GET` | `/vision/annotation/mix` | `vision.read` | `annotation/annotation.controller.ts` |
 | `GET` | `/vision/annotation/queue` | `vision.read` | `annotation/annotation.controller.ts` |
 | `POST` | `/vision/annotation/queue` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
