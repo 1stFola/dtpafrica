@@ -5,6 +5,7 @@ import { AdminRequirePermission } from "./AdminRequirePermission";
 import { AdminVisionCalibrationPage } from "./vision/AdminVisionCalibrationPage";
 import { AdminVisionIdentityPage } from "./vision/AdminVisionIdentityPage";
 import { AdminVisionTaskPage } from "./vision/AdminVisionTaskPage";
+import { ANNOTATION_SCREEN_PERMISSIONS } from "./vision/annotation-access";
 
 /**
  * The annotation workstation, mounted outside the marketing AppShell.
@@ -19,8 +20,10 @@ import { AdminVisionTaskPage } from "./vision/AdminVisionTaskPage";
  * anyone who knew the URL. It carries its own auth stack for exactly the reason
  * `MatchConsoleApp` does.
  *
- * `vision.annotate` rather than `vision.read`: this screen claims work and submits
- * labels, and someone who may only read the catalogue has no business doing either.
+ * A task opens for `vision.annotate` or `vision.review`, not `vision.read`: it is where
+ * labels are submitted and where a second person approves them, and someone who may only
+ * read the catalogue has no business doing either. The page shows each person only the
+ * controls their own permission allows.
  *
  * The identity review screen sits here too, under `vision.review`: it names
  * children on footage, and the API refuses everyone but a signed-in reviewer.
@@ -34,7 +37,7 @@ export function VisionWorkstationApp() {
             <Route path="identity/:assetId" element={<AdminVisionIdentityPage />} />
             <Route path="calibration/:assetId" element={<AdminVisionCalibrationPage />} />
           </Route>
-          <Route element={<AdminRequirePermission permission="vision.annotate" />}>
+          <Route element={<AdminRequirePermission permission={ANNOTATION_SCREEN_PERMISSIONS} />}>
             <Route path=":taskId" element={<AdminVisionTaskPage />} />
           </Route>
         </Route>

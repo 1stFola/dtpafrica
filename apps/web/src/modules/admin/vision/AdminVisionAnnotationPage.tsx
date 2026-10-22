@@ -62,6 +62,10 @@ export function AdminVisionAnnotationPage() {
   const { hasPermission } = useAdminAuth();
   /* Reviewing needs vision.review; the API refuses the list to anyone without it. */
   const canReview = hasPermission("vision.review");
+  /* Claiming needs vision.annotate; a reviewer-only account comes here for the review list. */
+  const canAnnotate = hasPermission("vision.annotate");
+  /* Deciding what gets labelled (queueing frames, making tasks) is a corpus decision: vision.datasets.manage. */
+  const canManage = hasPermission("vision.datasets.manage");
 
   const [mix, setMix] = useState<VisionMixReport | null>(null);
   const [review, setReview] = useState<{ waiting: number; yours: number; tasks: VisionAnnotationReviewTask[] } | null>(null);
@@ -212,7 +216,7 @@ export function AdminVisionAnnotationPage() {
         )}
       </section>
 
-      <section className="vision-panel">
+      {canAnnotate && <section className="vision-panel">
         <h2 className="vision-panel__title">Claim a window</h2>
         <div className="vision-filters">
           <label>
@@ -237,7 +241,7 @@ export function AdminVisionAnnotationPage() {
           Claiming is atomic, so two people opening this at the same moment are given
           different windows.
         </p>
-      </section>
+      </section>}
 
       {canReview && review && (
         <section className="vision-panel">
@@ -296,7 +300,8 @@ export function AdminVisionAnnotationPage() {
                   <td>{run.causes ? Object.entries(run.causes).map(([cause, n]) => `${cause.replace(/_/g, " ")} ${n}`).join(", ") : "—"}</td>
                   <td>
                     {run.queued > 0 ? <span className="vision-footnote">{run.queued} queued</span>
-                      : run.alreadyQueuedAs ? <span className="vision-footnote" title={`Run ${run.alreadyQueuedAs} picked these frames from the same footage and detect run, and its frames are queued.`}>already queued as <span className="vision-mono">{run.alreadyQueuedAs.slice(0, 8)}</span></span> : (
+                      : run.alreadyQueuedAs ? <span className="vision-footnote" title={`Run ${run.alreadyQueuedAs} picked these frames from the same footage and detect run, and its frames are queued.`}>already queued as <span className="vision-mono">{run.alreadyQueuedAs.slice(0, 8)}</span></span>
+                      : !canManage ? <span className="vision-footnote">not queued</span> : (
                       <button type="button" disabled={busy} onClick={async () => {
                         setBusy(true); setRunMessage(null);
                         try { const r = await queueVisionHardFrames(run.jobId); setRunMessage({ error: false, text: `${r.queued} frame(s) queued for labelling.` }); await load(); }
@@ -344,9 +349,9 @@ export function AdminVisionAnnotationPage() {
                   </td>
                   <td className="vision-mono">{item.videoAssetId.slice(0, 8)}</td>
                   <td>
-                    <button type="button" onClick={() => convert(item)} disabled={busy}>
+                    {canManage && <button type="button" onClick={() => convert(item)} disabled={busy}>
                       Make it a task
-                    </button>
+                    </button>}
                   </td>
                 </tr>
               ))}

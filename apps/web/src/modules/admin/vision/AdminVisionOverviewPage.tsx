@@ -6,6 +6,7 @@ import { useAdminAuth } from "../AdminAuthContext";
 import { useAdminVisionContext } from "./AdminVisionLayout";
 import { VisionConfigurationPanels } from "./AdminVisionStatusPage";
 import { Panel } from "./vision-ui";
+import { ANNOTATION_SCREEN_PERMISSIONS } from "./annotation-access";
 
 /**
  * The Vision hub: what there is, what needs a person, and where each thing
@@ -37,7 +38,7 @@ export function AdminVisionOverviewPage() {
         ...(hasPermission("vision.review")
           ? [{ to: "/admin/vision/review", label: "Review queue", count: overview.reviewQueue, note: `${overview.identitiesUnreviewed} identity window(s) and ${overview.candidatesUnreviewed} event candidate(s) awaiting a second person. Each opens on the video.` }]
           : []),
-        ...(hasPermission("vision.annotate") ? [{ to: "/admin/vision/annotation", label: "Annotation", count: overview.annotationOpen, note: "Open tasks. Claim a window to label, review submitted work, see the corpus mix." }] : []),
+        ...(hasPermission(ANNOTATION_SCREEN_PERMISSIONS) ? [{ to: "/admin/vision/annotation", label: "Annotation", count: overview.annotationOpen, note: "Open tasks. Claim a window to label, review submitted work, see the corpus mix." }] : []),
         { to: "/admin/vision/datasets", label: "Datasets", count: overview.datasets, note: "Versions, members, splits, the leakage report, freeze and export." },
         { to: "/admin/vision/models", label: "Models", count: overview.models, note: `${overview.modelsInProduction} in production. Register, benchmark, request and approve promotion, roll back.` },
         { to: "/admin/vision/events", label: "Events", count: overview.candidatesUnreviewed, note: "Candidates awaiting a second person; promotion into the match record." },
