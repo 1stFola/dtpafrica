@@ -71,6 +71,7 @@ function setup(options: { existingSquad?: Squad[]; knownPlayers?: Array<{ id: st
       );
       return { id: known?.id ?? `new-${displayName.toLowerCase().replace(/\s+/g, "-")}`, displayName };
     }),
+    publishRegisteredPlayers: vi.fn(async (ids: string[]) => ids.length),
   };
 
   const service = new AdminScoreboardService(
@@ -136,6 +137,19 @@ describe("importSquadCsv", () => {
       /row 3: Victor Johnson is already registered for Rival FC/
     );
     expect(ctx.writes).toEqual({ created: 0, updated: 0 });
+    /* Rejected: the players it resolved stay hidden drafts, not public players on no squad. */
+    expect(ctx.playerDirectory.publishRegisteredPlayers).not.toHaveBeenCalled();
+  });
+
+  it("publishes the squad's players inside the transaction that writes the rows", async () => {
+    /* The UFC 2026 squads were imported as drafts and every profile opened as
+       "Profile verification in progress". */
+    const csv = "shirtNumber,displayName\n1,Amaka Obi\n2,Ngozi Eze\n";
+    await ctx.service.importSquadCsv(TEAM_ID, csv);
+    expect(ctx.playerDirectory.publishRegisteredPlayers).toHaveBeenCalledWith(
+      ["new-amaka-obi", "new-ngozi-eze"],
+      expect.objectContaining({ sbTeamSquad: expect.anything() })
+    );
   });
 
   it("rejects a player listed twice in the same file", async () => {

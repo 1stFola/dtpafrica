@@ -116,4 +116,32 @@ export class PlayerDirectoryService {
       throw e;
     }
   }
+
+  /**
+   * Publish the drafts among these players, because a club registered them on its squad.
+   *
+   * `resolveOrCreatePlayer` makes a hidden draft because a name harvested from a match
+   * label must not reach the public directory until somebody approves it. A registered
+   * squad is that approval: the club put the boy on its sheet. Imported as drafts, the UFC
+   * 2026 squads (240 of 278 players) all opened as "Profile verification in progress" from
+   * the timeline and Stat Leaders, and nothing in the admin lists drafts for anyone to
+   * approve, so they would have stayed hidden.
+   *
+   * Called with the squad rows' own transaction, after the rows are written: a rejected
+   * import must leave reusable drafts behind, not public players on no squad.
+   *
+   * Only a draft is promoted. A player waiting on their own registration (`pending`), or
+   * one an admin hid, is left exactly as found.
+   */
+  async publishRegisteredPlayers(
+    playerIds: string[],
+    client: Pick<Prisma.TransactionClient, "player"> = this.prisma
+  ): Promise<number> {
+    if (!playerIds.length) return 0;
+    const { count } = await client.player.updateMany({
+      where: { id: { in: playerIds }, registrationStatus: "draft" },
+      data: { registrationStatus: "approved", isPublic: true },
+    });
+    return count;
+  }
 }

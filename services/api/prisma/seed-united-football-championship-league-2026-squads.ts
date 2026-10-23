@@ -30,7 +30,7 @@
  * data so the hold-back is visible here and in the seed's output.
  *
  * Additive, like every seed: a player is resolved or created exactly as the
- * admin squad import does it (same lookup, same draft shell), a squad row is
+ * admin squad import does it (same lookup, published once on the squad), a squad row is
  * created only when the team has no row for that player, and an existing row is
  * only ever given its missing player link. A shirt number or position changed
  * in admin is never reset.
@@ -425,6 +425,8 @@ export type SquadSeedResult = {
   unchanged: number;
   /** Players who had no photo and were given the one from their registration. */
   photosAdded: number;
+  /** Drafts made public because they are on a registered squad. */
+  published: number;
   /** Rows not written, each with the reason. */
   heldBack: string[];
   /** Squad size per team slug after the run. */
@@ -454,7 +456,8 @@ export async function seedUnitedFootballChampionshipLeague2026Squads(
 
   /* The same resolver the admin squad import uses, so a seeded player and an
      imported one are indistinguishable: tidied name, directory lookup by key,
-     display name and slug, and a draft shell when nobody matches. PrismaService
+     display name and slug, a draft shell when nobody matches, published once the
+     squad row is in place (`publishRegisteredPlayers`). PrismaService
      only adds lifecycle hooks to PrismaClient, which the resolver never calls. */
   const directory = new PlayerDirectoryService(prisma as PrismaService);
 
@@ -463,6 +466,7 @@ export async function seedUnitedFootballChampionshipLeague2026Squads(
     linked: 0,
     unchanged: 0,
     photosAdded: 0,
+    published: 0,
     heldBack: [],
     squadSizes: {},
   };
@@ -538,6 +542,10 @@ export async function seedUnitedFootballChampionshipLeague2026Squads(
       } else {
         result.unchanged += 1;
       }
+      /* Not when a row of the same name is linked to somebody else: that row is not his. */
+      if (!existing || !existing.playerId || existing.playerId === player.id) {
+        result.published += await directory.publishRegisteredPlayers([player.id]);
+      }
     }
   }
 
@@ -549,7 +557,8 @@ export async function seedUnitedFootballChampionshipLeague2026Squads(
   console.log(
     `Seeded UFC 2026 squads: ${listed} registered rows; ` +
       `${result.created} created, ${result.linked} linked, ${result.unchanged} already in place, ` +
-      `${result.heldBack.length} held back; ${result.photosAdded} photos added`
+      `${result.heldBack.length} held back; ${result.photosAdded} photos added, ` +
+      `${result.published} player(s) published`
   );
   for (const reason of result.heldBack) console.log(`  held back: ${reason}`);
   return result;
