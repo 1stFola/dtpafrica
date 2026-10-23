@@ -104,7 +104,7 @@ Job 2: Ansible
   6. Wait for cloud-init to finish
   7. Fetch secrets from AWS Secrets Manager
   8. Run playbook.yml → roles: common, docker, deploy
-  9. Verify: curl http://<server-ip>/api/v1/health → must return 200
+  9. Verify over SSH: curl http://127.0.0.1/api/v1/health on the box → must return 200
 ```
 
 ### Ansible Playbook Roles
@@ -137,7 +137,7 @@ Job 2: Ansible
 12. Build and start full stack: `docker compose up -d --build` (chdir: repo root)
 13. Open UFW ports 80 and 443
 14. Wait for port 80 to be up
-15. Health check: GET http://<ansible_host>/api/v1/health → 200 (40 retries × 10s)
+15. Health check: GET http://127.0.0.1/api/v1/health on the box → 200 (40 retries × 10s)
 
 ---
 
@@ -174,9 +174,11 @@ Restored at the start of each run so Terraform knows what already exists.
 Reconcile step checks if EC2 instance still exists in AWS — if terminated, clears
 stale state so Terraform recreates from scratch without hitting VPC limits.
 
-### Health check uses ansible_host not localhost
-The health check runs from the Ansible control node (GitHub Actions runner),
-not from inside the server. `ansible_host` is the actual server IP.
+### Health checks use loopback, not the public IP
+Ansible's `uri` and `wait_for` run on the server itself, so they ask
+`http://127.0.0.1`; `cd.yml`'s verify steps ask the same over SSH. Calling the
+Elastic IP would be refused once nginx's origin check is enforcing
+(DEPLOYMENT.md, "Origin lock").
 
 ---
 

@@ -15,7 +15,13 @@ RUN pnpm --filter @dtp/web build
 
 FROM nginx:1.27-alpine
 
-COPY infra/nginx.staging.conf /etc/nginx/conf.d/default.conf
+# A template: the image's entrypoint runs envsubst over /etc/nginx/templates/*.template at
+# start and writes conf.d/default.conf, filling in the origin check's two settings. Both
+# are defined here so the names always exist: unset, envsubst would leave the placeholder
+# in and nginx would refuse to start. Empty turns the check off (infra/nginx.staging.conf).
+ENV ORIGIN_VERIFY_SECRET="" \
+    ORIGIN_VERIFY_ENFORCE=""
+COPY infra/nginx.staging.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80
