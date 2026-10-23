@@ -2,14 +2,16 @@
 """Nightly Postgres backups for the single DTP box, and the way back from them.
 
     dtp-backup run                       dump, check, upload, prune (the nightly timer)
+    dtp-backup run --pre-deploy [--release TAG]
+                                         a restore point just before a deploy migrates
     dtp-backup list                      what is in the bucket and on this disk
     dtp-backup fetch SOURCE [-o FILE]    download a backup and check its sha256
     dtp-backup verify SOURCE [--keep]    restore into a throwaway Postgres and count rows
     dtp-backup restore-live SOURCE --confirm DBNAME
                                          replace the compose database with a backup
 
-SOURCE is `latest`, an object key from `list` (daily/... or weekly/...), or a local
-.dump file.
+SOURCE is `latest`, an object key from `list` (daily/..., weekly/... or pre-deploy/...),
+or a local .dump file.
 
 Why it is shaped like this (docs/support-playbook/database-backup-and-restore.md):
 
@@ -26,6 +28,11 @@ Why it is shaped like this (docs/support-playbook/database-backup-and-restore.md
 * Failure is reported to a dead man's switch (BACKUP_HEARTBEAT_URL, healthchecks.io
   style: GET on success, POST to /fail with the error). A backup that never runs --
   timer gone, box gone -- is caught because the success ping stops arriving.
+* `run --pre-deploy` is the deploy's restore point, taken moments before
+  `prisma migrate deploy`. It lives apart from the nightly rotation: pre-deploy/ in the
+  bucket (newest BACKUP_KEEP_PRE_DEPLOY) and pre-deploy-*.dump on disk (newest
+  BACKUP_PRE_DEPLOY_LOCAL_KEEP), so a day of deploys cannot push a night out of daily/.
+  It never pings the heartbeat: a deploy's success must not hide a nightly that stopped.
 
 Only the standard library and boto3 (python3-boto3 on Ubuntu 22.04, installed by the
 common role). Settings come from /etc/dtp-backup/backup.env, then the environment.
@@ -56,6 +63,8 @@ SCRATCH_IMAGE = "postgres:16-alpine"
 # Services stopped while the live database is swapped: everything that holds a
 # connection to it. `web` is nginx and static files, and keeps serving the site.
 APP_SERVICES = ("api", "worker")
+# Folders under BACKUP_S3_PREFIX, each with its own retention.
+KINDS = ("daily", "weekly", "pre-deploy")
 
 DEFAULTS = {
     "DTP_COMPOSE_PROJECT": "dtp-staging",
@@ -69,6 +78,8 @@ DEFAULTS = {
     "BACKUP_KEEP_WEEKLY": "8",
     "BACKUP_LOCAL_DIR": "/var/backups/dtp-db",
     "BACKUP_LOCAL_KEEP": "2",
+    "BACKUP_KEEP_PRE_DEPLOY": "10",
+    "BACKUP_PRE_DEPLOY_LOCAL_KEEP": "3",
     "BACKUP_HEARTBEAT_URL": "",
 }
 
@@ -319,11 +330,11 @@ def prune(client, s: dict[str, str], kind: str, keep: int, must_keep: str) -> li
 
 def resolve_key(client, s: dict[str, str], source: str) -> str:
     if source == "latest":
-        newest = [o["Key"] for o in list_keys(client, s, "daily") + list_keys(client, s, "weekly")]
+        newest = [o["Key"] for kind in KINDS for o in list_keys(client, s, kind)]
         if not newest:
             raise BackupError("The bucket holds no backups")
         return max(newest, key=lambda k: stamp_of(k))
-    if source.startswith(("daily/", "weekly/")):
+    if source.startswith(tuple(f"{kind}/" for kind in KINDS)):
         return s["BACKUP_S3_PREFIX"] + source
     return source
 
@@ -354,7 +365,9 @@ def local_source(s: dict[str, str], source: str, workdir: Path) -> Path:
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 
-def cmd_run(s: dict[str, str], _args) -> int:
+def cmd_run(s: dict[str, str], args) -> int:
+    if args.pre_deploy:
+        return cmd_pre_deploy(s, args)
     lock = acquire_lock()
     heartbeat(s, "/start")
     try:
@@ -371,34 +384,62 @@ def cmd_run(s: dict[str, str], _args) -> int:
     return 0
 
 
-def acquire_lock():
+def acquire_lock(wait: int = 0):
     import fcntl
 
     handle = open("/run/dtp-backup.lock" if os.access("/run", os.W_OK) else "/tmp/dtp-backup.lock", "w")
-    try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        raise SystemExit("[dtp-backup] another backup is running")
-    return handle
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return handle
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise SystemExit("[dtp-backup] another backup is running")
+            time.sleep(2)
+
+
+def local_backup_dir(s: dict[str, str]) -> Path:
+    local_dir = Path(s["BACKUP_LOCAL_DIR"])
+    local_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(local_dir, 0o700)
+    return local_dir
+
+
+def dump_and_check(container: str, target: Path) -> tuple[int, int, str]:
+    """Dump to target and read its table of contents back. Returns (size, tables, sha256)."""
+    dump_database(container, target)
+    size = target.stat().st_size
+    tables = check_archive(container, target)
+    digest = sha256_of(target)
+    log(f"dump ok: {target.name}, {human(size)}, {tables} tables with data, sha256 {digest[:16]}...")
+    return size, tables, digest
+
+
+def upload(client, s: dict[str, str], path: Path, key: str, metadata: dict[str, str]) -> None:
+    bucket = s["BACKUP_S3_BUCKET"]
+    client.upload_file(
+        str(path), bucket, key,
+        ExtraArgs={"Metadata": metadata, "ContentType": "application/octet-stream"},
+    )
+    head = client.head_object(Bucket=bucket, Key=key)
+    size = path.stat().st_size
+    if head["ContentLength"] != size:
+        raise BackupError(f"uploaded {key} is {head['ContentLength']} bytes, the dump is {size}")
+    log(f"uploaded s3://{bucket}/{key}")
 
 
 def run_backup(s: dict[str, str]) -> str:
     started = time.monotonic()
     now = dt.datetime.now(dt.timezone.utc)
-    local_dir = Path(s["BACKUP_LOCAL_DIR"])
-    local_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(local_dir, 0o700)
+    local_dir = local_backup_dir(s)
 
     container = live_postgres(s)
     db = container_env(container, "POSTGRES_DB")
     name = f"{db}-{now.strftime(STAMP_FORMAT)}.dump"
     target = local_dir / name
     log(f"dumping {db} from container {container[:12]}")
-    dump_database(container, target)
-    size = target.stat().st_size
-    tables = check_archive(container, target)
-    digest = sha256_of(target)
-    log(f"dump ok: {name}, {human(size)}, {tables} tables with data, sha256 {digest[:16]}...")
+    size, tables, digest = dump_and_check(container, target)
 
     # Keep the newest few on the box: the quickest way back from a bad migration, and
     # still there if the bucket is unreachable. Older ones only cost disk.
@@ -411,14 +452,7 @@ def run_backup(s: dict[str, str]) -> str:
     client = bucket_client(s)
     bucket = s["BACKUP_S3_BUCKET"]
     daily_key = f"{s['BACKUP_S3_PREFIX']}daily/{name}"
-    client.upload_file(
-        str(target), bucket, daily_key,
-        ExtraArgs={"Metadata": {"sha256": digest, "database": db}, "ContentType": "application/octet-stream"},
-    )
-    head = client.head_object(Bucket=bucket, Key=daily_key)
-    if head["ContentLength"] != size:
-        raise BackupError(f"uploaded {daily_key} is {head['ContentLength']} bytes, the dump is {size}")
-    log(f"uploaded s3://{bucket}/{daily_key}")
+    upload(client, s, target, daily_key, {"sha256": digest, "database": db})
 
     weekly = list_keys(client, s, "weekly")
     newest_weekly = stamp_of(weekly[-1]["Key"]) if weekly else None
@@ -441,10 +475,76 @@ def run_backup(s: dict[str, str]) -> str:
     )
 
 
+def cmd_pre_deploy(s: dict[str, str], args) -> int:
+    # Waits out a nightly run (seconds today) rather than failing the deploy over it.
+    lock = acquire_lock(wait=600)
+    try:
+        summary = run_pre_deploy(s, args.release)
+    finally:
+        lock.close()
+    print(summary)
+    return 0
+
+
+def run_pre_deploy(s: dict[str, str], release: str) -> str:
+    """The deploy's restore point. Raises if no checked dump is on disk; an upload that
+    fails is reported in the summary and is not an error, since the local copy is the
+    quick way back from a bad migration and the nightly heartbeat reports the bucket."""
+    started = time.monotonic()
+    now = dt.datetime.now(dt.timezone.utc)
+    container = live_postgres(s)
+    user = container_env(container, "POSTGRES_USER")
+    db = container_env(container, "POSTGRES_DB")
+
+    # A new box: the first deploy creates the schema, and there is nothing to keep.
+    tables = psql(
+        container, user, db,
+        "select count(*) from information_schema.tables "
+        "where table_schema = 'public' and table_type = 'BASE TABLE'",
+    )
+    if int(tables) == 0:
+        return f"pre-deploy: nothing to protect, {db} has no tables yet"
+
+    migration = latest_migration(container, user, db)
+    local_dir = local_backup_dir(s)
+    name = f"{db}-{now.strftime(STAMP_FORMAT)}.dump"
+    # The pre-deploy- prefix keeps these out of the nightly's `{db}-*.dump` pruning.
+    target = local_dir / f"pre-deploy-{name}"
+    log(f"dumping {db} from container {container[:12]} before deploying {release or '(unnamed release)'}")
+    size, count, digest = dump_and_check(container, target)
+
+    keep_local = max(1, int(s["BACKUP_PRE_DEPLOY_LOCAL_KEEP"]))
+    for old in sorted(local_dir.glob(f"pre-deploy-{db}-*.dump"))[:-keep_local]:
+        old.unlink()
+
+    where = f"local {target}"
+    if not offsite_configured(s):
+        where += " (bucket not configured: not uploaded)"
+    else:
+        key = f"{s['BACKUP_S3_PREFIX']}pre-deploy/{name}"
+        metadata = {"sha256": digest, "database": db, "migration": migration}
+        if release:
+            metadata["release"] = release
+        try:
+            client = bucket_client(s)
+            upload(client, s, target, key, metadata)
+            for pruned in prune(client, s, "pre-deploy", int(s["BACKUP_KEEP_PRE_DEPLOY"]), key):
+                log(f"pruned {pruned}")
+            where = f"{key[len(s['BACKUP_S3_PREFIX']):]}, {where}"
+        except Exception as exc:
+            log(f"WARNING: upload failed, the restore point is on this box only: {exc}")
+            where += f" (upload FAILED: {str(exc)[:200]})"
+
+    return (
+        f"pre-deploy restore point: {where} {human(size)} tables={count} "
+        f"schema={migration} release={release or '-'} took={time.monotonic() - started:.0f}s"
+    )
+
+
 def cmd_list(s: dict[str, str], _args) -> int:
     if offsite_configured(s):
         client = bucket_client(s)
-        for kind in ("daily", "weekly"):
+        for kind in KINDS:
             items = list_keys(client, s, kind)
             print(f"{kind}/ ({len(items)})")
             for o in reversed(items):
@@ -584,6 +684,8 @@ def cmd_restore_live(s: dict[str, str], args) -> int:
             "\nNext:\n"
             "  * If the backup predates the running release, apply its migrations: re-run the\n"
             "    deploy for the current commit (it runs `prisma migrate deploy`).\n"
+            "    Not when undoing a bad migration: that would apply it again. Roll back the\n"
+            "    release instead (the runbook, \"A deploy's migration went wrong\").\n"
             "  * Check https://dtp.africa/api/v1/health/ready and the site.\n"
             f"  * When satisfied: docker exec {container[:12]} dropdb -U {user} {kept_db}\n"
             f"    and remove {safety}\n"
@@ -596,7 +698,12 @@ def cmd_restore_live(s: dict[str, str], args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dtp-backup", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("run", help="dump, check, upload and prune (the nightly job)")
+    run = sub.add_parser("run", help="dump, check, upload and prune (the nightly job)")
+    run.add_argument(
+        "--pre-deploy", action="store_true",
+        help="a restore point before migrating: pre-deploy/ only, no heartbeat, local copy enough",
+    )
+    run.add_argument("--release", default="", help="with --pre-deploy: the release about to deploy")
     sub.add_parser("list", help="backups in the bucket and on this disk")
     fetch = sub.add_parser("fetch", help="download a backup and check its sha256")
     fetch.add_argument("source")

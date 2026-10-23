@@ -342,6 +342,46 @@
   failed_when: false
   when: run_migrations | default(true) | bool
 
+# A restore point from moments before the schema changes: `dtp-backup run --pre-deploy`
+# (roles/backup installs it). It goes to pre-deploy/ in the bucket and
+# /var/backups/dtp-db/pre-deploy-*.dump, with their own retention, and sends no
+# heartbeat, so the nightly rotation and its alert are untouched. The rollback
+# (run_migrations=false) changes no schema and skips it. Restoring from it:
+# docs/support-playbook/database-backup-and-restore.md, "A deploy's migration went wrong".
+#
+# A failed dump fails the deploy. This step is here because `migrate deploy` is the
+# likeliest way to lose data, and a migration run without a restore point leaves only
+# last night's dump, losing up to a day of results. Failing here costs nothing that
+# matters: nothing has been swapped, the old release keeps serving, exactly as when a
+# migration fails. And what makes the dump fail (Postgres not answering, a full disk,
+# Docker broken) would fail or endanger the migration too. Only the dump must succeed:
+# a failed upload is reported and the deploy goes on, because the local copy is the
+# quick way back and the nightly heartbeat already reports a broken bucket. On a new
+# box with no tables there is nothing to keep, and the step says so and passes. To
+# deploy past a broken dump on purpose: -e pre_deploy_backup=false.
+- name: Take a restore point before migrating
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - /usr/local/bin/dtp-backup
+      - run
+      - --pre-deploy
+      - --release
+      - "{{ image_tag }}"
+  register: pre_deploy_backup_result
+  timeout: 900
+  become: true
+  become_user: root
+  changed_when: "'nothing to protect' not in pre_deploy_backup_result.stdout"
+  when:
+    - run_migrations | default(true) | bool
+    - pre_deploy_backup | default(true) | bool
+
+- name: Report the restore point
+  ansible.builtin.debug:
+    msg: "{{ pre_deploy_backup_result.stdout }}"
+  when: pre_deploy_backup_result is not skipped
+
 - name: Apply database migrations (forward only)
   ansible.builtin.shell: |
     timeout --kill-after=15 300 docker run --rm --name dtp-staging-migrate \
