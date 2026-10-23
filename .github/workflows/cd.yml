@@ -372,7 +372,7 @@ jobs:
             --query SecretString --output text)
 
           DB_SECRET="$DB_SECRET" APP_SECRET="$APP_SECRET" python3 - <<'PY'
-          import json, os
+          import json, os, re
 
           db = json.loads(os.environ["DB_SECRET"])
           app = json.loads(os.environ["APP_SECRET"])
@@ -401,6 +401,9 @@ jobs:
               "backup_s3_secret_access_key": text(app.get("BACKUP_S3_SECRET_ACCESS_KEY")),
               "backup_heartbeat_url": text(app.get("BACKUP_HEARTBEAT_URL")),
               "disk_heartbeat_url": text(app.get("DISK_HEARTBEAT_URL")),
+              # Optional: what Supersonic sends as X-Origin-Verify. Absent leaves nginx's
+              # origin check off (infra/nginx.staging.conf).
+              "origin_verify_secret": text(app.get("ORIGIN_VERIFY_SECRET")),
           }
           for value in secret.values():
               if value:
@@ -412,6 +415,21 @@ jobs:
           missing = [name for name in ("ADMIN_JWT_SECRET", "ACADEMY_JWT_SECRET") if not text(app.get(name)).strip()]
           if missing:
               print(f"::error::dtp/staging/app is missing {', '.join(missing)}. Add each as its own value (openssl rand -hex 32) and re-run.", flush=True)
+              raise SystemExit(1)
+
+          # The origin secret goes into nginx's config as a literal (envsubst), so a quote,
+          # a semicolon or a brace would stop nginx from starting and take the site down.
+          # Enforcing with no secret checks nothing, so it is a mistake worth stopping on.
+          origin_secret = secret["origin_verify_secret"]
+          origin_enforce = text(app.get("ORIGIN_VERIFY_ENFORCE")).strip()
+          if origin_secret and not re.fullmatch(r"[A-Za-z0-9_-]{32,96}", origin_secret):
+              print("::error::ORIGIN_VERIFY_SECRET must be 32 to 96 letters, digits, - or _ (openssl rand -hex 32).", flush=True)
+              raise SystemExit(1)
+          if origin_enforce not in ("", "0", "1"):
+              print("::error::ORIGIN_VERIFY_ENFORCE must be 1, 0 or absent.", flush=True)
+              raise SystemExit(1)
+          if origin_enforce == "1" and not origin_secret:
+              print("::error::ORIGIN_VERIFY_ENFORCE is 1 but ORIGIN_VERIFY_SECRET is empty.", flush=True)
               raise SystemExit(1)
 
           # Vision Engine keys are optional in the secret: absent means off (docs/vision/15).
@@ -428,6 +446,7 @@ jobs:
               "vision_r2_bucket_clips": text(app.get("VISION_R2_BUCKET_CLIPS")),
               "backup_s3_endpoint": text(app.get("BACKUP_S3_ENDPOINT")),
               "backup_s3_bucket": text(app.get("BACKUP_S3_BUCKET")),
+              "origin_verify_enforce": origin_enforce,
           }
 
           path = os.path.join(os.environ["RUNNER_TEMP"], "deploy-secrets.json")
@@ -599,12 +618,16 @@ jobs:
           ANSIBLE_FORCE_COLOR:   "1"
           VARS_FILE:             ${{ steps.secrets.outputs.vars_file }}
 
+      # Asked on the box, over SSH. Once nginx's origin check is enforcing, a request to
+      # http://$IP from the runner is a direct caller and gets 403; loopback always passes
+      # (infra/nginx.staging.conf). This proves the stack answers, not that Supersonic
+      # reaches it: the uptime monitor on https://dtp.africa covers that.
       - name: Verify deployment
         id: verify
         run: |
           IP="${{ steps.resolve_ip.outputs.server_ip }}"
-          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
-            "http://$IP/api/v1/health" || echo "000")
+          HTTP=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/dtp-staging.pem "ubuntu@$IP" \
+            "curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1/api/v1/health" || echo "000")
           if [ "$HTTP" = "200" ]; then
             echo "Health check passed (HTTP $HTTP)"
           else
@@ -692,8 +715,8 @@ jobs:
         if: always() && steps.rollback.outcome == 'success'
         run: |
           IP="${{ steps.resolve_ip.outputs.server_ip }}"
-          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
-            "http://$IP/api/v1/health" || echo "000")
+          HTTP=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/dtp-staging.pem "ubuntu@$IP" \
+            "curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1/api/v1/health" || echo "000")
           if [ "$HTTP" = "200" ]; then
             echo "Rolled back to ${{ steps.previous.outputs.tag }} and the site is answering."
             echo "::warning::Deploy of ${DEPLOY_SHA} failed and was rolled back to ${{ steps.previous.outputs.tag }}."

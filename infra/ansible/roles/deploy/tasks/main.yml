@@ -25,6 +25,8 @@
       VISION_R2_BUCKET_DERIVED: "{{ vision_r2_bucket_derived | default('') }}"
       VISION_R2_BUCKET_MODELS: "{{ vision_r2_bucket_models | default('') }}"
       VISION_R2_BUCKET_CLIPS: "{{ vision_r2_bucket_clips | default('') }}"
+      ORIGIN_VERIFY_SECRET: "{{ origin_verify_secret | default('') }}"
+      ORIGIN_VERIFY_ENFORCE: "{{ origin_verify_enforce | default('') }}"
   no_log: true
 
 # Read the way the API reads it (vision.config.ts boolFromEnv): 1, true or yes, any
@@ -433,10 +435,13 @@
   changed_when: false
   failed_when: false
 
+# Loopback, not the public address. These run on the box, and the box reaching its own
+# Elastic IP goes out and back in, arriving as a direct caller, which nginx's origin check
+# refuses once it is enforcing. nginx always lets loopback past (infra/nginx.staging.conf).
 - name: Wait for web (nginx) to be up on port 80 (up to 120s)
   ansible.builtin.wait_for:
     port:    80
-    host:    "{{ ansible_host }}"
+    host:    127.0.0.1
     timeout: 120
 
 - name: Show container status and API logs
@@ -468,7 +473,7 @@
 
 - name: Wait for API health check to return 200 (up to 400s)
   ansible.builtin.uri:
-    url:            "http://{{ ansible_host }}/api/v1/health"
+    url:            "http://127.0.0.1/api/v1/health"
     status_code:    200
     return_content: false
   register: health

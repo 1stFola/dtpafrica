@@ -448,6 +448,81 @@ browser blocks it and logs a CSP violation in the console.
 CloudFront caches responses with their headers: a header change reaches visitors as the
 cache turns over, or at once after an invalidation.
 
+### Origin lock (Supersonic only)
+
+dtp.africa is served by Namecheap Supersonic, which fetches from the Elastic IP on port 80.
+That port is open to the world, so anyone can call the EIP directly, skip the CDN, and
+write any address they like in `X-Forwarded-For`, which the API's per-IP limits on logins
+and public forms read. Supersonic publishes no list of the addresses it fetches from, so
+the lock is a shared secret: Supersonic sends `X-Origin-Verify: <secret>` on every request,
+and nginx refuses requests without it (`infra/nginx.staging.conf`, "Origin check").
+
+Two values in the `dtp/staging/app` secret drive it, both optional:
+
+| Key | Value | Effect |
+|---|---|---|
+| `ORIGIN_VERIFY_SECRET` | `openssl rand -hex 32` (32–96 letters, digits, `-`, `_`) | nginx labels each request in its log; refuses nothing by itself |
+| `ORIGIN_VERIFY_ENFORCE` | `1` | requests without the secret get 403; loopback and Docker's bridge always pass |
+
+CD stops before touching the box if the secret has other characters (they would break
+nginx's config) or if enforcing is on without a secret.
+
+The web log's `origin=` field says what each request was: `off` (no secret set), `cdn`
+(carried the secret), `local` (loopback or Docker's bridge: the deploy's own checks),
+`direct` (anything else). To count them, from `/opt/dtp-app/repo`:
+
+```bash
+sudo docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --since 1h web | grep -o 'origin=[a-z]*' | sort | uniq -c
+```
+
+The deploy's health checks never use the EIP: Ansible asks `http://127.0.0.1` on the box,
+and `cd.yml` asks the same over SSH. The uptime monitor (STAGING-MANUAL-SETUP B5) uses
+`https://dtp.africa`, through Supersonic, and is the alarm if Supersonic ever stops
+sending the header while enforcing is on. Point no monitor at the bare IP.
+
+**Rollout.** Each stage is its own step, checked before the next. Only stage 3 can refuse
+a visitor, and it has an off-switch that takes seconds.
+
+0. **Ship the code, nothing set.** Every request logs `origin=off`; behaviour is as before.
+   Check: the CD run is green (its checks now go over loopback and SSH), the count above
+   shows `origin=local` from the deploy's own checks, and dtp.africa works.
+   Back out: revert the merge and deploy.
+1. **Set `ORIGIN_VERIFY_SECRET`, deploy.** Nothing is refused. Supersonic is not sending
+   yet, so its traffic logs `origin=direct`; the deploy's checks log `origin=local`.
+   Back out: delete the key and deploy.
+2. **Add the header in Supersonic:** a request header `X-Origin-Verify` with the same
+   value, on dtp.africa (and www if it is a separate site). No deploy. Within minutes the
+   count should turn to `origin=cdn`. Leave it a day, then look at what is still `direct`:
+
+   ```bash
+   sudo docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml logs --no-log-prefix --since 24h web | grep 'origin=direct' | awk '{print $1, $6, $7}' | sort | uniq -c | sort -rn | head -30
+   ```
+
+   It should be scanners and bots calling the IP, never visitors' pages, logins, or the
+   live-audio WebSocket. If real traffic still shows `direct`, Supersonic is not adding
+   the header to every request: stop here.
+   Back out: remove the header in Supersonic. Nothing depends on it yet.
+3. **Set `ORIGIN_VERIFY_ENFORCE` to `1`, deploy.** Check at once:
+   `curl -sI https://dtp.africa/` and `https://www.dtp.africa/` give 200,
+   `curl -s https://dtp.africa/api/v1/health` gives 200, `curl -sI http://54.225.155.75/`
+   gives 403, and signing in and a live match page work in a browser.
+
+   **Off-switch** (seconds; no restart, nothing dropped), from `/opt/dtp-app/repo`:
+
+   ```bash
+   sudo docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml exec web sh -c "sed -i 's/\"1:direct\" 1;/\"1:direct\" 0;/' /etc/nginx/conf.d/default.conf && nginx -t && nginx -s reload"
+   ```
+
+   It lasts until the web container is next recreated, so then set
+   `ORIGIN_VERIFY_ENFORCE` to `0` (or delete it) in the secret before the next deploy.
+
+**Rotating the secret.** Supersonic and nginx cannot change at the same moment, so turn
+enforcing off first (off-switch, then `ORIGIN_VERIFY_ENFORCE` `0`), change the value in both
+places, check the log shows `origin=cdn` again, then enforce.
+
+Once enforcing, a direct caller is refused before anything reads `X-Forwarded-For`, so the
+"any source, last entry" real-IP setting in nginx stays as it is.
+
 ### Cache invalidation after a deploy
 
 After a deploy passes its health check, `cd.yml` invalidates `/index.html` and `/`, so

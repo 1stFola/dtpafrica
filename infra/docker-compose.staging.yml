@@ -88,6 +88,11 @@ services:
     logging: *default-logging
     depends_on:
       - api
+    environment:
+      # The origin check (infra/nginx.staging.conf): the X-Origin-Verify value Supersonic
+      # sends, and 1 to refuse requests without it. Empty secret checks nothing.
+      ORIGIN_VERIFY_SECRET: ${ORIGIN_VERIFY_SECRET:-}
+      ORIGIN_VERIFY_ENFORCE: ${ORIGIN_VERIFY_ENFORCE:-}
     ports:
       - "${WEB_PORT:-8080}:80"
 
