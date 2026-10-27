@@ -1,0 +1,10 @@
+# Secrets and venue-specific config: examples are committed, real files never are.
+.env
+publish.env
+config/sources.toml
+# Fixture output stays local; the committed test log is written to docs/fairplay/.
+fixtures/out/
+*.sqlite3
+*.sqlite3-*
+__pycache__/
+*.egg-info/

@@ -1,0 +1,14 @@
+# Simulated WAN outage, layered on compose.yaml:
+#   docker compose -f compose.yaml -f compose.wan-outage.yaml --profile synthetic up -d
+# The compose network gets no route to anything outside it, and nothing is published to
+# the host. The fixtures then reach the Edge only through `docker compose exec`, the way an
+# operator at a venue with no internet would reach it locally.
+networks:
+  edge:
+    internal: true
+
+services:
+  mediamtx:
+    ports: !reset []
+  edge:
+    ports: !reset []

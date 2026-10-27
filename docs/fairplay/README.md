@@ -17,7 +17,10 @@ decision or a score, or claim VAR/FVS status.
 | [openapi-outline.yaml](./openapi-outline.yaml) | OpenAPI 3.1 outline of the cloud and Edge routes, with the time contracts as schemas |
 | [phase-plan.md](./phase-plan.md) | Gate decisions, P0 backlog with effort ranges, Phase 1 prerequisites, rollback |
 | [blockers.md](./blockers.md) | Blockers, standing escalations, and the assumption register (verified with its source, or UNVERIFIED) |
-| [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard · 0010 admin placement |
+| [phase-1-edge-foundation.md](./phase-1-edge-foundation.md) | **Phase 1 delivery**: the Edge media foundation, its test log and measurements (synthetic feeds; hardware acceptance pending) |
+| [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard · 0010 admin placement · 0011 recording independent of the Edge |
+
+Code: [`services/fairplay-edge`](../../services/fairplay-edge/README.md).
 
 ---
 
