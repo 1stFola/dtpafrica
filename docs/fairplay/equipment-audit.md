@@ -3,7 +3,9 @@
 Phase 0 deliverable. **Every row below is UNVERIFIED.** Nothing in this repository describes
 the matchday kit: a search of `docs/` for switcher, OBS, ATEM, vMix, drone, DJI, SDI, HDMI,
 NDI, SRT, RTMP and RTSP returns nothing. The PID says DTP owns ground camera(s), a drone,
-walkie-talkies and a live production setup; that is the whole of what is known.
+walkie-talkies and a live production setup; that is the whole of what is known. No
+matchday hardware sheet came with the PID bundle (it holds the PID, the prompt pack, and
+the prompt pack again as Markdown).
 
 The matrix is the questionnaire for the matchday crew. Phase 1 does not start until the
 **Gate** rows are answered with evidence (a photo of the back panel, a model number, a
@@ -45,6 +47,7 @@ screenshot of the encoder's output settings), not from memory.
 | E13 | Time source | Do the cameras or encoder embed wall-clock time (RTSP sender reports, SEI timecode)? Is NTP reachable on site? | UNVERIFIED | — |
 | E14 | Operator devices | Which laptops/tablets will a replay operator and assessor use; are they DTP-owned (a local certificate can be installed) | UNVERIFIED | Gate |
 | E15 | Audio | Which feeds carry audio; whether ambient audio of players or officials is captured (a privacy question, not a technical one) | UNVERIFIED | — |
+| E16 | **Source recording mode** (the summary of E1–E6) | Per camera, one of: *ISO, live* (a separate stream FairPlay can record during the match) · *ISO, on-device only* (recorded inside the switcher or camera, usable after the match only) · *programme only* | UNVERIFIED | Gate — decides single- or multi-angle mode |
 
 ## Ingest topologies, by what the answers turn out to be
 

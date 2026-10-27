@@ -13,9 +13,14 @@ several media APIs; `https://localhost` is one, `http://192.168.x.x` is not.
 
 - A separate Vite/React app, `apps/fairplay-console`, reusing `@dtp/ui`, built to static
   files and served by the Edge. It talks only to the Edge API on its own origin.
-- **Caddy** terminates TLS with its internal CA. On the Edge machine the console is
-  `https://localhost`. Any second device (assessor laptop) must be DTP-owned and have the
-  Edge's root certificate installed once, at provisioning.
+- **Uvicorn terminates TLS itself.** At provisioning the Edge generates its own CA (Python
+  `cryptography`) and a server certificate for `localhost` and its LAN address; the CA key
+  stays on the Edge. On the Edge machine the console is `https://localhost`. Any second
+  device (assessor laptop) must be DTP-owned and have the Edge's root certificate
+  installed once.
+- No reverse proxy, which keeps the venue at two long-running processes. **Caddy** (its
+  internal CA does the same job) is the fallback if Phase 2 measures that streaming media
+  through the Edge API cannot meet the PID's 15-second p95 retrieval target.
 - Media reaches the browser only through the Edge API's authorised proxy of MediaMTX `/get`
   (`format=mp4`), with the session cookie. No media URL works without it.
 - The cloud admin page links to the console and shows pairing state; it never embeds it.

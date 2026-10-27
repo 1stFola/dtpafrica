@@ -25,6 +25,8 @@ commitments. P2 (any automatic classification) is out of V1 entirely.
 6. Match deletion: `SetNull` + snapshot, not `Restrict`.
 7. Who holds footage rights for the pilot fixtures, and whether the competition agreement
    covers recording for dispute review (see blockers).
+8. FairPlay as its own `/admin/fairplay` area, linked from the ScoreBoard match center and
+   kept out of the recorder console ([ADR-0010](./adr/0010-admin-placement.md)).
 
 ## P0 backlog, in order
 
@@ -36,7 +38,7 @@ commitments. P2 (any automatic classification) is out of V1 entirely.
 | 4 | Source health and watchdog: disconnect, recorder stopped, disk low/hard water marks, MediaMTX down | FP-14 (P0 part) | 1 | 2–3 d | 1 |
 | 5 | Retention job that never deletes protected or unsynced segments | — | 1 | 1–2 d | 3 |
 | 6 | **Phase 1 gate**: two-feed (or one-feed) recording test, disconnect one source, restart Edge, checksums verified — synthetic first, real kit when available | FP-02, FP-03 | 1 | 1–2 d | 1–5, hardware |
-| 7 | Local auth: Caddy TLS, signed bundle verification (with a dev signing key), PIN login, session cookie | FP-11 | 2 | 3–5 d | gate 4 |
+| 7 | Local auth: Edge CA + Uvicorn TLS, signed bundle verification (with a dev signing key), PIN login, session cookie | FP-11 | 2 | 3–5 d | gate 4 |
 | 8 | Time model: periods, calibrations, offsets, uncertainty, failure states | FP-05 | 2 | 3–5 d | 3 |
 | 9 | Local console: shadow banner, health, live preview, replay player via the Edge proxy, jump −10/−30/−60, 0.5×/1×, source selector, incident list | FP-03, FP-04 | 2 | 6–10 d | 7, 8 |
 | 10 | Incidents and reviews: state machine, versions, four outcomes, reopen-as-audited | FP-06, FP-07 | 2 | 3–5 d | 9 |
@@ -44,7 +46,7 @@ commitments. P2 (any automatic classification) is out of V1 entirely.
 | 12 | Edge audit hash chain and outbox with backoff | FP-09, FP-10 | 3 | 3–4 d | 10 |
 | 13 | Cloud: migration, `fairplay` module, device pairing, credential bundle, sync batch, receipts | FP-01, FP-10 | 3 | 5–8 d | gate 2 |
 | 14 | Cloud: evidence presign/confirm/read-url on a separate bucket, audit | FP-11 | 3 | 2–4 d | 13, bucket approval |
-| 15 | Web admin: FairPlay index, per-match page, devices, members, report view | FP-01, FP-15 | 3 | 4–6 d | 13 |
+| 15 | Web admin: `/admin/fairplay` area, per-match page, devices, members, report view, match-center link | FP-01, FP-15 | 3 | 4–6 d | 13, gate 8 |
 | 16 | **Phase 3 gate**: 30-minute WAN-off drill, 10× duplicate sync, wrong-device token refused, authorisation matrix | FP-09–11 | 3 | 2–3 d | 12–15 |
 | 17 | Runbooks, matchday checklists, operator guide; three shadow matches | — | 4 | 5–10 d + matchdays | all, rights |
 
@@ -56,26 +58,29 @@ extended monitoring (FP-14), organiser report polish (FP-15), PDF.
 
 ## Prerequisites for Phase 1
 
-- Gate decisions 1 and 3 made.
-- An Edge development machine (or Fola's agreement to start on a developer laptop with
-  synthetic feeds only, hardware acceptance marked pending).
-- The equipment audit's Gate rows answered — or, if not yet, Phase 1 proceeds on synthetic
-  feeds and **stops before claiming real-video success**, as the prompt pack requires.
+Phase 1 starts when every **Required** row is ticked. **Required for hardware acceptance**
+rows may stay open: Phase 1 then runs on synthetic feeds and its report marks hardware
+acceptance *pending*, never passed.
+
+| # | Prerequisite | Required | Evidence that it is met |
+|---|---|---|---|
+| P1 | Gate decision 3 (Edge stack) approved | Required | Fola's approval recorded in ADR-0003's status line |
+| P2 | Gate decision 1 provisionally set: single-angle unless the audit proves ISO feeds | Required | ADR-0008 status line |
+| P3 | A development machine for the Edge: Linux or Windows, Python 3.12, ffmpeg + ffprobe on `PATH`, Docker (Linux) or the MediaMTX native binary (Windows), ≥ 50 GB free | Required | `python --version`, `ffmpeg -version`, `ffprobe -version` and `mediamtx --version` (or the Compose image tag) pasted in the Phase 1 report |
+| P4 | MediaMTX version chosen and pinned (release archive SHA-256 recorded), its release notes read against the settings in [architecture §3](./architecture.md#3-components) | Required | the pin and checksum in the Phase 1 PR; an OSS register row |
+| P5 | OSS register rows added for MediaMTX, FastAPI/Starlette/Uvicorn/Pydantic, `cryptography` | Required | `docs/licenses/OSS_REGISTER.md` in the Phase 1 PR |
+| P6 | Agreement that Phase 1 uses **synthetic footage only** (generated test patterns with burned-in clocks), no real match footage | Required | stated in the Phase 1 brief |
+| P7 | Full-disk encryption on the machine that will be the matchday Edge | Required for hardware acceptance | screenshot of BitLocker / LUKS status |
+| P8 | Equipment audit Gate rows E1–E8, E10, E14 answered with evidence | Required for hardware acceptance | the filled [equipment audit](./equipment-audit.md) |
+| P9 | A measured 5-minute sustained write test on the matchday SSD | Required for hardware acceptance | command output in the Phase 1 report |
+| P10 | Rights confirmed for any real fixture recorded in the bench test | Required before any real footage | B2 in [blockers](./blockers.md) closed |
+
+What Phase 1 does **not** need: any cloud change, any schema migration, any R2 bucket, any
+change to the existing API or web app.
 
 ## Blockers and escalations
 
-| Blocker | Why it stops work | Who |
-|---|---|---|
-| Hardware outputs unknown (E1–E6) | Nothing may promise isolated camera recordings until proven; single-angle mode is the safe default | Matchday crew → Fola |
-| Footage rights and consent for real fixtures | No real youth-player footage is recorded into FairPlay, or shown to anyone outside DTP, until the competition agreement covers it | Fola / organisers |
-| R2 bucket creation | A Cloudflare account change; tiny cost but needs approval | Fola |
-| Organiser access model | Decides whether external people get admin accounts | Fola |
-| Retention period | PID suggests 7–30 days locally; needs the organiser's agreement before any automated deletion | Fola / organisers |
-| Edge machine OS | Docker on Windows handles UDP/RTSP less well; may mean native services instead | Matchday crew |
-
-Standing escalations (from the master prompt): any request to enable referee
-intervention, any new recurring charge or EC2 change, any destructive migration, any
-reduction in access control, any upload of real footage to a third-party AI service.
+Kept in one place: [blockers.md](./blockers.md), with the assumption register.
 
 ## Rollback
 

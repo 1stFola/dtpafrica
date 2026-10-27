@@ -1,0 +1,781 @@
+# DTP FairPlay — OpenAPI outline (Phase 0)
+#
+# A design outline, not a description of running code: none of these routes exists yet.
+# Two surfaces in one file, told apart by tag:
+#   cloud — the existing NestJS API under /api/v1 (no Swagger there today; this file is
+#           the contract its controllers are written to, as docs/vision/07 is for Vision)
+#   edge  — services/fairplay-edge on the venue LAN; FastAPI will generate the live spec
+#           from code in Phase 1 and this outline is checked against it.
+# Field meanings: docs/fairplay/architecture.md §5 and docs/fairplay/integration-map.md.
+
+openapi: 3.1.0
+info:
+  title: DTP FairPlay (outline)
+  version: 0.0.0-phase0
+  description: >
+    Shadow review and post-match evidence only. No route here contacts a referee,
+    changes a decision, or writes a ScoreBoard event or score.
+servers:
+  - url: https://www.dtp.africa/api/v1
+    description: cloud (existing API)
+  - url: https://localhost:8443
+    description: edge (venue machine; LAN address with the Edge's own CA)
+tags:
+  - name: cloud
+  - name: edge
+
+paths:
+  # ── cloud: devices ───────────────────────────────────────────────────────
+  /fairplay/devices:
+    post:
+      tags: [cloud]
+      summary: Register an Edge device; returns a one-time bootstrap token
+      security: [{ adminJwt: [] }]
+      x-permission: fairplay.edge.admin
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceBootstrap" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/devices/register:
+    post:
+      tags: [cloud]
+      summary: Exchange a bootstrap token for a device token
+      security: [{ bootstrapToken: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicKeyEd25519]
+              properties:
+                publicKeyEd25519: { type: string, description: base64 raw public key }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceToken" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/devices/{deviceId}/retire:
+    post:
+      tags: [cloud]
+      security: [{ adminJwt: [] }]
+      x-permission: fairplay.edge.admin
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string } } }
+      responses:
+        "204": { description: retired }
+        default: { $ref: "#/components/responses/Refusal" }
+
+  # ── cloud: sessions ──────────────────────────────────────────────────────
+  /fairplay/sessions:
+    post:
+      tags: [cloud]
+      summary: Create a session for an existing SbMatch and assign a device
+      security: [{ adminJwt: [] }]
+      x-permission: fairplay.session.manage
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        default: { $ref: "#/components/responses/Refusal" }
+    get:
+      tags: [cloud]
+      security: [{ adminJwt: [] }]
+      x-permission: any fairplay.* within competition scope
+      parameters:
+        - { name: matchId, in: query, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionPage" }
+  /fairplay/sessions/{sessionId}:
+    get:
+      tags: [cloud]
+      security: [{ adminJwt: [] }]
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/sessions/{sessionId}/members:
+    put:
+      tags: [cloud]
+      security: [{ adminJwt: [] }]
+      x-permission: fairplay.session.manage
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/SessionMember" }
+      responses:
+        "200": { description: replaced }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/sessions/{sessionId}/credential-bundle:
+    get:
+      tags: [cloud]
+      summary: Signed offline operator bundle for the device's session
+      security: [{ deviceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CredentialBundle" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/sessions/{sessionId}/report:
+    get:
+      tags: [cloud]
+      security: [{ adminJwt: [] }]
+      x-permission: fairplay.report.view (approved items only) or fairplay.incident.review
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Report" }
+
+  # ── cloud: sync and evidence ─────────────────────────────────────────────
+  /fairplay/sync/batch:
+    post:
+      tags: [cloud]
+      summary: Idempotent upsert of Edge records, in dependency order
+      security: [{ deviceToken: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SyncBatch" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncResult" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/evidence/presign:
+    post:
+      tags: [cloud]
+      summary: Presigned PUT (or multipart) for one evidence object under sessions/{id}/
+      security: [{ deviceToken: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PresignRequest" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PresignResponse" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/evidence/{evidenceId}/confirm:
+    post:
+      tags: [cloud]
+      summary: HEAD the object, check bytes, record the remote key
+      security: [{ deviceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/EvidenceId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Evidence" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/evidence/{evidenceId}/read-url:
+    post:
+      tags: [cloud]
+      summary: Short-lived presigned GET; audited
+      security: [{ adminJwt: [] }]
+      x-permission: fairplay.report.view (approved evidence) or fairplay.evidence.view_original (with reason)
+      parameters: [{ $ref: "#/components/parameters/EvidenceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { $ref: "#/components/schemas/Instant" }
+        default: { $ref: "#/components/responses/Refusal" }
+  /fairplay/incidents:
+    get:
+      tags: [cloud]
+      security: [{ adminJwt: [] }]
+      parameters:
+        - { name: sessionId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentPage" }
+  /fairplay/incidents/{incidentId}:
+    get:
+      tags: [cloud]
+      security: [{ adminJwt: [] }]
+      parameters: [{ $ref: "#/components/parameters/IncidentId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentDetail" }
+        default: { $ref: "#/components/responses/Refusal" }
+
+  # ── edge ─────────────────────────────────────────────────────────────────
+  /edge/auth/login:
+    post:
+      tags: [edge]
+      summary: Email + matchday PIN against the signed bundle; sets the local session cookie
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, pin]
+              properties: { email: { type: string }, pin: { type: string } }
+      responses:
+        "204": { description: signed in (Set-Cookie) }
+        default: { $ref: "#/components/responses/Refusal" }
+  /edge/sessions/{sessionId}/start:
+    post:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      x-permission: fairplay.session.manage or fairplay.incident.operate
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses: { "204": { description: recording requested }, default: { $ref: "#/components/responses/Refusal" } }
+  /edge/sessions/{sessionId}/stop:
+    post:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses: { "204": { description: stopped }, default: { $ref: "#/components/responses/Refusal" } }
+  /edge/sessions/{sessionId}/sources:
+    get:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Source" } }
+  /edge/sessions/{sessionId}/health:
+    get:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /edge/sessions/{sessionId}/periods:
+    post:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PeriodMarkCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PeriodMark" }
+  /edge/sessions/{sessionId}/calibrations:
+    post:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      x-permission: fairplay.incident.operate
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CalibrationCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Calibration" }
+  /edge/sessions/{sessionId}/recordings:
+    get:
+      tags: [edge]
+      summary: Recorded spans per source, with gaps (MediaMTX /list + the manifest)
+      security: [{ edgeSession: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/SessionId" }
+        - { name: sourceId, in: query, schema: { type: string, format: uuid } }
+        - { name: start, in: query, schema: { $ref: "#/components/schemas/Instant" } }
+        - { name: end, in: query, schema: { $ref: "#/components/schemas/Instant" } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SourceSpan" } }
+  /edge/media/window:
+    get:
+      tags: [edge]
+      summary: Authorised proxy of MediaMTX /get (format=mp4); MediaMTX itself is loopback-only
+      security: [{ edgeSession: [] }]
+      parameters:
+        - { name: sourceId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: start, in: query, required: true, schema: { $ref: "#/components/schemas/Instant" } }
+        - { name: durationMs, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 600000 } }
+      responses:
+        "200": { description: video/mp4 stream, content: { video/mp4: {} } }
+        "404": { description: no recording covers the window (gap) }
+  /edge/incidents:
+    post:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      x-permission: fairplay.incident.operate
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IncidentCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+  /edge/incidents/{incidentId}:
+    patch:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/IncidentId" }
+        - { name: If-Match, in: header, required: true, schema: { type: integer }, description: current version }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IncidentPatch" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+        "409": { $ref: "#/components/responses/Refusal" }
+  /edge/incidents/{incidentId}/reviews:
+    post:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      x-permission: fairplay.incident.review
+      parameters: [{ $ref: "#/components/parameters/IncidentId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+  /edge/incidents/{incidentId}/clips:
+    post:
+      tags: [edge]
+      summary: Clip job; stream copy unless a derivation is requested
+      security: [{ edgeSession: [] }]
+      parameters: [{ $ref: "#/components/parameters/IncidentId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClipRequest" }
+      responses:
+        "202":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+  /edge/jobs/{jobId}:
+    get:
+      tags: [edge]
+      security: [{ edgeSession: [] }]
+      parameters: [{ name: jobId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+
+components:
+  securitySchemes:
+    adminJwt: { type: http, scheme: bearer, description: existing admin JWT (AdminAuthGuard) }
+    bootstrapToken: { type: apiKey, in: header, name: x-fairplay-bootstrap-token }
+    deviceToken: { type: apiKey, in: header, name: x-fairplay-device-token }
+    edgeSession: { type: apiKey, in: cookie, name: fp_session }
+
+  parameters:
+    SessionId: { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+    DeviceId: { name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }
+    IncidentId: { name: incidentId, in: path, required: true, schema: { type: string, format: uuid } }
+    EvidenceId: { name: evidenceId, in: path, required: true, schema: { type: string, format: uuid } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+
+  responses:
+    Refusal:
+      description: The existing Vision refusal() shape
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Refusal" }
+
+  schemas:
+    Instant: { type: string, format: date-time, description: "RFC 3339, milliseconds, Z" }
+    Refusal:
+      type: object
+      required: [statusCode, error, message]
+      properties:
+        statusCode: { type: integer }
+        error: { type: string }
+        message: { type: string }
+        remediation: { type: string }
+
+    # enums — the closed sets ADR-0001 relies on
+    SessionMode: { type: string, enum: [shadow, post_match] }
+    AngleMode: { type: string, enum: [single, multi] }
+    SourceRole: { type: string, enum: [ground, drone, programme] }
+    IncidentState: { type: string, enum: [flagged, reviewing, reviewed, archived] }
+    ReviewResult: { type: string, enum: [supports_original, supports_alternative, inconclusive, footage_unavailable] }
+    AuthorityMode: { type: string, enum: [shadow] }
+    WindowState: { type: string, enum: [ok, uncalibrated, stale_after_reconnect, uncertainty_high, clock_unsynced, clock_stepped, gap] }
+    Period: { oneOf: [{ type: integer, enum: [1, 2, 3, 4] }, { type: string, enum: [penalties] }] }
+
+    DeviceCreate:
+      type: object
+      required: [label]
+      properties: { label: { type: string, maxLength: 80 } }
+    DeviceBootstrap:
+      type: object
+      required: [deviceId, bootstrapToken, expiresAt, cloudSigningPublicKey]
+      properties:
+        deviceId: { type: string, format: uuid }
+        bootstrapToken: { type: string, description: shown once }
+        expiresAt: { $ref: "#/components/schemas/Instant" }
+        cloudSigningPublicKey: { type: string, description: "Ed25519; verifies credential bundles" }
+    DeviceToken:
+      type: object
+      required: [deviceToken, expiresAt]
+      properties:
+        deviceToken: { type: string }
+        expiresAt: { $ref: "#/components/schemas/Instant" }
+
+    SessionCreate:
+      type: object
+      required: [matchId, deviceId, mode]
+      properties:
+        matchId: { type: string, format: uuid, description: SbMatch.id }
+        deviceId: { type: string, format: uuid }
+        mode: { $ref: "#/components/schemas/SessionMode" }
+        fullMatchUpload: { type: boolean, default: false, description: requires a recorded budget acknowledgement }
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        matchId: { type: [string, "null"], format: uuid }
+        matchSnapshot: { type: object }
+        deviceId: { type: string, format: uuid }
+        mode: { $ref: "#/components/schemas/SessionMode" }
+        angleMode: { $ref: "#/components/schemas/AngleMode" }
+        status: { type: string, enum: [planned, recording, ended, archived] }
+        startedAt: { $ref: "#/components/schemas/Instant" }
+        endedAt: { $ref: "#/components/schemas/Instant" }
+        lastSyncAt: { $ref: "#/components/schemas/Instant" }
+    SessionPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        nextCursor: { type: [string, "null"] }
+    SessionMember:
+      type: object
+      required: [adminUserId, permissions]
+      properties:
+        adminUserId: { type: string, format: uuid }
+        permissions: { type: array, items: { type: string, pattern: "^fairplay\\." } }
+    CredentialBundle:
+      type: object
+      required: [bundleId, sessionId, matchId, issuedAt, expiresAt, members, signature]
+      properties:
+        bundleId: { type: string, format: uuid }
+        sessionId: { type: string, format: uuid }
+        matchId: { type: string, format: uuid }
+        issuedAt: { $ref: "#/components/schemas/Instant" }
+        expiresAt: { $ref: "#/components/schemas/Instant" }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              adminUserId: { type: string, format: uuid }
+              email: { type: string }
+              name: { type: string }
+              permissions: { type: array, items: { type: string } }
+              pinHash: { type: string, description: argon2id }
+        signature: { type: string, description: Ed25519 over the canonical JSON of the other fields }
+
+    Source:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        role: { $ref: "#/components/schemas/SourceRole" }
+        path: { type: string, description: "MediaMTX path, e.g. match/{sessionId}/ground" }
+        codec: { type: string }
+        fps: { type: string, description: "rational, e.g. 25/1" }
+        hasAudio: { type: boolean }
+        recording: { type: boolean, description: "true only when a segment is being written, not merely when connected" }
+        connectedSince: { $ref: "#/components/schemas/Instant" }
+    Health:
+      type: object
+      properties:
+        sources: { type: array, items: { $ref: "#/components/schemas/Source" } }
+        diskFreeBytes: { type: integer }
+        diskState: { type: string, enum: [ok, soft_limit, hard_limit] }
+        lastFinalizedSegmentAt: { $ref: "#/components/schemas/Instant" }
+        outboxDepth: { type: integer }
+        clock: { $ref: "#/components/schemas/EdgeClockSample" }
+        mediaServer: { type: string, enum: [up, down] }
+
+    EdgeClockSample:
+      type: object
+      required: [edgeUtc, edgeMonoNs, ntpState]
+      properties:
+        edgeUtc: { $ref: "#/components/schemas/Instant" }
+        edgeMonoNs: { type: integer, format: int64 }
+        ntpState: { type: string, enum: [synced, unsynced, unknown] }
+        cloudOffsetMs: { type: [integer, "null"] }
+        cloudRttMs: { type: [integer, "null"] }
+    PeriodMarkCreate:
+      type: object
+      required: [period, edge]
+      properties:
+        period: { $ref: "#/components/schemas/Period" }
+        edge: { type: string, enum: [start, end] }
+        supersedes: { type: [string, "null"], format: uuid }
+    PeriodMark:
+      allOf:
+        - $ref: "#/components/schemas/PeriodMarkCreate"
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            sessionId: { type: string, format: uuid }
+            edgeUtc: { $ref: "#/components/schemas/Instant" }
+            edgeMonoNs: { type: integer, format: int64 }
+            consoleAnchorUtc: { $ref: "#/components/schemas/Instant" }
+            consoleDeltaMs: { type: [integer, "null"] }
+            actorId: { type: string, format: uuid }
+    SourceSpan:
+      type: object
+      properties:
+        sourceId: { type: string, format: uuid }
+        ingestStartUtc: { $ref: "#/components/schemas/Instant" }
+        durationMs: { type: integer }
+        segmentIds: { type: array, items: { type: string, format: uuid } }
+    CalibrationCreate:
+      type: object
+      required: [sourceId, period, referenceUtc, observedIngestUtc, uncertaintyMs, method]
+      properties:
+        sourceId: { type: string, format: uuid }
+        period: { $ref: "#/components/schemas/Period" }
+        referenceUtc: { $ref: "#/components/schemas/Instant" }
+        observedIngestUtc: { $ref: "#/components/schemas/Instant" }
+        uncertaintyMs: { type: integer, minimum: 0 }
+        method: { type: string, enum: [whistle, ball_strike, clapper, manual] }
+        referenceSourceId: { type: [string, "null"], format: uuid }
+        evidenceSegmentId: { type: string, format: uuid }
+        evidenceOffsetMs: { type: integer }
+        supersedes: { type: [string, "null"], format: uuid }
+    Calibration:
+      allOf:
+        - $ref: "#/components/schemas/CalibrationCreate"
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            offsetMs: { type: integer, description: "observedIngestUtc − referenceUtc; > 0 means the source lags" }
+            actorId: { type: string, format: uuid }
+            createdUtc: { $ref: "#/components/schemas/Instant" }
+    IncidentWindow:
+      type: object
+      properties:
+        eventUtc: { $ref: "#/components/schemas/Instant" }
+        eventUtcBasis: { type: string, enum: [period_mark, operator_now, sheet_event] }
+        preRollMs: { type: integer, default: 20000 }
+        postRollMs: { type: integer, default: 10000 }
+        perSource:
+          type: array
+          items:
+            type: object
+            properties:
+              sourceId: { type: string, format: uuid }
+              startIngestUtc: { $ref: "#/components/schemas/Instant" }
+              durationMs: { type: integer }
+              offsetMs: { type: integer }
+              uncertaintyMs: { type: integer }
+              calibrationId: { type: [string, "null"], format: uuid }
+              state: { $ref: "#/components/schemas/WindowState" }
+
+    IncidentCreate:
+      type: object
+      required: [id, sessionId, category, window]
+      properties:
+        id: { type: string, format: uuid, description: client-generated }
+        sessionId: { type: string, format: uuid }
+        sheetEventId: { type: [string, "null"], description: the console sheet's event id (ADR-0009) }
+        period: { $ref: "#/components/schemas/Period" }
+        matchClock: { type: object, properties: { minute: { type: integer }, second: { type: integer } } }
+        category: { type: string }
+        window: { $ref: "#/components/schemas/IncidentWindow" }
+    IncidentPatch:
+      type: object
+      properties:
+        state: { $ref: "#/components/schemas/IncidentState" }
+        category: { type: string }
+        window: { $ref: "#/components/schemas/IncidentWindow" }
+        reopenReason: { type: string, description: required when moving back from reviewed }
+    Incident:
+      allOf:
+        - $ref: "#/components/schemas/IncidentCreate"
+        - type: object
+          properties:
+            state: { $ref: "#/components/schemas/IncidentState" }
+            version: { type: integer }
+            anglesAvailable: { type: integer }
+            createdBy: { type: string, format: uuid }
+            openedAt: { $ref: "#/components/schemas/Instant" }
+    IncidentPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Incident" } }
+        nextCursor: { type: [string, "null"] }
+    IncidentDetail:
+      allOf:
+        - $ref: "#/components/schemas/Incident"
+        - type: object
+          properties:
+            reviews: { type: array, items: { $ref: "#/components/schemas/Review" } }
+            evidence: { type: array, items: { $ref: "#/components/schemas/Evidence" } }
+            currentMatchEventId: { type: [string, "null"], format: uuid, description: looked up at read time }
+    ReviewCreate:
+      type: object
+      required: [id, result, factualNotes]
+      properties:
+        id: { type: string, format: uuid }
+        result: { $ref: "#/components/schemas/ReviewResult" }
+        factualNotes: { type: string, maxLength: 4000 }
+    Review:
+      allOf:
+        - $ref: "#/components/schemas/ReviewCreate"
+        - type: object
+          properties:
+            incidentId: { type: string, format: uuid }
+            reviewerId: { type: string, format: uuid }
+            reviewerName: { type: string }
+            authorityMode: { $ref: "#/components/schemas/AuthorityMode" }
+            completedAt: { $ref: "#/components/schemas/Instant" }
+
+    ClipRequest:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId: { type: string, format: uuid }
+        derivation: { type: string, enum: [copy, reencode, frame], default: copy }
+        speed: { type: number, enum: [0.25, 0.5, 1], default: 1, description: anything but 1 implies reencode }
+    Job:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        state: { type: string, enum: [queued, running, succeeded, failed] }
+        evidenceId: { type: [string, "null"], format: uuid }
+        error: { type: [string, "null"] }
+    Evidence:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reviewId: { type: [string, "null"], format: uuid }
+        sourceSegmentIds: { type: array, items: { type: string, format: uuid } }
+        sourceSegmentSha256: { type: array, items: { type: string } }
+        windowStartUtc: { $ref: "#/components/schemas/Instant" }
+        windowDurationMs: { type: integer }
+        derivation: { type: string, enum: [copy, reencode, frame] }
+        encoder: { type: [string, "null"], description: "the ffmpeg build, as VisionVideoVariant.encoder" }
+        sha256: { type: string }
+        bytes: { type: integer }
+        remoteKey: { type: [string, "null"] }
+        accessClass: { type: string, enum: [internal, organiser_approved] }
+        approvedBy: { type: [string, "null"], format: uuid }
+
+    SyncItem:
+      type: object
+      required: [entityType, id, version, idempotencyKey, payloadHash, payload]
+      properties:
+        entityType:
+          type: string
+          enum: [session, source, segment, period_mark, calibration, incident, review, evidence, audit]
+        id: { type: string, format: uuid }
+        version: { type: integer }
+        idempotencyKey: { type: string, description: "{entityType}:{id}:{version}" }
+        payloadHash: { type: string, description: SHA-256 of the canonical JSON payload }
+        payload: { type: object }
+    SyncBatch:
+      type: object
+      required: [deviceId, items]
+      properties:
+        deviceId: { type: string, format: uuid }
+        items: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/SyncItem" } }
+    SyncResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              idempotencyKey: { type: string }
+              outcome: { type: string, enum: [applied, replayed, stale_ignored, conflict, flagged] }
+              detail: { type: string }
+
+    PresignRequest:
+      type: object
+      required: [evidenceId, bytes, sha256, contentType]
+      properties:
+        evidenceId: { type: string, format: uuid }
+        bytes: { type: integer, minimum: 1 }
+        sha256: { type: string }
+        contentType: { type: string, enum: [video/mp4, image/jpeg, application/json] }
+    PresignResponse:
+      type: object
+      properties:
+        mode: { type: string, enum: [single, multipart] }
+        key: { type: string }
+        url: { type: string, format: uri, description: single mode }
+        uploadSessionId: { type: string, format: uuid, description: "multipart mode, existing upload-session pattern" }
+        expiresAt: { $ref: "#/components/schemas/Instant" }
+
+    Report:
+      type: object
+      properties:
+        session: { $ref: "#/components/schemas/Session" }
+        banner: { type: string, const: "SHADOW REVIEW — NOT VAR. No on-field decision was changed." }
+        incidents: { type: array, items: { $ref: "#/components/schemas/IncidentDetail" } }
+        gaps: { type: array, items: { $ref: "#/components/schemas/SourceSpan" } }
+        generatedAt: { $ref: "#/components/schemas/Instant" }

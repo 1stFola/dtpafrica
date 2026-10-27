@@ -87,6 +87,27 @@ console, and need checking against the real bill.
   Video". No player beyond YouTube iframes and plain `<video>` on presigned proxies in the
   Vision admin pages.
 
+## ScoreBoard service boundaries
+
+| Boundary | Route prefix (under `/api/v1`) | Nest wiring | What it owns |
+|---|---|---|---|
+| Public ScoreBoard | `scoreboard`, `time` | `ScoreboardModule` → `ScoreboardController`, `TimeController`; services `ScoreboardService`, `ScoreboardLifecycleService`, `CompetitionEngineService`, `PlayerDirectoryService`, `LiveAudioCommentaryService` (WebSocket on the HTTP server) | read models for the public site; stat reversal on event changes; server time |
+| Admin ScoreBoard | `admin/scoreboard` | `AdminModule` → `AdminScoreboardController`, `AdminScoreboardService` | fixtures, teams, squads, events, highlights, live streams |
+| Recorder console | `admin/scoreboard/match-stats` | `AdminModule` → `AdminMatchStatsController`, `AdminMatchStatsService`, `SheetAutoApproveService`, `RecorderIdleService` | the working sheet, its review workflow, approval into `SbMatchEvent` and the score |
+| SIP ingest | (internal) | `SipModule`, imported by `ScoreboardModule` | match → scouting ingest, `SbSipIngestAudit` |
+| Vision | `vision/*` | `VisionModule` (imports `ScoreboardModule`) | footage, jobs, workers, review |
+
+Ten non-test files write `SbMatchEvent`: the recorder console's approval
+(`admin/admin-match-stats.service.ts`), the admin and public ScoreBoard services, the
+lifecycle service, record merges (`players/merge-player-records.ts`,
+`scoreboard/merge-team-records.ts`), goal linking and timeline-number resolution
+(`scoreboard/link-match-goals.ts`, `resolve-timeline-numbers.ts`), and Vision's promotion
+(`vision/events/events.service.ts`, `reapply-enrichment.ts`). Any of them can change or
+replace an event an incident refers to, which is a second reason incidents hold the sheet
+event id rather than an event FK. FairPlay adds no writer: it reads `SbMatch`,
+`SbMatchStatistics` and `SbMatchEvent` only, and a test asserts the module contains no
+Prisma write to any `Sb*` model.
+
 ## What Vision already built that FairPlay must reuse, not copy
 
 | Need | Existing piece | Reuse plan |
@@ -107,8 +128,7 @@ console, and need checking against the real bill.
   `admin/rbac/permissions.catalog.ts`.
 - **Schema**: new `FairPlay*` models mapped to `fairplay_*` tables; `SbMatch` gains only a
   Prisma back-relation (no column change).
-- **Web admin**: per-match view as a sub-route `admin/match-stats/:matchId/fairplay` in
-  `MatchConsoleApp.tsx`, or a link from the ScoreBoard match list; sidebar entry via
-  `AdminLayout.tsx` + `ADMIN_NAV_PERMISSIONS` + `AdminApp.tsx`. A FairPlay tab must not
-  extend the shared `SheetSection` union.
+- **Web admin**: a `/admin/fairplay/*` area mounted like `vision/*` in `AdminApp.tsx`, a
+  per-match page `/admin/fairplay/matches/:matchId`, and a "FairPlay" link from the
+  ScoreBoard match center. Not in the recorder console ([ADR-0010](./adr/0010-admin-placement.md)).
 - **Edge**: new `services/fairplay-edge` (Python) and a separately built local console.

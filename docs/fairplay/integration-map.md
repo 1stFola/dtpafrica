@@ -10,14 +10,21 @@ approval at the Phase 0 gate.
 
 | Area | File | Change | Risk to existing features |
 |---|---|---|---|
-| API module | `services/api/src/fairplay/` (new), `src/app.module.ts` | new Nest module importing `AdminGuardsModule` and the shared `ObjectStore` | none: new routes under `/api/v1/fairplay` |
+| API module | `services/api/src/fairplay/` (new), `src/app.module.ts` | new `FairPlayModule` in `AppModule.imports`, importing `PrismaModule` and `AdminGuardsModule` (the documented way for a module outside admin to use `AdminAuthGuard` + `PermissionsGuard`). It does **not** import `ScoreboardModule`, `AdminModule` or `VisionModule`: it reads `SbMatch` and `SbMatchStatistics` through Prisma and calls no ScoreBoard service | none: new routes under `/api/v1/fairplay` |
 | Permissions | `services/api/src/admin/rbac/permissions.catalog.ts` | new slugs and two roles (below); `super_admin` gets them | seeding adds rows only |
 | Schema | `services/api/prisma/schema.prisma` + one migration | new `FairPlay*` models; `SbMatch` and `AdminUser` gain **back-relations only** | additive; no column on an existing table changes |
 | Body limits | `services/api/src/shared/body-limits.ts` | sync batch route gets its own bound (≈1 MB) | none |
-| Storage | `services/api/src/vision/storage/`, `packages/vision-contracts/src/storage.ts` | a FairPlay-owned bucket mapping; decided in Phase 3 whether by extending `BucketId` or by a second `R2ObjectStore` instance with its own config ([ADR-0006](./adr/0006-evidence-storage.md)) | Vision's boundary spec must still pass |
-| Web admin route | `apps/web/src/modules/admin/MatchConsoleApp.tsx` | sub-route `admin/match-stats/:matchId/fairplay` | the console's `*` route still catches everything else |
-| Web admin nav | `AdminLayout.tsx`, `admin-permissions.ts` (`ADMIN_NAV_PERMISSIONS`), `AdminApp.tsx` | "FairPlay" index of sessions | hidden from users without the permission |
-| Match list link | `apps/web/src/modules/admin/scoreboard/pages/AdminScoreboardMatchCenterPage.tsx` | a "FairPlay" action per match, shown only with permission | additive |
+| Storage | `services/api/src/vision/storage/r2-object-store.ts` | a **second `R2ObjectStore` instance**, provided inside `FairPlayModule` from its own `FAIRPLAY_R2_*` settings and a token scoped to the evidence bucket only. Vision's `OBJECT_STORE` is not reused: it is built from Vision's config, switches to in-memory when Vision storage is off, and holds a key that reaches Vision's buckets ([ADR-0006](./adr/0006-evidence-storage.md)) | the adapter class is reused unchanged; how it learns a FairPlay bucket id without coupling Vision's contracts is the one design point left for Phase 3 |
+| Web admin area | `apps/web/src/modules/admin/AdminApp.tsx` | `<Route element={<AdminRequirePermission permission={[...fairplay slugs]} />}><Route path="fairplay/*" element={<AdminFairPlayApp />} /></Route>` — the same shape as `vision/*` at `AdminApp.tsx:65-66` | none: a new path |
+| Per-match page | `apps/web/src/modules/admin/fairplay/` (new) | `/admin/fairplay/matches/:matchId` (sessions, incidents, evidence, report) and `/admin/fairplay/devices` | — |
+| Web admin nav | `AdminLayout.tsx` `links`, `admin-permissions.ts` `ADMIN_NAV_PERMISSIONS["/admin/fairplay"]` | "FairPlay" entry | hidden without a FairPlay permission |
+| ScoreBoard → Match → FairPlay | `apps/web/src/modules/admin/scoreboard/pages/AdminScoreboardMatchCenterPage.tsx` | a "FairPlay" link on the selected match to `/admin/fairplay/matches/:matchId`, rendered only when `hasPermission` grants a FairPlay slug | additive; nothing changes for users without FairPlay permissions |
+
+**Why not inside the match console or `/admin/scoreboard`** ([ADR-0010](./adr/0010-admin-placement.md)):
+the console at `admin/match-stats/:matchId/*` is the recorder's full-viewport pitch-side
+tool, and showing disputed-incident findings there would put them in front of the person
+keeping the official sheet during the match. `/admin/scoreboard` requires `scoreboard.read`
+(`ADMIN_NAV_PERMISSIONS`), which an organiser viewer should not need just to read a report.
 | Edge service | `services/fairplay-edge/` (new, Python) | FastAPI app, MediaMTX config, Compose file, tests | none: does not run on EC2 |
 | Local console | `apps/fairplay-console/` (new Vite app) reusing `@dtp/ui` | built static, served by the Edge | none: not in the `web` image |
 | Contracts | `packages/fairplay-contracts/` (new, TS) + Python mirror with a parity test | sync payloads, enums, manifest schema | follows the vision-contracts precedent |
@@ -102,7 +109,7 @@ repo's style (no Swagger exists); an OpenAPI file is generated for the Edge by F
 | POST | `/fairplay/evidence/:id/read-url` | JWT + `report.view` or `view_original` (+ reason) | presigned GET ≤ 5 min; audited |
 | GET | `/fairplay/sessions/:id/report` | JWT + scope | JSON report; printable HTML in the web app |
 
-### Edge (FastAPI, venue LAN, behind Caddy)
+### Edge (FastAPI, venue LAN, TLS terminated by Uvicorn)
 
 | Method | Path | Purpose |
 |---|---|---|

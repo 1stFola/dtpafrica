@@ -17,7 +17,7 @@ changes a score, writes a ScoreBoard event or claims VAR/FVS status
  cameras ──► switcher / OBS ──► YouTube Live ──► public (SbLiveStream.youtubeUrl)
  (UNVERIFIED outputs)            (the only recording today is YouTube's)
 
- recorder's phone ──► match console (apps/web) ──► /api/v1/admin/match-stats ──► Postgres
+ recorder's phone ──► match console (apps/web) ──► /api/v1/admin/scoreboard/match-stats ──► Postgres
                        localStorage drafts           sheet JSON → SbMatchEvent on approval
 
  Vision (separate): uploaded footage ──► R2 (master/derived) ──► worker (ffmpeg) ──► review
@@ -45,7 +45,7 @@ There is no venue-side recording under DTP control and no replay during a match.
  │                                                       ├ ffprobe / ffmpeg clips│
  │                                                       └ serves local console  │
  │                                                                  ▲            │
- │   operator / assessor laptop ──── HTTPS (Caddy, local CA) ───────┘            │
+ │   operator / assessor laptop ──── HTTPS (Edge's own CA) ─────────┘            │
  └───────────────────────────────────────────────┬──────────────────────────────┘
                                                  │ when online: device token
                                                  ▼
@@ -68,12 +68,25 @@ uploaded unless an admin turns it on for that session with a budget acknowledgem
 | Ingest, recording, recorded playback | **MediaMTX**, pinned (latest is v1.21.3 at the time of writing; pin chosen in Phase 1 after reading its release notes) | It already does multi-protocol ingest, per-path fMP4 recording with a stated recovery point (`recordPartDuration` = the RPO), a segment-complete hook, and a `/list` + `/get?start=&duration=` playback server that cuts a time window out of recordings without re-encoding. A homemade server would have to reimplement all of that and would fail in ways we have not met yet. MIT. |
 | Edge API | **Python 3.12 + FastAPI + SQLite (WAL)** in `services/fairplay-edge` | PID baseline, and the repo already runs Python with ffmpeg subprocesses and pytest in CI. [ADR-0003](./adr/0003-edge-stack.md) records the Node alternative and why it lost. |
 | Local console | Separate Vite/React build reusing `@dtp/ui`, served by the Edge | Same design language, no cloud dependency, no mixed content. [ADR-0004](./adr/0004-local-console-and-tls.md) |
-| Local HTTPS | **Caddy** with its internal CA, root installed on DTP-owned operator devices | A browser treats `http://192.168.x.x` as insecure; a local CA avoids touching public DNS. Apache-2.0. |
+| Local HTTPS | **Uvicorn's own TLS**, with a certificate from a per-device CA the Edge generates at provisioning; root installed on DTP-owned operator devices | A browser treats `http://192.168.x.x` as insecure, and a local CA avoids touching public DNS. No reverse proxy: one process fewer. Caddy is the named fallback if Phase 2's measured media throughput through the API is not good enough ([ADR-0004](./adr/0004-local-console-and-tls.md)). |
 | Clip / probe | `ffprobe`, `ffmpeg -c copy` first; re-encode only for slowed/zoomed derivatives | Stream copy keeps a clip byte-faithful to the camera's encode and costs almost no CPU. |
 | Player | Native `<video>` on the MediaMTX `format=mp4` window, proxied through the Edge | Already the pattern in Vision's admin pages; add Video.js only if a measured need appears. |
 | Cloud | New `fairplay` module in the existing NestJS API and Postgres | No second backend. [ADR-0002](./adr/0002-central-metadata-in-existing-api.md) |
 | Evidence storage | Existing `R2ObjectStore`, new private bucket `fairplay-evidence`, presigned operations only | [ADR-0006](./adr/0006-evidence-storage.md) |
 | Orchestration | Docker Compose on Linux; native binaries as services on Windows if the Edge machine is Windows | Decided when E7 in the equipment audit is answered. |
+
+**Smallest feasible set.** Two long-running processes at the venue: MediaMTX and the Edge
+API (which also serves the console's static files and terminates TLS). ffmpeg/ffprobe run
+only per job. Nothing else runs. Each addition has to earn its place:
+
+| Not included | Why not |
+|---|---|
+| A separate reverse proxy (Caddy, nginx) | Uvicorn terminates TLS; added only if measured throughput requires it |
+| A queue or broker (Redis) | The outbox and job table are SQLite tables; one writer, one machine |
+| rclone | Uploads are a handful of presigned PUTs per match from the Edge API |
+| Video.js / hls.js | `<video>` plays MediaMTX's `format=mp4` windows; HLS is not produced |
+| A homemade media server | See the MediaMTX row above |
+| Any cloud media service | Video never leaves the venue except approved evidence to R2 |
 
 ### MediaMTX settings that must not be left at their defaults
 
@@ -97,8 +110,8 @@ version.
   metadata, reports and presigned R2 evidence; for live work it shows a "open the venue
   console" link and the pairing state. No iframe, no `http://` media, no CSP change needed
   beyond what already allows R2.
-- **The local console** is served from the Edge on its own HTTPS origin (Caddy, internal
-  CA). On the Edge machine itself `https://localhost` is already a secure context. A
+- **The local console** is served from the Edge on its own HTTPS origin (Uvicorn TLS, the
+  Edge's own CA). On the Edge machine itself `https://localhost` is already a secure context. A
   second device needs the root certificate installed once, which is acceptable only on
   DTP-owned devices (E14). The alternative — a public certificate for a DTP subdomain
   pointing at a private IP — needs a DNS change and is out of scope without approval
@@ -121,6 +134,25 @@ version.
 - **The super-admin API key cannot act at the venue.** It has no user id, and every
   FairPlay act needs a named person (the `personFor()` rule).
 
+**Token and credential lifetimes** (defaults; each is an environment setting):
+
+| Credential | Where it lives | Lifetime | Revoked by |
+|---|---|---|---|
+| Admin JWT (existing) | browser `sessionStorage` | 7 days (unchanged) | password change / deactivation; not usable at the venue |
+| Device bootstrap token | shown once to the admin | 1 hour, single use | expiry, or use |
+| Device token | Edge OS keyring; SHA-256 hash in Postgres | 30 days, rotated on each successful sync | `retire` in the cloud — effective at the device's next online call |
+| Session credential bundle | Edge disk, signed | 36 hours from issue | expiry; local disable on the Edge; cloud removal takes effect only when the Edge next fetches a bundle |
+| Local console session | `Secure; HttpOnly; SameSite=Strict` cookie | 8 hours absolute, 30 minutes idle | sign-out; Edge restart; local disable |
+| Presigned PUT (evidence) | Edge memory | 15 minutes, one object key | expiry |
+| Presigned GET (viewer) | viewer's browser | 5 minutes | expiry; access is re-checked on each issue |
+| Edge CA private key | Edge disk, readable by the Edge service user only | until re-provisioned | re-provision the device and reinstall the root |
+
+**What offline revocation cannot do**, stated in the runbook: a person removed in the cloud
+mid-match keeps venue access until the bundle expires or a local admin disables them; a
+retired device keeps recording and working locally, but every sync and presign is refused
+from its next online call; a stolen Edge laptop exposes the recordings on its disk (full-disk
+encryption on the Edge is a Phase 1 prerequisite for that reason), but not the bucket.
+
 ## 5. Time model and contracts
 
 Four clocks, never conflated:
@@ -142,7 +174,8 @@ which is what lets an Edge timestamp be compared with the match console's anchor
 match_clock (period P, mm:ss)
   → event_utc       = period_start_utc[P] + elapsed      (period starts marked on the Edge;
                                                             console anchors used as a cross-check)
-  → source window   = event_utc − camera_offset_ms[source]  ± uncertainty_ms[source]
+  → source window   = event_utc + offset_ms[source]  ± uncertainty_ms[source]
+                                                           (offset > 0: the source lags)
   → MediaMTX /get?path=…&start=<window start>&duration=<pre+post roll>
 ```
 
@@ -150,6 +183,67 @@ match_clock (period P, mm:ss)
 edge_utc of a visible event (kick-off whistle, ball strike), the source time it appears at,
 offset_ms, uncertainty_ms, method, actor_id, evidence frame ref}`. Required at kick-off and
 half-time; prompted after any source reconnect.
+
+**Contracts.** Field-level; the same shapes appear in
+[openapi-outline.yaml](./openapi-outline.yaml) and, from Phase 1, in
+`packages/fairplay-contracts`. All UTC instants are RFC 3339 with milliseconds and a `Z`
+suffix; all durations and offsets are integer milliseconds unless the name says `_ns`.
+
+`EdgeClockSample` — written every 60 s and on every state change:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `edgeUtc` | instant | Edge wall clock at the sample |
+| `edgeMonoNs` | int64 | Edge monotonic clock at the same moment |
+| `ntpState` | `synced` \| `unsynced` \| `unknown` | from the OS time service |
+| `cloudOffsetMs` | int \| null | Edge minus `GET /api/v1/time`, half the round trip subtracted; null offline |
+| `cloudRttMs` | int \| null | round trip of that request; samples with RTT > 1000 ms are kept but not used |
+
+`PeriodMark` — append-only:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | UUID | |
+| `sessionId` | UUID | |
+| `period` | 1 \| 2 \| 3 \| 4 \| `penalties` | 1–2 halves, 3–4 extra time; same numbering as `VisionClockAnchor.half` |
+| `edge` | `start` \| `end` | |
+| `edgeUtc`, `edgeMonoNs` | instant, int64 | when the operator marked it |
+| `consoleAnchorUtc` | instant \| null | the match console's anchor for the same moment (`SbMatchStatistics.clock`), when known |
+| `consoleDeltaMs` | int \| null | `edgeUtc − consoleAnchorUtc`; shown, never averaged away |
+| `actorId` | UUID | |
+| `supersedes` | UUID \| null | |
+
+`SourceSpan` — what a source actually recorded (from MediaMTX `/list` and the segment manifest):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sourceId` | UUID | |
+| `ingestStartUtc` | instant | MediaMTX's recording timestamp for the first frame (receive time, since `useAbsoluteTimestamp: false`) |
+| `durationMs` | int | |
+| `segmentIds` | UUID[] | segments the span is made of |
+
+`Calibration` — append-only, supersede not edit:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `sourceId`, `period` | | |
+| `referenceUtc` | instant | the instant the reference event happened, on the Edge clock (the operator's mark, or another source's recorded time of it) |
+| `observedIngestUtc` | instant | where the event appears in this source's recording |
+| `offsetMs` | int | `observedIngestUtc − referenceUtc`; positive = this source lags |
+| `uncertaintyMs` | int ≥ 0 | half-width of the operator's confidence; at least one frame interval |
+| `method` | `whistle` \| `ball_strike` \| `clapper` \| `manual` | |
+| `referenceSourceId` | UUID \| null | when calibrated against another source rather than the Edge mark |
+| `evidenceSegmentId`, `evidenceOffsetMs` | | the frame the operator looked at |
+| `actorId`, `createdUtc`, `supersedes` | | |
+
+`IncidentWindow` — what an incident asks each source for:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `eventUtc` | instant | the Edge-clock moment of the incident |
+| `eventUtcBasis` | `period_mark` \| `operator_now` \| `sheet_event` | how `eventUtc` was derived |
+| `preRollMs`, `postRollMs` | int | default 20 000 / 10 000 |
+| `perSource[]` | `{sourceId, startIngestUtc, durationMs, offsetMs, uncertaintyMs, calibrationId \| null, state}` | `startIngestUtc = eventUtc − preRollMs + offsetMs − uncertaintyMs`, `durationMs = preRollMs + postRollMs + 2 × uncertaintyMs`; `state` from the failure states below |
 
 **Failure states** the console must show, and the data must record:
 
@@ -205,7 +299,8 @@ before it is used, in the register's existing format and status values:
 |---|---|---|
 | MediaMTX | MIT | pin by version and checksum of the release archive |
 | FFmpeg / ffprobe | build-dependent | Edge uses the distribution's package as subprocesses, like the worker. Covered by the 4 Oct 2026 ruling **only while the Edge stays a DTP-owned machine**; an image or appliance handed to an organiser reopens it ([71](../vision/71-FFMPEG-LICENCE.md)) |
-| Caddy | Apache-2.0 | |
+| Caddy | Apache-2.0 | only if the TLS fallback is taken |
+| `cryptography` (Python) | Apache-2.0 / BSD | Edge CA, certificates, Ed25519 verification |
 | FastAPI, Starlette, Uvicorn, Pydantic | MIT / BSD-3 | |
 | SQLite | public domain | |
 | Video.js, rclone | Apache-2.0, MIT | only if adopted; neither is needed by this design |

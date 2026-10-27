@@ -13,9 +13,11 @@ decision or a score, or claim VAR/FVS status.
 | [inventory.md](./inventory.md) | What exists in the repo and in production that FairPlay sits on |
 | [architecture.md](./architecture.md) | Current and target data flow, components, MediaMTX hardening, browser security, time model, threat model, cost, licences |
 | [equipment-audit.md](./equipment-audit.md) | The matchday-kit questionnaire; every row UNVERIFIED |
-| [integration-map.md](./integration-map.md) | Extension points, schema mapping, permissions, API outline, sync contract |
-| [phase-plan.md](./phase-plan.md) | Gate decisions, P0 backlog with effort ranges, blockers, rollback |
-| [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard |
+| [integration-map.md](./integration-map.md) | Extension points, schema mapping, permissions, API summary, sync contract |
+| [openapi-outline.yaml](./openapi-outline.yaml) | OpenAPI 3.1 outline of the cloud and Edge routes, with the time contracts as schemas |
+| [phase-plan.md](./phase-plan.md) | Gate decisions, P0 backlog with effort ranges, Phase 1 prerequisites, rollback |
+| [blockers.md](./blockers.md) | Blockers, standing escalations, and the assumption register (verified with its source, or UNVERIFIED) |
+| [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard · 0010 admin placement |
 
 ---
 
@@ -40,14 +42,20 @@ environment setting, cloud resource or DNS record changed.
 $0 now; Phase 3 adds a private R2 bucket, estimated at about $0.12/month for ten matches of
 evidence-only storage at the PID's quoted prices, rechecked before use.
 
-**Test evidence** — none to report: Phase 0 wrote documents only, and no test was run.
+**Test evidence** — no code, so no test suite was run. What was checked: every existing
+file path cited in these documents resolves in the repository; every existing route cited
+was read from its controller; `openapi-outline.yaml` parses as YAML (PyYAML 6.0.3) with all
+126 `$ref`s resolving and no description split by an unquoted comma; relative links between
+these documents resolve. The outline was not run through an OpenAPI validator.
 The upstream MediaMTX defaults this design depends on (anonymous publish/read/playback,
 `playbackAllowOrigins: ["*"]`, `recordDeleteAfter: 1d`) were read from its repository on
 27 Oct 2026; the PID's links to MediaMTX's recording and playback docs return 404 (the files
 have been renumbered to `08-record.md` and `09-playback.md`).
 
-**Human approvals required** — the seven gate decisions in
+**Human approvals required** — the eight gate decisions in
 [phase-plan.md](./phase-plan.md#phase-0--discovery-this-folder), and the equipment audit.
+Phase 1's exact entry conditions are the
+[prerequisites table](./phase-plan.md#prerequisites-for-phase-1).
 
 **Rollback** — delete this folder.
 

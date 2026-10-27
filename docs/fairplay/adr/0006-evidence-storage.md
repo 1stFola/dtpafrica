@@ -13,8 +13,13 @@ forbids relaying video through EC2.
 ## Decision
 
 - A new private bucket, logical id `fairplay_evidence`, write-once like `master`, with no
-  public access and no custom domain. Reuses `R2ObjectStore`; whether by extending `BucketId`
-  or a second store instance is decided in Phase 3 against Vision's boundary spec.
+  public access and no custom domain.
+- A **second `R2ObjectStore` instance**, provided inside `FairPlayModule` from
+  `FAIRPLAY_R2_*` settings with an R2 token scoped to this bucket only. Vision's
+  `OBJECT_STORE` provider is not reused: it is built from `VisionConfig`, falls back to the
+  in-memory store when Vision storage is off, and its key can reach Vision's buckets. How
+  the adapter accepts a bucket id outside Vision's `BucketId` list without coupling the two
+  contracts is settled in Phase 3 against `vision-boundaries.spec.ts`.
 - **The Edge holds no R2 credentials.** It calls `POST /fairplay/evidence/presign` with its
   device token; the cloud returns a short-lived presigned PUT (multipart above a threshold,
   using the existing upload-session pattern) for a key under `sessions/{sessionId}/`.
