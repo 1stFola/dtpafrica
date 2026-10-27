@@ -26,6 +26,11 @@ import {
   buildNumberLookup,
   squadNumberLabel,
 } from "../scoreboard/squad-number-lookup";
+import {
+  OFFICIAL_EVENT_TYPES,
+  readTeamOfficial,
+  type TeamOfficial,
+} from "@dtp/engines";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
 import { assessAutoApprove, danglingNumbers } from "./sheet-auto-approve";
 import { mergeRecordedEvents } from "./sheet-event-merge";
@@ -261,6 +266,11 @@ export type RecordedEvent = {
    */
   secondaryPlayerNumber: number | null;
   half: 1 | 2;
+  /**
+   * A card shown to a coach or other team official rather than a player. Set only on a
+   * card, and then the event carries no shirt numbers (see `team-officials.ts`).
+   */
+  official?: TeamOfficial;
 };
 
 /**
@@ -366,11 +376,17 @@ export function readEvents(input: unknown): RecordedEvent[] {
       typeof e.addedMinute === "number" && Number.isFinite(e.addedMinute) && e.addedMinute > 0
         ? Math.floor(e.addedMinute)
         : null;
+    /* An official is a person without a shirt: on a card, they replace the numbers. */
+    const official = OFFICIAL_EVENT_TYPES.has(type) ? readTeamOfficial(e.official) : null;
     const number =
-      typeof e.playerNumber === "number" && Number.isFinite(e.playerNumber) && e.playerNumber > 0
+      !official &&
+      typeof e.playerNumber === "number" &&
+      Number.isFinite(e.playerNumber) &&
+      e.playerNumber > 0
         ? Math.floor(e.playerNumber)
         : null;
     const secondary =
+      !official &&
       typeof e.secondaryPlayerNumber === "number" &&
       Number.isFinite(e.secondaryPlayerNumber) &&
       e.secondaryPlayerNumber > 0
@@ -385,6 +401,8 @@ export function readEvents(input: unknown): RecordedEvent[] {
       playerNumber: number,
       secondaryPlayerNumber: secondary,
       half: e.half === 2 ? 2 : 1,
+      /* Only when there is one, so a player event reads back exactly as it was sent. */
+      ...(official ? { official } : {}),
     });
   }
   return out;
@@ -1540,6 +1558,9 @@ export class AdminMatchStatsService {
         playerNumber: event.playerNumber,
         secondaryPlayerNumber: event.secondaryPlayerNumber,
         recorderSequence: index,
+        /* Here and in the comment, never in `playerLabel`: player history matches a
+           player by the name on that label. */
+        ...(event.official ? { official: event.official } : {}),
       } as Prisma.InputJsonValue,
     }));
 

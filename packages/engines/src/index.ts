@@ -37,4 +37,5 @@ export {
 } from "./scoreboard/normalize-player-name";
 export * from "./scoreboard/placeholder-names";
 export * from "./scoreboard/squad-number-lookup";
+export * from "./scoreboard/team-officials";
 export * from "./media-url";

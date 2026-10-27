@@ -2,6 +2,12 @@ import { Link } from "react-router-dom";
 import { EVENT_LABELS, type SbMatchEvent, type SbTeamRef } from "../../../api/scoreboard";
 import { namesAPerson, playerDisplayName } from "../../../lib/player-display-name";
 import { compareEventClock, eventClockLabel } from "../event-clock";
+import {
+  OFFICIAL_EVENT_TYPES,
+  readTeamOfficial,
+  teamOfficialLabel,
+  type TeamOfficial,
+} from "@dtp/engines/team-officials";
 
 const EVENT_ICONS: Record<string, string> = {
   goal: "⚽",
@@ -349,9 +355,27 @@ function normalizedTimelineLabel(value: string | null | undefined): string | nul
   return label.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+const SINGLE_HOLDER_ROLES = new Set(["head_coach", "team_manager"]);
+
+/** The coach or other official a card was shown to, when it was not a player. */
+function eventOfficial(ev: SbMatchEvent): TeamOfficial | null {
+  return OFFICIAL_EVENT_TYPES.has(ev.type) ? readTeamOfficial(ev.metadata?.official) : null;
+}
+
 function playerDisciplineKeys(ev: SbMatchEvent): string[] {
   const csvType = resolveCsvEventType(ev);
   if (csvType !== "yellow_card" || !ev.teamId) return [];
+
+  /* Officials are counted apart from players: a coach's second yellow is a sending-off
+     too, but never a player's second yellow. Unnamed, the role stands for the person only
+     where a team has one of them; two unnamed assistants may be two people. */
+  const official = eventOfficial(ev);
+  if (official) {
+    if (official.name) return [`${ev.teamId}:official:${official.name.toLowerCase()}`];
+    return SINGLE_HOLDER_ROLES.has(official.role)
+      ? [`${ev.teamId}:official-role:${official.role}`]
+      : [];
+  }
 
   const keys = new Set<string>();
   if (ev.playerId) keys.add(`${ev.teamId}:id:${ev.playerId}`);
@@ -474,6 +498,8 @@ type ParsedEvent = {
   showAssist: boolean;
   saveDisplay: SaveDisplay | null;
   club?: string;
+  /** "Head coach · Ade Bola" on a card shown to the bench; never a player link. */
+  officialLabel: string | null;
 };
 
 function parseEvent(
@@ -533,6 +559,10 @@ function parseEvent(
     showAssist,
     saveDisplay,
     club,
+    officialLabel: (() => {
+      const official = eventOfficial(ev);
+      return official ? teamOfficialLabel(official) : null;
+    })(),
   };
 }
 
@@ -555,13 +585,15 @@ function EventCard({
     assistLabel,
     saveDisplay,
     club,
+    officialLabel,
   } = parsed;
 
   return (
     <div className={`sbm-event__card sbm-event__card--${align}`}>
-      {(club || saveDisplay || showPrimary || showAssist || showDetail || (ev.highlights?.length ?? 0) > 0) && (
+      {(club || saveDisplay || showPrimary || showAssist || showDetail || officialLabel || (ev.highlights?.length ?? 0) > 0) && (
         <div className="sbm-event__body">
           {club && <span className="sbm-event__club">{club}</span>}
+          {officialLabel && <span className="sbm-event__official">{officialLabel}</span>}
           {saveDisplay?.kickerLabel && (
             <>
               <PlayerLink

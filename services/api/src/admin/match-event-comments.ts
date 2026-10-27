@@ -10,8 +10,12 @@
  * event's position, so regenerating a sheet produces identical copy.
  */
 
+import { teamOfficialPhrase, type TeamOfficial } from "@dtp/engines";
+
 export type RecordedEventInput = {
   type: string;
+  /** A coach or other official shown a card; the event then has no shirt number. */
+  official?: TeamOfficial | null;
   /** Incoming player on a substitution, or the assist provider on a goal. */
   secondaryPlayerNumber?: number | null;
   /** Logged match minute. Added time is carried separately, football-style. */
@@ -309,6 +313,20 @@ const TEMPLATES: Record<string, Variant[]> = {
   ],
 };
 
+/* A card for someone on the bench. Never "goes into the book" as a player would, and
+   never "leaving the team with fewer players": a coach's red changes nothing on the pitch. */
+type OfficialVariant = (ctx: CommentContext, who: string) => string;
+const OFFICIAL_TEMPLATES: Record<string, OfficialVariant[]> = {
+  yellow_card: [
+    (c, who) => `Yellow Card! The referee cautions the ${c.teamName} ${who} on the touchline.`,
+    (c, who) => `Yellow Card! The ${c.teamName} ${who} is shown a yellow card in the technical area.`,
+  ],
+  red_card: [
+    (c, who) => `Red Card! The ${c.teamName} ${who} is sent to the stands by the referee.`,
+    (c, who) => `Red Card! The referee dismisses the ${c.teamName} ${who} from the technical area.`,
+  ],
+};
+
 /** Readable fallback for any type without bespoke copy. */
 function fallback(type: string, ctx: CommentContext, event: RecordedEventInput): string {
   const label = type
@@ -331,10 +349,13 @@ export function generateEventComment(
   ctx: CommentContext,
   occurrence = 0
 ): string {
+  const officialVariants = event.official ? OFFICIAL_TEMPLATES[event.type] : undefined;
   const variants = TEMPLATES[event.type];
-  const body = variants?.length
-    ? variants[occurrence % variants.length](ctx, event)
-    : fallback(event.type, ctx, event);
+  const body = officialVariants?.length
+    ? officialVariants[occurrence % officialVariants.length](ctx, teamOfficialPhrase(event.official!))
+    : variants?.length
+      ? variants[occurrence % variants.length](ctx, event)
+      : fallback(event.type, ctx, event);
   return `${formatMinute(event.minute, event.addedMinute)} - ${body}`;
 }
 

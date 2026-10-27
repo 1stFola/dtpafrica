@@ -26,6 +26,28 @@ import {
   type NumberToCheck,
   type UnregisteredNumber,
 } from "./unregisteredNumber";
+import {
+  OFFICIAL_EVENT_TYPES,
+  TEAM_OFFICIAL_NAME_MAX,
+  TEAM_OFFICIAL_ROLES,
+  TEAM_OFFICIAL_ROLE_LABELS,
+  teamOfficialLabel,
+  type TeamOfficial,
+  type TeamOfficialRole,
+} from "@dtp/engines/team-officials";
+
+/**
+ * Step 3 answered with an official instead of a shirt number. `role` is null until one is
+ * picked; the whole value is null while step 3 takes a player.
+ */
+export type OfficialEntry = { role: TeamOfficialRole | null; name: string };
+
+/** The official an entry names, once a role is picked. */
+export function officialFromEntry(entry: OfficialEntry | null): TeamOfficial | null {
+  if (!entry?.role) return null;
+  const name = entry.name.replace(/\s+/g, " ").trim();
+  return { role: entry.role, name: name || null };
+}
 
 /**
  * Event types that need a second player before they can be logged: the incoming
@@ -68,6 +90,7 @@ export function MatchEventsTab({
   captured,
   side,
   playerNumber,
+  official,
   onCapturedUsed,
   clock,
   addedInput,
@@ -87,6 +110,8 @@ export function MatchEventsTab({
   /** Null until step 2 is answered — no side is ever inherited. */
   side: Side | null;
   playerNumber: string;
+  /** Set while step 3 names a coach or other official instead of a shirt number. */
+  official: OfficialEntry | null;
   onCapturedUsed: () => void;
   clock: ReturnType<typeof useMatchClock>;
   addedInput: string;
@@ -111,6 +136,9 @@ export function MatchEventsTab({
     playerNumber: "",
     secondaryPlayerNumber: "",
     half: "1",
+    /* "" for a player; otherwise the official the card was shown to. */
+    officialRole: "" as TeamOfficialRole | "",
+    officialName: "",
   });
   const [shootoutPlayerNumber, setShootoutPlayerNumber] = useState("");
   const [shootoutOutcome, setShootoutOutcome] = useState<"goal" | "miss">("goal");
@@ -139,20 +167,41 @@ export function MatchEventsTab({
     const teamId = s === "home" ? sheet.match.homeTeam.id : sheet.match.awayTeam.id;
     return playerLabelsByKey?.get(`${teamId}:${number}`) ?? `No. ${number}`;
   };
+  /** Who an event in the log was about: an official, or the player and second player. */
+  const whoFor = (e: RecordedEvent) => {
+    if (e.official) return ` · ${teamOfficialLabel(e.official)}`;
+    const primary = e.playerNumber ? ` · ${labelForNumber(e.side, e.playerNumber)}` : "";
+    const secondary = e.secondaryPlayerNumber
+      ? e.type === "substitution"
+        ? ` → ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
+        : ` · assist ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
+      : "";
+    return primary + secondary;
+  };
   const stepsEnabled = editable && clock.started;
   /* Reopened after full time: the minute is typed in step 1 and can be changed on edit. */
   const correcting = clock.correcting;
   const hasSide = Boolean(side);
   const primaryNumber = parseJersey(playerNumber);
   const hasPlayerNumber = primaryNumber != null;
+  const officialMode = official != null;
+  const chosenOfficial = officialFromEntry(official);
   /* Every earlier step must be answered before step 4 unlocks: no event can be
      filed against the wrong minute, the wrong side, or no player at all. */
   const canLog =
-    stepsEnabled && Boolean(captured) && hasSide && hasPlayerNumber;
+    stepsEnabled &&
+    Boolean(captured) &&
+    hasSide &&
+    (officialMode ? chosenOfficial != null : hasPlayerNumber);
+  /* An official can only be shown a card, so every other button stays locked for one. */
+  const lockedForType = officialMode
+    ? (type: string) => !canLog || !OFFICIAL_EVENT_TYPES.has(type)
+    : undefined;
 
   /** Step 4 — the tap. Types needing a second player open a prompt first. */
   const addEvent = (type: string) => {
     if (!canLog || !captured || !side) return;
+    if (officialMode && !OFFICIAL_EVENT_TYPES.has(type)) return;
     if (SECOND_PLAYER_PROMPT[type]) {
       setSecondNumber("");
       setPendingType(type);
@@ -177,7 +226,9 @@ export function MatchEventsTab({
   /** Commit the event, with the second player's number when one was given. */
   const writeEvent = (type: string, secondary: number | null, confirmed = false) => {
     if (!captured || !side) return;
+    /* An official has no shirt number, so there is nothing to check against the squad. */
     if (
+      !chosenOfficial &&
       !confirmed &&
       holdForUnregistered(
         [
@@ -197,9 +248,10 @@ export function MatchEventsTab({
       minute: captured.minute,
       addedMinute: captured.added,
       side,
-      playerNumber: primaryNumber,
-      secondaryPlayerNumber: secondary,
+      playerNumber: chosenOfficial ? null : primaryNumber,
+      secondaryPlayerNumber: chosenOfficial ? null : secondary,
       half: captured.half ?? clock.half,
+      ...(chosenOfficial ? { official: chosenOfficial } : {}),
     };
     onChange({ events: correcting ? placeChronologically(events, next) : [...events, next] });
     setPendingType(null);
@@ -224,6 +276,8 @@ export function MatchEventsTab({
       secondaryPlayerNumber:
         event.secondaryPlayerNumber == null ? "" : String(event.secondaryPlayerNumber),
       half: String(event.half),
+      officialRole: event.official?.role ?? "",
+      officialName: event.official?.name ?? "",
     });
   };
 
@@ -246,10 +300,18 @@ export function MatchEventsTab({
         })
       : null;
 
+  /* A card can be for an official; any other type is always a player's. */
+  const editCanBeOfficial = OFFICIAL_EVENT_TYPES.has(editDraft.type);
+  const editOfficial =
+    editCanBeOfficial && editDraft.officialRole
+      ? officialFromEntry({ role: editDraft.officialRole, name: editDraft.officialName })
+      : null;
+
   /* A blank number clears it; anything else typed has to be a shirt number. */
   const needsSecond = Boolean(SECOND_PLAYER_PROMPT[editDraft.type]);
   const editNumberError =
     editing &&
+    !editOfficial &&
     (invalidJersey(editDraft.playerNumber) ||
       (needsSecond && invalidJersey(editDraft.secondaryPlayerNumber)))
       ? JERSEY_RANGE
@@ -259,15 +321,19 @@ export function MatchEventsTab({
     if (!editable || !editing) return;
     if (editMinute && !editMinute.ok) return;
     if (editNumberError) return;
+    /* Dropped from the copy, then set again only if the edit still names an official. */
+    const { official: _was, ...before } = editing;
     const next: RecordedEvent = {
-      ...editing,
+      ...before,
       type: editDraft.type,
       minute: editMinute?.ok ? editMinute.minute : parseMinute(editDraft.minute),
       addedMinute: editMinute?.ok ? editMinute.added : parsePositiveInt(editDraft.addedMinute),
       side: editDraft.side,
-      playerNumber: parseJersey(editDraft.playerNumber),
-      secondaryPlayerNumber: needsSecond ? parseJersey(editDraft.secondaryPlayerNumber) : null,
+      playerNumber: editOfficial ? null : parseJersey(editDraft.playerNumber),
+      secondaryPlayerNumber:
+        !editOfficial && needsSecond ? parseJersey(editDraft.secondaryPlayerNumber) : null,
       half: editMinute?.ok ? editMinute.half : editDraft.half === "2" ? 2 : 1,
+      ...(editOfficial ? { official: editOfficial } : {}),
     };
     /* Only a number this edit puts there: one already filed was confirmed when it was. */
     const moved = next.side !== editing.side;
@@ -434,6 +500,15 @@ export function MatchEventsTab({
                 </em>
               ) : !side ? (
                 <em className="mcx-step__gate"> — choose home or away first (step 2)</em>
+              ) : officialMode ? (
+                chosenOfficial ? (
+                  <em className="mcx-step__gate">
+                    {" "}
+                    — Yellow Card or Red Card for the {teamOfficialLabel(chosenOfficial)}
+                  </em>
+                ) : (
+                  <em className="mcx-step__gate"> — choose the official's role (step 3)</em>
+                )
               ) : playerNumber.trim() === "" ? (
                 <em className="mcx-step__gate"> — enter a jersey number first (step 3)</em>
               ) : !hasPlayerNumber ? (
@@ -443,6 +518,7 @@ export function MatchEventsTab({
             <EventGrid
               types={sheet.eventTypes}
               locked={!canLog}
+              lockedForType={lockedForType}
               prefs={prefs}
               captureMap={sheet.eventCapture}
               statLabels={statLabels}
@@ -471,12 +547,7 @@ export function MatchEventsTab({
                   <strong>{labelFor(e.type)}</strong>
                   <span className="mcx-logitem__meta">
                     {teamFor(e.side)}
-                    {e.playerNumber ? ` · ${labelForNumber(e.side, e.playerNumber)}` : ""}
-                    {e.secondaryPlayerNumber
-                      ? e.type === "substitution"
-                        ? ` → ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
-                        : ` · assist ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
-                      : ""}
+                    {whoFor(e)}
                   </span>
                 </span>
                 {editable && (
@@ -523,11 +594,14 @@ export function MatchEventsTab({
                     setEditDraft((draft) => ({ ...draft, type: event.target.value }))
                   }
                 >
-                  {Array.from(new Set([editing.type, ...sheet.eventTypes])).map((type) => (
-                    <option key={type} value={type}>
-                      {labelFor(type)}
-                    </option>
-                  ))}
+                  {/* An official keeps to the cards: nothing else can be theirs. */}
+                  {Array.from(new Set([editing.type, ...sheet.eventTypes]))
+                    .filter((type) => !editOfficial || OFFICIAL_EVENT_TYPES.has(type))
+                    .map((type) => (
+                      <option key={type} value={type}>
+                        {labelFor(type)}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label>
@@ -582,19 +656,55 @@ export function MatchEventsTab({
                   <option value="2">2nd half</option>
                 </select>
               </label>
-              <label>
-                <span>Player number</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={99}
-                  inputMode="numeric"
-                  value={editDraft.playerNumber}
-                  onChange={(event) =>
-                    setEditDraft((draft) => ({ ...draft, playerNumber: event.target.value }))
-                  }
-                />
-              </label>
+              {editCanBeOfficial && (
+                <label>
+                  <span>Shown to</span>
+                  <select
+                    value={editDraft.officialRole}
+                    onChange={(event) =>
+                      setEditDraft((draft) => ({
+                        ...draft,
+                        officialRole: event.target.value as TeamOfficialRole | "",
+                      }))
+                    }
+                  >
+                    <option value="">A player</option>
+                    {TEAM_OFFICIAL_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {TEAM_OFFICIAL_ROLE_LABELS[role]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {editOfficial ? (
+                <label>
+                  <span>Official's name</span>
+                  <input
+                    type="text"
+                    maxLength={TEAM_OFFICIAL_NAME_MAX}
+                    value={editDraft.officialName}
+                    onChange={(event) =>
+                      setEditDraft((draft) => ({ ...draft, officialName: event.target.value }))
+                    }
+                    placeholder="Optional"
+                  />
+                </label>
+              ) : (
+                <label>
+                  <span>Player number</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    inputMode="numeric"
+                    value={editDraft.playerNumber}
+                    onChange={(event) =>
+                      setEditDraft((draft) => ({ ...draft, playerNumber: event.target.value }))
+                    }
+                  />
+                </label>
+              )}
               {SECOND_PLAYER_PROMPT[editDraft.type] && (
                 <label>
                   <span>{SECOND_PLAYER_PROMPT[editDraft.type].label}</span>
