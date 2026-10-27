@@ -49,6 +49,13 @@ import {
   useMatchClock,
 } from "./useMatchClock";
 import { checkTypedMinute } from "./correctionMinute";
+import {
+  UnregisteredNumberPrompt,
+  findUnregistered,
+  parseJersey,
+  type NumberToCheck,
+  type UnregisteredNumber,
+} from "./unregisteredNumber";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { formatQuiet } from "../components/StoppedRecordingsPanel";
 import {
@@ -1149,6 +1156,11 @@ export function AdminMatchStatsConsolePage() {
   const [showKickoffStarter, setShowKickoffStarter] = useState(false);
   const [kickoffSide, setKickoffSide] = useState<Side | null>(null);
   const [kickoffNumber, setKickoffNumber] = useState("");
+  /* Said inside the kick-off prompt: the page's error line is hidden behind it. */
+  const [kickoffError, setKickoffError] = useState<string | null>(null);
+  const [kickoffUnregistered, setKickoffUnregistered] = useState<UnregisteredNumber[] | null>(
+    null
+  );
 
   usePageTitle(sheet ? `${sheet.match.homeTeam.name} vs ${sheet.match.awayTeam.name}` : "Match console");
 
@@ -1525,18 +1537,29 @@ export function AdminMatchStatsConsolePage() {
   const openKickoffStarter = () => {
     setKickoffSide(side);
     setKickoffNumber(playerNumber);
+    setKickoffError(null);
     setShowKickoffStarter(true);
   };
 
-  const confirmKickoffStarter = () => {
+  const confirmKickoffStarter = (confirmed = false) => {
     if (!kickoffSide) {
-      setError("Choose the team that played the kick-off.");
+      setKickoffError("Choose the team that played the kick-off.");
       return;
     }
-    const jersey = Number(kickoffNumber);
-    if (!Number.isFinite(jersey) || jersey < 1 || jersey > 99) {
-      setError("Enter the jersey number of the player who played the kick-off.");
+    const jersey = parseJersey(kickoffNumber);
+    if (jersey == null) {
+      setKickoffError(
+        "Enter the jersey number, 1 to 99, of the player who played the kick-off."
+      );
       return;
+    }
+    setKickoffError(null);
+    if (!confirmed) {
+      const unregistered = checkNumbers([{ side: kickoffSide, number: jersey }]);
+      if (unregistered.length > 0) {
+        setKickoffUnregistered(unregistered);
+        return;
+      }
     }
     const nextKickoff: RecordedEvent = {
       id: `kick_off-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1544,7 +1567,7 @@ export function AdminMatchStatsConsolePage() {
       minute: 0,
       addedMinute: null,
       side: kickoffSide,
-      playerNumber: Math.floor(jersey),
+      playerNumber: jersey,
       secondaryPlayerNumber: null,
       half: 1,
     };
@@ -1586,8 +1609,14 @@ export function AdminMatchStatsConsolePage() {
    * The others (asking for a correction, releasing a lock, sending back) do not wait for a
    * sync that a locked sheet would refuse, and never discard what is still unsent: they used
    * to clear the device's draft whatever it held.
+   *
+   * Resolves to whether it worked, so a caller clears a typed note only when it was sent:
+   * the error is caught here, and a bare `.then` used to wipe the note on a failure too.
    */
-  const act = async (fn: () => Promise<MatchStatsSheet>, options: { needsSync?: boolean } = {}) => {
+  const act = async (
+    fn: () => Promise<MatchStatsSheet>,
+    options: { needsSync?: boolean } = {}
+  ): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
@@ -1607,8 +1636,10 @@ export function AdminMatchStatsConsolePage() {
         clearDraft(matchId);
       }
       loadHistory();
+      return true;
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -1645,11 +1676,18 @@ export function AdminMatchStatsConsolePage() {
     () => capturedFromEvents(sheet?.eventCapture ?? {}, events, splitKeys),
     [sheet, events, splitKeys]
   );
+  const numberLookup = useMemo(() => (sheet ? matchNumberLookup(sheet.match) : null), [sheet]);
+  /* The same lookup again, so "not registered" is exactly a number published with no name. */
+  const checkNumbers = useCallback(
+    (entries: NumberToCheck[]) =>
+      sheet && numberLookup ? findUnregistered(numberLookup, sheet.match, entries) : [],
+    [sheet, numberLookup]
+  );
   const playerLabelsByKey = useMemo(() => {
-    if (!sheet) return new Map<string, string>();
+    const lookup = numberLookup;
+    if (!sheet || !lookup) return new Map<string, string>();
     /* Built from the same lookup as everything else, so this list and the event
        rows can never disagree about who wears a number. */
-    const lookup = matchNumberLookup(sheet.match);
     const labels = new Map<string, string>();
     for (const p of [...(sheet.match.squadPlayers ?? []), ...(sheet.match.teamSquad ?? [])]) {
       if (p.jerseyNumber == null || p.jerseyNumber <= 0) continue;
@@ -1659,7 +1697,7 @@ export function AdminMatchStatsConsolePage() {
       }
     }
     return labels;
-  }, [sheet]);
+  }, [sheet, numberLookup]);
 
   const totals = useMemo(() => {
     const out: Record<string, SidePair> = {};
@@ -1956,7 +1994,7 @@ export function AdminMatchStatsConsolePage() {
             <label className="mcx-jersey">
               <span
                 className={`mcx-step__n mcx-step__n--inline${
-                  side && playerNumber.trim() !== "" ? "" : " is-locked"
+                  side && parseJersey(playerNumber) != null ? "" : " is-locked"
                 }`}
               >
                 3
@@ -2087,7 +2125,7 @@ export function AdminMatchStatsConsolePage() {
                   disabled={busy || !releaseNote.trim()}
                   onClick={() =>
                     act(() => matchStatsApi.releaseIdleLock(matchId, releaseNote.trim())).then(
-                      () => setReleaseNote("")
+                      (ok) => ok && setReleaseNote("")
                     )
                   }
                 >
@@ -2122,7 +2160,8 @@ export function AdminMatchStatsConsolePage() {
                 askCorrection
                   ? act(() =>
                       matchStatsApi.requestCorrection(matchId, correctionNote)
-                    ).then(() => {
+                    ).then((ok) => {
+                      if (!ok) return;
                       setAskCorrection(false);
                       setCorrectionNote("");
                     })
@@ -2309,6 +2348,7 @@ export function AdminMatchStatsConsolePage() {
             homeName={match.homeTeam.name}
             awayName={match.awayTeam.name}
             playerLabelsByKey={playerLabelsByKey}
+            checkNumbers={checkNumbers}
           />
         </>
       )}
@@ -2396,6 +2436,9 @@ export function AdminMatchStatsConsolePage() {
                 autoFocus
               />
             </label>
+            {kickoffError && (
+              <p className="mcx-error" role="alert">{kickoffError}</p>
+            )}
             <div className="mcx-prompt__actions">
               <button
                 type="button"
@@ -2407,13 +2450,24 @@ export function AdminMatchStatsConsolePage() {
               <button
                 type="button"
                 className="mcx-btn mcx-btn--primary"
-                onClick={confirmKickoffStarter}
+                onClick={() => confirmKickoffStarter()}
               >
                 Start match
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {kickoffUnregistered && (
+        <UnregisteredNumberPrompt
+          numbers={kickoffUnregistered}
+          onConfirm={() => {
+            setKickoffUnregistered(null);
+            confirmKickoffStarter(true);
+          }}
+          onCancel={() => setKickoffUnregistered(null)}
+        />
       )}
 
       {showTrainingLive && (
