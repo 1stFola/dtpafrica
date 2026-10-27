@@ -20,6 +20,34 @@ import {
   shootoutStartingSide,
 } from "./shootout";
 import { checkTypedMinute, closesTheMatch, placeChronologically } from "./correctionMinute";
+import {
+  UnregisteredNumberPrompt,
+  parseJersey,
+  type NumberToCheck,
+  type UnregisteredNumber,
+} from "./unregisteredNumber";
+import {
+  OFFICIAL_EVENT_TYPES,
+  TEAM_OFFICIAL_NAME_MAX,
+  TEAM_OFFICIAL_ROLES,
+  TEAM_OFFICIAL_ROLE_LABELS,
+  teamOfficialLabel,
+  type TeamOfficial,
+  type TeamOfficialRole,
+} from "@dtp/engines/team-officials";
+
+/**
+ * Step 3 answered with an official instead of a shirt number. `role` is null until one is
+ * picked; the whole value is null while step 3 takes a player.
+ */
+export type OfficialEntry = { role: TeamOfficialRole | null; name: string };
+
+/** The official an entry names, once a role is picked. */
+export function officialFromEntry(entry: OfficialEntry | null): TeamOfficial | null {
+  if (!entry?.role) return null;
+  const name = entry.name.replace(/\s+/g, " ").trim();
+  return { role: entry.role, name: name || null };
+}
 
 /**
  * Event types that need a second player before they can be logged: the incoming
@@ -29,6 +57,19 @@ const SECOND_PLAYER_PROMPT: Record<string, { title: string; label: string; allow
   substitution: { title: "Substitution", label: "Incoming player's number" },
   goal: { title: "Goal", label: "Assist — jersey number", allowNone: "Solo Effort" },
 };
+
+/** Where to pick up once the recorder says an unregistered number is right. */
+type HeldEntry =
+  | { kind: "event"; type: string; secondary: number | null }
+  | { kind: "edit" }
+  | { kind: "shootout" };
+
+const JERSEY_RANGE = "Jersey numbers run from 1 to 99.";
+
+/** Typed but not a shirt number. A blank is not invalid, only unanswered. */
+function invalidJersey(value: string): boolean {
+  return value.trim() !== "" && parseJersey(value) == null;
+}
 
 function labelFor(type: string): string {
   return EVENT_LABELS[type] ?? type.replace(/_/g, " ");
@@ -49,6 +90,7 @@ export function MatchEventsTab({
   captured,
   side,
   playerNumber,
+  official,
   onCapturedUsed,
   clock,
   addedInput,
@@ -57,6 +99,7 @@ export function MatchEventsTab({
   homeName,
   awayName,
   playerLabelsByKey,
+  checkNumbers,
 }: {
   sheet: MatchStatsSheet;
   editable: boolean;
@@ -67,6 +110,8 @@ export function MatchEventsTab({
   /** Null until step 2 is answered — no side is ever inherited. */
   side: Side | null;
   playerNumber: string;
+  /** Set while step 3 names a coach or other official instead of a shirt number. */
+  official: OfficialEntry | null;
   onCapturedUsed: () => void;
   clock: ReturnType<typeof useMatchClock>;
   addedInput: string;
@@ -75,6 +120,8 @@ export function MatchEventsTab({
   homeName: string;
   awayName: string;
   playerLabelsByKey?: Map<string, string>;
+  /** The numbers among these that nobody in the squad wears. */
+  checkNumbers: (entries: NumberToCheck[]) => UnregisteredNumber[];
 }) {
   /* Held while the second-player prompt is open, so the event is only written
      once that answer is given or explicitly waived. */
@@ -89,12 +136,20 @@ export function MatchEventsTab({
     playerNumber: "",
     secondaryPlayerNumber: "",
     half: "1",
+    /* "" for a player; otherwise the official the card was shown to. */
+    officialRole: "" as TeamOfficialRole | "",
+    officialName: "",
   });
   const [shootoutPlayerNumber, setShootoutPlayerNumber] = useState("");
   const [shootoutOutcome, setShootoutOutcome] = useState<"goal" | "miss">("goal");
   // Closing the shootout modal only hides it; the shootout itself carries on
   // and still ends automatically once it is decided.
   const [shootoutDismissed, setShootoutDismissed] = useState(false);
+  /* An entry against a number nobody in the squad wears, waiting on the recorder. */
+  const [numberCheck, setNumberCheck] = useState<{
+    numbers: UnregisteredNumber[];
+    held: HeldEntry;
+  } | null>(null);
 
   const { prefs } = useFeedbackPrefs();
   const playSound = useUISound({ enabled: prefs.sound, intensity: prefs.intensity });
@@ -112,19 +167,41 @@ export function MatchEventsTab({
     const teamId = s === "home" ? sheet.match.homeTeam.id : sheet.match.awayTeam.id;
     return playerLabelsByKey?.get(`${teamId}:${number}`) ?? `No. ${number}`;
   };
+  /** Who an event in the log was about: an official, or the player and second player. */
+  const whoFor = (e: RecordedEvent) => {
+    if (e.official) return ` · ${teamOfficialLabel(e.official)}`;
+    const primary = e.playerNumber ? ` · ${labelForNumber(e.side, e.playerNumber)}` : "";
+    const secondary = e.secondaryPlayerNumber
+      ? e.type === "substitution"
+        ? ` → ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
+        : ` · assist ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
+      : "";
+    return primary + secondary;
+  };
   const stepsEnabled = editable && clock.started;
   /* Reopened after full time: the minute is typed in step 1 and can be changed on edit. */
   const correcting = clock.correcting;
   const hasSide = Boolean(side);
-  const hasPlayerNumber = playerNumber.trim() !== "";
+  const primaryNumber = parseJersey(playerNumber);
+  const hasPlayerNumber = primaryNumber != null;
+  const officialMode = official != null;
+  const chosenOfficial = officialFromEntry(official);
   /* Every earlier step must be answered before step 4 unlocks: no event can be
      filed against the wrong minute, the wrong side, or no player at all. */
   const canLog =
-    stepsEnabled && Boolean(captured) && hasSide && hasPlayerNumber;
+    stepsEnabled &&
+    Boolean(captured) &&
+    hasSide &&
+    (officialMode ? chosenOfficial != null : hasPlayerNumber);
+  /* An official can only be shown a card, so every other button stays locked for one. */
+  const lockedForType = officialMode
+    ? (type: string) => !canLog || !OFFICIAL_EVENT_TYPES.has(type)
+    : undefined;
 
   /** Step 4 — the tap. Types needing a second player open a prompt first. */
   const addEvent = (type: string) => {
     if (!canLog || !captured || !side) return;
+    if (officialMode && !OFFICIAL_EVENT_TYPES.has(type)) return;
     if (SECOND_PLAYER_PROMPT[type]) {
       setSecondNumber("");
       setPendingType(type);
@@ -134,9 +211,35 @@ export function MatchEventsTab({
     writeEvent(type, null);
   };
 
+  /**
+   * Hold an entry whose number nobody in the squad wears until the recorder confirms it.
+   * True when it was held; it is then filed from `confirmUnregistered`.
+   */
+  const holdForUnregistered = (entries: NumberToCheck[], held: HeldEntry): boolean => {
+    const numbers = checkNumbers(entries);
+    if (numbers.length === 0) return false;
+    playSound("error");
+    setNumberCheck({ numbers, held });
+    return true;
+  };
+
   /** Commit the event, with the second player's number when one was given. */
-  const writeEvent = (type: string, secondary: number | null) => {
+  const writeEvent = (type: string, secondary: number | null, confirmed = false) => {
     if (!captured || !side) return;
+    /* An official has no shirt number, so there is nothing to check against the squad. */
+    if (
+      !chosenOfficial &&
+      !confirmed &&
+      holdForUnregistered(
+        [
+          { side, number: primaryNumber },
+          { side, number: secondary },
+        ],
+        { kind: "event", type, secondary }
+      )
+    ) {
+      return;
+    }
     // Sounded here rather than on tap, so a goal cheers when the assist lands.
     playSound(soundFor(type));
     const next: RecordedEvent = {
@@ -145,9 +248,10 @@ export function MatchEventsTab({
       minute: captured.minute,
       addedMinute: captured.added,
       side,
-      playerNumber: playerNumber ? Number(playerNumber) : null,
-      secondaryPlayerNumber: secondary,
+      playerNumber: chosenOfficial ? null : primaryNumber,
+      secondaryPlayerNumber: chosenOfficial ? null : secondary,
       half: captured.half ?? clock.half,
+      ...(chosenOfficial ? { official: chosenOfficial } : {}),
     };
     onChange({ events: correcting ? placeChronologically(events, next) : [...events, next] });
     setPendingType(null);
@@ -172,6 +276,8 @@ export function MatchEventsTab({
       secondaryPlayerNumber:
         event.secondaryPlayerNumber == null ? "" : String(event.secondaryPlayerNumber),
       half: String(event.half),
+      officialRole: event.official?.role ?? "",
+      officialName: event.official?.name ?? "",
     });
   };
 
@@ -194,22 +300,60 @@ export function MatchEventsTab({
         })
       : null;
 
-  const saveEdit = () => {
+  /* A card can be for an official; any other type is always a player's. */
+  const editCanBeOfficial = OFFICIAL_EVENT_TYPES.has(editDraft.type);
+  const editOfficial =
+    editCanBeOfficial && editDraft.officialRole
+      ? officialFromEntry({ role: editDraft.officialRole, name: editDraft.officialName })
+      : null;
+
+  /* A blank number clears it; anything else typed has to be a shirt number. */
+  const needsSecond = Boolean(SECOND_PLAYER_PROMPT[editDraft.type]);
+  const editNumberError =
+    editing &&
+    !editOfficial &&
+    (invalidJersey(editDraft.playerNumber) ||
+      (needsSecond && invalidJersey(editDraft.secondaryPlayerNumber)))
+      ? JERSEY_RANGE
+      : null;
+
+  const saveEdit = (confirmed = false) => {
     if (!editable || !editing) return;
     if (editMinute && !editMinute.ok) return;
-    const needsSecond = Boolean(SECOND_PLAYER_PROMPT[editDraft.type]);
+    if (editNumberError) return;
+    /* Dropped from the copy, then set again only if the edit still names an official. */
+    const { official: _was, ...before } = editing;
     const next: RecordedEvent = {
-      ...editing,
+      ...before,
       type: editDraft.type,
       minute: editMinute?.ok ? editMinute.minute : parseMinute(editDraft.minute),
       addedMinute: editMinute?.ok ? editMinute.added : parsePositiveInt(editDraft.addedMinute),
       side: editDraft.side,
-      playerNumber: parsePositiveInt(editDraft.playerNumber),
-      secondaryPlayerNumber: needsSecond
-        ? parsePositiveInt(editDraft.secondaryPlayerNumber)
-        : null,
+      playerNumber: editOfficial ? null : parseJersey(editDraft.playerNumber),
+      secondaryPlayerNumber:
+        !editOfficial && needsSecond ? parseJersey(editDraft.secondaryPlayerNumber) : null,
       half: editMinute?.ok ? editMinute.half : editDraft.half === "2" ? 2 : 1,
+      ...(editOfficial ? { official: editOfficial } : {}),
     };
+    /* Only a number this edit puts there: one already filed was confirmed when it was. */
+    const moved = next.side !== editing.side;
+    const entered = (number: number | null, before: number | null) =>
+      moved || number !== before ? number : null;
+    if (
+      !confirmed &&
+      holdForUnregistered(
+        [
+          { side: next.side, number: entered(next.playerNumber, editing.playerNumber) },
+          {
+            side: next.side,
+            number: entered(next.secondaryPlayerNumber, editing.secondaryPlayerNumber),
+          },
+        ],
+        { kind: "edit" }
+      )
+    ) {
+      return;
+    }
     /* A corrected minute moves the event to where it now happened. Full time and the
        shootout keep their place: their order is the match's ending. */
     const retimed =
@@ -280,17 +424,21 @@ export function MatchEventsTab({
     onChange({ events: normalizeShootoutSides([...events, marker]) });
   };
 
-  const logShootoutKick = () => {
-    const jersey = Number(shootoutPlayerNumber);
-    if (!Number.isFinite(jersey) || jersey < 1 || jersey > 99) return;
+  const logShootoutKick = (confirmed = false) => {
+    const jersey = parseJersey(shootoutPlayerNumber);
+    if (jersey == null) return;
+    const kicker = nextShootoutSide(events);
+    if (!confirmed && holdForUnregistered([{ side: kicker, number: jersey }], { kind: "shootout" })) {
+      return;
+    }
     const t = systemMinute();
     const nextEvent: RecordedEvent = {
       id: `shootout_${shootoutOutcome}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: shootoutOutcome === "goal" ? "shootout_goal" : "shootout_miss",
       minute: t.minute,
       addedMinute: t.addedMinute,
-      side: nextShootoutSide(events),
-      playerNumber: Math.floor(jersey),
+      side: kicker,
+      playerNumber: jersey,
       secondaryPlayerNumber: null,
       half: t.half,
     };
@@ -301,6 +449,16 @@ export function MatchEventsTab({
       return;
     }
     onChange({ events: nextEvents });
+  };
+
+  /* Filed from this render rather than the one that held it, so it sees the log as it is now. */
+  const confirmUnregistered = () => {
+    const held = numberCheck?.held;
+    setNumberCheck(null);
+    if (!held) return;
+    if (held.kind === "event") writeEvent(held.type, held.secondary, true);
+    else if (held.kind === "edit") saveEdit(true);
+    else logShootoutKick(true);
   };
 
   const shootoutKicks = events.filter((event) => SHOOTOUT_TYPES.has(event.type));
@@ -342,13 +500,25 @@ export function MatchEventsTab({
                 </em>
               ) : !side ? (
                 <em className="mcx-step__gate"> — choose home or away first (step 2)</em>
+              ) : officialMode ? (
+                chosenOfficial ? (
+                  <em className="mcx-step__gate">
+                    {" "}
+                    — Yellow Card or Red Card for the {teamOfficialLabel(chosenOfficial)}
+                  </em>
+                ) : (
+                  <em className="mcx-step__gate"> — choose the official's role (step 3)</em>
+                )
               ) : playerNumber.trim() === "" ? (
                 <em className="mcx-step__gate"> — enter a jersey number first (step 3)</em>
+              ) : !hasPlayerNumber ? (
+                <em className="mcx-step__gate"> — jersey numbers run from 1 to 99 (step 3)</em>
               ) : null}
             </span>
             <EventGrid
               types={sheet.eventTypes}
               locked={!canLog}
+              lockedForType={lockedForType}
               prefs={prefs}
               captureMap={sheet.eventCapture}
               statLabels={statLabels}
@@ -377,12 +547,7 @@ export function MatchEventsTab({
                   <strong>{labelFor(e.type)}</strong>
                   <span className="mcx-logitem__meta">
                     {teamFor(e.side)}
-                    {e.playerNumber ? ` · ${labelForNumber(e.side, e.playerNumber)}` : ""}
-                    {e.secondaryPlayerNumber
-                      ? e.type === "substitution"
-                        ? ` → ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
-                        : ` · assist ${labelForNumber(e.side, e.secondaryPlayerNumber)}`
-                      : ""}
+                    {whoFor(e)}
                   </span>
                 </span>
                 {editable && (
@@ -429,11 +594,14 @@ export function MatchEventsTab({
                     setEditDraft((draft) => ({ ...draft, type: event.target.value }))
                   }
                 >
-                  {Array.from(new Set([editing.type, ...sheet.eventTypes])).map((type) => (
-                    <option key={type} value={type}>
-                      {labelFor(type)}
-                    </option>
-                  ))}
+                  {/* An official keeps to the cards: nothing else can be theirs. */}
+                  {Array.from(new Set([editing.type, ...sheet.eventTypes]))
+                    .filter((type) => !editOfficial || OFFICIAL_EVENT_TYPES.has(type))
+                    .map((type) => (
+                      <option key={type} value={type}>
+                        {labelFor(type)}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label>
@@ -488,19 +656,55 @@ export function MatchEventsTab({
                   <option value="2">2nd half</option>
                 </select>
               </label>
-              <label>
-                <span>Player number</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={99}
-                  inputMode="numeric"
-                  value={editDraft.playerNumber}
-                  onChange={(event) =>
-                    setEditDraft((draft) => ({ ...draft, playerNumber: event.target.value }))
-                  }
-                />
-              </label>
+              {editCanBeOfficial && (
+                <label>
+                  <span>Shown to</span>
+                  <select
+                    value={editDraft.officialRole}
+                    onChange={(event) =>
+                      setEditDraft((draft) => ({
+                        ...draft,
+                        officialRole: event.target.value as TeamOfficialRole | "",
+                      }))
+                    }
+                  >
+                    <option value="">A player</option>
+                    {TEAM_OFFICIAL_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {TEAM_OFFICIAL_ROLE_LABELS[role]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {editOfficial ? (
+                <label>
+                  <span>Official's name</span>
+                  <input
+                    type="text"
+                    maxLength={TEAM_OFFICIAL_NAME_MAX}
+                    value={editDraft.officialName}
+                    onChange={(event) =>
+                      setEditDraft((draft) => ({ ...draft, officialName: event.target.value }))
+                    }
+                    placeholder="Optional"
+                  />
+                </label>
+              ) : (
+                <label>
+                  <span>Player number</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    inputMode="numeric"
+                    value={editDraft.playerNumber}
+                    onChange={(event) =>
+                      setEditDraft((draft) => ({ ...draft, playerNumber: event.target.value }))
+                    }
+                  />
+                </label>
+              )}
               {SECOND_PLAYER_PROMPT[editDraft.type] && (
                 <label>
                   <span>{SECOND_PLAYER_PROMPT[editDraft.type].label}</span>
@@ -526,6 +730,9 @@ export function MatchEventsTab({
             {editMinute && !editMinute.ok && (
               <p className="mcx-error" role="alert">{editMinute.reason}</p>
             )}
+            {editNumberError && (
+              <p className="mcx-error" role="alert">{editNumberError}</p>
+            )}
             <div className="mcx-prompt__actions">
               <button type="button" className="mcx-btn" onClick={() => setEditing(null)}>
                 Cancel
@@ -533,8 +740,8 @@ export function MatchEventsTab({
               <button
                 type="button"
                 className="mcx-btn mcx-btn--primary"
-                onClick={saveEdit}
-                disabled={Boolean(editMinute && !editMinute.ok)}
+                onClick={() => saveEdit()}
+                disabled={Boolean((editMinute && !editMinute.ok) || editNumberError)}
               >
                 Save changes
               </button>
@@ -551,7 +758,7 @@ export function MatchEventsTab({
             <p className="muted">
               {displayMinute(captured?.minute ?? 0, captured?.added ?? null)} ·{" "}
               {side ? teamFor(side) : ""}
-              {playerNumber ? ` · No. ${playerNumber}` : ""}
+              {side && primaryNumber ? ` · ${labelForNumber(side, primaryNumber)}` : ""}
             </p>
             <label className="mcx-prompt__label">
               {SECOND_PLAYER_PROMPT[pendingType].label}
@@ -567,6 +774,9 @@ export function MatchEventsTab({
                 autoFocus
               />
             </div>
+            {invalidJersey(secondNumber) && (
+              <p className="mcx-error" role="alert">{JERSEY_RANGE}</p>
+            )}
             <div className="mcx-prompt__actions">
               {SECOND_PLAYER_PROMPT[pendingType].allowNone && (
                 <button
@@ -580,8 +790,8 @@ export function MatchEventsTab({
               <button
                 type="button"
                 className="mcx-btn mcx-btn--primary"
-                disabled={secondNumber.trim() === ""}
-                onClick={() => writeEvent(pendingType, Number(secondNumber) || null)}
+                disabled={parseJersey(secondNumber) == null}
+                onClick={() => writeEvent(pendingType, parseJersey(secondNumber))}
               >
                 OK
               </button>
@@ -765,6 +975,9 @@ export function MatchEventsTab({
                     autoFocus
                   />
                 </label>
+                {invalidJersey(shootoutPlayerNumber) && (
+                  <p className="mcx-error" role="alert">{JERSEY_RANGE}</p>
+                )}
                 <div className="mcx-shootout-choice" role="radiogroup" aria-label="Penalty outcome">
                   <label className="mcx-shootout-choice__option is-goal">
                     <input
@@ -789,8 +1002,8 @@ export function MatchEventsTab({
                   <button
                     type="button"
                     className="mcx-btn mcx-btn--primary"
-                    disabled={shootoutPlayerNumber.trim() === ""}
-                    onClick={logShootoutKick}
+                    disabled={parseJersey(shootoutPlayerNumber) == null}
+                    onClick={() => logShootoutKick()}
                   >
                     Record penalty
                   </button>
@@ -805,6 +1018,15 @@ export function MatchEventsTab({
         <p className="mcx-callout">
           Full time. Check the log and the score, then submit the event log for approval.
         </p>
+      )}
+
+      {/* Last, so it sits over whichever prompt held the entry. */}
+      {numberCheck && (
+        <UnregisteredNumberPrompt
+          numbers={numberCheck.numbers}
+          onConfirm={confirmUnregistered}
+          onCancel={() => setNumberCheck(null)}
+        />
       )}
     </div>
   );

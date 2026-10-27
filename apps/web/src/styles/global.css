@@ -16006,6 +16006,15 @@ a.dbx-comp-card:hover {
   line-height: 1.25;
 }
 
+/* A card shown to the bench: who it was, plainly, and never a link to a player. */
+.sbm-event__official {
+  flex: 0 0 100%;
+  color: #fde68a;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .sbm-event__comment {
   flex: 0 0 100%;
   margin: 0 0 0.2rem;

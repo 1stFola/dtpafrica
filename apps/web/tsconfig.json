@@ -35,6 +35,9 @@
       "@dtp/engines/squad-number-lookup": [
         "../../packages/engines/src/scoreboard/squad-number-lookup.ts"
       ],
+      "@dtp/engines/team-officials": [
+        "../../packages/engines/src/scoreboard/team-officials.ts"
+      ],
       "@dtp/vision-contracts": ["../../packages/vision-contracts/src/index.ts"]
     }
   },

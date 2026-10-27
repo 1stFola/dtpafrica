@@ -1,3 +1,4 @@
+import type { TeamOfficial } from "@dtp/engines/team-officials";
 import { adminFetch } from "./admin";
 
 export type LiveAudioStatus = {
@@ -120,6 +121,8 @@ export type RecordedEvent = {
   /** Incoming player on a substitution, or the assist provider on a goal. */
   secondaryPlayerNumber: number | null;
   half: 1 | 2;
+  /** A card shown to a coach or other team official; the event then has no shirt number. */
+  official?: TeamOfficial;
 };
 
 export type SheetLogAction =

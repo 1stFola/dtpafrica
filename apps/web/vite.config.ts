@@ -25,6 +25,11 @@ export default defineConfig({
         __dirname,
         "../../packages/engines/src/scoreboard/squad-number-lookup.ts"
       ),
+      /* Coaches and other team officials on a card, worded as the API publishes them. */
+      "@dtp/engines/team-officials": path.resolve(
+        __dirname,
+        "../../packages/engines/src/scoreboard/team-officials.ts"
+      ),
       "@dtp/engines": path.resolve(__dirname, "../../packages/engines/src/media-url.ts"),
       /* The Vision contracts, from source: constants and types with no imports of their own,
          so the browser takes them as they are and nothing has to be built first. The screens

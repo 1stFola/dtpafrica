@@ -23,7 +23,14 @@ import {
   type SplitTally,
   type TallyValue,
 } from "../../../api/adminMatchStats";
-import { MatchEventsTab } from "./MatchEventsTab";
+import { MatchEventsTab, type OfficialEntry } from "./MatchEventsTab";
+import {
+  OFFICIAL_EVENT_TYPES,
+  TEAM_OFFICIAL_NAME_MAX,
+  TEAM_OFFICIAL_ROLES,
+  TEAM_OFFICIAL_ROLE_LABELS,
+  teamOfficialPhrase,
+} from "@dtp/engines/team-officials";
 import { capturedFromEvents } from "./eventStatCapture";
 import { MatchSheetHistory, latestActionBanner } from "./MatchSheetHistory";
 import { EventTimeline } from "../../scoreboard/components/EventTimeline";
@@ -49,6 +56,13 @@ import {
   useMatchClock,
 } from "./useMatchClock";
 import { checkTypedMinute } from "./correctionMinute";
+import {
+  UnregisteredNumberPrompt,
+  findUnregistered,
+  parseJersey,
+  type NumberToCheck,
+  type UnregisteredNumber,
+} from "./unregisteredNumber";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { formatQuiet } from "../components/StoppedRecordingsPanel";
 import {
@@ -337,6 +351,19 @@ function previewEventComment(
   return `${prefix} - ${body}`;
 }
 
+/** A card for someone on the bench, in the first wording the API publishes it with. */
+function previewOfficialComment(
+  event: RecordedEvent & { official: NonNullable<RecordedEvent["official"]> },
+  teamName: string
+): string {
+  const who = `the ${teamName} ${teamOfficialPhrase(event.official)}`;
+  const body =
+    event.type === "red_card"
+      ? `Red Card! ${who.charAt(0).toUpperCase()}${who.slice(1)} is sent to the stands by the referee.`
+      : `Yellow Card! The referee cautions ${who} on the touchline.`;
+  return `${formatEventMinute(event.minute, event.addedMinute)} - ${body}`;
+}
+
 function previewEvents(
   events: RecordedEvent[],
   match: MatchStatsSheet["match"]
@@ -346,6 +373,8 @@ function previewEvents(
     const opponent = event.side === "home" ? match.awayTeam : match.homeTeam;
     const primary = playerLabelForNumber(match, team.id, event.playerNumber);
     const secondary = playerLabelForNumber(match, team.id, event.secondaryPlayerNumber);
+    const official =
+      event.official && OFFICIAL_EVENT_TYPES.has(event.type) ? event.official : null;
     return {
       id: `training-live-${event.id}`,
       type: event.type,
@@ -356,12 +385,15 @@ function previewEvents(
       playerLabel2: secondary,
       assistPlayerId: null,
       assistLabel: event.type === "goal" ? secondary : null,
-      detail: previewEventComment(event, team, opponent, primary, secondary),
+      detail: official
+        ? previewOfficialComment({ ...event, official }, team.name)
+        : previewEventComment(event, team, opponent, primary, secondary),
       metadata: {
         source: "training_live_preview",
         addedMinute: event.addedMinute,
         half: event.half,
         recorderSequence: index,
+        ...(official ? { official } : {}),
       },
     };
   });
@@ -1145,10 +1177,17 @@ export function AdminMatchStatsConsolePage() {
      the frozen header — they are needed constantly while the grid scrolls. */
   const [side, setSide] = useState<Side | null>(null);
   const [playerNumber, setPlayerNumber] = useState("");
+  /* Step 3 answered with a coach or other official instead of a shirt number. */
+  const [official, setOfficial] = useState<OfficialEntry | null>(null);
   const [kitPicker, setKitPicker] = useState<Side | null>(null);
   const [showKickoffStarter, setShowKickoffStarter] = useState(false);
   const [kickoffSide, setKickoffSide] = useState<Side | null>(null);
   const [kickoffNumber, setKickoffNumber] = useState("");
+  /* Said inside the kick-off prompt: the page's error line is hidden behind it. */
+  const [kickoffError, setKickoffError] = useState<string | null>(null);
+  const [kickoffUnregistered, setKickoffUnregistered] = useState<UnregisteredNumber[] | null>(
+    null
+  );
 
   usePageTitle(sheet ? `${sheet.match.homeTeam.name} vs ${sheet.match.awayTeam.name}` : "Match console");
 
@@ -1511,6 +1550,7 @@ export function AdminMatchStatsConsolePage() {
     setCaptured(null);
     setSide(null);
     setPlayerNumber("");
+    setOfficial(null);
   }, [matchClock.half]);
 
   const handleEventsChange = useCallback(
@@ -1525,18 +1565,29 @@ export function AdminMatchStatsConsolePage() {
   const openKickoffStarter = () => {
     setKickoffSide(side);
     setKickoffNumber(playerNumber);
+    setKickoffError(null);
     setShowKickoffStarter(true);
   };
 
-  const confirmKickoffStarter = () => {
+  const confirmKickoffStarter = (confirmed = false) => {
     if (!kickoffSide) {
-      setError("Choose the team that played the kick-off.");
+      setKickoffError("Choose the team that played the kick-off.");
       return;
     }
-    const jersey = Number(kickoffNumber);
-    if (!Number.isFinite(jersey) || jersey < 1 || jersey > 99) {
-      setError("Enter the jersey number of the player who played the kick-off.");
+    const jersey = parseJersey(kickoffNumber);
+    if (jersey == null) {
+      setKickoffError(
+        "Enter the jersey number, 1 to 99, of the player who played the kick-off."
+      );
       return;
+    }
+    setKickoffError(null);
+    if (!confirmed) {
+      const unregistered = checkNumbers([{ side: kickoffSide, number: jersey }]);
+      if (unregistered.length > 0) {
+        setKickoffUnregistered(unregistered);
+        return;
+      }
     }
     const nextKickoff: RecordedEvent = {
       id: `kick_off-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1544,7 +1595,7 @@ export function AdminMatchStatsConsolePage() {
       minute: 0,
       addedMinute: null,
       side: kickoffSide,
-      playerNumber: Math.floor(jersey),
+      playerNumber: jersey,
       secondaryPlayerNumber: null,
       half: 1,
     };
@@ -1554,6 +1605,7 @@ export function AdminMatchStatsConsolePage() {
     setCaptured(null);
     setSide(null);
     setPlayerNumber("");
+    setOfficial(null);
     setTab("events");
     matchClock.kickOff(pendingHalfLength);
     handleEventsChange({ events: nextEvents });
@@ -1586,8 +1638,14 @@ export function AdminMatchStatsConsolePage() {
    * The others (asking for a correction, releasing a lock, sending back) do not wait for a
    * sync that a locked sheet would refuse, and never discard what is still unsent: they used
    * to clear the device's draft whatever it held.
+   *
+   * Resolves to whether it worked, so a caller clears a typed note only when it was sent:
+   * the error is caught here, and a bare `.then` used to wipe the note on a failure too.
    */
-  const act = async (fn: () => Promise<MatchStatsSheet>, options: { needsSync?: boolean } = {}) => {
+  const act = async (
+    fn: () => Promise<MatchStatsSheet>,
+    options: { needsSync?: boolean } = {}
+  ): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
@@ -1607,8 +1665,10 @@ export function AdminMatchStatsConsolePage() {
         clearDraft(matchId);
       }
       loadHistory();
+      return true;
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -1645,11 +1705,18 @@ export function AdminMatchStatsConsolePage() {
     () => capturedFromEvents(sheet?.eventCapture ?? {}, events, splitKeys),
     [sheet, events, splitKeys]
   );
+  const numberLookup = useMemo(() => (sheet ? matchNumberLookup(sheet.match) : null), [sheet]);
+  /* The same lookup again, so "not registered" is exactly a number published with no name. */
+  const checkNumbers = useCallback(
+    (entries: NumberToCheck[]) =>
+      sheet && numberLookup ? findUnregistered(numberLookup, sheet.match, entries) : [],
+    [sheet, numberLookup]
+  );
   const playerLabelsByKey = useMemo(() => {
-    if (!sheet) return new Map<string, string>();
+    const lookup = numberLookup;
+    if (!sheet || !lookup) return new Map<string, string>();
     /* Built from the same lookup as everything else, so this list and the event
        rows can never disagree about who wears a number. */
-    const lookup = matchNumberLookup(sheet.match);
     const labels = new Map<string, string>();
     for (const p of [...(sheet.match.squadPlayers ?? []), ...(sheet.match.teamSquad ?? [])]) {
       if (p.jerseyNumber == null || p.jerseyNumber <= 0) continue;
@@ -1659,7 +1726,7 @@ export function AdminMatchStatsConsolePage() {
       }
     }
     return labels;
-  }, [sheet]);
+  }, [sheet, numberLookup]);
 
   const totals = useMemo(() => {
     const out: Record<string, SidePair> = {};
@@ -1953,26 +2020,70 @@ export function AdminMatchStatsConsolePage() {
               })}
             </div>
 
-            <label className="mcx-jersey">
-              <span
-                className={`mcx-step__n mcx-step__n--inline${
-                  side && playerNumber.trim() !== "" ? "" : " is-locked"
-                }`}
-              >
-                3
-              </span>
-              <input
-                type="number"
-                min={1}
-                max={99}
-                inputMode="numeric"
-                placeholder="No."
-                value={playerNumber}
-                onChange={(e) => setPlayerNumber(e.target.value)}
+            <div className="mcx-who">
+              <label className="mcx-jersey">
+                <span
+                  className={`mcx-step__n mcx-step__n--inline${
+                    side && (official ? official.role : parseJersey(playerNumber) != null)
+                      ? ""
+                      : " is-locked"
+                  }`}
+                >
+                  3
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  inputMode="numeric"
+                  placeholder={official ? "—" : "No."}
+                  value={official ? "" : playerNumber}
+                  onChange={(e) => setPlayerNumber(e.target.value)}
+                  disabled={!editable || !side || Boolean(official)}
+                  aria-label="Jersey number"
+                />
+              </label>
+              {/* A coach, manager or physio has no shirt number: step 3 names them instead. */}
+              <button
+                type="button"
+                className={official ? "mcx-officialbtn is-active" : "mcx-officialbtn"}
+                onClick={() => setOfficial(official ? null : { role: null, name: "" })}
                 disabled={!editable || !side}
-                aria-label="Jersey number"
-              />
-            </label>
+                aria-pressed={Boolean(official)}
+              >
+                Official
+              </button>
+            </div>
+
+            {official && side && (
+              <div className="mcx-officialpicker" role="group" aria-label="Team official">
+                <span className="mcx-kitpicker__label">
+                  Card for a {side === "home" ? match.homeTeam.name : match.awayTeam.name} official
+                </span>
+                <div className="mcx-officialpicker__roles">
+                  {TEAM_OFFICIAL_ROLES.map((role) => (
+                    <button
+                      key={role}
+                      type="button"
+                      className={official.role === role ? "mcx-chip is-active" : "mcx-chip"}
+                      onClick={() => setOfficial({ ...official, role })}
+                      aria-pressed={official.role === role}
+                    >
+                      {TEAM_OFFICIAL_ROLE_LABELS[role]}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  className="mcx-officialpicker__name"
+                  maxLength={TEAM_OFFICIAL_NAME_MAX}
+                  placeholder="Name, if you know it"
+                  value={official.name}
+                  onChange={(e) => setOfficial({ ...official, name: e.target.value })}
+                  aria-label="Official's name (optional)"
+                />
+              </div>
+            )}
 
             {kitPicker && (
               <div className="mcx-kitpicker">
@@ -2087,7 +2198,7 @@ export function AdminMatchStatsConsolePage() {
                   disabled={busy || !releaseNote.trim()}
                   onClick={() =>
                     act(() => matchStatsApi.releaseIdleLock(matchId, releaseNote.trim())).then(
-                      () => setReleaseNote("")
+                      (ok) => ok && setReleaseNote("")
                     )
                   }
                 >
@@ -2122,7 +2233,8 @@ export function AdminMatchStatsConsolePage() {
                 askCorrection
                   ? act(() =>
                       matchStatsApi.requestCorrection(matchId, correctionNote)
-                    ).then(() => {
+                    ).then((ok) => {
+                      if (!ok) return;
                       setAskCorrection(false);
                       setCorrectionNote("");
                     })
@@ -2293,6 +2405,7 @@ export function AdminMatchStatsConsolePage() {
             captured={entryMinute}
             side={side}
             playerNumber={playerNumber}
+            official={official}
             onCapturedUsed={() => {
               // Reset the whole entry: the next event starts at step 1 with no
               // side pre-selected, so a side is never inherited by accident.
@@ -2301,6 +2414,7 @@ export function AdminMatchStatsConsolePage() {
               setTypedAdded("");
               setSide(null);
               setPlayerNumber("");
+              setOfficial(null);
             }}
             clock={matchClock}
             addedInput={addedInput}
@@ -2309,6 +2423,7 @@ export function AdminMatchStatsConsolePage() {
             homeName={match.homeTeam.name}
             awayName={match.awayTeam.name}
             playerLabelsByKey={playerLabelsByKey}
+            checkNumbers={checkNumbers}
           />
         </>
       )}
@@ -2396,6 +2511,9 @@ export function AdminMatchStatsConsolePage() {
                 autoFocus
               />
             </label>
+            {kickoffError && (
+              <p className="mcx-error" role="alert">{kickoffError}</p>
+            )}
             <div className="mcx-prompt__actions">
               <button
                 type="button"
@@ -2407,13 +2525,24 @@ export function AdminMatchStatsConsolePage() {
               <button
                 type="button"
                 className="mcx-btn mcx-btn--primary"
-                onClick={confirmKickoffStarter}
+                onClick={() => confirmKickoffStarter()}
               >
                 Start match
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {kickoffUnregistered && (
+        <UnregisteredNumberPrompt
+          numbers={kickoffUnregistered}
+          onConfirm={() => {
+            setKickoffUnregistered(null);
+            confirmKickoffStarter(true);
+          }}
+          onCancel={() => setKickoffUnregistered(null)}
+        />
       )}
 
       {showTrainingLive && (

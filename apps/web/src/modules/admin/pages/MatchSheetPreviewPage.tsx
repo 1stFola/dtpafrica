@@ -8,6 +8,7 @@ import {
   type SplitTally,
   type TallyValue,
 } from "../../../api/adminMatchStats";
+import { teamOfficialLabel } from "@dtp/engines/team-officials";
 import { displayMinute } from "./useMatchClock";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
@@ -161,7 +162,11 @@ export function MatchSheetPreviewPage() {
                   <span className="mpv-event__type">{labelFor(e.type)}</span>
                   <span className="mpv-event__who">
                     {e.side === "home" ? match.homeTeam.name : match.awayTeam.name}
-                    {e.playerNumber ? ` · No. ${e.playerNumber}` : ""}
+                    {e.official
+                      ? ` · ${teamOfficialLabel(e.official)}`
+                      : e.playerNumber
+                        ? ` · No. ${e.playerNumber}`
+                        : ""}
                   </span>
                 </li>
               ))}

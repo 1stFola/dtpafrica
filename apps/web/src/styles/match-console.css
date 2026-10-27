@@ -1792,6 +1792,49 @@
 
 .mcx-entrybar .mcx-kitpicker { flex: 1 0 100%; }
 
+/* Step 3: a shirt number, or a coach or other official, who has none. */
+.mcx-who { flex: 0 0 auto; display: flex; align-items: stretch; gap: 0.35rem; }
+
+.mcx-officialbtn {
+  padding: 0 0.7rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: 10px;
+  background: var(--mcx-surface);
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mcx-officialbtn.is-active {
+  border-color: #facc15;
+  background: rgba(250, 204, 21, 0.14);
+  color: #fde68a;
+}
+.mcx-officialbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.mcx-officialpicker {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.55);
+}
+.mcx-officialpicker__roles { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.mcx-officialpicker__roles .mcx-chip { min-width: 0; padding: 0.45rem 0.7rem; font-size: 0.82rem; }
+.mcx-officialpicker__name {
+  min-height: 40px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: 10px;
+  background: var(--mcx-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
 /* --- Running score, from the logged goals --- */
 
 .mcx-score {
@@ -2408,6 +2451,18 @@
   color: var(--color-muted);
   font-size: 0.78rem;
 }
+
+/* --- Unregistered jersey number: stop, then let the recorder file it anyway --- */
+
+.mcx-unregistered { text-align: left; }
+.mcx-unregistered h3 { color: #fca5a5; }
+.mcx-unregistered__list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.6rem 0;
+  padding-left: 1.7rem;
+}
+.mcx-unregistered .mcx-prompt__actions { margin-top: 1rem; }
 
 .mcx-prompt__cancel {
   margin-top: 0.6rem;
