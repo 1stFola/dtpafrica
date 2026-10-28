@@ -103,10 +103,14 @@ steps; the first real run will measure it.
 
 - **`detect` loading registered weights:** the next increment. Until then a version
   registered from a run cannot be run by detect, which refuses its config key.
-- **The benchmark on a training dataset:** the benchmark stage scores every sample in
-  the export, but the control plane lists predictions only for gold members. So a
-  dataset that also has train and val members is likely to be refused. Found while
-  mapping this work; not yet confirmed by a run.
+- **The benchmark on a training dataset (fixed 28 Oct 2026).** The stage read every
+  sample in the export as gold. The control plane lists predictions for gold members
+  only, so a dataset that also had train and val members was refused: "2 gold
+  member(s) have no detect artifact listed". A worker test reproduced exactly that.
+  The stage now scores only samples tagged `gold`, and reports the rest as
+  `otherSplitSamples`. An export with no gold sample is refused. The API side was
+  already scoped to gold. It reaches a worker once the CPU image is rebuilt from this
+  code.
 - **A training cap across runs:** doc 12's monthly training cap is not enforced. Each
   run's own budget is, through the job budget.
 

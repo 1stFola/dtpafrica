@@ -3,10 +3,12 @@
 A CPU stage. The predictions needed a GPU; comparing them with reviewed boxes is
 arithmetic, and routing arithmetic to a card would bill GPU rates for it.
 
-What it reads, all by **declared key**: the gold dataset's FiftyOne export
+What it reads, all by **declared key**: the dataset's FiftyOne export
 (`samples.json`, boxes per frame, normalised, 1-based) and one `detect` artifact
 per gold member, each produced by the model version under test. The control plane
 listed those keys in the job; the worker may fetch exactly them and nothing else.
+Only samples tagged `gold` are scored; a training dataset's train and val samples
+are counted as `otherSplitSamples` and left alone.
 
 What it refuses, before any number is produced:
 
@@ -15,7 +17,8 @@ What it refuses, before any number is produced:
 - a gold sample with no recorded frame size, because pixel boxes cannot be
   normalised against a size nobody wrote down;
 - a gold member with no detect artifact listed, because a benchmark over a subset
-  of the gold set is a benchmark of a different, undeclared dataset.
+  of the gold set is a benchmark of a different, undeclared dataset;
+- an export with no gold sample at all.
 
 See docs/vision/30-PHASE-3-INCREMENT-3.md.
 """
@@ -34,6 +37,8 @@ from ..track_metrics import TrackedBox, gold_tracks_from_export, score_tracks, t
 log = logging.getLogger(__name__)
 
 ARTIFACT_ROLE = "benchmark"
+#: The split tag the export gives gold members; the only split a benchmark scores.
+GOLD_SPLIT = "gold"
 
 
 def run_benchmark(ctx: StageContext) -> StageResult:
@@ -67,7 +72,15 @@ def run_benchmark(ctx: StageContext) -> StageResult:
     ctx.progress.set("download")
     gold_path = ctx.work_dir / "gold.json"
     bytes_read = download(ctx, ctx.client.input_url(ctx.job.job_id, "declared", key=gold_key), gold_path)
-    samples = json.loads(gold_path.read_bytes())["samples"]
+    exported = json.loads(gold_path.read_bytes())["samples"]
+    # A training dataset's export holds every split, each sample tagged with its own
+    # (`tags`, FiftyOne's idiom). Only gold is scored: the control plane lists predictions
+    # for gold members alone, so a train or val sample read as gold was refused as having
+    # nothing to score. An untagged sample, as in a hand-made export, is still read as gold.
+    samples = [s for s in exported if not s.get("tags") or GOLD_SPLIT in s["tags"]]
+    other_split_samples = len(exported) - len(samples)
+    if not samples:
+        raise StageRefusal(f"the export has no gold sample to score against ({other_split_samples} in other splits)")
     gold = gold_tracks_from_export(samples) if task == "track" else gold_from_export(samples)
     sizes: dict[str, tuple[float | None, float | None]] = {
         str((s.get("provenance") or {}).get("video_asset_id")): (
@@ -122,6 +135,7 @@ def run_benchmark(ctx: StageContext) -> StageResult:
         "goldLabelsKey": gold_key,
         "task": task,
         "predictions": [{"videoAssetId": a, "key": k} for a, k in by_asset.items()],
+        "otherSplitSamples": other_split_samples,
         **report,
     }
     artifact_path = ctx.work_dir / "benchmark.json"
@@ -138,6 +152,7 @@ def run_benchmark(ctx: StageContext) -> StageResult:
             "modelVersionId": model_version_id,
             "datasetVersionId": dataset_version_id,
             "task": task,
+            "otherSplitSamples": other_split_samples,
             **report,
         },
         # The stage ran no model; it scored one. The registry checks this list against
