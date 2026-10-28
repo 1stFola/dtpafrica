@@ -1,0 +1,30 @@
+# Simulated WAN outage, layered on compose.yaml:
+#   docker compose -f compose.yaml -f compose.wan-outage.yaml --profile synthetic up -d
+# The compose network gets no route to anything outside it, and nothing is published to
+# the host. The fixtures reach the Edge through `docker compose exec`, the way an operator
+# at a venue with no internet would reach it locally.
+#
+# `lan-relay` (TEST ONLY) stands in for the venue's LAN switch: it forwards one port on this
+# machine's loopback to the Edge's one address, so a browser here can use the console while
+# the Edge, MediaMTX and the feeds have no route out. It forwards nowhere else.
+networks:
+  edge:
+    internal: true
+  lan: {}
+
+services:
+  mediamtx:
+    ports: !reset []
+  edge:
+    ports: !reset []
+  lan-relay:
+    image: dtp-fairplay-edge:${FAIRPLAY_EDGE_TAG:-local}
+    command: ["relay", "--listen", "0.0.0.0:8443", "--target", "172.31.250.10:8443"]
+    networks: [edge, lan]
+    ports:
+      - "127.0.0.1:8443:8443"
+    depends_on: { edge: { condition: service_started } }
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

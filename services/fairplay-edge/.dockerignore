@@ -1,0 +1,8 @@
+.env
+publish.env
+config/sources.toml
+fixtures/out/
+**/__pycache__/
+*.egg-info/
+tests/
+auth/

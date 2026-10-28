@@ -1,0 +1,154 @@
+# DTP FairPlay Edge — venue stack. Docker Compose v2.
+#
+#   cp .env.example .env && cp publish.env.example publish.env   # then fill both
+#   cp config/sources.example.toml config/sources.toml           # name your feeds
+#   docker compose up -d --build
+#
+# Three services, plus two synthetic publishers under the `synthetic` profile:
+#   init      renders MediaMTX's hardened config from sources.toml, then exits
+#   mediamtx  pinned MediaMTX: ingest, recording, playback (playback/API not published)
+#   edge      the Edge API and its watchdog/manifest loop
+#
+# Independence: MediaMTX records every configured source on its own. Restarting or
+# stopping `edge` never stops a recording, and nothing here touches the YouTube encoder,
+# which must publish to YouTube directly and to MediaMTX as a separate output.
+
+name: fairplay-edge
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+x-edge-image: &edge-image
+  image: dtp-fairplay-edge:${FAIRPLAY_EDGE_TAG:-local}
+
+services:
+  init:
+    <<: *edge-image
+    build: .
+    command: ["render-mediamtx", "--out", "/etc/mediamtx/mediamtx.yml", "--mode", "docker"]
+    env_file: ["${FAIRPLAY_ENV_FILE:-.env}", "${FAIRPLAY_PUBLISH_ENV_FILE:-publish.env}"]
+    environment:
+      FAIRPLAY_EDGE_IP: 172.31.250.10
+    volumes:
+      - ${FAIRPLAY_SOURCES_PATH:-./config/sources.toml}:/etc/fairplay/sources.toml:ro
+      - mtxconfig:/etc/mediamtx
+      # Mounted here first so Docker seeds both volumes owned by uid 10001.
+      - recordings:/var/lib/fairplay/recordings
+      - data:/var/lib/fairplay/data
+    networks: [edge]
+    restart: "no"
+    logging: *logging
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.3@sha256:59e43552f3be43695b70c19424dc2a42fcec18075f88d91561a24ac5d70a586c
+    command: ["/etc/mediamtx/mediamtx.yml"]
+    user: "10001:10001"
+    depends_on:
+      init: { condition: service_completed_successfully }
+    environment:
+      # Segment names carry %z, but UTC keeps them readable and DST-proof.
+      TZ: UTC
+    volumes:
+      - mtxconfig:/etc/mediamtx:ro
+      - recordings:/recordings
+    ports:
+      # Ingest only. Set FAIRPLAY_INGEST_BIND to the Edge's venue-LAN address so cameras and
+      # the encoder can publish; every publish needs that source's credentials.
+      # The API (9997) and playback (9996) are deliberately NOT published.
+      - "${FAIRPLAY_INGEST_BIND:-127.0.0.1}:8554:8554"
+    networks:
+      edge: { ipv4_address: 172.31.250.5 }
+    restart: unless-stopped
+    # MediaMTX closes the current segment on SIGTERM; give it time to.
+    stop_grace_period: 15s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  edge:
+    <<: *edge-image
+    command: ["serve"]
+    depends_on:
+      init: { condition: service_completed_successfully }
+      mediamtx: { condition: service_started }
+    env_file: ["${FAIRPLAY_ENV_FILE:-.env}"]
+    environment:
+      FAIRPLAY_EDGE_LISTEN: 0.0.0.0
+      FAIRPLAY_MEDIAMTX_API_URL: http://172.31.250.5:9997
+      FAIRPLAY_MEDIAMTX_PLAYBACK_URL: http://172.31.250.5:9996
+      FAIRPLAY_MEDIAMTX_HLS_URL: http://172.31.250.5:8888
+      FAIRPLAY_CONSOLE_DIR: /srv/console
+      FAIRPLAY_TRUSTED_KEYS_FILE: /etc/fairplay/auth/trusted-keys.json
+      FAIRPLAY_BUNDLE_FILE: /etc/fairplay/auth/bundle.json
+    volumes:
+      - ${FAIRPLAY_SOURCES_PATH:-./config/sources.toml}:/etc/fairplay/sources.toml:ro
+      - recordings:/var/lib/fairplay/recordings
+      - data:/var/lib/fairplay/data
+      # The built console (`pnpm --filter @dtp/fairplay-console build`), served on the Edge's origin.
+      - ${FAIRPLAY_CONSOLE_PATH:-../../apps/fairplay-console/dist}:/srv/console:ro
+      # Public keys the operator bundle must be signed by, and the bundle. Read-only: the
+      # Edge can check who may sign in but cannot change it.
+      - ${FAIRPLAY_AUTH_DIR:-./auth}:/etc/fairplay/auth:ro
+    ports:
+      # 127.0.0.1 unless TLS is configured: load_settings refuses anything else without it.
+      - "${FAIRPLAY_EDGE_HOST_BIND:-127.0.0.1}:8443:8443"
+    networks:
+      edge: { ipv4_address: 172.31.250.10 }
+    restart: unless-stopped
+    # Lets the current hash finish and SQLite close cleanly.
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "fairplay-edge", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *logging
+
+  # ── SYNTHETIC FEEDS — development and fixtures only, never at a venue ──────
+  synth-ground:
+    <<: *edge-image
+    profiles: [synthetic]
+    command: ["synth", "--source", "ground", "--pattern", "testsrc2"]
+    env_file: ["${FAIRPLAY_PUBLISH_ENV_FILE:-publish.env}"]
+    environment:
+      FAIRPLAY_SYNTH_TARGET: 172.31.250.5:8554
+    depends_on: { mediamtx: { condition: service_started } }
+    networks: [edge]
+    # An encoder reconnects when the server comes back; so does this.
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    logging: *logging
+
+  synth-drone:
+    <<: *edge-image
+    profiles: [synthetic]
+    # Drone: a different pattern, no audio, and a clock 400 ms behind the ground's.
+    command: ["synth", "--source", "drone", "--pattern", "smptehdbars", "--no-audio", "--clock-offset-ms", "-400"]
+    env_file: ["${FAIRPLAY_PUBLISH_ENV_FILE:-publish.env}"]
+    environment:
+      FAIRPLAY_SYNTH_TARGET: 172.31.250.5:8554
+    depends_on: { mediamtx: { condition: service_started } }
+    networks: [edge]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    logging: *logging
+
+networks:
+  edge:
+    ipam:
+      # Fixed, so MediaMTX's API user can be limited to the Edge's own address.
+      config: [{ subnet: 172.31.250.0/24 }]
+
+volumes:
+  recordings:
+  data:
+  mtxconfig:

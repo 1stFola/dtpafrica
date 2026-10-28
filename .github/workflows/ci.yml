@@ -121,6 +121,11 @@ jobs:
       - name: Run web tests
         run: pnpm --filter @dtp/web test
 
+      # The FairPlay venue console: its time arithmetic, keyboard map and playlist parsing,
+      # and guards that it references no other host and offers no decision-changing control.
+      - name: Run FairPlay console tests
+        run: pnpm --filter @dtp/fairplay-console test
+
       # 3.12 to match the worker image (services/vision-worker/Dockerfile), so CI
       # runs the interpreter production runs. No ffmpeg needed: the stage tests fake
       # the subprocess, and media.py has no isolated tests yet.
@@ -140,6 +145,18 @@ jobs:
       # the log; the guard itself refuses to skip while CI is set.
       - name: Run vision worker tests
         working-directory: services/vision-worker
+        run: pytest -v -rs
+
+      # FairPlay Edge (venue service, never deployed to EC2). Unit tests only: they build MP4
+      # box structures themselves and fake ffprobe and MediaMTX. The recording fixtures need
+      # Docker, MediaMTX and ffmpeg and run on a machine that has them
+      # (services/fairplay-edge/fixtures/run_fixture.py). Same constraints as the image.
+      - name: Install FairPlay Edge
+        working-directory: services/fairplay-edge
+        run: pip install -c constraints.txt -e ".[dev]"
+
+      - name: Run FairPlay Edge tests
+        working-directory: services/fairplay-edge
         run: pytest -v -rs
 
       - name: Typecheck workspace

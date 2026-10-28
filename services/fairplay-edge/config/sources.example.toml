@@ -1,0 +1,28 @@
+# FairPlay sources. Copy to sources.toml.
+#
+# Each [[source]] becomes a MediaMTX path, a recordings folder and a publish user
+# (`pub-<name>`, password FAIRPLAY_PUBLISH_PASSWORD_<NAME> in publish.env).
+#
+#   name      1-32 chars of [a-z0-9_-]; the path cameras publish to: rtsp://host:8554/<name>
+#   role      ground | drone | programme
+#   required  a required source that stops publishing is a critical alert (default: ground only)
+#   protocol  rtsp | srt | rtmp — only the listeners in use are switched on
+#
+# Exactly one ground source is required. Until the equipment audit proves an isolated
+# second feed, configure ground only: single-angle mode (docs/fairplay/adr/0008).
+# The protocols here must be ones the venue hardware is VERIFIED to send; RTSP below is
+# what the synthetic feeds use.
+
+[[source]]
+name = "ground"
+role = "ground"
+required = true
+protocol = "rtsp"
+label = "Ground camera"
+
+[[source]]
+name = "drone"
+role = "drone"
+required = false
+protocol = "rtsp"
+label = "Drone"

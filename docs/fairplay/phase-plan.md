@@ -28,6 +28,14 @@ commitments. P2 (any automatic classification) is out of V1 entirely.
 8. FairPlay as its own `/admin/fairplay` area, linked from the ScoreBoard match center and
    kept out of the recorder console ([ADR-0010](./adr/0010-admin-placement.md)).
 
+## Status
+
+| Phase | State | Report |
+|---|---|---|
+| 0 — discovery | documents delivered; gate decisions open | [README](./README.md) |
+| 1 — Edge media foundation | **partial: done on synthetic feeds, hardware acceptance pending** (items 1–5 below; item 6 synthetic only) | [phase-1-edge-foundation.md](./phase-1-edge-foundation.md) |
+| 2 — replay console and synchronisation | **partial: accepted on the synthetic 30-minute fixture with the WAN cut; DEV bundles until Phase 3; hardware pending** (items 7–10; 11 is Phase 3) | [phase-2-replay-console.md](./phase-2-replay-console.md) |
+
 ## P0 backlog, in order
 
 | # | Item | PID | Phase | Effort | Depends on |

@@ -1,0 +1,33 @@
+[project]
+name = "dtp-fairplay-edge"
+version = "0.1.0"
+description = "DTP FairPlay Edge: venue-local recording index, segment manifests, health and watchdog over MediaMTX"
+requires-python = ">=3.11"
+dependencies = [
+    # MIT. Rows in docs/licenses/OSS_REGISTER.md.
+    "fastapi>=0.115,<1",
+    # BSD-3-Clause.
+    "uvicorn>=0.30,<1",
+    # BSD-3-Clause. MediaMTX API/playback client and the media proxy.
+    "httpx>=0.27,<1",
+    # Apache-2.0 OR BSD-3-Clause. Ed25519 bundle signatures and the Edge's own CA (ADR-0004/0005).
+    "cryptography>=44,<51",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+fairplay-edge = "fairplay_edge.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["fairplay_edge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
