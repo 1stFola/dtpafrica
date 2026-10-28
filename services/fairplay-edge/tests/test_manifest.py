@@ -96,6 +96,8 @@ def test_verify_detects_a_changed_original(settings, store, fake_probe):
     scanner.scan({"ground": True})
     seg_id = _segments(store)[0]["id"]
     assert scanner.verify(seg_id)["result"] == "match"
+    assert first.stat().st_mode & 0o222 == 0  # final originals are read-only
+    first.chmod(0o644)  # someone with the rights to do it changes the file anyway
     first.write_bytes(fmp4(3, mdat_bytes=65))
     assert scanner.verify(seg_id)["result"] == "mismatch"
     assert store.one("SELECT 1 FROM alerts WHERE kind = 'segment_mismatch' AND resolved_utc IS NULL")
@@ -108,3 +110,35 @@ def test_vanished_open_segment_is_missing(settings, store, fake_probe):
     path.unlink()
     scanner.scan({"ground": True})
     assert _segments(store)[0]["state"] == "missing"
+
+
+def test_pictures_lost_at_a_segment_switch_are_raised(settings, store, monkeypatch):
+    """MediaMTX can discard late video at a segment switch: the next segment then opens on
+    frames it cannot decode. Measured from the previous segment's last picture to this
+    segment's first keyframe; the files are whole, so both stay finalized."""
+    from fairplay_edge import manifest as manifest_module
+    from fairplay_edge.probe import Probe
+
+    def probed(path):
+        raw = {"format": {"duration": "32.0"}, "streams": [{"codec_type": "video", "start_time": "0.04",
+                                                            "duration": "30.0"}, {"codec_type": "audio"}]}
+        return Probe(codec="h264", profile="High", width=1280, height=720, fps="25/1", time_base="1/90000",
+                     start_pts=0, start_time_s=0.04, duration_ms=32_000, has_audio=True, raw=raw)
+
+    first_key = {"value": 0.04}
+    monkeypatch.setattr(manifest_module, "probe", probed)
+    monkeypatch.setattr(manifest_module, "video_packets", lambda path, interval=None: [(first_key["value"], True)])
+    write_segment(settings.recordings_dir, "ground", at(0), fmp4(3))
+    Scanner(settings, store).scan({})
+    first_key["value"] = 0.96  # opens on 0.92 s of frames without their keyframe
+    write_segment(settings.recordings_dir, "ground", at(32), fmp4(3))
+    Scanner(settings, store).scan({})
+    row = store.one("SELECT state, problems FROM segments WHERE start_utc = ?", ("2026-10-27T14:00:32.000Z",))
+    # previous pictures end at 14:00:30.000; this one's first decodable frame is at 14:00:32.920
+    assert row["state"] == "finalized" and "2920 ms of pictures missing" in row["problems"]
+    alert = store.one("SELECT * FROM alerts WHERE kind = 'segment_video_gap' AND resolved_utc IS NULL")
+    assert alert and alert["source"] == "ground"
+    first_key["value"] = 0.04
+    write_segment(settings.recordings_dir, "ground", at(62), fmp4(3))
+    Scanner(settings, store).scan({})  # 32.000 + 30 = 62.000: continuous again
+    assert store.one("SELECT 1 FROM alerts WHERE kind = 'segment_video_gap' AND resolved_utc IS NULL") is None

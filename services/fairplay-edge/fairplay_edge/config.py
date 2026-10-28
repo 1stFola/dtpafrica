@@ -75,6 +75,13 @@ class Settings:
     bundle_file: Path | None = None
     allow_dev_bundles: bool = False
     console_dir: Path | None = None
+    # Match clock: where each period starts, for bookmarks made from a match minute.
+    period_minutes: int = 45
+    extra_period_minutes: int = 15
+    # Cloud sync. Unset = nothing leaves the Edge; the outbox keeps every record.
+    cloud_sync_url: str | None = None
+    cloud_device_token: str | None = None
+    clip_max_attempts: int = 3
     extra: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -84,6 +91,10 @@ class Settings:
     @property
     def repaired_dir(self) -> Path:
         return self.data_dir / "repaired"
+
+    @property
+    def evidence_dir(self) -> Path:
+        return self.data_dir / "evidence"
 
     @property
     def db_path(self) -> Path:
@@ -172,6 +183,15 @@ def is_loopback(host: str) -> bool:
         return False
 
 
+def _whole(env: dict[str, str], name: str, default: int, lo: int, hi: int) -> int:
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    if not value.isdigit() or not lo <= int(value) <= hi:
+        raise ConfigError(f"{name} must be a whole number from {lo} to {hi}")
+    return int(value)
+
+
 def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = True) -> Settings:
     env = dict(os.environ if env is None else env)
     sources = load_sources(Path(env.get("FAIRPLAY_SOURCES_FILE", "/etc/fairplay/sources.toml")))
@@ -188,6 +208,11 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
             f"FAIRPLAY_EDGE_HOST_BIND={host_bind} exposes the Edge API beyond this machine; "
             "that requires FAIRPLAY_EDGE_TLS_CERT and FAIRPLAY_EDGE_TLS_KEY"
         )
+    sync_url = env.get("FAIRPLAY_CLOUD_SYNC_URL", "").strip().rstrip("/") or None
+    # Records about youth matches cross the internet only encrypted; loopback is for the test sink.
+    if sync_url and not (sync_url.startswith("https://") or
+                         is_loopback(sync_url.removeprefix("http://").split("/")[0].rsplit(":", 1)[0])):
+        raise ConfigError("FAIRPLAY_CLOUD_SYNC_URL must be https:// (plain http only to this machine, for tests)")
     retention = env.get("FAIRPLAY_RETENTION_DAYS", "").strip()
     retention_days = None
     if retention:
@@ -223,4 +248,9 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         bundle_file=Path(env["FAIRPLAY_BUNDLE_FILE"]) if env.get("FAIRPLAY_BUNDLE_FILE") else None,
         allow_dev_bundles=env.get("FAIRPLAY_ALLOW_DEV_BUNDLES", "") == "1",
         console_dir=Path(env["FAIRPLAY_CONSOLE_DIR"]) if env.get("FAIRPLAY_CONSOLE_DIR") else None,
+        period_minutes=_whole(env, "FAIRPLAY_PERIOD_MINUTES", 45, 10, 60),
+        extra_period_minutes=_whole(env, "FAIRPLAY_EXTRA_PERIOD_MINUTES", 15, 5, 30),
+        cloud_sync_url=sync_url,
+        cloud_device_token=require_secret(env, "FAIRPLAY_CLOUD_DEVICE_TOKEN") if sync_url else None,
+        clip_max_attempts=_whole(env, "FAIRPLAY_CLIP_MAX_ATTEMPTS", 3, 1, 10),
     )

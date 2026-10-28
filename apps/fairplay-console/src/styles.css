@@ -64,15 +64,19 @@ textarea { min-height: 4rem; width: 100%; }
 .fp-chip--muted { color: var(--color-muted); }
 
 .fp-alerts { padding: 0 var(--space-4); }
-.fp-grid { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); grid-template-columns: 250px minmax(0, 1fr) minmax(0, 1fr) 300px;
-  grid-template-areas: "sources live replay incidents" "sources calibration calibration incidents"; }
+.fp-grid { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); grid-template-columns: 250px minmax(0, 1fr) minmax(0, 1fr) 380px;
+  grid-template-areas: "sources live replay incidents" "rights calibration calibration incidents"; }
 .fp-sources { grid-area: sources; }
 .fp-live { grid-area: live; }
 .fp-replay { grid-area: replay; }
 .fp-incidents { grid-area: incidents; }
 .fp-calibration { grid-area: calibration; }
+.fp-rights { grid-area: rights; }
 @media (max-width: 1200px) {
-  .fp-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "live replay" "sources incidents" "calibration calibration"; }
+  .fp-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "live replay" "sources incidents" "rights incidents" "calibration calibration"; }
+}
+@media (max-width: 760px) {
+  .fp-grid { grid-template-columns: 1fr; grid-template-areas: "live" "replay" "incidents" "sources" "rights" "calibration"; padding: var(--space-3); }
 }
 .fp-panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--space-3); min-width: 0; }
 
@@ -118,3 +122,28 @@ textarea { min-height: 4rem; width: 100%; }
 .fp-scrub { width: 100%; margin-top: var(--space-2); accent-color: var(--color-primary); }
 .fp-goto { margin-top: var(--space-2); }
 .fp-goto input { width: 9rem; }
+
+/* Phase 3: review, evidence, rights, audit, the organiser report */
+.fp-state { padding: 0 0.45rem; border-radius: 999px; font-size: 0.75rem; background: #273449; }
+.fp-state--flagged { background: rgba(245, 158, 11, 0.25); }
+.fp-state--reviewing { background: rgba(59, 130, 246, 0.3); }
+.fp-state--reviewed { background: rgba(34, 197, 94, 0.2); }
+.fp-state--archived { color: var(--color-muted); }
+.fp-fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-2); margin: 0; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.fp-fieldset:disabled { opacity: 0.7; }
+.fp-fieldset legend { padding: 0 var(--space-1); color: var(--color-muted); font-size: 0.85rem; }
+.fp-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.fp-form label, .fp-fieldset label { display: flex; flex-direction: column; gap: var(--space-1); }
+.fp-form label.fp-radio, .fp-fieldset label.fp-radio { flex-direction: row; align-items: center; gap: var(--space-1); }
+.fp-review, .fp-evidence { border-top: 1px solid var(--color-border); padding-top: var(--space-2); }
+.fp-review h4, .fp-evidence h4 { margin: 0 0 var(--space-1); }
+.fp-finding p { margin: var(--space-1) 0; }
+.fp-notes { white-space: pre-wrap; }
+/* The incidents column is narrow: the evidence table scrolls inside it, never the page. */
+.fp-evidence .fp-table { display: block; overflow-x: auto; }
+.fp-evidence .fp-table td.fp-row { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.fp-evidence__video { width: 100%; margin-top: var(--space-2); background: #000; border-radius: var(--radius-sm); }
+.fp-audit { padding-left: 1.25rem; font-size: 0.82rem; max-height: 240px; overflow: auto; }
+.fp-list { padding-left: 1.25rem; font-size: 0.85rem; }
+.fp-report { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); max-width: 960px; }
+.fp-banner-note { padding: var(--space-2) var(--space-3); border-left: 3px solid var(--color-primary); background: #1e293b; }

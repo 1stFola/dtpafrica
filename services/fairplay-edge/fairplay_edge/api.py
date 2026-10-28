@@ -30,8 +30,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, retention, timing
-from .auth import COOKIE, CSRF_HEADER, DEVICE, IDLE_MINUTES, AuthError, Principal
+from . import __version__, audit, evidence, incidents, retention, timing
+from .audit import Actor
+from .auth import COOKIE, CSRF_HEADER, DEVICE, IDLE_MINUTES, STAFF_PERMISSIONS, AuthError, Principal
 from .mediamtx import MediaMtxUnavailable
 from .naming import iso, parse_iso, utcnow
 from .repair import RepairRefused, repair
@@ -111,7 +112,7 @@ class CalibrationIn(BaseModel):
 class IncidentIn(BaseModel):
     sessionId: str
     eventUtc: str | None = None
-    basis: str = "operator_now"
+    basis: str = Field(default="operator_now", pattern="^(operator_now|period_mark|manual|sheet_event|match_clock)$")
     category: str = "other"
     note: str | None = Field(default=None, max_length=2000)
     preRollMs: int = 20_000
@@ -120,6 +121,7 @@ class IncidentIn(BaseModel):
     matchMinute: int | None = Field(default=None, ge=0, le=200)
     matchSecond: int | None = Field(default=None, ge=0, le=59)
     sheetEventId: str | None = Field(default=None, max_length=120)
+    playerRef: str | None = Field(default=None, max_length=120)
 
 
 class IncidentPatch(BaseModel):
@@ -130,6 +132,30 @@ class IncidentPatch(BaseModel):
     matchMinute: int | None = Field(default=None, ge=0, le=200)
     matchSecond: int | None = Field(default=None, ge=0, le=59)
     period: str | None = None
+    playerRef: str | None = Field(default=None, max_length=120)
+
+
+class ReviewIn(BaseModel):
+    result: str = Field(pattern="^(supports_original|supports_alternative|inconclusive|footage_unavailable)$")
+    factualNotes: str = Field(min_length=3, max_length=5000)
+    onFieldDecision: str | None = Field(default=None, max_length=500)
+    evidenceIds: list[str] = Field(default_factory=list, max_length=20)
+
+
+class ReopenIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+
+
+class ClipIn(BaseModel):
+    source: str
+
+
+class RightsIn(BaseModel):
+    footageKind: str = Field(pattern="^(synthetic|real)$")
+    status: str = Field(pattern="^(not_recorded|internal_review_only|external_release_permitted)$")
+    minorsPresent: str = Field(pattern="^(yes|no|unknown)$")
+    basis: str | None = Field(default=None, max_length=500)
+    consentReference: str | None = Field(default=None, max_length=300)
 
 
 class ReplayMetricIn(BaseModel):
@@ -217,8 +243,19 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             return who
         return check
 
-    viewer = Depends(principal)
+    def require_any(permissions: tuple[str, ...]):
+        def check(who: Principal = Depends(principal)) -> Principal:
+            if not any(who.can(p) for p in permissions):
+                raise refusal(403, "forbidden", "this is for venue staff; organisers see approved evidence only")
+            return who
+        return check
+
+    viewer = Depends(principal)  # anyone signed in, organisers included: only for who-am-I and sign-out
+    staff = Depends(require_any(STAFF_PERMISSIONS))
     operator = Depends(require("fairplay.incident.operate"))
+    reviewer = Depends(require("fairplay.incident.review"))
+    exporter = Depends(require("fairplay.evidence.export"))
+    organiser = Depends(require_any(("fairplay.report.view", *STAFF_PERMISSIONS)))
     manager = Depends(require("fairplay.session.manage"))
     admin = Depends(require("fairplay.edge.admin"))
 
@@ -295,6 +332,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def actor(who: Principal) -> str:
         return who.user_id
 
+    def actor_of(who: Principal) -> Actor:
+        return Actor(id=who.user_id, name=who.name, kind=who.kind)
+
     # ── liveness and sign-in: no auth ────────────────────────────────────
     @app.get("/edge/v1/healthz")
     def healthz():
@@ -341,12 +381,12 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return {"disabled": body.userId}
 
     @app.get("/edge/v1/openapi.json")
-    def openapi(_: Principal = viewer):
+    def openapi(_: Principal = staff):
         return app.openapi()
 
     # ── health ───────────────────────────────────────────────────────────
     @app.get("/edge/v1/health")
-    def health(_: Principal = viewer):
+    def health(_: Principal = staff):
         snap = service.watchdog.snapshot
         alerts = open_alerts()
         worst = max((SEVERITY_RANK[a["severity"]] for a in alerts), default=-1)
@@ -364,8 +404,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             "mediaServer": {"up": snap.media_server_up, "error": snap.media_server_error},
             "disk": disk_view(),
             "clock": timing.clock_state(service.store),
-            # Phase 3 adds the sync outbox; until then nothing leaves the venue.
-            "cloud": {"connected": False, "note": "local only: no cloud sync in this phase"},
+            "cloud": service.outbox.status(service.sync_configured),
+            "audit": audit.head(service.store),
             "bundle": {"loaded": service.bundle is not None, "dev": service.bundle.dev if service.bundle else None,
                        "expiresUtc": iso(service.bundle.expires_utc) if service.bundle else None,
                        "problem": service.bundle_error},
@@ -389,24 +429,24 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                 "hardLimitFreeBytes": settings.disk_hard_free_bytes, "state": state}
 
     @app.get("/edge/v1/disk")
-    def disk(_: Principal = viewer):
+    def disk(_: Principal = staff):
         return disk_view()
 
     @app.get("/edge/v1/clock")
-    def clock(_: Principal = viewer):
+    def clock(_: Principal = staff):
         return timing.clock_state(service.store)
 
     # ── sources and recordings ───────────────────────────────────────────
     @app.get("/edge/v1/sources")
-    def sources(_: Principal = viewer):
+    def sources(_: Principal = staff):
         return [source_view(s) for s in settings.sources]
 
     @app.get("/edge/v1/sources/{name}")
-    def source(name: str, _: Principal = viewer):
+    def source(name: str, _: Principal = staff):
         return source_view(source_or_404(name))
 
     @app.get("/edge/v1/sources/{name}/spans")
-    def spans(name: str, start: str | None = None, end: str | None = None, _: Principal = viewer):
+    def spans(name: str, start: str | None = None, end: str | None = None, _: Principal = staff):
         source_or_404(name)
         s = _when(start, "start") if start else None
         e = _when(end, "end") if end else None
@@ -414,7 +454,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return {"source": name, "basis": basis, "spans": items}
 
     @app.get("/edge/v1/sources/{name}/gaps")
-    def gaps(name: str, start: str, end: str, minGapMs: int = Query(500, ge=0), _: Principal = viewer):
+    def gaps(name: str, start: str, end: str, minGapMs: int = Query(500, ge=0), _: Principal = staff):
         source_or_404(name)
         s, e = _when(start, "start"), _when(end, "end")
         if e <= s:
@@ -438,7 +478,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                 "notRecorded": holes, "observedDrops": drops}
 
     @app.get("/edge/v1/sources/{name}/window")
-    def window(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), _: Principal = viewer):
+    def window(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), _: Principal = staff):
         """What a replay request for this window would show, and which originals it comes from."""
         source_or_404(name)
         s = _when(start, "start")
@@ -533,10 +573,29 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             if i >= REPLAY_CACHE_FILES or total > REPLAY_CACHE_BYTES:
                 f.unlink(missing_ok=True)
 
+    # A browser fetches one replay window in many range requests; one audit entry per person,
+    # source and window per hour says who looked at what without burying the log.
+    seen_access: dict[tuple, datetime] = {}
+
+    def first_look(*key) -> bool:
+        now = utcnow()
+        if key in seen_access and now - seen_access[key] < timedelta(hours=1):
+            return False
+        if len(seen_access) > 5000:
+            seen_access.clear()
+        seen_access[key] = now
+        return True
+
+    def note_access(who: Principal, source: str, start: datetime, duration_ms: int) -> None:
+        if first_look(who.user_id, "media", source, iso(start), duration_ms):
+            audit.record(service.store, actor_of(who), "media.accessed", "source", source, None,
+                         {"startUtc": iso(start), "durationMs": duration_ms})
+
     @app.get("/edge/v1/media/{name}")
-    async def media(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), _: Principal = viewer):
+    async def media(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), who: Principal = staff):
         source_or_404(name)
         s = _when(start, "start")
+        note_access(who, name, s, durationMs)
         end = s + timedelta(milliseconds=durationMs)
         # A window reaching into the last seconds may still be growing: never reuse it.
         fresh = end > utcnow() - timedelta(seconds=10)
@@ -558,7 +617,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return FileResponse(target, media_type="video/mp4", headers={"Cache-Control": "no-store"})
 
     @app.get("/edge/v1/live/{name}/{file}")
-    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), _: Principal = viewer):
+    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), _: Principal = staff):
         """Live preview: MediaMTX's HLS playlists and fMP4 parts, proxied after authorisation.
         MediaMTX names its HLS session in `?session=`; that one parameter is passed through."""
         source_or_404(name)
@@ -571,7 +630,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.get("/edge/v1/segments")
     def segments(source: str | None = None, state: str | None = None, start: str | None = None,
                  end: str | None = None, limit: int = Query(100, ge=1, le=500), after: str | None = None,
-                 _: Principal = viewer):
+                 _: Principal = staff):
         sql = ("SELECT id, source, rel_path, state, start_utc, end_utc, duration_ms, bytes, complete_bytes, sha256,"
                " codec, width, height, fps, finalized_utc, verified_utc, deleted_utc FROM segments WHERE 1=1")
         params: list = []
@@ -598,14 +657,14 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return {"items": rows, "next": f"{rows[-1]['start_utc']}|{rows[-1]['id']}" if more else None}
 
     @app.get("/edge/v1/segments/{segment_id}")
-    def segment(segment_id: str, _: Principal = viewer):
+    def segment(segment_id: str, _: Principal = staff):
         try:
             return service.scanner.manifest_for(segment_id)
         except KeyError:
             raise refusal(404, "unknown_segment", "no such segment")
 
     @app.post("/edge/v1/segments/{segment_id}/verify")
-    def verify(segment_id: str, _: Principal = viewer):
+    def verify(segment_id: str, _: Principal = staff):
         try:
             return service.scanner.verify(segment_id)
         except KeyError:
@@ -623,7 +682,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     # ── alerts, events ───────────────────────────────────────────────────
     @app.get("/edge/v1/alerts")
     def alerts(state: str = Query("open", pattern="^(open|all)$"), limit: int = Query(200, ge=1, le=1000),
-               _: Principal = viewer):
+               _: Principal = staff):
         if state == "open":
             return open_alerts()
         rows = service.store.query("SELECT * FROM alerts ORDER BY opened_utc DESC LIMIT ?", (limit,))
@@ -632,7 +691,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return rows
 
     @app.get("/edge/v1/events")
-    def events(limit: int = Query(200, ge=1, le=1000), after: int = 0, _: Principal = viewer):
+    def events(limit: int = Query(200, ge=1, le=1000), after: int = 0, _: Principal = staff):
         rows = service.store.query("SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?", (after, limit))
         for r in rows:
             r["detail"] = json.loads(r["detail"]) if r["detail"] else None
@@ -640,7 +699,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     # ── holds and retention ──────────────────────────────────────────────
     @app.get("/edge/v1/holds")
-    def holds(active: bool = True, _: Principal = viewer):
+    def holds(active: bool = True, _: Principal = staff):
         sql = "SELECT * FROM holds" + (" WHERE released_utc IS NULL" if active else "") + " ORDER BY from_utc"
         return service.store.query(sql)
 
@@ -662,7 +721,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return released
 
     @app.get("/edge/v1/retention/plan")
-    def retention_plan(days: int | None = Query(None, ge=1), _: Principal = viewer):
+    def retention_plan(days: int | None = Query(None, ge=1), _: Principal = staff):
         chosen = days or settings.retention_days
         if chosen is None:
             raise refusal(400, "retention_off", "retention is off; pass ?days=N to preview a rule",
@@ -690,7 +749,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             raise refusal(400, "invalid", str(exc))
 
     @app.get("/edge/v1/sessions")
-    def list_sessions(_: Principal = viewer):
+    def list_sessions(_: Principal = staff):
         return service.store.query("SELECT * FROM match_sessions ORDER BY created_utc DESC")
 
     @app.post("/edge/v1/sessions", status_code=201)
@@ -698,7 +757,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return timing_call(timing.create_session, service.store, body.label, body.matchRef, body.mode, actor(who))
 
     @app.get("/edge/v1/sessions/{session_id}")
-    def session(session_id: str, _: Principal = viewer):
+    def session(session_id: str, _: Principal = staff):
         row = session_or_404(session_id)
         return {**row, "periods": timing.current_periods(service.store, session_id),
                 "calibration": timing.calibration_view(service.store, settings, session_id, spans_for),
@@ -715,7 +774,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                            at=at, supersedes=body.supersedes, console_anchor=body.consoleAnchorUtc)
 
     @app.get("/edge/v1/sessions/{session_id}/calibrations")
-    def calibrations(session_id: str, _: Principal = viewer):
+    def calibrations(session_id: str, _: Principal = staff):
         session_or_404(session_id)
         return {"current": timing.calibration_view(service.store, settings, session_id, spans_for),
                 "history": service.store.query("SELECT * FROM calibrations WHERE session_id = ? ORDER BY created_utc",
@@ -730,44 +789,255 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                            note=body.note, supersedes=body.supersedes)
 
     @app.get("/edge/v1/sessions/{session_id}/sync-test")
-    def sync(session_id: str, at: str, halfWidthMs: int = Query(2000, ge=200, le=30_000), _: Principal = viewer):
+    def sync(session_id: str, at: str, halfWidthMs: int = Query(2000, ge=200, le=30_000), _: Principal = staff):
         return timing_call(timing.sync_test, service.store, settings, session_id, _when(at, "at"), spans_for,
                            halfWidthMs)
 
+    # ── incidents and reviews ────────────────────────────────────────────
+    def lifecycle(fn, *args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (KeyError, incidents.NotFound):
+            raise refusal(404, "not_found", "no such record")
+        except timing.Conflict as exc:
+            raise refusal(409, "conflict", str(exc), "reload, check what changed, and try again")
+        except timing.TimingError as exc:
+            raise refusal(400, "invalid", str(exc))
+        except evidence.ClipFailed as exc:
+            raise refusal(409, exc.code, str(exc))
+
+    def version_of(if_match: str) -> int:
+        try:
+            return int(if_match.strip('"'))
+        except ValueError:
+            raise refusal(400, "bad_if_match", "If-Match must be the incident's version number")
+
+    def once(key: str | None, who: Principal, route: str, body: dict, status: int, fn) -> JSONResponse:
+        """Run `fn` at most once per Idempotency-Key: a repeat gets the first answer back."""
+        if key is None:
+            return JSONResponse(fn(), status_code=status)
+        if not re.match(r"^[A-Za-z0-9_-]{8,80}$", key):
+            raise refusal(400, "bad_idempotency_key", "Idempotency-Key must be 8-80 letters, digits, - or _")
+        try:
+            seen = incidents.claim_request(service.store, key, who.user_id, route, body)
+        except timing.Conflict as exc:
+            raise refusal(409, "idempotency_conflict", str(exc))
+        if seen is not None:
+            return JSONResponse(seen["body"], status_code=seen["status"], headers={"Idempotent-Replayed": "true"})
+        try:
+            result = fn()
+        except BaseException:
+            incidents.finish_request(service.store, key, 0, None)
+            raise
+        incidents.finish_request(service.store, key, status, result)
+        return JSONResponse(result, status_code=status)
+
     @app.get("/edge/v1/incidents")
-    def incidents(sessionId: str, _: Principal = viewer):
+    def list_incidents(sessionId: str, _: Principal = staff):
         session_or_404(sessionId)
-        return service.store.query("SELECT * FROM incidents WHERE session_id = ? ORDER BY event_utc DESC", (sessionId,))
+        return [incidents.view(r) for r in
+                service.store.query("SELECT * FROM incidents WHERE session_id = ? ORDER BY event_utc DESC", (sessionId,))]
 
     @app.post("/edge/v1/incidents", status_code=201)
-    def flag(body: IncidentIn, who: Principal = operator):
-        event = _when(body.eventUtc, "eventUtc") if body.eventUtc else None
-        return timing_call(timing.create_incident, service.store, body.sessionId, actor(who), event_utc=event,
-                           basis=body.basis if body.eventUtc else "operator_now", category=body.category,
-                           note=body.note, pre_roll_ms=body.preRollMs, post_roll_ms=body.postRollMs,
-                           period=body.period, match_minute=body.matchMinute, match_second=body.matchSecond,
-                           sheet_event_id=body.sheetEventId)
+    def flag(body: IncidentIn, who: Principal = operator,
+             idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        def run():
+            event = _when(body.eventUtc, "eventUtc") if body.eventUtc else None
+            return lifecycle(incidents.create, service.store, settings, body.sessionId, actor_of(who), event_utc=event,
+                             basis=body.basis if (body.eventUtc or body.basis in ("match_clock", "sheet_event"))
+                             else "operator_now",
+                             category=body.category, note=body.note, pre_roll_ms=body.preRollMs,
+                             post_roll_ms=body.postRollMs, period=body.period, match_minute=body.matchMinute,
+                             match_second=body.matchSecond, sheet_event_id=body.sheetEventId, player_ref=body.playerRef)
+        return once(idempotency_key, who, "incidents.create", body.model_dump(), 201, run)
+
+    @app.get("/edge/v1/incidents/{incident_id}")
+    def incident_detail(incident_id: str, _: Principal = staff):
+        row = lifecycle(incidents.get, service.store, incident_id)
+        return {**row, "reviews": incidents.reviews(service.store, incident_id),
+                "evidence": [evidence.evidence_view(e) for e in service.store.query(
+                    "SELECT * FROM evidence WHERE incident_id = ? ORDER BY created_utc", (incident_id,))],
+                "jobs": service.store.query("SELECT * FROM jobs WHERE incident_id = ? ORDER BY created_utc",
+                                            (incident_id,)),
+                "rights": incidents.current_rights(service.store, row["session_id"])}
 
     @app.patch("/edge/v1/incidents/{incident_id}")
     def patch_incident(incident_id: str, body: IncidentPatch, if_match: str = Header(..., alias="If-Match"),
                        who: Principal = operator):
-        try:
-            version = int(if_match.strip('"'))
-        except ValueError:
-            raise refusal(400, "bad_if_match", "If-Match must be the incident's version number")
         changes = {k: v for k, v in {
             "pre_roll_ms": body.preRollMs, "post_roll_ms": body.postRollMs, "category": body.category,
             "note": body.note, "match_minute": body.matchMinute, "match_second": body.matchSecond,
-            "period": body.period}.items() if v is not None}
-        return timing_call(timing.update_incident, service.store, incident_id, version, actor(who), changes)
+            "period": body.period, "player_ref": body.playerRef}.items() if v is not None}
+        return lifecycle(incidents.edit, service.store, settings, incident_id, version_of(if_match), actor_of(who),
+                         changes)
 
     @app.get("/edge/v1/incidents/{incident_id}/windows")
-    def windows(incident_id: str, _: Principal = viewer):
+    def windows(incident_id: str, _: Principal = staff):
         return timing_call(timing.incident_windows, service.store, settings, incident_id, spans_for)
+
+    @app.post("/edge/v1/incidents/{incident_id}/review/start")
+    def review_start(incident_id: str, if_match: str = Header(..., alias="If-Match"), who: Principal = reviewer):
+        return lifecycle(incidents.start_review, service.store, incident_id, version_of(if_match), actor_of(who))
+
+    @app.post("/edge/v1/incidents/{incident_id}/review/complete")
+    def review_complete(incident_id: str, body: ReviewIn, if_match: str = Header(..., alias="If-Match"),
+                        who: Principal = reviewer):
+        # What each camera shows is judged here, not taken from the browser.
+        shown = timing_call(timing.incident_windows, service.store, settings, incident_id, spans_for)
+        states = {w["source"]: w["state"] for w in shown["perSource"]}
+        return lifecycle(incidents.complete_review, service.store, incident_id, version_of(if_match), actor_of(who),
+                         result=body.result, factual_notes=body.factualNotes, on_field_decision=body.onFieldDecision,
+                         evidence_ids=body.evidenceIds, footage_states=states)
+
+    @app.post("/edge/v1/incidents/{incident_id}/archive")
+    def archive(incident_id: str, if_match: str = Header(..., alias="If-Match"), who: Principal = reviewer):
+        return lifecycle(incidents.archive, service.store, incident_id, version_of(if_match), actor_of(who))
+
+    @app.post("/edge/v1/incidents/{incident_id}/reopen")
+    def reopen(incident_id: str, body: ReopenIn, if_match: str = Header(..., alias="If-Match"),
+               who: Principal = reviewer):
+        return lifecycle(incidents.reopen, service.store, incident_id, version_of(if_match), actor_of(who), body.reason)
+
+    @app.get("/edge/v1/incidents/{incident_id}/audit")
+    def incident_audit(incident_id: str, _: Principal = staff):
+        lifecycle(incidents.get, service.store, incident_id)
+        return audit.for_incident(service.store, incident_id)
+
+    # ── evidence ─────────────────────────────────────────────────────────
+    @app.post("/edge/v1/incidents/{incident_id}/clips")
+    def request_clip(incident_id: str, body: ClipIn, who: Principal = operator):
+        source_or_404(body.source)
+        job, created = lifecycle(evidence.request_clip, service.store, settings, incident_id, body.source, actor_of(who))
+        return JSONResponse(job, status_code=202 if created else 200)
+
+    @app.get("/edge/v1/jobs/{job_id}")
+    def job(job_id: str, _: Principal = staff):
+        row = service.store.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        if row is None:
+            raise refusal(404, "not_found", "no such job")
+        return row
+
+    def evidence_or_404(evidence_id: str) -> dict:
+        return lifecycle(evidence.get, service.store, evidence_id)
+
+    def readable(who: Principal, row: dict) -> str:
+        """'staff', or 'organiser' when only released evidence may be read; refuses otherwise."""
+        if any(who.can(p) for p in STAFF_PERMISSIONS):
+            return "staff"
+        ok, why = evidence.released(service.store, row)
+        if not ok:
+            # Not 403: an organiser is not told that withheld evidence exists.
+            raise refusal(404, "not_found", "no such evidence")
+        return "organiser"
+
+    @app.get("/edge/v1/evidence")
+    def list_evidence(incidentId: str, _: Principal = staff):
+        lifecycle(incidents.get, service.store, incidentId)
+        rows = service.store.query("SELECT * FROM evidence WHERE incident_id = ? ORDER BY created_utc", (incidentId,))
+        return [{**evidence.evidence_view(r), "release": dict(zip(("allowed", "reason"),
+                                                                 evidence.released(service.store, r)))} for r in rows]
+
+    @app.get("/edge/v1/evidence/{evidence_id}")
+    def evidence_detail(evidence_id: str, who: Principal = organiser):
+        row = evidence_or_404(evidence_id)
+        readable(who, row)
+        return row
+
+    @app.get("/edge/v1/evidence/{evidence_id}/manifest")
+    def evidence_manifest(evidence_id: str, who: Principal = organiser):
+        row = evidence_or_404(evidence_id)
+        readable(who, row)
+        lifecycle(evidence.verify_file, service.store, settings, row)
+        return FileResponse(evidence.path_of(settings, row, "manifest_rel_path"), media_type="application/json")
+
+    @app.get("/edge/v1/evidence/{evidence_id}/file")
+    def evidence_file(evidence_id: str, who: Principal = organiser):
+        row = evidence_or_404(evidence_id)
+        as_role = readable(who, row)
+        path = evidence.path_of(settings, row)
+        if not path.exists():
+            raise refusal(409, "evidence_missing", "the evidence file is missing from this Edge")
+        if first_look(who.user_id, "evidence", evidence_id):
+            audit.record(service.store, actor_of(who), "evidence.accessed", "evidence", evidence_id, None,
+                         {"as": as_role, "sha256": row["sha256"]})
+        return FileResponse(path, media_type="video/mp4")
+
+    @app.post("/edge/v1/evidence/{evidence_id}/approve")
+    def approve_evidence(evidence_id: str, who: Principal = exporter):
+        return lifecycle(evidence.approve, service.store, settings, evidence_id, actor_of(who))
+
+    @app.post("/edge/v1/evidence/{evidence_id}/export")
+    def export_evidence(evidence_id: str, who: Principal = exporter):
+        row = evidence_or_404(evidence_id)
+        ok, why = evidence.released(service.store, row)
+        if not ok:
+            raise refusal(409, "not_released", why, "approve it once the finding is complete and rights are recorded")
+        path, digest = lifecycle(evidence.export_package, service.store, settings, row, actor_of(who),
+                                 settings.data_dir / "exports")
+        return FileResponse(path, media_type="application/zip", filename=path.name,
+                            headers={"X-Package-SHA256": digest})
+
+    # ── rights, the organiser's report, audit and sync ───────────────────
+    @app.get("/edge/v1/sessions/{session_id}/rights")
+    def rights(session_id: str, _: Principal = staff):
+        session_or_404(session_id)
+        current = incidents.current_rights(service.store, session_id)
+        ok, why = incidents.release_check(current)
+        return {"current": current, "externalRelease": {"allowed": ok, "reason": why},
+                "history": service.store.query("SELECT * FROM session_rights WHERE session_id = ? ORDER BY created_utc",
+                                               (session_id,))}
+
+    @app.post("/edge/v1/sessions/{session_id}/rights", status_code=201)
+    def record_rights(session_id: str, body: RightsIn, who: Principal = admin):
+        session_or_404(session_id)
+        return lifecycle(incidents.record_rights, service.store, session_id, actor_of(who),
+                         footage_kind=body.footageKind, status=body.status, minors_present=body.minorsPresent,
+                         basis=body.basis, consent_reference=body.consentReference)
+
+    @app.get("/edge/v1/report/sessions")
+    def report_sessions(_: Principal = organiser):
+        return service.store.query("SELECT id, label, match_ref, mode, created_utc, ended_utc FROM match_sessions"
+                                   " ORDER BY created_utc DESC")
+
+    @app.get("/edge/v1/report/sessions/{session_id}")
+    def report(session_id: str, _: Principal = organiser):
+        """What an organiser may see: completed findings and the evidence released with them."""
+        session = session_or_404(session_id)
+        out = []
+        for inc in service.store.query("SELECT * FROM incidents WHERE session_id = ? AND state IN ('reviewed','archived')"
+                                       " ORDER BY event_utc", (session_id,)):
+            finding = service.store.one("SELECT result, factual_notes, on_field_decision, completed_at, reviewer_name"
+                                        " FROM reviews WHERE id = ?", (inc["current_review_id"],))
+            released = [evidence.evidence_view(e) for e in service.store.query(
+                "SELECT * FROM evidence WHERE incident_id = ? AND state = 'approved'", (inc["id"],))
+                if evidence.released(service.store, e)[0]]
+            out.append({"incidentId": inc["id"], "period": inc["period"], "matchMinute": inc["match_minute"],
+                        "matchSecond": inc["match_second"], "category": inc["category"], "finding": finding,
+                        "evidence": [{k: e[k] for k in ("id", "source", "sha256", "bytes", "duration_ms",
+                                                        "coverage", "footage_kind")} for e in released]})
+        return {"session": {k: session[k] for k in ("id", "label", "match_ref", "mode")},
+                "authorityMode": "shadow",
+                "note": "Shadow review only: these findings did not and cannot change any decision in the match.",
+                "incidents": out}
+
+    @app.get("/edge/v1/audit")
+    def audit_entries(after: int = 0, limit: int = Query(200, ge=1, le=1000), _: Principal = admin):
+        return audit.entries(service.store, after=after, limit=limit)
+
+    @app.get("/edge/v1/audit/verify")
+    def audit_verify(_: Principal = admin):
+        return audit.verify(service.store)
+
+    @app.get("/edge/v1/outbox")
+    def outbox_view(_: Principal = staff):
+        status = service.outbox.status(service.sync_configured)
+        parked = service.store.query("SELECT seq, idempotency_key, entity_type, result, last_error FROM outbox"
+                                     " WHERE state = 'parked' ORDER BY seq")
+        return {**status, "parkedItems": parked}
 
     # ── measured replay latency ──────────────────────────────────────────
     @app.post("/edge/v1/metrics/replay", status_code=201)
-    def record_replay(body: ReplayMetricIn, who: Principal = viewer):
+    def record_replay(body: ReplayMetricIn, who: Principal = staff):
         source_or_404(body.source)
         with service.store.tx() as db:
             db.execute("INSERT INTO replay_metrics (at_utc, user_id, source, window_start_utc, duration_ms,"
@@ -777,7 +1047,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return {"recorded": True}
 
     @app.get("/edge/v1/metrics/replay")
-    def replay_summary(since: str | None = None, _: Principal = viewer):
+    def replay_summary(since: str | None = None, _: Principal = staff):
         return timing.replay_summary(service.store, iso(_when(since, "since")) if since else None)
 
     # ── the console ──────────────────────────────────────────────────────

@@ -1,0 +1,679 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dtp.africa/schemas/fairplay/evidence-manifest/v1",
+  "title": "FairPlay evidence manifest, version 1",
+  "description": "Written by the FairPlay Edge beside every evidence clip (services/fairplay-edge/fairplay_edge/evidence.py). Says which original recordings the clip was cut from, their SHA-256 at the moment of the cut, how it was cut, and who asked for it. The manifest's own SHA-256 is recorded in the Edge database and in the evidence.created audit entry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "evidenceId",
+    "createdUtc",
+    "authorityMode",
+    "footageKind",
+    "edge",
+    "incident",
+    "window",
+    "coverage",
+    "sources",
+    "derivative",
+    "derivation",
+    "custody"
+  ],
+  "$defs": {
+    "utc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromUtc",
+        "toUtc",
+        "durationMs"
+      ],
+      "properties": {
+        "fromUtc": {
+          "$ref": "#/$defs/utc"
+        },
+        "toUtc": {
+          "$ref": "#/$defs/utc"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kind": {
+          "enum": [
+            "not_recorded",
+            "video",
+            "undecodable"
+          ],
+          "description": "not_recorded: no usable segment covers it; video: the clip's video track has no pictures there; undecodable: frames whose keyframe the recorder discarded."
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "fairplay.evidence-manifest/v1"
+    },
+    "evidenceId": {
+      "$ref": "#/$defs/uuid"
+    },
+    "createdUtc": {
+      "$ref": "#/$defs/utc"
+    },
+    "authorityMode": {
+      "const": "shadow",
+      "description": "V1 is shadow review only (ADR-0001). No other value exists."
+    },
+    "footageKind": {
+      "enum": [
+        "synthetic",
+        "real"
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deviceId",
+        "device",
+        "version"
+      ],
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "device": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "incident": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "sessionId",
+        "matchId",
+        "scoreboardEventId",
+        "period",
+        "matchMinute",
+        "matchSecond",
+        "eventUtc",
+        "eventUtcBasis",
+        "category",
+        "playerRef"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The incident version the clip was requested for."
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "matchId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scoreboardEventId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "period": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "matchMinute": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "matchSecond": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "eventUtc": {
+          "$ref": "#/$defs/utc",
+          "description": "Approximate: the Edge clock at the moment, on the stated basis."
+        },
+        "eventUtcBasis": {
+          "enum": [
+            "operator_now",
+            "period_mark",
+            "manual",
+            "sheet_event",
+            "match_clock"
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "playerRef": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "requestedStartUtc",
+        "requestedDurationMs",
+        "eventAtMs",
+        "offsetMs",
+        "uncertaintyMs",
+        "calibrationId",
+        "clock"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "requestedStartUtc": {
+          "$ref": "#/$defs/utc"
+        },
+        "requestedDurationMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "eventAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Where the incident falls in the clip as cut: the pre-roll plus the keyframe lead-in (coverage.videoCheck.leadInMs)."
+        },
+        "offsetMs": {
+          "type": "integer"
+        },
+        "uncertaintyMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "calibrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clock": {
+          "type": "string"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "coveredMs",
+        "gaps",
+        "unusedSegments",
+        "videoCheck"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "full",
+            "partial"
+          ],
+          "description": "full only when the plan had no gap AND the clip's own video frames have no hole and reach the window's length (within three frames). There is no 'none': no footage means no clip."
+        },
+        "coveredMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/span"
+          }
+        },
+        "unusedSegments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "segmentId",
+              "state",
+              "note"
+            ],
+            "properties": {
+              "segmentId": {
+                "$ref": "#/$defs/uuid"
+              },
+              "state": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "videoCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Read from the clip's video packet timestamps after the cut, so a cut that came out short can never be reported as full.",
+          "required": [
+            "method",
+            "fps",
+            "frames",
+            "firstPtsS",
+            "lastPtsS",
+            "holes",
+            "undecodableLeadMs",
+            "missingMs",
+            "full",
+            "leadInMs",
+            "excessMs"
+          ],
+          "properties": {
+            "method": {
+              "type": "string"
+            },
+            "fps": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "the sources' nominal frame rate, used to count time from frames"
+            },
+            "frames": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "firstPtsS": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "lastPtsS": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "holes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fromS",
+                  "toS",
+                  "durationMs",
+                  "approxFromUtc",
+                  "approxToUtc"
+                ],
+                "properties": {
+                  "fromS": {
+                    "type": "number"
+                  },
+                  "toS": {
+                    "type": "number"
+                  },
+                  "durationMs": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "approxFromUtc": {
+                    "$ref": "#/$defs/utc"
+                  },
+                  "approxToUtc": {
+                    "$ref": "#/$defs/utc"
+                  }
+                }
+              }
+            },
+            "undecodableLeadMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "missingMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "full": {
+              "type": "boolean"
+            },
+            "leadInMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "footage from before the window at the clip's start: the copy cut begins at the keyframe at or before the requested start"
+            },
+            "excessMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "pictures beyond the lead-in and the window, at the sources' frame rate: footage that appears twice because segments' recorded start times overlap. Above three frames, the clip is not full."
+            }
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "segmentId",
+          "relPath",
+          "state",
+          "startUtc",
+          "endUtc",
+          "durationMs",
+          "bytes",
+          "sha256",
+          "verifiedSha256AtCut",
+          "usedFromUtc",
+          "usedToUtc",
+          "inpointS",
+          "outpointS"
+        ],
+        "properties": {
+          "segmentId": {
+            "$ref": "#/$defs/uuid"
+          },
+          "relPath": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "finalized",
+              "partial"
+            ]
+          },
+          "startUtc": {
+            "$ref": "#/$defs/utc"
+          },
+          "endUtc": {
+            "$ref": "#/$defs/utc"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256",
+            "description": "Recorded when the segment was finalised."
+          },
+          "verifiedSha256AtCut": {
+            "$ref": "#/$defs/sha256",
+            "description": "Re-computed just before the cut; equal to sha256, or there is no clip."
+          },
+          "usedFromUtc": {
+            "$ref": "#/$defs/utc"
+          },
+          "usedToUtc": {
+            "$ref": "#/$defs/utc"
+          },
+          "inpointS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "null: from the segment's own start"
+          },
+          "outpointS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "null: to the segment's own end"
+          },
+          "undecodableLeadMs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "present when the segment opened with frames that could not be decoded; the cut starts at its first keyframe"
+          }
+        }
+      }
+    },
+    "derivative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relPath",
+        "container",
+        "bytes",
+        "sha256",
+        "durationMs",
+        "codec",
+        "width",
+        "height",
+        "fps",
+        "hasAudio"
+      ],
+      "properties": {
+        "relPath": {
+          "type": "string"
+        },
+        "container": {
+          "const": "mp4"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "codec": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "height": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "fps": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hasAudio": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "derivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "tool",
+        "toolVersion",
+        "arguments",
+        "note"
+      ],
+      "properties": {
+        "method": {
+          "const": "copy",
+          "description": "Stream copy. V1 never re-encodes evidence."
+        },
+        "tool": {
+          "type": "string"
+        },
+        "toolVersion": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "custody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "requestedBy",
+        "requestedUtc",
+        "auditHeadAtCut",
+        "activity"
+      ],
+      "properties": {
+        "jobId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "requestedBy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "name"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        "requestedUtc": {
+          "$ref": "#/$defs/utc"
+        },
+        "auditHeadAtCut": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "seq",
+            "entryHash"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "entryHash": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        },
+        "activity": {
+          "type": "array",
+          "description": "Every audit entry about this incident, its reviews, evidence and jobs, up to the cut.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "seq",
+              "atUtc",
+              "actorId",
+              "actorName",
+              "action",
+              "entityType",
+              "entityId",
+              "entryHash"
+            ],
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "atUtc": {
+                "$ref": "#/$defs/utc"
+              },
+              "actorId": {
+                "type": "string"
+              },
+              "actorName": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "entityType": {
+                "type": "string"
+              },
+              "entityId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "entryHash": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

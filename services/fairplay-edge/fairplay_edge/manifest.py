@@ -22,15 +22,20 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from . import __version__, mp4
+from . import __version__, mp4, outbox
 from .config import Settings
 from .naming import NotASegment, iso, parse_iso, parse_rel_path, utcnow
-from .probe import ProbeError, probe, sha256_file
+from .probe import ProbeError, probe, sha256_file, video_packets, video_span_s
 from .store import Store, new_id
 
 log = logging.getLogger("fairplay.manifest")
 
 MANIFEST_SCHEMA = "fairplay.segment-manifest/v1"
+# Pictures missing between the end of one segment's video and the next segment's first
+# decodable frame. Seen with MediaMTX 1.21.3 when a feed's audio runs more than a second
+# ahead of its video: at each segment switch the recorder discards the late video ("sample
+# of track received too late"). See docs/fairplay/phase-3-incidents-and-evidence.md.
+VIDEO_GAP_MS = 250
 
 
 def list_segment_files(recordings_dir: Path, source_names: set[str]) -> list[tuple[str, Path]]:
@@ -175,14 +180,58 @@ class Scanner:
             Store.log_event(db, now, f"segment.{state}", segment_id, {
                 "reason": reason, "sha256": digest, "bytes": structure.file_bytes,
                 "inspectProbeMs": round((probed - started) * 1000), "hashMs": round((hashed - probed) * 1000)})
+        lost = self.pictures_lost_before(row, path, probe_result) if probe_result else None
+        if lost is not None and lost > VIDEO_GAP_MS:
+            # The file is whole, so it stays finalized; the loss is recorded and raised.
+            problems.append(f"{lost} ms of pictures missing before this segment's first decodable frame")
+            with self.store.tx() as db:
+                db.execute("UPDATE segments SET problems = ? WHERE id = ?", (json.dumps(problems), segment_id))
+            self.store.open_alert("segment_video_gap", row["source"], "warning", now,
+                                  {"segment_id": segment_id, "rel_path": row["rel_path"], "lostMs": lost})
+        elif lost is not None:
+            self.store.resolve_alert("segment_video_gap", row["source"], now)
         if state != "finalized":
             self.store.open_alert(
                 f"segment_{state}", row["source"], "warning", now,
                 {"segment_id": segment_id, "rel_path": row["rel_path"], "problems": problems},
             )
+        # MediaMTX has moved on from this file (an open handle keeps writing regardless, so this
+        # can never cost a recording). Read-only stops a casual edit; the hash catches the rest.
+        try:
+            path.chmod(0o444)
+        except OSError:
+            pass
         manifest = self.write_sidecar(segment_id)
+        self.sync(segment_id, manifest)
         log.info(json.dumps({"event": f"segment.{state}", "rel_path": row["rel_path"], "sha256": digest}))
         return manifest
+
+    def pictures_lost_before(self, row: dict, path: Path, probed) -> int | None:
+        """Milliseconds between the previous segment's last picture and this segment's first
+        decodable one (a keyframe), on the receive-time clock. None when it cannot be told:
+        no previous segment, or no video timing."""
+        prev = self.store.one(
+            "SELECT start_utc, probe_json FROM segments WHERE source = ? AND start_utc < ? AND probe_json IS NOT NULL"
+            " AND state IN ('finalized','partial') ORDER BY start_utc DESC LIMIT 1", (row["source"], row["start_utc"]))
+        before = video_span_s(json.loads(prev["probe_json"])) if prev else None
+        mine = video_span_s(probed.raw)
+        if before is None or mine is None:
+            return None
+        try:
+            first_key = next((pts for pts, key in video_packets(path, "%+10") if key), None)
+        except ProbeError:
+            return None
+        if first_key is None:
+            return None
+        prev_end = parse_iso(prev["start_utc"]) + timedelta(seconds=before[1])
+        first_shown = parse_iso(row["start_utc"]) + timedelta(seconds=first_key - mine[0])
+        return max(0, round((first_shown - prev_end).total_seconds() * 1000))
+
+    def sync(self, segment_id: str, manifest: dict | None = None) -> None:
+        """Queue the segment's manifest for the cloud: what exists, never the video."""
+        manifest = manifest or self.manifest_for(segment_id)
+        with self.store.tx() as db:
+            outbox.enqueue(db, "segment", segment_id, None, manifest)
 
     # ── sidecar ───────────────────────────────────────────────────────────
     def manifest_for(self, segment_id: str) -> dict:

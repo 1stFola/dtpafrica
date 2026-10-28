@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DtpLogo } from "@dtp/ui";
 import {
-  ApiError, get, patch, post,
+  ApiError, createOnce, get, post,
   type CalibrationRow, type Health, type Incident, type IncidentWindows, type MatchSession, type Me,
   type SessionDetail, type SourceView, type SourceWindow, type SyncTest,
 } from "./api";
 import { ShadowBanner } from "./Banner";
+import { can, IncidentPanel, RightsPanel } from "./Review";
 import { LivePlayer, type LiveState } from "./hls";
 import { actionFor, nextSpeed, SHORTCUTS, type Action } from "./keys";
 import { loadWindow, measureSlowRate, report, warningsFor } from "./replay";
@@ -13,7 +14,6 @@ import { clockLabel, edgeToIngest, matchClock, parseTypedTime, PERIOD_OFFSET_MIN
 
 const REPLAY_WINDOW_MS = 40_000;
 const LIVE_SAFETY_MS = 1_500; // the newest second is still being written
-const CATEGORIES = ["goal", "penalty", "offside", "foul", "handball", "card", "goalkeeper", "other"];
 const CAL_METHODS = ["marker", "whistle", "ball_strike", "clapper"];
 
 type Replay = {
@@ -29,8 +29,6 @@ type Replay = {
   error?: string;
   toPlayableMs?: number | null;
 };
-
-const can = (me: Me, permission: string) => me.kind === "device" || me.permissions.includes(permission);
 
 export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const [health, setHealth] = useState<Health | null>(null);
@@ -61,6 +59,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   const replayVideo = useRef<HTMLVideoElement>(null);
   const livePlayer = useRef<LivePlayer | null>(null);
   const liveRegion = useRef<HTMLDivElement>(null);
+  const flagging = useRef(false);
 
   const edgeNow = useCallback(() => Date.now() + skewMs, [skewMs]);
   const say = useCallback((text: string) => setMessage(text), []);
@@ -145,7 +144,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   const replayAt = useCallback(async (source: string, edgeMs: number, note: string) => {
     const cal = calibrationFor(source);
     const offset = cal?.offsetMs ?? 0;
-    const unc = cal?.uncertaintyMs ?? 2000;
+    const unc = cal?.uncertaintyMs ?? 3000; // timing.py UNCALIBRATED_UNCERTAINTY_MS
     const startIngest = edgeToIngest(edgeMs, offset);
     const latest = edgeToIngest(edgeNow(), offset) - LIVE_SAFETY_MS;
     const duration = Math.max(2000, Math.min(REPLAY_WINDOW_MS, latest - startIngest));
@@ -237,31 +236,42 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   }, [say]);
 
   // ── incidents, periods, calibration ───────────────────────────────────
-  const flag = useCallback(async () => {
-    if (!sessionId) return say("Create or choose a session first.");
+  /** One flag request in flight at a time, each with its own Idempotency-Key. */
+  const submitFlag = useCallback(async (body: Record<string, unknown>, done: (inc: Incident) => string) => {
+    if (flagging.current) return;
+    flagging.current = true;
     try {
-      const inc = await post<Incident>("/edge/v1/incidents", { sessionId, category: "other" });
-      say(`Incident flagged at ≈ ${clockLabel(toMs(inc.event_utc))} UTC.`);
+      const inc = await createOnce<Incident>("/edge/v1/incidents", body);
+      say(done(inc));
       await refreshSession();
       setSelected(inc.id);
     } catch (err) {
       say(err instanceof ApiError ? err.message : "could not flag the incident");
+    } finally {
+      flagging.current = false;
     }
-  }, [refreshSession, say, sessionId]);
+  }, [refreshSession, say]);
+
+  const flag = useCallback(async () => {
+    if (!sessionId) return say("Create or choose a session first.");
+    await submitFlag({ sessionId, category: "other" }, (inc) => `Incident flagged at ≈ ${clockLabel(toMs(inc.event_utc))} UTC.`);
+  }, [say, sessionId, submitFlag]);
 
   /** An incident at the moment on screen in the replay, for something seen after the fact. */
   const flagAtReplay = useCallback(async () => {
     const at = currentEdge();
     if (!sessionId || at === null) return say("Load a replay and pause on the moment first.");
-    try {
-      const inc = await post<Incident>("/edge/v1/incidents", { sessionId, eventUtc: toIso(at), basis: "manual", category: "other" });
-      say(`Incident flagged at the replay position ≈ ${clockLabel(at)} UTC.`);
-      await refreshSession();
-      setSelected(inc.id);
-    } catch (err) {
-      say(err instanceof ApiError ? err.message : "could not flag the incident");
-    }
-  }, [currentEdge, refreshSession, say, sessionId]);
+    await submitFlag({ sessionId, eventUtc: toIso(at), basis: "manual", category: "other" },
+                     () => `Incident flagged at the replay position ≈ ${clockLabel(at)} UTC.`);
+  }, [currentEdge, say, sessionId, submitFlag]);
+
+  /** A bookmark from the match clock (a minute the referee or the sheet gives). */
+  const flagAtMinute = useCallback(async (period: string, minute: number, second: number, sheetEventId: string) => {
+    if (!sessionId) return say("Create or choose a session first.");
+    await submitFlag({ sessionId, basis: sheetEventId ? "sheet_event" : "match_clock", period, matchMinute: minute,
+                       matchSecond: second, sheetEventId: sheetEventId || undefined, category: "other" },
+                     (inc) => `Incident flagged at ${minute}:${String(second).padStart(2, "0")} ≈ ${clockLabel(toMs(inc.event_utc))} UTC.`);
+  }, [say, sessionId, submitFlag]);
 
   const latestIncident = useCallback(() => {
     if (incidents[0]) void openIncident(incidents[0].id);
@@ -351,6 +361,9 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   // ── derived ───────────────────────────────────────────────────────────
   const session = sessions.find((s) => s.id === sessionId) ?? null;
   const selectedIncident = incidents.find((i) => i.id === selected) ?? null;
+  const cloud = health?.cloud;
+  const cloudLabel = !cloud ? "…" : !cloud.configured ? `local only · ${cloud.pending} queued`
+    : cloud.parked ? `${cloud.parked} need attention` : cloud.pending ? `${cloud.pending} to send` : "in sync";
   const replayLabel = sources.find((s) => s.name === replay?.source)?.label ?? replay?.source ?? "";
   const replayWarnings = replay ? warningsFor(replayLabel, replay.flags, replay.uncertaintyMs) : [];
   const periodStart = useMemo(() => detail?.periods.filter((p) => p.edge === "start").at(-1) ?? null, [detail]);
@@ -379,7 +392,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
           <span className="fp-clock" title="Edge clock, UTC">Edge {clockLabel(edgeNow())}</span>
           {periodStart && <span className="fp-chip">Match ≈ {matchClock(edgeNow(), toMs(periodStart.edge_utc), PERIOD_OFFSET_MIN[periodStart.period] ?? 0)}</span>}
           <span className={`fp-chip fp-chip--${health?.status ?? "starting"}`}>Edge {health?.status ?? "…"}</span>
-          <span className="fp-chip fp-chip--muted" title={health?.cloud.note}>Cloud: local only</span>
+          <span className={`fp-chip ${cloud?.parked ? "fp-chip--critical" : "fp-chip--muted"}`}
+                title={cloud?.note ?? cloud?.lastError ?? undefined}>Cloud: {cloudLabel}</span>
           <span className={`fp-chip ${health?.disk.state === "ok" ? "" : "fp-chip--warn"}`}>Disk {health ? `${Math.round(health.disk.freeBytes / 1e9)} GB free` : "…"}</span>
           <span className="fp-me">{me.name}</span>
           <button className="fp-btn" onClick={onSignedOut}>Sign out</button>
@@ -479,14 +493,19 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
             {incidents.map((inc) => (
               <li key={inc.id}>
                 <button className={`fp-incident ${selected === inc.id ? "is-selected" : ""}`} onClick={() => void openIncident(inc.id)} aria-keyshortcuts={inc === incidents[0] ? "I" : undefined}>
-                  ≈ {clockLabel(toMs(inc.event_utc))} · {inc.category} {inc.note ? `· ${inc.note}` : ""}
+                  ≈ {clockLabel(toMs(inc.event_utc))} · {inc.category} <span className={`fp-state fp-state--${inc.state}`}>{inc.state}</span> {inc.note ? `· ${inc.note}` : ""}
                 </button>
               </li>
             ))}
           </ul>
-          {selectedIncident && <IncidentEditor incident={selectedIncident} windows={windows} canEdit={can(me, "fairplay.incident.operate")}
-                                                onSaved={async () => { await refreshSession(); await openIncident(selectedIncident.id); }} say={say} />}
+          {can(me, "fairplay.incident.operate") && sessionId && <MinuteBookmark onFlag={flagAtMinute} />}
+          {selectedIncident && <IncidentPanel incidentId={selectedIncident.id}
+                                              windows={windows?.incidentId === selectedIncident.id ? windows : null}
+                                              sources={sources.map((s) => s.name)}
+                                              me={me} say={say} onChanged={refreshSession} />}
         </section>
+
+        {sessionId && <RightsPanel sessionId={sessionId} me={me} say={say} />}
 
         <section className="fp-panel fp-calibration" aria-labelledby="calibration-title">
           <h2 id="calibration-title">Periods &amp; calibration</h2>
@@ -547,51 +566,20 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   );
 }
 
-function IncidentEditor({ incident, windows, canEdit, onSaved, say }: {
-  incident: Incident; windows: IncidentWindows | null; canEdit: boolean; onSaved: () => Promise<void>; say: (t: string) => void;
-}) {
-  const [pre, setPre] = useState(incident.pre_roll_ms / 1000);
-  const [postRoll, setPostRoll] = useState(incident.post_roll_ms / 1000);
-  const [category, setCategory] = useState(incident.category);
-  const [note, setNote] = useState(incident.note ?? "");
-
-  useEffect(() => {
-    setPre(incident.pre_roll_ms / 1000);
-    setPostRoll(incident.post_roll_ms / 1000);
-    setCategory(incident.category);
-    setNote(incident.note ?? "");
-  }, [incident.id, incident.version, incident.pre_roll_ms, incident.post_roll_ms, incident.category, incident.note]);
-
-  const save = async () => {
-    try {
-      await patch(`/edge/v1/incidents/${incident.id}`, { preRollMs: Math.round(pre * 1000), postRollMs: Math.round(postRoll * 1000), category, note }, incident.version);
-      say("Incident saved.");
-      await onSaved();
-    } catch (err) {
-      say(err instanceof ApiError && err.status === 409 ? "Someone else changed this incident — reloaded; check and save again." : err instanceof Error ? err.message : "not saved");
-      await onSaved();
-    }
-  };
-
+function MinuteBookmark({ onFlag }: { onFlag: (period: string, minute: number, second: number, sheetEventId: string) => Promise<void> }) {
+  const [period, setPeriod] = useState("1");
+  const [clock, setClock] = useState("");
+  const [sheetEvent, setSheetEvent] = useState("");
+  const parsed = /^(\d{1,3})(?::([0-5]\d))?$/.exec(clock.trim());
   return (
-    <div className="fp-editor">
-      <h3>Incident ≈ {clockLabel(toMs(incident.event_utc))} UTC · v{incident.version}</h3>
-      <div className="fp-row">
-        <label>Pre-roll <input type="number" min={0} max={600} value={pre} onChange={(e) => setPre(Number(e.target.value))} disabled={!canEdit} /> s</label>
-        <label>Post-roll <input type="number" min={0} max={600} value={postRoll} onChange={(e) => setPostRoll(Number(e.target.value))} disabled={!canEdit} /> s</label>
-      </div>
-      <label>Category <select value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canEdit}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
-      <label>Note <textarea value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} disabled={!canEdit} /></label>
-      <button className="fp-btn fp-btn--primary" onClick={() => void save()} disabled={!canEdit}>Save</button>
-      {windows && (
-        <table className="fp-table">
-          <caption>What each source shows for this incident</caption>
-          <thead><tr><th>Source</th><th>Offset</th><th>State</th><th>Recorded</th></tr></thead>
-          <tbody>{windows.perSource.map((w) => (
-            <tr key={w.source}><td>{w.source}</td><td>{signedMs(w.offsetMs)} ± {w.uncertaintyMs}</td><td>{w.state.replaceAll("_", " ")}</td><td>{Math.round(w.coveredMs / 1000)} / {Math.round(w.durationMs / 1000)} s</td></tr>
-          ))}</tbody>
-        </table>
-      )}
-    </div>
+    <form className="fp-row fp-goto" onSubmit={(e) => {
+      e.preventDefault();
+      if (parsed) void onFlag(period, Number(parsed[1]), Number(parsed[2] ?? 0), sheetEvent.trim());
+    }}>
+      <label>Period <select value={period} onChange={(e) => setPeriod(e.target.value)}>{["1", "2", "3", "4"].map((p) => <option key={p}>{p}</option>)}</select></label>
+      <label>Minute <input value={clock} onChange={(e) => setClock(e.target.value)} placeholder="47:30" aria-label="Match clock, minutes:seconds" size={6} /></label>
+      <label>ScoreBoard event <input value={sheetEvent} onChange={(e) => setSheetEvent(e.target.value)} placeholder="optional id" size={10} /></label>
+      <button className="fp-btn" type="submit" disabled={!parsed}>Flag at minute</button>
+    </form>
   );
 }

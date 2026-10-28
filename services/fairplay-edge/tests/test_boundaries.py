@@ -21,10 +21,14 @@ def test_only_the_synthetic_generator_encodes():
     assert [name for name, text in SOURCES.items() if encoders.search(text)] == ["synth.py"]
 
 
-def test_recordings_are_only_probed():
-    """ffmpeg (the encoder) is invoked only by synth.py; recordings meet ffprobe alone."""
+def test_recordings_are_only_probed_or_stream_copied():
+    """ffmpeg runs in two places: synth.py encodes test feeds, and evidence.py cuts clips
+    with `-c copy`, which never decodes or re-encodes a recording."""
     calls = re.compile(r"which\(\"ffmpeg\"\)|\[\s*\"ffmpeg\"")
-    assert [name for name, text in SOURCES.items() if calls.search(text)] == ["synth.py"]
+    assert sorted(name for name, text in SOURCES.items() if calls.search(text)) == ["evidence.py", "synth.py"]
+    cut = SOURCES["evidence.py"]
+    assert '"-c", "copy"' in cut
+    assert not re.search(r"-filter|\"-vf\"|\"-af\"|\"-crf\"|\"-b:v\"|\"-preset\"", cut)
 
 
 def test_no_cors_middleware():

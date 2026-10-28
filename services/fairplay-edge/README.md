@@ -102,6 +102,27 @@ a synchronisation test; warnings in words for no footage, gaps, uncalibrated, st
 reconnect and an unconfirmed clock. Keys: `Space` play/pause, `1 2 3` back 10/30/60 s,
 `, .` nudge, `S` speed, `F` flag, `I` latest incident, `L` live, `G D P` replay source, `?` help.
 
+Phase 3 adds, per incident: its state (flagged → under review → reviewed → archived), a
+bookmark from a match minute or a ScoreBoard event id, the shadow review form (four
+results, factual notes, the evidence relied on), reopening with a reason (the earlier
+finding is kept), evidence clips per camera with their job state, SHA-256 and coverage,
+approval and export for admins, and the incident's audit trail. Per session: the footage
+rights panel. Someone holding only `fairplay.report.view` (an organiser) gets a separate,
+read-only report of completed findings and released evidence, and nothing of the venue.
+
+**Who may do what** (permissions in the operator bundle):
+
+| | operate | review | edge.admin | evidence.export | report.view only |
+|---|---|---|---|---|---|
+| sources, recordings, replay, live, incidents | ✓ | ✓ | ✓ | ✓ | — |
+| flag and edit incidents, request clips, mark periods, calibrate | ✓ | | | | — |
+| start, complete, archive and reopen reviews | | ✓ | | | — |
+| record footage rights, read the whole audit log | | | ✓ | | — |
+| approve evidence for release, export a package | | | | ✓ | — |
+| completed findings and released evidence | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+A member with no permission sees nothing (Phase 2 let any member look).
+
 ## Using the API
 
 Every route but `/edge/v1/healthz`, `/edge/v1/auth/status` and `/edge/v1/auth/login` needs a
@@ -133,6 +154,15 @@ docker compose exec edge fairplay-edge api GET /edge/v1/health
 | `POST /edge/v1/sessions/{id}/periods`, `GET/POST /sessions/{id}/calibrations`, `GET /sessions/{id}/sync-test?at=` | period marks, per-source calibrations, the synchronisation test |
 | `GET/POST /edge/v1/incidents`, `PATCH /incidents/{id}` (`If-Match`), `GET /incidents/{id}/windows` | incidents (a retention hold each), versioned edits, per-source windows with their flags |
 | `GET /edge/v1/live/{source}/{file}` | live preview (MediaMTX HLS, proxied after authorisation) |
+| `POST /edge/v1/incidents` (`Idempotency-Key`), `GET /incidents/{id}` | flag (now, at a time, at a match minute or a ScoreBoard event); one incident with its reviews, evidence, jobs and rights |
+| `POST /edge/v1/incidents/{id}/review/start\|complete`, `/archive`, `/reopen` (all `If-Match`) | the review state machine; a stale version is a 409 |
+| `GET /edge/v1/incidents/{id}/audit` | every audit entry about the incident, its reviews, evidence and jobs |
+| `POST /edge/v1/incidents/{id}/clips`, `GET /jobs/{id}` | ask for an evidence clip of one camera (202 new, 200 the existing job); the job's state |
+| `GET /edge/v1/evidence?incidentId`, `/evidence/{id}`, `/evidence/{id}/file`, `/evidence/{id}/manifest` | evidence and its manifest; organisers see released evidence only (404 otherwise) |
+| `POST /edge/v1/evidence/{id}/approve`, `/export` | approve for release (needs the finding and the rights); download a zip of clip, manifest and `SHA256SUMS` |
+| `GET/POST /edge/v1/sessions/{id}/rights` | the session's footage rights, appended and superseded, never edited |
+| `GET /edge/v1/report/sessions`, `/report/sessions/{id}` | the organiser's report: completed findings and released evidence |
+| `GET /edge/v1/audit`, `/audit/verify`, `GET /edge/v1/outbox` | the audit log and a walk of its hash chain (admin); the sync queue |
 | `GET /edge/v1/clock`, `POST/GET /edge/v1/metrics/replay` | the Edge clock; replay time-to-playable as measured in the browser, with p50/p95 |
 
 ## Tests
@@ -155,6 +185,10 @@ python -I fixtures/run_fixture.py core
 
 ```bash
 python -I fixtures/run_fixture.py wan --minutes 30
+```
+
+```bash
+python -I fixtures/run_fixture.py evidence --project fp3
 ```
 
 Each writes `fixtures/out/<scenario>-<UTC>/results.json` and `log.md`, with freshly generated

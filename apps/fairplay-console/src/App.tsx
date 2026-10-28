@@ -3,6 +3,10 @@ import { DtpLogo } from "@dtp/ui";
 import { ApiError, get, post, type AuthStatus, type Me } from "./api";
 import { ShadowBanner } from "./Banner";
 import { Console } from "./Console";
+import { OrganiserView } from "./Review";
+
+// Anything beyond fairplay.report.view makes someone venue staff (auth.py STAFF_PERMISSIONS).
+const isStaff = (me: Me) => me.kind === "device" || me.permissions.some((p) => p !== "fairplay.report.view");
 
 export function App() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
@@ -25,15 +29,18 @@ export function App() {
 
   if (!checked) return <p className="fp-center">Connecting to the Edge…</p>;
   if (!me) return <SignIn status={status} onSignedIn={setMe} />;
+  const signOut = async () => {
+    await post("/edge/v1/auth/logout").catch(() => undefined);
+    setMe(null);
+    void refresh();
+  };
+  if (isStaff(me)) return <Console me={me} onSignedOut={signOut} />;
+  if (me.permissions.includes("fairplay.report.view")) return <OrganiserView me={me} onSignedOut={signOut} />;
   return (
-    <Console
-      me={me}
-      onSignedOut={async () => {
-        await post("/edge/v1/auth/logout").catch(() => undefined);
-        setMe(null);
-        void refresh();
-      }}
-    />
+    <div className="fp-center" role="alert">
+      <p>Signed in as {me.name}, but this account has no FairPlay permission on this Edge.</p>
+      <button className="fp-btn" onClick={() => void signOut()}>Sign out</button>
+    </div>
   );
 }
 

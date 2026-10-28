@@ -111,3 +111,36 @@ def summarise(raw: dict) -> Probe:
 
 def probe(path: Path) -> Probe:
     return summarise(run_ffprobe(path))
+
+
+def video_packets(path: Path, read_interval: str | None = None, timeout: float = 120) -> list[tuple[float, bool]]:
+    """(pts seconds, is keyframe) for every video packet, in presentation order. Reads the
+    container's index only: no decoding. `read_interval` (ffprobe syntax, e.g. "%+5")
+    limits it to the start of the file."""
+    cmd = [ffprobe_path(), "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags",
+           "-of", "csv=p=0"]
+    if read_interval:
+        cmd += ["-read_intervals", read_interval]
+    try:
+        out = subprocess.run([*cmd, str(path)], capture_output=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise ProbeError(f"ffprobe timed out after {timeout}s") from exc
+    if out.returncode != 0:
+        raise ProbeError(out.stderr.decode(errors="replace").strip() or f"ffprobe exited {out.returncode}")
+    packets = []
+    for line in out.stdout.decode(errors="replace").splitlines():
+        pts, _, flags = line.partition(",")
+        try:
+            packets.append((float(pts), "K" in flags))
+        except ValueError:
+            continue  # a packet without a timestamp
+    return sorted(packets)
+
+
+def video_span_s(raw: dict) -> tuple[float, float] | None:
+    """(first video timestamp, video duration) in seconds, from a stored ffprobe result."""
+    video = next((s for s in raw.get("streams", []) if s.get("codec_type") == "video"), None)
+    try:
+        return float(video.get("start_time") or 0.0), float(video["duration"])
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None

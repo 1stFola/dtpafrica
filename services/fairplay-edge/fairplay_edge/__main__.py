@@ -142,8 +142,11 @@ def cmd_api(args: argparse.Namespace) -> int:
     tls = bool(os.environ.get("FAIRPLAY_EDGE_TLS_CERT"))
     url = f"{'https' if tls else 'http'}://127.0.0.1:{os.environ.get('FAIRPLAY_EDGE_PORT', '8443')}{args.path}"
     data = args.body.encode() if args.body else None
-    request = urllib.request.Request(url, data=data, method=args.method, headers={
-        "Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    for header in args.header:
+        name, _, value = header.partition(":")
+        headers[name.strip()] = value.strip()
+    request = urllib.request.Request(url, data=data, method=args.method, headers=headers)
     context = ssl._create_unverified_context() if tls else None
     try:
         with urllib.request.urlopen(request, timeout=args.timeout, context=context) as response:
@@ -154,6 +157,13 @@ def cmd_api(args: argparse.Namespace) -> int:
     if args.out:
         Path(args.out).write_bytes(payload)
         print(json.dumps({"status": status, "bytes": len(payload), "out": args.out}))
+    elif args.status:
+        try:
+            body = json.loads(payload)
+        except ValueError:
+            body = payload.decode(errors="replace")
+        print(json.dumps({"status": status, "body": body}))
+        return 0
     else:
         sys.stdout.write(payload.decode(errors="replace") + "\n")
     return 0 if status < 400 else 1
@@ -192,14 +202,20 @@ def cmd_dev_bundle(args: argparse.Namespace) -> int:
     import uuid
     from datetime import timedelta
 
-    from .auth import BUNDLE_SCHEMA, hash_pin, sign_bundle
+    from .auth import BUNDLE_SCHEMA, PERMISSIONS, hash_pin, sign_bundle
     from .naming import iso, utcnow
 
     members = []
     for spec in args.member:
-        email, name, pin, perms = spec.split(",", 3)
+        email, name, pin, perms = (part.strip() for part in spec.split(",", 3))
+        granted = [p.strip() for p in perms.split("+") if p.strip()]
+        # The Edge ignores permissions it does not know, so a typo here would sign someone in
+        # with nothing. Refuse it instead.
+        unknown = [p for p in granted if p not in PERMISSIONS]
+        if unknown:
+            raise SystemExit(f"{email}: unknown permission(s) {', '.join(map(repr, unknown))}")
         members.append({"userId": str(uuid.uuid5(uuid.NAMESPACE_URL, f"fairplay-dev:{email}")), "email": email,
-                        "name": name, "permissions": perms.split("+"), "pinHash": hash_pin(pin)})
+                        "name": name, "permissions": granted, "pinHash": hash_pin(pin)})
     now = utcnow()
     bundle = {"schema": BUNDLE_SCHEMA, "bundleId": str(uuid.uuid4()), "issuer": "dev-local", "issuedAt": iso(now),
               "expiresAt": iso(now + timedelta(hours=args.hours)), "session": {"label": args.label, "matchId": None},
@@ -286,9 +302,11 @@ def main(argv: list[str] | None = None) -> int:
     ret.set_defaults(fn=cmd_retention)
     sub.add_parser("healthcheck", help="liveness probe for the container").set_defaults(fn=cmd_healthcheck)
     api = sub.add_parser("api", help="call this Edge's API locally with the configured token")
-    api.add_argument("method", choices=("GET", "POST"))
+    api.add_argument("method", choices=("GET", "POST", "PATCH"))
     api.add_argument("path")
     api.add_argument("--body")
+    api.add_argument("--header", action="append", default=[], help="Name: value; repeatable (If-Match, Idempotency-Key)")
+    api.add_argument("--status", action="store_true", help="print {status, body} as JSON")
     api.add_argument("--out")
     api.add_argument("--timeout", type=float, default=60)
     api.set_defaults(fn=cmd_api)

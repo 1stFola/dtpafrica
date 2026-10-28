@@ -104,7 +104,7 @@ def apply(settings: Settings, store: Store, scanner: Scanner, now: datetime | No
             db.execute("UPDATE segments SET state = 'deleted', deleted_utc = ? WHERE id = ?", (at, row["id"]))
             Store.log_event(db, at, "segment.deleted.retention", row["id"],
                             {"rel_path": row["rel_path"], "sha256": row["sha256"], "days": settings.retention_days})
-        scanner.write_sidecar(row["id"])
+        scanner.sync(row["id"], scanner.write_sidecar(row["id"]))
         log.info(json.dumps({"event": "segment.deleted.retention", "rel_path": row["rel_path"]}))
         deleted.append({"id": row["id"], "relPath": row["rel_path"], "endUtc": row["end_utc"]})
     return deleted
