@@ -63,11 +63,16 @@ def mono_ns() -> int:
 
 # ── match sessions ────────────────────────────────────────────────────────
 
-def create_session(store: Store, label: str, match_ref: str | None, mode: str, actor: str) -> dict:
+def create_session(store: Store, label: str, match_ref: str | None, mode: str, actor: str,
+                   session_id: str | None = None) -> dict:
+    """`session_id` is the cloud's, from a signed bundle: the session the cloud provisioned
+    for this device, which is the only one the cloud accepts from it."""
     if mode not in ("shadow", "post_match"):
         # ADR-0001: there is no third mode.
         raise TimingError("mode must be shadow or post_match")
-    row = {"id": new_id(), "label": label.strip()[:120], "match_ref": match_ref, "mode": mode,
+    if session_id and store.one("SELECT 1 FROM match_sessions WHERE id = ?", (session_id,)):
+        raise TimingError("this session has already been started on this Edge")
+    row = {"id": session_id or new_id(), "label": label.strip()[:120], "match_ref": match_ref, "mode": mode,
            "created_utc": iso(utcnow()), "created_by": actor}
     if not row["label"]:
         raise TimingError("a session needs a label")

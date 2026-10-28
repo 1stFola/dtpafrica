@@ -22,6 +22,14 @@ export const MATCH_SHEET_BODY_LIMIT = "1mb";
 
 export const MATCH_SHEET_ROUTE_PREFIX = "/api/v1/admin/scoreboard/match-stats/";
 
+/**
+ * What a FairPlay Edge's sync batch accepts: up to 200 outbox items, an evidence record
+ * with its video check being the largest at a few kilobytes. Device-token guarded.
+ */
+export const FAIRPLAY_SYNC_BODY_LIMIT = "2mb";
+
+export const FAIRPLAY_SYNC_ROUTE = "/api/v1/fairplay/sync/batch";
+
 type UsesMiddleware = { use: (...handlers: unknown[]) => unknown };
 
 /**
@@ -37,6 +45,10 @@ export function applyBodyLimits(app: UsesMiddleware): void {
   const matchSheet = json({ limit: MATCH_SHEET_BODY_LIMIT });
   app.use((req: { url?: string }, res: unknown, next: (err?: unknown) => void) =>
     req.url?.startsWith(MATCH_SHEET_ROUTE_PREFIX) ? matchSheet(req as never, res as never, next) : next()
+  );
+  const fairplaySync = json({ limit: FAIRPLAY_SYNC_BODY_LIMIT });
+  app.use((req: { url?: string }, res: unknown, next: (err?: unknown) => void) =>
+    req.url === FAIRPLAY_SYNC_ROUTE ? fairplaySync(req as never, res as never, next) : next()
   );
   app.use(json({ limit: DEFAULT_BODY_LIMIT }));
   app.use(urlencoded({ extended: true, limit: DEFAULT_BODY_LIMIT }));

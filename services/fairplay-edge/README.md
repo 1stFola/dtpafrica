@@ -80,7 +80,23 @@ Compose mounts `apps/fairplay-console/dist` read-only (`FAIRPLAY_CONSOLE_PATH` t
 
 **Who can sign in** comes from a signed operator bundle (ADR-0005), mounted read-only from
 `./auth` (`FAIRPLAY_AUTH_DIR`): `trusted-keys.json` (public keys only) and `bundle.json`.
-Until the cloud issues bundles (Phase 3), a **development** key and bundle can be made with
+**Pairing with the DTP cloud** (Phase 4, `docs/fairplay/phase-4-cloud.md`). An admin adds the
+device under `/admin/fairplay` and is shown a one-time bootstrap token. Save it to a file next
+to `compose.yaml`, then, once:
+
+```bash
+docker compose run --rm -v "$PWD/auth:/pair-auth" -v "$PWD/bootstrap-token:/pair-token:ro" edge pair --url https://www.dtp.africa --bootstrap-token-file /pair-token --token-file /var/lib/fairplay/data/cloud-device-token --trusted-keys /pair-auth/trusted-keys.json
+```
+
+and delete the bootstrap token file. Then in `.env` set `FAIRPLAY_CLOUD_SYNC_URL`,
+`FAIRPLAY_CLOUD_DEVICE_TOKEN_FILE=/var/lib/fairplay/data/cloud-device-token` and
+`FAIRPLAY_BUNDLE_PATH=/var/lib/fairplay/data/bundle.json`, and restart. While online the Edge
+fetches the signed bundle for the session the cloud assigned to it every five minutes (only a
+bundle that verifies against `./auth/trusted-keys.json` is installed), syncs its outbox, and
+uploads released evidence by presigned URL. A session opened while a cloud bundle is loaded
+takes the cloud's session id, match and mode.
+
+For development without the cloud, a **development** key and bundle can be made with
 `fairplay-edge dev-keygen` and `fairplay-edge dev-bundle`; the Edge refuses them unless
 `FAIRPLAY_ALLOW_DEV_BUNDLES=1`, and the console then shows *DEV CREDENTIALS — NOT FOR A REAL
 MATCH* on every screen. Keep the dev signing key off the Edge: only the public key belongs in

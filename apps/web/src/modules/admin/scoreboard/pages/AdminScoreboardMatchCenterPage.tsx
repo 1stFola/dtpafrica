@@ -10,6 +10,8 @@ import {
 import { adminScoreboardApi } from "../../../../api/admin-scoreboard";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useAdminToast } from "../../components/AdminToast";
+import { useAdminAuth } from "../../AdminAuthContext";
+import { FAIRPLAY_ANY } from "../../fairplay/fairplay-access";
 import { formatAdminScoreboardError } from "../admin-scoreboard-utils";
 import { AdminSbPageHeader } from "../components/AdminSbPageHeader";
 import { MatchCsvIngestModal } from "../components/MatchCsvIngestModal";
@@ -31,6 +33,7 @@ export function AdminScoreboardMatchCenterPage() {
   const [live, setLive] = useState<SbMatchListItem[]>([]);
   const [all, setAll] = useState<SbMatchListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const canFairPlay = useAdminAuth().hasPermission(FAIRPLAY_ANY);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [readiness, setReadiness] = useState<
     Awaited<ReturnType<typeof adminScoreboardApi.getSpotter>>["rosterReadiness"] | null
@@ -242,6 +245,12 @@ export function AdminScoreboardMatchCenterPage() {
         <Link to="/admin/scoreboard/roster" className="text-link">
           Rosters
         </Link>
+        {/* ScoreBoard -> Match -> FairPlay: only for accounts with a FairPlay permission. */}
+        {selected && canFairPlay && (
+          <Link to={`/admin/fairplay/matches/${selected.id}`} className="text-link">
+            FairPlay
+          </Link>
+        )}
       </div>
 
       <div className="admin-sb-sticky-bar">

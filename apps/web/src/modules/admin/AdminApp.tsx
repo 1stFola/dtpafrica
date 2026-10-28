@@ -26,6 +26,8 @@ import { AdminRolesPage } from "./settings/AdminRolesPage";
 import { AdminUsersPage } from "./settings/AdminUsersPage";
 import { AdminScoreboardEntitiesPage } from "./scoreboard/pages/AdminScoreboardEntitiesPage";
 import { AdminVisionApp } from "./vision/AdminVisionApp";
+import { AdminFairPlayApp } from "./fairplay/AdminFairPlayApp";
+import { FAIRPLAY_ANY } from "./fairplay/fairplay-access";
 
 export function AdminApp() {
   return (
@@ -64,6 +66,10 @@ export function AdminApp() {
                 The workstation screens mount outside AdminLayout — see App.tsx. */}
             <Route element={<AdminRequirePermission permission="vision.read" />}>
               <Route path="vision/*" element={<AdminVisionApp />} />
+            </Route>
+            {/* FairPlay shadow review: its own area, linked from the match center (ADR-0010). */}
+            <Route element={<AdminRequirePermission permission={FAIRPLAY_ANY} />}>
+              <Route path="fairplay/*" element={<AdminFairPlayApp />} />
             </Route>
             <Route path="blog" element={<AdminBlogListPage />} />
             <Route path="blog/new" element={<AdminBlogEditPage />} />

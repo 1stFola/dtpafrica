@@ -244,8 +244,9 @@ def test_a_phase_2_database_upgrades_in_place(tmp_path):
     db.commit()
     db.close()
     store = Store(path)
-    assert store.one("SELECT version FROM schema_version")["version"] == 3
+    assert store.one("SELECT version FROM schema_version")["version"] == 4  # v3, then v4 (uploads)
+    assert store.one("SELECT name FROM sqlite_master WHERE name = 'uploads'")
     row = store.one("SELECT * FROM incidents WHERE id = 'i1'")
     assert (row["state"], row["version"], row["match_id"], row["reopened_count"]) == ("flagged", 3, "m-9", 0)
-    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 3}'
+    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 4}'
     assert Store(path).device_id == store.device_id  # opening again changes nothing

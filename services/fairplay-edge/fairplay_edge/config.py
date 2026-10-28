@@ -174,6 +174,24 @@ def _cidrs(value: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _device_token(env: dict[str, str]) -> str:
+    """FAIRPLAY_CLOUD_DEVICE_TOKEN, or the file `fairplay-edge pair` wrote it to."""
+    path = env.get("FAIRPLAY_CLOUD_DEVICE_TOKEN_FILE", "").strip()
+    if path and not env.get("FAIRPLAY_CLOUD_DEVICE_TOKEN"):
+        try:
+            value = Path(path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ConfigError(f"FAIRPLAY_CLOUD_DEVICE_TOKEN_FILE: {exc}") from exc
+        return require_secret({"FAIRPLAY_CLOUD_DEVICE_TOKEN": value}, "FAIRPLAY_CLOUD_DEVICE_TOKEN")
+    return require_secret(env, "FAIRPLAY_CLOUD_DEVICE_TOKEN")
+
+
+def url_allowed(url: str) -> bool:
+    """https anywhere; plain http only to this machine, for tests."""
+    return url.startswith("https://") or (url.startswith("http://") and
+                                          is_loopback(url.removeprefix("http://").split("/")[0].rsplit(":", 1)[0].strip("[]")))
+
+
 def is_loopback(host: str) -> bool:
     if host == "localhost":
         return True
@@ -210,8 +228,7 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         )
     sync_url = env.get("FAIRPLAY_CLOUD_SYNC_URL", "").strip().rstrip("/") or None
     # Records about youth matches cross the internet only encrypted; loopback is for the test sink.
-    if sync_url and not (sync_url.startswith("https://") or
-                         is_loopback(sync_url.removeprefix("http://").split("/")[0].rsplit(":", 1)[0])):
+    if sync_url and not url_allowed(sync_url):
         raise ConfigError("FAIRPLAY_CLOUD_SYNC_URL must be https:// (plain http only to this machine, for tests)")
     retention = env.get("FAIRPLAY_RETENTION_DAYS", "").strip()
     retention_days = None
@@ -251,6 +268,6 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         period_minutes=_whole(env, "FAIRPLAY_PERIOD_MINUTES", 45, 10, 60),
         extra_period_minutes=_whole(env, "FAIRPLAY_EXTRA_PERIOD_MINUTES", 15, 5, 30),
         cloud_sync_url=sync_url,
-        cloud_device_token=require_secret(env, "FAIRPLAY_CLOUD_DEVICE_TOKEN") if sync_url else None,
+        cloud_device_token=_device_token(env) if sync_url else None,
         clip_max_attempts=_whole(env, "FAIRPLAY_CLIP_MAX_ATTEMPTS", 3, 1, 10),
     )

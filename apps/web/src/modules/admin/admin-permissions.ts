@@ -83,6 +83,15 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, string | string[] | undefined
   "/admin/blog": "blog.read",
   "/admin/scoreboard": "scoreboard.read",
   "/admin/vision": "vision.read",
+  "/admin/fairplay": [
+    "fairplay.session.manage",
+    "fairplay.edge.admin",
+    "fairplay.incident.operate",
+    "fairplay.incident.review",
+    "fairplay.evidence.view_original",
+    "fairplay.evidence.export",
+    "fairplay.report.view",
+  ],
   "/admin/settings/roles": "admin.roles.manage",
   "/admin/settings/users": "admin.users.manage",
 };

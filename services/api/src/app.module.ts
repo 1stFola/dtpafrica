@@ -15,6 +15,7 @@ import { AcademyAuthModule } from "./academy-auth/academy-auth.module";
 import { AcademyDashboardModule } from "./academy-dashboard/academy-dashboard.module";
 import { SupportModule } from "./support/support.module";
 import { VisionModule } from "./vision/vision.module";
+import { FairPlayModule } from "./fairplay/fairplay.module";
 import { THROTTLE_MODULE_OPTIONS } from "./shared/throttle";
 
 @Module({
@@ -36,6 +37,7 @@ import { THROTTLE_MODULE_OPTIONS } from "./shared/throttle";
     AcademyDashboardModule,
     SupportModule,
     VisionModule,
+    FairPlayModule,
   ],
 })
 export class AppModule {}
