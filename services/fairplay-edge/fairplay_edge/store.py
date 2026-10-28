@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -247,6 +247,220 @@ CREATE TABLE IF NOT EXISTS replay_metrics (
 );
 """
 
+# Version 3 (Phase 3): reviews, evidence, clip jobs, the audit chain and the sync outbox.
+# One script in one transaction, so a failure leaves version 2 exactly as it was. The only
+# change to an existing table is `incidents`, rebuilt because SQLite cannot widen a CHECK:
+# every row is copied, its state is unchanged ('flagged' is still valid), and the row count
+# is compared before the old table goes.
+_MIGRATE_V3 = """
+BEGIN IMMEDIATE;
+
+CREATE TABLE incidents_v3 (
+    id                TEXT PRIMARY KEY,
+    session_id        TEXT NOT NULL REFERENCES match_sessions(id),
+    match_id          TEXT,
+    event_utc         TEXT NOT NULL,
+    basis             TEXT NOT NULL CHECK (basis IN ('operator_now','period_mark','manual','sheet_event','match_clock')),
+    pre_roll_ms       INTEGER NOT NULL,
+    post_roll_ms      INTEGER NOT NULL,
+    category          TEXT NOT NULL,
+    note              TEXT,
+    period            TEXT,
+    match_minute      INTEGER,
+    match_second      INTEGER,
+    sheet_event_id    TEXT,
+    player_ref        TEXT,
+    observed_windows  TEXT,
+    state             TEXT NOT NULL CHECK (state IN ('flagged','reviewing','reviewed','archived')),
+    version           INTEGER NOT NULL,
+    hold_id           TEXT,
+    current_review_id TEXT,
+    reopened_count    INTEGER NOT NULL DEFAULT 0,
+    created_by        TEXT NOT NULL,
+    created_utc       TEXT NOT NULL,
+    updated_utc       TEXT NOT NULL
+);
+INSERT INTO incidents_v3 (id, session_id, match_id, event_utc, basis, pre_roll_ms, post_roll_ms, category, note,
+                          period, match_minute, match_second, sheet_event_id, state, version, hold_id, created_by,
+                          created_utc, updated_utc)
+    SELECT i.id, i.session_id, s.match_ref, i.event_utc, i.basis, i.pre_roll_ms, i.post_roll_ms, i.category, i.note,
+           i.period, i.match_minute, i.match_second, i.sheet_event_id, i.state, i.version, i.hold_id, i.created_by,
+           i.created_utc, i.updated_utc
+    FROM incidents i LEFT JOIN match_sessions s ON s.id = i.session_id;
+-- RAISE() is for triggers only; a failing CHECK aborts the script just as well.
+CREATE TEMP TABLE migration_check (copied_all INTEGER NOT NULL CHECK (copied_all = 1));
+INSERT INTO migration_check SELECT (SELECT COUNT(*) FROM incidents) = (SELECT COUNT(*) FROM incidents_v3);
+DROP TABLE migration_check;
+DROP TABLE incidents;
+ALTER TABLE incidents_v3 RENAME TO incidents;
+CREATE INDEX incidents_session ON incidents (session_id, event_utc);
+
+-- This Edge's identity: the audit chain and the outbox are per device.
+CREATE TABLE edge_identity (
+    device_id    TEXT PRIMARY KEY,
+    created_utc  TEXT NOT NULL
+);
+
+-- A review is a finding by one assessor on one version of an incident. Completed reviews are
+-- never edited: reopening supersedes one and starts the next.
+CREATE TABLE reviews (
+    id                TEXT PRIMARY KEY,
+    incident_id       TEXT NOT NULL REFERENCES incidents(id),
+    incident_version  INTEGER NOT NULL,
+    reviewer_id       TEXT NOT NULL,
+    reviewer_name     TEXT NOT NULL,
+    state             TEXT NOT NULL CHECK (state IN ('open','completed','superseded')),
+    -- V1 is shadow review only (ADR-0001): no other value can be stored.
+    authority_mode    TEXT NOT NULL DEFAULT 'shadow' CHECK (authority_mode = 'shadow'),
+    on_field_decision TEXT,
+    result            TEXT CHECK (result IS NULL OR result IN
+                          ('supports_original','supports_alternative','inconclusive','footage_unavailable')),
+    factual_notes     TEXT,
+    evidence_ids      TEXT,
+    footage_states    TEXT,
+    version           INTEGER NOT NULL,
+    started_utc       TEXT NOT NULL,
+    completed_at      TEXT,
+    superseded_by     TEXT,
+    superseded_reason TEXT
+);
+CREATE INDEX reviews_incident ON reviews (incident_id, started_utc);
+CREATE UNIQUE INDEX reviews_one_open ON reviews (incident_id) WHERE state = 'open';
+
+-- Clip jobs. One live job per incident, source and window; a second request for the same
+-- thing gets the first job back.
+CREATE TABLE jobs (
+    id                 TEXT PRIMARY KEY,
+    kind               TEXT NOT NULL CHECK (kind IN ('evidence_clip')),
+    incident_id        TEXT NOT NULL REFERENCES incidents(id),
+    incident_version   INTEGER NOT NULL,
+    source             TEXT NOT NULL,
+    window_start_utc   TEXT NOT NULL,
+    window_duration_ms INTEGER NOT NULL,
+    dedupe_key         TEXT NOT NULL,
+    state              TEXT NOT NULL CHECK (state IN ('queued','running','succeeded','failed')),
+    attempts           INTEGER NOT NULL DEFAULT 0,
+    max_attempts       INTEGER NOT NULL,
+    next_attempt_utc   TEXT,
+    error_code         TEXT,
+    error              TEXT,
+    evidence_id        TEXT,
+    requested_by       TEXT NOT NULL,
+    requested_name     TEXT NOT NULL,
+    created_utc        TEXT NOT NULL,
+    started_utc        TEXT,
+    finished_utc       TEXT
+);
+CREATE UNIQUE INDEX jobs_one_live ON jobs (dedupe_key) WHERE state IN ('queued','running','succeeded');
+CREATE INDEX jobs_due ON jobs (state, next_attempt_utc);
+
+-- An evidence row exists only once its file does: a failed or empty cut leaves a failed job
+-- and nothing here.
+CREATE TABLE evidence (
+    id                  TEXT PRIMARY KEY,
+    incident_id         TEXT NOT NULL REFERENCES incidents(id),
+    incident_version    INTEGER NOT NULL,
+    session_id          TEXT NOT NULL REFERENCES match_sessions(id),
+    source              TEXT NOT NULL,
+    job_id              TEXT NOT NULL REFERENCES jobs(id),
+    state               TEXT NOT NULL CHECK (state IN ('ready','approved')),
+    derivation          TEXT NOT NULL CHECK (derivation IN ('copy')),
+    footage_kind        TEXT NOT NULL CHECK (footage_kind IN ('synthetic','real')),
+    window_start_utc    TEXT NOT NULL,
+    window_duration_ms  INTEGER NOT NULL,
+    coverage            TEXT NOT NULL CHECK (coverage IN ('full','partial')),
+    covered_ms          INTEGER NOT NULL,
+    duration_ms         INTEGER,
+    rel_path            TEXT NOT NULL UNIQUE,
+    bytes               INTEGER NOT NULL,
+    sha256              TEXT NOT NULL,
+    manifest_rel_path   TEXT NOT NULL UNIQUE,
+    manifest_sha256     TEXT NOT NULL,
+    source_segment_ids  TEXT NOT NULL,
+    approved_by         TEXT,
+    approved_name       TEXT,
+    approved_utc        TEXT,
+    created_by          TEXT NOT NULL,
+    created_utc         TEXT NOT NULL
+);
+CREATE INDEX evidence_incident ON evidence (incident_id);
+
+-- Footage rights per match session, appended and superseded, never edited. No row means
+-- "real footage, rights not recorded": nothing leaves the Edge.
+CREATE TABLE session_rights (
+    id                TEXT PRIMARY KEY,
+    session_id        TEXT NOT NULL REFERENCES match_sessions(id),
+    footage_kind      TEXT NOT NULL CHECK (footage_kind IN ('synthetic','real')),
+    status            TEXT NOT NULL CHECK (status IN ('not_recorded','internal_review_only','external_release_permitted')),
+    minors_present    TEXT NOT NULL CHECK (minors_present IN ('yes','no','unknown')),
+    basis             TEXT,
+    consent_reference TEXT,
+    recorded_by       TEXT NOT NULL,
+    recorded_name     TEXT NOT NULL,
+    created_utc       TEXT NOT NULL,
+    supersedes        TEXT
+);
+CREATE INDEX session_rights_current ON session_rights (session_id, created_utc);
+
+-- Append-only, hash-chained per device. The triggers refuse UPDATE and DELETE outright, so
+-- no code path, this one included, can rewrite history without dropping the trigger first.
+CREATE TABLE audit_log (
+    seq             INTEGER PRIMARY KEY,
+    at_utc          TEXT NOT NULL,
+    device_id       TEXT NOT NULL,
+    actor_id        TEXT NOT NULL,
+    actor_name      TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL,
+    action          TEXT NOT NULL,
+    entity_type     TEXT NOT NULL,
+    entity_id       TEXT,
+    entity_version  INTEGER,
+    detail          TEXT NOT NULL,
+    prev_hash       TEXT NOT NULL,
+    entry_hash      TEXT NOT NULL UNIQUE
+);
+CREATE INDEX audit_entity ON audit_log (entity_type, entity_id, seq);
+CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
+    BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
+    BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+
+-- The transactional outbox: written in the same transaction as the change it describes.
+CREATE TABLE outbox (
+    seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+    idempotency_key   TEXT NOT NULL UNIQUE,
+    entity_type       TEXT NOT NULL,
+    entity_id         TEXT NOT NULL,
+    entity_version    INTEGER NOT NULL,
+    rank              INTEGER NOT NULL,
+    payload           TEXT NOT NULL,
+    payload_hash      TEXT NOT NULL,
+    state             TEXT NOT NULL CHECK (state IN ('pending','sent','parked')),
+    attempts          INTEGER NOT NULL DEFAULT 0,
+    next_attempt_utc  TEXT NOT NULL,
+    last_error        TEXT,
+    result            TEXT,
+    created_utc       TEXT NOT NULL,
+    sent_utc          TEXT
+);
+CREATE INDEX outbox_due ON outbox (state, rank, seq);
+
+-- Idempotency-Key on the console's create requests: a double click or a retried request
+-- returns the first answer instead of making a second record.
+CREATE TABLE request_keys (
+    key          TEXT PRIMARY KEY,
+    actor_id     TEXT NOT NULL,
+    route        TEXT NOT NULL,
+    body_hash    TEXT NOT NULL,
+    status       INTEGER NOT NULL,
+    response     TEXT NOT NULL,
+    created_utc  TEXT NOT NULL
+);
+
+UPDATE schema_version SET version = 3;
+COMMIT;
+"""
+
 
 def new_id() -> str:
     return str(uuid.uuid4())
@@ -275,11 +489,29 @@ class Store:
             db.close()
         with self.tx() as db:
             row = db.execute("SELECT version FROM schema_version").fetchone()
+            # A new file has just been given the version 2 tables; it migrates like any other.
+            start = row["version"] if row is not None else 2
             if row is None:
-                db.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
-            elif row["version"] < SCHEMA_VERSION:
-                db.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
-                self.log_event(db, _now(), "store.migrated", None, {"from": row["version"], "to": SCHEMA_VERSION})
+                db.execute("INSERT INTO schema_version (version) VALUES (2)")
+            elif start < 2:
+                db.execute("UPDATE schema_version SET version = 2")
+        if start < 3:
+            db = self._connect()
+            try:
+                db.executescript(_MIGRATE_V3)
+            except sqlite3.Error:
+                if db.in_transaction:
+                    db.execute("ROLLBACK")
+                raise
+            finally:
+                db.close()
+        if start < SCHEMA_VERSION:
+            with self.tx() as db:
+                self.log_event(db, _now(), "store.migrated", None, {"from": start, "to": SCHEMA_VERSION})
+        with self.tx() as db:
+            if db.execute("SELECT 1 FROM edge_identity").fetchone() is None:
+                db.execute("INSERT INTO edge_identity (device_id, created_utc) VALUES (?, ?)", (new_id(), _now()))
+            self.device_id = db.execute("SELECT device_id FROM edge_identity").fetchone()["device_id"]
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)

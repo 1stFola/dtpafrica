@@ -2,11 +2,14 @@ from datetime import timedelta
 
 import pytest
 
-from fairplay_edge import retention, timing
+from fairplay_edge import incidents, retention, timing
+from fairplay_edge.audit import Actor
 from fairplay_edge.naming import iso, parse_iso
 from fairplay_edge.store import new_id
 
 from .conftest import at
+
+OP = Actor("u-op", "u-op", "operator")
 
 
 @pytest.fixture
@@ -137,7 +140,7 @@ def test_window_with_partial_footage_is_a_gap(store, settings, session):
 
 
 def test_incident_creates_a_hold_and_windows(store, settings, session):
-    inc = timing.create_incident(store, session["id"], "u-op", event_utc=at(600), basis="manual", category="penalty")
+    inc = incidents.create(store, settings, session["id"], OP, event_utc=at(600), basis="manual", category="penalty")
     hold = store.one("SELECT * FROM holds WHERE id = ?", (inc["hold_id"],))
     assert hold["reason"] == "incident" and hold["ref"] == inc["id"] and hold["source"] is None
     assert parse_iso(hold["from_utc"]) <= at(600 - 20) and parse_iso(hold["to_utc"]) >= at(600 + 10)
@@ -147,28 +150,28 @@ def test_incident_creates_a_hold_and_windows(store, settings, session):
 
 
 def test_incident_edit_needs_the_current_version(store, settings, session):
-    inc = timing.create_incident(store, session["id"], "u-op", event_utc=at(600))
-    updated = timing.update_incident(store, inc["id"], 1, "u-op", {"pre_roll_ms": 40_000})
+    inc = incidents.create(store, settings, session["id"], OP, event_utc=at(600))
+    updated = incidents.edit(store, settings, inc["id"], 1, OP, {"pre_roll_ms": 40_000})
     assert updated["version"] == 2 and updated["hold_id"] != inc["hold_id"]
     old = store.one("SELECT released_utc FROM holds WHERE id = ?", (inc["hold_id"],))
     assert old["released_utc"] is not None  # replaced, not edited
     with pytest.raises(timing.Conflict):
-        timing.update_incident(store, inc["id"], 1, "u-op", {"note": "late edit"})
+        incidents.edit(store, settings, inc["id"], 1, OP, {"note": "late edit"})
 
 
 def test_incident_rolls_are_validated(store, settings, session):
     with pytest.raises(timing.TimingError):
-        timing.create_incident(store, session["id"], "u", pre_roll_ms=-1)
+        incidents.create(store, settings, session["id"], OP, pre_roll_ms=-1)
     with pytest.raises(timing.TimingError):
-        timing.create_incident(store, session["id"], "u", pre_roll_ms=9 * 60_000, post_roll_ms=2 * 60_000)
+        incidents.create(store, settings, session["id"], OP, pre_roll_ms=9 * 60_000, post_roll_ms=2 * 60_000)
     with pytest.raises(timing.TimingError):
-        timing.create_incident(store, session["id"], "u", category="overturned")
+        incidents.create(store, settings, session["id"], OP, category="overturned")
 
 
 def test_ended_session_refuses_new_marks(store, settings, session):
     timing.end_session(store, session["id"], "u")
     with pytest.raises(timing.Conflict):
-        timing.create_incident(store, session["id"], "u")
+        incidents.create(store, settings, session["id"], OP)
 
 
 def test_sync_test_claims_nothing_until_every_source_is_calibrated(store, settings, session):
@@ -219,5 +222,5 @@ def test_incident_hold_protects_footage_from_retention(store, settings, session)
     with store.tx() as db:
         db.execute("INSERT INTO segments (id, source, rel_path, start_utc, end_utc, state, discovered_utc)"
                    " VALUES ('seg', 'ground', 'ground/x.mp4', ?, ?, 'finalized', 't')", (iso(at(590)), iso(at(620))))
-    timing.create_incident(store, session["id"], "u", event_utc=at(600))
+    incidents.create(store, settings, session["id"], OP, event_utc=at(600))
     assert retention.plan(store, 1, at(600) + timedelta(days=30)) == []

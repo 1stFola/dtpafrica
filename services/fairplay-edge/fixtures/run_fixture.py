@@ -2,6 +2,7 @@
 
     python -I fixtures/run_fixture.py core            # ~6 minutes
     python -I fixtures/run_fixture.py wan --minutes 30
+    python -I fixtures/run_fixture.py evidence        # Phase 3, ~8 minutes, WAN cut
 
 `core`: two independent sources record; one disconnects and reconnects while the other
 carries on; a recorded window is fetched and checked against its original segments; the
@@ -10,6 +11,11 @@ the crashed segment is detected as partial and repaired.
 
 `wan`: the same stack on a network with no route out, for `--minutes`, with a drone drop at
 a third of the way and an Edge restart at two thirds.
+
+`evidence` (Phase 3), with the network cut throughout: an incident at a known marker, a
+doubled create, an edit collision, 30 s clips from both cameras checked frame by frame and
+hash by hash, review, approval and export, a missing original, a clip job cut off by
+SIGKILL, replay after the restart, and an outbox that keeps everything and sends nothing.
 
 Each run writes `fixtures/out/<scenario>-<UTC>/` with generated secrets (never reused),
 `results.json` and `log.md`. A check that fails is recorded and the run continues; nothing
@@ -53,6 +59,24 @@ def iso(dt: datetime) -> str:
 
 def parse(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+# Where the synthetic red minute marker begins in a clip: decode tiny frames and find the
+# rise in "redness" (red minus the mean of green and blue) above the clip's median.
+MARKER_SCRIPT = r"""
+import json, subprocess, sys
+clip, fps = sys.argv[1], int(sys.argv[2])
+w, h = 16, 9
+raw = subprocess.run(['ffmpeg', '-v', 'error', '-i', clip, '-vf', f'scale={w}:{h}', '-f', 'rawvideo',
+                      '-pix_fmt', 'rgb24', '-'], capture_output=True).stdout
+n = w * h * 3
+frames = [raw[i:i + n] for i in range(0, len(raw) - n + 1, n)]
+vals = [(sum(f[0::3]) - (sum(f[1::3]) + sum(f[2::3])) / 2) / (w * h) for f in frames]
+base = sorted(vals)[len(vals) // 2] if vals else 0
+rise = next((i for i in range(1, len(vals)) if vals[i] - base > 40 and vals[i - 1] - base <= 40), None)
+print(json.dumps({'frames': len(vals), 'baseline': round(base, 1), 'peak': round(max(vals, default=0), 1),
+                  'riseFrame': rise, 'riseMs': None if rise is None else round(rise * 1000 / fps)}))
+"""
 
 
 class Run:
@@ -416,6 +440,239 @@ class Run:
         self.stats("end of drill")
         self.no_transcoding()
 
+    # ── Phase 3: incidents and evidence ───────────────────────────────────
+    def call(self, method: str, path: str, body: dict | None = None, headers: dict | None = None) -> tuple[int, object]:
+        args = ["exec", "-T", "edge", "fairplay-edge", "api", method, path, "--status"]
+        if body is not None:
+            args += ["--body", json.dumps(body)]
+        for name, value in (headers or {}).items():
+            args += ["--header", f"{name}: {value}"]
+        out = self.compose(*args, check=False)
+        try:
+            parsed = json.loads(out.strip().splitlines()[-1])
+            return parsed["status"], parsed["body"]
+        except (json.JSONDecodeError, IndexError, KeyError):
+            return 0, out
+
+    def clip(self, incident_id: str, source: str) -> dict:
+        status, job = self.call("POST", f"/edge/v1/incidents/{incident_id}/clips", {"source": source})
+        if status not in (200, 202):
+            return {"state": "refused", "status": status, "body": job}
+        return self.until(f"{source} clip job finishes", lambda: (j := self.api("GET", f"/edge/v1/jobs/{job['id']}"))
+                          .get("state") in ("succeeded", "failed") and j, 180) or {"state": "timeout", "id": job["id"]}
+
+    def marker_in_clip(self, evidence_id: str, fps: int = 25) -> dict:
+        """Decode the clip inside the Edge and find where the red minute marker begins."""
+        detail = self.api("GET", f"/edge/v1/evidence/{evidence_id}")
+        return self.edge_python(MARKER_SCRIPT, f"/var/lib/fairplay/data/evidence/{detail['rel_path']}", str(fps))
+
+    def evidence(self) -> None:
+        """Phase 3 acceptance on synthetic feeds, with the WAN cut throughout."""
+        sys.path.insert(0, str(ROOT / "tests"))
+        from schema_check import errors  # noqa: PLC0415 (standard library only)
+
+        schema = json.loads((ROOT / "fairplay_edge" / "schemas" / "evidence-manifest.v1.schema.json").read_text("utf-8"))
+        self.up()
+        egress = self.compose("exec", "-T", "edge", "fairplay-edge", "check-egress", check=False)
+        self.check("P3: the Edge cannot reach the internet", '"reachable"' not in egress, result=egress.strip())
+        self.both_recording("P3")
+        _, session = self.call("POST", "/edge/v1/sessions", {"label": "Phase 3 fixture (synthetic)", "matchRef": "fixture"})
+        sid = session["id"]
+        status, rights = self.call("POST", f"/edge/v1/sessions/{sid}/rights", {
+            "footageKind": "synthetic", "status": "not_recorded", "minorsPresent": "no"})
+        self.check("P3: rights recorded as synthetic test footage", status == 201, rights=rights)
+
+        # The known moment: the next whole minute on the burned-in clock, where the ground's
+        # red marker begins. Wait until it and 10 s after it are recorded and final.
+        marker = (utc() + timedelta(seconds=40)).replace(second=0, microsecond=0) + timedelta(minutes=1)
+        self.note("P3: the incident is the marker at", at=iso(marker))
+        self.wait(max(0.0, (marker - utc()).total_seconds()) + 50, "the marker, its post-roll and a 30 s segment")
+        key = secrets.token_hex(16)
+        body = {"sessionId": sid, "eventUtc": iso(marker), "basis": "manual", "category": "other",
+                "note": "synthetic minute marker"}
+        s1, inc = self.call("POST", "/edge/v1/incidents", body, {"Idempotency-Key": key})
+        s2, again = self.call("POST", "/edge/v1/incidents", body, {"Idempotency-Key": key})
+        listed = self.api("GET", f"/edge/v1/incidents?sessionId={sid}")
+        self.check("P3: a doubled create (same Idempotency-Key) makes one incident",
+                   s1 == s2 == 201 and inc["id"] == again["id"] and len(listed) == 1, ids=[inc.get("id"), again.get("id")])
+
+        # Edit collision: two edits from version 1. The first wins; the second is refused.
+        a, _ = self.call("PATCH", f"/edge/v1/incidents/{inc['id']}", {"note": "first edit"}, {"If-Match": "1"})
+        b, refused = self.call("PATCH", f"/edge/v1/incidents/{inc['id']}", {"note": "second edit"}, {"If-Match": "1"})
+        now = self.api("GET", f"/edge/v1/incidents/{inc['id']}")
+        self.check("P3: an edit from a stale version is refused (409) and loses nothing",
+                   a == 200 and b == 409 and now.get("note") == "first edit" and now.get("version") == 2,
+                   statuses=[a, b], refusal=refused)
+
+        # The 30-second clips, one per camera.
+        made = {}
+        for source in ("ground", "drone"):
+            job = self.clip(inc["id"], source)
+            made[source] = job
+            self.check(f"P3: a 30 s {source} clip is cut from the originals", job.get("state") == "succeeded", job=job)
+        repeat_status, repeat = self.call("POST", f"/edge/v1/incidents/{inc['id']}/clips", {"source": "ground"})
+        self.check("P3: asking again for the same clip returns the first job, no second cut",
+                   repeat_status == 200 and repeat.get("id") == made["ground"].get("id"))
+
+        segments = {s["id"]: s for n in ("ground", "drone") for s in self.segments(n)}
+        markers = {}
+        for source, job in made.items():
+            if job.get("state") != "succeeded":
+                continue
+            ev = self.api("GET", f"/edge/v1/evidence/{job['evidence_id']}")
+            manifest = self.api("GET", f"/edge/v1/evidence/{ev['id']}/manifest")
+            window_lo = parse(ev["window_start_utc"])
+            window_hi = window_lo + timedelta(milliseconds=ev["window_duration_ms"])
+            expected = sorted((s for s in segments.values() if s["source"] == source and s["state"] in ("finalized", "partial")
+                               and parse(s["start_utc"]) < window_hi and parse(s["end_utc"]) > window_lo),
+                              key=lambda s: s["start_utc"])
+            # Every original the window touches is either a source (with its hash) or listed as
+            # unused with the reason; nothing else is named.
+            by_id = {s["id"]: s for s in expected}
+            accounted = ev["source_segment_ids"] + [u["segmentId"] for u in manifest["coverage"]["unusedSegments"]]
+            self.check(f"P3: {source} evidence accounts for exactly the original segments its window touches, with"
+                       " their hashes", sorted(accounted) == sorted(by_id) and ev["source_segment_ids"]
+                       and all(x["sha256"] == by_id[x["segmentId"]]["sha256"] == x["verifiedSha256AtCut"]
+                               for x in manifest["sources"]),
+                       sources=[x["relPath"] for x in manifest["sources"]],
+                       unused=manifest["coverage"]["unusedSegments"])
+            rehash = self.compose("exec", "-T", "edge", "sha256sum", f"/var/lib/fairplay/data/evidence/{ev['rel_path']}",
+                                  check=False).split(" ")[0]
+            self.check(f"P3: {source} clip on disk hashes to its recorded SHA-256 and the manifest validates",
+                       rehash == ev["sha256"] == manifest["derivative"]["sha256"] and not errors(manifest, schema),
+                       sha256=ev["sha256"], schemaErrors=errors(manifest, schema)[:5])
+            # Coverage must be what the pictures hold: count the clip's video frames here,
+            # independently of the Edge, and hold its claim to them.
+            frames = self.compose("exec", "-T", "edge", "sh", "-c",
+                                  "ffprobe -v error -select_streams v:0 -count_packets -show_entries "
+                                  f"stream=nb_read_packets -of csv=p=0 /var/lib/fairplay/data/evidence/{ev['rel_path']}",
+                                  check=False).strip()
+            vc = manifest["coverage"]["videoCheck"]
+            honest = (frames.isdigit() and int(frames) == vc["frames"]
+                      and (ev["coverage"] == "full") == (vc["full"] and not manifest["coverage"]["gaps"])
+                      # frames on screen = lead-in + the window, less what is missing, plus any repeat
+                      and abs(int(frames) * 40 - vc["leadInMs"] - (ev["window_duration_ms"] - vc["missingMs"])
+                              - vc["excessMs"]) <= 120)
+            self.check(f"P3: {source} clip's stated coverage matches its own video frames (counted independently)",
+                       honest, frames=frames, coverage=ev["coverage"], videoCheck={k: vc[k] for k in
+                       ("frames", "leadInMs", "missingMs", "excessMs", "holes", "undecodableLeadMs", "full")},
+                       gaps=manifest["coverage"]["gaps"])
+            self.measurements.setdefault("clips", {})[source] = {"coverage": ev["coverage"], "durationMs": ev["duration_ms"],
+                                                                 "videoCheck": vc, "gaps": manifest["coverage"]["gaps"]}
+            found = self.marker_in_clip(ev["id"])
+            markers[source] = {**found, "eventAtMs": manifest["window"]["eventAtMs"]}
+            if found.get("riseMs") is not None:
+                markers[source]["markerMinusEventMs"] = found["riseMs"] - manifest["window"]["eventAtMs"]
+        self.measurements["marker_in_clip"] = markers
+        ground_lag = markers.get("ground", {}).get("markerMinusEventMs")
+        self.check("P3: the ground's marker appears in its clip where the incident is, within the 3 s uncalibrated"
+                   " uncertainty", ground_lag is not None and -3000 <= ground_lag <= 3000, markers=markers)
+        drone_lag = markers.get("drone", {}).get("markerMinusEventMs")
+        # Each feed reaches MediaMTX with its own delay, so the cameras' offset is measured by
+        # calibration, never assumed from the 400 ms painted into the drone's clock (Phase 2).
+        self.check("P3: the drone's marker appears in its clip where the incident is, within the 3 s uncalibrated"
+                   " uncertainty", drone_lag is not None and -3000 <= drone_lag <= 3000, markers=markers)
+
+        # Phase 1's recordings, re-examined: does each camera keep every picture across its
+        # segment switches? (Found in this phase: MediaMTX discards late video on an
+        # audio+video feed. Reported as found, not hidden.)
+        alerts = self.api("GET", "/edge/v1/alerts?state=all&limit=1000")
+        for source in ("ground", "drone"):
+            short = [a for a in alerts if isinstance(a, dict) and a.get("kind") == "segment_video_gap"
+                     and a.get("source") == source]
+            finals = [s for s in self.segments(source) if s["state"] == "finalized"]
+            self.check(f"P3: {source} recordings keep their video across segment switches",
+                       not short, alerts=[a.get("detail") for a in short][:3], finalSegments=len(finals))
+        mtx = self.compose("logs", "--no-color", "mediamtx", check=False)
+        self.measurements["mediamtx_too_late"] = {
+            src: mtx.count(f"[path {src}] [recorder] sample of track") for src in ("ground", "drone")}
+
+        # Review, approval and export, all offline.
+        ev_ids = [j["evidence_id"] for j in made.values() if j.get("state") == "succeeded"]
+        version = now["version"]
+        st, _ = self.call("POST", f"/edge/v1/incidents/{inc['id']}/review/start", {}, {"If-Match": str(version)})
+        sc, done = self.call("POST", f"/edge/v1/incidents/{inc['id']}/review/complete", {
+            "result": "inconclusive", "factualNotes": "Synthetic marker visible on both cameras.", "evidenceIds": ev_ids},
+            {"If-Match": str(version + 1)})
+        self.check("P3: review starts and completes (shadow)", st == 200 and sc == 200 and done.get("state") == "reviewed")
+        sa, approved = self.call("POST", f"/edge/v1/evidence/{ev_ids[0]}/approve", {}) if ev_ids else (0, None)
+        export = self.compose("exec", "-T", "edge", "fairplay-edge", "api", "POST", f"/edge/v1/evidence/{ev_ids[0]}/export",
+                              "--out", "/tmp/package.zip", check=False) if ev_ids else ""
+        listing = self.compose("exec", "-T", "edge", "python", "-c",
+                               "import zipfile,sys;print(sorted(zipfile.ZipFile('/tmp/package.zip').namelist()))",
+                               check=False).strip()
+        self.check("P3: approved and exported as a package with the clip, manifest and SHA256SUMS",
+                   sa == 200 and "['SHA256SUMS', 'clip.mp4', 'manifest.json']" in listing, approve=sa, export=export.strip(),
+                   contents=listing)
+
+        # Missing source: one original vanishes before its clip is cut. Refused, no file.
+        # The victim must not be footage a later check replays: the first incident's window,
+        # with a segment's length either side.
+        keep_lo, keep_hi = marker - timedelta(seconds=60), marker + timedelta(seconds=50)
+        def outside():
+            fresh = sorted(self.segments("ground"), key=lambda s: s["start_utc"])
+            return next((s for s in fresh if s["state"] == "finalized" and s["end_utc"]
+                         and (parse(s["end_utc"]) < keep_lo or parse(s["start_utc"]) > keep_hi)), None)
+
+        victim = self.until("a ground segment outside the incident's footage", outside, 120, every=10)
+        late = (parse(victim["start_utc"]) + timedelta(seconds=15)) if victim else utc()
+        s_late, inc2 = self.call("POST", "/edge/v1/incidents", {"sessionId": sid, "eventUtc": iso(late), "basis": "manual",
+                                                                "preRollMs": 5000, "postRollMs": 5000})
+        assert not victim or parse(victim["start_utc"]) > keep_hi or parse(victim["end_utc"]) < keep_lo
+        if victim and s_late == 201:
+            self.compose("exec", "-T", "edge", "rm", "-f", f"/var/lib/fairplay/recordings/{victim['rel_path']}", check=False)
+            job = self.clip(inc2["id"], "ground")
+            evidence_rows = self.api("GET", f"/edge/v1/evidence?incidentId={inc2['id']}")
+            self.check("P3: a missing original is refused: the job fails source_missing and no clip exists",
+                       job.get("state") == "failed" and job.get("error_code") == "source_missing" and evidence_rows == [],
+                       job={k: job.get(k) for k in ("state", "error_code", "error")}, removed=victim["rel_path"])
+        else:
+            self.check("P3: a missing original is refused (set-up)", False, victim=victim, status=s_late)
+
+        # Interrupted job: kill the Edge straight after asking for a clip, then start it again.
+        s3, inc3 = self.call("POST", "/edge/v1/incidents", {"sessionId": sid, "eventUtc": iso(utc() - timedelta(seconds=90)),
+                                                            "basis": "manual", "preRollMs": 300_000, "postRollMs": 10_000})
+        _, job3 = self.call("POST", f"/edge/v1/incidents/{inc3['id']}/clips", {"source": "drone"})
+        cid = self.compose("ps", "-q", "edge").strip()
+        subprocess.run(["docker", "kill", cid], capture_output=True)
+        killed = self.note("P3: Edge killed (SIGKILL) with a clip job in hand")
+        self.compose("start", "edge")
+        self.until("edge back", lambda: self.api("GET", "/edge/v1/health").get("passes", 0) > 0, 90)
+        recovered = [e for e in self.api("GET", "/edge/v1/events?limit=1000") if e.get("kind") == "job.recovered"]
+        final = self.until("job after restart", lambda: (j := self.api("GET", f"/edge/v1/jobs/{job3['id']}"))
+                           .get("state") in ("succeeded", "failed") and j, 180) or {}
+        leftovers = self.compose("exec", "-T", "edge", "sh", "-c", "find /var/lib/fairplay/data/evidence -name '*.part' | wc -l",
+                                 check=False).strip()
+        self.check("P3: a job cut off by a SIGKILL completes after the restart, with no half-written file left",
+                   final.get("state") in ("succeeded", "failed") and leftovers == "0", job={k: final.get(k) for k in
+                   ("state", "attempts", "error_code")}, wasRunningAtKill=bool(recovered), killedAt=iso(killed))
+        self.measurements["interrupted_job"] = {"recoveredEvent": bool(recovered), "final": final}
+
+        # Replay after the restart: the incident's window still plays, the evidence still verifies.
+        windows = self.api("GET", f"/edge/v1/incidents/{inc['id']}/windows")
+        ground_w = next((w for w in windows.get("perSource", []) if w["source"] == "ground"), {})
+        self.fetch_window("P3 after restart", "ground", parse(ground_w["startIngestUtc"]), 10_000) if ground_w else None
+        sm, _ = self.call("GET", f"/edge/v1/evidence/{ev_ids[0]}/manifest") if ev_ids else (0, None)
+        audit = self.api("GET", "/edge/v1/audit/verify")
+        self.check("P3: after the restart the evidence still verifies and the audit chain is whole",
+                   sm == 200 and audit.get("ok") is True, audit=audit)
+
+        # Nothing left the venue: the outbox holds every record, ready for when there is a WAN.
+        health = self.api("GET", "/edge/v1/health")
+        cloud = health.get("cloud", {})
+        self.check("P3: with no WAN and no destination, the outbox keeps every record and sends nothing",
+                   cloud.get("configured") is False and cloud.get("pending", 0) > 0 and cloud.get("sent") == 0, cloud=cloud)
+        entries = self.api("GET", "/edge/v1/audit?limit=1000")
+        actions = sorted({e["action"] for e in entries if isinstance(e, dict)})
+        self.check("P3: create, edit, review, export and access are all in the audit log",
+                   {"incident.created", "incident.edited", "review.completed", "evidence.created", "evidence.approved",
+                    "evidence.exported", "media.accessed"} <= set(actions), actions=actions)
+        self.measurements["audit_entries"] = len(entries)
+        self.stats("end of evidence run")
+        idle = self.compose("exec", "-T", "edge", "sh", "-c",
+                            "for p in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $p; echo; done", check=False)
+        self.check("P3: no ffmpeg is left running in the Edge once the jobs are done", "ffmpeg " not in idle)
+
     # ── output ────────────────────────────────────────────────────────────
     def finish(self) -> int:
         try:
@@ -448,14 +705,19 @@ class Run:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("scenario", choices=("core", "wan"))
+    parser.add_argument("scenario", choices=("core", "wan", "evidence"))
     parser.add_argument("--minutes", type=float, default=30)
     parser.add_argument("--keep", action="store_true", help="leave the stack and its volumes up afterwards")
     parser.add_argument("--project", default="fpfix", help="Compose project name (one stack at a time: the subnet is fixed)")
     args = parser.parse_args()
-    run = Run(args.scenario, wan=args.scenario == "wan", keep=args.keep, project=args.project)
+    run = Run(args.scenario, wan=args.scenario in ("wan", "evidence"), keep=args.keep, project=args.project)
     try:
-        run.core() if args.scenario == "core" else run.wan_drill(args.minutes)
+        if args.scenario == "core":
+            run.core()
+        elif args.scenario == "wan":
+            run.wan_drill(args.minutes)
+        else:
+            run.evidence()
     except Exception as exc:
         run.check(f"scenario ran to completion ({exc.__class__.__name__}: {exc})", False)
     return run.finish()

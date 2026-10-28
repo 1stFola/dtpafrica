@@ -47,6 +47,7 @@ screenshot of the encoder's output settings), not from memory.
 | E13 | Time source | Do the cameras or encoder embed wall-clock time (RTSP sender reports, SEI timecode)? Is NTP reachable on site? | UNVERIFIED | — |
 | E14 | Operator devices | Which laptops/tablets will a replay operator and assessor use; are they DTP-owned (a local certificate can be installed) | UNVERIFIED | Gate |
 | E15 | Audio | Which feeds carry audio; whether ambient audio of players or officials is captured (a privacy question, not a technical one) | UNVERIFIED | — |
+| E17 | **Audio/video alignment into MediaMTX** | For each feed that carries audio: how far its audio runs ahead of its video when it reaches MediaMTX. Measured on the bench by recording 10 minutes and reading the Edge's `segment_video_gap` alerts (none = pass). MediaMTX 1.21.3 discards video at every segment switch when audio leads by more than 1 s; Phase 3 found the synthetic ground feed losing 2 s of pictures per segment this way ([phase 3](./phase-3-incidents-and-evidence.md)) | UNVERIFIED | Gate — a feed that fails loses pictures from every recording |
 | E16 | **Source recording mode** (the summary of E1–E6) | Per camera, one of: *ISO, live* (a separate stream FairPlay can record during the match) · *ISO, on-device only* (recorded inside the switcher or camera, usable after the match only) · *programme only* | UNVERIFIED | Gate — decides single- or multi-angle mode |
 
 ## Ingest topologies, by what the answers turn out to be

@@ -129,6 +129,7 @@ def test_repair_refuses_a_finalized_segment(settings, store, fake_probe, three_f
 
 def test_repair_refuses_if_the_original_changed(settings, store, fake_probe):
     original, scanner, row = _partial(settings, store)
+    original.chmod(0o644)
     original.write_bytes(original.read_bytes() + b"\x00")
     with pytest.raises(RepairRefused, match="no longer matches"):
         repair(settings, store, scanner, row["id"])

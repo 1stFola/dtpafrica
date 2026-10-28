@@ -29,7 +29,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Callable
 
-from . import retention
+from . import outbox
 from .config import Settings
 from .naming import iso, parse_iso, utcnow
 from .store import Store, new_id
@@ -37,7 +37,9 @@ from .store import Store, new_id
 PERIODS = ("1", "2", "3", "4", "penalties")
 METHODS = ("whistle", "ball_strike", "clapper", "marker", "manual")
 CATEGORIES = ("goal", "penalty", "offside", "foul", "handball", "card", "goalkeeper", "other")
-UNCALIBRATED_UNCERTAINTY_MS = 2000
+# A guess, not a measurement: an uncalibrated camera's delay is unknown. Phase 3's fixture
+# runs measured 0.9-2.3 s on the synthetic feeds, so the Phase 2 value of 2 s was too tight.
+UNCALIBRATED_UNCERTAINTY_MS = 3000
 HIGH_UNCERTAINTY_MS = 500
 STEP_THRESHOLD_MS = 1000
 HOLD_MARGIN = timedelta(seconds=60)
@@ -73,6 +75,7 @@ def create_session(store: Store, label: str, match_ref: str | None, mode: str, a
         db.execute("INSERT INTO match_sessions (id, label, match_ref, mode, created_utc, created_by)"
                    " VALUES (:id, :label, :match_ref, :mode, :created_utc, :created_by)", row)
         Store.log_event(db, row["created_utc"], "session.created", None, row)
+        outbox.enqueue(db, "session", row["id"], None, {**row, "ended_utc": None})
     return row
 
 
@@ -89,6 +92,8 @@ def end_session(store: Store, session_id: str, actor: str) -> dict:
     with store.tx() as db:
         db.execute("UPDATE match_sessions SET ended_utc = COALESCE(ended_utc, ?) WHERE id = ?", (at, session_id))
         Store.log_event(db, at, "session.ended", None, {"id": session_id, "by": actor})
+        outbox.enqueue(db, "session", session_id, None,
+                       dict(db.execute("SELECT * FROM match_sessions WHERE id = ?", (session_id,)).fetchone()))
     return get_session(store, session_id)
 
 
@@ -119,6 +124,7 @@ def mark_period(store: Store, session_id: str, period: str, edge: str, actor: st
                    " :edge_utc, :edge_mono_ns, :console_anchor_utc, :console_delta_ms, :actor_id, :supersedes,"
                    " :created_utc)", row)
         Store.log_event(db, row["created_utc"], "period.marked", None, row)
+        outbox.enqueue(db, "period", row["id"], 1, row)
     return row
 
 
@@ -170,6 +176,7 @@ def calibrate(store: Store, settings: Settings, session_id: str, source: str, re
                    " :observed_ingest_utc, :offset_ms, :uncertainty_ms, :method, :reference_source,"
                    " :evidence_segment_id, :note, :actor_id, :supersedes, :created_utc)", row)
         Store.log_event(db, row["created_utc"], "calibration.added", None, row)
+        outbox.enqueue(db, "calibration", row["id"], 1, row)
     return row
 
 
@@ -245,72 +252,6 @@ def _validate_rolls(pre: int, post: int) -> None:
 
 def _hold_window(event: datetime, pre: int, post: int) -> tuple[datetime, datetime]:
     return event - timedelta(milliseconds=pre) - HOLD_MARGIN, event + timedelta(milliseconds=post) + HOLD_MARGIN
-
-
-def create_incident(store: Store, session_id: str, actor: str, *, event_utc: datetime | None = None,
-                    basis: str = "operator_now", category: str = "other", note: str | None = None,
-                    pre_roll_ms: int = 20_000, post_roll_ms: int = 10_000, period: str | None = None,
-                    match_minute: int | None = None, match_second: int | None = None,
-                    sheet_event_id: str | None = None) -> dict:
-    _open(store, session_id)
-    if category not in CATEGORIES:
-        raise TimingError(f"category must be one of {', '.join(CATEGORIES)}")
-    if basis not in ("operator_now", "period_mark", "manual", "sheet_event"):
-        raise TimingError("unknown basis")
-    _validate_rolls(pre_roll_ms, post_roll_ms)
-    event = event_utc or utcnow()
-    now = iso(utcnow())
-    incident_id = new_id()
-    lo, hi = _hold_window(event, pre_roll_ms, post_roll_ms)
-    # The footage around an incident is protected from retention from the moment it is flagged.
-    hold = retention.create_hold(store, None, lo, hi, "incident", incident_id)
-    row = {"id": incident_id, "session_id": session_id, "event_utc": iso(event), "basis": basis,
-           "pre_roll_ms": pre_roll_ms, "post_roll_ms": post_roll_ms, "category": category, "note": note,
-           "period": period, "match_minute": match_minute, "match_second": match_second,
-           "sheet_event_id": sheet_event_id, "state": "flagged", "version": 1, "hold_id": hold["id"],
-           "created_by": actor, "created_utc": now, "updated_utc": now}
-    with store.tx() as db:
-        db.execute("INSERT INTO incidents (id, session_id, event_utc, basis, pre_roll_ms, post_roll_ms, category, note,"
-                   " period, match_minute, match_second, sheet_event_id, state, version, hold_id, created_by,"
-                   " created_utc, updated_utc) VALUES (:id, :session_id, :event_utc, :basis, :pre_roll_ms,"
-                   " :post_roll_ms, :category, :note, :period, :match_minute, :match_second, :sheet_event_id, :state,"
-                   " :version, :hold_id, :created_by, :created_utc, :updated_utc)", row)
-        Store.log_event(db, now, "incident.flagged", None, row)
-    return row
-
-
-def update_incident(store: Store, incident_id: str, version: int, actor: str, changes: dict) -> dict:
-    row = store.one("SELECT * FROM incidents WHERE id = ?", (incident_id,))
-    if row is None:
-        raise KeyError(incident_id)
-    if row["version"] != version:
-        raise Conflict(f"the incident is at version {row['version']}, not {version}; reload before changing it")
-    allowed = {"pre_roll_ms", "post_roll_ms", "category", "note", "match_minute", "match_second", "period"}
-    changes = {k: v for k, v in changes.items() if k in allowed}
-    merged = {**row, **changes}
-    if merged["category"] not in CATEGORIES:
-        raise TimingError(f"category must be one of {', '.join(CATEGORIES)}")
-    _validate_rolls(merged["pre_roll_ms"], merged["post_roll_ms"])
-    now = iso(utcnow())
-    hold_id = row["hold_id"]
-    if {"pre_roll_ms", "post_roll_ms"} & changes.keys():
-        lo, hi = _hold_window(parse_iso(row["event_utc"]), merged["pre_roll_ms"], merged["post_roll_ms"])
-        new_hold = retention.create_hold(store, None, lo, hi, "incident", incident_id)
-        if hold_id:
-            retention.release_hold(store, hold_id, "incident window changed; replaced by a new hold")
-        hold_id = new_hold["id"]
-    with store.tx() as db:
-        cur = db.execute(
-            "UPDATE incidents SET pre_roll_ms = ?, post_roll_ms = ?, category = ?, note = ?, match_minute = ?,"
-            " match_second = ?, period = ?, hold_id = ?, version = version + 1, updated_utc = ?"
-            " WHERE id = ? AND version = ?",
-            (merged["pre_roll_ms"], merged["post_roll_ms"], merged["category"], merged["note"],
-             merged["match_minute"], merged["match_second"], merged["period"], hold_id, now, incident_id, version))
-        if cur.rowcount != 1:
-            raise Conflict("the incident changed while this edit was being saved; reload")
-        Store.log_event(db, now, "incident.updated", None, {"id": incident_id, "by": actor, "from": version,
-                                                            "changes": changes})
-    return store.one("SELECT * FROM incidents WHERE id = ?", (incident_id,))
 
 
 # ── windows ───────────────────────────────────────────────────────────────

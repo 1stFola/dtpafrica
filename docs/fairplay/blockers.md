@@ -20,8 +20,11 @@ file it was read from, or marked **UNVERIFIED** with who can settle it.
 | B8 | Sheet approval does not record the sheet event id on `SbMatchEvent.metadata` | automatic incident → current event lookup | a one-line ScoreBoard change, reviewed on its own ([ADR-0009](./adr/0009-linking-incidents-to-scoreboard.md)) | Fola (review) |
 | B9 | The Edge image's FFmpeg is Debian 13's 7.1.x, not the Debian 12 build the 4 Oct 2026 ruling cleared | shipping the Edge image beyond development | the register's FFmpeg row says a different build reopens the question ([OSS register](../licenses/OSS_REGISTER.md#fairplay-edge-venue-service)) | Fola |
 | B10 | Edge licence-register rows (MediaMTX, FastAPI, `cryptography` and the rest) are REVIEW REQUIRED | shipping the Edge beyond development | nothing enters without a cleared row | Fola |
-| B11 | Operator bundles are DEV-signed until the cloud signs them (Phase 3) | any real match | a DEV key on a developer's machine is not a control anyone else can audit | Phase 3 |
+| B11 | Operator bundles are DEV-signed until the cloud signs them | any real match | a DEV key on a developer's machine is not a control anyone else can audit | the cloud `fairplay` module (backlog 13), not built in Phase 3 |
 | B12 | HTTPS not yet used from a real reviewer device with the Edge's root installed | a second device at a venue | proven by unit tests and a handshake test only | matchday crew |
+| B13 | No cloud receiver for the outbox (`POST /api/v1/fairplay/sync/batch`), no device pairing | any record reaching the cloud; the cloud's check of the audit chain | the Edge side is built and tested against a test double; the cloud module, its additive migration and its audit-table trigger are backlog 13 | Fola (approve building it) |
+| B14 | The Edge's disks are not encrypted by anything here; physical custody unplanned | real footage of minors on the Edge | hashes and the audit chain detect tampering, they do not stop reading ([privacy](./privacy.md)) | matchday crew → Fola |
+| B15 | No tool for a player's or parent's request to see or erase footage; no evidence retention rule | real matches | erasing evidence must be an audited action keeping hash and reason ([privacy](./privacy.md)) | Fola / organisers |
 
 **Standing escalations** (master prompt): any request to enable referee intervention or
 VAR/FVS functions; any new recurring charge or EC2 change; any destructive or incompatible

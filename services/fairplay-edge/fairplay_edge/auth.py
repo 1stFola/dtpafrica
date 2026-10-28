@@ -41,7 +41,12 @@ PERMISSIONS = (
     "fairplay.session.manage",
     "fairplay.edge.admin",
     "fairplay.evidence.view_original",
+    "fairplay.evidence.export",
+    "fairplay.report.view",
 )
+# Venue staff see the venue: sources, recordings, incidents, draft evidence. Anyone else
+# (an organiser holding only fairplay.report.view) sees released evidence and nothing more.
+STAFF_PERMISSIONS = tuple(p for p in PERMISSIONS if p != "fairplay.report.view")
 ISSUERS = ("dev-local", "dtp-cloud")
 SESSION_HOURS = 8
 IDLE_MINUTES = 30

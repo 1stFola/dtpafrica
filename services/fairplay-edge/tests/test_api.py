@@ -206,7 +206,9 @@ def test_cookie_writes_need_the_csrf_header(op):
 
 def test_permissions_are_enforced(op):
     _login(op, "view@dtp.test", "654321")
-    assert op.get("/edge/v1/health").status_code == 200  # any signed-in member may look
+    # Signed in, but with no venue permission: sees nothing (Phase 2 let any member look).
+    assert op.get("/edge/v1/health").status_code == 403
+    assert op.get("/edge/v1/auth/me").status_code == 200
     hold = {"fromUtc": "2026-10-27T14:00:00Z", "toUtc": "2026-10-27T14:00:30Z", "reason": "incident"}
     assert op.post("/edge/v1/holds", json=hold, headers=CSRF).status_code == 403
 

@@ -1,8 +1,10 @@
-"""The background loop: watch, scan, sample the clock, and (when enabled) retain.
+"""The background loops: watch, scan, sample the clock, retain (when enabled); cut evidence
+clips; and send the sync outbox.
 
-It runs inside the API process, in a worker thread so hashing never blocks a request. If
-this process stops, MediaMTX keeps recording: the next start scans what was written while
-it was down. Stopping waits for the current pass, so a hash is never cut off half-way.
+They run inside the API process, each in a worker thread so hashing, cutting or a slow WAN
+never blocks a request or each other. If this process stops, MediaMTX keeps recording: the
+next start scans what was written while it was down, and requeues any clip job it
+interrupted. Stopping waits for the current pass, so a hash is never cut off half-way.
 """
 
 from __future__ import annotations
@@ -12,11 +14,12 @@ import json
 import logging
 import time
 
-from . import retention
+from . import evidence, retention
 from .auth import AuthError, Bundle, Sessions, load_trusted_keys, verify_bundle
 from .config import Settings
 from .manifest import Scanner
 from .mediamtx import MediaMtx
+from .outbox import HttpTransport, NoDestination, Outbox
 from .store import Store
 from .timing import ClockWatch
 from .watchdog import Watchdog
@@ -40,11 +43,16 @@ class EdgeService:
         self.scanner = Scanner(settings, self.store)
         self.sessions = Sessions(self.store)
         self.clock = ClockWatch(self.store)
+        self.cutter = evidence.FfmpegCutter()
+        self.sync_configured = bool(settings.cloud_sync_url)
+        transport = (HttpTransport(settings.cloud_sync_url, settings.cloud_device_token) if self.sync_configured
+                     else NoDestination())
+        self.outbox = Outbox(self.store, transport)
         self.bundle: Bundle | None = None
         self.bundle_error: str | None = None
         self._bundle_mtime: float | None = None
         self._stop = asyncio.Event()
-        self._task: asyncio.Task | None = None
+        self._tasks: list[asyncio.Task] = []
         self._last_retention = 0.0
         self._last_clock = 0.0
         self.passes = 0
@@ -86,23 +94,51 @@ class EdgeService:
                 log.info(json.dumps({"event": "retention.run", "deleted": len(deleted)}))
         self.passes += 1
 
-    async def _loop(self) -> None:
+    def run_jobs_once(self) -> bool:
+        """Run one due clip job. True if there was one."""
+        job = evidence.due_job(self.store)
+        if job is None:
+            return False
+        result = evidence.run_job(self.store, self.settings, self.cutter, job["id"])
+        log.info(json.dumps({"event": "job.ran", "id": job["id"], "state": result["state"],
+                             "error": result.get("error_code")}))
+        return True
+
+    def sync_once(self) -> None:
+        if self.sync_configured:
+            report = self.outbox.run_once()
+            if report.attempted:
+                log.info(json.dumps({"event": "outbox.run", "attempted": report.attempted, "sent": report.sent,
+                                     "parked": report.parked, "error": report.error}))
+
+    async def _every(self, name: str, fn, seconds: float) -> None:
         while not self._stop.is_set():
+            busy = False
             try:
-                await asyncio.to_thread(self.run_once)
-                self.last_pass_error = None
+                busy = bool(await asyncio.to_thread(fn))
+                if name == "pass":
+                    self.last_pass_error = None
             except Exception as exc:  # a failed pass must not end the loop
-                self.last_pass_error = f"{exc.__class__.__name__}: {exc}"
-                log.exception("edge pass failed")
+                if name == "pass":
+                    self.last_pass_error = f"{exc.__class__.__name__}: {exc}"
+                log.exception("edge %s failed", name)
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self.settings.poll_seconds)
+                # A job loop that just ran a job looks again at once; otherwise wait.
+                await asyncio.wait_for(self._stop.wait(), timeout=0.05 if busy else seconds)
             except asyncio.TimeoutError:
                 pass
 
     def start(self) -> None:
-        self._task = asyncio.create_task(self._loop(), name="fairplay-edge-loop")
+        interrupted = evidence.recover(self.store, self.settings)
+        if interrupted:
+            log.info(json.dumps({"event": "jobs.recovered", "ids": interrupted}))
+        self._tasks = [
+            asyncio.create_task(self._every("pass", self.run_once, self.settings.poll_seconds), name="fairplay-edge-loop"),
+            asyncio.create_task(self._every("jobs", self.run_jobs_once, 2.0), name="fairplay-edge-jobs"),
+            asyncio.create_task(self._every("sync", self.sync_once, 2.0), name="fairplay-edge-sync"),
+        ]
 
     async def stop(self) -> None:
         self._stop.set()
-        if self._task:
-            await self._task
+        for task in self._tasks:
+            await task
