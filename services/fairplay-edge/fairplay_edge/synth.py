@@ -34,6 +34,8 @@ class Feed:
     duration_s: float | None = None
     marker_every_s: int = 60
     bitrate: str = "2500k"
+    # The Phase 1-3 form: audio as its own input. Kept to reproduce the lost-video defect.
+    separate_audio_input: bool = False
 
 
 def _escape(text: str) -> str:
@@ -67,10 +69,18 @@ def build_command(feed: Feed, base_epoch: float) -> list[str]:
         f"drawbox=x=0:y=0:w=iw:h=ih:color=red@0.35:t=fill:"
         f"enable='lt(mod({whole % feed.marker_every_s}+t+{frac:.3f}\\,{feed.marker_every_s})\\,1)'",
     ])
-    cmd = [ffmpeg, "-hide_banner", "-loglevel", "warning", "-nostats", "-re",
-           "-f", "lavfi", "-i", f"{feed.pattern}=size={feed.size}:rate={feed.rate}"]
-    if feed.audio:
-        cmd += ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"]
+    video = f"{feed.pattern}=size={feed.size}:rate={feed.rate}"
+    audio = "sine=frequency=440:sample_rate=48000"
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "warning", "-nostats", "-re"]
+    if feed.audio and not feed.separate_audio_input:
+        # One input for both, so -re paces audio and video off one clock. As two inputs,
+        # each paced on its own, the audio could reach MediaMTX more than a second ahead of
+        # the video, and MediaMTX then discarded video at every segment switch (Phase 3).
+        cmd += ["-f", "lavfi", "-i", f"{video}[out0];{audio}[out1]"]
+    else:
+        cmd += ["-f", "lavfi", "-i", video]
+        if feed.audio:
+            cmd += ["-f", "lavfi", "-i", audio]
     if feed.duration_s:
         cmd += ["-t", f"{feed.duration_s:.3f}"]
     cmd += ["-vf", overlay,

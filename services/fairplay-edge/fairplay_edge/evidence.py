@@ -238,7 +238,10 @@ def plan_cut(store: Store, settings: Settings, source: str, start: datetime, dur
             parse_iso(r["end_utc"]) >= end for r in rows if r["end_utc"]):
         raise NotYet("the end of the window has not been recorded and finalised yet")
     pieces, used, problems = [], [], []
-    cursor = start  # pieces never overlap, even where segments do
+    # MediaMTX writes each sample to exactly one segment, in order, so consecutive segments
+    # never hold the same footage, even where their recorded times overlap (a clock
+    # artefact). Only the window's own edges are trimmed; every segment between is taken
+    # whole. Trimming an overlap, as Phase 3 first did, skipped real footage.
     for row in rows:
         if row["state"] == "missing":
             raise ClipFailed("source_missing", f"original {row['rel_path']} is missing from disk")
@@ -254,10 +257,9 @@ def plan_cut(store: Store, settings: Settings, source: str, start: datetime, dur
         seg_start = parse_iso(row["start_utc"])
         base = row["start_time_s"] or 0.0
         seg_end = seg_start + timedelta(seconds=video_seconds(row))
-        lo, hi = max(start, seg_start, cursor), min(end, seg_end)
+        lo, hi = max(start, seg_start), min(end, seg_end)
         if hi <= lo:
             continue
-        cursor = hi
         # No in/out point where the piece runs to the segment's own edge: a seek that is not
         # needed is one that cannot fail.
         # The outpoint is always set: without one, the concat demuxer places the next segment
@@ -283,7 +285,7 @@ def plan_cut(store: Store, settings: Settings, source: str, start: datetime, dur
         cursor = max(cursor, hi)
     if (end - cursor).total_seconds() * 1000 > GAP_TOLERANCE_MS:
         gaps.append({"fromUtc": iso(cursor), "toUtc": iso(end), "durationMs": round((end - cursor).total_seconds() * 1000)})
-    covered = round(sum((parse_iso(u["usedToUtc"]) - parse_iso(u["usedFromUtc"])).total_seconds() * 1000 for u in used))
+    covered = duration_ms - sum(g["durationMs"] for g in gaps)
     source_fps = next((r["fps"] for r in rows if r["fps"] and r["state"] in ("finalized", "partial")), None)
     return {"pieces": pieces, "used": used, "gaps": gaps, "unused": problems, "coveredMs": covered,
             "coverage": "full" if not gaps else "partial", "sourceFps": source_fps}
@@ -366,9 +368,10 @@ def check_video(pts: list[float], fps: str | None, window_ms: int, plan: dict, w
     covered = max(0.0, span - lead_in - sum(h["durationMs"] for h in holes) / 1000)
     lead = sum(u.get("undecodableLeadMs", 0) for u in plan["used"])
     missing = max(0, round(window_ms - covered * 1000))
-    # More pictures than the lead-in and the window can hold means footage appears twice:
-    # segments whose recorded start times overlap (MediaMTX re-anchoring its clock after a
-    # stall, "detected drift ... resetting"). The clip is then not a faithful copy.
+    # More pictures than the lead-in and the window can hold means the recording's own
+    # times disagree with its frames: segments whose recorded start times overlap (MediaMTX
+    # re-anchoring its clock, "detected drift ... resetting"). The footage is all there,
+    # once, but times inside the clip are uncertain by that much, so it is not called full.
     excess = max(0, round((len(shown) * frame - lead_in) * 1000 - (window_ms - missing)))
     return {"method": "video packet timestamps of the clip (no decode)", "fps": fps, "frames": len(shown),
             "firstPtsS": round(shown[0], 3) if shown else None, "lastPtsS": round(shown[-1], 3) if shown else None,

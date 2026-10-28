@@ -74,6 +74,7 @@ def cmd_synth(args: argparse.Namespace) -> int:
         clock_offset_ms=args.clock_offset_ms,
         audio=not args.no_audio,
         duration_s=args.duration,
+        separate_audio_input=args.separate_audio_input,
     )
     return run(feed)
 
@@ -293,6 +294,8 @@ def main(argv: list[str] | None = None) -> int:
     synth.add_argument("--clock-offset-ms", type=int, default=0)
     synth.add_argument("--no-audio", action="store_true")
     synth.add_argument("--duration", type=float)
+    synth.add_argument("--separate-audio-input", action="store_true",
+                       help="audio as its own input, as before Phase 3: reproduces the lost-video defect")
     synth.set_defaults(fn=cmd_synth)
     sub.add_parser("scan-once", help="one watchdog + manifest pass").set_defaults(fn=cmd_scan)
     sub.add_parser("verify-all", help="re-hash every final segment").set_defaults(fn=cmd_verify_all)

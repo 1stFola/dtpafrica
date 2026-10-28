@@ -215,6 +215,42 @@ Found and fixed during the browser QA:
 | Duplicate sync submission | unit tests against the test double: one batch ten times → 1 applied, 9 replayed; a lost reply resent → `replayed`; same key, different content → parked + alert | **PASS** (no real receiver exists) |
 | Missing source | fixture: one ground original deleted → job `failed` / `source_missing`, no evidence row, no file; unit tests for missing, changed (`source_mismatch`) and no footage | **PASS** |
 
+## After the merge (28 Oct 2026, branch `fix/fairplay-synth-av-alignment`)
+
+**D2, the lost video.** The synthetic feed now makes its audio and video from one `lavfi`
+input, so `-re` paces both off one clock (`--separate-audio-input` keeps the old form for
+reproducing the defect). Results:
+
+| | Old form (two inputs) | New form (one input) |
+|---|---|---|
+| Fixture runs with MediaMTX "too late" discards | runs 1, 2, 3, 6 (431 and 267 counted in runs 1 and 6) | **none** in runs 9 and 10 |
+| Isolated test: ground feed only, 4 fresh starts, 10 s segments | 0 discards | 0 discards |
+| The same with 4 busy CPU processes in Docker's VM (3 starts each) | 0 discards | 0 discards |
+
+So the defect could not be produced on demand with either form. It appeared with the full
+stack starting at once, on a loaded machine. Two clean runs with the new form are
+encouraging, not proof. The `segment_video_gap` alert and equipment-audit row E17 remain
+the guard for real encoders.
+
+**A cutting bug in the merged code, fixed.** MediaMTX writes each sample to exactly one
+segment, in order, so consecutive segments never hold the same footage, even where their
+recorded times overlap (a clock artefact). Phase 3 trimmed such overlaps as if they were
+duplicates, and so **skipped real footage**; copy-seeking then snapped back to a keyframe,
+which is what showed as "excess" pictures in runs 7 and 9. Run 7's drone clip did not hold
+footage twice, as reported above: it had a hidden jump, and was rightly not called `full`.
+Now only the window's own edges are trimmed, every segment between is taken whole, and an
+overlap is never counted as a gap.
+
+**Run 9: 30 / 30.** No discards on either camera; both clips `partial` (they still had the
+cutting bug above, which the excess check flagged).
+**Run 10: 29 / 30, with both clips `full`**: the ground clip has 799 frames, matching the
+window plus its lead-in to within 34 ms, and an independent count agrees. This is the
+first `full` ground clip on the real stack with the current cutter. The one failure is a
+5.0 s ground gap from two MediaMTX recorder resets (*detected drift … resetting*) at
+16:52, while the Edge was cutting clips on a machine with OneDrive syncing: the synthetic
+encoders share Docker's VM with the Edge, so a stall there stalls the "camera". At a venue
+the cameras are separate hardware. The alert reported the gap correctly.
+
 ## Privacy
 
 See [privacy.md](./privacy.md): what is held, where it goes, who sees what, the rights
