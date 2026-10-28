@@ -479,6 +479,13 @@
   overflow-y: auto;
 }
 
+/* The panel scrolls rather than squeezing what is in it. Left to shrink, a flex column
+   taller than 88vh took the height out of the only items that could give it up, the two
+   note boxes, which ended up a sliver one line high that nobody saw to type into. */
+.vision-workstation__side > * {
+  flex-shrink: 0;
+}
+
 /* The side panel is narrow: a label column of at least 10rem left the pitch size's two
    inputs 88px between them, so they stacked. Here a label takes only what it needs. */
 .vision-workstation__side .vision-row {
@@ -495,7 +502,9 @@
 .vision-workstation__side textarea {
   border-radius: 8px;
   font: inherit;
+  min-height: 4.5rem;
   padding: 0.5rem;
+  resize: vertical;
   width: 100%;
 }
 
