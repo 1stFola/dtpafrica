@@ -5,7 +5,7 @@ import json
 import pytest
 
 from fairplay_edge.config import ConfigError
-from fairplay_edge.mediamtx_config import ALWAYS_OFF, hashed, render, write
+from fairplay_edge.mediamtx_config import ALWAYS_OFF, hashed, matches, render, write
 
 
 @pytest.fixture
@@ -43,15 +43,22 @@ def test_live_preview_hls_is_internal_and_same_origin(cfg, settings, env):
     assert native["hlsAddress"].startswith("127.0.0.1:")
 
 
-def test_passwords_are_hashed_never_plain(settings, env, tmp_path):
+def test_passwords_are_argon2id_hashed_never_plain(settings, env, tmp_path):
     out = tmp_path / "mediamtx.yml"
     write(settings, env, out)
     text = out.read_text()
     for key in ("FAIRPLAY_MEDIAMTX_PASSWORD", "FAIRPLAY_PUBLISH_PASSWORD_GROUND", "FAIRPLAY_PUBLISH_PASSWORD_DRONE"):
         assert env[key] not in text
-    assert hashed(env["FAIRPLAY_PUBLISH_PASSWORD_GROUND"]) in text
     # The header is a YAML comment; the body must still parse as JSON.
-    json.loads(text.split("\n", 3)[3])
+    users = {u["user"]: u["pass"] for u in json.loads(text.split("\n", 3)[3])["authInternalUsers"]}
+    assert all(p.startswith("argon2:$argon2id$v=19$") for p in users.values())
+    assert matches(env["FAIRPLAY_PUBLISH_PASSWORD_GROUND"], users["pub-ground"])
+    assert matches(env["FAIRPLAY_MEDIAMTX_PASSWORD"], users["fairplay-edge"])
+    assert not matches(env["FAIRPLAY_PUBLISH_PASSWORD_DRONE"], users["pub-ground"])
+
+
+def test_each_hash_has_its_own_salt():
+    assert hashed("same-secret-value-for-both-0123456789") != hashed("same-secret-value-for-both-0123456789")
 
 
 def test_unused_listeners_off_and_no_wildcard_origins(cfg):

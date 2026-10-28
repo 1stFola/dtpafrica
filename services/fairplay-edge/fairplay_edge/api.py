@@ -150,7 +150,7 @@ class DisableIn(BaseModel):
 
 def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     settings = service.settings
-    token_digest = hashlib.sha256(settings.api_token.encode()).digest()
+    api_token = settings.api_token.encode()
     secure_cookie = settings.tls_cert is not None
 
     @asynccontextmanager
@@ -191,7 +191,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         header = request.headers.get("authorization", "")
         scheme, _, value = header.partition(" ")
         if scheme.lower() == "bearer" and value:
-            if hmac.compare_digest(hashlib.sha256(value.encode()).digest(), token_digest):
+            # Constant time on the raw bytes; nothing to gain from hashing a random token first.
+            if hmac.compare_digest(value.encode(), api_token):
                 return DEVICE
             raise HTTPException(401, {"statusCode": 401, "error": "unauthorised", "message": "token not accepted"},
                                 headers={"WWW-Authenticate": "Bearer"})

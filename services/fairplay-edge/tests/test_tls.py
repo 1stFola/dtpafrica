@@ -14,6 +14,19 @@ from cryptography import x509
 from fairplay_edge.tlsgen import SERVER_DAYS, init
 
 
+def _server_ctx(paths) -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(paths["cert"], paths["key"])
+    return ctx
+
+
+def _client_ctx(cafile=None) -> ssl.SSLContext:
+    ctx = ssl.create_default_context(cafile=str(cafile) if cafile else None)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
 def test_ca_and_server_certificate(tmp_path):
     paths = init(tmp_path / "tls", ["192.168.1.20", "edge.venue.lan"], "test")
     cert = x509.load_pem_x509_certificate(paths["cert"].read_bytes())
@@ -40,9 +53,8 @@ def test_reissue_keeps_the_same_ca(tmp_path):
 
 def test_a_client_trusting_only_the_edge_ca_completes_a_handshake(tmp_path):
     paths = init(tmp_path / "tls", [], "test")
-    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    server_ctx.load_cert_chain(paths["cert"], paths["key"])
-    client_ctx = ssl.create_default_context(cafile=str(paths["ca"]))
+    server_ctx = _server_ctx(paths)
+    client_ctx = _client_ctx(paths["ca"])
     listener = socket.create_server(("127.0.0.1", 0))
     port = listener.getsockname()[1]
     errors = []
@@ -68,8 +80,7 @@ def test_a_client_trusting_only_the_edge_ca_completes_a_handshake(tmp_path):
 
 def test_a_client_without_the_ca_refuses(tmp_path):
     paths = init(tmp_path / "tls", [], "test")
-    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    server_ctx.load_cert_chain(paths["cert"], paths["key"])
+    server_ctx = _server_ctx(paths)
     listener = socket.create_server(("127.0.0.1", 0))
     port = listener.getsockname()[1]
 
@@ -84,6 +95,6 @@ def test_a_client_without_the_ca_refuses(tmp_path):
     thread.start()
     with socket.create_connection(("127.0.0.1", port)) as raw:
         with pytest.raises(ssl.SSLCertVerificationError):
-            ssl.create_default_context().wrap_socket(raw, server_hostname="localhost")
+            _client_ctx().wrap_socket(raw, server_hostname="localhost")
     thread.join(5)
     listener.close()

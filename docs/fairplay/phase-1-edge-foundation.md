@@ -78,7 +78,7 @@ Read from the 1.21.3 image's own `mediamtx.yml`:
 | `recordDeleteAfter: 1d` | `0s`; retention is the Edge's |
 | `record: false` | `true` for configured paths only; any other path is refused |
 | `rtspTransports: [udp, multicast, tcp]` | `[tcp]` |
-| passwords in plain text | `sha256:` hashes; no plaintext in the rendered file |
+| passwords in plain text | Argon2id hashes (`argon2:`, m = 4096 KiB, t = 3, p = 1, random salt) since PR #303's CodeQL review; Phase 1 shipped `sha256:` hashes. No plaintext in the rendered file |
 
 API (9997) and playback (9996) are not published to the host at all.
 
