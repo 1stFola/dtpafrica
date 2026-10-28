@@ -624,7 +624,11 @@ const MATCHES: MatchSeed[] = [
     kickoffAt: "2026-10-01T16:00:00+01:00", venue: "WATER COPORATION SPORT PITCH, IYANA ISASHI",
     status: "scheduled", homeScore: 0, awayScore: 0,
     walkover: false, goals: [] },
-  { id: "478c1f7d-e6cf-56b0-80dd-7a0362cc065d", homeSlug: "future-stars-fc", awaySlug: "black-jaguars-fc",
+  /* The id of the match an admin created on live on 2 Oct and recorded as a 4-3,
+     before this fixture had been seeded there. Under this file's own id the seed
+     later added a second, empty copy beside it; under this one it finds the played
+     match and preserves it. */
+  { id: "bcf21d4a-57f8-49bc-a64e-5f7079465ee8", homeSlug: "future-stars-fc", awaySlug: "black-jaguars-fc",
     kickoffAt: "2026-10-02T16:00:00+01:00", venue: "LA PRIMARY SCHOOL SPORT PITCH, IYANA ISASHI",
     status: "scheduled", homeScore: 0, awayScore: 0,
     walkover: false, goals: [] },
