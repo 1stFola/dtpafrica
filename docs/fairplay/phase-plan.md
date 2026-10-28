@@ -12,7 +12,7 @@ commitments. P2 (any automatic classification) is out of V1 entirely.
 [equipment audit](./equipment-audit.md), [integration map](./integration-map.md),
 [ADRs](./adr/), this plan. Documents only: no code, schema, cloud or DNS change.
 
-**Gate — Fola decides:**
+**Gate — Fola decides:** (gates 2–8 decided on 28 Oct 2026: see [decisions.md](./decisions.md); gate 1 waits for the equipment audit)
 
 1. The ingest topology, from the answered [equipment audit](./equipment-audit.md) (T1–T4),
    and therefore single- or multi-angle for the pilot.
