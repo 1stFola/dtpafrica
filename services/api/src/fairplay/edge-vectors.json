@@ -1,0 +1,163 @@
+{
+  "audit": {
+    "deviceId": "164975da-388c-410a-9dc1-052b4671d420",
+    "payloads": [
+      {
+        "action": "incident.created",
+        "actor_id": "u-1",
+        "actor_kind": "operator",
+        "actor_name": "Adé Operator",
+        "at_utc": "2026-10-28T18:39:45.419Z",
+        "detail": {
+          "category": "foul",
+          "minute": 23
+        },
+        "detail_text": "{\"category\":\"foul\",\"minute\":23}",
+        "device_id": "164975da-388c-410a-9dc1-052b4671d420",
+        "entity_id": "i-1",
+        "entity_type": "incident",
+        "entity_version": 1,
+        "entry_hash": "dda8e9652d523b3bdf3a3ea16905182a21265ad7dbbb3fbac8570c0e9cfdbbe4",
+        "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "seq": 1
+      },
+      {
+        "action": "evidence.created",
+        "actor_id": "u-1",
+        "actor_kind": "operator",
+        "actor_name": "Adé Operator",
+        "at_utc": "2026-10-28T18:39:45.419Z",
+        "detail": {
+          "coverage": 1.0,
+          "fps": 25.0,
+          "names": [
+            "Ọlá"
+          ],
+          "note": "ratio 0.5"
+        },
+        "detail_text": "{\"coverage\":1.0,\"fps\":25.0,\"names\":[\"Ọlá\"],\"note\":\"ratio 0.5\"}",
+        "device_id": "164975da-388c-410a-9dc1-052b4671d420",
+        "entity_id": "e-1",
+        "entity_type": "evidence",
+        "entity_version": 1,
+        "entry_hash": "00dbd2acbb7ba095cd5ba2fc4723de1dd4f2c85e5407eb6df1f9bcfc33d90663",
+        "prev_hash": "dda8e9652d523b3bdf3a3ea16905182a21265ad7dbbb3fbac8570c0e9cfdbbe4",
+        "seq": 2
+      },
+      {
+        "action": "outbox.parked",
+        "actor_id": "system",
+        "actor_kind": "system",
+        "actor_name": "FairPlay Edge",
+        "at_utc": "2026-10-28T18:39:45.420Z",
+        "detail": {},
+        "detail_text": "{}",
+        "device_id": "164975da-388c-410a-9dc1-052b4671d420",
+        "entity_id": null,
+        "entity_type": "session",
+        "entity_version": null,
+        "entry_hash": "c4e0ad733996c6e6d013551f64a0b7f760ba058f16787ad953fcb818c9ff1e44",
+        "prev_hash": "00dbd2acbb7ba095cd5ba2fc4723de1dd4f2c85e5407eb6df1f9bcfc33d90663",
+        "seq": 3
+      }
+    ]
+  },
+  "bundle": {
+    "bundle": {
+      "bundleId": "b-1",
+      "expiresAt": "2026-10-29T21:00:00Z",
+      "issuedAt": "2026-10-28T09:00:00Z",
+      "issuer": "dtp-cloud",
+      "members": [
+        {
+          "email": "ade@example.org",
+          "name": "Adé",
+          "permissions": [
+            "fairplay.incident.operate",
+            "fairplay.incident.review"
+          ],
+          "pinHash": "scrypt$32768$8$1$AAECAwQFBgcICQoLDA0ODw==$nVLvyZ/xcAN+KOEMCAg5u24AE/jSn9gzcXDiYRs0mi8=",
+          "userId": "u-1"
+        }
+      ],
+      "schema": "fairplay.credential-bundle/v1",
+      "session": {
+        "id": "s-1",
+        "label": "Lions v Eagles",
+        "matchId": null,
+        "mode": "shadow"
+      }
+    },
+    "contentHash": "d65beae8c6790e4ef9862f590355662696a08fa075d8be95b6725c71b512b38b",
+    "keyId": "56475aa75463474c",
+    "publicKey": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+    "seedHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "signature": "fKr61k0c7SxysK7zRKhrjjKN4ADyV5SuLcwHIndS+PfcaAH1EGjR2Nd4eHkOYFUB+GxCxUBZA4Tmy8WOvP+3Cg=="
+  },
+  "canonical": [
+    {
+      "python": "{\"A\":\"upper\",\"_\":\"underscore\",\"a\":[true,false,null],\"b\":1,\"z9\":-42}",
+      "value": {
+        "A": "upper",
+        "_": "underscore",
+        "a": [
+          true,
+          false,
+          null
+        ],
+        "b": 1,
+        "z9": -42
+      }
+    },
+    {
+      "python": "{\"text\":\"Ẹ̀ṣọ́ — naïve “quotes” \\\\ back\\\\slash \\\"dq\\\" / slash\"}",
+      "value": {
+        "text": "Ẹ̀ṣọ́ — naïve “quotes” \\ back\\slash \"dq\" / slash"
+      }
+    },
+    {
+      "python": "{\"ctl\":\"tab\\tnl\\ncr\\rbs\\bff\\fnul\\u0000unit\\u001fdel\"}",
+      "value": {
+        "ctl": "tab\tnl\ncr\rbs\bff\fnul\u0000unit\u001fdel"
+      }
+    },
+    {
+      "python": "{\"emoji\":\"⚽🟥 offside? 🤔\",\"sep\":\"  \"}",
+      "value": {
+        "emoji": "⚽🟥 offside? 🤔",
+        "sep": "  "
+      }
+    },
+    {
+      "python": "{\"empty\":{},\"nested\":{\"x\":[],\"y\":{\"b\":[1,{\"c\":3,\"d\":2}]}}}",
+      "value": {
+        "empty": {},
+        "nested": {
+          "x": [],
+          "y": {
+            "b": [
+              1,
+              {
+                "c": 3,
+                "d": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "python": "{\"big\":9007199254740991,\"neg\":-9007199254740991,\"zero\":0}",
+      "value": {
+        "big": 9007199254740991,
+        "neg": -9007199254740991,
+        "zero": 0
+      }
+    }
+  ],
+  "pin": {
+    "hash": "scrypt$32768$8$1$AAECAwQFBgcICQoLDA0ODw==$nVLvyZ/xcAN+KOEMCAg5u24AE/jSn9gzcXDiYRs0mi8=",
+    "pin": "482913",
+    "saltHex": "000102030405060708090a0b0c0d0e0f"
+  }
+}

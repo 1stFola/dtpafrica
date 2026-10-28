@@ -228,6 +228,25 @@ def cmd_dev_bundle(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pair(args: argparse.Namespace) -> int:
+    """Pair this Edge with the DTP cloud using the one-time bootstrap token an admin was shown."""
+    from .cloud import CloudClient, CloudError, pair
+    from .store import Store
+
+    settings = _settings(need_api_token=False)
+    trusted = Path(args.trusted_keys) if args.trusted_keys else settings.trusted_keys_file
+    if trusted is None:
+        raise SystemExit("set FAIRPLAY_TRUSTED_KEYS_FILE or pass --trusted-keys: pairing adds the cloud's key to it")
+    bootstrap = Path(args.bootstrap_token_file).read_text(encoding="utf-8").strip()
+    try:
+        result = pair(CloudClient(args.url, None), Store(settings.db_path), bootstrap, Path(args.token_file), trusted)
+    except CloudError as exc:
+        raise SystemExit(f"pairing failed: {exc}")
+    print(json.dumps({**result, "tokenFile": args.token_file,
+                      "next": "set FAIRPLAY_CLOUD_SYNC_URL and FAIRPLAY_CLOUD_DEVICE_TOKEN_FILE, then restart"}))
+    return 0
+
+
 def cmd_relay(args: argparse.Namespace) -> int:
     """TEST ONLY: forward one port to one fixed address. Stands in for the venue LAN switch in
     the WAN-outage acceptance run, so a browser on the host reaches an Edge that has no route out."""
@@ -326,6 +345,12 @@ def main(argv: list[str] | None = None) -> int:
     bundle.add_argument("--hours", type=float, default=36)
     bundle.add_argument("--member", action="append", required=True)
     bundle.set_defaults(fn=cmd_dev_bundle)
+    pairing = sub.add_parser("pair", help="pair this Edge with the DTP cloud (one-time bootstrap token)")
+    pairing.add_argument("--url", required=True, help="the API's base URL, e.g. https://www.dtp.africa")
+    pairing.add_argument("--bootstrap-token-file", required=True)
+    pairing.add_argument("--token-file", required=True, help="where to write the device token (owner-only)")
+    pairing.add_argument("--trusted-keys", help="the trusted-keys file to add the cloud's key to (default: the configured one)")
+    pairing.set_defaults(fn=cmd_pair)
     relay = sub.add_parser("relay", help="TEST ONLY: forward a port to a fixed address")
     relay.add_argument("--listen", required=True)
     relay.add_argument("--target", required=True)

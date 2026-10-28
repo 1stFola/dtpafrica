@@ -37,6 +37,8 @@ ACTIONS = (
     "media.accessed",
     "rights.recorded",
     "outbox.parked",
+    "evidence.uploaded",
+    "session.opened_from_bundle",
 )
 
 
@@ -93,7 +95,9 @@ def append(db: sqlite3.Connection, actor: Actor, action: str, entity_type: str, 
         " :entry_hash)", entry)
     from . import outbox  # outbox imports Actor from here
 
-    outbox.enqueue(db, "audit", f"{device_id}:{entry['seq']}", 1, view(entry))
+    # The hashed text goes too: re-encoding the parsed detail in another language need not
+    # give the same bytes (a float such as 1.0), and the cloud recomputes the hash from it.
+    outbox.enqueue(db, "audit", f"{device_id}:{entry['seq']}", 1, {**view(entry), "detail_text": entry["detail"]})
     return entry
 
 

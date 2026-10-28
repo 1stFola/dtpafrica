@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -461,6 +461,26 @@ UPDATE schema_version SET version = 3;
 COMMIT;
 """
 
+# Phase 4: what of each evidence clip has reached the cloud's bucket. Additive: one table.
+_MIGRATE_V4 = """
+BEGIN IMMEDIATE;
+CREATE TABLE uploads (
+    evidence_id      TEXT NOT NULL REFERENCES evidence(id),
+    kind             TEXT NOT NULL CHECK (kind IN ('clip','manifest')),
+    state            TEXT NOT NULL CHECK (state IN ('pending','stored')),
+    remote_key       TEXT,
+    attempts         INTEGER NOT NULL DEFAULT 0,
+    next_attempt_utc TEXT NOT NULL,
+    last_error       TEXT,
+    stored_utc       TEXT,
+    created_utc      TEXT NOT NULL,
+    PRIMARY KEY (evidence_id, kind)
+);
+CREATE INDEX uploads_due ON uploads (state, next_attempt_utc);
+UPDATE schema_version SET version = 4;
+COMMIT;
+"""
+
 
 def new_id() -> str:
     return str(uuid.uuid4())
@@ -495,10 +515,12 @@ class Store:
                 db.execute("INSERT INTO schema_version (version) VALUES (2)")
             elif start < 2:
                 db.execute("UPDATE schema_version SET version = 2")
-        if start < 3:
+        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4)):
+            if start >= version:
+                continue
             db = self._connect()
             try:
-                db.executescript(_MIGRATE_V3)
+                db.executescript(script)
             except sqlite3.Error:
                 if db.in_transaction:
                     db.execute("ROLLBACK")

@@ -81,15 +81,18 @@ services:
       FAIRPLAY_MEDIAMTX_HLS_URL: http://172.31.250.5:8888
       FAIRPLAY_CONSOLE_DIR: /srv/console
       FAIRPLAY_TRUSTED_KEYS_FILE: /etc/fairplay/auth/trusted-keys.json
-      FAIRPLAY_BUNDLE_FILE: /etc/fairplay/auth/bundle.json
+      # A DEV bundle is placed by hand in ./auth. A paired Edge fetches its bundle from the cloud
+      # and must be able to write it: set FAIRPLAY_BUNDLE_PATH=/var/lib/fairplay/data/bundle.json.
+      FAIRPLAY_BUNDLE_FILE: ${FAIRPLAY_BUNDLE_PATH:-/etc/fairplay/auth/bundle.json}
     volumes:
       - ${FAIRPLAY_SOURCES_PATH:-./config/sources.toml}:/etc/fairplay/sources.toml:ro
       - recordings:/var/lib/fairplay/recordings
       - data:/var/lib/fairplay/data
       # The built console (`pnpm --filter @dtp/fairplay-console build`), served on the Edge's origin.
       - ${FAIRPLAY_CONSOLE_PATH:-../../apps/fairplay-console/dist}:/srv/console:ro
-      # Public keys the operator bundle must be signed by, and the bundle. Read-only: the
-      # Edge can check who may sign in but cannot change it.
+      # Public keys the operator bundle must be signed by (and a DEV bundle). Read-only: the
+      # Edge can check who may sign in but cannot change whom it trusts. A cloud bundle is
+      # only installed if it verifies against these keys.
       - ${FAIRPLAY_AUTH_DIR:-./auth}:/etc/fairplay/auth:ro
     ports:
       # 127.0.0.1 unless TLS is configured: load_settings refuses anything else without it.

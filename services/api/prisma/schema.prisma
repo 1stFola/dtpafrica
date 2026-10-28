@@ -562,6 +562,9 @@ model SbMatch {
   /// Vision footage of this fixture: catalogued sources and acquired copies.
   visionSourceRecords VisionSourceVideoRecord[]
   visionVideoAssets   VisionVideoAsset[]
+  /// FairPlay shadow-review sessions. SetNull on delete: evidence outlives the fixture row
+  /// and keeps a snapshot of it (docs/fairplay/decisions.md D5).
+  fairPlaySessions    FairPlaySession[]
 
   @@index([competitionId, status])
   @@index([stageKey])
@@ -950,6 +953,7 @@ model AdminUser {
   role         AdminRole?             @relation(fields: [roleId], references: [id], onDelete: SetNull)
   competition  SbCompetition?         @relation(fields: [competitionId], references: [id], onDelete: SetNull)
   competitions AdminUserCompetition[]
+  fairPlaySessionMembers FairPlaySessionMember[]
 
   @@index([roleId])
   @@index([competitionId])
@@ -2353,4 +2357,282 @@ model VisionEvidenceLink {
   @@index([candidateId])
   @@index([kind, targetId])
   @@map("vision_evidence_links")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FairPlay — Phase 4: the cloud side of venue shadow review (docs/fairplay/)
+//
+//  The Edge at the venue owns incidents, reviews and evidence; it creates them with its own
+//  ids and versions and syncs them here through an outbox. The cloud provisions sessions and
+//  devices, signs who may sign in at the venue, and keeps what the Edge sends. It never
+//  opens, relays or transcodes video: clips go from the Edge to R2 by presigned URL.
+//
+//  Additive only: new tables, and back-relations on SbMatch and AdminUser.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A venue Edge machine. Tokens follow VisionWorker: hashed, a one-shot bootstrap token that
+/// `register` exchanges for a device token, each accepted by exactly one guard.
+model FairPlayEdgeDevice {
+  id             String    @id @default(uuid())
+  label          String
+  /// The Edge's own id (its `edge_identity.device_id`), learned at registration. Batches
+  /// and audit chains carry it.
+  edgeDeviceId   String?   @unique @map("edge_device_id")
+  tokenHash      String    @unique @map("token_hash")
+  tokenKind      String    @default("bootstrap") @map("token_kind")
+  tokenExpiresAt DateTime  @map("token_expires_at")
+  createdById    String?   @map("created_by_id")
+  createdByEmail String?   @map("created_by_email")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  registeredAt   DateTime? @map("registered_at")
+  lastSeenAt     DateTime? @map("last_seen_at")
+  retiredAt      DateTime? @map("retired_at")
+  retiredById    String?   @map("retired_by_id")
+
+  sessions FairPlaySession[]
+
+  @@map("fairplay_edge_devices")
+}
+
+/// A match under shadow review, provisioned here and run on one Edge. Its id is the Edge
+/// session's id: the Edge takes it from the signed bundle.
+model FairPlaySession {
+  id             String    @id @default(uuid())
+  matchId        String?   @map("match_id")
+  /// Stored, not joined: scoping and the report must survive the match being deleted.
+  competitionId  String    @map("competition_id")
+  matchSnapshot  Json      @map("match_snapshot")
+  deviceId       String    @map("device_id")
+  label          String
+  /// ADR-0001: shadow or post_match, nothing else (a CHECK in the migration).
+  mode           String    @default("shadow")
+  angleMode      String    @default("single") @map("angle_mode")
+  createdById    String?   @map("created_by_id")
+  createdByEmail String?   @map("created_by_email")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  /// What the Edge last reported for the session itself.
+  edgeVersion    Int?      @map("edge_version")
+  edgeCreatedAt  DateTime? @map("edge_created_at")
+  endedAt        DateTime? @map("ended_at")
+  lastSyncAt     DateTime? @map("last_sync_at")
+
+  match     SbMatch?                @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  device    FairPlayEdgeDevice      @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  members   FairPlaySessionMember[]
+  incidents FairPlayIncident[]
+  evidence  FairPlayEvidence[]
+  records   FairPlayRecord[]
+
+  @@index([matchId])
+  @@index([competitionId, createdAt])
+  @@index([deviceId])
+  @@map("fairplay_sessions")
+}
+
+/// Who may sign in at the venue for a session, and as what. The PIN hash is scrypt, set by
+/// the member themself; the plaintext never reaches the database or a log.
+model FairPlaySessionMember {
+  id          String    @id @default(uuid())
+  sessionId   String    @map("session_id")
+  adminUserId String    @map("admin_user_id")
+  permissions String[]
+  pinHash     String?   @map("pin_hash")
+  pinSetAt    DateTime? @map("pin_set_at")
+  addedById   String?   @map("added_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  session   FairPlaySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  adminUser AdminUser       @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, adminUserId])
+  @@index([adminUserId])
+  @@map("fairplay_session_members")
+}
+
+/// One per item a device has sent: what it hashed to and what was answered. A repeat with
+/// the same key and hash gets `replayed`; the same key with another hash, `conflict`.
+model FairPlaySyncReceipt {
+  id             String   @id @default(uuid())
+  deviceId       String   @map("device_id")
+  idempotencyKey String   @map("idempotency_key")
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id")
+  version        Int
+  payloadHash    String   @map("payload_hash")
+  status         String
+  message        String?
+  receivedAt     DateTime @default(now()) @map("received_at")
+
+  @@unique([deviceId, idempotencyKey])
+  @@index([entityType, entityId])
+  @@map("fairplay_sync_receipts")
+}
+
+/// The latest version of every synced entity the cloud keeps as sent: segments, periods,
+/// calibrations, rights records and clip jobs. Incidents, reviews and evidence have tables
+/// of their own because the admin pages query them. Segments belong to a device, not a
+/// session: recording runs whether or not a session is open (ADR-0011).
+model FairPlayRecord {
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  deviceId   String   @map("device_id")
+  sessionId  String?  @map("session_id")
+  version    Int
+  payload    Json
+  receivedAt DateTime @default(now()) @map("received_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  session FairPlaySession? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@id([entityType, entityId])
+  @@index([sessionId, entityType])
+  @@index([deviceId, entityType])
+  @@map("fairplay_records")
+}
+
+model FairPlayIncident {
+  id           String   @id
+  sessionId    String   @map("session_id")
+  version      Int
+  state        String
+  category     String
+  eventUtc     DateTime @map("event_utc")
+  period       String?
+  matchMinute  Int?     @map("match_minute")
+  matchSecond  Int?     @map("match_second")
+  /// The console sheet's event id (ADR-0009); the SbMatchEvent is looked up through it.
+  sheetEventId String?  @map("sheet_event_id")
+  payload      Json
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  session FairPlaySession  @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  reviews FairPlayReview[]
+
+  @@index([sessionId, eventUtc])
+  @@map("fairplay_incidents")
+}
+
+model FairPlayReview {
+  id            String    @id
+  incidentId    String    @map("incident_id")
+  version       Int
+  state         String
+  /// ADR-0001: shadow only (a CHECK in the migration).
+  authorityMode String    @default("shadow") @map("authority_mode")
+  result        String?
+  reviewerId    String    @map("reviewer_id")
+  reviewerName  String    @map("reviewer_name")
+  completedAt   DateTime? @map("completed_at")
+  payload       Json
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  incident FairPlayIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+
+  @@index([incidentId])
+  @@map("fairplay_reviews")
+}
+
+/// An evidence clip as the Edge describes it, and what of it is held in R2.
+model FairPlayEvidence {
+  id               String    @id
+  sessionId        String    @map("session_id")
+  incidentId       String    @map("incident_id")
+  version          Int
+  state            String
+  source           String
+  footageKind      String    @map("footage_kind")
+  sha256           String
+  bytes            BigInt
+  manifestSha256   String    @map("manifest_sha256")
+  windowStartUtc   DateTime  @map("window_start_utc")
+  windowDurationMs Int       @map("window_duration_ms")
+  coverage         String
+  approvedAt       DateTime? @map("approved_at")
+  payload          Json
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  session FairPlaySession          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  objects FairPlayEvidenceObject[]
+
+  @@index([sessionId])
+  @@index([incidentId])
+  @@map("fairplay_evidence")
+}
+
+/// One object in the evidence bucket: a clip or its manifest. `stored` only after the cloud
+/// has checked the object's size and SHA-256 itself (never from an ETag).
+model FairPlayEvidenceObject {
+  id           String    @id @default(uuid())
+  evidenceId   String    @map("evidence_id")
+  kind         String
+  key          String    @unique
+  sha256       String
+  bytes        BigInt
+  state        String    @default("pending")
+  etag         String?
+  attempts     Int       @default(0)
+  presignedAt  DateTime? @map("presigned_at")
+  storedAt     DateTime? @map("stored_at")
+  /// D10: 90 days after the finding. Set when the object is stored.
+  deleteAfter  DateTime? @map("delete_after")
+  deletedAt    DateTime? @map("deleted_at")
+  deleteReason String?   @map("delete_reason")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  evidence FairPlayEvidence @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+
+  @@unique([evidenceId, kind])
+  @@index([state, deleteAfter])
+  @@map("fairplay_evidence_objects")
+}
+
+/// The Edge's audit entries, as hash-chained there, and whether each one links to the one
+/// before it from the same device. Insert-only: a trigger refuses UPDATE and DELETE.
+model FairPlayEdgeAuditEntry {
+  id            String   @id @default(uuid())
+  edgeDeviceId  String   @map("edge_device_id")
+  seq           Int
+  atUtc         DateTime @map("at_utc")
+  actorId       String   @map("actor_id")
+  actorName     String   @map("actor_name")
+  actorKind     String   @map("actor_kind")
+  action        String
+  entityType    String   @map("entity_type")
+  entityId      String?  @map("entity_id")
+  entityVersion Int?     @map("entity_version")
+  detail        Json
+  prevHash      String   @map("prev_hash")
+  entryHash     String   @map("entry_hash")
+  /// ok: the hash recomputes and follows the previous entry; break: it does not;
+  /// unverified: sent without its hashed text, so only the link to the previous entry
+  /// was checked.
+  chainStatus   String   @map("chain_status")
+  receivedAt    DateTime @default(now()) @map("received_at")
+
+  @@unique([edgeDeviceId, seq])
+  @@index([entityType, entityId])
+  @@map("fairplay_edge_audit_entries")
+}
+
+/// What happened here, in the cloud: devices registered and retired, sessions and members
+/// changed, bundles issued, evidence read, objects stored, refused or deleted. Flat actor
+/// fields, as Vision's; insert-only by trigger.
+model FairPlayAuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  targetKind String   @map("target_kind")
+  targetId   String?  @map("target_id")
+  actorKind  String   @map("actor_kind")
+  actorId    String?  @map("actor_id")
+  actorEmail String?  @map("actor_email")
+  reason     String?  @db.Text
+  data       Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([action, createdAt])
+  @@index([targetKind, targetId])
+  @@map("fairplay_audit_logs")
 }

@@ -53,6 +53,14 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { slug: "vision.media.raw.read", resource: "vision", action: "media.raw.read", description: "Access raw source footage, including youth footage" },
   { slug: "vision.evidence.search", resource: "vision", action: "evidence.search", description: "Search approved evidence" },
   { slug: "vision.audit.read", resource: "vision", action: "audit.read", description: "Read the Vision audit trail: who did what, including who read raw footage" },
+  // —— FairPlay shadow review (docs/fairplay/) ——
+  { slug: "fairplay.session.manage", resource: "fairplay", action: "session.manage", description: "Provision FairPlay sessions for a match and choose who may act at the venue" },
+  { slug: "fairplay.edge.admin", resource: "fairplay", action: "edge.admin", description: "Register, pair and retire FairPlay Edge devices" },
+  { slug: "fairplay.incident.operate", resource: "fairplay", action: "incident.operate", description: "Flag incidents, mark calibrations and request clips at the venue" },
+  { slug: "fairplay.incident.review", resource: "fairplay", action: "incident.review", description: "Record shadow-review findings at the venue and read them here" },
+  { slug: "fairplay.evidence.view_original", resource: "fairplay", action: "evidence.view_original", description: "Watch original venue recordings (venue only; every viewing is audited)" },
+  { slug: "fairplay.evidence.export", resource: "fairplay", action: "evidence.export", description: "Approve and export FairPlay evidence, and read it here" },
+  { slug: "fairplay.report.view", resource: "fairplay", action: "report.view", description: "Read FairPlay reports and released evidence for assigned competitions" },
 ];
 
 /**
@@ -102,6 +110,37 @@ export const VISION_ML_ENGINEER_PERMISSION_SLUGS = [
 export const VISION_SCOUT_READONLY_PERMISSION_SLUGS = [
   "admin.session.read",
   "vision.evidence.search",
+];
+
+/**
+ * FairPlay roles. Nobody holds one until an admin assigns it (decisions.md D3).
+ *
+ *   - `fairplay_organiser_viewer` holds `fairplay.report.view` and nothing else, and must
+ *     be scoped to named competitions: an organiser account with no competitions is
+ *     refused, not treated as unscoped (fairplay/access.ts, decisions.md D4).
+ *   - Nothing FairPlay grants a ScoreBoard permission: findings stay out of the recorder
+ *     console and the official record (ADR-0001, ADR-0010).
+ */
+export const FAIRPLAY_PERMISSION_SLUGS = ADMIN_PERMISSIONS.filter((p) =>
+  p.slug.startsWith("fairplay.")
+).map((p) => p.slug);
+
+export const FAIRPLAY_ADMIN_PERMISSION_SLUGS = ["admin.session.read", ...FAIRPLAY_PERMISSION_SLUGS];
+
+export const FAIRPLAY_ASSESSOR_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "fairplay.incident.operate",
+  "fairplay.incident.review",
+];
+
+export const FAIRPLAY_OPERATOR_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "fairplay.incident.operate",
+];
+
+export const FAIRPLAY_ORGANISER_VIEWER_PERMISSION_SLUGS = [
+  "admin.session.read",
+  "fairplay.report.view",
 ];
 
 export const ALL_PERMISSION_SLUGS = ADMIN_PERMISSIONS.map((p) => p.slug);
@@ -245,5 +284,29 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
     name: "Vision Scout (read only)",
     description: "Search approved Vision evidence; no raw footage or training data",
     permissionSlugs: VISION_SCOUT_READONLY_PERMISSION_SLUGS,
+  },
+  {
+    slug: "fairplay_admin",
+    name: "FairPlay Admin",
+    description: "Pair Edge devices, provision shadow-review sessions, read findings and evidence",
+    permissionSlugs: FAIRPLAY_ADMIN_PERMISSION_SLUGS,
+  },
+  {
+    slug: "fairplay_assessor",
+    name: "FairPlay Assessor",
+    description: "Flag incidents and record shadow-review findings at the venue",
+    permissionSlugs: FAIRPLAY_ASSESSOR_PERMISSION_SLUGS,
+  },
+  {
+    slug: "fairplay_operator",
+    name: "FairPlay Operator",
+    description: "Flag incidents and mark calibrations at the venue; no findings",
+    permissionSlugs: FAIRPLAY_OPERATOR_PERMISSION_SLUGS,
+  },
+  {
+    slug: "fairplay_organiser_viewer",
+    name: "FairPlay Organiser (view only)",
+    description: "Read FairPlay reports and released evidence for assigned competitions only",
+    permissionSlugs: FAIRPLAY_ORGANISER_VIEWER_PERMISSION_SLUGS,
   },
 ];

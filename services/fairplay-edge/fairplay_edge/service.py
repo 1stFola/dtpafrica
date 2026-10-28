@@ -19,6 +19,7 @@ from .auth import AuthError, Bundle, Sessions, load_trusted_keys, verify_bundle
 from .config import Settings
 from .manifest import Scanner
 from .mediamtx import MediaMtx
+from .cloud import BUNDLE_EVERY_S, CloudClient, CloudError, Uploader, refresh_bundle
 from .outbox import HttpTransport, NoDestination, Outbox
 from .store import Store
 from .timing import ClockWatch
@@ -48,6 +49,11 @@ class EdgeService:
         transport = (HttpTransport(settings.cloud_sync_url, settings.cloud_device_token) if self.sync_configured
                      else NoDestination())
         self.outbox = Outbox(self.store, transport)
+        # The same destination and token: the bundle and evidence uploads (cloud.py).
+        self.cloud = CloudClient(settings.cloud_sync_url, settings.cloud_device_token) if self.sync_configured else None
+        self.uploader = Uploader(settings, self.store, self.cloud) if self.cloud else None
+        self.bundle_refresh: str | None = None
+        self._last_bundle_fetch = -BUNDLE_EVERY_S
         self.bundle: Bundle | None = None
         self.bundle_error: str | None = None
         self._bundle_mtime: float | None = None
@@ -111,6 +117,20 @@ class EdgeService:
                 log.info(json.dumps({"event": "outbox.run", "attempted": report.attempted, "sent": report.sent,
                                      "parked": report.parked, "error": report.error}))
 
+    def cloud_once(self) -> bool:
+        """Fetch the bundle every few minutes, and send any released evidence."""
+        if self.cloud is None:
+            return False
+        if time.monotonic() - self._last_bundle_fetch >= BUNDLE_EVERY_S:
+            self._last_bundle_fetch = time.monotonic()
+            try:
+                self.bundle_refresh = refresh_bundle(self.settings, self.cloud)
+                self.reload_bundle()
+            except CloudError as exc:
+                self.bundle_refresh = f"failed: {exc}"
+            log.info(json.dumps({"event": "bundle.refresh", "result": self.bundle_refresh}))
+        return bool(self.uploader.run_once())
+
     async def _every(self, name: str, fn, seconds: float) -> None:
         while not self._stop.is_set():
             busy = False
@@ -136,6 +156,7 @@ class EdgeService:
             asyncio.create_task(self._every("pass", self.run_once, self.settings.poll_seconds), name="fairplay-edge-loop"),
             asyncio.create_task(self._every("jobs", self.run_jobs_once, 2.0), name="fairplay-edge-jobs"),
             asyncio.create_task(self._every("sync", self.sync_once, 2.0), name="fairplay-edge-sync"),
+            asyncio.create_task(self._every("cloud", self.cloud_once, 10.0), name="fairplay-edge-cloud"),
         ]
 
     async def stop(self) -> None:

@@ -43,3 +43,15 @@ change that needs approval before Phase 3.
   a round trip per object. Rejected: a venue laptop is the device most likely to be lost.
 - **Vision's `clips` bucket**: wrong policy — FairPlay evidence must never be reachable from
   the training or highlight paths ([ADR-0007](./0007-no-vision-training-path.md)).
+
+## Phase 4 note (28 October 2026)
+
+Built as decided, with one change to how: FairPlay has **its own small storage port**
+(`services/api/src/fairplay/storage/evidence-store.ts`: presign PUT, HEAD, presign GET,
+remove) rather than a second `R2ObjectStore`. Vision's adapter is keyed by Vision's closed
+`BucketId` list, so reusing it meant either widening Vision's contract or a FairPlay id in
+it; four operations did not justify either. The presigned PUT signs the length and the
+SHA-256, the SDK's own CRC32 is off (it cannot be computed for a body the SDK never sees),
+and confirm compares the SHA-256 the store reports on `HEAD`, never the ETag. Multipart is
+not used: a clip is at most a few hundred MB, inside a single PUT's limit. See
+[phase-4-cloud.md](../phase-4-cloud.md).

@@ -15,6 +15,7 @@ import "./styles/admin-fixtures.css";
 import "./styles/match-console.css";
 /* Vision Engine admin surfaces — scoped .vision-* rules. */
 import "./styles/admin-vision.css";
+import "./styles/admin-fairplay.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

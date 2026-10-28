@@ -404,7 +404,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             "mediaServer": {"up": snap.media_server_up, "error": snap.media_server_error},
             "disk": disk_view(),
             "clock": timing.clock_state(service.store),
-            "cloud": service.outbox.status(service.sync_configured),
+            "cloud": {**service.outbox.status(service.sync_configured),
+                      "uploads": service.uploader.status() if service.uploader else None,
+                      "bundleRefresh": service.bundle_refresh},
             "audit": audit.head(service.store),
             "bundle": {"loaded": service.bundle is not None, "dev": service.bundle.dev if service.bundle else None,
                        "expiresUtc": iso(service.bundle.expires_utc) if service.bundle else None,
@@ -754,6 +756,17 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/sessions", status_code=201)
     def new_session(body: SessionIn, who: Principal = manager):
+        b = service.bundle
+        if b is not None and b.issuer == "dtp-cloud" and b.session_id:
+            # The cloud provisioned this session for this device: its id, match and mode are
+            # the cloud's, and the cloud accepts no other session from this Edge.
+            if body.matchRef not in (None, b.match_ref) or body.mode != (b.session_mode or body.mode):
+                raise refusal(409, "conflict", "the signed bundle fixes this session's match and mode")
+            row = timing_call(timing.create_session, service.store, body.label, b.match_ref, b.session_mode or body.mode,
+                              actor(who), session_id=b.session_id)
+            audit.record(service.store, actor_of(who), "session.opened_from_bundle", "session", b.session_id, None,
+                         {"bundleId": b.bundle_id, "matchId": b.match_ref})
+            return row
         return timing_call(timing.create_session, service.store, body.label, body.matchRef, body.mode, actor(who))
 
     @app.get("/edge/v1/sessions/{session_id}")

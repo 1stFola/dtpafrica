@@ -3,8 +3,9 @@
 Who may act comes from a **credential bundle**: a list of people, their FairPlay
 permissions and a hash of the matchday PIN each set, with an expiry, signed with Ed25519.
 The Edge holds only public keys (`FAIRPLAY_TRUSTED_KEYS_FILE`), so it can check a bundle
-offline but cannot forge one. In Phase 3 the cloud signs bundles; until then a bundle can
-be signed with a **development key** (`fairplay-edge dev-keygen` / `dev-bundle`), which is
+offline but cannot forge one. The cloud signs bundles (issuer `dtp-cloud`, Phase 4; the
+Edge fetches its session's bundle while online, cloud.py). For development a bundle can be
+signed with a **development key** (`fairplay-edge dev-keygen` / `dev-bundle`), which is
 refused unless `FAIRPLAY_ALLOW_DEV_BUNDLES=1` and is labelled DEV everywhere it shows.
 
 Sign-in is email + PIN against the bundle and yields a random session token in a
@@ -142,6 +143,8 @@ class Bundle:
     session_label: str | None
     match_ref: str | None
     members: tuple[Member, ...] = field(default=())
+    session_id: str | None = None
+    session_mode: str | None = None
 
     @property
     def dev(self) -> bool:
@@ -195,7 +198,8 @@ def verify_bundle(signed: dict, trusted: dict[str, dict], *, allow_dev: bool, no
                               permissions=perms, pin_hash=m["pinHash"]))
     return Bundle(bundle_id=bundle["bundleId"], issuer=issuer, issued_utc=issued, expires_utc=expires,
                   session_label=(bundle.get("session") or {}).get("label"),
-                  match_ref=(bundle.get("session") or {}).get("matchId"), members=tuple(members))
+                  match_ref=(bundle.get("session") or {}).get("matchId"), members=tuple(members),
+                  session_id=(bundle.get("session") or {}).get("id"), session_mode=(bundle.get("session") or {}).get("mode"))
 
 
 # ── sessions ──────────────────────────────────────────────────────────────
