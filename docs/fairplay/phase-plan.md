@@ -36,7 +36,52 @@ commitments. P2 (any automatic classification) is out of V1 entirely.
 | 1 — Edge media foundation | **partial: done on synthetic feeds, hardware acceptance pending** (items 1–5 below; item 6 synthetic only) | [phase-1-edge-foundation.md](./phase-1-edge-foundation.md) |
 | 2 — replay console and synchronisation | **partial: accepted on the synthetic 30-minute fixture with the WAN cut; DEV bundles until Phase 3; hardware pending** (items 7–10; 11 is Phase 3) | [phase-2-replay-console.md](./phase-2-replay-console.md) |
 | 3 — incidents and evidence | **partial: Edge side built (items 10–12) and tested on synthetic feeds with the WAN cut; found lost video at segment switches on audio+video feeds (fixed in the feed, #307)** | [phase-3-incidents-and-evidence.md](./phase-3-incidents-and-evidence.md) |
-| 4 — cloud (items 13–16) | **partial: built and tested end to end against the real API, Postgres and an S3 server on synthetic data; the R2 bucket, the production migration and deploy await approval** | [phase-4-cloud.md](./phase-4-cloud.md) |
+| 4 — cloud (items 13–16) | **partial: built and tested end to end against the real API, Postgres and an S3 server on synthetic data (merged, #310); the R2 bucket, the production migration and deploy await approval** | [phase-4-cloud.md](./phase-4-cloud.md) |
+| 5 — resilience and defence in depth (Prompt 6) | **in progress: 5.1 review done (3 high, 8 medium, 9 low findings); fixes not started** | [phase-5-threat-review.md](./phase-5-threat-review.md) |
+| 6 — controlled pilot packaging (Prompt 7) | not started | — |
+| 7 — independent acceptance review (Prompt 8) | not started | — |
+
+## Prompts 6–8, in increments
+
+The remaining prompts are taken one increment at a time: one PR each, each closed with
+the prompt pack's phase handover template (section K), and nothing starts until Fola says
+go. An increment that would need hardware, real footage, a deploy or a paid service stops
+at that point and says so; on synthetic data it reports *pending*, never passed.
+
+**Phase 5 — resilience (Prompt 6).** Much of the scenario list was already exercised on
+synthetic feeds in Phases 1–4; 5.1 says which, so later increments only add what is missing.
+
+| # | Increment | What it adds | Needs |
+|---|---|---|---|
+| 5.1 | Threat and failure review | every Prompt 6 scenario and security requirement against the PID and the merged code: covered (with the test that shows it), partly covered, or open; findings graded critical/high/medium/low. A document, no code | — |
+| 5.2 | Failure drill harness | one fixture running the Edge-side drills in sequence with a drill log and measured recovery time and recovery point: WAN off 30 min, drone drop and reconnect, MediaMTX restarted mid-match (no file overwritten), Edge API killed (SQLite recovery, outbox resumes), console refreshed or asleep while recording continues, whole stack killed as a power cut | synthetic feeds |
+| 5.3 | Storage and upload failures | disk soft and hard limits on a small volume, with the console's warning checked in the browser; an evidence upload cut halfway and resumed without a second evidence record (fault injected into the S3 mock) | — |
+| 5.4 | Security tests | automated: bad pairing token, unauthorised user, guessed replay and evidence URLs, cross-match access, a member's role removed mid-match (today the venue keeps access until the 36 h bundle expires), device token rotation; no secret in logs, health output or the web bundle; every export audited | — |
+| 5.5 | Fixes | the high and critical findings from 5.1–5.4, one PR per finding or a small group | depends on findings |
+| 5.6 | Time-sync warnings | no hardware time sync, or a gross drone offset: a conspicuous warning instead of implied precision | — |
+| 5.7 | Request and erasure tool (D11, B15) | the audited player/parent request tool, required before the first real match | — |
+| 5.8 | Runbook and sign-off | monitoring and alert runbook, recovery time and recovery point table, residual-risk list for Fola to sign | 5.1–5.7 |
+
+**Phase 6 — pilot packaging (Prompt 7).** Documentation and scripts; nothing is deployed.
+
+| # | Increment | What it adds | Needs |
+|---|---|---|---|
+| 6.1 | Installer and configuration | pinned Compose and images, port plan, volumes, health checks, watchdog, controlled update; a complete variable reference checked against `config.py` and `.env.example` | — |
+| 6.2 | Backup and restore | Edge database and manifests restored on a clean machine; cloud FairPlay tables restored into a scratch database | — |
+| 6.3 | Operator procedures | pairing, rehearsal, kick-off and half-time marks, incidents, evidence, end of match, report, sync and archive; 90/60/30/15-minute checks; recovery SOP for network, camera, power and storage; training pages | — |
+| 6.4 | Hardware validation checklist | what to measure on the matchday kit and how | writing it: none; running it: hardware |
+| 6.5 | Licences | dependency inventory, notices, FFmpeg build review | Fola's B9/B10 rulings |
+| 6.6 | Cost and rights | per-match storage and cost worksheet from measured bitrates; rights, consent, release and retention checklist | real bitrates need hardware; synthetic until then |
+| 6.7 | Demo and go/no-go | synthetic demo dataset and the 8-minute walk-through, draft organiser demo report, release notes, pilot go/no-go checklist | — |
+
+**Phase 7 — acceptance review (Prompt 8).** Run by a reviewer that did not build it (a fresh
+session or the multi-agent cloud review), so the verdict is not the builder's own. Real
+CPU, RAM and disk measurements need the matchday machine; without it those rows are
+NOT TESTED. Production stays off until Fola signs the release.
+
+**Outside the code, at any point:** the R2 bucket, the signing key and the production
+deploy (Phase 4); the equipment audit (gate 1); footage rights and consent (D8); disk
+encryption and a named custodian on the Edge machine (D12).
 
 ## P0 backlog, in order
 
