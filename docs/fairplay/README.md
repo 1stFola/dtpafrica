@@ -20,6 +20,7 @@ decision or a score, or claim VAR/FVS status.
 | [phase-1-edge-foundation.md](./phase-1-edge-foundation.md) | **Phase 1 delivery**: the Edge media foundation, its test log and measurements (synthetic feeds; hardware acceptance pending) |
 | [phase-2-replay-console.md](./phase-2-replay-console.md) | **Phase 2 delivery**: the venue console, operator sign-in, the time model and calibration, with the WAN-cut acceptance run and measured p95 |
 | [phase-3-incidents-and-evidence.md](./phase-3-incidents-and-evidence.md) | **Phase 3 delivery**: the review state machine, evidence clips and their manifest, the audit chain, the sync outbox, permissions and the rights gate, with the WAN-cut fixture run |
+| [decisions.md](./decisions.md) | **Fola's decisions** on the gates, retention, rights, organiser access and Edge security (28 Oct 2026) |
 | [privacy.md](./privacy.md) | What the Edge holds about people, where it goes, who sees it, and the privacy decisions still open |
 | [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard · 0010 admin placement · 0011 recording independent of the Edge · 0012 replay and live-preview delivery · 0013 evidence clips by stream copy · 0014 audit chain and sync outbox |
 

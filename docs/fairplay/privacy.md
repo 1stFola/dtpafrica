@@ -83,6 +83,8 @@ disk encryption and be kept by DTP staff. That is a decision for the hardware se
 
 ## Decisions still needed
 
+**Decided 28 Oct 2026** ([decisions.md](./decisions.md)): consent model direction (D8), recordings 14 days (D9), evidence on the Edge end of season + 12 months and in R2 90 days after the finding (D10), an audited request tool before the first real match (D11), disk encryption and a named custodian (D12), the audit log kept and minimised (D13), organiser admin accounts (D4). The list below is kept for the reasoning.
+
 1. **Lawful basis and consent model** for recording youth matches, and who holds the
    consent records the `consent_reference` points to (B2).
 2. **Retention periods**: for recordings (B7; retention is off by default and never
