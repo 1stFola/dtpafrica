@@ -254,9 +254,9 @@ def test_a_short_cut_is_never_called_full(store, settings, session, ten_second_s
     assert errors(manifest, SCHEMA) == []
 
 
-def test_repeated_footage_is_never_called_full(store, settings, session, ten_second_segments):
-    """Run 7: two segments whose recorded start times overlapped put 1.7 s of footage in a
-    clip twice. More pictures than the window holds is not a faithful copy either."""
+def test_more_pictures_than_the_window_is_never_called_full(store, settings, session, ten_second_segments):
+    """When segments' recorded times overlap, a clip holds more pictures than its window: the
+    footage is all there once, but the clip's times are uncertain by the excess."""
     inc = flag(store, settings, session)
     job, _ = evidence.request_clip(store, settings, inc["id"], "ground", OP)
     cutter = FakeCutter()
@@ -281,16 +281,17 @@ def test_frames_without_their_keyframe_are_not_counted(store, settings, session,
     assert ev["coverage"] == "partial"
 
 
-def test_overlapping_segments_are_never_cut_twice(store, settings, session, ten_second_segments):
-    """Where a feed's audio runs on past its video, consecutive segments overlap. The plan
-    follows the video, and no moment goes into the clip twice."""
+def test_overlapping_recorded_times_never_skip_footage(store, settings, session, ten_second_segments):
+    """Segments whose recorded times overlap still hold different footage (MediaMTX writes each
+    sample once). Every segment inside the window is taken whole; only the window's own edges
+    are trimmed, and an overlap is never counted as a gap."""
     video = json.dumps({"streams": [{"codec_type": "video", "start_time": "0", "duration": "12.0"}]})
     with store.tx() as db:
         db.execute("UPDATE segments SET probe_json = ? WHERE source = 'ground'", (video,))
     plan = evidence.plan_cut(store, settings, "ground", at(20), 30_000)
-    spans = [(u["usedFromUtc"], u["usedToUtc"]) for u in plan["used"]]
-    assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:])), spans
-    assert plan["coveredMs"] == 30_000 and spans[0][0] == "2026-10-27T14:00:20.000Z"
+    assert [p["inpointS"] for p in plan["pieces"]] == [None, None, None]  # 20, 30, 40: each from its start
+    assert plan["gaps"] == [] and plan["coveredMs"] == 30_000
+    assert plan["pieces"][-1]["outpointS"] == 10.0  # the last one stops at the window's end
 
 
 def test_ffmpeg_errors_fail_the_cut_even_with_exit_zero(monkeypatch, tmp_path):

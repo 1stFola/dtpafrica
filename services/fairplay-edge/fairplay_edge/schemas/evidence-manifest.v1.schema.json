@@ -383,7 +383,7 @@
             "excessMs": {
               "type": "integer",
               "minimum": 0,
-              "description": "pictures beyond the lead-in and the window, at the sources' frame rate: footage that appears twice because segments' recorded start times overlap. Above three frames, the clip is not full."
+              "description": "pictures beyond the lead-in and the window, at the sources' frame rate: the recording's own times disagree with its frames (segments' recorded start times overlap). Every picture appears once, but times inside the clip are uncertain by this much. Above three frames, the clip is not full."
             }
           }
         }
