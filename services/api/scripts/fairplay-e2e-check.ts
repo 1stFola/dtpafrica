@@ -20,7 +20,7 @@
  * this runs only on a throwaway database.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHash, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -113,7 +113,7 @@ async function main() {
   const s2 = await call<{ id: string }>("POST", "/fairplay/sessions", { matchId: match2.id, deviceId: d2.id });
   const login = await call<{ token?: string; accessToken?: string }>("POST", "/admin/auth/login", { email: assessor.email, password }, {});
   const jwt = { Authorization: `Bearer ${login.token ?? login.accessToken}` };
-  const pin = String(100000 + (randomBytes(3).readUIntBE(0, 3) % 900000));
+  const pin = String(randomInt(100000, 1000000));
   await call("PUT", `/fairplay/sessions/${s1.id}/members/me/pin`, { pin }, jwt);
   check("devices, sessions, a member and their PIN are set up through the API", true);
 
