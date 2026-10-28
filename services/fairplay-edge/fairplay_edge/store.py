@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -124,9 +124,138 @@ CREATE TABLE IF NOT EXISTS events (
 );
 """
 
+# Version 2 (Phase 2): operators, match sessions and the time model. Additive only, so a
+# version 1 database (Phase 1 recordings and manifests) upgrades in place.
+_SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS operator_sessions (
+    id             TEXT PRIMARY KEY,           -- SHA-256 of the cookie token, never the token
+    user_id        TEXT NOT NULL,
+    email          TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    permissions    TEXT NOT NULL,
+    bundle_id      TEXT NOT NULL,
+    bundle_dev     INTEGER NOT NULL,
+    ip             TEXT,
+    created_utc    TEXT NOT NULL,
+    last_seen_utc  TEXT NOT NULL,
+    expires_utc    TEXT NOT NULL,
+    revoked_utc    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+    email   TEXT NOT NULL,
+    ip      TEXT,
+    at_utc  TEXT NOT NULL,
+    ok      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_attempts_email ON login_attempts (email, at_utc);
+
+CREATE TABLE IF NOT EXISTS local_disabled (
+    user_id  TEXT PRIMARY KEY,
+    at_utc   TEXT NOT NULL,
+    by_user  TEXT NOT NULL,
+    reason   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS match_sessions (
+    id           TEXT PRIMARY KEY,
+    label        TEXT NOT NULL,
+    match_ref    TEXT,
+    mode         TEXT NOT NULL CHECK (mode IN ('shadow','post_match')),
+    created_utc  TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    ended_utc    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS period_marks (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL REFERENCES match_sessions(id),
+    period              TEXT NOT NULL CHECK (period IN ('1','2','3','4','penalties')),
+    edge                TEXT NOT NULL CHECK (edge IN ('start','end')),
+    edge_utc            TEXT NOT NULL,
+    edge_mono_ns        INTEGER NOT NULL,
+    console_anchor_utc  TEXT,
+    console_delta_ms    INTEGER,
+    actor_id            TEXT NOT NULL,
+    supersedes          TEXT,
+    created_utc         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS calibrations (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL REFERENCES match_sessions(id),
+    source               TEXT NOT NULL,
+    period               TEXT,
+    reference_utc        TEXT NOT NULL,
+    observed_ingest_utc  TEXT NOT NULL,
+    offset_ms            INTEGER NOT NULL,
+    uncertainty_ms       INTEGER NOT NULL CHECK (uncertainty_ms >= 0),
+    method               TEXT NOT NULL CHECK (method IN ('whistle','ball_strike','clapper','marker','manual')),
+    reference_source     TEXT,
+    evidence_segment_id  TEXT,
+    note                 TEXT,
+    actor_id             TEXT NOT NULL,
+    supersedes           TEXT,
+    created_utc          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS calibrations_current ON calibrations (session_id, source, created_utc);
+
+CREATE TABLE IF NOT EXISTS incidents (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES match_sessions(id),
+    event_utc       TEXT NOT NULL,
+    basis           TEXT NOT NULL CHECK (basis IN ('operator_now','period_mark','manual','sheet_event')),
+    pre_roll_ms     INTEGER NOT NULL,
+    post_roll_ms    INTEGER NOT NULL,
+    category        TEXT NOT NULL,
+    note            TEXT,
+    period          TEXT,
+    match_minute    INTEGER,
+    match_second    INTEGER,
+    sheet_event_id  TEXT,
+    state           TEXT NOT NULL CHECK (state IN ('flagged')),
+    version         INTEGER NOT NULL,
+    hold_id         TEXT,
+    created_by      TEXT NOT NULL,
+    created_utc     TEXT NOT NULL,
+    updated_utc     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS clock_samples (
+    seq              INTEGER PRIMARY KEY AUTOINCREMENT,
+    edge_utc         TEXT NOT NULL,
+    edge_mono_ns     INTEGER NOT NULL,
+    ntp_state        TEXT NOT NULL,
+    cloud_offset_ms  INTEGER,
+    cloud_rtt_ms     INTEGER,
+    step_ms          INTEGER
+);
+
+-- Measured in the operator's browser: request sent to video playable.
+CREATE TABLE IF NOT EXISTS replay_metrics (
+    seq                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    at_utc               TEXT NOT NULL,
+    user_id              TEXT,
+    source               TEXT NOT NULL,
+    window_start_utc     TEXT NOT NULL,
+    duration_ms          INTEGER NOT NULL,
+    to_first_frame_ms    INTEGER,
+    to_playable_ms       INTEGER,
+    bytes                INTEGER,
+    outcome              TEXT NOT NULL,
+    note                 TEXT
+);
+"""
+
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class Store:
@@ -136,15 +265,21 @@ class Store:
         # executescript commits whatever is open first, so it runs outside tx().
         db = self._connect()
         try:
-            db.executescript(_SCHEMA)
+            row = None
+            if db.execute("SELECT name FROM sqlite_master WHERE name = 'schema_version'").fetchone():
+                row = db.execute("SELECT version FROM schema_version").fetchone()
+            if row is not None and row["version"] > SCHEMA_VERSION:
+                raise RuntimeError(f"database schema {row['version']} is newer than {SCHEMA_VERSION}; refusing to guess")
+            db.executescript(_SCHEMA + _SCHEMA_V2)
         finally:
             db.close()
         with self.tx() as db:
             row = db.execute("SELECT version FROM schema_version").fetchone()
             if row is None:
                 db.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
-            elif row["version"] != SCHEMA_VERSION:
-                raise RuntimeError(f"database schema {row['version']} is not {SCHEMA_VERSION}; refusing to guess")
+            elif row["version"] < SCHEMA_VERSION:
+                db.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
+                self.log_event(db, _now(), "store.migrated", None, {"from": row["version"], "to": SCHEMA_VERSION})
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)

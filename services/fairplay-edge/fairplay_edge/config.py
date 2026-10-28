@@ -70,6 +70,11 @@ class Settings:
     retention_days: int | None = None
     retention_max_deletions: int = 50
     device_label: str = "edge"
+    mediamtx_hls_url: str = "http://127.0.0.1:8888"
+    trusted_keys_file: Path | None = None
+    bundle_file: Path | None = None
+    allow_dev_bundles: bool = False
+    console_dir: Path | None = None
     extra: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -213,4 +218,9 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         retention_days=retention_days,
         retention_max_deletions=int(env.get("FAIRPLAY_RETENTION_MAX_DELETIONS", "50")),
         device_label=env.get("FAIRPLAY_DEVICE_LABEL", "edge"),
+        mediamtx_hls_url=env.get("FAIRPLAY_MEDIAMTX_HLS_URL", "http://127.0.0.1:8888").rstrip("/"),
+        trusted_keys_file=Path(env["FAIRPLAY_TRUSTED_KEYS_FILE"]) if env.get("FAIRPLAY_TRUSTED_KEYS_FILE") else None,
+        bundle_file=Path(env["FAIRPLAY_BUNDLE_FILE"]) if env.get("FAIRPLAY_BUNDLE_FILE") else None,
+        allow_dev_bundles=env.get("FAIRPLAY_ALLOW_DEV_BUNDLES", "") == "1",
+        console_dir=Path(env["FAIRPLAY_CONSOLE_DIR"]) if env.get("FAIRPLAY_CONSOLE_DIR") else None,
     )

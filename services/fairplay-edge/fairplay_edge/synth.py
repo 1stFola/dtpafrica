@@ -48,8 +48,11 @@ def build_command(feed: Feed, base_epoch: float) -> list[str]:
     whole = math.floor(burned)
     frac = burned - whole
     gop = feed.rate * 2
+    # Seconds and milliseconds must come from the same instant, base + pts. The seconds field
+    # therefore gets the fractional part of the base too; with an integer base, a clock offset
+    # that is not a whole second made the seconds read one low for part of every second.
     clock = (
-        f"%{{pts\\:gmtime\\:{whole}\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S}}"
+        f"%{{pts\\:gmtime\\:{burned:.3f}\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S}}"
         f".%{{eif\\:mod((t+{frac:.3f})*1000\\,1000)\\:d\\:3}}Z"
     )
     overlay = ",".join([

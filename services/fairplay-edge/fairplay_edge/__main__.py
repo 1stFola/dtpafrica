@@ -159,6 +159,94 @@ def cmd_api(args: argparse.Namespace) -> int:
     return 0 if status < 400 else 1
 
 
+def cmd_tls_init(args: argparse.Namespace) -> int:
+    from .tlsgen import init
+
+    settings = _settings(need_api_token=False)
+    paths = init(settings.data_dir / "tls", args.host, settings.device_label)
+    print(json.dumps({k: str(v) for k, v in paths.items()}, indent=2))
+    print("set FAIRPLAY_EDGE_TLS_CERT and FAIRPLAY_EDGE_TLS_KEY to cert and key; install ca on reviewer devices",
+          file=sys.stderr)
+    return 0
+
+
+def cmd_dev_keygen(args: argparse.Namespace) -> int:
+    """DEVELOPMENT ONLY: a signing key standing in for the cloud's until Phase 3."""
+    from .auth import generate_key, key_id
+
+    private, public = generate_key()
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    fd = os.open(out / "dev-signing-key.pem", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(private)
+    kid = key_id(public)
+    (out / "trusted-keys.json").write_text(json.dumps({kid: {"publicKey": public, "issuer": "dev-local"}}, indent=2))
+    print(json.dumps({"keyId": kid, "trustedKeys": str(out / "trusted-keys.json"),
+                      "signingKey": str(out / "dev-signing-key.pem"), "issuer": "dev-local"}))
+    return 0
+
+
+def cmd_dev_bundle(args: argparse.Namespace) -> int:
+    """DEVELOPMENT ONLY: sign a bundle with the dev key. `--member email,Name,PIN,perm1+perm2`."""
+    import uuid
+    from datetime import timedelta
+
+    from .auth import BUNDLE_SCHEMA, hash_pin, sign_bundle
+    from .naming import iso, utcnow
+
+    members = []
+    for spec in args.member:
+        email, name, pin, perms = spec.split(",", 3)
+        members.append({"userId": str(uuid.uuid5(uuid.NAMESPACE_URL, f"fairplay-dev:{email}")), "email": email,
+                        "name": name, "permissions": perms.split("+"), "pinHash": hash_pin(pin)})
+    now = utcnow()
+    bundle = {"schema": BUNDLE_SCHEMA, "bundleId": str(uuid.uuid4()), "issuer": "dev-local", "issuedAt": iso(now),
+              "expiresAt": iso(now + timedelta(hours=args.hours)), "session": {"label": args.label, "matchId": None},
+              "members": members}
+    signed = sign_bundle(bundle, Path(args.key).read_text())
+    Path(args.out).write_text(json.dumps(signed, indent=2))
+    print(json.dumps({"bundleId": bundle["bundleId"], "members": len(members), "expiresAt": bundle["expiresAt"],
+                      "out": args.out}))
+    return 0
+
+
+def cmd_relay(args: argparse.Namespace) -> int:
+    """TEST ONLY: forward one port to one fixed address. Stands in for the venue LAN switch in
+    the WAN-outage acceptance run, so a browser on the host reaches an Edge that has no route out."""
+    import asyncio
+
+    listen_host, _, listen_port = args.listen.rpartition(":")
+    target_host, _, target_port = args.target.rpartition(":")
+
+    async def pipe(reader, writer):
+        try:
+            while data := await reader.read(65536):
+                writer.write(data)
+                await writer.drain()
+        except (ConnectionError, OSError):
+            pass
+        finally:
+            writer.close()
+
+    async def handle(client_reader, client_writer):
+        try:
+            upstream_reader, upstream_writer = await asyncio.open_connection(target_host, int(target_port))
+        except OSError:
+            client_writer.close()
+            return
+        await asyncio.gather(pipe(client_reader, upstream_writer), pipe(upstream_reader, client_writer))
+
+    async def main_loop():
+        server = await asyncio.start_server(handle, listen_host, int(listen_port))
+        print(f"relay {args.listen} -> {args.target}", flush=True)
+        async with server:
+            await server.serve_forever()
+
+    asyncio.run(main_loop())
+    return 0
+
+
 def cmd_check_egress(args: argparse.Namespace) -> int:
     """For the WAN-outage drill: try to reach the internet and report whether anything answered."""
     results = {}
@@ -204,6 +292,23 @@ def main(argv: list[str] | None = None) -> int:
     api.add_argument("--out")
     api.add_argument("--timeout", type=float, default=60)
     api.set_defaults(fn=cmd_api)
+    tls = sub.add_parser("tls-init", help="create the Edge's CA and a server certificate")
+    tls.add_argument("--host", action="append", default=[], help="LAN address or name; repeatable")
+    tls.set_defaults(fn=cmd_tls_init)
+    keygen = sub.add_parser("dev-keygen", help="DEVELOPMENT ONLY: a bundle signing key")
+    keygen.add_argument("--out", required=True)
+    keygen.set_defaults(fn=cmd_dev_keygen)
+    bundle = sub.add_parser("dev-bundle", help="DEVELOPMENT ONLY: sign an operator bundle")
+    bundle.add_argument("--key", required=True)
+    bundle.add_argument("--out", required=True)
+    bundle.add_argument("--label", default="Development session")
+    bundle.add_argument("--hours", type=float, default=36)
+    bundle.add_argument("--member", action="append", required=True)
+    bundle.set_defaults(fn=cmd_dev_bundle)
+    relay = sub.add_parser("relay", help="TEST ONLY: forward a port to a fixed address")
+    relay.add_argument("--listen", required=True)
+    relay.add_argument("--target", required=True)
+    relay.set_defaults(fn=cmd_relay)
     egress = sub.add_parser("check-egress", help="report whether the internet is reachable")
     egress.add_argument("targets", nargs="*", default=["1.1.1.1:443", "8.8.8.8:53", "www.dtp.africa:443"])
     egress.add_argument("--timeout", type=float, default=3.0)

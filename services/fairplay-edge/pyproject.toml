@@ -10,6 +10,8 @@ dependencies = [
     "uvicorn>=0.30,<1",
     # BSD-3-Clause. MediaMTX API/playback client and the media proxy.
     "httpx>=0.27,<1",
+    # Apache-2.0 OR BSD-3-Clause. Ed25519 bundle signatures and the Edge's own CA (ADR-0004/0005).
+    "cryptography>=44,<51",
 ]
 
 [project.optional-dependencies]

@@ -101,7 +101,8 @@ version.
 | `recordDeleteAfter` | **`1d`** | `0s` | The default deletes recordings after a day. Retention is the Edge's job, because only it knows which segments an incident protects. |
 | `recordFormat` / `recordPartDuration` / `recordSegmentDuration` | fmp4 / 1s / 1h | fmp4 / 1s (measure) / 5–15 min (measure) | Shorter segments finalise and get hashed sooner. |
 | `useAbsoluteTimestamp` | false | false unless the audit proves the source sends trustworthy absolute time | With `false`, recording time is MediaMTX's receive time; the time model treats that as `ingest_utc` and calibrates the camera offset on top. |
-| Unused listeners (HLS, WebRTC, …) | on | off unless used | Fewer open ports on a shared venue network. |
+| Unused listeners (WebRTC, MoQ, RTMP/SRT unless a source uses them) | on | off | Fewer open ports on a shared venue network. |
+| HLS | on, `hlsAllowOrigins: ["*"]` | on from Phase 2 for live preview, fMP4 variant, `hlsAllowOrigins: []`, reachable only on the compose network with the Edge's `read` credentials, never published | Browsers get it only through the Edge's authorised proxy ([ADR-0012](./adr/0012-replay-and-live-preview-delivery.md)). |
 | `runOnRecordSegmentComplete` | unset | calls the Edge with `MTX_SEGMENT_PATH` and `MTX_SEGMENT_DURATION` | Triggers hashing and the manifest row. A sweep on start-up catches anything finalised while the Edge was down. |
 
 ## 4. Browser security, pairing and offline identity
@@ -245,16 +246,25 @@ suffix; all durations and offsets are integer milliseconds unless the name says 
 | `preRollMs`, `postRollMs` | int | default 20 000 / 10 000 |
 | `perSource[]` | `{sourceId, startIngestUtc, durationMs, offsetMs, uncertaintyMs, calibrationId \| null, state}` | `startIngestUtc = eventUtc − preRollMs + offsetMs − uncertaintyMs`, `durationMs = preRollMs + postRollMs + 2 × uncertaintyMs`; `state` from the failure states below |
 
-**Failure states** the console must show, and the data must record:
+**Failure states** the console must show, and the data must record. Per window (as
+implemented in Phase 2, `fairplay_edge/timing.py`; the worst one is the window's `state`, all
+of them are in its `flags`):
 
 | State | Trigger | Effect |
 |---|---|---|
-| `uncalibrated` | no calibration for this source and period | windows shown with a ±30 s default and a warning |
-| `stale_after_reconnect` | source dropped and returned since last calibration | warning; recalibration prompt |
-| `uncertainty_high` | `uncertainty_ms` > 500 | side-by-side alignment disabled; each angle on its own timeline |
-| `clock_unsynced` | Edge has not seen NTP or the cloud clock this session | badge; every timestamp carries the flag |
-| `clock_stepped` | wall clock jumped (monotonic vs wall disagree) | session marked; affected window recorded |
-| `gap` | no segment covers part of a requested window | the gap is drawn; `footage_unavailable` offered |
+| `no_footage` | nothing recorded in the window | "No recording of … covers this moment"; `footage_unavailable` offered (Phase 3) |
+| `gap` | part of the window not recorded | warning; the recorded part still plays |
+| `stale_after_reconnect` | the source's stream was broken between the calibrated footage and this window — a drop the watchdog saw **or** a gap in the recordings — judged in footage time, so footage before a later drop keeps its calibration | "reconnected after it was calibrated — recalibrate"; the sync test makes no claim |
+| `uncalibrated` | no calibration for this source in the session | offset 0, uncertainty ±2 s (not ±30 s: the window widens by twice the uncertainty, and ±2 s keeps it usable); warning |
+| `uncertainty_high` | `uncertainty_ms` > 500 | warning; no cross-camera claim |
+
+Per Edge, not per window, because they concern absolute time rather than one camera's
+alignment (a per-window flag would mark every window and hide the ones that matter):
+
+| State | Trigger | Effect |
+|---|---|---|
+| clock sync unknown/unsynced | the Edge cannot confirm NTP (in a container it cannot) | standing console warning: compare with the match console before relying on wall times |
+| `clock_stepped` | wall and monotonic clocks disagree by > 1 s between samples | alert and console warning naming the step; recorded in `clock_samples` |
 
 Browser seeking lands on keyframes; nothing claims frame accuracy. Frame-exact extraction
 is FP-13 (P1), done by ffmpeg on the Edge and returned with its source timestamp.

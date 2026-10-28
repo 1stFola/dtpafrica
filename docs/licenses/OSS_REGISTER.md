@@ -164,7 +164,9 @@ and `compose.yaml`.
 | httpx 0.28.1 / httpcore 1.0.9 / h11 0.16.0 | encode/httpx | BSD-3-Clause / BSD-3-Clause / MIT | runtime | **REVIEW REQUIRED** (proposed APPROVED) | MediaMTX client and the media proxy. Already used by the Vision worker |
 | anyio, idna, certifi, click, annotated-types, typing-extensions, annotated-doc, typing-inspection | various | MIT / BSD-3-Clause / MPL-2.0 (certifi) / PSF-2.0 (typing-extensions) | runtime (transitive) | **REVIEW REQUIRED** (proposed APPROVED) | certifi's MPL-2.0 applies to its CA bundle file, unmodified |
 | opentelemetry-api 1.45.1 | open-telemetry/opentelemetry-python | Apache-2.0 | runtime (transitive, via FastAPI) | **REVIEW REQUIRED** (proposed APPROVED) | The API package only; no SDK or exporter is installed, so nothing is sent anywhere |
+| cryptography 50.0.2 (+ cffi 2.1.1, pycparser 3.12) | pyca/cryptography | Apache-2.0 OR BSD-3-Clause (cffi MIT, pycparser BSD-3-Clause) | runtime | **REVIEW REQUIRED** (proposed APPROVED) | Added in Phase 2 (27 Oct 2026). Verifies Ed25519 signatures on operator bundles (ADR-0005) and generates the Edge's own CA and server certificate (ADR-0004). The wheel bundles its own OpenSSL (Apache-2.0); nothing is linked into DTP code |
 | pytest 9.2.0 (+ pluggy, iniconfig, packaging, Pygments) | pytest-dev/pytest | MIT (Pygments BSD-2-Clause) | dev-tool | **REVIEW REQUIRED** (proposed APPROVED) | Tests only; not in the image |
+| FairPlay console (`apps/fairplay-console`) | this repository | DTP's own code | runtime | — | React 18 and Vite 5, both already in the workspace (and already used by `apps/web`); the live-preview player is in-house (no hls.js). Served by the Edge; no new npm dependency |
 | DejaVu fonts (`fonts-dejavu-core`) | dejavu-fonts | Bitstream Vera licence (permissive) | dev-tool | **REVIEW REQUIRED** (proposed APPROVED) | Burned-in labels on the synthetic feeds only |
 
 ---

@@ -56,14 +56,14 @@ def parse(value: str) -> datetime:
 
 
 class Run:
-    def __init__(self, scenario: str, wan: bool, keep: bool):
+    def __init__(self, scenario: str, wan: bool, keep: bool, project: str = "fpfix"):
         self.scenario = scenario
         self.wan = wan
         self.keep = keep
         self.started = utc()
         self.out = ROOT / "fixtures" / "out" / f"{scenario}-{self.started.strftime('%Y%m%dT%H%M%SZ')}"
         self.out.mkdir(parents=True)
-        self.project = "fpfix"
+        self.project = project
         self.checks: list[dict] = []
         self.timeline: list[dict] = []
         self.measurements: dict = {}
@@ -90,6 +90,11 @@ class Run:
             f"FAIRPLAY_PUBLISH_PASSWORD_DRONE={secrets.token_urlsafe(32)}\n", encoding="utf-8")
         shutil.copy(ROOT / "config" / "sources.example.toml", self.out / "sources.toml")
 
+    def _empty(self, name: str) -> Path:
+        folder = self.out / name
+        folder.mkdir(exist_ok=True)
+        return folder
+
     def compose(self, *args: str, check: bool = True, capture: bool = True, timeout: float = 600) -> str:
         files = ["-f", "compose.yaml"] + (["-f", "compose.wan-outage.yaml"] if self.wan else [])
         env = {
@@ -97,6 +102,10 @@ class Run:
             "FAIRPLAY_ENV_FILE": str(self.out / "fixture.env"),
             "FAIRPLAY_PUBLISH_ENV_FILE": str(self.out / "fixture-publish.env"),
             "FAIRPLAY_SOURCES_PATH": str(self.out / "sources.toml"),
+            # Phase 1 fixtures need no operator bundle or console; empty folders keep the
+            # read-only mounts from pointing at whatever an operator left in ./auth.
+            "FAIRPLAY_AUTH_DIR": str(self._empty("auth")),
+            "FAIRPLAY_CONSOLE_PATH": str(self._empty("console")),
         }
         cmd = ["docker", "compose", "-p", self.project, *files, "--profile", "synthetic", *args]
         result = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=capture, text=True, timeout=timeout,
@@ -442,8 +451,9 @@ def main() -> int:
     parser.add_argument("scenario", choices=("core", "wan"))
     parser.add_argument("--minutes", type=float, default=30)
     parser.add_argument("--keep", action="store_true", help="leave the stack and its volumes up afterwards")
+    parser.add_argument("--project", default="fpfix", help="Compose project name (one stack at a time: the subnet is fixed)")
     args = parser.parse_args()
-    run = Run(args.scenario, wan=args.scenario == "wan", keep=args.keep)
+    run = Run(args.scenario, wan=args.scenario == "wan", keep=args.keep, project=args.project)
     try:
         run.core() if args.scenario == "core" else run.wan_drill(args.minutes)
     except Exception as exc:

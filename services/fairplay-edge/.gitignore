@@ -8,3 +8,4 @@ fixtures/out/
 *.sqlite3-*
 __pycache__/
 *.egg-info/
+auth/

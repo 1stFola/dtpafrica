@@ -18,9 +18,11 @@ decision or a score, or claim VAR/FVS status.
 | [phase-plan.md](./phase-plan.md) | Gate decisions, P0 backlog with effort ranges, Phase 1 prerequisites, rollback |
 | [blockers.md](./blockers.md) | Blockers, standing escalations, and the assumption register (verified with its source, or UNVERIFIED) |
 | [phase-1-edge-foundation.md](./phase-1-edge-foundation.md) | **Phase 1 delivery**: the Edge media foundation, its test log and measurements (synthetic feeds; hardware acceptance pending) |
-| [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard · 0010 admin placement · 0011 recording independent of the Edge |
+| [phase-2-replay-console.md](./phase-2-replay-console.md) | **Phase 2 delivery**: the venue console, operator sign-in, the time model and calibration, with the WAN-cut acceptance run and measured p95 |
+| [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard · 0010 admin placement · 0011 recording independent of the Edge · 0012 replay and live-preview delivery |
 
-Code: [`services/fairplay-edge`](../../services/fairplay-edge/README.md).
+Code: [`services/fairplay-edge`](../../services/fairplay-edge/README.md) (the Edge) and
+[`apps/fairplay-console`](../../apps/fairplay-console/) (the venue console it serves).
 
 ---
 

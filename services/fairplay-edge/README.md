@@ -66,10 +66,48 @@ Edge 30 s to finish a hash and close SQLite. `docker compose down` keeps the vol
 Names come from MediaMTX's receive time in UTC, and from source names only, never from a
 match or team name, which get corrected.
 
+## The operator console (Phase 2)
+
+The console (`apps/fairplay-console`) is served by the Edge at `/`, on the Edge's own origin,
+under a Content-Security-Policy that allows that origin only: it needs no internet and loads
+nothing from anywhere else. Build it before starting the stack:
+
+```bash
+pnpm --filter @dtp/fairplay-console build
+```
+
+Compose mounts `apps/fairplay-console/dist` read-only (`FAIRPLAY_CONSOLE_PATH` to change it).
+
+**Who can sign in** comes from a signed operator bundle (ADR-0005), mounted read-only from
+`./auth` (`FAIRPLAY_AUTH_DIR`): `trusted-keys.json` (public keys only) and `bundle.json`.
+Until the cloud issues bundles (Phase 3), a **development** key and bundle can be made with
+`fairplay-edge dev-keygen` and `fairplay-edge dev-bundle`; the Edge refuses them unless
+`FAIRPLAY_ALLOW_DEV_BUNDLES=1`, and the console then shows *DEV CREDENTIALS — NOT FOR A REAL
+MATCH* on every screen. Keep the dev signing key off the Edge: only the public key belongs in
+`./auth`. Operators sign in with email and an 8-digit-or-longer matchday PIN (6 minimum).
+
+**HTTPS on the venue LAN** (ADR-0004): `docker compose run --rm edge tls-init --host <edge-lan-ip>`
+writes the Edge's own CA and server certificate under the data volume; set
+`FAIRPLAY_EDGE_TLS_CERT`/`_KEY`, set `FAIRPLAY_EDGE_HOST_BIND` to the LAN address, and install
+`ca.pem` once on each DTP-owned reviewer device. Without TLS the Edge only listens on this
+machine (`127.0.0.1`, which browsers treat as secure).
+
+What the console does: shadow banner on every screen; Edge clock, session, cloud/disk/clock
+state; each source recording / not recording / unavailable; live preview (HLS through the
+Edge, ≈ 3–7 s behind, measured); replay of any recorded window with ±10/30/60 s, ±0.1 s
+nudges, a position slider, 0.5×/1× and 0.25× only when measured; go to a UTC time; flag an
+incident now or at the replay position, with pre/post roll; per-source windows for an
+incident; period marks; calibration by "this frame is the reference" → "same event here";
+a synchronisation test; warnings in words for no footage, gaps, uncalibrated, stale after a
+reconnect and an unconfirmed clock. Keys: `Space` play/pause, `1 2 3` back 10/30/60 s,
+`, .` nudge, `S` speed, `F` flag, `I` latest incident, `L` live, `G D P` replay source, `?` help.
+
 ## Using the API
 
-Every route but `/edge/v1/healthz` needs `Authorization: Bearer $FAIRPLAY_EDGE_API_TOKEN`.
-From the Edge machine:
+Every route but `/edge/v1/healthz`, `/edge/v1/auth/status` and `/edge/v1/auth/login` needs a
+signed-in operator's session cookie or `Authorization: Bearer $FAIRPLAY_EDGE_API_TOKEN` (the
+device token, for the fixtures and this command line). Cookie requests that change anything
+must also send `X-FairPlay-Request: 1`. From the Edge machine:
 
 ```bash
 docker compose exec edge fairplay-edge api GET /edge/v1/health
@@ -90,6 +128,12 @@ docker compose exec edge fairplay-edge api GET /edge/v1/health
 | `GET/POST /edge/v1/holds`, `POST /holds/{id}/release` | protect a time range from retention; release with a reason |
 | `GET /edge/v1/retention/plan?days=N` | what a rule would delete; retention itself is off by default |
 | `GET /edge/v1/disk`, `/openapi.json` | free space and thresholds; the API schema (authenticated) |
+| `GET /edge/v1/auth/status`, `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/disable` | sign-in state (no names), PIN sign-in, the signed-in person, sign-out, local disable (offline revocation) |
+| `GET/POST /edge/v1/sessions`, `GET /sessions/{id}`, `POST /sessions/{id}/end` | match sessions (`shadow` or `post_match` only) |
+| `POST /edge/v1/sessions/{id}/periods`, `GET/POST /sessions/{id}/calibrations`, `GET /sessions/{id}/sync-test?at=` | period marks, per-source calibrations, the synchronisation test |
+| `GET/POST /edge/v1/incidents`, `PATCH /incidents/{id}` (`If-Match`), `GET /incidents/{id}/windows` | incidents (a retention hold each), versioned edits, per-source windows with their flags |
+| `GET /edge/v1/live/{source}/{file}` | live preview (MediaMTX HLS, proxied after authorisation) |
+| `GET /edge/v1/clock`, `POST/GET /edge/v1/metrics/replay` | the Edge clock; replay time-to-playable as measured in the browser, with p50/p95 |
 
 ## Tests
 

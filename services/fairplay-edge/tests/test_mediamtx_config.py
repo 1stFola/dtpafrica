@@ -28,10 +28,19 @@ def test_publishers_can_only_publish_their_own_path(cfg):
         assert u["permissions"] == [{"action": "publish", "path": u["user"][4:]}]
 
 
-def test_api_and_playback_only_for_the_edge_address(cfg):
+def test_api_playback_and_live_read_only_for_the_edge_address(cfg):
     edge = next(u for u in cfg["authInternalUsers"] if u["user"] == "fairplay-edge")
     assert edge["ips"] == ["172.31.250.10"]
-    assert {p["action"] for p in edge["permissions"]} == {"api", "playback"}
+    assert {p["action"] for p in edge["permissions"]} == {"api", "playback", "read"}
+    # No other user may read: publishers publish, nothing else.
+    others = [u for u in cfg["authInternalUsers"] if u["user"] != "fairplay-edge"]
+    assert all(p["action"] == "publish" for u in others for p in u["permissions"])
+
+
+def test_live_preview_hls_is_internal_and_same_origin(cfg, settings, env):
+    assert cfg["hls"] is True and cfg["hlsAllowOrigins"] == [] and cfg["hlsVariant"] == "fmp4"
+    native = render(settings, env, mode="native")
+    assert native["hlsAddress"].startswith("127.0.0.1:")
 
 
 def test_passwords_are_hashed_never_plain(settings, env, tmp_path):

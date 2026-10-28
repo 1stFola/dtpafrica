@@ -23,7 +23,7 @@ MEDIAMTX_VERSION = "1.21.3"
 RECORD_NAME = "%Y-%m-%d_%H-%M-%S-%f_%z"
 
 # Listeners FairPlay never uses. Named so a test can assert each is off.
-ALWAYS_OFF = ("hls", "webrtc", "moq", "metrics", "pprof")
+ALWAYS_OFF = ("webrtc", "moq", "metrics", "pprof")
 
 
 def hashed(secret: str) -> str:
@@ -60,7 +60,9 @@ def render(settings: Settings, env: dict[str, str], *, mode: str = "docker") -> 
             "user": settings.mediamtx_user,
             "pass": hashed(settings.mediamtx_password),
             "ips": edge_ips,
-            "permissions": [{"action": "api"}, {"action": "playback"}],
+            # `read` is for the live preview over HLS, which the Edge proxies after its own
+            # authorisation; no browser ever talks to MediaMTX.
+            "permissions": [{"action": "api"}, {"action": "playback"}, {"action": "read"}],
         }
     )
 
@@ -84,7 +86,19 @@ def render(settings: Settings, env: dict[str, str], *, mode: str = "docker") -> 
         "playbackTrustedProxies": [],
         "metrics": False,
         "pprof": False,
-        "hls": False,
+        # Live preview (Phase 2). Reachable only on the compose network (Docker) or loopback
+        # (native), only with the Edge's credentials, never published, no cross-origin reads.
+        # fMP4 segments, because the console's player appends them with Media Source Extensions.
+        "hls": True,
+        "hlsAddress": f"{control_host}:8888",
+        "hlsEncryption": False,
+        "hlsAllowOrigins": [],
+        "hlsTrustedProxies": [],
+        "hlsAlwaysRemux": False,
+        "hlsVariant": "fmp4",
+        "hlsSegmentCount": 7,
+        "hlsSegmentDuration": "1s",
+        "hlsMuxerCloseAfter": "60s",
         "webrtc": False,
         "moq": False,
         "rtsp": "rtsp" in protocols,

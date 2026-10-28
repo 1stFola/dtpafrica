@@ -1,0 +1,27 @@
+{
+  "name": "@dtp/fairplay-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DTP FairPlay venue console: served by the Edge on its own origin, works with no internet",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run --reporter=verbose",
+    "lint": "echo ok"
+  },
+  "dependencies": {
+    "@dtp/ui": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.9"
+  }
+}

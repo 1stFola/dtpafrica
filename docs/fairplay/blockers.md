@@ -19,7 +19,9 @@ file it was read from, or marked **UNVERIFIED** with who can settle it.
 | B7 | Retention period | any automated deletion | needs the organiser's agreement; PID proposes 7–30 days locally | Fola / organisers |
 | B8 | Sheet approval does not record the sheet event id on `SbMatchEvent.metadata` | automatic incident → current event lookup | a one-line ScoreBoard change, reviewed on its own ([ADR-0009](./adr/0009-linking-incidents-to-scoreboard.md)) | Fola (review) |
 | B9 | The Edge image's FFmpeg is Debian 13's 7.1.x, not the Debian 12 build the 4 Oct 2026 ruling cleared | shipping the Edge image beyond development | the register's FFmpeg row says a different build reopens the question ([OSS register](../licenses/OSS_REGISTER.md#fairplay-edge-venue-service)) | Fola |
-| B10 | Edge licence-register rows (MediaMTX, FastAPI and the rest) are REVIEW REQUIRED | shipping the Edge beyond development | nothing enters without a cleared row | Fola |
+| B10 | Edge licence-register rows (MediaMTX, FastAPI, `cryptography` and the rest) are REVIEW REQUIRED | shipping the Edge beyond development | nothing enters without a cleared row | Fola |
+| B11 | Operator bundles are DEV-signed until the cloud signs them (Phase 3) | any real match | a DEV key on a developer's machine is not a control anyone else can audit | Phase 3 |
+| B12 | HTTPS not yet used from a real reviewer device with the Edge's root installed | a second device at a venue | proven by unit tests and a handshake test only | matchday crew |
 
 **Standing escalations** (master prompt): any request to enable referee intervention or
 VAR/FVS functions; any new recurring charge or EC2 change; any destructive or incompatible
