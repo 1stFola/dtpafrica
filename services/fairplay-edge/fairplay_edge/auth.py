@@ -32,6 +32,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 
+from . import audit
+from .audit import Actor
 from .naming import iso, parse_iso, utcnow
 from .store import Store
 
@@ -213,6 +215,10 @@ class Principal:
     permissions: tuple[str, ...]
     session_id: str | None = None
     bundle_dev: bool = False
+    # The match session the bundle was signed for. A person reads that session and the
+    # footage around it, nothing else on the device (F5); None for the device token and for
+    # a DEV bundle that names no session.
+    bundle_session: str | None = None
 
     def can(self, permission: str) -> bool:
         return self.kind == "device" or permission in self.permissions
@@ -264,7 +270,8 @@ class Sessions:
             Store.log_event(db, iso(now), "auth.login", None, {"userId": member.user_id, "email": member.email,
                                                                "bundleId": bundle.bundle_id, "ip": ip})
         return token, Principal(kind="operator", user_id=member.user_id, email=member.email, name=member.name,
-                                permissions=member.permissions, session_id=_token_hash(token), bundle_dev=bundle.dev)
+                                permissions=member.permissions, session_id=_token_hash(token), bundle_dev=bundle.dev,
+                                bundle_session=bundle.session_id)
 
     def resolve(self, token: str, bundle: Bundle | None, now: datetime | None = None) -> Principal | None:
         """The signed-in person, held to the bundle loaded now: someone the current bundle no longer
@@ -297,7 +304,8 @@ class Sessions:
                                 {"userId": row["user_id"], "removed": [p for p in held if p not in permissions],
                                  "bundleId": bundle.bundle_id})
         return Principal(kind="operator", user_id=row["user_id"], email=row["email"], name=row["name"],
-                         permissions=permissions, session_id=row["id"], bundle_dev=bool(row["bundle_dev"]))
+                         permissions=permissions, session_id=row["id"], bundle_dev=bool(row["bundle_dev"]),
+                         bundle_session=bundle.session_id)
 
     def revoke(self, session_id: str, reason: str, now: datetime | None = None) -> None:
         at = iso(now or utcnow())
@@ -305,10 +313,12 @@ class Sessions:
             db.execute("UPDATE operator_sessions SET revoked_utc = ? WHERE id = ? AND revoked_utc IS NULL", (at, session_id))
             Store.log_event(db, at, "auth.session.ended", None, {"reason": reason})
 
-    def disable(self, user_id: str, by: str, reason: str) -> None:
+    def disable(self, user_id: str, by: Actor, reason: str) -> None:
+        """Offline revocation, by an Edge admin, in the audit chain with who and why."""
         at = iso(utcnow())
         with self.store.tx() as db:
             db.execute("INSERT OR REPLACE INTO local_disabled (user_id, at_utc, by_user, reason) VALUES (?, ?, ?, ?)",
-                       (user_id, at, by, reason))
+                       (user_id, at, by.id, reason))
             db.execute("UPDATE operator_sessions SET revoked_utc = ? WHERE user_id = ? AND revoked_utc IS NULL", (at, user_id))
-            Store.log_event(db, at, "auth.member.disabled", None, {"userId": user_id, "by": by, "reason": reason})
+            Store.log_event(db, at, "auth.member.disabled", None, {"userId": user_id, "by": by.id, "reason": reason})
+            audit.append(db, by, "member.disabled", "member", user_id, None, {"reason": reason})

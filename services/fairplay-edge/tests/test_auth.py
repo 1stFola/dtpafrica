@@ -6,6 +6,7 @@ import pytest
 
 from fairplay_edge.auth import (BUNDLE_SCHEMA, AuthError, Sessions, check_pin, generate_key, hash_pin, key_id,
                                 sign_bundle, verify_bundle)
+from fairplay_edge.audit import Actor
 from fairplay_edge.naming import iso, utcnow
 
 
@@ -139,11 +140,11 @@ def test_session_never_outlives_the_bundle(store, keys):
 def test_local_disable_ends_sessions_and_refuses_sign_in(store, bundle):
     sessions = Sessions(store)
     token, _ = sessions.login(bundle, "op@dtp.test", "123456", "ip")
-    sessions.disable("u-op", "device", "left the venue")
+    sessions.disable("u-op", Actor(id="u-admin", name="Admin", kind="operator"), "left the venue")
     assert sessions.resolve(token, bundle) is None
     with pytest.raises(AuthError):
         sessions.login(bundle, "op@dtp.test", "123456", "ip")
-    assert json.loads(store.one("SELECT detail FROM events WHERE kind = 'auth.member.disabled'")["detail"])["by"] == "device"
+    assert json.loads(store.one("SELECT detail FROM events WHERE kind = 'auth.member.disabled'")["detail"])["by"] == "u-admin"
 
 
 def _ended_because(store):

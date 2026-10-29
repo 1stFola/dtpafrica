@@ -57,6 +57,30 @@ export function assertCompetition(reader: Reader, competitionId: string, what: s
   if (!mayReadCompetition(reader, competitionId)) throw refusal(404, "NotFound", `Unknown ${what} ${id}`, "Check the id.");
 }
 
+/** Prisma `where` for devices this reader may see and act on: none of their open sessions is another competition's. */
+export function devicesWhere(reader: Reader) {
+  return reader.competitions
+    ? { sessions: { none: { endedAt: null, competitionId: { notIn: reader.competitions } } } }
+    : {};
+}
+
+type ScopedAccount = { allCompetitions: boolean; competitionId: string | null; competitions: { competitionId: string }[] };
+
+/**
+ * Whether an account (not the caller) may read a competition, on the rule the admin sign-in
+ * applies (admin-auth.service.ts): every competition when granted all, or when it has no
+ * grants at all; otherwise the union of the join table and the legacy column.
+ */
+export function accountReads(account: ScopedAccount, competitionId: string): boolean {
+  if (account.allCompetitions) return true;
+  const granted = [...account.competitions.map((c) => c.competitionId), ...(account.competitionId ? [account.competitionId] : [])];
+  return !granted.length || granted.includes(competitionId);
+}
+
+/** What `accountReads` needs: in a Prisma `select`, all three; in an `include`, the scalars come anyway. */
+export const ACCOUNT_COMPETITIONS = { competitions: { select: { competitionId: true } } } as const;
+export const ACCOUNT_SCOPE = { allCompetitions: true, competitionId: true, ...ACCOUNT_COMPETITIONS } as const;
+
 export function actorFields(ctx: AdminAuthContext): { actorKind: string; actorId: string | null; actorEmail: string | null } {
   return { actorKind: ctx.method === "api_key" ? "api_key" : "admin", actorId: ctx.userId ?? null, actorEmail: ctx.email ?? null };
 }

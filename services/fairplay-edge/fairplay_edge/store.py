@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -482,6 +482,26 @@ COMMIT;
 """
 
 
+# Phase 5.5: the cloud pairing (so a device token's expiry is known and warned of) and
+# which reads have already been audited this hour (so a restart does not forget). Additive.
+_MIGRATE_V5 = """
+BEGIN IMMEDIATE;
+CREATE TABLE cloud_pairing (
+    id                 INTEGER PRIMARY KEY CHECK (id = 1),
+    cloud_device_id    TEXT NOT NULL,
+    label              TEXT NOT NULL,
+    token_expires_utc  TEXT NOT NULL,
+    paired_utc         TEXT NOT NULL
+);
+CREATE TABLE access_seen (
+    key      TEXT PRIMARY KEY,
+    at_utc   TEXT NOT NULL
+);
+UPDATE schema_version SET version = 5;
+COMMIT;
+"""
+
+
 def new_id() -> str:
     return str(uuid.uuid4())
 
@@ -515,7 +535,7 @@ class Store:
                 db.execute("INSERT INTO schema_version (version) VALUES (2)")
             elif start < 2:
                 db.execute("UPDATE schema_version SET version = 2")
-        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4)):
+        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5)):
             if start >= version:
                 continue
             db = self._connect()

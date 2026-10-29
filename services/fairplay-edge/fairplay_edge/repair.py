@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import mp4
+from . import audit, mp4
+from .audit import Actor
 from .config import Settings
 from .manifest import Scanner
 from .naming import iso, utcnow
@@ -24,7 +25,7 @@ class RepairRefused(ValueError):
     pass
 
 
-def repair(settings: Settings, store: Store, scanner: Scanner, segment_id: str) -> dict:
+def repair(settings: Settings, store: Store, scanner: Scanner, segment_id: str, actor: Actor | None = None) -> dict:
     row = store.one("SELECT * FROM segments WHERE id = ?", (segment_id,))
     if row is None:
         raise KeyError(segment_id)
@@ -81,6 +82,9 @@ def repair(settings: Settings, store: Store, scanner: Scanner, segment_id: str) 
         )
         Store.log_event(db, derivative["created_utc"], "segment.repaired", segment_id,
                         {k: derivative[k] for k in ("id", "sha256", "bytes", "lost_bytes")})
+        audit.append(db, actor or Actor.system(), "segment.repaired", "segment", segment_id, None,
+                     {"derivativeId": derivative["id"], "sha256": derivative["sha256"],
+                      "originalSha256": row["sha256"], "lostBytes": derivative["lost_bytes"]})
     scanner.write_sidecar(segment_id)
     return {**derivative, "original": {"sha256": row["sha256"], "bytes": row["bytes"], "state": row["state"]},
             "note": "derivative of a partial original; the original is unchanged"}

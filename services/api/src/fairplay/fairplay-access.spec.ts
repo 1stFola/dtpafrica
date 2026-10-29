@@ -42,6 +42,7 @@ const EXPECTED: Record<string, string[]> = {
   listDevices: ["fairplay.edge.admin", "fairplay.session.manage"],
   createDevice: ["fairplay.edge.admin"],
   retireDevice: ["fairplay.edge.admin"],
+  rePairDevice: ["fairplay.edge.admin"],
   listSessions: STAFF_READ,
   createSession: ["fairplay.session.manage"],
   candidates: ["fairplay.session.manage"],

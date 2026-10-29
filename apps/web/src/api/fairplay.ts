@@ -80,11 +80,13 @@ export const fairplayApi = {
   createDevice: (label: string) =>
     adminFetch<{ id: string; label: string; bootstrapToken: string; bootstrapExpiresAt: string }>("/fairplay/devices", { method: "POST", body: JSON.stringify({ label }) }),
   retireDevice: (id: string) => adminFetch(`/fairplay/devices/${id}/retire`, { method: "POST" }),
+  rePairDevice: (id: string, reason: string) =>
+    adminFetch<{ id: string; label: string; bootstrapToken: string; bootstrapExpiresAt: string }>(`/fairplay/devices/${id}/re-pair`, { method: "POST", body: JSON.stringify({ reason }) }),
   sessions: (matchId?: string) => adminFetch<FairPlaySessionRow[]>(`/fairplay/sessions${matchId ? `?matchId=${encodeURIComponent(matchId)}` : ""}`),
   session: (id: string) => adminFetch<FairPlaySession>(`/fairplay/sessions/${id}`),
   createSession: (input: { matchId: string; deviceId: string; label?: string; mode?: string; members: { adminUserId: string; permissions: string[] }[] }) =>
     adminFetch<FairPlaySession>("/fairplay/sessions", { method: "POST", body: JSON.stringify(input) }),
-  candidates: () => adminFetch<FairPlayCandidate[]>("/fairplay/member-candidates"),
+  candidates: (matchId: string) => adminFetch<FairPlayCandidate[]>(`/fairplay/member-candidates?matchId=${encodeURIComponent(matchId)}`),
   setMembers: (id: string, members: { adminUserId: string; permissions: string[] }[]) =>
     adminFetch<FairPlaySession>(`/fairplay/sessions/${id}/members`, { method: "PUT", body: JSON.stringify({ members }) }),
   setMyPin: (id: string, pin: string) => adminFetch<{ pinSetAt: string }>(`/fairplay/sessions/${id}/members/me/pin`, { method: "PUT", body: JSON.stringify({ pin }) }),

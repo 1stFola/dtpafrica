@@ -4,7 +4,7 @@ import type { Prisma } from "@prisma/client";
 import type { AdminAuthContext } from "../admin/auth/admin-auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { refusal } from "../vision/shared/refusals";
-import { actorFields, assertCompetition, readerOf } from "./access";
+import { ACCOUNT_COMPETITIONS, ACCOUNT_SCOPE, accountReads, actorFields, assertCompetition, devicesWhere, readerOf } from "./access";
 import { canonical, sha256Hex } from "./canonical";
 import {
   BUNDLE_ISSUER,
@@ -67,9 +67,13 @@ export class FairPlaySessionsService {
     });
     if (!match) throw refusal(404, "NotFound", `Unknown match ${input.matchId}`, "Pick the match from ScoreBoard.");
     assertCompetition(reader, match.competitionId, "match", input.matchId);
-    const device = await this.prisma.fairPlayEdgeDevice.findUnique({ where: { id: input.deviceId } });
-    if (!device || device.retiredAt) throw refusal(400, "DeviceUnavailable", "That device does not exist or is retired.", "Pick a paired device.");
-    const members = await this.checkMembers(input.members ?? []);
+    // A device serving another competition's open session is not this caller's to take over:
+    // the bundle goes to the nearest kickoff, so a second session could seize the venue (F4).
+    const device = await this.prisma.fairPlayEdgeDevice.findFirst({ where: { id: input.deviceId, ...devicesWhere(reader) } });
+    if (!device || device.retiredAt) {
+      throw refusal(400, "DeviceUnavailable", "That device does not exist, is retired, or is serving another competition.", "Pick a paired device.");
+    }
+    const members = await this.checkMembers(input.members ?? [], match.competitionId);
     const snapshot = {
       matchId: match.id, competitionId: match.competition.id, competition: match.competition.name,
       home: match.homeTeam.name, away: match.awayTeam.name, kickoffAt: match.kickoffAt?.toISOString() ?? null,
@@ -138,7 +142,7 @@ export class FairPlaySessionsService {
     const session = await this.prisma.fairPlaySession.findUnique({ where: { id } });
     if (!session) throw refusal(404, "NotFound", `Unknown session ${id}`, "Check the id.");
     assertCompetition(readerOf(ctx), session.competitionId, "session", id);
-    const checked = await this.checkMembers(members);
+    const checked = await this.checkMembers(members, session.competitionId);
     await this.prisma.$transaction(async (tx) => {
       const keep = checked.map((m) => m.adminUserId);
       await tx.fairPlaySessionMember.deleteMany({ where: { sessionId: id, adminUserId: { notIn: keep } } });
@@ -180,7 +184,7 @@ export class FairPlaySessionsService {
     }
     const sessions = await this.prisma.fairPlaySession.findMany({
       where: { deviceId: device.deviceId, endedAt: null },
-      include: { members: { include: { adminUser: { select: { email: true, name: true, isActive: true,
+      include: { members: { include: { adminUser: { select: { email: true, name: true, isActive: true, ...ACCOUNT_SCOPE,
         role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } } } } } },
     });
     if (!sessions.length) return { bundle: null, reason: "no open session is assigned to this device" };
@@ -191,9 +195,10 @@ export class FairPlaySessionsService {
     };
     const session = [...sessions].sort((a, b) => kickoff(a) - kickoff(b) || b.createdAt.getTime() - a.createdAt.getTime())[0];
     // The venue never gets more than the account holds now, not just when the member was added:
-    // a permission taken off the role since is left out of the next bundle.
+    // a permission taken off the role since is left out of the next bundle, and so is an
+    // account no longer given the match's competition.
     const members: BundleMember[] = session.members
-      .filter((m) => m.pinHash && m.adminUser.isActive)
+      .filter((m) => m.pinHash && m.adminUser.isActive && accountReads(m.adminUser, session.competitionId))
       .map((m) => {
         const held = roleSlugs(m.adminUser.role);
         return { userId: m.adminUserId, email: m.adminUser.email.trim().toLowerCase(), name: m.adminUser.name ?? m.adminUser.email,
@@ -219,34 +224,46 @@ export class FairPlaySessionsService {
   }
 
   /**
-   * Who could be a member: active accounts whose role holds a venue permission, and which ones.
-   * An organiser (report.view alone) is not venue staff and is not offered.
+   * Who could be a member of a session for this match: active accounts whose role holds a
+   * venue permission and which may read the match's competition, and which permissions.
+   * An organiser (report.view alone) is not venue staff and is not offered. A caller who
+   * cannot read the match gets the same 404 as for a match that does not exist (F4).
    */
-  async candidates() {
+  async candidates(matchId: string, ctx: AdminAuthContext) {
+    const match = await this.prisma.sbMatch.findUnique({ where: { id: matchId }, select: { competitionId: true } });
+    if (!match) throw refusal(404, "NotFound", `Unknown match ${matchId}`, "Pick the match from ScoreBoard.");
+    assertCompetition(readerOf(ctx), match.competitionId, "match", matchId);
     const staff = VENUE_PERMISSIONS.filter((p) => p !== "fairplay.report.view");
     const users = await this.prisma.adminUser.findMany({
       where: { isActive: true, role: { permissions: { some: { permission: { slug: { in: staff } } } } } },
-      include: { role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } },
+      include: { ...ACCOUNT_COMPETITIONS, role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } },
       orderBy: { email: "asc" },
       take: 500,
     });
-    return users.map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role?.slug ?? null,
+    return users.filter((u) => accountReads(u, match.competitionId)).map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role?.slug ?? null,
       permissions: [...roleSlugs(u.role)].filter((p) => (VENUE_PERMISSIONS as readonly string[]).includes(p)).sort() }));
   }
 
-  /** Members must be active accounts that themselves hold what they are given at the venue. */
-  private async checkMembers(members: MemberInput[]): Promise<MemberInput[]> {
+  /**
+   * Members must be active accounts that themselves hold what they are given at the venue,
+   * and may read the match's competition: the venue never grants more than the account does.
+   */
+  private async checkMembers(members: MemberInput[], competitionId: string): Promise<MemberInput[]> {
     if (members.length > 50) throw refusal(400, "TooManyMembers", "At most 50 members per session.", "Remove some.");
     const ids = [...new Set(members.map((m) => m.adminUserId))];
     if (ids.length !== members.length) throw refusal(400, "DuplicateMember", "A person is listed twice.", "List each member once.");
     const users = await this.prisma.adminUser.findMany({
       where: { id: { in: ids } },
-      include: { role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } },
+      include: { ...ACCOUNT_COMPETITIONS, role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } },
     });
     const byId = new Map(users.map((u) => [u.id, u]));
     return members.map((m) => {
       const user = byId.get(m.adminUserId);
       if (!user || !user.isActive) throw refusal(400, "MemberUnavailable", `Unknown or disabled account ${m.adminUserId}`, "Pick active admin accounts.");
+      if (!accountReads(user, competitionId)) {
+        throw refusal(400, "MemberOutOfScope", `${user.email} is not given this match's competition on their account.`,
+          "Add the competition to their account in Settings, Users, or pick someone else.");
+      }
       const perms = [...new Set(m.permissions)];
       const unknown = perms.filter((p) => !(VENUE_PERMISSIONS as readonly string[]).includes(p));
       if (unknown.length || !perms.length) {

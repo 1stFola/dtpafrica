@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { refusal } from "../vision/shared/refusals";
 import type { AdminAuthContext } from "../admin/auth/admin-auth.types";
-import { actorFields } from "./access";
+import { actorFields, devicesWhere, readerOf } from "./access";
 import { hashesMatch, loadSigningKey, newToken, tokenHash, BUNDLE_ISSUER } from "./credentials";
 import { FAIRPLAY_CONFIG, type FairPlayConfig } from "./fairplay.config";
 import { FairPlayAuditService, deviceActor, SYSTEM_ACTOR } from "./fairplay-audit.service";
@@ -16,6 +16,13 @@ import { FairPlayAuditService, deviceActor, SYSTEM_ACTOR } from "./fairplay-audi
  *
  * Only hashes are stored. Unknown, expired, retired and wrong-kind tokens get one answer.
  * Retiring rotates the hash, so a token in flight stops working at once.
+ *
+ * Re-pairing replaces a device's token with a fresh bootstrap token, for a token that is
+ * expiring, may have leaked, or belongs to a retired device that is coming back. The old
+ * token stops at once, and only the same Edge machine can take the device back.
+ *
+ * A device serving an open session of a competition the caller cannot read is not shown to
+ * them and cannot be retired, re-paired or given a session by them (F4).
  */
 
 export type DeviceIdentity = { deviceId: string; edgeDeviceId: string; label: string };
@@ -43,8 +50,8 @@ export class FairPlayDevicesService {
     return { id: device.id, label: clean, bootstrapToken, bootstrapExpiresAt: expiresAt.toISOString() };
   }
 
-  async list() {
-    const rows = await this.prisma.fairPlayEdgeDevice.findMany({ orderBy: { createdAt: "desc" },
+  async list(ctx: AdminAuthContext) {
+    const rows = await this.prisma.fairPlayEdgeDevice.findMany({ where: devicesWhere(readerOf(ctx)), orderBy: { createdAt: "desc" },
       include: { _count: { select: { sessions: true } } } });
     return rows.map((d) => ({
       id: d.id, label: d.label, edgeDeviceId: d.edgeDeviceId, state: d.retiredAt ? "retired" : d.tokenKind === "device" ? "paired" : "awaiting_pairing",
@@ -63,10 +70,19 @@ export class FairPlayDevicesService {
       throw refusal(400, "EdgeDeviceIdInvalid", "edgeDeviceId must be the Edge's UUID", "Run `fairplay-edge pair` on the Edge itself.");
     }
     const device = await this.byToken(bootstrapToken, "bootstrap");
+    if (device.edgeDeviceId && device.edgeDeviceId !== edgeDeviceId) {
+      // A re-pair token takes the device back to the machine it was, never to another one.
+      await this.audit.record("device.refused", { kind: "device", id: device.id }, SYSTEM_ACTOR, { reason: "re-pair from another edge", edgeDeviceId });
+      throw refusal(409, "EdgeMismatch", "This device belongs to another Edge machine.", "Add a new device for this machine instead.");
+    }
     const taken = await this.prisma.fairPlayEdgeDevice.findUnique({ where: { edgeDeviceId } });
     if (taken && taken.id !== device.id) {
       await this.audit.record("device.refused", { kind: "device", id: device.id }, SYSTEM_ACTOR, { reason: "edge id already paired", other: taken.id });
-      throw refusal(409, "EdgeAlreadyPaired", "This Edge is already paired as another device.", "Retire the other device first.");
+      // The Edge keeps its id for good, so its history stays on one device row: a machine
+      // that was retired comes back by re-pairing that device, not as a new one.
+      throw taken.retiredAt
+        ? refusal(409, "EdgeAlreadyPaired", `This Edge was paired as "${taken.label}", now retired.`, "Re-pair that device on the FairPlay page instead.")
+        : refusal(409, "EdgeAlreadyPaired", "This Edge is already paired as another device.", "Retire the other device first.");
     }
     const deviceToken = newToken();
     const expiresAt = new Date(Date.now() + this.config.deviceTokenTtlDays * 86_400_000);
@@ -76,7 +92,8 @@ export class FairPlayDevicesService {
         registeredAt: new Date(), lastSeenAt: new Date() },
     });
     if (swapped.count !== 1) throw INVALID();
-    await this.audit.record("device.registered", { kind: "device", id: device.id }, deviceActor(device.id), { edgeDeviceId });
+    await this.audit.record("device.registered", { kind: "device", id: device.id }, deviceActor(device.id),
+      { edgeDeviceId, rePaired: Boolean(device.edgeDeviceId) });
     const signing = this.config.bundleSigningKeyPem ? loadSigningKey(this.config.bundleSigningKeyPem) : null;
     return {
       deviceId: device.id, label: device.label, deviceToken, deviceTokenExpiresAt: expiresAt.toISOString(),
@@ -96,14 +113,43 @@ export class FairPlayDevicesService {
   }
 
   async retire(id: string, ctx: AdminAuthContext) {
-    const device = await this.prisma.fairPlayEdgeDevice.findUnique({ where: { id } });
-    if (!device) throw refusal(404, "NotFound", `Unknown device ${id}`, "Check the id.");
+    const device = await this.visible(id, ctx);
     if (device.retiredAt) return { id, retiredAt: device.retiredAt };
     const retiredAt = new Date();
     await this.prisma.fairPlayEdgeDevice.update({ where: { id },
       data: { retiredAt, retiredById: ctx.userId ?? null, tokenHash: tokenHash(newToken()) } });
     await this.audit.record("device.retired", { kind: "device", id }, actorFields(ctx));
     return { id, retiredAt };
+  }
+
+  /**
+   * A new bootstrap token for a device that was paired before: its current token stops now,
+   * a retired device is brought back, and the Edge runs `fairplay-edge pair` again. Only the
+   * same Edge machine can complete it (register checks the id).
+   */
+  async rePair(id: string, reason: string, ctx: AdminAuthContext) {
+    const clean = reason.trim().slice(0, 300);
+    if (!clean) throw refusal(400, "ReasonRequired", "Re-pairing needs a reason", "Say why: token expiring, token may have leaked, machine back in use.");
+    const device = await this.visible(id, ctx);
+    if (!device.edgeDeviceId) {
+      throw refusal(409, "NeverPaired", "This device was never paired.", "Pair it with the bootstrap token it was given, or add it again.");
+    }
+    const bootstrapToken = newToken();
+    const expiresAt = new Date(Date.now() + this.config.bootstrapTokenTtlHours * 3600_000);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.fairPlayEdgeDevice.update({ where: { id },
+        data: { tokenHash: tokenHash(bootstrapToken), tokenKind: "bootstrap", tokenExpiresAt: expiresAt, retiredAt: null, retiredById: null } });
+      await this.audit.record("device.re_pair_started", { kind: "device", id }, actorFields(ctx),
+        { wasRetired: Boolean(device.retiredAt), edgeDeviceId: device.edgeDeviceId }, clean, tx);
+    });
+    return { id, label: device.label, bootstrapToken, bootstrapExpiresAt: expiresAt.toISOString() };
+  }
+
+  /** The device, if this caller may act on it; another competition's device looks absent. */
+  private async visible(id: string, ctx: AdminAuthContext) {
+    const device = await this.prisma.fairPlayEdgeDevice.findFirst({ where: { id, ...devicesWhere(readerOf(ctx)) } });
+    if (!device) throw refusal(404, "NotFound", `Unknown device ${id}`, "Check the id.");
+    return device;
   }
 
   private async byToken(token: string, kind: "bootstrap" | "device") {

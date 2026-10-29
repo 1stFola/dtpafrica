@@ -164,7 +164,7 @@ def test_incident_records_each_cameras_window(store, settings, session):
 def test_chain_verifies_and_rows_cannot_be_changed(store, incident):
     incidents.start_review(store, incident["id"], 1, ASSESSOR)
     result = audit.verify(store)
-    assert result["ok"] and result["entries"] == 2
+    assert result["ok"] and result["entries"] == 3  # the incident's hold, the incident, the review start
     db = sqlite3.connect(store.path)
     with pytest.raises(sqlite3.IntegrityError, match="append-only"):
         db.execute("UPDATE audit_log SET actor_name = 'someone else'")
@@ -185,7 +185,8 @@ def test_tampering_after_dropping_the_trigger_is_detected(store, incident):
 
 def test_every_audit_entry_is_queued_for_the_cloud(store, incident):
     keys = [r["idempotency_key"] for r in store.query("SELECT idempotency_key FROM outbox WHERE entity_type = 'audit'")]
-    assert keys == [f"audit:{store.device_id}:1:1"]  # {type}:{device}:{seq}:{version}
+    # {type}:{device}:{seq}:{version}: the incident's retention hold, then the incident.
+    assert keys == [f"audit:{store.device_id}:1:1", f"audit:{store.device_id}:2:1"]
 
 
 # ── rights ────────────────────────────────────────────────────────────────
@@ -244,9 +245,9 @@ def test_a_phase_2_database_upgrades_in_place(tmp_path):
     db.commit()
     db.close()
     store = Store(path)
-    assert store.one("SELECT version FROM schema_version")["version"] == 4  # v3, then v4 (uploads)
+    assert store.one("SELECT version FROM schema_version")["version"] == 5  # v3, v4 (uploads), v5 (pairing, access)
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'uploads'")
     row = store.one("SELECT * FROM incidents WHERE id = 'i1'")
     assert (row["state"], row["version"], row["match_id"], row["reopened_count"]) == ("flagged", 3, "m-9", 0)
-    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 4}'
+    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 5}'
     assert Store(path).device_id == store.device_id  # opening again changes nothing
