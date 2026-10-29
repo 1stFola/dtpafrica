@@ -21,6 +21,8 @@ import json
 import logging
 from datetime import datetime, timedelta
 
+from . import audit
+from .audit import Actor
 from .config import Settings
 from .manifest import Scanner
 from .naming import iso, utcnow
@@ -46,7 +48,7 @@ WHERE s.state IN ('finalized', 'partial', 'corrupt')
 
 
 def create_hold(store: Store, source: str | None, from_utc: datetime, to_utc: datetime, reason: str,
-                ref: str | None) -> dict:
+                ref: str | None, actor: Actor | None = None) -> dict:
     if reason not in HOLD_REASONS:
         raise ValueError(f"reason must be one of {', '.join(HOLD_REASONS)}")
     if to_utc <= from_utc:
@@ -59,10 +61,14 @@ def create_hold(store: Store, source: str | None, from_utc: datetime, to_utc: da
             " VALUES (:id, :source, :from_utc, :to_utc, :reason, :ref, :created_utc)", hold,
         )
         Store.log_event(db, hold["created_utc"], "hold.created", None, hold)
+        audit.append(db, actor or Actor.system(), "hold.created", "hold", hold["id"], None,
+                     {k: hold[k] for k in ("source", "from_utc", "to_utc", "reason", "ref")})
     return hold
 
 
-def release_hold(store: Store, hold_id: str, reason: str) -> dict | None:
+def release_hold(store: Store, hold_id: str, reason: str, actor: Actor | None = None) -> dict | None:
+    """Release a hold, with a reason. Who released it is in the audit chain: a released hold
+    lets retention delete the footage, so this act is never only in the mutable event log."""
     if not reason.strip():
         raise ValueError("releasing a hold needs a reason")
     now = iso(utcnow())
@@ -74,6 +80,7 @@ def release_hold(store: Store, hold_id: str, reason: str) -> dict | None:
         if not cur.rowcount:
             return None
         Store.log_event(db, now, "hold.released", None, {"id": hold_id, "reason": reason})
+        audit.append(db, actor or Actor.system(), "hold.released", "hold", hold_id, None, {"reason": reason})
     return store.one("SELECT * FROM holds WHERE id = ?", (hold_id,))
 
 
@@ -104,6 +111,9 @@ def apply(settings: Settings, store: Store, scanner: Scanner, now: datetime | No
             db.execute("UPDATE segments SET state = 'deleted', deleted_utc = ? WHERE id = ?", (at, row["id"]))
             Store.log_event(db, at, "segment.deleted.retention", row["id"],
                             {"rel_path": row["rel_path"], "sha256": row["sha256"], "days": settings.retention_days})
+            audit.append(db, Actor.system(), "segment.deleted", "segment", row["id"], None,
+                         {"relPath": row["rel_path"], "sha256": row["sha256"], "rule": "retention",
+                          "days": settings.retention_days})
         scanner.sync(row["id"], scanner.write_sidecar(row["id"]))
         log.info(json.dumps({"event": "segment.deleted.retention", "rel_path": row["rel_path"]}))
         deleted.append({"id": row["id"], "relPath": row["rel_path"], "endUtc": row["end_utc"]})

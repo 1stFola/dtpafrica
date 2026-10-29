@@ -128,6 +128,23 @@ async function main() {
   await refusedWith("an unscoped organiser account is refused outright", () => sessions.list(orgUnscoped, {}), "OrganiserUnscoped");
   check("an organiser's session list is their competition's only", (await sessions.list(orgC1, {})).every((s) => s.competitionId === c1.id));
 
+  console.log("\nCompetition scope of devices and members (F4)");
+  const managerC1 = ctx("mgr-1", ["fairplay.session.manage", "fairplay.edge.admin"], [c1.id]);
+  const listed = await devices.list(managerC1);
+  check("a competition's manager is not shown a device serving another competition's open session",
+    listed.some((d) => d.id === d1.id) && !listed.some((d) => d.id === d2.id), listed.map((d) => d.label));
+  await refusedWith("nor can they put a session of theirs on that device", () => sessions.create({ matchId: matchA.id, deviceId: d2.id }, managerC1), "DeviceUnavailable");
+  await refusedWith("nor retire it", () => devices.retire(d2.id, managerC1), "NotFound");
+  await refusedWith("nor re-pair it", () => devices.rePair(d2.id, "test", managerC1), "NotFound");
+  await refusedWith("nor list member candidates for another competition's match", () => sessions.candidates(matchC.id, managerC1), "NotFound");
+  const c2Only = await prisma.adminUser.create({ data: { email: `c2op-${run}@example.org`, name: "c2op", roleId: await role("fairplay_operator"),
+    competitions: { create: { competitionId: c2.id } } } });
+  const candidates = await sessions.candidates(matchA.id, managerC1);
+  check("candidates for a match are the accounts given its competition, and no others",
+    candidates.some((c) => c.id === operator.id) && !candidates.some((c) => c.id === c2Only.id), candidates.map((c) => c.email));
+  await refusedWith("an account not given the match's competition cannot be a member",
+    () => sessions.create({ matchId: matchA.id, deviceId: d1.id, members: [{ adminUserId: c2Only.id, permissions: ["fairplay.incident.operate"] }] }, admin), "MemberOutOfScope");
+
   console.log("\nThe signed bundle");
   check("no bundle names a member before they set a PIN", (await sessions.bundleFor(id1)).bundle?.bundle.members.length === 0);
   await refusedWith("a PIN is six digits or more", () => sessions.setMyPin(s1.id, "1234", assessorCtx), "PinInvalid");
@@ -153,6 +170,10 @@ async function main() {
   check("a member whose role holds none of their venue permissions is left out",
     (await sessions.bundleFor(id1)).bundle?.bundle.members.length === 0);
   await prisma.adminUser.update({ where: { id: assessor.id }, data: { roleId: await role("fairplay_assessor") } });
+  await prisma.adminUserCompetition.create({ data: { adminUserId: assessor.id, competitionId: c2.id } });
+  check("a member no longer given the match's competition is left out of the next bundle",
+    (await sessions.bundleFor(id1)).bundle?.bundle.members.length === 0);
+  await prisma.adminUserCompetition.deleteMany({ where: { adminUserId: assessor.id } });
 
   console.log("\nSync: idempotent, ordered, owned");
   const t0 = "2026-10-28T15:00:00.000Z";
@@ -343,6 +364,25 @@ async function main() {
   console.log("\nRetiring a device");
   await devices.retire(d1.id, admin);
   await refusedWith("a retired device's token stops working at once", () => devices.verify(reg1.deviceToken), "DeviceTokenInvalid");
+
+  console.log("\nRe-pairing and token rotation (F6)");
+  const d3 = await devices.create("Edge laptop 3", admin);
+  await refusedWith("a retired machine is not paired again as a new device", () => devices.register(d3.bootstrapToken, edge1), "EdgeAlreadyPaired");
+  await refusedWith("re-pairing needs a reason", () => devices.rePair(d1.id, "  ", admin), "ReasonRequired");
+  await refusedWith("a device that was never paired is not re-paired", () => devices.rePair(d3.id, "test", admin), "NeverPaired");
+  const back = await devices.rePair(d1.id, "machine back in use", admin);
+  await refusedWith("a re-pair token never moves the device to another machine", () => devices.register(back.bootstrapToken, randomUUID()), "EdgeMismatch");
+  const reg1b = await devices.register(back.bootstrapToken, edge1);
+  const id1b = await devices.verify(reg1b.deviceToken);
+  const rePairs = await prisma.fairPlayAuditLog.findMany({ where: { action: "device.re_pair_started", targetId: d1.id } });
+  check("the retired machine comes back on its own device row, and the re-pair is audited with its reason",
+    id1b.deviceId === d1.id && rePairs.length === 1 && rePairs[0].reason === "machine back in use"
+      && (rePairs[0].data as { wasRetired?: boolean }).wasRetired === true, rePairs);
+  const rotate = await devices.rePair(d1.id, "token may have leaked", admin);
+  await refusedWith("re-pairing stops the current device token at once", () => devices.verify(reg1b.deviceToken), "DeviceTokenInvalid");
+  const reg1c = await devices.register(rotate.bootstrapToken, edge1);
+  check("the same machine pairs again with a new token, good for another year",
+    (await devices.verify(reg1c.deviceToken)).deviceId === d1.id && new Date(reg1c.deviceTokenExpiresAt).getTime() > Date.now() + 300 * 86_400_000);
 
   const usage = await reports.usage();
   check("usage counts what the bucket holds and what was asked of it", usage.objects === 0 && usage.deletedObjects === 2 && usage.thisMonth.uploads >= 3, usage);

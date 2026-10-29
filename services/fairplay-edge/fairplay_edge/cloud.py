@@ -1,7 +1,9 @@
 """The Edge's side of the DTP cloud, beyond the sync outbox (Phase 4, docs/fairplay/phase-4-cloud.md):
 
   pair            exchange the one-time bootstrap token an admin was shown for a device
-                  token, and learn the public key the cloud signs bundles with;
+                  token, and learn the public key the cloud signs bundles with. Re-pairing
+                  (a new bootstrap token for the same device, from the FairPlay page) is the
+                  same command; the Edge warns 30 days before its device token expires;
   refresh_bundle  while online, fetch the signed credential bundle for the session the
                   cloud assigned to this device, verify it, and install it. A bundle that
                   does not verify is never written, so a bad answer cannot lock anyone out;
@@ -28,13 +30,14 @@ import httpx
 from . import audit, evidence
 from .auth import AuthError, canonical, load_trusted_keys, verify_bundle
 from .config import Settings, url_allowed
-from .naming import iso, utcnow
+from .naming import iso, parse_iso, utcnow
 from .outbox import backoff
 from .store import Store
 
 log = logging.getLogger("fairplay.cloud")
 
 BUNDLE_EVERY_S = 300
+TOKEN_WARN_DAYS = 30
 UPLOADS_PER_PASS = 4
 CHUNK = 1024 * 1024
 # Waits for answers that will not change soon: not releasable yet, storage not set up.
@@ -115,9 +118,17 @@ def pair(client: CloudClient, store: Store, bootstrap_token: str, token_file: Pa
     answer = client.register(bootstrap_token.strip(), store.device_id)
     token_file.parent.mkdir(parents=True, exist_ok=True)
     tmp = token_file.with_suffix(".tmp")
-    tmp.write_text(answer["deviceToken"] + "\n", encoding="utf-8")
-    os.chmod(tmp, 0o600)
+    tmp.unlink(missing_ok=True)
+    # Owner-only from the moment it exists: never written first and narrowed after.
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(answer["deviceToken"] + "\n")
     tmp.replace(token_file)
+    now = iso(utcnow())
+    with store.tx() as db:
+        db.execute("INSERT OR REPLACE INTO cloud_pairing (id, cloud_device_id, label, token_expires_utc, paired_utc)"
+                   " VALUES (1, ?, ?, ?, ?)", (answer["deviceId"], answer["label"], answer["deviceTokenExpiresAt"], now))
+        Store.log_event(db, now, "cloud.paired", None, {"deviceId": answer["deviceId"], "tokenExpires": answer["deviceTokenExpiresAt"]})
     key = answer.get("trustedKey")
     if key:
         keys = json.loads(trusted_keys_file.read_text(encoding="utf-8")) if trusted_keys_file.exists() else {}
@@ -128,6 +139,28 @@ def pair(client: CloudClient, store: Store, bootstrap_token: str, token_file: Pa
         load_trusted_keys(trusted_keys_file)  # refuses a key whose id does not match it
     return {"deviceId": answer["deviceId"], "label": answer["label"], "tokenExpires": answer["deviceTokenExpiresAt"],
             "trustedKeyId": key["keyId"] if key else None}
+
+
+def check_token_expiry(store: Store, now: datetime | None = None) -> str | None:
+    """Warn 30 days before the device token expires, and loudly once it has: an expired token
+    syncs nothing. Re-pairing clears both. An Edge paired before this was recorded says nothing."""
+    row = store.one("SELECT * FROM cloud_pairing WHERE id = 1")
+    if row is None:
+        return None
+    now = now or utcnow()
+    at, expires = iso(now), parse_iso(row["token_expires_utc"])
+    detail = {"expiresUtc": row["token_expires_utc"], "device": row["label"],
+              "remedy": "an Edge admin re-pairs this device on the FairPlay page, then runs fairplay-edge pair"}
+    if expires <= now:
+        store.resolve_alert("device_token_expiring", None, at)
+        store.open_alert("device_token_expired", None, "critical", at, detail)
+        return "expired"
+    store.resolve_alert("device_token_expired", None, at)
+    if expires - now <= timedelta(days=TOKEN_WARN_DAYS):
+        store.open_alert("device_token_expiring", None, "warning", at, detail)
+        return "expiring"
+    store.resolve_alert("device_token_expiring", None, at)
+    return None
 
 
 # ── the operator bundle ──────────────────────────────────────────────────

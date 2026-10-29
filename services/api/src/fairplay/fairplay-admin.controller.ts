@@ -43,8 +43,8 @@ export class FairPlayAdminController {
 
   @Get("devices")
   @RequirePermissions("fairplay.edge.admin", "fairplay.session.manage")
-  listDevices() {
-    return this.devices.list();
+  listDevices(@AdminAuth() ctx: AdminAuthContext) {
+    return this.devices.list(ctx);
   }
 
   @Post("devices")
@@ -57,6 +57,13 @@ export class FairPlayAdminController {
   @RequirePermissions("fairplay.edge.admin")
   retireDevice(@Param("id", ParseUUIDPipe) id: string, @AdminAuth() ctx: AdminAuthContext) {
     return this.devices.retire(id, ctx);
+  }
+
+  /** A fresh bootstrap token for a paired or retired device: its current token stops at once. */
+  @Post("devices/:id/re-pair")
+  @RequirePermissions("fairplay.edge.admin")
+  rePairDevice(@Param("id", ParseUUIDPipe) id: string, @Body() body: { reason?: string }, @AdminAuth() ctx: AdminAuthContext) {
+    return this.devices.rePair(id, String(body?.reason ?? ""), ctx);
   }
 
   // ── sessions ────────────────────────────────────────────────────────────
@@ -79,11 +86,11 @@ export class FairPlayAdminController {
       angleMode: body.angleMode, members: members(body.members) }, ctx);
   }
 
-  /** Accounts that could be made members: active, with a FairPlay venue permission on their role. */
+  /** Accounts that could be members for a match: active, a venue permission on their role, the match's competition on their account. */
   @Get("member-candidates")
   @RequirePermissions("fairplay.session.manage")
-  candidates() {
-    return this.sessions.candidates();
+  candidates(@Query("matchId", ParseUUIDPipe) matchId: string, @AdminAuth() ctx: AdminAuthContext) {
+    return this.sessions.candidates(matchId, ctx);
   }
 
   @Get("sessions/:id")

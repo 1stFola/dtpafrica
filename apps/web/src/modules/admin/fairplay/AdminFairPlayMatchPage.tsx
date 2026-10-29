@@ -60,13 +60,13 @@ function NewSessionPanel({ matchId, onCreated, first }: { matchId: string; onCre
   const { busy, run, messages } = useAction(onCreated);
 
   useEffect(() => {
-    void Promise.all([fairplayApi.devices(), fairplayApi.candidates()]).then(([d, c]) => {
+    void Promise.all([fairplayApi.devices(), fairplayApi.candidates(matchId)]).then(([d, c]) => {
       const paired = d.filter((x) => x.state === "paired");
       setDevices(paired);
       setDeviceId((cur) => cur || paired[0]?.id || "");
       setCandidates(c);
     }, () => undefined);
-  }, []);
+  }, [matchId]);
 
   return (
     <Panel title={first ? "Provision a session" : "Provision another session"}>
@@ -102,7 +102,7 @@ function NewSessionPanel({ matchId, onCreated, first }: { matchId: string; onCre
 }
 
 function MemberPicker({ candidates, picked, onChange }: { candidates: FairPlayCandidate[]; picked: Picked; onChange: (p: Picked) => void }) {
-  if (!candidates.length) return <p className="muted">No account holds a FairPlay role yet. Give the venue staff a FairPlay role in Settings → Users.</p>;
+  if (!candidates.length) return <p className="muted">No account with a FairPlay role is given this match's competition yet. Give the venue staff a FairPlay role and the competition in Settings → Users.</p>;
   const toggle = (user: string, perm: string) => {
     const now = picked[user] ?? [];
     onChange({ ...picked, [user]: now.includes(perm) ? now.filter((p) => p !== perm) : [...now, perm] });

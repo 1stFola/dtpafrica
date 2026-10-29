@@ -19,7 +19,7 @@ from .auth import AuthError, Bundle, Sessions, load_trusted_keys, verify_bundle
 from .config import Settings
 from .manifest import Scanner
 from .mediamtx import MediaMtx
-from .cloud import BUNDLE_EVERY_S, CloudClient, CloudError, Uploader, refresh_bundle
+from .cloud import BUNDLE_EVERY_S, CloudClient, CloudError, Uploader, check_token_expiry, refresh_bundle
 from .outbox import HttpTransport, NoDestination, Outbox
 from .store import Store
 from .timing import ClockWatch
@@ -129,6 +129,7 @@ class EdgeService:
             except CloudError as exc:
                 self.bundle_refresh = f"failed: {exc}"
             log.info(json.dumps({"event": "bundle.refresh", "result": self.bundle_refresh}))
+            check_token_expiry(self.store)
         return bool(self.uploader.run_once())
 
     async def _every(self, name: str, fn, seconds: float) -> None:

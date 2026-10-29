@@ -379,6 +379,11 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     health?.clock.recentSteps.length ? `The Edge clock jumped ${health.clock.recentSteps[0].step_ms} ms at ${clockLabel(toMs(health.clock.recentSteps[0].edge_utc))}.` : null,
   ].filter(Boolean) as string[];
   const diskWarning = health ? diskMessage(health.disk) : null;
+  // The device token: an expired one sends nothing to the cloud; re-pair before it lapses.
+  const tokenAlert = health?.openAlerts.find((a) => a.kind === "device_token_expired" || a.kind === "device_token_expiring");
+  const tokenWarning = !tokenAlert ? null : tokenAlert.kind === "device_token_expired"
+    ? "This Edge's cloud token has expired: nothing reaches the cloud. An Edge admin re-pairs the device on the FairPlay page."
+    : "This Edge's cloud token expires within 30 days. An Edge admin re-pairs the device on the FairPlay page.";
 
   return (
     <div className="fp-app">
@@ -417,9 +422,10 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
         </div>
       )}
 
-      {(clockWarnings.length > 0 || health?.mediaServer.up === false) && (
+      {(clockWarnings.length > 0 || health?.mediaServer.up === false || tokenWarning) && (
         <div className="fp-alerts" role="status">
           {health?.mediaServer.up === false && <p className="fp-error">Recorder unreachable: {health.mediaServer.error}</p>}
+          {tokenWarning && <p className={tokenAlert?.kind === "device_token_expired" ? "fp-error" : "fp-warn"}>{tokenWarning}</p>}
           {clockWarnings.map((w) => <p key={w} className="fp-warn">{w}</p>)}
         </div>
       )}

@@ -22,6 +22,7 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import timedelta
 
 from .naming import iso, utcnow
 from .store import Store
@@ -40,6 +41,13 @@ ACTIONS = (
     "evidence.uploaded",
     "session.opened_from_bundle",
     "alert.acknowledged",
+    # Phase 5.5 (F8): what protects or removes footage, and who may act, is chained too.
+    "hold.created", "hold.released",
+    "segment.repaired", "segment.deleted",
+    "member.disabled",
+    "evidence.manifest_accessed",
+    # Phase 5.5 (F5): an Edge admin reading a session other than the bundle's.
+    "session.accessed_outside_bundle",
 )
 
 
@@ -107,6 +115,25 @@ def record(store: Store, actor: Actor, action: str, entity_type: str, entity_id:
     """An entry on its own, for reads (access) that change nothing else."""
     with store.tx() as db:
         return append(db, actor, action, entity_type, entity_id, entity_version, detail)
+
+
+SEEN_FOR = timedelta(hours=1)
+
+
+def record_once(store: Store, key: str, actor: Actor, action: str, entity_type: str, entity_id: str | None,
+                detail: dict) -> bool:
+    """An access entry at most once per `key` an hour. A browser fetches one video in many
+    range requests; one entry per person and item an hour says who looked without burying
+    the log. What was seen is kept in the database, in the same transaction as the entry,
+    so a restart neither forgets it nor writes an entry it did not."""
+    now = utcnow()
+    with store.tx() as db:
+        db.execute("DELETE FROM access_seen WHERE at_utc < ?", (iso(now - SEEN_FOR),))
+        if db.execute("SELECT 1 FROM access_seen WHERE key = ?", (key,)).fetchone():
+            return False
+        db.execute("INSERT INTO access_seen (key, at_utc) VALUES (?, ?)", (key, iso(now)))
+        append(db, actor, action, entity_type, entity_id, None, detail)
+        return True
 
 
 def view(row: dict) -> dict:

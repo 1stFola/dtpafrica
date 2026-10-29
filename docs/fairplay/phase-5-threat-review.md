@@ -318,7 +318,137 @@ none of these fixes depends on them.
 
 ---
 
-## Handover (prompt pack section K)
+## 5.5, part 2: the recommended medium findings fixed
+
+Branch `feat/fairplay-phase-5-mediums`, on top of part 1. None of the open decisions above
+changes these fixes.
+
+**F4, fixed: a competition's manager stays inside their competition.**
+- A device serving an open session of a competition the caller cannot read is not in
+  their device list. They cannot put a session on it, retire it or re-pair it; to them it
+  looks absent (`DeviceUnavailable` or 404).
+- Member candidates are asked for per match (`GET member-candidates?matchId=`). The caller
+  must be able to read the match, and only accounts given its competition are offered.
+- A member must be given the match's competition on their account (`MemberOutOfScope`).
+  A member whose competition is taken away later drops out of the next bundle, as a
+  removed permission does since part 1.
+
+**F5, fixed: a person at the venue reads their own session.**
+- The bundle's session binds every sign-in (`Principal.bundle_session`). Another session
+  on the same machine answers 404 everywhere: the session, its incidents, evidence,
+  jobs, rights and report. The session lists show only the bundle's session.
+- Replay, spans, gaps, segment lists and segment manifests are limited to the time
+  around that session: from 3 hours before it was opened to 1 hour after it ended (now,
+  while it is open). Outside that, replay gets `403 outside_session`.
+- An Edge admin may still read any session and any footage on the device. Each first
+  read of another session in an hour is in the audit chain
+  (`session.accessed_outside_bundle`); replay is audited as before (`media.accessed`).
+- Not bound: the device token (the machine's own CLI), and DEV bundles that name no
+  session.
+- Left device-wide, on purpose: sources and live preview, alerts, events, holds, the
+  outbox and health. These describe the machine, not a match.
+- A limit to know: back-to-back matches on one machine. Once the cloud's bundle moves to
+  the next match, a reviewer still finishing the first one needs an Edge admin.
+
+**F6, fixed: retired devices come back, and tokens are rotated.**
+- An Edge admin re-pairs a device on the FairPlay page (`POST devices/:id/re-pair`, with
+  a reason). This issues a new bootstrap token, the current token stops at once, and a
+  retired device is brought back. It is audited (`device.re_pair_started`, with
+  `wasRetired`).
+- Only the same Edge machine can complete a re-pair (`EdgeMismatch` otherwise). A retired
+  machine registering as a new device is told to re-pair its old one, so its history
+  stays on one device row.
+- The Edge keeps the token's expiry at pairing (schema v5, `cloud_pairing`). It warns 30
+  days ahead (`device_token_expiring`), then raises a critical alert once the token has
+  expired (`device_token_expired`). The console shows both, and the FairPlay page has a
+  "Token expires" column that flags the last 30 days.
+- The token file is created owner-only (`os.open(…, 0o600)`), never written first and
+  narrowed after.
+- After `fairplay-edge pair`, the Edge service is restarted to use the new token. The
+  page says so.
+
+**F8, fixed: the acts that matter are in the hash chain.**
+- New audit actions:
+  - `hold.created` and `hold.released`, with the actor; an incident's own hold is
+    chained under the person who flagged it;
+  - `member.disabled`, for an offline disable;
+  - `segment.repaired`;
+  - `segment.deleted`, for a retention deletion by the system;
+  - `evidence.manifest_accessed`, for every manifest download.
+- The once-an-hour access record for replay and evidence files is kept in the database
+  (`access_seen`), in the same transaction as its entry, so a restart neither forgets it
+  nor drops an entry.
+
+**Schema.** The Edge goes to v5, which adds two tables and changes nothing that exists.
+The cloud needs no migration: the new audit action is a new value in an existing column.
+
+**Checks run** (29 Oct 2026). Another session's Vision rehearsal was running on the same
+machine throughout, and the Docker VM was short of memory. One full Edge run took 76
+minutes and failed two real-ffmpeg evidence tests on timing. Run on their own, they pass.
+
+| Check | Result |
+|---|---|
+| Edge pytest in the Edge image | 254 passed, 1 skipped (11 new: five for F5, four for F8, two for F6). Four older tests were updated for the new behaviour: a hold now comes first in the chain, `member.disabled` names the admin, and the schema is v5. |
+| `fairplay:cloudcheck` on a fresh scratch DB (`fp55d_scratch`) | 85/85 (15 new: F4's device, candidate and member scope; a member whose competition is removed; F6's re-pair, rotation and refusals). Its first run, on `fp55c_scratch`, found a Prisma `include` that cannot name scalar fields, which tsc had passed; fixed. |
+| `fairplay:e2echeck` on a fresh scratch DB (`fp55_e2e_scratch`) | 26/26 |
+| `vitest src/fairplay` (API) | 25 passed |
+| console `tsc`, `vitest`, `vite build` | clean; 20 passed; built |
+| `tsc` for the API and the web app; `pnpm typecheck` | clean |
+
+**Browser QA.**
+- *Venue console:* the rebuilt Edge image ran the synthetic stack with the QA bundle,
+  re-signed to name one of two sessions.
+  - The operator's session picker listed only that session. The other answered 404.
+    Yesterday's footage answered `403 outside_session`, and the last minutes played.
+  - The admin saw both sessions. Two reads of the other gave one audit entry, naming the
+    bundle's session.
+  - A pairing expiring in 10 days showed the amber token line. An expired one showed the
+    red line, and the header turned "Edge critical".
+- *Web admin:* the API was pointed at the gate's scratch database, with a test admin
+  scoped to its first competition.
+  - The device list left out the device serving the other competition.
+  - "Token expires" showed the date.
+  - "Re-pair" asked for a reason. It showed the one-time token with the restart
+    instruction, and the device went back to "awaiting pairing" with its Edge id.
+  - The candidates for a match were only accounts given its competition, and a request
+    without `matchId` got 400.
+- Afterwards the QA bundle and `.claude/launch.json` were restored, the seed script
+  deleted, and the stack removed with its volumes.
+
+```text
+DTP FAIRPLAY | PHASE 5.5 (PART 2) DELIVERY
+STATUS: complete on synthetic data; F7, F9, F10, F12–F19 not started
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: part 1's bundle checks; the audit chain; Prisma account scope as admin sign-in reads it
+- Hardware facts actually verified: none
+- Unknowns remaining: as for part 1 (UPS, RTSPS or a closed camera network, host time sync)
+
+IMPLEMENTED
+- Code paths changed: cloud devices/sessions/access; Edge api, auth, audit, cloud, retention, repair, store; console; web admin
+- APIs and migrations: POST devices/:id/re-pair; member-candidates needs matchId; Edge schema v5 (additive); no cloud migration
+- Local/Cloud config: none
+
+SECURITY + COST
+- Auth and evidence changes: venue reads bound to the bundle's session; device and member scope by competition; token rotation; holds, disables, repairs, deletions and manifest reads chained
+- New dependencies and license: none
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: re-pairing a real Edge against the deployed cloud is untested (no deploy)
+- Measured replay/CPU/RAM/SSD outcomes: none new
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: none known in these fixes; the decisions above are still open
+- Steps to revert safely: revert the commit. An older Edge build refuses a v5 database rather than guess, so set `schema_version` back to 4 first; the two new tables are then ignored
+- Human approvals required: the four open decisions; the R2 bucket, deploy and signing key as before
+- Proposed next phase: 5.2 failure drills, or the F7/F9/F10/F12–F19 hardening group
+```
+
+---
+
+## Handover for 5.1 (prompt pack section K)
 
 ```text
 DTP FAIRPLAY | PHASE 5.1 DELIVERY

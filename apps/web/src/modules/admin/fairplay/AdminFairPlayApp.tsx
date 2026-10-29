@@ -96,6 +96,10 @@ function DevicesPanel({ canManage }: { canManage: boolean }) {
   const [devices, setDevices] = useState<FairPlayDevice[]>([]);
   const [label, setLabel] = useState("");
   const [shown, setShown] = useState<{ label: string; bootstrapToken: string; bootstrapExpiresAt: string } | null>(null);
+  const rePair = (d: FairPlayDevice) => {
+    const reason = window.prompt(`Re-pair ${d.label}? Its current token stops working at once. Why (token expiring, may have leaked, machine back in use)?`);
+    if (reason?.trim()) void run(`${d.label} is waiting to be paired again.`, async () => setShown(await fairplayApi.rePairDevice(d.id, reason.trim())));
+  };
   const load = useCallback(async () => setDevices(await fairplayApi.devices()), []);
   const { busy, run, messages } = useAction(load);
   useEffect(() => void load().catch(() => undefined), [load]);
@@ -107,7 +111,8 @@ function DevicesPanel({ canManage }: { canManage: boolean }) {
         <div className="vision-panel vision-panel--ok">
           <p>
             Bootstrap token for <strong>{shown.label}</strong>. It is shown once and pairs one machine, until{" "}
-            {formatWhen(shown.bootstrapExpiresAt)}. Save it to a file on the Edge, then run <code>fairplay-edge pair</code>.
+            {formatWhen(shown.bootstrapExpiresAt)}. Save it to a file on the Edge, run <code>fairplay-edge pair</code>, then restart the
+            Edge service so it uses the new device token.
           </p>
           <code className="fairplay-token">{shown.bootstrapToken}</code>
           <p><button type="button" className="fairplay-btn" onClick={() => setShown(null)}>I have saved it</button></p>
@@ -115,7 +120,7 @@ function DevicesPanel({ canManage }: { canManage: boolean }) {
       )}
       <table className="vision-table">
         <thead>
-          <tr><th>Device</th><th>State</th><th>Edge id</th><th>Last seen</th><th>Sessions</th><th /></tr>
+          <tr><th>Device</th><th>State</th><th>Edge id</th><th>Last seen</th><th>Token expires</th><th>Sessions</th><th /></tr>
         </thead>
         <tbody>
           {devices.map((d) => (
@@ -124,8 +129,12 @@ function DevicesPanel({ canManage }: { canManage: boolean }) {
               <td><Pill tone={d.state === "paired" ? "ok" : d.state === "retired" ? "bad" : "warn"}>{d.state.replace("_", " ")}</Pill></td>
               <td title={d.edgeDeviceId ?? ""}>{short(d.edgeDeviceId)}</td>
               <td>{formatWhen(d.lastSeenAt)}</td>
+              <td>{d.state === "paired" ? <TokenExpiry at={d.tokenExpiresAt} /> : "—"}</td>
               <td>{d.sessions}</td>
               <td>
+                {canManage && d.edgeDeviceId && (
+                  <button type="button" className="fairplay-btn" disabled={busy} onClick={() => rePair(d)}>Re-pair</button>
+                )}{" "}
                 {canManage && d.state !== "retired" && (
                   <button type="button" className="fairplay-btn fairplay-btn--danger" disabled={busy}
                     onClick={() => window.confirm(`Retire ${d.label}? Its token stops working at once.`)
@@ -152,6 +161,13 @@ function DevicesPanel({ canManage }: { canManage: boolean }) {
       )}
     </Panel>
   );
+}
+
+/** A device token within 30 days of expiry is flagged: re-pair the device before it stops syncing. */
+function TokenExpiry({ at }: { at: string }) {
+  const days = Math.floor((new Date(at).getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return <Pill tone="bad">expired</Pill>;
+  return days <= 30 ? <Pill tone="warn">{`in ${days} days`}</Pill> : <>{formatWhen(at)}</>;
 }
 
 function UsagePanel() {

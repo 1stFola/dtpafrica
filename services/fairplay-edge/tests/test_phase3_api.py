@@ -193,6 +193,15 @@ def test_export_is_audited_and_hashed(clients, service, session_id):
     assert len(exports) == 2 and exports[0]["detail"]["packageSha256"] == first.headers["x-package-sha256"]
 
 
+def test_every_manifest_download_is_audited(clients, service, session_id):
+    _, ev = to_reviewed(clients, service, session_id)
+    clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF)
+    for _ in range(2):
+        assert clients["organiser"].get(f"/edge/v1/evidence/{ev['id']}/manifest").status_code == 200
+    seen = [e for e in clients["admin"].get("/edge/v1/audit").json() if e["action"] == "evidence.manifest_accessed"]
+    assert len(seen) == 2 and seen[0]["actor_id"] == "u-organiser" and seen[0]["detail"]["as"] == "organiser"
+
+
 def test_replay_access_is_audited_once_per_window(clients):
     async def fake_fetch(url, params, target):
         target.write_bytes(b"\x00" * 1000)

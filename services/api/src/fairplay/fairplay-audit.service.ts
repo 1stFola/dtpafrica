@@ -14,6 +14,7 @@ export const FAIRPLAY_AUDIT_ACTIONS = [
   "device.registered",
   "device.retired",
   "device.refused",
+  "device.re_pair_started",
   "session.created",
   "session.members.changed",
   "member.pin.set",

@@ -45,6 +45,10 @@ SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 HLS_FILE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 REPLAY_CACHE_FILES = 60
 REPLAY_CACHE_BYTES = 2 * 1024**3
+# What a person signed in for one session may replay: from a while before it was opened
+# (the warm-up, or a session opened late) to a while after it ended (F5).
+SESSION_REPLAY_BEFORE = timedelta(hours=3)
+SESSION_REPLAY_AFTER = timedelta(hours=1)
 UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; "
        "img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; "
@@ -336,6 +340,52 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def actor_of(who: Principal) -> Actor:
         return Actor(id=who.user_id, name=who.name, kind=who.kind)
 
+    # ── which session a person may read (F5) ─────────────────────────────
+    # A person reads the session their bundle was signed for, and the footage around it.
+    # An Edge admin may read any session on the device, and each first read of another one
+    # in an hour is in the audit chain. The device token and DEV bundles without a session
+    # are not bound.
+    def unbound(who: Principal) -> bool:
+        return who.kind == "device" or who.bundle_session is None
+
+    def check_session(who: Principal, session_id: str, missing: tuple[str, str] = ("unknown_session", "no such session")):
+        if unbound(who) or session_id == who.bundle_session:
+            return
+        if who.can("fairplay.edge.admin"):
+            audit.record_once(service.store, f"outside|{who.user_id}|{session_id}", actor_of(who),
+                              "session.accessed_outside_bundle", "session", session_id,
+                              {"bundleSession": who.bundle_session})
+            return
+        # The same answer as for a session that does not exist.
+        raise refusal(404, *missing)
+
+    def replay_span(who: Principal) -> tuple[datetime, datetime] | None:
+        if unbound(who) or who.can("fairplay.edge.admin"):
+            return None
+        row = service.store.one("SELECT created_utc, ended_utc FROM match_sessions WHERE id = ?", (who.bundle_session,))
+        now = utcnow()
+        # Not opened here yet: the hours before now, for the rehearsal.
+        opened = parse_iso(row["created_utc"]) if row else now
+        closed = parse_iso(row["ended_utc"]) if row and row["ended_utc"] else now
+        return opened - SESSION_REPLAY_BEFORE, closed + SESSION_REPLAY_AFTER
+
+    def check_window(who: Principal, start: datetime, end: datetime) -> None:
+        span = replay_span(who)
+        if span and (start < span[0] or end > span[1]):
+            raise refusal(403, "outside_session", "this footage is outside the session you are signed in for",
+                          "an Edge admin can open footage from other times")
+
+    def clamp(who: Principal, start: datetime | None, end: datetime | None):
+        span = replay_span(who)
+        if span is None:
+            return start, end
+        return max(start or span[0], span[0]), min(end or span[1], span[1])
+
+    def incident_session(who: Principal, incident_id: str) -> dict:
+        row = lifecycle(incidents.get, service.store, incident_id)
+        check_session(who, row["session_id"], ("not_found", "no such record"))
+        return row
+
     # ── liveness and sign-in: no auth ────────────────────────────────────
     @app.get("/edge/v1/healthz")
     def healthz():
@@ -378,7 +428,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.post("/edge/v1/auth/disable")
     def disable(body: DisableIn, who: Principal = admin):
         """Offline revocation: the only way to stop a person at the venue before the bundle expires."""
-        service.sessions.disable(body.userId, actor(who), body.reason)
+        service.sessions.disable(body.userId, actor_of(who), body.reason)
         return {"disabled": body.userId}
 
     @app.get("/edge/v1/openapi.json")
@@ -457,19 +507,21 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return source_view(source_or_404(name))
 
     @app.get("/edge/v1/sources/{name}/spans")
-    def spans(name: str, start: str | None = None, end: str | None = None, _: Principal = staff):
+    def spans(name: str, start: str | None = None, end: str | None = None, who: Principal = staff):
         source_or_404(name)
         s = _when(start, "start") if start else None
         e = _when(end, "end") if end else None
+        s, e = clamp(who, s, e)
         items, basis = spans_for(name, s, e)
         return {"source": name, "basis": basis, "spans": items}
 
     @app.get("/edge/v1/sources/{name}/gaps")
-    def gaps(name: str, start: str, end: str, minGapMs: int = Query(500, ge=0), _: Principal = staff):
+    def gaps(name: str, start: str, end: str, minGapMs: int = Query(500, ge=0), who: Principal = staff):
         source_or_404(name)
         s, e = _when(start, "start"), _when(end, "end")
         if e <= s:
             raise refusal(400, "bad_window", "end must be after start")
+        check_window(who, s, e)
         items, basis = spans_for(name, s, e)
         holes, cursor = [], s
         for span in items:
@@ -489,11 +541,12 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                 "notRecorded": holes, "observedDrops": drops}
 
     @app.get("/edge/v1/sources/{name}/window")
-    def window(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), _: Principal = staff):
+    def window(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), who: Principal = staff):
         """What a replay request for this window would show, and which originals it comes from."""
         source_or_404(name)
         s = _when(start, "start")
         e = s + timedelta(milliseconds=durationMs)
+        check_window(who, s, e)
         items, basis = spans_for(name, s, e)
         covered = timing.coverage(items, s, e)
         segments = service.store.query(
@@ -584,30 +637,19 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             if i >= REPLAY_CACHE_FILES or total > REPLAY_CACHE_BYTES:
                 f.unlink(missing_ok=True)
 
-    # A browser fetches one replay window in many range requests; one audit entry per person,
-    # source and window per hour says who looked at what without burying the log.
-    seen_access: dict[tuple, datetime] = {}
-
-    def first_look(*key) -> bool:
-        now = utcnow()
-        if key in seen_access and now - seen_access[key] < timedelta(hours=1):
-            return False
-        if len(seen_access) > 5000:
-            seen_access.clear()
-        seen_access[key] = now
-        return True
-
+    # One audit entry per person, source and window an hour (audit.record_once, kept in the
+    # database so a restart does not forget what was already written).
     def note_access(who: Principal, source: str, start: datetime, duration_ms: int) -> None:
-        if first_look(who.user_id, "media", source, iso(start), duration_ms):
-            audit.record(service.store, actor_of(who), "media.accessed", "source", source, None,
-                         {"startUtc": iso(start), "durationMs": duration_ms})
+        audit.record_once(service.store, f"media|{who.user_id}|{source}|{iso(start)}|{duration_ms}", actor_of(who),
+                          "media.accessed", "source", source, {"startUtc": iso(start), "durationMs": duration_ms})
 
     @app.get("/edge/v1/media/{name}")
     async def media(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), who: Principal = staff):
         source_or_404(name)
         s = _when(start, "start")
-        note_access(who, name, s, durationMs)
         end = s + timedelta(milliseconds=durationMs)
+        check_window(who, s, end)
+        note_access(who, name, s, durationMs)
         # A window reaching into the last seconds may still be growing: never reuse it.
         fresh = end > utcnow() - timedelta(seconds=10)
         key = hashlib.sha256(f"{name}|{iso(s)}|{durationMs}|{utcnow().timestamp() if fresh else ''}".encode()).hexdigest()[:32]
@@ -641,7 +683,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.get("/edge/v1/segments")
     def segments(source: str | None = None, state: str | None = None, start: str | None = None,
                  end: str | None = None, limit: int = Query(100, ge=1, le=500), after: str | None = None,
-                 _: Principal = staff):
+                 who: Principal = staff):
         sql = ("SELECT id, source, rel_path, state, start_utc, end_utc, duration_ms, bytes, complete_bytes, sha256,"
                " codec, width, height, fps, finalized_utc, verified_utc, deleted_utc FROM segments WHERE 1=1")
         params: list = []
@@ -652,12 +694,13 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         if state:
             sql += " AND state = ?"
             params.append(state)
-        if start:
+        lo, hi = clamp(who, _when(start, "start") if start else None, _when(end, "end") if end else None)
+        if lo:
             sql += " AND COALESCE(end_utc, start_utc) > ?"
-            params.append(iso(_when(start, "start")))
-        if end:
+            params.append(iso(lo))
+        if hi:
             sql += " AND start_utc < ?"
-            params.append(iso(_when(end, "end")))
+            params.append(iso(hi))
         if after:
             cursor_start, _sep, cursor_id = after.partition("|")
             sql += " AND (start_utc, id) > (?, ?)"
@@ -667,25 +710,34 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         rows = rows[:limit]
         return {"items": rows, "next": f"{rows[-1]['start_utc']}|{rows[-1]['id']}" if more else None}
 
+    def segment_in_span(who: Principal, segment_id: str) -> None:
+        span = replay_span(who)
+        row = service.store.one("SELECT start_utc, end_utc FROM segments WHERE id = ?", (segment_id,))
+        if row is None or (span and (parse_iso(row["start_utc"]) >= span[1]
+                                     or parse_iso(row["end_utc"] or row["start_utc"]) <= span[0])):
+            raise refusal(404, "unknown_segment", "no such segment")
+
     @app.get("/edge/v1/segments/{segment_id}")
-    def segment(segment_id: str, _: Principal = staff):
+    def segment(segment_id: str, who: Principal = staff):
+        segment_in_span(who, segment_id)
         try:
             return service.scanner.manifest_for(segment_id)
         except KeyError:
             raise refusal(404, "unknown_segment", "no such segment")
 
     @app.post("/edge/v1/segments/{segment_id}/verify")
-    def verify(segment_id: str, _: Principal = staff):
+    def verify(segment_id: str, who: Principal = staff):
+        segment_in_span(who, segment_id)
         try:
             return service.scanner.verify(segment_id)
         except KeyError:
             raise refusal(404, "unknown_segment", "no such segment")
 
     @app.post("/edge/v1/segments/{segment_id}/repair")
-    def repair_segment(segment_id: str, _: Principal = admin):
+    def repair_segment(segment_id: str, who: Principal = admin):
         refuse_at_hard_limit("repaired copies")
         try:
-            return repair(settings, service.store, service.scanner, segment_id)
+            return repair(settings, service.store, service.scanner, segment_id, actor_of(who))
         except KeyError:
             raise refusal(404, "unknown_segment", "no such segment")
         except RepairRefused as exc:
@@ -716,12 +768,12 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return service.store.query(sql)
 
     @app.post("/edge/v1/holds", status_code=201)
-    def create_hold(body: HoldIn, _: Principal = operator):
+    def create_hold(body: HoldIn, who: Principal = operator):
         if body.source is not None:
             source_or_404(body.source)
         try:
             return retention.create_hold(service.store, body.source, _when(body.fromUtc, "fromUtc"),
-                                         _when(body.toUtc, "toUtc"), body.reason, body.ref)
+                                         _when(body.toUtc, "toUtc"), body.reason, body.ref, actor_of(who))
         except ValueError as exc:
             raise refusal(400, "bad_hold", str(exc))
 
@@ -745,8 +797,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return service.store.one("SELECT * FROM alerts WHERE id = ?", (alert_id,))
 
     @app.post("/edge/v1/holds/{hold_id}/release")
-    def release(hold_id: str, body: ReleaseIn, _: Principal = admin):
-        released = retention.release_hold(service.store, hold_id, body.reason)
+    def release(hold_id: str, body: ReleaseIn, who: Principal = admin):
+        released = retention.release_hold(service.store, hold_id, body.reason, actor_of(who))
         if released is None:
             raise refusal(404, "unknown_hold", "no such active hold")
         return released
@@ -780,8 +832,10 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             raise refusal(400, "invalid", str(exc))
 
     @app.get("/edge/v1/sessions")
-    def list_sessions(_: Principal = staff):
-        return service.store.query("SELECT * FROM match_sessions ORDER BY created_utc DESC")
+    def list_sessions(who: Principal = staff):
+        if unbound(who) or who.can("fairplay.edge.admin"):
+            return service.store.query("SELECT * FROM match_sessions ORDER BY created_utc DESC")
+        return service.store.query("SELECT * FROM match_sessions WHERE id = ?", (who.bundle_session,))
 
     @app.post("/edge/v1/sessions", status_code=201)
     def new_session(body: SessionIn, who: Principal = manager):
@@ -800,7 +854,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return timing_call(timing.create_session, service.store, body.label, body.matchRef, body.mode, actor(who))
 
     @app.get("/edge/v1/sessions/{session_id}")
-    def session(session_id: str, _: Principal = staff):
+    def session(session_id: str, who: Principal = staff):
+        check_session(who, session_id)
         row = session_or_404(session_id)
         return {**row, "periods": timing.current_periods(service.store, session_id),
                 "calibration": timing.calibration_view(service.store, settings, session_id, spans_for),
@@ -808,16 +863,19 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/sessions/{session_id}/end")
     def end(session_id: str, who: Principal = manager):
+        check_session(who, session_id)
         return timing_call(timing.end_session, service.store, session_id, actor(who))
 
     @app.post("/edge/v1/sessions/{session_id}/periods", status_code=201)
     def period(session_id: str, body: PeriodIn, who: Principal = operator):
+        check_session(who, session_id)
         at = _when(body.atUtc, "atUtc") if body.atUtc else None
         return timing_call(timing.mark_period, service.store, session_id, body.period, body.edge, actor(who),
                            at=at, supersedes=body.supersedes, console_anchor=body.consoleAnchorUtc)
 
     @app.get("/edge/v1/sessions/{session_id}/calibrations")
-    def calibrations(session_id: str, _: Principal = staff):
+    def calibrations(session_id: str, who: Principal = staff):
+        check_session(who, session_id)
         session_or_404(session_id)
         return {"current": timing.calibration_view(service.store, settings, session_id, spans_for),
                 "history": service.store.query("SELECT * FROM calibrations WHERE session_id = ? ORDER BY created_utc",
@@ -825,6 +883,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/sessions/{session_id}/calibrations", status_code=201)
     def calibrate(session_id: str, body: CalibrationIn, who: Principal = operator):
+        check_session(who, session_id)
         return timing_call(timing.calibrate, service.store, settings, session_id, body.source,
                            _when(body.referenceUtc, "referenceUtc"), _when(body.observedIngestUtc, "observedIngestUtc"),
                            body.uncertaintyMs, body.method, actor(who), period=body.period,
@@ -832,7 +891,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                            note=body.note, supersedes=body.supersedes)
 
     @app.get("/edge/v1/sessions/{session_id}/sync-test")
-    def sync(session_id: str, at: str, halfWidthMs: int = Query(2000, ge=200, le=30_000), _: Principal = staff):
+    def sync(session_id: str, at: str, halfWidthMs: int = Query(2000, ge=200, le=30_000), who: Principal = staff):
+        check_session(who, session_id)
         return timing_call(timing.sync_test, service.store, settings, session_id, _when(at, "at"), spans_for,
                            halfWidthMs)
 
@@ -876,7 +936,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return JSONResponse(result, status_code=status)
 
     @app.get("/edge/v1/incidents")
-    def list_incidents(sessionId: str, _: Principal = staff):
+    def list_incidents(sessionId: str, who: Principal = staff):
+        check_session(who, sessionId)
         session_or_404(sessionId)
         return [incidents.view(r) for r in
                 service.store.query("SELECT * FROM incidents WHERE session_id = ? ORDER BY event_utc DESC", (sessionId,))]
@@ -884,6 +945,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.post("/edge/v1/incidents", status_code=201)
     def flag(body: IncidentIn, who: Principal = operator,
              idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        check_session(who, body.sessionId)
+
         def run():
             event = _when(body.eventUtc, "eventUtc") if body.eventUtc else None
             return lifecycle(incidents.create, service.store, settings, body.sessionId, actor_of(who), event_utc=event,
@@ -895,8 +958,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return once(idempotency_key, who, "incidents.create", body.model_dump(), 201, run)
 
     @app.get("/edge/v1/incidents/{incident_id}")
-    def incident_detail(incident_id: str, _: Principal = staff):
-        row = lifecycle(incidents.get, service.store, incident_id)
+    def incident_detail(incident_id: str, who: Principal = staff):
+        row = incident_session(who, incident_id)
         return {**row, "reviews": incidents.reviews(service.store, incident_id),
                 "evidence": [evidence.evidence_view(e) for e in service.store.query(
                     "SELECT * FROM evidence WHERE incident_id = ? ORDER BY created_utc", (incident_id,))],
@@ -907,6 +970,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.patch("/edge/v1/incidents/{incident_id}")
     def patch_incident(incident_id: str, body: IncidentPatch, if_match: str = Header(..., alias="If-Match"),
                        who: Principal = operator):
+        incident_session(who, incident_id)
         changes = {k: v for k, v in {
             "pre_roll_ms": body.preRollMs, "post_roll_ms": body.postRollMs, "category": body.category,
             "note": body.note, "match_minute": body.matchMinute, "match_second": body.matchSecond,
@@ -915,16 +979,19 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                          changes)
 
     @app.get("/edge/v1/incidents/{incident_id}/windows")
-    def windows(incident_id: str, _: Principal = staff):
+    def windows(incident_id: str, who: Principal = staff):
+        incident_session(who, incident_id)
         return timing_call(timing.incident_windows, service.store, settings, incident_id, spans_for)
 
     @app.post("/edge/v1/incidents/{incident_id}/review/start")
     def review_start(incident_id: str, if_match: str = Header(..., alias="If-Match"), who: Principal = reviewer):
+        incident_session(who, incident_id)
         return lifecycle(incidents.start_review, service.store, incident_id, version_of(if_match), actor_of(who))
 
     @app.post("/edge/v1/incidents/{incident_id}/review/complete")
     def review_complete(incident_id: str, body: ReviewIn, if_match: str = Header(..., alias="If-Match"),
                         who: Principal = reviewer):
+        incident_session(who, incident_id)
         # What each camera shows is judged here, not taken from the browser.
         shown = timing_call(timing.incident_windows, service.store, settings, incident_id, spans_for)
         states = {w["source"]: w["state"] for w in shown["perSource"]}
@@ -934,35 +1001,41 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/incidents/{incident_id}/archive")
     def archive(incident_id: str, if_match: str = Header(..., alias="If-Match"), who: Principal = reviewer):
+        incident_session(who, incident_id)
         return lifecycle(incidents.archive, service.store, incident_id, version_of(if_match), actor_of(who))
 
     @app.post("/edge/v1/incidents/{incident_id}/reopen")
     def reopen(incident_id: str, body: ReopenIn, if_match: str = Header(..., alias="If-Match"),
                who: Principal = reviewer):
+        incident_session(who, incident_id)
         return lifecycle(incidents.reopen, service.store, incident_id, version_of(if_match), actor_of(who), body.reason)
 
     @app.get("/edge/v1/incidents/{incident_id}/audit")
-    def incident_audit(incident_id: str, _: Principal = staff):
-        lifecycle(incidents.get, service.store, incident_id)
+    def incident_audit(incident_id: str, who: Principal = staff):
+        incident_session(who, incident_id)
         return audit.for_incident(service.store, incident_id)
 
     # ── evidence ─────────────────────────────────────────────────────────
     @app.post("/edge/v1/incidents/{incident_id}/clips")
     def request_clip(incident_id: str, body: ClipIn, who: Principal = operator):
+        incident_session(who, incident_id)
         source_or_404(body.source)
         refuse_at_hard_limit("clips")
         job, created = lifecycle(evidence.request_clip, service.store, settings, incident_id, body.source, actor_of(who))
         return JSONResponse(job, status_code=202 if created else 200)
 
     @app.get("/edge/v1/jobs/{job_id}")
-    def job(job_id: str, _: Principal = staff):
+    def job(job_id: str, who: Principal = staff):
         row = service.store.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
         if row is None:
             raise refusal(404, "not_found", "no such job")
+        incident_session(who, row["incident_id"])
         return row
 
-    def evidence_or_404(evidence_id: str) -> dict:
-        return lifecycle(evidence.get, service.store, evidence_id)
+    def evidence_or_404(evidence_id: str, who: Principal) -> dict:
+        row = lifecycle(evidence.get, service.store, evidence_id)
+        check_session(who, row["session_id"], ("not_found", "no such evidence"))
+        return row
 
     def readable(who: Principal, row: dict) -> str:
         """'staff', or 'organiser' when only released evidence may be read; refuses otherwise."""
@@ -975,44 +1048,47 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return "organiser"
 
     @app.get("/edge/v1/evidence")
-    def list_evidence(incidentId: str, _: Principal = staff):
-        lifecycle(incidents.get, service.store, incidentId)
+    def list_evidence(incidentId: str, who: Principal = staff):
+        incident_session(who, incidentId)
         rows = service.store.query("SELECT * FROM evidence WHERE incident_id = ? ORDER BY created_utc", (incidentId,))
         return [{**evidence.evidence_view(r), "release": dict(zip(("allowed", "reason"),
                                                                  evidence.released(service.store, r)))} for r in rows]
 
     @app.get("/edge/v1/evidence/{evidence_id}")
     def evidence_detail(evidence_id: str, who: Principal = organiser):
-        row = evidence_or_404(evidence_id)
+        row = evidence_or_404(evidence_id, who)
         readable(who, row)
         return row
 
     @app.get("/edge/v1/evidence/{evidence_id}/manifest")
     def evidence_manifest(evidence_id: str, who: Principal = organiser):
-        row = evidence_or_404(evidence_id)
-        readable(who, row)
+        row = evidence_or_404(evidence_id, who)
+        as_role = readable(who, row)
         lifecycle(evidence.verify_file, service.store, settings, row)
+        # One request, one file: every manifest download is in the chain (F8).
+        audit.record(service.store, actor_of(who), "evidence.manifest_accessed", "evidence", evidence_id, None,
+                     {"as": as_role, "manifestSha256": row["manifest_sha256"]})
         return FileResponse(evidence.path_of(settings, row, "manifest_rel_path"), media_type="application/json")
 
     @app.get("/edge/v1/evidence/{evidence_id}/file")
     def evidence_file(evidence_id: str, who: Principal = organiser):
-        row = evidence_or_404(evidence_id)
+        row = evidence_or_404(evidence_id, who)
         as_role = readable(who, row)
         path = evidence.path_of(settings, row)
         if not path.exists():
             raise refusal(409, "evidence_missing", "the evidence file is missing from this Edge")
-        if first_look(who.user_id, "evidence", evidence_id):
-            audit.record(service.store, actor_of(who), "evidence.accessed", "evidence", evidence_id, None,
-                         {"as": as_role, "sha256": row["sha256"]})
+        audit.record_once(service.store, f"evidence|{who.user_id}|{evidence_id}", actor_of(who), "evidence.accessed",
+                          "evidence", evidence_id, {"as": as_role, "sha256": row["sha256"]})
         return FileResponse(path, media_type="video/mp4")
 
     @app.post("/edge/v1/evidence/{evidence_id}/approve")
     def approve_evidence(evidence_id: str, who: Principal = exporter):
+        evidence_or_404(evidence_id, who)
         return lifecycle(evidence.approve, service.store, settings, evidence_id, actor_of(who))
 
     @app.post("/edge/v1/evidence/{evidence_id}/export")
     def export_evidence(evidence_id: str, who: Principal = exporter):
-        row = evidence_or_404(evidence_id)
+        row = evidence_or_404(evidence_id, who)
         refuse_at_hard_limit("exports")
         ok, why = evidence.released(service.store, row)
         if not ok:
@@ -1024,7 +1100,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     # ── rights, the organiser's report, audit and sync ───────────────────
     @app.get("/edge/v1/sessions/{session_id}/rights")
-    def rights(session_id: str, _: Principal = staff):
+    def rights(session_id: str, who: Principal = staff):
+        check_session(who, session_id)
         session_or_404(session_id)
         current = incidents.current_rights(service.store, session_id)
         ok, why = incidents.release_check(current)
@@ -1034,19 +1111,23 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/sessions/{session_id}/rights", status_code=201)
     def record_rights(session_id: str, body: RightsIn, who: Principal = admin):
+        check_session(who, session_id)
         session_or_404(session_id)
         return lifecycle(incidents.record_rights, service.store, session_id, actor_of(who),
                          footage_kind=body.footageKind, status=body.status, minors_present=body.minorsPresent,
                          basis=body.basis, consent_reference=body.consentReference)
 
     @app.get("/edge/v1/report/sessions")
-    def report_sessions(_: Principal = organiser):
-        return service.store.query("SELECT id, label, match_ref, mode, created_utc, ended_utc FROM match_sessions"
-                                   " ORDER BY created_utc DESC")
+    def report_sessions(who: Principal = organiser):
+        sql = "SELECT id, label, match_ref, mode, created_utc, ended_utc FROM match_sessions"
+        if unbound(who) or who.can("fairplay.edge.admin"):
+            return service.store.query(sql + " ORDER BY created_utc DESC")
+        return service.store.query(sql + " WHERE id = ?", (who.bundle_session,))
 
     @app.get("/edge/v1/report/sessions/{session_id}")
-    def report(session_id: str, _: Principal = organiser):
+    def report(session_id: str, who: Principal = organiser):
         """What an organiser may see: completed findings and the evidence released with them."""
+        check_session(who, session_id)
         session = session_or_404(session_id)
         out = []
         for inc in service.store.query("SELECT * FROM incidents WHERE session_id = ? AND state IN ('reviewed','archived')"

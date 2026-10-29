@@ -148,7 +148,7 @@ def create(store: Store, settings: Settings, session_id: str, actor: Actor, *, e
     incident_id = new_id()
     lo, hi = timing._hold_window(event, pre_roll_ms, post_roll_ms)
     # The footage around an incident is protected from retention from the moment it is flagged.
-    hold = retention.create_hold(store, None, lo, hi, "incident", incident_id)
+    hold = retention.create_hold(store, None, lo, hi, "incident", incident_id, actor)
     row = {"id": incident_id, "session_id": session_id, "match_id": session["match_ref"], "event_utc": iso(event),
            "basis": basis, "pre_roll_ms": pre_roll_ms, "post_roll_ms": post_roll_ms, "category": category,
            "note": note, "period": period, "match_minute": match_minute, "match_second": match_second,
@@ -192,9 +192,9 @@ def edit(store: Store, settings: Settings, incident_id: str, version: int, actor
     if {"pre_roll_ms", "post_roll_ms"} & changes.keys():
         event = parse_iso(row["event_utc"])
         lo, hi = timing._hold_window(event, merged["pre_roll_ms"], merged["post_roll_ms"])
-        new_hold = retention.create_hold(store, None, lo, hi, "incident", incident_id)
+        new_hold = retention.create_hold(store, None, lo, hi, "incident", incident_id, actor)
         if row["hold_id"]:
-            retention.release_hold(store, row["hold_id"], "incident window changed; replaced by a new hold")
+            retention.release_hold(store, row["hold_id"], "incident window changed; replaced by a new hold", actor)
         fields["hold_id"] = new_hold["id"]
         fields["observed_windows"] = json.dumps(window_definitions(store, settings, row["session_id"], event,
                                                                    merged["pre_roll_ms"], merged["post_roll_ms"]))
