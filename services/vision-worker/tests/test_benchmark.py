@@ -176,6 +176,26 @@ def test_refuses_a_gold_member_with_no_artifact_listed(ctx) -> None:
         bench_stage.run_benchmark(ctx)
 
 
+def test_scores_only_the_gold_split_of_a_training_dataset(ctx) -> None:
+    # A training dataset's export holds every split, each sample tagged with its own. The
+    # control plane lists predictions for gold members only, so train and val samples
+    # must not be read as gold that has nothing to score.
+    gold = {**GOLD["samples"][0], "tags": ["gold"]}
+    train = {**GOLD["samples"][0], "tags": ["train"], "provenance": {"video_asset_id": "t1"}}
+    val = {**GOLD["samples"][0], "tags": ["val"], "provenance": {"video_asset_id": "v1"}}
+    ctx.objects[GOLD_KEY] = {"samples": [train, gold, val]}
+    result = bench_stage.run_benchmark(ctx)
+    assert result.summary["framesLabelled"] == 1
+    assert result.summary["framesScored"] == 1
+    assert result.summary["otherSplitSamples"] == 2
+
+
+def test_refuses_an_export_with_no_gold_sample(ctx) -> None:
+    ctx.objects[GOLD_KEY] = {"samples": [{**GOLD["samples"][0], "tags": ["train"]}]}
+    with pytest.raises(StageRefusal, match="no gold sample"):
+        bench_stage.run_benchmark(ctx)
+
+
 def test_refuses_a_gold_sample_with_no_frame_size(ctx) -> None:
     ctx.objects[GOLD_KEY] = {"samples": [{**GOLD["samples"][0], "metadata": {}}]}
     with pytest.raises(StageRefusal, match="no frame size"):
