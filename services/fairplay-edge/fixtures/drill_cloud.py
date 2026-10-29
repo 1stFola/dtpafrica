@@ -120,6 +120,7 @@ def main() -> int:
     host, port = args.listen.rsplit(":", 1)
     server = ThreadingHTTPServer((host, int(port)), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(args.cert, args.key)
     server.socket = context.wrap_socket(server.socket, server_side=True)
     print(f"drill-cloud listening on {args.listen} (TEST ONLY)", flush=True)
