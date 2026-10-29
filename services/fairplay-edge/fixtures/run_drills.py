@@ -1,7 +1,8 @@
-"""FairPlay Phase 5.2: the Edge-side failure drills, in sequence. SYNTHETIC feeds only.
+"""FairPlay Phase 5.2 and 5.3: the Edge-side failure drills, in sequence. SYNTHETIC feeds only.
 
     python -I fixtures/run_drills.py                     # ~50 minutes, a 30-minute WAN cut
     python -I fixtures/run_drills.py --wan-minutes 3     # a quick rehearsal of the same
+    python -I fixtures/run_drills.py storage             # 5.3, ~10 minutes
 
 The stack runs on the cut network of compose.wan-outage.yaml, with real MediaMTX, two
 synthetic cameras, the LAN relay and a stand-in cloud (compose.drills.yaml, TEST ONLY).
@@ -22,6 +23,18 @@ was lost (the recovery point, RPO) and any step a person had to take.
 A docker kill is not a power cut: the host's page cache and the disk's write cache survive
 it, and Docker is started again by this script, not by the host at boot. D5 tests the
 software's recovery only; a UPS and a real power cut need the venue kit.
+
+`storage` (5.3) puts the recordings on a 1 GB tmpfs (compose.storage.yaml, TEST ONLY), with
+the soft limit at 0.6 GB free and the hard limit at 0.3 GB, and steps the disk down with a
+filler file beside the source folders:
+  S1  under the soft limit: a warning; new sessions still allowed; recording carries on.
+  S2  under the hard limit: critical; new sessions and clips refused with 507; recording
+      carries on.
+  S3  full: recording stops, and is raised as such; the Edge and its database carry on.
+  S4  the filler removed: recording comes back, the alerts resolve, and the gap is shown.
+`--browser-pause N` holds at S1, S2 and S3 so the console can be looked at, until a
+`continue-<stage>` file appears in the run's folder or N seconds pass, and writes
+the drill's sign-in to `console-signin.json` in the run's folder (git-ignored).
 """
 
 from __future__ import annotations
@@ -43,6 +56,8 @@ from run_fixture import ROOT, Run, iso, parse, utc  # noqa: E402
 SINK_IP = "172.31.250.30"
 CA_IN_EDGE = "/etc/fairplay/auth/drill-ca.pem"
 IDLE_MINUTES = 30
+MB = 1024 ** 2
+STORAGE_SOFT_GB, STORAGE_HARD_GB = 0.6, 0.3
 CONSOLE_DIST = ROOT.parents[1] / "apps" / "fairplay-console" / "dist"
 
 # Run once in the Edge image: a DEV bundle with one operator, and the stand-in cloud's CA.
@@ -66,6 +81,26 @@ bundle = {"schema": BUNDLE_SCHEMA, "bundleId": str(uuid.uuid4()), "issuer": "dev
 paths = tlsgen.init(Path("/out/cloud/tls"), [cfg["sinkIp"]], "drill cloud")
 (auth / "drill-ca.pem").write_bytes(paths["ca"].read_bytes())
 print(json.dumps({"ok": True}))
+"""
+
+# Writes zeros beside the source folders until the volume has `target` bytes free (0: full).
+FILL_SCRIPT = r"""
+import json, os, shutil, sys
+root, target = '/var/lib/fairplay/recordings', int(sys.argv[1])
+before = shutil.disk_usage(root).free
+need, written, error = before - target, 0, None
+if need > 0:
+    block = bytes(1 << 20)
+    try:
+        with open(root + '/.drill-filler', 'ab') as fh:
+            while written < need:
+                written += fh.write(block[:min(len(block), need - written)])
+            fh.flush()
+            os.fsync(fh.fileno())
+    except OSError as exc:
+        error = exc.strerror
+u = shutil.disk_usage(root)
+print(json.dumps({'before': before, 'written': written, 'free': u.free, 'total': u.total, 'error': error}))
 """
 
 OUTBOX_SCRIPT = r"""
@@ -110,12 +145,18 @@ class Console:
 
 
 class Drills(Run):
-    def __init__(self, keep: bool, project: str, wan_minutes: float):
-        super().__init__("drills", wan=True, keep=keep, project=project)
+    def __init__(self, keep: bool, project: str, wan_minutes: float, scenario: str = "drills", browser_pause: float = 0):
+        super().__init__(scenario, wan=True, keep=keep, project=project)
         self.wan_minutes = wan_minutes
+        self.browser_pause = browser_pause
         self.cloud = self.out / "cloud"
         self.cloud.mkdir()
-        self.overlays = ["compose.drills.yaml"]
+        self.overlays = ["compose.drills.yaml"] + (["compose.storage.yaml"] if scenario == "storage" else [])
+        if scenario == "storage":
+            env = (self.out / "fixture.env").read_text(encoding="utf-8")
+            env = env.replace("FAIRPLAY_DISK_SOFT_FREE_GB=2", f"FAIRPLAY_DISK_SOFT_FREE_GB={STORAGE_SOFT_GB}")
+            env = env.replace("FAIRPLAY_DISK_HARD_FREE_GB=1", f"FAIRPLAY_DISK_HARD_FREE_GB={STORAGE_HARD_GB}")
+            (self.out / "fixture.env").write_text(env, encoding="utf-8")
         self.extra_env = {"FAIRPLAY_DRILL_DIR": str(self.cloud)}
         if (CONSOLE_DIST / "index.html").exists():
             self.extra_env["FAIRPLAY_CONSOLE_PATH"] = str(CONSOLE_DIST)
@@ -216,12 +257,15 @@ class Drills(Run):
     def crashed(self, label: str, ids: list[str], cut: datetime) -> list[dict]:
         """Each segment open at a crash: final or partial, never complete if torn; repair the partial ones."""
         detail = [self.api("GET", f"/edge/v1/segments/{i}") for i in ids]
+        # A file that holds no media at all (opened, then refused by a full disk) is corrupt, not footage.
+        empty = [d for d in detail if d.get("state") == "corrupt" and not d["file"]["completeBytes"]]
+        kept = [d for d in detail if d not in empty]
         self.check(f"{label}: each segment open at the fault is final, and never called complete if its tail is torn",
-                   bool(detail) and all(d.get("state") in ("finalized", "partial") for d in detail)
-                   and all(d["state"] == "partial" or d["file"]["completeBytes"] == d["file"]["bytes"] for d in detail),
-                   states=[d.get("state") for d in detail])
+                   bool(kept) and all(d.get("state") in ("finalized", "partial") for d in kept)
+                   and all(d["state"] == "partial" or d["file"]["completeBytes"] == d["file"]["bytes"] for d in kept),
+                   states=[d.get("state") for d in detail], emptyFiles=len(empty))
         losses = []
-        for d in detail:
+        for d in kept:
             start = parse(d["timing"]["startUtc"])
             if d.get("state") == "partial":
                 repaired = self.api("POST", f"/edge/v1/segments/{d['id']}/repair")
@@ -454,6 +498,130 @@ class Drills(Run):
                  openSegments=losses, offSeconds=15,
                  note="RTO is from the cut, including 15 s off; RPO is each camera's gap in ms. The page cache survives a docker kill")
 
+    # ── 5.3: the disk's limits, and a full disk ───────────────────────────
+    def fill(self, free_bytes: int) -> dict:
+        return self.edge_python(FILL_SCRIPT, str(max(0, free_bytes)))
+
+    def alert_open(self, kind: str, source: str | None = None) -> dict | None:
+        alerts = self.api("GET", "/edge/v1/alerts")
+        return next((a for a in alerts if isinstance(a, dict) and a.get("kind") == kind
+                     and (source is None or a.get("source") == source)), None)
+
+    def browser_check(self, stage: str) -> None:
+        """Hold for a look at the console: until `continue-<stage>` appears in the run's folder,
+        or --browser-pause seconds."""
+        if self.browser_pause:
+            go = self.out / f"continue-{stage}"
+            self.note(f"BROWSER CHECK {stage}", until=iso(utc() + timedelta(seconds=self.browser_pause)), go=str(go))
+            deadline = time.monotonic() + self.browser_pause
+            while not go.exists() and time.monotonic() < deadline:
+                time.sleep(1)
+
+    def storage(self) -> None:
+        self.setup_auth()
+        if self.browser_pause:
+            (self.out / "console-signin.json").write_text(json.dumps({"email": self.email, "pin": self.pin}), encoding="utf-8")
+        self.up()
+        self.wait(40, "first segments")
+        self.both_recording("S0")
+        _, session = self.call("POST", "/edge/v1/sessions", {"label": "Storage drill (synthetic)", "matchRef": "storage"})
+        soft, hard = int(STORAGE_SOFT_GB * 1024 ** 3), int(STORAGE_HARD_GB * 1024 ** 3)
+        a = self.fill(1 << 62)  # writes nothing: reads the volume
+        time.sleep(30)
+        b = self.fill(1 << 62)
+        rate = max(1.0, (a["free"] - b["free"]) / 30)
+        self.measurements["storage"] = {"totalBytes": b["total"], "fillBytesPerSecond": round(rate),
+                                        "softLimitFreeBytes": soft, "hardLimitFreeBytes": hard}
+        self.check("S0: the recordings are on the drill's small volume, and no disk alert is open",
+                   b["total"] < 2 * 1024 ** 3 and b["free"] > soft and not self.alert_open("disk_soft_limit")
+                   and not self.alert_open("disk_hard_limit"), volume=b, fillBytesPerSecond=round(rate))
+        self.begin("S1 soft limit", "filled to under the soft limit")
+        t1 = self.note("S1: fill to under the soft limit", free=soft - 20 * MB)
+        self.fill(soft - 20 * MB)
+        seen = self.until("disk_soft_limit", lambda: self.alert_open("disk_soft_limit"), 30, every=1)
+        t1_seen = utc()
+        status, _ = self.call("POST", "/edge/v1/sessions", {"label": "under the soft limit", "matchRef": "storage"})
+        self.check("S1: under the soft limit the Edge raises a warning, and still starts a new session",
+                   bool(seen) and seen.get("severity") == "warning" and not self.alert_open("disk_hard_limit") and status == 201,
+                   alert=seen, newSession=status)
+        time.sleep(65)  # a minute of samples for the outlook
+        disk = self.api("GET", "/edge/v1/health").get("disk", {})
+        self.check("S1: health gives the free space, the soft state and the minutes left at the fill rate",
+                   disk.get("state") == "soft_limit" and disk.get("freeBytes", 0) > 0 and disk.get("minutesToHardLimit") is not None,
+                   disk=disk)
+        self.check("S1: both cameras carry on recording", bool(self.until("both recording", self.both_up, 15, every=1)))
+        self.browser_check("soft")
+        self.end(t1, None, {"footageLostMs": 0}, detected_at=t1_seen, detectSeconds=round((t1_seen - t1).total_seconds(), 1),
+                 note="nothing to recover from: a warning only")
+
+        self.begin("S2 hard limit", "filled to under the hard limit")
+        t2 = self.note("S2: fill to under the hard limit", free=hard - 20 * MB)
+        self.fill(hard - 20 * MB)
+        seen = self.until("disk_hard_limit", lambda: self.alert_open("disk_hard_limit"), 30, every=1)
+        t2_seen = utc()
+        s_status, s_body = self.call("POST", "/edge/v1/sessions", {"label": "under the hard limit", "matchRef": "storage"})
+        i_status, inc = self.call("POST", "/edge/v1/incidents", {"sessionId": session["id"], "basis": "manual",
+                                                                  "eventUtc": iso(utc() - timedelta(seconds=30))})
+        c_status, c_body = self.call("POST", f"/edge/v1/incidents/{inc['id']}/clips", {"source": "ground"}) if i_status == 201 else (0, None)
+        self.check("S2: under the hard limit the Edge raises a critical alert", bool(seen) and seen.get("severity") == "critical",
+                   alert=seen)
+        self.check("S2: it refuses a new session and a new clip with 507, and still records an incident",
+                   s_status == 507 and c_status == 507 and i_status == 201
+                   and (s_body or {}).get("error") == "disk_hard_limit" and (c_body or {}).get("error") == "disk_hard_limit",
+                   session=s_status, incident=i_status, clip=c_status)
+        self.check("S2: both cameras carry on recording", bool(self.until("both recording", self.both_up, 15, every=1)))
+        self.browser_check("hard")
+        self.end(t2, None, {"footageLostMs": 0}, detected_at=t2_seen, detectSeconds=round((t2_seen - t2).total_seconds(), 1),
+                 note="new work that writes files is refused; recording carries on")
+
+        self.begin("S3 disk full", "the volume filled completely, held 30 s, then the filler removed")
+        open_ids = self.open_segments()
+        t3 = self.note("S3: fill the disk")
+        full = self.fill(0)
+        stalled = self.until("recording_stalled on both", lambda: all(self.alert_open("recording_stalled", n) for n in ("ground", "drone")),
+                             30, every=1)
+        t3_seen = utc()
+        views = []
+        for _ in range(6):
+            views.append({n: self.source(n).get("recording") for n in ("ground", "drone")})
+            time.sleep(2)
+        self.check("S3: no camera is shown as recording while the disk is full",
+                   not any(v for view in views for v in view.values()), samples=views)
+        self.check("S3: with the disk full, recording stops and is raised as recording_stalled (critical) on both cameras",
+                   bool(stalled) and all((self.alert_open("recording_stalled", n) or {}).get("severity") == "critical" for n in ("ground", "drone")),
+                   fill=full)
+        status, _ = self.call("POST", "/edge/v1/incidents", {"sessionId": session["id"], "basis": "manual",
+                                                             "eventUtc": iso(utc() - timedelta(seconds=10))})
+        self.check("S3: the Edge still answers and its database (on its own volume) still takes an incident",
+                   self.api("GET", "/edge/v1/health").get("passes", 0) > 0 and status == 201, incident=status)
+        self.browser_check("full")
+        time.sleep(30)
+        t_free = self.note("S4: remove the filler")
+        self.compose("exec", "-T", "edge", "rm", "-f", "/var/lib/fairplay/recordings/.drill-filler", check=False)
+        back = self.until("both recording after the disk is freed", self.both_up, 90, every=1)
+        t_back = utc()
+        action = None
+        if not back:
+            action = "docker compose restart mediamtx: recording did not resume by itself"
+            self.compose("restart", "mediamtx", timeout=120)
+            back = self.until("both recording after a MediaMTX restart", self.both_up, 90, every=1)
+            t_back = utc()
+        self.check("S4: once space is freed both cameras record again, with no restart", action is None, recovered=bool(back))
+        self.wait(45, "finalise the segments open when the disk filled")
+        left = [k for k in ("disk_soft_limit", "disk_hard_limit") if self.alert_open(k)]
+        left += [f"recording_stalled:{n}" for n in ("ground", "drone") if self.alert_open("recording_stalled", n)]
+        self.check("S4: the disk and recording alerts resolve", not left, open=left)
+        losses = self.crashed("S4", open_ids, t3)
+        self.verify_all("S4")
+        holes = {n: self.holes(n, t3 - timedelta(seconds=30), t_back + timedelta(seconds=20)) for n in ("ground", "drone")}
+        self.check("S4: the footage lost while the disk was full is shown as a gap on each camera",
+                   all(len(h) >= 1 for h in holes.values()), holes=holes)
+        self.end(t_free, t_back if back else None, {n: sum(x["durationMs"] for x in h) for n, h in holes.items()},
+                 detected_at=t3_seen, operator_action=action, openSegments=losses,
+                 fullSeconds=round((t_free - t3).total_seconds(), 1),
+                 note="RTO is from the space being freed to both cameras recording; RPO is each camera's gap in ms")
+        self.stats("end of storage drill")
+
     # ── output ────────────────────────────────────────────────────────────
     def finish(self) -> int:
         self.measurements["drills"] = self.log
@@ -469,13 +637,16 @@ class Drills(Run):
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("scenario", nargs="?", choices=("drills", "storage"), default="drills")
     parser.add_argument("--wan-minutes", type=float, default=30)
+    parser.add_argument("--browser-pause", type=float, default=0, help="storage: seconds to hold at the soft and hard limits")
     parser.add_argument("--keep", action="store_true", help="leave the stack and its volumes up afterwards")
     parser.add_argument("--project", default="fpdrill", help="Compose project name (one stack at a time: the subnet is fixed)")
     args = parser.parse_args()
-    run = Drills(keep=args.keep, project=args.project, wan_minutes=args.wan_minutes)
+    run = Drills(keep=args.keep, project=args.project, wan_minutes=args.wan_minutes, scenario=args.scenario,
+                 browser_pause=args.browser_pause)
     try:
-        run.drills()
+        run.storage() if args.scenario == "storage" else run.drills()
     except Exception as exc:
         run.check(f"drills ran to completion ({exc.__class__.__name__}: {exc})", False)
     return run.finish()

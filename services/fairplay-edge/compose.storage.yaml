@@ -1,0 +1,10 @@
+# TEST ONLY: the storage drill (`fixtures/run_drills.py storage`), layered on the drill
+# files. The recordings volume becomes a small tmpfs, so the disk's soft and hard limits and a
+# full disk can be reached in minutes. Never used at a venue: a tmpfs is lost at a restart.
+volumes:
+  recordings:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=${FAIRPLAY_DRILL_RECORDINGS_SIZE:-1g},uid=10001,gid=10001,mode=0750"

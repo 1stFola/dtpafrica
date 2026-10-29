@@ -36,8 +36,8 @@ decide (see "Proposed scope for 5.5").
 | Drone feed drops and reconnects; ground continues | **covered (synthetic)** | Phase 1: drone stopped 28.6 s, ground unaffected, feed interval closed, alert raised. Phase 2: the drone's calibration is flagged `stale_after_reconnect` until recalibrated. | hardware |
 | MediaMTX restarted during a match; originals not silently overwritten | **covered (synthetic), 5.2 D3** | Segment names carry microseconds (`mediamtx_config.py:25`), so a restart starts a new file. Finalised segments are made read-only (`manifest.py:201`) and re-hashed before any clip or upload (`evidence.verify_file`). Phase 2 observed that a restart breaks every recording and flags both cameras stale. | drilled in 5.2 (D3): about 3 s lost per camera, shown as a gap; no original rewritten |
 | Edge API restart; SQLite recovery; outbox resumes | **covered (synthetic), 5.2 D4** | WAL with `synchronous=FULL` (`store.py:541-542`). Phase 1: restart keeps all hashes. Phase 3: SIGKILL then replay of the incident window, audit chain whole. Phase 4 e2e: a restarted sender catches up. | Phase 1 found that `restart: unless-stopped` does not bring back a container that was `docker kill`ed. A crash inside the process does restart. A kill during an active sync batch was drilled in 5.2 (D4): the batch was sent again and answered replayed. |
-| SSD reaches soft and hard thresholds, with a conspicuous warning | **open: F3** | thresholds and alerts exist (`watchdog.py:160-167`, `test_disk_thresholds`) | see F3: the warning is a chip, and the hard limit stops nothing |
-| R2 upload begins, fails, resumes without duplicate evidence records | **mostly covered** | Unique `(evidenceId, kind)` in the cloud (`schema.prisma`, `FairPlayEvidenceObject`). Unit tests: a corrupted upload is sent again; a cloud not ready yet is asked again later. Phase 4 e2e: a corrupted object is refused, removed and uploaded properly; a duplicate upload sends nothing. | a PUT cut halfway through the transfer (5.3) |
+| SSD reaches soft and hard thresholds, with a conspicuous warning | **covered (synthetic), 5.3; F21 and F23 open** | thresholds and alerts exist (`watchdog.py:160-167`, `test_disk_thresholds`) | F3 fixed in 5.5 part 1. 5.3 drilled both limits and a full disk: a full disk is shown as recording (F21), and a file torn in a fragment header is not repairable (F23) |
+| R2 upload begins, fails, resumes without duplicate evidence records | **covered (synthetic), 5.3** | Unique `(evidenceId, kind)` in the cloud (`schema.prisma`, `FairPlayEvidenceObject`). Unit tests: a corrupted upload is sent again; a cloud not ready yet is asked again later. Phase 4 e2e: a corrupted object is refused, removed and uploaded properly; a duplicate upload sends nothing. | cut halfway in 5.3's e2e: nothing in the bucket, sent again whole, one object per kind |
 | Invalid pairing token | **covered** | e2e: unknown token refused; the bootstrap token works once (`devices.service.ts:73-78`) | — |
 | Unauthorised user | **covered** | cloud access matrix (`fairplay-access.spec.ts`); Edge role tests (`test_auth.py`, `test_phase3_api.py`) | — |
 | Replay URL guessed | **covered** | Edge media and evidence need the session cookie. Organisers get a 404 for withheld evidence. Cloud evidence keys contain a UUID and are read only through a 5-minute audited URL. | — |
@@ -590,6 +590,148 @@ RISKS, ROLLBACK, NEXT GATE
 - Steps to revert safely: revert the commit (fixtures and docs only)
 - Human approvals required: the four open decisions as before; whether to cap the outbox back-off lower
 - Proposed next phase: 5.3 storage and upload failures, or 5.4 security tests
+```
+
+---
+
+## 5.3: storage and upload failures
+
+Branch `feat/fairplay-phase-5-storage`, on top of 5.2's branch (#317), whose drill harness it
+extends. The Edge itself is unchanged: this increment adds tests, and it found two defects
+(F21, F23) and one small one (F22). The fixes wait for a decision (5.5).
+
+**How it runs.**
+- **The disk.** `python -I fixtures/run_drills.py storage` puts the recordings on a 1 GB
+  tmpfs (`compose.storage.yaml`, TEST ONLY). The soft limit is 0.6 GB free and the hard
+  limit 0.3 GB. A filler file beside the source folders steps the disk down: under the soft
+  limit (S1), under the hard limit (S2), full (S3), then freed (S4).
+- **The cameras.** Two synthetic cameras wrote 0.40 MB/s between them.
+- **The console.** `--browser-pause` holds at each stage for a look at the console.
+- **The upload.** It is cut in the Phase 4 end-to-end check (`fairplay:e2echeck`): the real
+  API and S3 server, and the Edge's real uploader. For one clip, a relay in front of the S3
+  server (TEST ONLY) forwards half the PUT's body and then drops both connections, as a WAN
+  failing mid-upload would.
+
+**Upload cut halfway: covered.** All 31 e2e checks passed (4 new), on a fresh scratch
+database (`fp53_e2e_scratch`).
+- The relay forwarded 528 of 1,056 bytes, then dropped the connection. The Edge recorded
+  `RemoteProtocolError`, kept the clip pending (attempt 1), and stored its manifest
+  normally.
+- The half-sent object was not in the bucket (404).
+- On the next pass the clip was sent again whole, and confirmed.
+- In the cloud, that evidence has one object per kind, both stored, and no second record.
+  The read URL serves the Edge's exact bytes.
+- A cut upload is sent again from the start (one PUT, no multipart). For 30-second clips
+  that is a few megabytes; the test clip is the test cutter's 1 KB.
+
+**The disk's limits: covered.**
+
+| Stage | What happened |
+|---|---|
+| S1, under the soft limit | `disk_soft_limit` (warning) 3.8 s after the fill. A new session was still allowed. Health gave the free space, the state and the minutes left. Both cameras kept recording. |
+| S2, under the hard limit | `disk_hard_limit` (critical) 3.8 s after the fill. A new session and a new clip were refused with `507 disk_hard_limit`; an incident was still taken. Both cameras kept recording. |
+
+Browser check (`storage-20261029T200933Z`, operator signed in through the LAN relay):
+- **Soft limit.** A full-width amber banner: "Disk running low (0.4 GB free)", the time
+  left, and "Plan to free space before the next match". The header said "Edge degraded".
+- **Hard limit.** A full-width red banner: "Disk almost full (0.3 GB free). New sessions,
+  clips and exports are refused…". The header said "Edge critical", with the disk chip red.
+- The operator has no "New session" button at any stage; its disabled state for an admin
+  was checked in 5.5 part 1.
+
+**A full disk: two defects.** Final run `storage-20261029T203139Z`: 16 passed, 3 failed. All
+three failures are F21 and F23. Every one of the four storage runs showed F21.
+
+- **What went wrong.** Both cameras were reported as recording for the whole time the disk
+  was full (80.8 s). Neither got a `recording_stalled` alert (F21). The ground camera's open
+  file was marked `corrupt`, so about 7 s of whole fragments in it are not offered for
+  repair (F23).
+- **What held up.**
+  - The Edge kept answering. Its database is on its own volume, and it still took an
+    incident.
+  - Once the filler was removed, both cameras recorded again 1.9 s later, without a
+    restart, and every disk and recording alert resolved.
+  - The drone's open file was `partial`, and was repaired into a whole derivative.
+  - All 59 final segments re-hashed to their manifests.
+  - Each camera showed one gap: ground 88.5 s (the full period plus F23's 7 s), drone
+    80.0 s.
+- **The console.** Browser check, at 0.0 GB free: both source cards said "● Recording".
+  Beside them, the red banner said the disk was full and "recording then stops".
+
+**F21 (high, new): a full disk is shown as recording.**
+- On "no space left on device", MediaMTX's recorder starts a new file every 2–3 s, and
+  each write fails.
+- The watchdog counts a source as recording while its current segment grew within
+  `record_stall_seconds` (6 s). Each new, empty file looks like growth.
+- So `recording` stays true, and `recording_stalled` is never raised. The API showed
+  `recording: true` with `currentSegmentBytes: 0`.
+- The red disk banner is the only sign. This is the "recording silently fails" risk in the
+  PID. The empty files also raise `segment_corrupt` warnings, one per file the scanner
+  catches.
+- Fix (5.5):
+  - judge recording by bytes of media written over the window, not by a file appearing;
+  - and raise a `disk_full` critical alert, marking every source as not recording, when
+    free space is under what one part needs.
+
+**F22 (low, new): the disk chip rounds to whole gigabytes.** At 0.4 GB free it said
+"Disk 0 GB free", while the banner said 0.4 GB (`Console.tsx:413` uses `Math.round`). Fix:
+one decimal place, as the banner does.
+
+**F23 (medium, new): a file torn inside a fragment header is called corrupt, not partial.**
+- The ground file open when the disk filled was 2.5 MB, torn 57 bytes into a `moof` box.
+  ffprobe could not read it at all, and the scanner calls any file ffprobe cannot read
+  `corrupt` (`manifest.py:133`).
+- Repair only accepts `partial` files, so 7 s of whole fragments, with their init, are not
+  offered for repair.
+- Fix (5.5): when the init segment and complete fragments are present and only the tail is
+  torn, call the file `partial`, so repair can keep the whole fragments.
+
+**Notes and limits.**
+- The filler writes hundreds of MB in a few seconds. In one run that burst cost the ground
+  camera a 4.2 s gap. That is a drill artefact: a real disk fills at the cameras' pace.
+- The drill's recordings are on their own tmpfs. At a venue the recordings and the data
+  volume normally share one disk, so a full disk would stop the database as well. The hard
+  limit (5 GB free by default) is what keeps that from happening.
+- A tmpfs is not an SSD. Write speed and wear are not tested.
+
+**Checks run** (29 Oct 2026):
+
+| Check | Result |
+|---|---|
+| `fairplay:e2echeck` on a fresh scratch DB (`fp53_e2e_scratch`) | 31/31 (4 new: the cut, nothing in the bucket, the resend, one object per kind) |
+| `python -I fixtures/run_drills.py storage` | 16 passed, 3 failed: F21 (2 checks) and F23 (1) |
+| the same with `--browser-pause` (console checked) | soft and hard banners as described; F21 seen in the console |
+| Edge pytest in the Edge image; API `tsc` (incl. scripts) | 255 passed, 1 skipped (the cloud e2e, run by `fairplay:e2echeck`); clean |
+
+```text
+DTP FAIRPLAY | PHASE 5.3 DELIVERY
+STATUS: complete on synthetic data; found F21 (high) and F23 (medium), not fixed here
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: 5.2's drill harness; Phase 4's e2e check (real API, s3mock, the Edge's uploader); F3's banners and 507 refusals
+- Hardware facts actually verified: none
+- Unknowns remaining: the Edge's SSD (size, speed, whether recordings and data share it); UPS
+
+IMPLEMENTED
+- Code paths changed: fixtures only (run_drills.py storage, compose.storage.yaml TEST ONLY); test_cloud_e2e.py (a cutting relay); fairplay-e2e-check.ts (cloud-side count); no Edge or API code
+- APIs and migrations: none
+- Local/Cloud config: none
+
+SECURITY + COST
+- Auth and evidence changes: none
+- New dependencies and license: none
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: e2e 31/31; storage 16 passed, 3 failed (the defects found). Untested: a real SSD, a shared disk, an upload of a full-size clip to R2
+- Measured replay/CPU/RAM/SSD outcomes: fill 0.40 MB/s for two synthetic cameras; alerts 3.8 s after each limit; recording back 1.9 s after space was freed
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: F21 before any real match (an operator could believe a full disk is recording)
+- Steps to revert safely: revert the commit (tests and docs only)
+- Human approvals required: whether to fix F21, F22 and F23 now (5.5); the open decisions as before
+- Proposed next phase: the F21/F22/F23 fixes, then 5.4 security tests
 ```
 
 ---
