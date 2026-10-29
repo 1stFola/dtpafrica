@@ -122,7 +122,7 @@ export type Health = {
   status: "ok" | "degraded" | "critical" | "starting";
   device: string;
   mediaServer: { up: boolean | null; error: string | null };
-  disk: { freeBytes: number; state: string };
+  disk: { freeBytes: number; state: string; minutesToHardLimit: number | null; minutesToFull: number | null };
   clock: ClockState;
   cloud: OutboxStatus;
   audit: { seq: number; entry_hash: string; at_utc: string } | null;

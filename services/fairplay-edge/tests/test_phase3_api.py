@@ -224,3 +224,27 @@ def test_no_footage_finding_through_the_api(clients, session_id):
     ok = clients["assessor"].post(f"/edge/v1/incidents/{inc['id']}/review/complete", headers={**CSRF, "If-Match": "2"},
                                   json={**body, "result": "footage_unavailable"})
     assert ok.status_code == 200
+
+
+def test_only_an_admin_confirms_a_cameras_new_address_and_it_is_audited(clients, service):
+    service.mediamtx.ready = {"ground": True}
+    service.mediamtx.publisher["ground"] = ("s1", "10.0.0.21")
+    service.run_once()
+    service.mediamtx.publisher["ground"] = ("s2", "10.0.0.99")
+    service.run_once()
+    alert = next(a for a in clients["admin"].get("/edge/v1/alerts").json() if a["kind"] == "publisher_address_changed")
+    path = f"/edge/v1/alerts/{alert['id']}/acknowledge"
+    assert clients["operator"].post(path, headers=CSRF, json={"reason": "new encoder"}).status_code == 403
+    r = clients["admin"].post(path, headers=CSRF, json={"reason": "swapped the ground encoder at half-time"})
+    assert r.status_code == 200 and r.json()["resolved_utc"]
+    entry = service.store.one("SELECT * FROM audit_log WHERE action = 'alert.acknowledged'")
+    assert entry["actor_id"] == "u-admin" and "10.0.0.99" in entry["detail"]
+    service.mediamtx.publisher["ground"] = ("s3", "10.0.0.99")
+    service.run_once()
+    assert not [a for a in clients["admin"].get("/edge/v1/alerts").json() if a["kind"] == "publisher_address_changed"]
+    assert clients["admin"].post(path, headers=CSRF, json={"reason": "again"}).status_code == 404
+    service.mediamtx.down = True
+    service.run_once()
+    down = next(a for a in clients["admin"].get("/edge/v1/alerts").json() if a["kind"] == "media_server_down")
+    assert clients["admin"].post(f"/edge/v1/alerts/{down['id']}/acknowledge", headers=CSRF,
+                                 json={"reason": "known"}).status_code == 409

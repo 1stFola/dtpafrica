@@ -37,6 +37,7 @@ from .mediamtx import MediaMtxUnavailable
 from .naming import iso, parse_iso, utcnow
 from .repair import RepairRefused, repair
 from .service import EdgeService
+from .store import Store
 
 MAX_WINDOW_MS = 10 * 60 * 1000
 SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
@@ -223,7 +224,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             raise HTTPException(401, {"statusCode": 401, "error": "unauthorised", "message": "token not accepted"},
                                 headers={"WWW-Authenticate": "Bearer"})
         cookie = request.cookies.get(COOKIE)
-        who = service.sessions.resolve(cookie) if cookie else None
+        who = service.sessions.resolve(cookie, service.bundle) if cookie else None
         if who is None:
             raise HTTPException(401, {"statusCode": 401, "error": "unauthorised",
                                       "message": "sign in, or present the device token"},
@@ -428,7 +429,15 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         elif usage.free < settings.disk_soft_free_bytes:
             state = "soft_limit"
         return {"freeBytes": usage.free, "totalBytes": usage.total, "softLimitFreeBytes": settings.disk_soft_free_bytes,
-                "hardLimitFreeBytes": settings.disk_hard_free_bytes, "state": state}
+                "hardLimitFreeBytes": settings.disk_hard_free_bytes, "state": state,
+                **service.watchdog.disk_outlook(usage.free)}
+
+    def refuse_at_hard_limit(what: str) -> None:
+        """Below the hard limit the space left is kept for the recordings themselves: nothing
+        new that writes files is started. Nothing is deleted to make room."""
+        if shutil.disk_usage(settings.recordings_dir).free < settings.disk_hard_free_bytes:
+            raise refusal(507, "disk_hard_limit", f"the Edge's disk is below its hard limit: no new {what} until space is freed",
+                          "an Edge admin frees space (export and remove old matches, or run retention); recording carries on until the disk is full")
 
     @app.get("/edge/v1/disk")
     def disk(_: Principal = staff):
@@ -674,6 +683,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/segments/{segment_id}/repair")
     def repair_segment(segment_id: str, _: Principal = admin):
+        refuse_at_hard_limit("repaired copies")
         try:
             return repair(settings, service.store, service.scanner, segment_id)
         except KeyError:
@@ -714,6 +724,25 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                                          _when(body.toUtc, "toUtc"), body.reason, body.ref)
         except ValueError as exc:
             raise refusal(400, "bad_hold", str(exc))
+
+    @app.post("/edge/v1/alerts/{alert_id}/acknowledge")
+    def acknowledge(alert_id: str, body: ReleaseIn, who: Principal = admin):
+        """An admin confirms a camera's new publisher address is the camera's (and not someone
+        publishing in its place). Only that alert waits for a person; the others clear themselves."""
+        row = service.store.one("SELECT * FROM alerts WHERE id = ? AND resolved_utc IS NULL", (alert_id,))
+        if row is None:
+            raise refusal(404, "unknown_alert", "no such open alert")
+        if row["kind"] != "publisher_address_changed":
+            raise refusal(409, "not_acknowledgeable", "this alert clears itself when its cause is gone")
+        detail = json.loads(row["detail"])
+        at = iso(utcnow())
+        with service.store.tx() as db:
+            db.execute("UPDATE alerts SET resolved_utc = ? WHERE id = ? AND resolved_utc IS NULL", (at, alert_id))
+            Store.log_event(db, at, "source.publisher_address", None,
+                            {"source": row["source"], "address": detail["address"], "accepted": True, "by": who.user_id})
+            audit.append(db, actor_of(who), "alert.acknowledged", "alert", alert_id, None,
+                         {"kind": row["kind"], "source": row["source"], "address": detail["address"], "reason": body.reason})
+        return service.store.one("SELECT * FROM alerts WHERE id = ?", (alert_id,))
 
     @app.post("/edge/v1/holds/{hold_id}/release")
     def release(hold_id: str, body: ReleaseIn, _: Principal = admin):
@@ -756,6 +785,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/sessions", status_code=201)
     def new_session(body: SessionIn, who: Principal = manager):
+        refuse_at_hard_limit("sessions")
         b = service.bundle
         if b is not None and b.issuer == "dtp-cloud" and b.session_id:
             # The cloud provisioned this session for this device: its id, match and mode are
@@ -920,6 +950,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.post("/edge/v1/incidents/{incident_id}/clips")
     def request_clip(incident_id: str, body: ClipIn, who: Principal = operator):
         source_or_404(body.source)
+        refuse_at_hard_limit("clips")
         job, created = lifecycle(evidence.request_clip, service.store, settings, incident_id, body.source, actor_of(who))
         return JSONResponse(job, status_code=202 if created else 200)
 
@@ -982,6 +1013,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.post("/edge/v1/evidence/{evidence_id}/export")
     def export_evidence(evidence_id: str, who: Principal = exporter):
         row = evidence_or_404(evidence_id)
+        refuse_at_hard_limit("exports")
         ok, why = evidence.released(service.store, row)
         if not ok:
             raise refusal(409, "not_released", why, "approve it once the finding is complete and rights are recorded")

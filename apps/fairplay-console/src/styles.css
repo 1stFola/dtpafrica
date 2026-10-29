@@ -64,6 +64,9 @@ textarea { min-height: 4rem; width: 100%; }
 .fp-chip--muted { color: var(--color-muted); }
 
 .fp-alerts { padding: 0 var(--space-4); }
+.fp-disk-banner { padding: var(--space-2) var(--space-4); font-weight: 600; color: #fff; }
+.fp-disk-banner--warn { background: #fbbf24; color: #111827; }
+.fp-disk-banner--critical { background: #b91c1c; }
 .fp-grid { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); grid-template-columns: 250px minmax(0, 1fr) minmax(0, 1fr) 380px;
   grid-template-areas: "sources live replay incidents" "rights calibration calibration incidents"; }
 .fp-sources { grid-area: sources; }
