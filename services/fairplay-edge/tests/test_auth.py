@@ -96,7 +96,7 @@ def test_login_and_resolve(store, bundle):
     sessions = Sessions(store)
     token, who = sessions.login(bundle, "op@dtp.test", "123456", "10.0.0.5")
     assert who.can("fairplay.incident.operate") and not who.can("fairplay.edge.admin")
-    again = sessions.resolve(token)
+    again = sessions.resolve(token, bundle)
     assert again.user_id == "u-op"
     row = store.one("SELECT id FROM operator_sessions")
     assert row["id"] != token  # only the hash is stored
@@ -123,8 +123,8 @@ def test_lockout_after_five_failures(store, bundle):
 def test_idle_session_ends(store, bundle):
     sessions = Sessions(store)
     token, _ = sessions.login(bundle, "op@dtp.test", "123456", "ip")
-    assert sessions.resolve(token, now=utcnow() + timedelta(minutes=31)) is None
-    assert sessions.resolve(token) is None  # and it stays ended
+    assert sessions.resolve(token, bundle, now=utcnow() + timedelta(minutes=31)) is None
+    assert sessions.resolve(token, bundle) is None  # and it stays ended
 
 
 def test_session_never_outlives_the_bundle(store, keys):
@@ -140,7 +140,54 @@ def test_local_disable_ends_sessions_and_refuses_sign_in(store, bundle):
     sessions = Sessions(store)
     token, _ = sessions.login(bundle, "op@dtp.test", "123456", "ip")
     sessions.disable("u-op", "device", "left the venue")
-    assert sessions.resolve(token) is None
+    assert sessions.resolve(token, bundle) is None
     with pytest.raises(AuthError):
         sessions.login(bundle, "op@dtp.test", "123456", "ip")
     assert json.loads(store.one("SELECT detail FROM events WHERE kind = 'auth.member.disabled'")["detail"])["by"] == "device"
+
+
+def _ended_because(store):
+    return json.loads(store.one("SELECT detail FROM events WHERE kind = 'auth.session.ended' ORDER BY rowid DESC")["detail"])["reason"]
+
+
+def test_someone_dropped_from_the_new_bundle_is_signed_out(store, keys):
+    private, trusted = keys
+    first = verify_bundle(make_bundle(private), trusted, allow_dev=True)
+    sessions = Sessions(store)
+    token, _ = sessions.login(first, "op@dtp.test", "123456", "ip")
+    without = verify_bundle(make_bundle(private, members=[
+        {"userId": "u-view", "email": "view@dtp.test", "name": "Viewer", "permissions": [], "pinHash": hash_pin("654321")}]),
+        trusted, allow_dev=True)
+    assert sessions.resolve(token, without) is None
+    assert _ended_because(store) == "not_in_current_bundle"
+    assert sessions.resolve(token, first) is None  # ended for good, not just while that bundle is loaded
+
+
+def test_a_permission_the_new_bundle_drops_is_gone_at_once_and_one_it_adds_waits(store, keys):
+    private, trusted = keys
+    member = {"userId": "u-op", "email": "op@dtp.test", "name": "Operator", "pinHash": hash_pin("123456")}
+    first = verify_bundle(make_bundle(private, members=[
+        {**member, "permissions": ["fairplay.incident.operate", "fairplay.incident.review"]}]), trusted, allow_dev=True)
+    sessions = Sessions(store)
+    token, _ = sessions.login(first, "op@dtp.test", "123456", "ip")
+    narrower = verify_bundle(make_bundle(private, members=[
+        {**member, "permissions": ["fairplay.incident.operate", "fairplay.edge.admin"]}]), trusted, allow_dev=True)
+    who = sessions.resolve(token, narrower)
+    assert who.can("fairplay.incident.operate") and not who.can("fairplay.incident.review")
+    assert not who.can("fairplay.edge.admin")  # added in the cloud: takes a fresh sign-in
+    assert not sessions.resolve(token, first).can("fairplay.incident.review")  # stays removed
+    narrowed = json.loads(store.one("SELECT detail FROM events WHERE kind = 'auth.session.narrowed'")["detail"])
+    assert narrowed["removed"] == ["fairplay.incident.review"] and narrowed["bundleId"] == narrower.bundle_id
+
+
+def test_no_bundle_or_an_expired_one_signs_everyone_out(store, keys):
+    private, trusted = keys
+    bundle = verify_bundle(make_bundle(private), trusted, allow_dev=True)
+    sessions = Sessions(store)
+    token, _ = sessions.login(bundle, "op@dtp.test", "123456", "ip")
+    assert sessions.resolve(token, None) is None
+    assert _ended_because(store) == "no_current_bundle"
+    other, _ = sessions.login(bundle, "view@dtp.test", "654321", "ip")
+    stale = verify_bundle(make_bundle(private, hours=1, issued=utcnow() - timedelta(hours=2)), trusted,
+                          allow_dev=True, now=utcnow() - timedelta(hours=2))
+    assert sessions.resolve(other, stale) is None

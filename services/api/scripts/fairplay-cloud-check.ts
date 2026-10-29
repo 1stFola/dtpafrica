@@ -144,6 +144,15 @@ async function main() {
   const again = await sessions.bundleFor(id1, { contentHash: issued.contentHash, expiresAt: signed.bundle.expiresAt });
   check("an unchanged bundle is not re-signed", (again as { unchanged?: boolean }).unchanged === true);
   check("a device gets only its own session's bundle", (await sessions.bundleFor(id2)).bundle?.bundle.session.id === sC.id);
+  await prisma.adminUser.update({ where: { id: assessor.id }, data: { roleId: await role("fairplay_operator") } });
+  const demoted = await sessions.bundleFor(id1, { contentHash: issued.contentHash, expiresAt: signed.bundle.expiresAt });
+  check("a permission taken off the member's role since is left out of the next bundle",
+    demoted.bundle?.bundle.members[0]?.permissions.join() === "fairplay.incident.operate" && demoted.contentHash !== issued.contentHash,
+    demoted.bundle?.bundle.members);
+  await prisma.adminUser.update({ where: { id: assessor.id }, data: { roleId: await role("match_recorder") } });
+  check("a member whose role holds none of their venue permissions is left out",
+    (await sessions.bundleFor(id1)).bundle?.bundle.members.length === 0);
+  await prisma.adminUser.update({ where: { id: assessor.id }, data: { roleId: await role("fairplay_assessor") } });
 
   console.log("\nSync: idempotent, ordered, owned");
   const t0 = "2026-10-28T15:00:00.000Z";

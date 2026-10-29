@@ -100,3 +100,37 @@ def test_alert_is_opened_once_while_open(settings, store, mtx):
     dog.poll()
     dog.poll()
     assert store.one("SELECT COUNT(*) AS n FROM alerts WHERE kind = 'media_server_down'")["n"] == 1
+
+
+def test_disk_outlook_turns_the_fill_rate_into_minutes(settings, store, mtx):
+    gb = 1024**3
+    dog = Watchdog(replace(settings, disk_hard_free_bytes=5 * gb), store, mtx)
+    assert dog.disk_outlook(20 * gb, now=0)["minutesToHardLimit"] is None  # no samples yet
+    dog._disk_samples.extend([(0.0, 21 * gb), (30.0, 20 * gb + gb // 2)])
+    assert dog.disk_outlook(20 * gb, now=30)["minutesToHardLimit"] is None  # under a minute of samples
+    dog._disk_samples.append((120.0, 20 * gb))  # 1 GB in two minutes
+    outlook = dog.disk_outlook(20 * gb, now=120)
+    assert outlook["minutesToHardLimit"] == 30 and outlook["minutesToFull"] == 40
+    dog._disk_samples.append((180.0, 21 * gb))  # space freed: not filling
+    assert dog.disk_outlook(21 * gb, now=180)["minutesToHardLimit"] is None
+    assert dog.disk_outlook(21 * gb, now=180 + 2000)["fillBytesPerSecond"] is None  # samples older than ten minutes
+
+
+def test_a_camera_publishing_from_a_new_address_is_raised_until_an_admin_confirms(settings, store, mtx):
+    from fairplay_edge.watchdog import known_publishers
+    dog = Watchdog(settings, store, mtx)
+    mtx.ready = {"ground": True}
+    mtx.publisher["ground"] = ("s1", "10.0.0.21")
+    dog.poll()
+    assert known_publishers(store, "ground") == {"10.0.0.21"}  # the first address is the baseline
+    assert _open(store, "publisher_address_changed", "ground") is None
+    mtx.publisher["ground"] = ("s2", "10.0.0.21")  # reconnects from the same camera
+    dog.poll()
+    assert _open(store, "publisher_address_changed", "ground") is None
+    mtx.publisher["ground"] = ("s3", "10.0.0.99")  # someone else publishing as the ground camera
+    dog.poll()
+    dog.poll()
+    alert = _open(store, "publisher_address_changed", "ground")
+    assert alert["severity"] == "warning" and "10.0.0.99" in alert["detail"]
+    assert known_publishers(store, "ground") == {"10.0.0.21"}  # not known until an admin says so
+    assert store.one("SELECT COUNT(*) AS n FROM alerts WHERE kind = 'publisher_address_changed'")["n"] == 1

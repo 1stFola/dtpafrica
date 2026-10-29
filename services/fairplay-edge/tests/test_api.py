@@ -305,3 +305,19 @@ def test_missing_recording_is_a_404(op):
     _login(op)
     r = op.get("/edge/v1/media/ground?start=2026-10-27T14:00:00Z&durationMs=10000")
     assert r.status_code == 404 and r.json()["error"] == "no_recording"
+
+
+def test_below_the_hard_limit_nothing_new_that_writes_files_starts(settings, fake_probe):
+    from dataclasses import replace
+    full = EdgeService(replace(settings, disk_soft_free_bytes=10**18, disk_hard_free_bytes=10**18))
+    full.mediamtx = FakeMediaMtx()
+    full.watchdog.mediamtx = full.mediamtx
+    with TestClient(create_app(full, run_loop=False)) as c:
+        full.run_once()
+        r = c.post("/edge/v1/sessions", json={"label": "x"}, headers=AUTH)
+        assert r.status_code == 507 and r.json()["error"] == "disk_hard_limit"
+        assert "recording carries on" in r.json()["remediation"]
+        disk = c.get("/edge/v1/disk", headers=AUTH).json()
+        assert disk["state"] == "hard_limit" and "minutesToHardLimit" in disk
+        kinds = {a["kind"]: a["severity"] for a in c.get("/edge/v1/health", headers=AUTH).json()["openAlerts"]}
+        assert kinds.get("disk_hard_limit") == "critical"

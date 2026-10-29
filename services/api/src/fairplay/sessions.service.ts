@@ -180,7 +180,8 @@ export class FairPlaySessionsService {
     }
     const sessions = await this.prisma.fairPlaySession.findMany({
       where: { deviceId: device.deviceId, endedAt: null },
-      include: { members: { include: { adminUser: { select: { email: true, name: true, isActive: true } } } } },
+      include: { members: { include: { adminUser: { select: { email: true, name: true, isActive: true,
+        role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } } } } } },
     });
     if (!sessions.length) return { bundle: null, reason: "no open session is assigned to this device" };
     const now = Date.now();
@@ -189,10 +190,16 @@ export class FairPlaySessionsService {
       return at ? Math.abs(new Date(at).getTime() - now) : Number.MAX_SAFE_INTEGER;
     };
     const session = [...sessions].sort((a, b) => kickoff(a) - kickoff(b) || b.createdAt.getTime() - a.createdAt.getTime())[0];
+    // The venue never gets more than the account holds now, not just when the member was added:
+    // a permission taken off the role since is left out of the next bundle.
     const members: BundleMember[] = session.members
       .filter((m) => m.pinHash && m.adminUser.isActive)
-      .map((m) => ({ userId: m.adminUserId, email: m.adminUser.email.trim().toLowerCase(), name: m.adminUser.name ?? m.adminUser.email,
-        permissions: [...m.permissions].sort(), pinHash: m.pinHash! }))
+      .map((m) => {
+        const held = roleSlugs(m.adminUser.role);
+        return { userId: m.adminUserId, email: m.adminUser.email.trim().toLowerCase(), name: m.adminUser.name ?? m.adminUser.email,
+          permissions: m.permissions.filter((p) => held.has(p)).sort(), pinHash: m.pinHash! };
+      })
+      .filter((m) => m.permissions.length)
       .sort((a, b) => (a.userId < b.userId ? -1 : 1));
     const sessionPart = { id: session.id, label: session.label, matchId: session.matchId, mode: session.mode };
     const contentHash = sha256Hex(canonical({ session: sessionPart, members }));

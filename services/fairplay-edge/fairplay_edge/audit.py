@@ -39,6 +39,7 @@ ACTIONS = (
     "outbox.parked",
     "evidence.uploaded",
     "session.opened_from_bundle",
+    "alert.acknowledged",
 )
 
 

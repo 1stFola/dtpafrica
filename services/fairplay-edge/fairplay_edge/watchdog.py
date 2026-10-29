@@ -10,6 +10,8 @@ Alert kinds (one open alert per kind and source at a time):
   recording_stalled   critical   publishing, but nothing written
   disk_soft_limit     warning    free space below the soft threshold
   disk_hard_limit     critical   free space below the hard threshold
+  publisher_address_changed  warning  a source publishing from an address it has not used before;
+                      stays open until an Edge admin acknowledges it (the address is then known)
 plus the scanner's segment_partial / segment_corrupt / segment_missing / segment_mismatch.
 """
 
@@ -18,6 +20,8 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -27,6 +31,8 @@ from .naming import iso, parse_iso, utcnow
 from .store import Store, new_id
 
 log = logging.getLogger("fairplay.watchdog")
+
+DISK_RATE_WINDOW_S = 600
 
 
 @dataclass
@@ -50,6 +56,10 @@ class Watchdog:
         self.store = store
         self.mediamtx = mediamtx
         self.snapshot = Snapshot()
+        # (monotonic seconds, free bytes) for the fill rate the console turns into minutes left.
+        self._disk_samples: deque[tuple[float, int]] = deque(maxlen=600)
+        # The publisher connection last checked per source, so each connection is looked up once.
+        self._publisher_checked: dict[str, str] = {}
 
     def poll(self) -> Snapshot:
         now = utcnow()
@@ -67,12 +77,15 @@ class Watchdog:
 
         usage = shutil.disk_usage(self.settings.recordings_dir)
         snap.disk_free_bytes, snap.disk_total_bytes = usage.free, usage.total
+        self._disk_samples.append((time.monotonic(), usage.free))
         self._disk(usage.free, at)
 
         if snap.media_server_up:
             for source in self.settings.sources:
                 status = snap.paths.get(source.name)
                 self._source(source, bool(status and status.ready), status, now)
+                if status and status.ready:
+                    self._publisher(source.name, status, at)
         self.snapshot = snap
         return snap
 
@@ -154,7 +167,46 @@ class Watchdog:
             if self.store.open_alert("recording_stalled", source.name, "critical", at, state):
                 log.warning(json.dumps({"alert": "recording_stalled", "source": source.name}))
 
+    # ── publisher address ─────────────────────────────────────────────────
+    def _publisher(self, source: str, status: PathStatus, at: str) -> None:
+        """Camera ingest is plaintext on the venue LAN (F2 in the Phase 5 review): someone with a
+        camera's password can publish in its place whenever it drops. An address the source has
+        never published from is raised for an admin to confirm; the first one is the baseline."""
+        if not status.source_id or self._publisher_checked.get(source) == status.source_id:
+            return
+        try:
+            address = self.mediamtx.publisher_address(status)
+        except MediaMtxUnavailable:
+            return
+        self._publisher_checked[source] = status.source_id
+        if address is None:
+            return
+        known = known_publishers(self.store, source)
+        if address in known:
+            return
+        with self.store.tx() as db:
+            Store.log_event(db, at, "source.publisher_address", None,
+                            {"source": source, "address": address, "accepted": not known})
+        if known and self.store.open_alert("publisher_address_changed", source, "warning", at,
+                                           {"address": address, "known": sorted(known)}):
+            log.warning(json.dumps({"alert": "publisher_address_changed", "source": source, "address": address}))
+
     # ── disk ──────────────────────────────────────────────────────────────
+    def disk_outlook(self, free: int, now: float | None = None) -> dict:
+        """How fast the disk is filling over the last ten minutes, and the minutes left at that
+        rate before the hard limit and before it is full. None until there is a minute of samples,
+        and while it is not filling."""
+        now = time.monotonic() if now is None else now
+        recent = [(t, f) for t, f in self._disk_samples if now - t <= DISK_RATE_WINDOW_S]
+        rate = None
+        if len(recent) >= 2 and recent[-1][0] - recent[0][0] >= 60:
+            rate = (recent[0][1] - recent[-1][1]) / (recent[-1][0] - recent[0][0])
+        if rate is None or rate <= 0:
+            return {"fillBytesPerSecond": rate, "minutesToHardLimit": None, "minutesToFull": None}
+        return {"fillBytesPerSecond": round(rate),
+                "minutesToHardLimit": max(0, round((free - self.settings.disk_hard_free_bytes) / rate / 60)),
+                "minutesToFull": round(free / rate / 60)}
+
     def _disk(self, free: int, at: str) -> None:
         s = self.settings
         if free < s.disk_hard_free_bytes:
@@ -165,3 +217,14 @@ class Watchdog:
             self.store.open_alert("disk_soft_limit", None, "warning", at, {"freeBytes": free})
         else:
             self.store.resolve_alert("disk_soft_limit", None, at)
+
+
+def known_publishers(store: Store, source: str) -> set[str]:
+    """Addresses a source has published from that were accepted: the first, and any an admin confirmed."""
+    rows = store.query("SELECT detail FROM events WHERE kind = 'source.publisher_address'")
+    out = set()
+    for row in rows:
+        d = json.loads(row["detail"])
+        if d.get("source") == source and d.get("accepted"):
+            out.add(d["address"])
+    return out

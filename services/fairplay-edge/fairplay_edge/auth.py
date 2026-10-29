@@ -266,7 +266,10 @@ class Sessions:
         return token, Principal(kind="operator", user_id=member.user_id, email=member.email, name=member.name,
                                 permissions=member.permissions, session_id=_token_hash(token), bundle_dev=bundle.dev)
 
-    def resolve(self, token: str, now: datetime | None = None) -> Principal | None:
+    def resolve(self, token: str, bundle: Bundle | None, now: datetime | None = None) -> Principal | None:
+        """The signed-in person, held to the bundle loaded now: someone the current bundle no longer
+        lists is signed out, and a permission it no longer gives them is gone at once. A permission
+        it adds takes a fresh sign-in."""
         now = now or utcnow()
         row = self.store.one("SELECT * FROM operator_sessions WHERE id = ? AND revoked_utc IS NULL", (_token_hash(token),))
         if row is None or parse_iso(row["expires_utc"]) <= now:
@@ -277,11 +280,24 @@ class Sessions:
         if self.store.one("SELECT 1 FROM local_disabled WHERE user_id = ?", (row["user_id"],)):
             self.revoke(row["id"], "disabled", now)
             return None
+        if bundle is None or bundle.expires_utc <= now:
+            self.revoke(row["id"], "no_current_bundle", now)
+            return None
+        member = next((m for m in bundle.members if m.user_id == row["user_id"]), None)
+        if member is None:
+            self.revoke(row["id"], "not_in_current_bundle", now)
+            return None
+        held = tuple(json.loads(row["permissions"]))
+        permissions = tuple(p for p in held if p in member.permissions)
         with self.store.tx() as db:
-            db.execute("UPDATE operator_sessions SET last_seen_utc = ? WHERE id = ?", (iso(now), row["id"]))
+            db.execute("UPDATE operator_sessions SET last_seen_utc = ?, permissions = ? WHERE id = ?",
+                       (iso(now), json.dumps(list(permissions)), row["id"]))
+            if permissions != held:
+                Store.log_event(db, iso(now), "auth.session.narrowed", None,
+                                {"userId": row["user_id"], "removed": [p for p in held if p not in permissions],
+                                 "bundleId": bundle.bundle_id})
         return Principal(kind="operator", user_id=row["user_id"], email=row["email"], name=row["name"],
-                         permissions=tuple(json.loads(row["permissions"])), session_id=row["id"],
-                         bundle_dev=bool(row["bundle_dev"]))
+                         permissions=permissions, session_id=row["id"], bundle_dev=bool(row["bundle_dev"]))
 
     def revoke(self, session_id: str, reason: str, now: datetime | None = None) -> None:
         at = iso(now or utcnow())

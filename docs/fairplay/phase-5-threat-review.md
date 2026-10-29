@@ -251,6 +251,73 @@ certificate for any site that reviewer devices will trust.
 
 ---
 
+## 5.5, part 1: the high findings fixed
+
+Branch `feat/fairplay-phase-5-highs`. The decisions listed above are still open, and
+none of these fixes depends on them.
+
+**F1, fixed in both halves.**
+- Cloud: `bundleFor` signs only the venue permissions the member's role still holds.
+  A member left with none is dropped. The bundle's content hash changes, so the Edge's
+  next five-minute fetch installs the new bundle.
+- Edge: every request checks the sign-in against the bundle loaded now (`auth.py`,
+  `Sessions.resolve`):
+  - someone the bundle no longer lists is signed out (`not_in_current_bundle`);
+  - with no valid bundle, everyone is signed out (`no_current_bundle`);
+  - a permission the bundle dropped is gone at once, with an `auth.session.narrowed`
+    event;
+  - a permission it adds needs a fresh sign-in.
+- Still open: the 36 h offline window, which is the decision above.
+
+**F3, fixed.**
+- The console shows a full-width banner: amber below the soft limit, red below the hard
+  limit. It gives the free space and, once the Edge has a minute of samples, the time
+  left at the current fill rate.
+- The disk chip turns red at the hard limit.
+- Below the hard limit the Edge refuses new sessions, clips, exports and repaired copies
+  with `507 disk_hard_limit`, and the console's "New session" button is disabled.
+  Recording carries on until the disk is full, and nothing is deleted to make room.
+
+**F2, software half done; the network half needs the venue.**
+- The watchdog asks MediaMTX where each publisher connects from, once per connection.
+  It checks the RTSP session's `remoteAddr`; the API was confirmed on MediaMTX 1.21.3.
+- A source's first address is its baseline. Any other address opens a
+  `publisher_address_changed` warning on that source's card: "someone else may be
+  sending this feed".
+- It stays open until an Edge admin confirms the address with a reason
+  (`POST /edge/v1/alerts/{id}/acknowledge`). The confirmation goes into the
+  hash-chained audit log (`alert.acknowledged`), and the address becomes known.
+- Encrypted ingest or a closed camera network still depends on the kit (blocker B16).
+
+**Checks run** (29 Oct 2026):
+
+| Check | Result |
+|---|---|
+| Edge pytest in the Edge image | 243 passed, 1 skipped (7 new: three bundle-change sign-in tests, disk outlook, publisher address, hard-limit refusals, admin confirmation) |
+| `fairplay:cloudcheck` on a fresh scratch DB (`fp5_scratch`) | 70/70 (2 new: a permission taken off the role; a member left with none) |
+| The same check run again on the same DB | 69/70. The usage check counts every row in the database, so the gate needs a fresh database each run. This was already true; it is not caused by these changes. |
+| `fairplay:e2echeck` on a fresh scratch DB (`fp5_e2e_scratch`) | 26/26, including the venue sign-in with the cloud PIN |
+| `vitest src/fairplay` (API) | 25 passed |
+| console `tsc`, `vitest`, `vite build` | clean; 20 passed (3 new); built |
+| `pnpm typecheck` (repository) | clean |
+
+**Browser QA** of the venue console. The rebuilt Edge image ran a synthetic stack
+(project `fp5`, WAN cut, LAN relay) with real MediaMTX and the Phase 3 QA bundle:
+- *Soft limit:* the amber banner showed free space and "about 29 days" left. The first
+  build printed "38863 min", so long times are now rounded down to hours or days.
+- *Hard limit:* the red banner showed, the Edge was reported critical, and recording
+  carried on. A new session request got 507 with its remediation. "New session" was
+  disabled with an explanation.
+- *New address:* the ground feed was stopped and republished from another container
+  (172.31.250.2, then .6). Real MediaMTX reported the new address, and the card showed
+  the warning with "Confirm address". The admin confirmed it with a reason, the alert
+  closed, and the audit entry carries the admin, the address and the reason.
+- *Role removed:* a bundle without the admin was installed while they were signed in.
+  The Edge loaded it, and the admin's next request got 401, which put the console back
+  on the sign-in page. The QA bundle was restored afterwards.
+
+---
+
 ## Handover (prompt pack section K)
 
 ```text

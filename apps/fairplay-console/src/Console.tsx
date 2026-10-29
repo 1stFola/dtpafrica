@@ -6,6 +6,7 @@ import {
   type SessionDetail, type SourceView, type SourceWindow, type SyncTest,
 } from "./api";
 import { ShadowBanner } from "./Banner";
+import { diskMessage } from "./disk";
 import { can, IncidentPanel, RightsPanel } from "./Review";
 import { LivePlayer, type LiveState } from "./hls";
 import { actionFor, nextSpeed, SHORTCUTS, type Action } from "./keys";
@@ -323,6 +324,12 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     setSync(await get<SyncTest>(`/edge/v1/sessions/${sessionId}/sync-test?at=${encodeURIComponent(toIso(at))}`));
   };
 
+  const confirmPublisher = async (alertId: string, source: string) => {
+    const reason = window.prompt(`Confirm the ${source} feed's new address is the venue's own camera or encoder. Why did it change?`)?.trim();
+    if (!reason || reason.length < 3) return;
+    await post(`/edge/v1/alerts/${alertId}/acknowledge`, { reason });
+  };
+
   const createSession = async () => {
     const label = window.prompt("Session label (e.g. the fixture)")?.trim();
     if (!label) return;
@@ -371,6 +378,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     health?.clock.ntpState !== "synced" ? "Edge clock sync is not confirmed: compare with the match console before relying on wall times." : null,
     health?.clock.recentSteps.length ? `The Edge clock jumped ${health.clock.recentSteps[0].step_ms} ms at ${clockLabel(toMs(health.clock.recentSteps[0].edge_utc))}.` : null,
   ].filter(Boolean) as string[];
+  const diskWarning = health ? diskMessage(health.disk) : null;
 
   return (
     <div className="fp-app">
@@ -385,7 +393,10 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
               {sessions.map((s) => <option key={s.id} value={s.id}>{s.label}{s.ended_utc ? " (ended)" : ""}</option>)}
             </select>
           </label>
-          {can(me, "fairplay.session.manage") && <button className="fp-btn" onClick={createSession}>New session</button>}
+          {can(me, "fairplay.session.manage") && (
+            <button className="fp-btn" onClick={createSession} disabled={health?.disk.state === "hard_limit"}
+                    title={health?.disk.state === "hard_limit" ? "The disk is below its hard limit: free space first" : undefined}>New session</button>
+          )}
           {session && <span className="fp-chip">{session.mode === "shadow" ? "Shadow" : "Post-match"}</span>}
         </div>
         <div className="fp-status" aria-live="polite">
@@ -394,11 +405,17 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
           <span className={`fp-chip fp-chip--${health?.status ?? "starting"}`}>Edge {health?.status ?? "…"}</span>
           <span className={`fp-chip ${cloud?.parked ? "fp-chip--critical" : "fp-chip--muted"}`}
                 title={cloud?.note ?? cloud?.lastError ?? undefined}>Cloud: {cloudLabel}</span>
-          <span className={`fp-chip ${health?.disk.state === "ok" ? "" : "fp-chip--warn"}`}>Disk {health ? `${Math.round(health.disk.freeBytes / 1e9)} GB free` : "…"}</span>
+          <span className={`fp-chip ${health?.disk.state === "hard_limit" ? "fp-chip--critical" : health?.disk.state === "soft_limit" ? "fp-chip--warn" : ""}`}>Disk {health ? `${Math.round(health.disk.freeBytes / 1e9)} GB free` : "…"}</span>
           <span className="fp-me">{me.name}</span>
           <button className="fp-btn" onClick={onSignedOut}>Sign out</button>
         </div>
       </header>
+
+      {diskWarning && (
+        <div className={`fp-disk-banner fp-disk-banner--${health!.disk.state === "hard_limit" ? "critical" : "warn"}`} role="alert">
+          {diskWarning}
+        </div>
+      )}
 
       {(clockWarnings.length > 0 || health?.mediaServer.up === false) && (
         <div className="fp-alerts" role="status">
@@ -428,7 +445,16 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
                   <button className="fp-btn" onClick={() => void switchSource(s.name)} aria-pressed={replay?.source === s.name}
                           aria-keyshortcuts={s.role === "ground" ? "G" : s.role === "drone" ? "D" : "P"}>Replay</button>
                 </div>
-                {s.openAlerts.map((a) => <p key={a.id} className={a.severity === "critical" ? "fp-error" : "fp-warn"}>{a.kind.replaceAll("_", " ")}</p>)}
+                {s.openAlerts.map((a) => (
+                  <p key={a.id} className={a.severity === "critical" ? "fp-error" : "fp-warn"}>
+                    {a.kind === "publisher_address_changed"
+                      ? "Publishing from a new address: someone else may be sending this feed. Check the camera before trusting new footage."
+                      : a.kind.replaceAll("_", " ")}
+                    {a.kind === "publisher_address_changed" && can(me, "fairplay.edge.admin") && (
+                      <> <button className="fp-btn" onClick={() => void confirmPublisher(a.id, s.label)}>Confirm address</button></>
+                    )}
+                  </p>
+                ))}
               </article>
             );
           })}

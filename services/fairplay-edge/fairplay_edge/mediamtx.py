@@ -24,6 +24,13 @@ class PathStatus:
     codec_props: tuple[dict, ...]
     bytes_received: int
     readers: int
+    source_id: str | None = None
+
+
+# The API collection holding each kind of publisher, by the `source.type` paths/list reports.
+# Checked against MediaMTX 1.21.3 for RTSP; the others follow the same API naming.
+PUBLISHER_COLLECTIONS = {"rtspSession": "rtspsessions", "rtspsSession": "rtspssessions", "rtmpConn": "rtmpconns",
+                         "rtmpsConn": "rtmpsconns", "srtConn": "srtconns"}
 
 
 class MediaMtx:
@@ -55,6 +62,7 @@ class MediaMtx:
                 ready=bool(item.get("ready")),
                 ready_time=item.get("readyTime"),
                 source_type=source.get("type"),
+                source_id=source.get("id"),
                 tracks=tuple(item.get("tracks") or ()),
                 codec_props=tuple(
                     {"codec": t.get("codec"), **(t.get("codecProps") or {})} for t in tracks2 if isinstance(t, dict)
@@ -63,6 +71,18 @@ class MediaMtx:
                 readers=len(item.get("readers") or ()),
             )
         return out
+
+    def publisher_address(self, status: PathStatus) -> str | None:
+        """The IP address a path's publisher connects from, or None if it cannot be told."""
+        collection = PUBLISHER_COLLECTIONS.get(status.source_type or "")
+        if not collection or not status.source_id:
+            return None
+        response = self._get(f"{self.api_url}/v3/{collection}/get/{status.source_id}")
+        if response.status_code != 200:
+            return None
+        remote = str(response.json().get("remoteAddr") or "")
+        host = remote.rsplit(":", 1)[0] if ":" in remote else remote
+        return host.strip("[]") or None
 
     def spans(self, path: str, start: datetime | None = None, end: datetime | None = None) -> list[dict]:
         """Recorded timespans, as MediaMTX's playback server reports them. 404 means none."""
