@@ -34,8 +34,8 @@ decide (see "Proposed scope for 5.5").
 |---|---|---|---|
 | WAN down mid-match for ≥ 30 min (no AWS, YouTube or R2) | **covered (synthetic)** | Phase 1: 30-minute drill on a Docker network with no route out, `verify-all` 121/121. Phase 3: full run under the WAN cut. Phase 4 e2e: an incident reviewed and approved during the outage, then a restarted sender catching up with nothing lost. Uploads wait out the outage (`test_an_outage_keeps_every_upload_and_they_go_when_it_ends`). Nothing on the Edge depends on YouTube. | hardware |
 | Drone feed drops and reconnects; ground continues | **covered (synthetic)** | Phase 1: drone stopped 28.6 s, ground unaffected, feed interval closed, alert raised. Phase 2: the drone's calibration is flagged `stale_after_reconnect` until recalibrated. | hardware |
-| MediaMTX restarted during a match; originals not silently overwritten | **partly** | Segment names carry microseconds (`mediamtx_config.py:25`), so a restart starts a new file. Finalised segments are made read-only (`manifest.py:201`) and re-hashed before any clip or upload (`evidence.verify_file`). Phase 2 observed that a restart breaks every recording and flags both cameras stale. | a drill that restarts MediaMTX mid-recording and measures the loss and the gap shown (5.2) |
-| Edge API restart; SQLite recovery; outbox resumes | **covered (synthetic), one gap** | WAL with `synchronous=FULL` (`store.py:541-542`). Phase 1: restart keeps all hashes. Phase 3: SIGKILL then replay of the incident window, audit chain whole. Phase 4 e2e: a restarted sender catches up. | Phase 1 found that `restart: unless-stopped` does not bring back a container that was `docker kill`ed. A crash inside the process does restart. A kill during an active sync batch is not drilled (5.2). |
+| MediaMTX restarted during a match; originals not silently overwritten | **covered (synthetic), 5.2 D3** | Segment names carry microseconds (`mediamtx_config.py:25`), so a restart starts a new file. Finalised segments are made read-only (`manifest.py:201`) and re-hashed before any clip or upload (`evidence.verify_file`). Phase 2 observed that a restart breaks every recording and flags both cameras stale. | drilled in 5.2 (D3): about 3 s lost per camera, shown as a gap; no original rewritten |
+| Edge API restart; SQLite recovery; outbox resumes | **covered (synthetic), 5.2 D4** | WAL with `synchronous=FULL` (`store.py:541-542`). Phase 1: restart keeps all hashes. Phase 3: SIGKILL then replay of the incident window, audit chain whole. Phase 4 e2e: a restarted sender catches up. | Phase 1 found that `restart: unless-stopped` does not bring back a container that was `docker kill`ed. A crash inside the process does restart. A kill during an active sync batch was drilled in 5.2 (D4): the batch was sent again and answered replayed. |
 | SSD reaches soft and hard thresholds, with a conspicuous warning | **open: F3** | thresholds and alerts exist (`watchdog.py:160-167`, `test_disk_thresholds`) | see F3: the warning is a chip, and the hard limit stops nothing |
 | R2 upload begins, fails, resumes without duplicate evidence records | **mostly covered** | Unique `(evidenceId, kind)` in the cloud (`schema.prisma`, `FairPlayEvidenceObject`). Unit tests: a corrupted upload is sent again; a cloud not ready yet is asked again later. Phase 4 e2e: a corrupted object is refused, removed and uploaded properly; a duplicate upload sends nothing. | a PUT cut halfway through the transfer (5.3) |
 | Invalid pairing token | **covered** | e2e: unknown token refused; the bootstrap token works once (`devices.service.ts:73-78`) | — |
@@ -43,9 +43,9 @@ decide (see "Proposed scope for 5.5").
 | Replay URL guessed | **covered** | Edge media and evidence need the session cookie. Organisers get a 404 for withheld evidence. Cloud evidence keys contain a UUID and are read only through a 5-minute audited URL. | — |
 | Actor role changed during the match | **open: F1** | — | see F1 |
 | Cross-match access blocked | **partly: F4, F5** | the cloud refuses a wrong-match or wrong-device sync (e2e; `sync.service.ts:186-215`) | see F4, F5 |
-| Console laptop sleeps or refreshes; recorder carries on | **covered by design, not drilled** | recording is MediaMTX's alone and never waits on the console. Sessions time out after 30 idle minutes, so a laptop that slept longer signs in again. | a drill: sleep or refresh during recording, check nothing is lost (5.2) |
+| Console laptop sleeps or refreshes; recorder carries on | **covered (synthetic), 5.2 D1** | recording is MediaMTX's alone and never waits on the console. Sessions time out after 30 idle minutes, so a laptop that slept longer signs in again. | drilled in 5.2 (D1): a refresh kept the sign-in; after 34 min asleep the console signed in again; no gap |
 | No hardware time sync; gross drone offset | **partly: F11** | The console warns that clock sync is not confirmed. Clock steps over 1 s are raised (`timing.py:375`). Uncalibrated sources carry ±3 s and calibrations above 500 ms are flagged. | see F11 |
-| Power interruption and recovery (UPS) | **partly** | WAL `synchronous=FULL`; MediaMTX's recovery point is one part (1 s; 0.29 s measured in Phase 1); container kill and restart tested | No host power cut has been simulated. Whether Docker starts on boot is host configuration. UPS capability is unknown: a **hardware assumption, escalated**, not designed around (5.2 simulates; a real drill needs the kit). |
+| Power interruption and recovery (UPS) | **partly** | WAL `synchronous=FULL`; MediaMTX's recovery point is one part (1 s; 0.29 s measured in Phase 1); container kill and restart tested | No host power cut has been simulated. Whether Docker starts on boot is host configuration. UPS capability is unknown: a **hardware assumption, escalated**, not designed around (5.2 D5 simulated it with every container killed at once; a real drill needs the kit). |
 
 ## Security requirements
 
@@ -444,6 +444,152 @@ RISKS, ROLLBACK, NEXT GATE
 - Steps to revert safely: revert the commit. An older Edge build refuses a v5 database rather than guess, so set `schema_version` back to 4 first; the two new tables are then ignored
 - Human approvals required: the four open decisions; the R2 bucket, deploy and signing key as before
 - Proposed next phase: 5.2 failure drills, or the F7/F9/F10/F12–F19 hardening group
+```
+
+---
+
+## 5.2: the failure drills
+
+Branch `feat/fairplay-phase-5-drills`. One fixture, `fixtures/run_drills.py`, runs the
+Edge-side drills in sequence. It writes a drill log (`drills.md`, and `drills` in
+`results.json`) with, for each drill:
+- the fault, and when it was seen;
+- when service came back, and the recovery time (RTO);
+- what was lost (the recovery point, RPO);
+- any step a person had to take.
+
+Nothing in the Edge itself changed.
+
+**How it runs.**
+- The stack runs on the cut network of `compose.wan-outage.yaml`, with real MediaMTX, two
+  synthetic cameras, the LAN relay and a stand-in cloud, `drill-cloud`
+  (`compose.drills.yaml`, `fixtures/drill_cloud.py`, TEST ONLY).
+- The stand-in cloud answers the sync endpoint as the real one does:
+  - applied, the first time;
+  - replayed, for the same key and hash;
+  - a conflict, for another hash.
+- It serves HTTPS with a certificate from a CA made for the run. The Edge trusts that CA
+  through `SSL_CERT_FILE`, so the Edge's own rule (https only, except to loopback) is
+  unchanged.
+- It fsyncs every batch it takes to a file before it answers.
+- The WAN goes off when the stand-in cloud is detached from the network, so the Edge sees
+  "no route to host", as with a dead uplink.
+- Each run makes its own PIN, device token, signing key and CA, and never reuses them.
+
+**The drills.**
+- **D1, WAN off for 30 minutes.** 30 incidents are flagged during the outage. A console
+  that signed in and refreshed before the cut sleeps through it. Then the WAN returns.
+- **D2, drone drop.** The drone's publisher is stopped for 60 s, then started.
+- **D3, MediaMTX restarted.** `docker compose restart mediamtx` mid-match, which sends
+  SIGTERM with a 15 s grace period.
+- **D4, Edge killed mid-sync.** The stand-in cloud applies a 50-record batch and holds its
+  answer for 8 s. The Edge is SIGKILLed while it waits.
+- **D5, power cut.** Every venue container (MediaMTX, the Edge, the cameras and the relay)
+  is SIGKILLed at once and left off for 15 s. Then the stack is started with
+  `docker compose up -d`.
+
+**The full run: 34 passed, 0 failed.**
+- It ran on 29 Oct 2026 from 17:41 to 18:22 UTC (`drills-20261029T174120Z`), with nothing
+  else loading the machine.
+- A rehearsal with a 2-minute WAN cut, run just before it, also passed 34 of 34.
+
+| Drill | RTO | RPO | A person had to |
+|---|---|---|---|
+| D1 WAN off, 30 min | 206 s, from the WAN's return to an empty outbox | no records lost: 212 waited, and all 233 in the outbox were applied once. No footage lost. | nothing |
+| D2 drone drop, 60 s | 4.9 s, from the camera's return to recording | 59.4 s gap shown for a 60.0 s drop: nothing lost beyond the drop. The ground had no gap. | nothing |
+| D3 MediaMTX restart | 7.3 s, to both cameras recording | 3.0 s (ground) and 3.1 s (drone), each shown as a gap | nothing |
+| D4 Edge killed mid-sync | 11.2 s, to the Edge answering | no records lost, no footage lost | start the Edge (`docker compose start edge`) |
+| D5 power cut, 15 s off | 32.3 s, from the cut to both cameras recording | 20.4 s (ground) and 21.0 s (drone): the 15 s off, plus 5.4 s and 6.0 s of start-up. No records lost. | start the stack (`docker compose up -d`) |
+
+**What the checks showed.**
+- **D1:**
+  - Through the outage every record waited in the outbox, and none was marked sent.
+  - Both cameras recorded with no gap.
+  - Afterwards every record reached the cloud exactly once.
+  - The console had been idle for 34 minutes, so it was signed out. It signed in again and
+    saw both cameras recording.
+- **D3:**
+  - No original was lost, cut short or rewritten, and the restart started new files.
+  - The segments open at the restart closed cleanly as final.
+  - Every final segment re-hashed to its manifest.
+- **D4:**
+  - SQLite passed `integrity_check`, and the audit chain verified.
+  - Every incident the Edge had confirmed was still there.
+  - The 50-record batch the cloud took but never answered was sent again after the
+    restart. It came back as replayed, and nothing was applied twice.
+  - Recording carried on through the kill.
+- **D5:**
+  - Integrity, the audit chain, every confirmed incident and every queued record survived.
+  - The segments open at the cut ended on a whole fragment, so they were final: under one
+    1 s part was lost from each.
+  - Each camera shows one gap.
+
+**What the drills found.**
+- **The outbox's back-off sets the WAN recovery time.** After a 30-minute outage, records
+  waited 206 s after the WAN came back, because the sender backs off up to 5 minutes
+  (±20%). That is acceptable for post-match evidence. If records must reach the cloud
+  sooner after an outage, cap the back-off lower. It is not changed here.
+- **No `outbox_stalled` warning appeared.**
+  - The warning is raised at a failed attempt, once a record has waited more than 30
+    minutes. An outage of exactly 30 minutes ends before that.
+  - This is as designed, but it means a shorter outage shows only as the sync error in the
+    health panel.
+- **Restarting MediaMTX costs about 3 s per camera.** The loss is shown as a gap, never
+  hidden.
+- **A killed container stays down.**
+  - `restart: unless-stopped` does not bring back a container stopped by `docker kill`, as
+    Phase 1 found. A crash inside the process does restart.
+  - The risk at a venue is a person or a script killing it. The operator runbook (Phase 7)
+    should say to start it again.
+- **After a power cut, Docker must start the stack itself.**
+  - That is host configuration: Docker started at boot, and the containers' restart policy.
+  - The drill stands in for it with `docker compose up -d`.
+
+**Limits, stated plainly.**
+- A docker kill is not a power cut. The host's page cache and the disk's write cache
+  survive it. So D5 tests the software's recovery, not the file system's or the disk's.
+- A UPS, and whether the host boots and starts Docker unattended, are still hardware
+  questions for the venue kit (escalated in 5.1).
+- The stand-in cloud is not the DTP API. The real API's replay behaviour was checked
+  against a real database in Phase 4's e2e.
+
+**Checks run** (29 Oct 2026):
+
+| Check | Result |
+|---|---|
+| `python -I fixtures/run_drills.py` (30-minute WAN cut) | 34 passed, 0 failed |
+| `python -I fixtures/run_drills.py --wan-minutes 2` | 34 passed, 0 failed |
+| Edge pytest in the Edge image | 255 passed, 1 skipped (the cloud e2e, run by `fairplay:e2echeck`); 1 new |
+
+```text
+DTP FAIRPLAY | PHASE 5.2 DELIVERY
+STATUS: complete on synthetic feeds; a real power cut and a UPS need the venue kit
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: the Phase 1–4 fixture runner (Run), the cut-network overlay and LAN relay, the Edge's own tlsgen CA
+- Hardware facts actually verified: none
+- Unknowns remaining: UPS; whether the host starts Docker and the stack at boot; RTSPS or a closed camera network
+
+IMPLEMENTED
+- Code paths changed: fixtures only (run_drills.py, drill_cloud.py, two hooks in run_fixture.py); compose.drills.yaml (TEST ONLY); one unit test; no Edge code
+- APIs and migrations: none
+- Local/Cloud config: none
+
+SECURITY + COST
+- Auth and evidence changes: none. The stand-in cloud is reached over HTTPS and checks the device token; per-run secrets stay under fixtures/out (git-ignored)
+- New dependencies and license: none (standard library and the existing Edge image)
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: 34/34 on both runs. Untested: a real power cut, the disk's write cache, Docker at boot, the real cloud API in these drills
+- Measured replay/CPU/RAM/SSD outcomes: RTO and RPO per drill as in the table; docker stats in results.json
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: none. Found: the back-off sets a 3–6 minute WAN recovery time; a docker-killed container stays down
+- Steps to revert safely: revert the commit (fixtures and docs only)
+- Human approvals required: the four open decisions as before; whether to cap the outbox back-off lower
+- Proposed next phase: 5.3 storage and upload failures, or 5.4 security tests
 ```
 
 ---

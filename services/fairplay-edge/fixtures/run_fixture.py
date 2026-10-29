@@ -88,6 +88,9 @@ class Run:
         self.out = ROOT / "fixtures" / "out" / f"{scenario}-{self.started.strftime('%Y%m%dT%H%M%SZ')}"
         self.out.mkdir(parents=True)
         self.project = project
+        # Extra Compose files and variables, for scenarios built on this one (run_drills.py).
+        self.overlays: list[str] = []
+        self.extra_env: dict[str, str] = {}
         self.checks: list[dict] = []
         self.timeline: list[dict] = []
         self.measurements: dict = {}
@@ -121,6 +124,8 @@ class Run:
 
     def compose(self, *args: str, check: bool = True, capture: bool = True, timeout: float = 600) -> str:
         files = ["-f", "compose.yaml"] + (["-f", "compose.wan-outage.yaml"] if self.wan else [])
+        for overlay in self.overlays:
+            files += ["-f", overlay]
         env = {
             **__import__("os").environ,
             "FAIRPLAY_ENV_FILE": str(self.out / "fixture.env"),
@@ -130,6 +135,7 @@ class Run:
             # read-only mounts from pointing at whatever an operator left in ./auth.
             "FAIRPLAY_AUTH_DIR": str(self._empty("auth")),
             "FAIRPLAY_CONSOLE_PATH": str(self._empty("console")),
+            **self.extra_env,
         }
         cmd = ["docker", "compose", "-p", self.project, *files, "--profile", "synthetic", *args]
         result = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=capture, text=True, timeout=timeout,

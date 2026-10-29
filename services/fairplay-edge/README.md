@@ -211,6 +211,17 @@ Each writes `fixtures/out/<scenario>-<UTC>/results.json` and `log.md`, with fres
 secrets, under its own Compose project (`fpfix`), and removes its volumes afterwards unless
 `--keep` is passed. Run one at a time: they share the fixed subnet `172.31.250.0/24`.
 
+The failure drills (Phase 5.2) run in sequence on the cut network, with a stand-in cloud
+(`compose.drills.yaml`, `fixtures/drill_cloud.py`, TEST ONLY): WAN off, a drone drop,
+MediaMTX restarted, the Edge killed mid-sync, and every container killed as a power cut.
+About 50 minutes; `--wan-minutes 3` rehearses it in about 12. Besides `results.json` it
+writes `drills.md`, the drill log with each drill's recovery time and recovery point. It
+uses the built console in `apps/fairplay-console/dist` when there is one.
+
+```bash
+python -I fixtures/run_drills.py
+```
+
 ## Native install (no Docker)
 
 Possible where Docker is unsuitable (for example UDP ingest on Windows): run MediaMTX's
