@@ -1806,34 +1806,123 @@
   font-weight: 700;
   cursor: pointer;
 }
-.mcx-officialbtn.is-active {
-  border-color: #facc15;
-  background: rgba(250, 204, 21, 0.14);
-  color: #fde68a;
-}
+.mcx-officialbtn:not(:disabled):hover { border-color: #facc15; color: #fde68a; }
 .mcx-officialbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.mcx-officialpicker {
-  flex: 1 0 100%;
+/* The official's card modal: who, then the card itself, which files the event. */
+.mcx-official .mcx-prompt__label { margin-top: 0.9rem; }
+.mcx-official__roles { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.mcx-official__roles .mcx-chip { min-width: 0; padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+.mcx-official__cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}
+.mcx-official__hint { margin: 0.5rem 0 0; font-size: 0.78rem; }
+
+.mcx-cardbtn {
+  min-height: 64px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.mcx-cardbtn--yellow { background: #facc15; color: #1c1917; }
+.mcx-cardbtn--red { background: #e11d48; color: #fff; }
+.mcx-cardbtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Step 4 when the event types live in the full-screen picker. */
+.mcx-step__labelrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.mcx-step__mode {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.mcx-pickbtn {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.6rem;
-  border: 1px solid rgba(250, 204, 21, 0.35);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.55);
-}
-.mcx-officialpicker__roles { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.mcx-officialpicker__roles .mcx-chip { min-width: 0; padding: 0.45rem 0.7rem; font-size: 0.82rem; }
-.mcx-officialpicker__name {
-  min-height: 40px;
-  padding: 0 0.7rem;
-  border: 1px solid var(--mcx-line);
-  border-radius: 10px;
-  background: var(--mcx-surface);
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 76px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--mcx-home);
+  border-radius: 14px;
+  background: rgba(76, 159, 254, 0.16);
   color: var(--color-text);
   font: inherit;
+  cursor: pointer;
 }
+.mcx-pickbtn__main { font-size: 1.1rem; font-weight: 800; }
+.mcx-pickbtn__sub { font-size: 0.82rem; color: var(--color-muted); }
+.mcx-pickbtn.is-locked {
+  border-color: var(--mcx-line);
+  background: var(--mcx-surface);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Below the prompts (400), so an assist prompt or a number check opens over it. */
+.mcx-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 390;
+  display: flex;
+  flex-direction: column;
+  background: #0b1220;
+}
+.mcx-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 3px solid var(--mcx-line);
+}
+.mcx-picker__who h3 { margin: 0; font-size: 1.05rem; }
+.mcx-picker__who p {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.mcx-picker__min { color: var(--color-text); font-weight: 800; font-variant-numeric: tabular-nums; }
+.mcx-picker__close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--mcx-line);
+  border-radius: 12px;
+  background: var(--mcx-surface);
+  color: var(--color-text);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.mcx-picker__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.mcx-picker .mcx-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.6rem; }
+.mcx-picker .mcx-grid__btn { min-height: 68px; }
 
 /* --- Running score, from the logged goals --- */
 

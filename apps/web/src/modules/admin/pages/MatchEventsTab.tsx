@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EVENT_LABELS } from "../../../api/scoreboard";
 import type {
   KitColours,
@@ -36,11 +36,10 @@ import {
   type TeamOfficialRole,
 } from "@dtp/engines/team-officials";
 
-/**
- * Step 3 answered with an official instead of a shirt number. `role` is null until one is
- * picked; the whole value is null while step 3 takes a player.
- */
-export type OfficialEntry = { role: TeamOfficialRole | null; name: string };
+/** An official being named in the card modal or the edit form. `role` is null until picked. */
+type OfficialEntry = { role: TeamOfficialRole | null; name: string };
+
+const NO_OFFICIAL: OfficialEntry = { role: null, name: "" };
 
 /** The official an entry names, once a role is picked. */
 export function officialFromEntry(entry: OfficialEntry | null): TeamOfficial | null {
@@ -90,7 +89,8 @@ export function MatchEventsTab({
   captured,
   side,
   playerNumber,
-  official,
+  officialOpen,
+  onOfficialClose,
   onCapturedUsed,
   clock,
   addedInput,
@@ -110,8 +110,12 @@ export function MatchEventsTab({
   /** Null until step 2 is answered — no side is ever inherited. */
   side: Side | null;
   playerNumber: string;
-  /** Set while step 3 names a coach or other official instead of a shirt number. */
-  official: OfficialEntry | null;
+  /**
+   * The step-3 Official button was tapped: a card for a coach or other official is filed
+   * from its own modal, which names them and ends on the Yellow or Red Card.
+   */
+  officialOpen: boolean;
+  onOfficialClose: () => void;
   onCapturedUsed: () => void;
   clock: ReturnType<typeof useMatchClock>;
   addedInput: string;
@@ -151,8 +155,17 @@ export function MatchEventsTab({
     held: HeldEntry;
   } | null>(null);
 
-  const { prefs } = useFeedbackPrefs();
+  /* The official named in the card modal, fresh each time it opens. */
+  const [officialDraft, setOfficialDraft] = useState<OfficialEntry>(NO_OFFICIAL);
+  useEffect(() => {
+    if (officialOpen) setOfficialDraft(NO_OFFICIAL);
+  }, [officialOpen]);
+  /* The full-screen event picker, when that is how this recorder chose to see step 4. */
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const { prefs, update: updatePrefs } = useFeedbackPrefs();
   const playSound = useUISound({ enabled: prefs.sound, intensity: prefs.intensity });
+  const fullScreenPicker = prefs.eventPicker === "fullscreen";
 
   /* So a button can say which statistic it will also file, in the wording the
      Statistics tab uses rather than a raw key. */
@@ -184,24 +197,30 @@ export function MatchEventsTab({
   const hasSide = Boolean(side);
   const primaryNumber = parseJersey(playerNumber);
   const hasPlayerNumber = primaryNumber != null;
-  const officialMode = official != null;
-  const chosenOfficial = officialFromEntry(official);
   /* Every earlier step must be answered before step 4 unlocks: no event can be
      filed against the wrong minute, the wrong side, or no player at all. */
-  const canLog =
-    stepsEnabled &&
-    Boolean(captured) &&
-    hasSide &&
-    (officialMode ? chosenOfficial != null : hasPlayerNumber);
-  /* An official can only be shown a card, so every other button stays locked for one. */
-  const lockedForType = officialMode
-    ? (type: string) => !canLog || !OFFICIAL_EVENT_TYPES.has(type)
-    : undefined;
+  const canLog = stepsEnabled && Boolean(captured) && hasSide && hasPlayerNumber;
+  /* An official needs the minute and the side; the modal itself names them. */
+  const officialReady = stepsEnabled && Boolean(captured) && hasSide;
+  const chosenOfficial = officialFromEntry(officialDraft);
+
+  /* Once the entry resets after a filed event, the picker closes with it, so it never
+     pops open by itself half-way through the next shirt number. */
+  useEffect(() => {
+    if (!canLog) setPickerOpen(false);
+  }, [canLog]);
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPickerOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [pickerOpen]);
 
   /** Step 4 — the tap. Types needing a second player open a prompt first. */
   const addEvent = (type: string) => {
     if (!canLog || !captured || !side) return;
-    if (officialMode && !OFFICIAL_EVENT_TYPES.has(type)) return;
     if (SECOND_PLAYER_PROMPT[type]) {
       setSecondNumber("");
       setPendingType(type);
@@ -226,9 +245,7 @@ export function MatchEventsTab({
   /** Commit the event, with the second player's number when one was given. */
   const writeEvent = (type: string, secondary: number | null, confirmed = false) => {
     if (!captured || !side) return;
-    /* An official has no shirt number, so there is nothing to check against the squad. */
     if (
-      !chosenOfficial &&
       !confirmed &&
       holdForUnregistered(
         [
@@ -248,15 +265,38 @@ export function MatchEventsTab({
       minute: captured.minute,
       addedMinute: captured.added,
       side,
-      playerNumber: chosenOfficial ? null : primaryNumber,
-      secondaryPlayerNumber: chosenOfficial ? null : secondary,
+      playerNumber: primaryNumber,
+      secondaryPlayerNumber: secondary,
       half: captured.half ?? clock.half,
-      ...(chosenOfficial ? { official: chosenOfficial } : {}),
     };
     onChange({ events: correcting ? placeChronologically(events, next) : [...events, next] });
     setPendingType(null);
     setSecondNumber("");
+    setPickerOpen(false);
     // Clear the entry so the next event starts from a clean step 1.
+    onCapturedUsed();
+  };
+
+  /**
+   * File a card for the official named in the modal. The modal is where this event ends:
+   * an official has no shirt number to check, and nothing but a card can be theirs.
+   */
+  const writeOfficialCard = (type: "yellow_card" | "red_card") => {
+    if (!officialReady || !captured || !side || !chosenOfficial) return;
+    playSound(soundFor(type));
+    const next: RecordedEvent = {
+      id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      minute: captured.minute,
+      addedMinute: captured.added,
+      side,
+      playerNumber: null,
+      secondaryPlayerNumber: null,
+      half: captured.half ?? clock.half,
+      official: chosenOfficial,
+    };
+    onChange({ events: correcting ? placeChronologically(events, next) : [...events, next] });
+    onOfficialClose();
     onCapturedUsed();
   };
 
@@ -490,41 +530,68 @@ export function MatchEventsTab({
         <section className="mcx-step mcx-step--grid">
           <span className="mcx-step__n">4</span>
           <div className="mcx-step__body">
-            <span className="mcx-step__label">
-              Tap the event to capture
-              {!captured ? (
-                <em className="mcx-step__gate">
-                  {correcting
-                    ? " — enter the minute first (step 1)"
-                    : " — log a minute first (step 1)"}
-                </em>
-              ) : !side ? (
-                <em className="mcx-step__gate"> — choose home or away first (step 2)</em>
-              ) : officialMode ? (
-                chosenOfficial ? (
+            <div className="mcx-step__labelrow">
+              <span className="mcx-step__label">
+                {fullScreenPicker ? "Choose the event to capture" : "Tap the event to capture"}
+                {!captured ? (
+                  <em className="mcx-step__gate">
+                    {correcting
+                      ? " — enter the minute first (step 1)"
+                      : " — log a minute first (step 1)"}
+                  </em>
+                ) : !side ? (
+                  <em className="mcx-step__gate"> — choose home or away first (step 2)</em>
+                ) : playerNumber.trim() === "" ? (
                   <em className="mcx-step__gate">
                     {" "}
-                    — Yellow Card or Red Card for the {teamOfficialLabel(chosenOfficial)}
+                    — enter a jersey number, or tap Official (step 3)
                   </em>
+                ) : !hasPlayerNumber ? (
+                  <em className="mcx-step__gate"> — jersey numbers run from 1 to 99 (step 3)</em>
+                ) : null}
+              </span>
+              {/* The same switch as the landing page's settings, here because it is the
+                  moment a recorder finds out which way they prefer. */}
+              <button
+                type="button"
+                className="mcx-step__mode"
+                onClick={() =>
+                  updatePrefs({ eventPicker: fullScreenPicker ? "inline" : "fullscreen" })
+                }
+              >
+                {fullScreenPicker ? "Show buttons here" : "Use full screen"}
+              </button>
+            </div>
+            {fullScreenPicker ? (
+              <button
+                type="button"
+                className={canLog ? "mcx-pickbtn" : "mcx-pickbtn is-locked"}
+                aria-disabled={!canLog}
+                onClick={() => (canLog ? setPickerOpen(true) : playSound("error"))}
+              >
+                {canLog && captured && side ? (
+                  <>
+                    <span className="mcx-pickbtn__main">Choose the event</span>
+                    <span className="mcx-pickbtn__sub">
+                      {displayMinute(captured.minute, captured.added)} · {teamFor(side)} ·{" "}
+                      {labelForNumber(side, primaryNumber)}
+                    </span>
+                  </>
                 ) : (
-                  <em className="mcx-step__gate"> — choose the official's role (step 3)</em>
-                )
-              ) : playerNumber.trim() === "" ? (
-                <em className="mcx-step__gate"> — enter a jersey number first (step 3)</em>
-              ) : !hasPlayerNumber ? (
-                <em className="mcx-step__gate"> — jersey numbers run from 1 to 99 (step 3)</em>
-              ) : null}
-            </span>
-            <EventGrid
-              types={sheet.eventTypes}
-              locked={!canLog}
-              lockedForType={lockedForType}
-              prefs={prefs}
-              captureMap={sheet.eventCapture}
-              statLabels={statLabels}
-              onLog={addEvent}
-              onBlocked={() => playSound("error")}
-            />
+                  <span className="mcx-pickbtn__main">Choose the event</span>
+                )}
+              </button>
+            ) : (
+              <EventGrid
+                types={sheet.eventTypes}
+                locked={!canLog}
+                prefs={prefs}
+                captureMap={sheet.eventCapture}
+                statLabels={statLabels}
+                onLog={addEvent}
+                onBlocked={() => playSound("error")}
+              />
+            )}
           </div>
         </section>
       )}
@@ -746,6 +813,115 @@ export function MatchEventsTab({
                 Save changes
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Full-screen event picker: the grid with the whole screen to itself ---- */}
+      {fullScreenPicker && pickerOpen && canLog && captured && side && (
+        <div
+          className="mcx-picker"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mcx-picker-title"
+        >
+          <header className="mcx-picker__head" style={{ borderBottomColor: kits[side] }}>
+            <div className="mcx-picker__who">
+              <h3 id="mcx-picker-title">Choose the event</h3>
+              <p>
+                <span className="mcx-picker__min">
+                  {displayMinute(captured.minute, captured.added)}
+                </span>
+                <span className="mcx-kit" style={{ background: kits[side] }} aria-hidden="true" />
+                {teamFor(side)} · {labelForNumber(side, primaryNumber)}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="mcx-picker__close"
+              onClick={() => setPickerOpen(false)}
+              aria-label="Close the event picker"
+            >
+              ×
+            </button>
+          </header>
+          <div className="mcx-picker__body">
+            <EventGrid
+              types={sheet.eventTypes}
+              locked={false}
+              prefs={prefs}
+              captureMap={sheet.eventCapture}
+              statLabels={statLabels}
+              onLog={addEvent}
+              onBlocked={() => playSound("error")}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ---- Card for a team official: named here, and filed from here ---- */}
+      {officialOpen && officialReady && captured && side && (
+        <div
+          className="mcx-prompt"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mcx-official-title"
+        >
+          <div className="mcx-prompt__card mcx-prompt__card--wide mcx-official">
+            <h3 id="mcx-official-title">Card for a team official</h3>
+            <p className="muted">
+              {displayMinute(captured.minute, captured.added)} · {teamFor(side)}
+            </p>
+            <span className="mcx-prompt__label">Who was it shown to?</span>
+            <div className="mcx-official__roles">
+              {TEAM_OFFICIAL_ROLES.map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  className={officialDraft.role === role ? "mcx-chip is-active" : "mcx-chip"}
+                  onClick={() => setOfficialDraft((draft) => ({ ...draft, role }))}
+                  aria-pressed={officialDraft.role === role}
+                >
+                  {TEAM_OFFICIAL_ROLE_LABELS[role]}
+                </button>
+              ))}
+            </div>
+            <label className="mcx-prompt__label">
+              <span>Name (optional)</span>
+              <input
+                type="text"
+                maxLength={TEAM_OFFICIAL_NAME_MAX}
+                placeholder="If you know it"
+                value={officialDraft.name}
+                onChange={(event) =>
+                  setOfficialDraft((draft) => ({ ...draft, name: event.target.value }))
+                }
+              />
+            </label>
+            <div className="mcx-official__cards">
+              <button
+                type="button"
+                className="mcx-cardbtn mcx-cardbtn--yellow"
+                disabled={!chosenOfficial}
+                onClick={() => writeOfficialCard("yellow_card")}
+              >
+                Yellow Card
+              </button>
+              <button
+                type="button"
+                className="mcx-cardbtn mcx-cardbtn--red"
+                disabled={!chosenOfficial}
+                onClick={() => writeOfficialCard("red_card")}
+              >
+                Red Card
+              </button>
+            </div>
+            {!chosenOfficial && (
+              <p className="mcx-official__hint muted">Choose who it was to enable the cards.</p>
+            )}
+            <button type="button" className="mcx-prompt__cancel" onClick={onOfficialClose}>
+              Cancel
+            </button>
           </div>
         </div>
       )}

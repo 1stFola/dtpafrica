@@ -1,4 +1,4 @@
-import { useFeedbackPrefs } from "./useFeedbackPrefs";
+import { useFeedbackPrefs, type FeedbackPrefs } from "./useFeedbackPrefs";
 import { useUISound, type FeedbackIntensity } from "./useUISound";
 
 const LEVELS: { value: FeedbackIntensity; label: string; hint: string }[] = [
@@ -7,8 +7,21 @@ const LEVELS: { value: FeedbackIntensity; label: string; hint: string }[] = [
   { value: "high", label: "High", hint: "Loud and lively — for a full stand" },
 ];
 
+const PICKER_MODES: { value: FeedbackPrefs["eventPicker"]; label: string; hint: string }[] = [
+  {
+    value: "fullscreen",
+    label: "Full screen",
+    hint: "One button opens every event type on the whole screen. The default",
+  },
+  {
+    value: "inline",
+    label: "In the page",
+    hint: "The event buttons sit under the entry bar, as before",
+  },
+];
+
 /**
- * Sound and motion controls for the capture grid.
+ * Where the capture grid appears, and its sound and motion.
  *
  * Lives on the recorder's landing page rather than inside the console: this is
  * something you set once before kickoff, and burying it behind a match would
@@ -31,9 +44,10 @@ export function FeedbackSettings() {
         onClick={() => update({ collapsed: open })}
       >
         <span className="mcx-fx__heading">
-          <h2 id="mcx-fx-title">Tap feedback</h2>
+          <h2 id="mcx-fx-title">Event buttons</h2>
           <span className="muted">
-            How the event buttons react when you capture. Saved on this device only.
+            Where the event buttons appear and how they react when you capture. Saved on this
+            device only.
           </span>
         </span>
         {/* A literal +/- rather than a chevron: unambiguous at a glance on a
@@ -45,6 +59,7 @@ export function FeedbackSettings() {
 
       {!open && (
         <p className="mcx-fx__summary">
+          {prefs.eventPicker === "fullscreen" ? "Full-screen picker" : "Buttons in the page"} ·{" "}
           {prefs.sound || prefs.visuals ? (
             <>
               {[prefs.sound && "Sound", prefs.visuals && "Animations"]
@@ -59,6 +74,24 @@ export function FeedbackSettings() {
       )}
 
       <div id="mcx-fx-body" hidden={!open}>
+      <fieldset className="mcx-fx__levels">
+        <legend>Choosing an event</legend>
+        <div className="mcx-fx__row">
+          {PICKER_MODES.map((mode) => (
+            <button
+              key={mode.value}
+              type="button"
+              className={`mcx-fx__level${prefs.eventPicker === mode.value ? " is-active" : ""}`}
+              aria-pressed={prefs.eventPicker === mode.value}
+              onClick={() => update({ eventPicker: mode.value })}
+            >
+              <strong>{mode.label}</strong>
+              <span>{mode.hint}</span>
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
       <div className="mcx-fx__toggles">
         <label className="mcx-fx__switch">
           <input

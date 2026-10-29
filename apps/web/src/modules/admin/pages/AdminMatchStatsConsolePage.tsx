@@ -23,12 +23,9 @@ import {
   type SplitTally,
   type TallyValue,
 } from "../../../api/adminMatchStats";
-import { MatchEventsTab, type OfficialEntry } from "./MatchEventsTab";
+import { MatchEventsTab } from "./MatchEventsTab";
 import {
   OFFICIAL_EVENT_TYPES,
-  TEAM_OFFICIAL_NAME_MAX,
-  TEAM_OFFICIAL_ROLES,
-  TEAM_OFFICIAL_ROLE_LABELS,
   teamOfficialPhrase,
 } from "@dtp/engines/team-officials";
 import { capturedFromEvents } from "./eventStatCapture";
@@ -1177,8 +1174,8 @@ export function AdminMatchStatsConsolePage() {
      the frozen header — they are needed constantly while the grid scrolls. */
   const [side, setSide] = useState<Side | null>(null);
   const [playerNumber, setPlayerNumber] = useState("");
-  /* Step 3 answered with a coach or other official instead of a shirt number. */
-  const [official, setOfficial] = useState<OfficialEntry | null>(null);
+  /* The step-3 Official button: a card for a coach or other official, filed in its own modal. */
+  const [officialOpen, setOfficialOpen] = useState(false);
   const [kitPicker, setKitPicker] = useState<Side | null>(null);
   const [showKickoffStarter, setShowKickoffStarter] = useState(false);
   const [kickoffSide, setKickoffSide] = useState<Side | null>(null);
@@ -1550,7 +1547,7 @@ export function AdminMatchStatsConsolePage() {
     setCaptured(null);
     setSide(null);
     setPlayerNumber("");
-    setOfficial(null);
+    setOfficialOpen(false);
   }, [matchClock.half]);
 
   const handleEventsChange = useCallback(
@@ -1605,7 +1602,7 @@ export function AdminMatchStatsConsolePage() {
     setCaptured(null);
     setSide(null);
     setPlayerNumber("");
-    setOfficial(null);
+    setOfficialOpen(false);
     setTab("events");
     matchClock.kickOff(pendingHalfLength);
     handleEventsChange({ events: nextEvents });
@@ -2024,9 +2021,7 @@ export function AdminMatchStatsConsolePage() {
               <label className="mcx-jersey">
                 <span
                   className={`mcx-step__n mcx-step__n--inline${
-                    side && (official ? official.role : parseJersey(playerNumber) != null)
-                      ? ""
-                      : " is-locked"
+                    side && parseJersey(playerNumber) != null ? "" : " is-locked"
                   }`}
                 >
                   3
@@ -2036,54 +2031,29 @@ export function AdminMatchStatsConsolePage() {
                   min={1}
                   max={99}
                   inputMode="numeric"
-                  placeholder={official ? "—" : "No."}
-                  value={official ? "" : playerNumber}
+                  placeholder="No."
+                  value={playerNumber}
                   onChange={(e) => setPlayerNumber(e.target.value)}
-                  disabled={!editable || !side || Boolean(official)}
+                  disabled={!editable || !side}
                   aria-label="Jersey number"
                 />
               </label>
-              {/* A coach, manager or physio has no shirt number: step 3 names them instead. */}
+              {/* A coach, manager or physio has no shirt number: their card is named and
+                  filed in its own modal, so it needs the minute and the side first. */}
               <button
                 type="button"
-                className={official ? "mcx-officialbtn is-active" : "mcx-officialbtn"}
-                onClick={() => setOfficial(official ? null : { role: null, name: "" })}
-                disabled={!editable || !side}
-                aria-pressed={Boolean(official)}
+                className="mcx-officialbtn"
+                onClick={() => setOfficialOpen(true)}
+                disabled={!editable || !side || !entryMinute}
+                title={
+                  entryMinute && side
+                    ? "A card for a coach or other team official"
+                    : "Log the minute and choose the team first"
+                }
               >
                 Official
               </button>
             </div>
-
-            {official && side && (
-              <div className="mcx-officialpicker" role="group" aria-label="Team official">
-                <span className="mcx-kitpicker__label">
-                  Card for a {side === "home" ? match.homeTeam.name : match.awayTeam.name} official
-                </span>
-                <div className="mcx-officialpicker__roles">
-                  {TEAM_OFFICIAL_ROLES.map((role) => (
-                    <button
-                      key={role}
-                      type="button"
-                      className={official.role === role ? "mcx-chip is-active" : "mcx-chip"}
-                      onClick={() => setOfficial({ ...official, role })}
-                      aria-pressed={official.role === role}
-                    >
-                      {TEAM_OFFICIAL_ROLE_LABELS[role]}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  className="mcx-officialpicker__name"
-                  maxLength={TEAM_OFFICIAL_NAME_MAX}
-                  placeholder="Name, if you know it"
-                  value={official.name}
-                  onChange={(e) => setOfficial({ ...official, name: e.target.value })}
-                  aria-label="Official's name (optional)"
-                />
-              </div>
-            )}
 
             {kitPicker && (
               <div className="mcx-kitpicker">
@@ -2405,7 +2375,8 @@ export function AdminMatchStatsConsolePage() {
             captured={entryMinute}
             side={side}
             playerNumber={playerNumber}
-            official={official}
+            officialOpen={officialOpen}
+            onOfficialClose={() => setOfficialOpen(false)}
             onCapturedUsed={() => {
               // Reset the whole entry: the next event starts at step 1 with no
               // side pre-selected, so a side is never inherited by accident.
@@ -2414,7 +2385,7 @@ export function AdminMatchStatsConsolePage() {
               setTypedAdded("");
               setSide(null);
               setPlayerNumber("");
-              setOfficial(null);
+              setOfficialOpen(false);
             }}
             clock={matchClock}
             addedInput={addedInput}
