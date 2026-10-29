@@ -143,6 +143,12 @@ describe("job defaults", () => {
     expect(jobs.missedHeartbeatsBeforeExpiry).toBe(3);
     expect(jobs.heartbeatIntervalSeconds).toBe(30);
   });
+
+  it("caps training per month at $50 unless configured, and refuses a cap of nothing", () => {
+    expect(loadVisionConfig({}).compute.monthlyTrainingBudgetUsdCents).toBe(5000);
+    expect(loadVisionConfig({ VISION_MONTHLY_TRAINING_BUDGET_USD_CENTS: "12000" }).compute.monthlyTrainingBudgetUsdCents).toBe(12000);
+    expect(() => loadVisionConfig({ VISION_MONTHLY_TRAINING_BUDGET_USD_CENTS: "0" })).toThrow(VisionConfigError);
+  });
 });
 
 describe("the URL a hosted worker calls back to", () => {

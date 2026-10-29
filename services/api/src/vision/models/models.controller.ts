@@ -122,6 +122,13 @@ export class VisionModelsController {
     return jsonSafe(await this.models.createModel(dto, auth));
   }
 
+  /** This month's training spend against its cap: spent, held by open runs, and left. */
+  @Get("training/budget")
+  @RequirePermissions("vision.read")
+  async trainingBudget() {
+    return this.training.monthToDate();
+  }
+
   /** A fine-tuning run on a frozen dataset (docs/vision/102); its budget is approved with the request. */
   @Post("training")
   @RequirePermissions("vision.models.train")

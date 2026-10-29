@@ -48,6 +48,11 @@ export type VisionConfig = {
     hostedWorkerCallbackUrl: string | null;
     /** Refuses to launch new capacity past this, per month. */
     monthlyBudgetUsdCents: number;
+    /**
+     * Training's own cap per calendar month (UTC), separate from the GPU cap
+     * (docs/vision/12). A run request that would take the month past it is refused.
+     */
+    monthlyTrainingBudgetUsdCents: number;
   };
   /** Policy defaults from docs/vision/03-RIGHTS-AND-GOVERNANCE.md, pending
    * counsel confirmation (open item O1). Config, not constants, so confirming
@@ -79,6 +84,7 @@ const DEFAULTS = {
   budgetSeconds: 7200,
   budgetUsdCents: 500,
   monthlyBudgetUsdCents: 20_000,
+  monthlyTrainingBudgetUsdCents: 5_000,
   workerImage: "dtp-vision-engine:0.1.0",
   takedownDeleteWithinDays: 7,
   dataSubjectAckWithinDays: 7,
@@ -267,6 +273,13 @@ export function loadVisionConfig(env: NodeJS.ProcessEnv = process.env): VisionCo
         env,
         "VISION_MONTHLY_BUDGET_USD_CENTS",
         DEFAULTS.monthlyBudgetUsdCents,
+        problems,
+        { min: 1 }
+      ),
+      monthlyTrainingBudgetUsdCents: intFromEnv(
+        env,
+        "VISION_MONTHLY_TRAINING_BUDGET_USD_CENTS",
+        DEFAULTS.monthlyTrainingBudgetUsdCents,
         problems,
         { min: 1 }
       ),
