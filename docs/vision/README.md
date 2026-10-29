@@ -8,7 +8,9 @@ Checkpoint QA: 1,772 API tests (109 files), 259 web tests, 492 worker tests and
 99 shared contract tests passed, with API/web production builds and staged
 whitespace checks. Local pilot evidence and the $4 compute ceiling remain unchanged.
 
-**Latest: detect loads trained weights** — contract 1.24.0: a version registered from a `train` run hands detect its weights, checksum and training config as declared reads; the worker checks the bytes before loading them, and a trained model reports goalkeeper and referee as themselves. Needs a new GPU image before the next pod run. See [103](103-DETECT-LOADS-TRAINED-WEIGHTS.md).
+**Latest: a scratch rehearsal, freeze to train** — on a scratch database and stand-in storage, the dataset froze and exported, a 1-cent run stopped at its budget, and a real CPU epoch trained. Its upload then failed: presigned URLs carried the checksum of an empty body, which R2 ignores and other stores refuse (fixed). Also found: a job's budget is per attempt (up to three); the monthly GPU cap is not enforced; and on this laptop `::1` reaches WSL's relay instead of Postgres. Register, detect and benchmark are still to rehearse. See [104](104-SCRATCH-REHEARSAL-FREEZE-TO-TRAIN.md).
+
+**Previously: detect loads trained weights** — contract 1.24.0: a version registered from a `train` run hands detect its weights, checksum and training config as declared reads; the worker checks the bytes before loading them, and a trained model reports goalkeeper and referee as themselves. Needs a new GPU image before the next pod run. See [103](103-DETECT-LOADS-TRAINED-WEIGHTS.md).
 
 **Previously: the train stage** — contract 1.23.0 adds `train`: a run, asked for with its own budget, fine-tunes the torchvision Faster R-CNN baseline on a frozen dataset's train split (negatives kept, uncertain frames left out), scores its val split with the benchmark's evaluation, and writes weights, config and metrics to the models bucket. A person registers a candidate version from a succeeded run. Detect loading those weights comes next. See [102](102-TRAIN-STAGE.md).
 
