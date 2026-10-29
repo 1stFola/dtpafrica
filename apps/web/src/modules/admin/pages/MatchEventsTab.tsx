@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EVENT_LABELS } from "../../../api/scoreboard";
 import type {
   KitColours,
@@ -49,18 +49,56 @@ export function officialFromEntry(entry: OfficialEntry | null): TeamOfficial | n
 }
 
 /**
- * Event types that need a second player before they can be logged: the incoming
- * player on a substitution, and the assist provider on a goal.
+ * Event types that involve two players: the scorer and the assist on a goal, the players
+ * coming off and on at a substitution. Both are asked for together, so a number typed
+ * twice is caught while the recorder can still say which one was meant.
  */
-const SECOND_PLAYER_PROMPT: Record<string, { title: string; label: string; allowNone?: string }> = {
-  substitution: { title: "Substitution", label: "Incoming player's number" },
-  goal: { title: "Goal", label: "Assist — jersey number", allowNone: "Solo Effort" },
+const SECOND_PLAYER_PROMPT: Record<
+  string,
+  {
+    title: string;
+    primaryLabel: string;
+    label: string;
+    allowNone?: string;
+    /** When both numbers are the same: the question, and the way out of it. */
+    same: {
+      question: (who: string) => string;
+      changePrimary: string;
+      changeSecondary: string;
+      /** A goal can be a solo effort; a substitution cannot be undone that way. */
+      solo?: string;
+    };
+  }
+> = {
+  substitution: {
+    title: "Substitution",
+    primaryLabel: "Player coming off — number",
+    label: "Player coming on — number",
+    same: {
+      question: (who) => `${who} is down as both coming off and coming on. Which one is wrong?`,
+      changePrimary: "Change the player coming off",
+      changeSecondary: "Change the player coming on",
+    },
+  },
+  goal: {
+    title: "Goal",
+    primaryLabel: "Scorer — jersey number",
+    label: "Assist — jersey number",
+    allowNone: "Solo Effort",
+    same: {
+      question: (who) =>
+        `${who} is down as both the scorer and the assist. A player cannot assist their own goal. What needs correcting?`,
+      changePrimary: "Change the scorer",
+      changeSecondary: "Change the assist",
+      solo: "It was a solo goal",
+    },
+  },
 };
 
 /** Where to pick up once the recorder says an unregistered number is right. */
 type HeldEntry =
-  | { kind: "event"; type: string; secondary: number | null }
-  | { kind: "edit" }
+  | { kind: "event"; type: string; primary: number | null; secondary: number | null }
+  | { kind: "edit"; solo: boolean }
   | { kind: "shootout" };
 
 const JERSEY_RANGE = "Jersey numbers run from 1 to 99.";
@@ -68,6 +106,47 @@ const JERSEY_RANGE = "Jersey numbers run from 1 to 99.";
 /** Typed but not a shirt number. A blank is not invalid, only unanswered. */
 function invalidJersey(value: string): boolean {
   return value.trim() !== "" && parseJersey(value) == null;
+}
+
+/**
+ * Asked when one shirt number was given for both players of a goal or substitution: say
+ * which one is wrong, or, on a goal, that nobody assisted it.
+ */
+function SamePlayerQuestion({
+  question,
+  changePrimary,
+  changeSecondary,
+  solo,
+  onChangePrimary,
+  onChangeSecondary,
+  onSolo,
+}: {
+  question: string;
+  changePrimary: string;
+  changeSecondary: string;
+  solo?: string;
+  onChangePrimary: () => void;
+  onChangeSecondary: () => void;
+  onSolo: () => void;
+}) {
+  return (
+    <div className="mcx-same" role="alert">
+      <p className="mcx-same__q">{question}</p>
+      <div className="mcx-same__actions">
+        <button type="button" className="mcx-btn" onClick={onChangePrimary}>
+          {changePrimary}
+        </button>
+        <button type="button" className="mcx-btn" onClick={onChangeSecondary}>
+          {changeSecondary}
+        </button>
+        {solo && (
+          <button type="button" className="mcx-btn mcx-btn--primary" onClick={onSolo}>
+            {solo}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function labelFor(type: string): string {
@@ -130,7 +209,15 @@ export function MatchEventsTab({
   /* Held while the second-player prompt is open, so the event is only written
      once that answer is given or explicitly waived. */
   const [pendingType, setPendingType] = useState<string | null>(null);
+  /* The scorer (or player coming off), from step 3 but correctable in the prompt. */
+  const [firstNumber, setFirstNumber] = useState("");
   const [secondNumber, setSecondNumber] = useState("");
+  /* Both numbers are the same player: the prompt asks what was meant before filing. */
+  const [sameAsked, setSameAsked] = useState(false);
+  const firstInput = useRef<HTMLInputElement | null>(null);
+  const secondInput = useRef<HTMLInputElement | null>(null);
+  /* The same question, asked from the edit form. */
+  const [editSameAsked, setEditSameAsked] = useState(false);
   const [editing, setEditing] = useState<RecordedEvent | null>(null);
   const [editDraft, setEditDraft] = useState({
     type: "",
@@ -222,7 +309,9 @@ export function MatchEventsTab({
   const addEvent = (type: string) => {
     if (!canLog || !captured || !side) return;
     if (SECOND_PLAYER_PROMPT[type]) {
+      setFirstNumber(primaryNumber == null ? "" : String(primaryNumber));
       setSecondNumber("");
+      setSameAsked(false);
       setPendingType(type);
       // The sound belongs to the completed event, so it waits for the prompt.
       return;
@@ -242,17 +331,25 @@ export function MatchEventsTab({
     return true;
   };
 
-  /** Commit the event, with the second player's number when one was given. */
-  const writeEvent = (type: string, secondary: number | null, confirmed = false) => {
+  /**
+   * Commit the event, with the second player's number when one was given. `primary` is
+   * step 3's number unless the two-player prompt corrected it.
+   */
+  const writeEvent = (
+    type: string,
+    secondary: number | null,
+    confirmed = false,
+    primary: number | null = primaryNumber
+  ) => {
     if (!captured || !side) return;
     if (
       !confirmed &&
       holdForUnregistered(
         [
-          { side, number: primaryNumber },
+          { side, number: primary },
           { side, number: secondary },
         ],
-        { kind: "event", type, secondary }
+        { kind: "event", type, primary, secondary }
       )
     ) {
       return;
@@ -265,13 +362,15 @@ export function MatchEventsTab({
       minute: captured.minute,
       addedMinute: captured.added,
       side,
-      playerNumber: primaryNumber,
+      playerNumber: primary,
       secondaryPlayerNumber: secondary,
       half: captured.half ?? clock.half,
     };
     onChange({ events: correcting ? placeChronologically(events, next) : [...events, next] });
     setPendingType(null);
+    setFirstNumber("");
     setSecondNumber("");
+    setSameAsked(false);
     setPickerOpen(false);
     // Clear the entry so the next event starts from a clean step 1.
     onCapturedUsed();
@@ -304,6 +403,10 @@ export function MatchEventsTab({
     if (!editable) return;
     onChange({ events: normalizeShootoutSides(events.filter((e) => e.id !== id)) });
   };
+
+  /* A changed number answers the same-player question, so it goes away until asked again. */
+  useEffect(() => setSameAsked(false), [firstNumber, secondNumber]);
+  useEffect(() => setEditSameAsked(false), [editDraft]);
 
   const openEdit = (event: RecordedEvent) => {
     setEditing(event);
@@ -357,7 +460,11 @@ export function MatchEventsTab({
       ? JERSEY_RANGE
       : null;
 
-  const saveEdit = (confirmed = false) => {
+  /**
+   * `solo` files a goal with no assist: the recorder's answer when the assist was the
+   * scorer's own number. It rides through the unregistered-number check with the edit.
+   */
+  const saveEdit = (confirmed = false, solo = false) => {
     if (!editable || !editing) return;
     if (editMinute && !editMinute.ok) return;
     if (editNumberError) return;
@@ -371,10 +478,22 @@ export function MatchEventsTab({
       side: editDraft.side,
       playerNumber: editOfficial ? null : parseJersey(editDraft.playerNumber),
       secondaryPlayerNumber:
-        !editOfficial && needsSecond ? parseJersey(editDraft.secondaryPlayerNumber) : null,
+        !editOfficial && needsSecond && !solo
+          ? parseJersey(editDraft.secondaryPlayerNumber)
+          : null,
       half: editMinute?.ok ? editMinute.half : editDraft.half === "2" ? 2 : 1,
       ...(editOfficial ? { official: editOfficial } : {}),
     };
+    /* One player in both places: ask which is wrong rather than file it. */
+    if (
+      needsSecond &&
+      next.playerNumber != null &&
+      next.playerNumber === next.secondaryPlayerNumber
+    ) {
+      playSound("error");
+      setEditSameAsked(true);
+      return;
+    }
     /* Only a number this edit puts there: one already filed was confirmed when it was. */
     const moved = next.side !== editing.side;
     const entered = (number: number | null, before: number | null) =>
@@ -389,7 +508,7 @@ export function MatchEventsTab({
             number: entered(next.secondaryPlayerNumber, editing.secondaryPlayerNumber),
           },
         ],
-        { kind: "edit" }
+        { kind: "edit", solo }
       )
     ) {
       return;
@@ -405,6 +524,7 @@ export function MatchEventsTab({
         : events.map((event) => (event.id === editing.id ? next : event));
     onChange({ events: normalizeShootoutSides(retimed) });
     setEditing(null);
+    setEditSameAsked(false);
   };
 
   const systemMinute = () => ({
@@ -496,8 +616,8 @@ export function MatchEventsTab({
     const held = numberCheck?.held;
     setNumberCheck(null);
     if (!held) return;
-    if (held.kind === "event") writeEvent(held.type, held.secondary, true);
-    else if (held.kind === "edit") saveEdit(true);
+    if (held.kind === "event") writeEvent(held.type, held.secondary, true, held.primary);
+    else if (held.kind === "edit") saveEdit(true, held.solo);
     else logShootoutKick(true);
   };
 
@@ -800,6 +920,21 @@ export function MatchEventsTab({
             {editNumberError && (
               <p className="mcx-error" role="alert">{editNumberError}</p>
             )}
+            {editSameAsked && SECOND_PLAYER_PROMPT[editDraft.type] && (
+              <SamePlayerQuestion
+                question={SECOND_PLAYER_PROMPT[editDraft.type].same.question(
+                  labelForNumber(editDraft.side, parseJersey(editDraft.playerNumber))
+                )}
+                changePrimary={SECOND_PLAYER_PROMPT[editDraft.type].same.changePrimary}
+                changeSecondary={SECOND_PLAYER_PROMPT[editDraft.type].same.changeSecondary}
+                solo={SECOND_PLAYER_PROMPT[editDraft.type].same.solo}
+                onChangePrimary={() => setEditSameAsked(false)}
+                onChangeSecondary={() =>
+                  setEditDraft((draft) => ({ ...draft, secondaryPlayerNumber: "" }))
+                }
+                onSolo={() => saveEdit(false, true)}
+              />
+            )}
             <div className="mcx-prompt__actions">
               <button type="button" className="mcx-btn" onClick={() => setEditing(null)}>
                 Cancel
@@ -926,52 +1061,109 @@ export function MatchEventsTab({
         </div>
       )}
 
-      {/* ---- Second player prompt: substitution in, or the assist ---- */}
-      {pendingType && SECOND_PLAYER_PROMPT[pendingType] && (
-        <div className="mcx-prompt" role="dialog" aria-modal="true">
-          <div className="mcx-prompt__card">
-            <h3>{SECOND_PLAYER_PROMPT[pendingType].title}</h3>
-            <p className="muted">
-              {displayMinute(captured?.minute ?? 0, captured?.added ?? null)} ·{" "}
-              {side ? teamFor(side) : ""}
-              {side && primaryNumber ? ` · ${labelForNumber(side, primaryNumber)}` : ""}
-            </p>
-            <label className="mcx-prompt__label">
-              {SECOND_PLAYER_PROMPT[pendingType].label}
-            </label>
-            <div className="mcx-prompt__row">
-              <input
-                type="number"
-                min={1}
-                max={99}
-                inputMode="numeric"
-                value={secondNumber}
-                onChange={(e) => setSecondNumber(e.target.value)}
-                autoFocus
-              />
-            </div>
-            {invalidJersey(secondNumber) && (
-              <p className="mcx-error" role="alert">{JERSEY_RANGE}</p>
-            )}
-            <div className="mcx-prompt__actions">
-              {SECOND_PLAYER_PROMPT[pendingType].allowNone && (
-                <button
-                  type="button"
-                  className="mcx-btn"
-                  onClick={() => writeEvent(pendingType, null)}
-                >
-                  {SECOND_PLAYER_PROMPT[pendingType].allowNone}
-                </button>
+      {/* ---- Two-player prompt: scorer and assist, or the players off and on ---- */}
+      {pendingType && SECOND_PLAYER_PROMPT[pendingType] && (() => {
+        const def = SECOND_PLAYER_PROMPT[pendingType];
+        const first = parseJersey(firstNumber);
+        const second = parseJersey(secondNumber);
+        /* Filed only once the two are different players; the same number is a question. */
+        const submit = () => {
+          if (first == null || second == null) return;
+          if (first === second) {
+            playSound("error");
+            setSameAsked(true);
+            return;
+          }
+          writeEvent(pendingType, second, false, first);
+        };
+        const focus = (input: HTMLInputElement | null) =>
+          window.setTimeout(() => {
+            input?.focus();
+            input?.select();
+          }, 0);
+        return (
+          <div className="mcx-prompt" role="dialog" aria-modal="true" aria-label={def.title}>
+            <div className="mcx-prompt__card">
+              <h3>{def.title}</h3>
+              <p className="muted">
+                {displayMinute(captured?.minute ?? 0, captured?.added ?? null)} ·{" "}
+                {side ? teamFor(side) : ""}
+              </p>
+              <label className="mcx-prompt__label">
+                <span>{def.primaryLabel}</span>
+                <input
+                  ref={firstInput}
+                  type="number"
+                  min={1}
+                  max={99}
+                  inputMode="numeric"
+                  value={firstNumber}
+                  onChange={(e) => setFirstNumber(e.target.value)}
+                />
+                {side && first != null && (
+                  <span className="mcx-prompt__who">{labelForNumber(side, first)}</span>
+                )}
+              </label>
+              <label className="mcx-prompt__label">
+                <span>{def.label}</span>
+                <input
+                  ref={secondInput}
+                  type="number"
+                  min={1}
+                  max={99}
+                  inputMode="numeric"
+                  value={secondNumber}
+                  onChange={(e) => setSecondNumber(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submit();
+                  }}
+                  autoFocus
+                />
+                {side && second != null && (
+                  <span className="mcx-prompt__who">{labelForNumber(side, second)}</span>
+                )}
+              </label>
+              {(invalidJersey(firstNumber) || invalidJersey(secondNumber)) && (
+                <p className="mcx-error" role="alert">{JERSEY_RANGE}</p>
               )}
-              <button
-                type="button"
-                className="mcx-btn mcx-btn--primary"
-                disabled={parseJersey(secondNumber) == null}
-                onClick={() => writeEvent(pendingType, parseJersey(secondNumber))}
-              >
-                OK
-              </button>
-            </div>
+              {sameAsked && side && first != null ? (
+                <SamePlayerQuestion
+                  question={def.same.question(labelForNumber(side, first))}
+                  changePrimary={def.same.changePrimary}
+                  changeSecondary={def.same.changeSecondary}
+                  solo={def.same.solo}
+                  onChangePrimary={() => {
+                    setSameAsked(false);
+                    focus(firstInput.current);
+                  }}
+                  onChangeSecondary={() => {
+                    setSecondNumber("");
+                    focus(secondInput.current);
+                  }}
+                  onSolo={() => writeEvent(pendingType, null, false, first)}
+                />
+              ) : (
+                <div className="mcx-prompt__actions">
+                  {def.allowNone && (
+                    <button
+                      type="button"
+                      className="mcx-btn"
+                      disabled={first == null}
+                      onClick={() => writeEvent(pendingType, null, false, first)}
+                    >
+                      {def.allowNone}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="mcx-btn mcx-btn--primary"
+                    disabled={first == null || second == null}
+                    onClick={submit}
+                  >
+                    OK
+                  </button>
+                </div>
+              )}
             <button
               type="button"
               className="mcx-prompt__cancel"
@@ -979,9 +1171,10 @@ export function MatchEventsTab({
             >
               Cancel
             </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ---- Added time prompt ---- */}
       {clock.phase === "awaiting_added" && editable && (
