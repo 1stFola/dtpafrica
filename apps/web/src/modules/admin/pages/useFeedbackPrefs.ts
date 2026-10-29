@@ -15,6 +15,12 @@ export type FeedbackPrefs = {
   intensity: FeedbackIntensity;
   /** Whether the settings card is folded away. Set once, then left alone. */
   collapsed: boolean;
+  /**
+   * How step 4 shows the event types: a full-screen picker opened from one button, or the
+   * grid laid out in the page. Full screen is the default: on a phone the grid otherwise
+   * scrolls beneath the pinned entry bar and the button wanted is often out of sight.
+   */
+  eventPicker: "fullscreen" | "inline";
 };
 
 const KEY = "dtp_match_feedback";
@@ -26,6 +32,7 @@ export const DEFAULT_PREFS: FeedbackPrefs = {
   // Folded by default: these are pre-match settings, and the fixture list is
   // what a recorder opens this page for.
   collapsed: true,
+  eventPicker: "fullscreen",
 };
 
 function read(): FeedbackPrefs {
@@ -39,6 +46,8 @@ function read(): FeedbackPrefs {
       intensity:
         parsed.intensity === "low" || parsed.intensity === "high" ? parsed.intensity : "medium",
       collapsed: parsed.collapsed !== false,
+      /* Only an explicit choice of the in-page grid keeps it; anything else is the default. */
+      eventPicker: parsed.eventPicker === "inline" ? "inline" : "fullscreen",
     };
   } catch {
     return DEFAULT_PREFS;
