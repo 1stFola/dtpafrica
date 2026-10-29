@@ -1,0 +1,22 @@
+# TEST ONLY: the failure drills (fixtures/run_drills.py), layered on compose.yaml and
+# compose.wan-outage.yaml. Never used at a venue.
+#
+# `drill-cloud` stands in for the DTP cloud: an HTTPS sync sink with a certificate from a
+# CA made for the run (fixtures/drill_cloud.py). The Edge reaches it on the cut network at a
+# fixed address, and the drill turns the WAN off by detaching it from that network. It
+# publishes nothing to the host.
+services:
+  drill-cloud:
+    image: dtp-fairplay-edge:${FAIRPLAY_EDGE_TAG:-local}
+    entrypoint: ["python", "-I", "/opt/drill/drill_cloud.py"]
+    command: ["--data", "/drill", "--cert", "/drill/tls/server.pem", "--key", "/drill/tls/server-key.pem",
+              "--token-file", "/drill/device-token"]
+    volumes:
+      - ./fixtures/drill_cloud.py:/opt/drill/drill_cloud.py:ro
+      - ${FAIRPLAY_DRILL_DIR:?set by run_drills.py}:/drill
+    networks:
+      edge: { ipv4_address: 172.31.250.30 }
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
