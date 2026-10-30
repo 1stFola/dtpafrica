@@ -111,9 +111,14 @@ export type SourceView = {
   openAlerts: Alert[];
 };
 
+/** The kernel's answer, read by the Edge (timesync.py): synced, drifting, unsynced or unknown. */
+export type ClockSync = { state: string; maxErrorMs: number | null; estErrorMs: number | null; source: string; boundMs?: number;
+  settling?: boolean; forSeconds?: number };
+
 export type ClockState = {
   edgeUtc: string;
   ntpState: string;
+  sync?: ClockSync | null;
   recentSteps: { edge_utc: string; step_ms: number }[];
   cloudOffsetMs: number | null;
 };

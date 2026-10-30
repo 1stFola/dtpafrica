@@ -43,7 +43,7 @@ class EdgeService:
         self.watchdog = Watchdog(settings, self.store, self.mediamtx)
         self.scanner = Scanner(settings, self.store)
         self.sessions = Sessions(self.store)
-        self.clock = ClockWatch(self.store)
+        self.clock = ClockWatch(self.store, settings.clock_max_error_ms, settle_seconds=settings.clock_settle_seconds)
         self.cutter = evidence.FfmpegCutter()
         self.sync_configured = bool(settings.cloud_sync_url)
         transport = (HttpTransport(settings.cloud_sync_url, settings.cloud_device_token) if self.sync_configured
@@ -87,6 +87,8 @@ class EdgeService:
             log.warning(json.dumps({"event": "bundle.refused", "error": str(exc)}))
 
     def run_once(self) -> None:
+        # First: one system call, and the clock's state should not wait on a long scan.
+        self.clock.observe()
         snapshot = self.watchdog.poll()
         self.scanner.scan(snapshot.publishing())
         if time.monotonic() - self._last_clock >= CLOCK_EVERY_SECONDS:

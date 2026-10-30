@@ -112,6 +112,8 @@ class CalibrationIn(BaseModel):
     evidenceSegmentId: str | None = None
     note: str | None = Field(default=None, max_length=500)
     supersedes: str | None = None
+    # An offset beyond FAIRPLAY_CALIBRATION_CONFIRM_MS is refused unless this is set (F11).
+    confirmLargeOffset: bool = False
 
 
 class IncidentIn(BaseModel):
@@ -454,7 +456,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             "lastPassError": service.last_pass_error,
             "mediaServer": {"up": snap.media_server_up, "error": snap.media_server_error},
             "disk": disk_view(),
-            "clock": timing.clock_state(service.store),
+            "clock": timing.clock_state(service.store, service.clock.sync),
             "cloud": {**service.outbox.status(service.sync_configured),
                       "uploads": service.uploader.status() if service.uploader else None,
                       "bundleRefresh": service.bundle_refresh},
@@ -498,7 +500,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.get("/edge/v1/clock")
     def clock(_: Principal = staff):
-        return timing.clock_state(service.store)
+        return timing.clock_state(service.store, service.clock.sync)
 
     # ── sources and recordings ───────────────────────────────────────────
     @app.get("/edge/v1/sources")
@@ -831,6 +833,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             raise refusal(404, "not_found", "no such record")
         except timing.Conflict as exc:
             raise refusal(409, "conflict", str(exc))
+        except timing.LargeOffset:
+            raise  # the calibration route answers it: the operator may confirm
         except timing.TimingError as exc:
             raise refusal(400, "invalid", str(exc))
 
@@ -862,7 +866,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         row = session_or_404(session_id)
         return {**row, "periods": timing.current_periods(service.store, session_id),
                 "calibration": timing.calibration_view(service.store, settings, session_id, spans_for),
-                "clock": timing.clock_state(service.store)}
+                "clock": timing.clock_state(service.store, service.clock.sync)}
 
     @app.post("/edge/v1/sessions/{session_id}/end")
     def end(session_id: str, who: Principal = manager):
@@ -887,11 +891,19 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.post("/edge/v1/sessions/{session_id}/calibrations", status_code=201)
     def calibrate(session_id: str, body: CalibrationIn, who: Principal = operator):
         check_session(who, session_id)
-        return timing_call(timing.calibrate, service.store, settings, session_id, body.source,
-                           _when(body.referenceUtc, "referenceUtc"), _when(body.observedIngestUtc, "observedIngestUtc"),
-                           body.uncertaintyMs, body.method, actor(who), period=body.period,
-                           reference_source=body.referenceSource, evidence_segment_id=body.evidenceSegmentId,
-                           note=body.note, supersedes=body.supersedes)
+        try:
+            row = timing_call(timing.calibrate, service.store, settings, session_id, body.source,
+                              _when(body.referenceUtc, "referenceUtc"), _when(body.observedIngestUtc, "observedIngestUtc"),
+                              body.uncertaintyMs, body.method, actor(who), period=body.period,
+                              reference_source=body.referenceSource, evidence_segment_id=body.evidenceSegmentId,
+                              note=body.note, supersedes=body.supersedes, confirm_large=body.confirmLargeOffset)
+        except timing.LargeOffset as exc:
+            raise refusal(409, "offset_needs_confirmation", str(exc), "send it again with confirmLargeOffset: true")
+        if abs(row["offset_ms"]) > settings.calibration_confirm_ms:
+            audit.record(service.store, actor_of(who), "calibration.large_offset_confirmed", "calibration", row["id"], None,
+                         {"source": row["source"], "offsetMs": row["offset_ms"], "boundMs": settings.calibration_confirm_ms,
+                          "sessionId": session_id})
+        return row
 
     @app.get("/edge/v1/sessions/{session_id}/sync-test")
     def sync(session_id: str, at: str, halfWidthMs: int = Query(2000, ge=200, le=30_000), who: Principal = staff):

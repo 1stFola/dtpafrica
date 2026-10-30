@@ -48,6 +48,8 @@ ACTIONS = (
     "evidence.manifest_accessed",
     # Phase 5.5 (F5): an Edge admin reading a session other than the bundle's.
     "session.accessed_outside_bundle",
+    # Phase 5.6 (F11): a calibration offset beyond the bound, kept on the operator's word.
+    "calibration.large_offset_confirmed",
 )
 
 

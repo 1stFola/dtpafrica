@@ -44,7 +44,7 @@ decide (see "Proposed scope for 5.5").
 | Actor role changed during the match | **fixed (F1, 5.5); tested over HTTP, 5.4** | a permission dropped from a bundle is refused at the next request; in the cloud, a changed role or a deactivated account at the next request, and out of the next bundle | — |
 | Cross-match access blocked | **fixed (F4, F5, 5.5); tested, 5.4** | the cloud refuses a wrong-match or wrong-device sync (e2e; `sync.service.ts:186-215`). 5.4: another session or competition looks the same as a guessed id, on every route | — |
 | Console laptop sleeps or refreshes; recorder carries on | **covered (synthetic), 5.2 D1** | recording is MediaMTX's alone and never waits on the console. Sessions time out after 30 idle minutes, so a laptop that slept longer signs in again. | drilled in 5.2 (D1): a refresh kept the sign-in; after 34 min asleep the console signed in again; no gap |
-| No hardware time sync; gross drone offset | **partly: F11** | The console warns that clock sync is not confirmed. Clock steps over 1 s are raised (`timing.py:375`). Uncalibrated sources carry ±3 s and calibrations above 500 ms are flagged. | see F11 |
+| No hardware time sync; gross drone offset | **fixed (F11), 5.6** | The sync state is read from the kernel and warned of only when it is true and lasting. Clock steps over 1 s are raised. A calibration offset above 5 s must be confirmed, and one above a minute is refused. An uncalibrated camera carries at least its largest measured delay. | a hardware time source (B5) |
 | Power interruption and recovery (UPS) | **partly** | WAL `synchronous=FULL`; MediaMTX's recovery point is one part (1 s; 0.29 s measured in Phase 1); container kill and restart tested | No host power cut has been simulated. Whether Docker starts on boot is host configuration. UPS capability is unknown: a **hardware assumption, escalated**, not designed around (5.2 D5 simulated it with every container killed at once; a real drill needs the kit). |
 
 ## Security requirements
@@ -214,7 +214,7 @@ certificate for any site that reviewer devices will trust.
 - The uncalibrated uncertainty is ±3 s (`timing.py:42`), but Phase 3 measured
   uncalibrated offsets up to 2.87 s, and more on a starved machine.
 
-*Fix* (increment 5.6):
+*Fix* (increment 5.6, done: see "5.6: time-sync warnings" below):
 - read the host's time-sync state (`timedatectl`, `chronyc`) where available;
 - ask for confirmation on an offset above a configurable bound;
 - raise the uncalibrated uncertainty, or derive it from measurements.
@@ -930,6 +930,132 @@ RISKS, ROLLBACK, NEXT GATE
 - Steps to revert safely: revert the commit (tests, a script and two messages; no data change)
 - Human approvals required: whether viewing the live preview should be audited; the open decisions as before
 - Proposed next phase: 5.6 time-sync warnings (5.5's remaining fixes wait on Fola's choice of findings)
+```
+
+---
+
+## 5.6: time-sync warnings (F11)
+
+Increment 5.6 of the plan: no hardware time sync, or a gross offset on a camera, now gives
+a warning when it is true, instead of a warning that was always on or a number taken on
+trust. F11's three points are each fixed.
+
+**The clock's sync state is read, not assumed.**
+- The Edge asks the kernel (`timesync.py`). The kernel holds the clock-discipline state
+  that chrony, systemd-timesyncd or ntpd set, and `adjtimex` with no mode bits reads it
+  without changing anything. That needs no privilege and works inside the container,
+  whose clock is the host's.
+- **The four states:**
+  - `synced`: a daemon is disciplining the clock and the kernel's maximum error is within
+    `FAIRPLAY_CLOCK_MAX_ERROR_MS` (1 s);
+  - `drifting`: it was synchronised, but the maximum error has since grown past that
+    bound, as it does at 0.5 ms a second while the venue is offline;
+  - `unsynced`: the kernel marks the clock unsynchronised;
+  - `unknown`: the kernel cannot be asked.
+- **Bad news must last.** A daemon that steps the clock leaves it marked unsynchronised
+  for a few seconds. I measured this on the laptop's Docker VM: stepped every 30 s, and
+  unsynchronised for 2–8 s each time. So a reading of `unsynced` or `drifting` counts only
+  once it has lasted `FAIRPLAY_CLOCK_SETTLE_SECONDS` (120 s) without a break. A good reading
+  counts at once. The kernel is read at the start of every pass (2 s), before the watchdog
+  and the scan, so a long scan does not hold it up. The alert is written only when its
+  state changes. Until the first reading, and while a bad one settles, the console says
+  the clock is being checked.
+- **What the Edge reports.** Health and `/edge/v1/clock` give the state with the kernel's
+  maximum and estimated error. While the state is bad, `clock_not_synced` (warning) is
+  open. Each clock sample records the state.
+- **In the console.**
+  - `unsynced` is an amber banner, like the disk's: "The Edge clock has no time source…
+    Compare kick-off and incident times with the match console… Offsets between cameras
+    are measured on this one clock and are unaffected."
+  - `drifting` says by how much the clock may be off.
+  - `unknown` is a quiet line: "could not be checked on this machine", or "is being
+    checked" before the first reading and while a bad one settles.
+  - Nothing is shown while the clock is synced, which was not possible before.
+- **Clock steps.** A step older than two hours is no longer listed as recent. It stays in
+  the samples.
+
+**A large offset must be confirmed.**
+- A calibration whose offset is larger than `FAIRPLAY_CALIBRATION_CONFIRM_MS` (5 s) is
+  refused with 409 `offset_needs_confirmation`, which says how large it is and why. The
+  console asks the operator, and sends it again with `confirmLargeOffset` only if they
+  say yes.
+- A confirmed one is kept, and `calibration.large_offset_confirmed` goes in the audit
+  chain with the offset, the bound and who confirmed it.
+- An offset beyond a minute is refused even when confirmed: no live camera lags a minute,
+  so the reference or the frame is wrong.
+
+**An uncalibrated camera is as uncertain as the largest delay measured for it.**
+- With no calibration in this session, a camera's window is widened by at least ±3 s, as
+  before. It is also widened by at least the largest delay this Edge has measured for that
+  camera in the last 90 days, plus that measurement's own uncertainty.
+- Calibrations that were corrected later do not count.
+- The window, the calibration view and an incident's recorded windows all use it, and
+  say which basis they used (`uncertaintyBasis`: calibration, measured or default).
+- So a drone that lagged 4.2 s ± 0.3 s last match is not claimed at ±3 s this match.
+
+**Checked in the browser** (the 5.6 QA stack: the real Edge image, the synthetic feeds and
+this laptop's kernel):
+- With the bound set to 0, so that this laptop's real readings count as drifting: the
+  amber banner, "Edge degraded", and `clock_not_synced` open. Through the real API, a
+  12.5 s offset was refused with the confirmation message, then kept once confirmed, with
+  one audit entry.
+- Before the settling rule, with the default bound: the banner said "no time source"
+  while the VM's clock was being stepped. That is how the 30 s stepping was found. The
+  rule above came from it.
+- After the rule, with the default settings, for 11 minutes: no banner, no
+  `clock_not_synced`, the clock `synced` 25 s after the Edge started. The Edge was still
+  finalising a backlog then, which is how a slow first pass was found to hold up the
+  clock's reading; it now comes first in each pass. This laptop was heavily loaded, and
+  MediaMTX timed out, so the live preview failed. That is not related to this change.
+- The real watcher on the real kernel, every 2 s for 4 minutes: 12 of 120 readings were
+  unsynchronised (the VM's steps), none was reported, and no alert opened.
+
+**Not covered.**
+- A real Edge with chrony offline for a match. The 0.5 ms a second growth is the
+  kernel's documented behaviour, not measured here.
+- A hardware time source (GPS, PTP): none exists (B5).
+- Whether the match console's clock is right is outside the Edge.
+
+**Checks run** (30 Oct 2026):
+
+| Check | Result |
+|---|---|
+| Edge pytest in the Edge image | 292 passed, 1 skipped (17 new in `test_timesync.py`) |
+| console `vitest run`, `tsc --noEmit`, `build` | 26 passed (4 new in `clock.test.ts`); clean; built |
+| the kernel read inside the Edge image | answered without privilege: synced, 0.26 ms maximum error |
+| the kernel watched every 2 s for 2 min | stepped every 30 s, unsynchronised for 2–8 s each time |
+| browser, 5.6 QA stack | banner at bound 0; 409 then 201 with one audit entry; no banner with the defaults (11 min) |
+| the real ClockWatch on the real kernel, every 2 s for 4 min | 12 of 120 readings unsynchronised, 0 reported, no alert |
+
+```text
+DTP FAIRPLAY | PHASE 5.6 DELIVERY
+STATUS: complete on synthetic data and this laptop's kernel; F11 fixed
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: ClockWatch and clock_samples (Phase 2); F3's banner; the calibration flow (Phase 2)
+- Hardware facts actually verified: the laptop's Docker VM kernel answers adjtimex without privilege, and steps its clock every 30 s
+- Unknowns remaining: the venue Edge's time daemon and how often it can reach a time server (B5)
+
+IMPLEMENTED
+- Code paths changed: timesync.py (new); timing.py (ClockWatch.observe, settling, LargeOffset, uncalibrated_uncertainty); service.py (observe every pass); api.py (409 offset_needs_confirmation, the audit entry, the live clock reading); incidents.py; audit.py (one action); config.py; console clock.ts (new), Console.tsx, api.ts
+- APIs and migrations: no migration. Health and /edge/v1/clock add `sync`; calibration and window views add `uncertaintyBasis`; POST calibrations takes `confirmLargeOffset` and may answer 409 offset_needs_confirmation
+- Local/Cloud config: FAIRPLAY_CLOCK_MAX_ERROR_MS (1000), FAIRPLAY_CLOCK_SETTLE_SECONDS (120), FAIRPLAY_CALIBRATION_CONFIRM_MS (5000) in .env.example
+
+SECURITY + COST
+- Auth and evidence changes: none; a confirmed large offset is audited
+- New dependencies and license: none (ctypes, from the standard library)
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: Edge 292 passed, 1 skipped; console 26 passed; browser checks as described. Untested: a real Edge offline for a match
+- Measured replay/CPU/RAM/SSD outcomes: none (not a performance increment); the VM's clock steps measured as above
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: none found
+- Steps to revert safely: revert the commit (no data change; old calibrations and samples read as before)
+- Human approvals required: the bounds' defaults (1 s, 120 s, 5 s); the open decisions as before
+- Proposed next phase: 5.7, the request and erasure tool (D11, B15), or the 5.5 fixes Fola picks
 ```
 
 ---
