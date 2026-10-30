@@ -474,12 +474,15 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def disk_view() -> dict:
         usage = shutil.disk_usage(settings.recordings_dir)
         state = "ok"
-        if usage.free < settings.disk_hard_free_bytes:
+        if usage.free < settings.disk_full_free_bytes:
+            state = "full"
+        elif usage.free < settings.disk_hard_free_bytes:
             state = "hard_limit"
         elif usage.free < settings.disk_soft_free_bytes:
             state = "soft_limit"
         return {"freeBytes": usage.free, "totalBytes": usage.total, "softLimitFreeBytes": settings.disk_soft_free_bytes,
-                "hardLimitFreeBytes": settings.disk_hard_free_bytes, "state": state,
+                "hardLimitFreeBytes": settings.disk_hard_free_bytes, "fullFreeBytes": settings.disk_full_free_bytes,
+                "state": state,
                 **service.watchdog.disk_outlook(usage.free)}
 
     def refuse_at_hard_limit(what: str) -> None:

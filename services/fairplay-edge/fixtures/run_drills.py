@@ -578,6 +578,8 @@ class Drills(Run):
         open_ids = self.open_segments()
         t3 = self.note("S3: fill the disk")
         full = self.fill(0)
+        disk_full = self.until("disk_full", lambda: self.alert_open("disk_full"), 30, every=1)
+        t3_full = utc()
         stalled = self.until("recording_stalled on both", lambda: all(self.alert_open("recording_stalled", n) for n in ("ground", "drone")),
                              30, every=1)
         t3_seen = utc()
@@ -585,6 +587,10 @@ class Drills(Run):
         for _ in range(6):
             views.append({n: self.source(n).get("recording") for n in ("ground", "drone")})
             time.sleep(2)
+        self.check("S3: a full disk raises disk_full (critical), and the disk's state is full",
+                   bool(disk_full) and disk_full.get("severity") == "critical"
+                   and self.api("GET", "/edge/v1/disk").get("state") == "full",
+                   detectSeconds=round((t3_full - t3).total_seconds(), 1))
         self.check("S3: no camera is shown as recording while the disk is full",
                    not any(v for view in views for v in view.values()), samples=views)
         self.check("S3: with the disk full, recording stops and is raised as recording_stalled (critical) on both cameras",
@@ -608,7 +614,7 @@ class Drills(Run):
             t_back = utc()
         self.check("S4: once space is freed both cameras record again, with no restart", action is None, recovered=bool(back))
         self.wait(45, "finalise the segments open when the disk filled")
-        left = [k for k in ("disk_soft_limit", "disk_hard_limit") if self.alert_open(k)]
+        left = [k for k in ("disk_soft_limit", "disk_hard_limit", "disk_full") if self.alert_open(k)]
         left += [f"recording_stalled:{n}" for n in ("ground", "drone") if self.alert_open("recording_stalled", n)]
         self.check("S4: the disk and recording alerts resolve", not left, open=left)
         losses = self.crashed("S4", open_ids, t3)

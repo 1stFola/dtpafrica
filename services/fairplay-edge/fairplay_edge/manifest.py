@@ -10,7 +10,12 @@ A segment is final when either
     (the feed ended, or MediaMTX died mid-segment).
 Final segments are checked structurally (mp4.inspect), probed, hashed over every byte, and
 recorded twice: a row in SQLite and a JSON sidecar in `manifests/`. A file with a
-half-written tail is `partial`, never `finalized`; one ffprobe cannot read is `corrupt`.
+half-written tail is `partial`, never `finalized`. That includes a file whose torn tail stops
+ffprobe reading it, as long as its whole fragments probe (F23). A file with no readable
+media is `corrupt`.
+
+`last_growth_utc` is when media was last written to a segment. A file that holds only its
+initialisation, or nothing, does not count as growth (F21).
 """
 
 from __future__ import annotations
@@ -36,6 +41,12 @@ MANIFEST_SCHEMA = "fairplay.segment-manifest/v1"
 # ahead of its video: at each segment switch the recorder discards the late video ("sample
 # of track received too late"). See docs/fairplay/phase-3-incidents-and-evidence.md.
 VIDEO_GAP_MS = 250
+
+
+def media_written(path: Path) -> bool:
+    """Whether the file holds media: its init, then a fragment or the start of one."""
+    structure = mp4.inspect(path)
+    return structure.complete_bytes > 0 and (structure.fragments > 0 or structure.file_bytes > structure.complete_bytes)
 
 
 def list_segment_files(recordings_dir: Path, source_names: set[str]) -> list[tuple[str, Path]]:
@@ -73,11 +84,12 @@ class Scanner:
             newest_start[source] = max(newest_start.get(source, start_s), start_s)
             if rel not in known:
                 size = path.stat().st_size
+                grown = iso(now) if size and media_written(path) else None
                 with self.store.tx() as db:
                     db.execute(
                         "INSERT INTO segments (id, source, rel_path, start_utc, state, discovered_utc, last_size,"
                         " last_growth_utc) VALUES (?, ?, ?, ?, 'recording', ?, ?, ?)",
-                        (new_id(), source, rel, start_s, iso(now), size, iso(now)),
+                        (new_id(), source, rel, start_s, iso(now), size, grown),
                     )
                 log.info(json.dumps({"event": "segment.discovered", "rel_path": rel}))
 
@@ -90,12 +102,14 @@ class Scanner:
                 continue
             size = path.stat().st_size
             if size != row["last_size"]:
+                # Once a file holds media, every change is media; until then, look.
+                grown = iso(now) if row["last_growth_utc"] or media_written(path) else None
                 with self.store.tx() as db:
                     db.execute(
-                        "UPDATE segments SET last_size = ?, last_growth_utc = ? WHERE id = ?",
-                        (size, iso(now), row["id"]),
+                        "UPDATE segments SET last_size = ?, last_growth_utc = COALESCE(?, last_growth_utc) WHERE id = ?",
+                        (size, grown, row["id"]),
                     )
-                row["last_growth_utc"] = iso(now)
+                row["last_growth_utc"] = grown or row["last_growth_utc"]
             reason = None
             if newest_start.get(row["source"], row["start_utc"]) > row["start_utc"]:
                 reason = "newer_segment"
@@ -130,6 +144,14 @@ class Scanner:
             probe_result = probe(path)
         except ProbeError as exc:
             problems.append(f"ffprobe: {exc}")
+            if structure.has_media and structure.complete_bytes < structure.file_bytes:
+                # A tear inside a fragment's header can stop ffprobe reading the file at all
+                # (F23). The whole fragments before it are what a repair keeps: probe those.
+                try:
+                    probe_result = probe(path, limit=structure.complete_bytes)
+                    problems.append(f"probed the first {structure.complete_bytes} bytes, the whole fragments")
+                except ProbeError as inner:
+                    problems.append(f"ffprobe of the whole fragments: {inner}")
         if probe_result is None or not structure.has_media:
             state = "corrupt"
         elif structure.is_complete:

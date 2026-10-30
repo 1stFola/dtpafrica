@@ -84,6 +84,60 @@ def test_publishing_but_stalled_raises_recording_stalled(settings, store, mtx, f
     assert _open(store, "recording_stalled", "ground")["severity"] == "critical"
 
 
+def test_new_empty_files_are_not_recording(settings, store, mtx, fake_probe):
+    """F21: on a full disk MediaMTX opens a new file every few seconds and writes nothing to
+    it. A new file is not media; only media written counts as recording."""
+    s = replace(settings, record_stall_seconds=0)
+    dog = Watchdog(s, store, mtx)
+    mtx.ready = {"ground": True, "drone": False}
+    write_segment(s.recordings_dir, "ground", at(0), fmp4(2))
+    Scanner(s, store).scan({"ground": True})
+    with store.tx() as db:  # it last grew, and began publishing, a while ago
+        db.execute("UPDATE source_state SET since_utc = '2026-10-27T13:00:00.000Z'")
+        db.execute("UPDATE segments SET last_growth_utc = '2026-10-27T13:00:00.000Z'")
+    write_segment(s.recordings_dir, "ground", at(3), b"")
+    write_segment(s.recordings_dir, "ground", at(6), fmp4(0))  # its init, and nothing after
+    Scanner(s, store).scan({"ground": True})
+    rows = store.query("SELECT last_growth_utc FROM segments WHERE start_utc > '2026-10-27T14:00:00.000Z'")
+    assert [r["last_growth_utc"] for r in rows] == [None, None]
+    dog.poll()
+    assert dog.recording_state("ground", True)["recording"] is False
+    assert _open(store, "recording_stalled", "ground")["severity"] == "critical"
+
+
+def test_a_segment_switch_stays_recording(settings, store, mtx, fake_probe):
+    """The new file of a normal segment switch is empty for a moment; the last one just grew."""
+    dog = Watchdog(settings, store, mtx)
+    mtx.ready = {"ground": True, "drone": False}
+    write_segment(settings.recordings_dir, "ground", at(0), fmp4(3))
+    scanner = Scanner(settings, store)
+    scanner.scan({"ground": True})
+    new = write_segment(settings.recordings_dir, "ground", at(300), b"")
+    scanner.scan({"ground": True})
+    view = dog.recording_state("ground", True)
+    assert view["recording"] is True and view["currentSegmentBytes"] == 0
+    new.write_bytes(fmp4(1))
+    scanner.scan({"ground": True})
+    current = store.one("SELECT last_growth_utc FROM segments WHERE start_utc = '2026-10-27T14:05:00.000Z'")
+    assert current["last_growth_utc"] is not None
+
+
+def test_a_full_disk_is_not_recording(settings, store, mtx, fake_probe):
+    """F21: below the space one part needs, every source is not recording, whatever its files do."""
+    dog = Watchdog(replace(settings, disk_full_free_bytes=10**18), store, mtx)
+    mtx.ready = {"ground": True, "drone": False}
+    write_segment(settings.recordings_dir, "ground", at(0), fmp4(1))
+    Scanner(settings, store).scan({"ground": True})
+    dog.poll()
+    assert _open(store, "disk_full")["severity"] == "critical"
+    view = dog.recording_state("ground", True)
+    assert view["recording"] is False and view["diskFull"] is True
+    dog = Watchdog(replace(settings, disk_full_free_bytes=0), store, mtx)
+    dog.poll()
+    assert _open(store, "disk_full") is None
+    assert dog.recording_state("ground", True)["recording"] is True
+
+
 def test_disk_thresholds(settings, store, mtx):
     huge = 10**18
     dog = Watchdog(replace(settings, disk_soft_free_bytes=huge, disk_hard_free_bytes=huge), store, mtx)

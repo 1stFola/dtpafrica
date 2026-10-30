@@ -54,10 +54,17 @@ def ffprobe_path() -> str:
     return found
 
 
-def run_ffprobe(path: Path, timeout: float = 60) -> dict:
+def run_ffprobe(path: Path, timeout: float = 60, limit: int | None = None) -> dict:
+    """`limit` reads only the file's first bytes, through ffmpeg's subfile protocol: still
+    seekable, and nothing is copied."""
+    target = str(path)
+    if limit is not None:
+        if "," in target:
+            raise ProbeError("a path with a comma cannot be read as a byte range")
+        target = f"subfile,,start,0,end,{int(limit)},,:{target}"
     cmd = [
         ffprobe_path(), "-v", "error", "-print_format", "json",
-        "-show_format", "-show_streams", str(path),
+        "-show_format", "-show_streams", target,
     ]
     try:
         out = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
@@ -109,8 +116,8 @@ def summarise(raw: dict) -> Probe:
     )
 
 
-def probe(path: Path) -> Probe:
-    return summarise(run_ffprobe(path))
+def probe(path: Path, limit: int | None = None) -> Probe:
+    return summarise(run_ffprobe(path, limit=limit))
 
 
 def video_packets(path: Path, read_interval: str | None = None, timeout: float = 120) -> list[tuple[float, bool]]:
