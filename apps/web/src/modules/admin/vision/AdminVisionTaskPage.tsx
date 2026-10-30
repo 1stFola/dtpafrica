@@ -14,6 +14,7 @@ import {
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { sentBackReview } from "./annotation-access";
+import { REJECTION_LABELS, rejectionLabel, taskRef } from "./annotation-labels";
 import { usePictureRect } from "./use-picture-rect";
 import {
   clampToWindow,
@@ -68,16 +69,6 @@ import {
  */
 
 const CLASS_KEYS: Record<string, DetectionClass> = { "1": "player", "2": "goalkeeper", "3": "referee", "4": "ball" };
-
-const REJECTION_LABELS: Record<RejectionReason, string> = {
-  wrong_box: "Box is wrong",
-  wrong_identity: "Wrong player",
-  camera_cut: "Camera cut mid-window",
-  ball_invisible: "Ball not visible",
-  event_ambiguous: "Event genuinely ambiguous",
-  roster_error: "Roster is wrong",
-  rights_issue: "Rights problem",
-};
 
 export function AdminVisionTaskPage() {
   const { taskId = "" } = useParams();
@@ -503,6 +494,9 @@ export function AdminVisionTaskPage() {
     <main className="vision-workstation">
       <header className="vision-workstation__bar">
         <Link to="/admin/vision/annotation">← Queue</Link>
+        <span>
+          Task <strong className="vision-mono" title={task.id}>{taskRef(task.id)}</strong>
+        </span>
         <span className="vision-pill">{task.state.replace(/_/g, " ")}</span>
         <span>
           Schema <strong>{task.labelSchemaVersion?.version ?? "unknown"}</strong>
@@ -527,7 +521,7 @@ export function AdminVisionTaskPage() {
       {notice && <div className="vision-panel">{notice}</div>}
       {sentBack && (
         <div className="vision-panel" role="status">
-          <strong>Sent back: {sentBack.rejectionReason ? REJECTION_LABELS[sentBack.rejectionReason] ?? sentBack.rejectionReason : "no reason given"}.</strong>{" "}
+          <strong>Sent back: {rejectionLabel(sentBack.rejectionReason)}.</strong>{" "}
           {sentBack.notes ? <>Reviewer&apos;s note: &ldquo;{sentBack.notes}&rdquo;.</> : "The reviewer left no note."} Fix it, then submit again.
         </div>
       )}
@@ -765,7 +759,7 @@ export function AdminVisionTaskPage() {
                   {version.reviews.map((r) => (
                     <div key={r.id}>
                       {r.decision}
-                      {r.rejectionReason && ` — ${REJECTION_LABELS[r.rejectionReason] ?? r.rejectionReason}`}
+                      {r.rejectionReason && ` — ${rejectionLabel(r.rejectionReason)}`}
                       {r.notes && <div className="vision-footnote">{r.notes}</div>}
                     </div>
                   ))}

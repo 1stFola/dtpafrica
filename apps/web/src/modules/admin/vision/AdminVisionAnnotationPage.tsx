@@ -9,11 +9,14 @@ import {
   fetchVisionHardFrameRuns,
   fetchVisionAnnotationReviewQueue,
   fetchVisionLabellerProgress,
+  fetchVisionReviewedAnnotations,
   queueVisionHardFrames,
   type VisionLabellerProgress,
   type SamplingStrategy,
   type VisionHardFrameRun,
   type VisionAnnotationReviewTask,
+  type VisionReviewedDecision,
+  type ReviewDecisionKind,
   type VisionActiveLearningItem,
   type VisionLabelSchema,
   type VisionMixReport,
@@ -22,6 +25,7 @@ import { useAdminAuth } from "../AdminAuthContext";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { formatClock } from "./annotation-time";
+import { rejectionLabel, taskRef } from "./annotation-labels";
 
 /**
  * The annotation queue.
@@ -58,6 +62,13 @@ const STATE_LABELS: Record<string, string> = {
   abandoned: "Abandoned",
 };
 
+/* Text carries the verdict; the pill's colour only reinforces it. */
+const VERDICTS: Record<ReviewDecisionKind, { label: string; pill: string }> = {
+  approved: { label: "Approved", pill: "is-acquired" },
+  corrected: { label: "Corrected", pill: "is-progress" },
+  rejected: { label: "Sent back", pill: "is-refused" },
+};
+
 export function AdminVisionAnnotationPage() {
   usePageTitle("Annotation queue");
   const navigate = useNavigate();
@@ -71,6 +82,7 @@ export function AdminVisionAnnotationPage() {
 
   const [mix, setMix] = useState<VisionMixReport | null>(null);
   const [review, setReview] = useState<{ waiting: number; yours: number; tasks: VisionAnnotationReviewTask[] } | null>(null);
+  const [reviewed, setReviewed] = useState<{ total: number; decisions: VisionReviewedDecision[] } | null>(null);
   const [labellers, setLabellers] = useState<VisionLabellerProgress[] | null>(null);
   const [queue, setQueue] = useState<VisionActiveLearningItem[]>([]);
   const [runs, setRuns] = useState<VisionHardFrameRun[]>([]);
@@ -85,15 +97,17 @@ export function AdminVisionAnnotationPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [mixReport, queueResult, schemaResult, runResult, reviewResult, progressResult] = await Promise.all([
+      const [mixReport, queueResult, schemaResult, runResult, reviewResult, progressResult, reviewedResult] = await Promise.all([
         fetchVisionMixReport(),
         fetchVisionAnnotationQueue(50),
         fetchVisionLabelSchemas(),
         fetchVisionHardFrameRuns(),
         canReview ? fetchVisionAnnotationReviewQueue(50) : Promise.resolve(null),
         canReview ? fetchVisionLabellerProgress() : Promise.resolve(null),
+        canReview ? fetchVisionReviewedAnnotations(50) : Promise.resolve(null),
       ]);
       setReview(reviewResult);
+      setReviewed(reviewedResult);
       setLabellers(progressResult?.labellers ?? null);
       setRuns(runResult.runs);
       setMix(mixReport);
@@ -260,11 +274,20 @@ export function AdminVisionAnnotationPage() {
           ) : (
             <>
               <table className="vision-table">
-                <thead><tr><th scope="col">Submitted</th><th scope="col">By</th><th scope="col">Footage</th><th scope="col">Window</th><th scope="col">Why sampled</th><th scope="col" /></tr></thead>
+                <thead><tr><th scope="col">Task</th><th scope="col">Submitted</th><th scope="col">By</th><th scope="col">Footage</th><th scope="col">Window</th><th scope="col">Why sampled</th><th scope="col" /></tr></thead>
                 <tbody>
                   {review.tasks.map((task) => (
                     <tr key={task.taskId}>
-                      <td>{new Date(task.submittedAt).toLocaleString()}</td>
+                      <td className="vision-mono" title={task.taskId}>{taskRef(task.taskId)}</td>
+                      <td>
+                        {new Date(task.submittedAt).toLocaleString()}
+                        {task.sentBackBefore && (
+                          <div className="vision-sub">
+                            <span className="vision-pill is-progress">Resubmitted</span>{" "}
+                            sent back {new Date(task.sentBackBefore.at).toLocaleDateString()}: {rejectionLabel(task.sentBackBefore.reason)}
+                          </div>
+                        )}
+                      </td>
                       <td>{task.annotator ?? "—"}</td>
                       <td>{task.source ?? <span className="vision-mono">{task.videoAssetId.slice(0, 8)}</span>}</td>
                       <td>{formatClock(task.startMs)}</td>
@@ -276,6 +299,50 @@ export function AdminVisionAnnotationPage() {
               </table>
               {review.waiting > review.tasks.length && (
                 <p className="vision-footnote">Showing the oldest {review.tasks.length} of {review.waiting}.</p>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      {canReview && reviewed && (
+        <section className="vision-panel">
+          <h2 className="vision-panel__title">Already reviewed</h2>
+          <p className="vision-footnote">
+            Every verdict given on labelling work, newest first. A frame sent back and approved later
+            appears twice, under the same task number.
+          </p>
+          {reviewed.decisions.length === 0 ? (
+            <p className="vision-footnote">Nothing reviewed yet.</p>
+          ) : (
+            <>
+              <table className="vision-table">
+                <thead><tr><th scope="col">Task</th><th scope="col">Reviewed</th><th scope="col">Verdict</th><th scope="col">Labelled by</th><th scope="col">Footage</th><th scope="col">Window</th><th scope="col" /></tr></thead>
+                <tbody>
+                  {reviewed.decisions.map((d) => {
+                    const verdict = VERDICTS[d.decision] ?? { label: d.decision, pill: "" };
+                    return (
+                      <tr key={d.decisionId}>
+                        <td className="vision-mono" title={d.taskId}>{taskRef(d.taskId)}</td>
+                        <td>
+                          {new Date(d.reviewedAt).toLocaleString()}
+                          {d.reviewer && <div className="vision-sub">by {d.reviewer}</div>}
+                        </td>
+                        <td>
+                          <span className={`vision-pill ${verdict.pill}`}>{verdict.label}</span>
+                          {d.decision === "rejected" && <div className="vision-sub">{rejectionLabel(d.rejectionReason)}</div>}
+                        </td>
+                        <td>{d.annotator ?? "—"}</td>
+                        <td>{d.source ?? <span className="vision-mono">{d.videoAssetId.slice(0, 8)}</span>}</td>
+                        <td>{formatClock(d.startMs)}</td>
+                        <td><button type="button" onClick={() => navigate(`/admin/vision/workstation/${d.taskId}`)}>Open</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {reviewed.total > reviewed.decisions.length && (
+                <p className="vision-footnote">Showing the latest {reviewed.decisions.length} of {reviewed.total}.</p>
               )}
             </>
           )}

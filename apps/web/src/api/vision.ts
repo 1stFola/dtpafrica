@@ -407,10 +407,19 @@ export function queueVisionHardFrames(jobId: string) {
 }
 /** A submitted task waiting for a second person (docs/vision/101). */
 export type VisionAnnotationReviewTask = { taskId: string; videoAssetId: string; source: string | null; startMs: number; endMs: number;
-  samplingStrategy: SamplingStrategy; preLabelled: boolean; versionId: string | null; submittedAt: string; annotator: string | null };
+  samplingStrategy: SamplingStrategy; preLabelled: boolean; versionId: string | null; submittedAt: string; annotator: string | null;
+  /** Set when an earlier attempt was sent back: this is a resubmission, not new work. */
+  sentBackBefore: { at: string; reason: RejectionReason | null } | null };
 /** Oldest submission first. `yours` counts work the signed-in person submitted: they may not review it. */
 export function fetchVisionAnnotationReviewQueue(limit = 50) {
   return adminFetch<{ waiting: number; yours: number; tasks: VisionAnnotationReviewTask[] }>(`/vision/annotation/review-queue?limit=${limit}`);
+}
+export type VisionReviewedDecision = { decisionId: string; decision: ReviewDecisionKind; rejectionReason: RejectionReason | null; notes: string | null;
+  reviewedAt: string; reviewer: string | null; annotator: string | null; submittedAt: string; versionId: string; taskId: string; taskState: string;
+  videoAssetId: string; source: string | null; startMs: number; endMs: number; samplingStrategy: SamplingStrategy };
+/** Verdicts already given on labelling work, newest first. */
+export function fetchVisionReviewedAnnotations(limit = 50) {
+  return adminFetch<{ total: number; decisions: VisionReviewedDecision[] }>(`/vision/annotation/reviewed?limit=${limit}`);
 }
 export type VisionLabellerProgress = {
   annotatorId: string;

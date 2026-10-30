@@ -883,7 +883,8 @@ export class VisionAnnotationService {
       orderBy: { updatedAt: "asc" },
       select: { id: true, videoAssetId: true, startMs: true, endMs: true, samplingStrategy: true, preLabelled: true, updatedAt: true,
         videoAsset: { select: { sourceVideoRecord: { select: { title: true } } } },
-        versions: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, annotatorId: true, createdAt: true } } },
+        versions: { orderBy: { createdAt: "desc" }, select: { id: true, annotatorId: true, createdAt: true,
+          reviews: { where: { decision: "rejected" }, orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true, rejectionReason: true } } } } },
     });
     const userId = actor?.userId ?? null;
     const own = tasks.filter((t) => userId && t.versions[0]?.annotatorId === userId);
@@ -899,7 +900,49 @@ export class VisionAnnotationService {
         startMs: t.startMs, endMs: t.endMs, samplingStrategy: t.samplingStrategy, preLabelled: t.preLabelled,
         versionId: t.versions[0]?.id ?? null, submittedAt: t.versions[0]?.createdAt ?? t.updatedAt,
         annotator: t.versions[0]?.annotatorId ? (who.get(t.versions[0].annotatorId) ?? t.versions[0].annotatorId) : null,
+        // A resubmission after a send-back, so it is not mistaken for new work.
+        sentBackBefore: lastSendBack(t.versions.slice(1)),
       })),
+    };
+  }
+
+  /**
+   * Verdicts already given on labelling work, newest first.
+   *
+   * The review queue only lists what is still waiting, so approved and sent-back work used
+   * to vanish from view. One row per verdict: a frame sent back and later approved shows
+   * twice, and its task id says it is the same frame.
+   */
+  async reviewed(limit = 50) {
+    const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 50, 1), 200);
+    const where = { targetKind: "vision_annotation_version", annotationVersionId: { not: null } };
+    const [total, decisions] = await Promise.all([
+      this.prisma.visionReviewDecision.count({ where }),
+      this.prisma.visionReviewDecision.findMany({
+        where, orderBy: { createdAt: "desc" }, take,
+        select: { id: true, decision: true, rejectionReason: true, notes: true, reviewerId: true, createdAt: true,
+          annotationVersion: { select: { id: true, annotatorId: true, createdAt: true,
+            task: { select: { id: true, videoAssetId: true, startMs: true, endMs: true, samplingStrategy: true, state: true,
+              videoAsset: { select: { sourceVideoRecord: { select: { title: true } } } } } } } } },
+      }),
+    ]);
+    const peopleIds = [...new Set(decisions.flatMap((d) => [d.reviewerId, d.annotationVersion?.annotatorId].filter((x): x is string => !!x)))];
+    const people = peopleIds.length ? await this.prisma.adminUser.findMany({ where: { id: { in: peopleIds } }, select: { id: true, name: true, email: true } }) : [];
+    const who = new Map(people.map((p) => [p.id, p.name || p.email]));
+    const name = (id: string | null | undefined) => (id ? (who.get(id) ?? id) : null);
+    return {
+      total,
+      decisions: decisions.flatMap((d) => {
+        const v = d.annotationVersion;
+        if (!v) return [];
+        return [{
+          decisionId: d.id, decision: d.decision, rejectionReason: d.rejectionReason, notes: d.notes, reviewedAt: d.createdAt,
+          reviewer: name(d.reviewerId), annotator: name(v.annotatorId), submittedAt: v.createdAt, versionId: v.id,
+          taskId: v.task.id, taskState: v.task.state, videoAssetId: v.task.videoAssetId,
+          source: v.task.videoAsset.sourceVideoRecord?.title ?? null, startMs: v.task.startMs, endMs: v.task.endMs,
+          samplingStrategy: v.task.samplingStrategy,
+        }];
+      }),
     };
   }
 
@@ -1132,4 +1175,10 @@ export class VisionAnnotationService {
     }
     return task;
   }
+}
+
+/** The latest send-back among earlier attempts, newest first. */
+function lastSendBack(earlier: { reviews: { createdAt: Date; rejectionReason: string | null }[] }[]) {
+  const r = earlier.find((v) => v.reviews.length)?.reviews[0];
+  return r ? { at: r.createdAt, reason: r.rejectionReason } : null;
 }
