@@ -747,6 +747,7 @@ when a route has neither a permission nor a token guard.
 | `POST` | `/vision/annotation/queue/:id/convert` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
 | `POST` | `/vision/annotation/queue/hard-frames/:jobId` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
 | `GET` | `/vision/annotation/review-queue` | `vision.review` | `annotation/annotation.controller.ts` |
+| `GET` | `/vision/annotation/reviewed` | `vision.review` | `annotation/annotation.controller.ts` |
 | `GET` | `/vision/annotation/schemas` | `vision.read` | `annotation/annotation.controller.ts` |
 | `POST` | `/vision/annotation/schemas` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |
 | `POST` | `/vision/annotation/schemas/:id/supersede` | `vision.datasets.manage` | `annotation/annotation.controller.ts` |

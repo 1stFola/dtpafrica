@@ -148,6 +148,13 @@ export class VisionAnnotationController {
     return jsonSafe(await this.annotation.reviewQueue(auth, limit ? Number(limit) : undefined));
   }
 
+  /** Verdicts already given on labelling work, newest first, so reviewed work can be found again. */
+  @Get("reviewed")
+  @RequirePermissions("vision.review")
+  async reviewed(@Query("limit") limit?: string) {
+    return jsonSafe(await this.annotation.reviewed(limit ? Number(limit) : undefined));
+  }
+
   /** Each labeller's output, pace and send-backs: read by whoever reviews them, not by labellers about each other. */
   @Get("labellers")
   @RequirePermissions("vision.review")
