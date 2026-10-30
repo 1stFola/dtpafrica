@@ -116,7 +116,7 @@ def window_definitions(store: Store, settings: Settings, session_id: str, event:
             "fromIngestUtc": iso(event - timedelta(milliseconds=pre_ms - offset)),
             "toIngestUtc": iso(event + timedelta(milliseconds=post_ms + offset)),
             "offsetMs": offset,
-            "uncertaintyMs": cal["uncertainty_ms"] if cal else timing.UNCALIBRATED_UNCERTAINTY_MS,
+            "uncertaintyMs": cal["uncertainty_ms"] if cal else timing.uncalibrated_uncertainty(store, source.name)[0],
             "calibrationId": cal["id"] if cal else None,
         })
     return out

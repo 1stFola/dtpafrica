@@ -19,6 +19,11 @@ time, so footage recorded before a later drop keeps its calibration.
 
 Browser seeks land on keyframes. Nothing here claims frame accuracy: a window is a request
 for "about this moment, give or take the stated uncertainty".
+
+Phase 5.6 (F11): the Edge clock's sync state is read from the kernel (timesync.py), not
+assumed; a camera not yet calibrated is given at least the largest delay it has been
+measured at; and an offset beyond `FAIRPLAY_CALIBRATION_CONFIRM_MS` must be confirmed, since
+a slip of the hand on the reference looks like any other number.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Callable
 
-from . import outbox
+from . import outbox, timesync
 from .config import Settings
 from .naming import iso, parse_iso, utcnow
 from .store import Store, new_id
@@ -40,8 +45,14 @@ CATEGORIES = ("goal", "penalty", "offside", "foul", "handball", "card", "goalkee
 # A guess, not a measurement: an uncalibrated camera's delay is unknown. Phase 3's fixture
 # runs measured 0.9-2.3 s on the synthetic feeds, so the Phase 2 value of 2 s was too tight.
 UNCALIBRATED_UNCERTAINTY_MS = 3000
+# How far back a camera's measured delays count towards its uncalibrated uncertainty.
+MEASURED_LOOKBACK = timedelta(days=90)
+# No live camera delay is a minute: an offset beyond this is a wrong reference or a wrong frame.
+MAX_OFFSET_MS = 60_000
 HIGH_UNCERTAINTY_MS = 500
 STEP_THRESHOLD_MS = 1000
+# A clock step is news for this long; older ones stay in clock_samples.
+RECENT_STEP = timedelta(hours=2)
 HOLD_MARGIN = timedelta(seconds=60)
 MAX_WINDOW_MS = 10 * 60 * 1000
 STATE_PRIORITY = ("no_footage", "gap", "stale_after_reconnect", "uncalibrated", "uncertainty_high")
@@ -55,6 +66,15 @@ class TimingError(ValueError):
 
 class Conflict(TimingError):
     pass
+
+
+class LargeOffset(TimingError):
+    """An offset larger than cameras usually lag: kept only when the operator confirms it."""
+
+    def __init__(self, offset_ms: int, bound_ms: int):
+        self.offset_ms, self.bound_ms = offset_ms, bound_ms
+        super().__init__(f"an offset of {offset_ms / 1000:+.1f} s is larger than cameras usually lag ({bound_ms / 1000:.0f} s):"
+                         " check the reference and the frame, then confirm it if it is right")
 
 
 def mono_ns() -> int:
@@ -156,7 +176,7 @@ def _frame_ms(store: Store, source: str) -> int:
 def calibrate(store: Store, settings: Settings, session_id: str, source: str, reference_utc: datetime,
               observed_ingest_utc: datetime, uncertainty_ms: int, method: str, actor: str, *,
               period: str | None = None, reference_source: str | None = None, evidence_segment_id: str | None = None,
-              note: str | None = None, supersedes: str | None = None) -> dict:
+              note: str | None = None, supersedes: str | None = None, confirm_large: bool = False) -> dict:
     _open(store, session_id)
     if settings.source(source) is None:
         raise TimingError(f"no configured source named {source!r}")
@@ -169,6 +189,10 @@ def calibrate(store: Store, settings: Settings, session_id: str, source: str, re
         # Seeking is keyframe-constrained and frames are discrete: no claim tighter than a frame.
         raise TimingError(f"uncertainty below one frame ({floor} ms) is not a claim the footage supports")
     offset = round((observed_ingest_utc - reference_utc).total_seconds() * 1000)
+    if abs(offset) > MAX_OFFSET_MS:
+        raise TimingError(f"an offset of {offset / 1000:+.1f} s is not a camera's delay: the reference or the frame is wrong")
+    if abs(offset) > settings.calibration_confirm_ms and not confirm_large:
+        raise LargeOffset(offset, settings.calibration_confirm_ms)
     row = {"id": new_id(), "session_id": session_id, "source": source, "period": period,
            "reference_utc": iso(reference_utc), "observed_ingest_utc": iso(observed_ingest_utc), "offset_ms": offset,
            "uncertainty_ms": int(uncertainty_ms), "method": method, "reference_source": reference_source,
@@ -190,6 +214,20 @@ def current_calibration(store: Store, session_id: str, source: str) -> dict | No
         "SELECT * FROM calibrations c WHERE session_id = ? AND source = ? AND NOT EXISTS"
         " (SELECT 1 FROM calibrations d WHERE d.supersedes = c.id) ORDER BY created_utc DESC LIMIT 1",
         (session_id, source))
+
+
+def uncalibrated_uncertainty(store: Store, source: str, now: datetime | None = None) -> tuple[int, str]:
+    """How uncertain a camera not calibrated in this session is, and why: never less than
+    the default, and never less than the largest delay this Edge has measured for it lately
+    (plus that measurement's own uncertainty). Corrected calibrations do not count."""
+    since = iso((now or utcnow()) - MEASURED_LOOKBACK)
+    row = store.one(
+        "SELECT MAX(ABS(offset_ms) + uncertainty_ms) AS worst FROM calibrations c WHERE source = ? AND created_utc >= ?"
+        " AND NOT EXISTS (SELECT 1 FROM calibrations d WHERE d.supersedes = c.id)", (source, since))
+    worst = row["worst"] if row else None
+    if worst is not None and worst > UNCALIBRATED_UNCERTAINTY_MS:
+        return min(int(worst), MAX_OFFSET_MS), "measured"
+    return UNCALIBRATED_UNCERTAINTY_MS, "default"
 
 
 INTERRUPTION_MS = 500
@@ -231,6 +269,7 @@ def calibration_view(store: Store, settings: Settings, session_id: str, spans_fn
         cal = current_calibration(store, session_id, source.name)
         stale = interrupted_between(store, source.name, parse_iso(cal["observed_ingest_utc"]), now, spans_fn) if cal else None
         flags = []
+        unc, basis = (cal["uncertainty_ms"], "calibration") if cal else uncalibrated_uncertainty(store, source.name, now)
         if cal is None:
             flags.append("uncalibrated")
         else:
@@ -241,7 +280,7 @@ def calibration_view(store: Store, settings: Settings, session_id: str, spans_fn
         out.append({
             "source": source.name, "role": source.role,
             "offsetMs": cal["offset_ms"] if cal else 0,
-            "uncertaintyMs": cal["uncertainty_ms"] if cal else UNCALIBRATED_UNCERTAINTY_MS,
+            "uncertaintyMs": unc, "uncertaintyBasis": basis,
             "calibration": cal, "flags": flags,
             "reconnect": stale,
         })
@@ -275,7 +314,7 @@ def source_window(store: Store, session_id: str, source: str, event: datetime, p
                   spans_fn: SpansFn) -> dict:
     cal = current_calibration(store, session_id, source)
     offset = cal["offset_ms"] if cal else 0
-    unc = cal["uncertainty_ms"] if cal else UNCALIBRATED_UNCERTAINTY_MS
+    unc, basis_of_unc = (cal["uncertainty_ms"], "calibration") if cal else uncalibrated_uncertainty(store, source)
     duration = min(pre_ms + post_ms + 2 * unc, MAX_WINDOW_MS)
     start = event - timedelta(milliseconds=pre_ms) + timedelta(milliseconds=offset - unc)
     end = start + timedelta(milliseconds=duration)
@@ -303,6 +342,7 @@ def source_window(store: Store, session_id: str, source: str, event: datetime, p
         "eventAtMs": pre_ms + unc,  # where the incident falls inside the window
         "offsetMs": offset,
         "uncertaintyMs": unc,
+        "uncertaintyBasis": basis_of_unc,
         "calibrationId": cal["id"] if cal else None,
         "coveredMs": covered,
         "basis": basis,
@@ -353,12 +393,55 @@ def sync_test(store: Store, settings: Settings, session_id: str, at: datetime, s
 # ── the Edge clock ────────────────────────────────────────────────────────
 
 class ClockWatch:
-    """Samples wall and monotonic clocks together; a disagreement means the wall clock jumped."""
+    """Samples wall and monotonic clocks together; a disagreement means the wall clock jumped.
 
-    def __init__(self, store: Store, ntp_state: str = "unknown"):
+    It also asks the kernel, on every pass, whether the clock is synchronised, and raises
+    `clock_not_synced` while it is not. Good news counts at once; bad news only once it has
+    lasted `settle_seconds`. A daemon that steps the clock leaves it marked unsynchronised
+    until its next update, a few seconds later: Docker Desktop's VM does so every 30 s, and
+    chrony after a large correction. A clock with no daemon stays unsynchronised."""
+
+    def __init__(self, store: Store, max_error_ms: int = 1000, read: Callable[[int], dict] = timesync.read,
+                 settle_seconds: float = 120):
         self.store = store
-        self.ntp_state = ntp_state
+        self.max_error_ms = max_error_ms
+        self.read = read
+        self.settle_seconds = settle_seconds
+        # Not read yet: being checked, which the console says as such.
+        self.sync: dict = {"state": "unknown", "maxErrorMs": None, "estErrorMs": None, "source": "none", "settling": True}
+        self._bad_since: float | None = None
+        self._alerted: bool | None = None  # what the alert table says, once this watcher has set it
         self._last: tuple[datetime, int] | None = None
+
+    @property
+    def ntp_state(self) -> str:
+        return self.sync["state"]
+
+    def observe(self, now: datetime | None = None, at_mono: float | None = None) -> dict:
+        """Read the kernel (one system call) and update the state the Edge reports."""
+        reading = {**self.read(self.max_error_ms), "boundMs": self.max_error_ms}
+        at_mono = time.monotonic() if at_mono is None else at_mono
+        if reading["state"] in ("unsynced", "drifting"):
+            self._bad_since = at_mono if self._bad_since is None else self._bad_since
+            lasted = at_mono - self._bad_since
+            if lasted >= self.settle_seconds:
+                self.sync = {**reading, "forSeconds": round(lasted)}
+            elif self.sync["state"] == "unknown":
+                self.sync = {**self.sync, "settling": True}
+            # Otherwise the last settled state stands until this one has lasted.
+        else:
+            self._bad_since = None
+            self.sync = reading
+        bad = self.ntp_state in ("unsynced", "drifting")
+        if bad != self._alerted:
+            at = iso(now or utcnow())
+            if bad:
+                self.store.open_alert("clock_not_synced", None, "warning", at, self.sync)
+            else:
+                # Synced, or not knowable here (no kernel to ask): nothing to act on.
+                self.store.resolve_alert("clock_not_synced", None, at)
+            self._alerted = bad
+        return self.sync
 
     def sample(self, now: datetime | None = None, mono: int | None = None) -> dict:
         now = now or utcnow()
@@ -376,17 +459,19 @@ class ClockWatch:
             self.store.open_alert("clock_stepped", None, "warning", iso(now), {"stepMs": step})
         elif step is not None:
             self.store.resolve_alert("clock_stepped", None, iso(now))
-        return {"edgeUtc": iso(now), "edgeMonoNs": mono, "ntpState": self.ntp_state, "stepMs": step}
+        return {"edgeUtc": iso(now), "edgeMonoNs": mono, "ntpState": self.ntp_state, "stepMs": step, "sync": self.sync}
 
 
-def clock_state(store: Store) -> dict:
+def clock_state(store: Store, sync: dict | None = None) -> dict:
+    """`sync` is the clock watcher's latest kernel reading; without it, the last sample's state."""
     last = store.one("SELECT * FROM clock_samples ORDER BY seq DESC LIMIT 1")
-    steps = store.query("SELECT edge_utc, step_ms FROM clock_samples WHERE ABS(step_ms) > ? ORDER BY seq DESC LIMIT 10",
-                        (STEP_THRESHOLD_MS,))
+    steps = store.query("SELECT edge_utc, step_ms FROM clock_samples WHERE ABS(step_ms) > ? AND edge_utc >= ?"
+                        " ORDER BY seq DESC LIMIT 10", (STEP_THRESHOLD_MS, iso(utcnow() - RECENT_STEP)))
     return {
         "edgeUtc": iso(utcnow()),
         "edgeMonoNs": mono_ns(),
-        "ntpState": last["ntp_state"] if last else "unknown",
+        "ntpState": sync["state"] if sync else last["ntp_state"] if last else "unknown",
+        "sync": sync,
         "lastSample": last,
         "recentSteps": steps,
         "cloudOffsetMs": None,  # Phase 3: measured against /api/v1/time when online

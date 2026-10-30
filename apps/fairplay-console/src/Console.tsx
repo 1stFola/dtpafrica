@@ -6,6 +6,7 @@ import {
   type SessionDetail, type SourceView, type SourceWindow, type SyncTest,
 } from "./api";
 import { ShadowBanner } from "./Banner";
+import { clockBanner, clockNote } from "./clock";
 import { diskCritical, diskMessage, freeLabel } from "./disk";
 import { can, IncidentPanel, RightsPanel } from "./Review";
 import { LivePlayer, type LiveState } from "./hls";
@@ -306,11 +307,20 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     const video = replayVideo.current;
     if (!reference || !replay || !video || !sessionId) return say("Set a reference event first.");
     const observedIngest = replay.startIngestMs + video.currentTime * 1000;
+    const body = {
+      source: replay.source, referenceUtc: toIso(reference.edgeMs), observedIngestUtc: toIso(observedIngest),
+      uncertaintyMs: uncertainty, method, note: `reference: ${reference.label}`,
+    };
+    const send = (confirmLargeOffset: boolean) => post(`/edge/v1/sessions/${sessionId}/calibrations`, { ...body, confirmLargeOffset });
     try {
-      await post(`/edge/v1/sessions/${sessionId}/calibrations`, {
-        source: replay.source, referenceUtc: toIso(reference.edgeMs), observedIngestUtc: toIso(observedIngest),
-        uncertaintyMs: uncertainty, method, note: `reference: ${reference.label}`,
-      });
+      try {
+        await send(false);
+      } catch (err) {
+        // F11: an offset larger than cameras usually lag is often a slip on the reference or the frame.
+        if (!(err instanceof ApiError && err.body?.error === "offset_needs_confirmation")) throw err;
+        if (!window.confirm(`${err.message}.\n\nKeep this calibration for ${replay.source}?`)) return say("Calibration not kept.");
+        await send(true);
+      }
       say(`${replay.source} calibrated: offset ${signedMs(observedIngest - reference.edgeMs)} ± ${uncertainty} ms.`);
       await refreshSession();
     } catch (err) {
@@ -374,8 +384,9 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   const replayLabel = sources.find((s) => s.name === replay?.source)?.label ?? replay?.source ?? "";
   const replayWarnings = replay ? warningsFor(replayLabel, replay.flags, replay.uncertaintyMs) : [];
   const periodStart = useMemo(() => detail?.periods.filter((p) => p.edge === "start").at(-1) ?? null, [detail]);
+  const clockWarning = health ? clockBanner(health.clock) : null;
   const clockWarnings = [
-    health?.clock.ntpState !== "synced" ? "Edge clock sync is not confirmed: compare with the match console before relying on wall times." : null,
+    health ? clockNote(health.clock) : null,
     health?.clock.recentSteps.length ? `The Edge clock jumped ${health.clock.recentSteps[0].step_ms} ms at ${clockLabel(toMs(health.clock.recentSteps[0].edge_utc))}.` : null,
   ].filter(Boolean) as string[];
   const diskWarning = health ? diskMessage(health.disk) : null;
@@ -421,6 +432,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
           {diskWarning}
         </div>
       )}
+
+      {clockWarning && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{clockWarning}</div>}
 
       {(clockWarnings.length > 0 || health?.mediaServer.up === false || tokenWarning) && (
         <div className="fp-alerts" role="status">
