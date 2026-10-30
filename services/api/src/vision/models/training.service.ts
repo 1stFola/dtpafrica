@@ -16,6 +16,8 @@ import {
 import type { AdminAuthContext } from "../../admin/auth/admin-auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { VisionAuditService } from "../audit/vision-audit.service";
+import { estimateUsdCents, parseRateOverrides } from "../compute/resource-rates";
+import { VISION_CONFIG, type VisionConfig } from "../config/vision.config";
 import { VisionJobsService } from "../jobs/vision-jobs.service";
 import { RightsPolicyService } from "../rights/rights-policy.service";
 import { notFound, refusal } from "../shared/refusals";
@@ -27,6 +29,10 @@ const MAX_EXPORT_BYTES = 64 * 1024 * 1024;
 /** The GPUs a run may ask for: the 4090 class is the cheaper one per frame (docs/vision/101). */
 const TRAIN_RESOURCE_CLASSES = ["gpu_24gb", "gpu_48gb"] as const;
 type TrainResourceClass = (typeof TRAIN_RESOURCE_CLASSES)[number];
+
+/** The events that end an attempt; `claimed` starts one. */
+const ATTEMPT_ENDS = new Set(["requeued", "failed", "succeeded", "cancelled"]);
+const OPEN_STATES = new Set(["queued", "claimed", "running"]);
 
 type ExportSample = { filepath?: unknown; tags?: unknown; provenance?: { video_asset_id?: unknown }; annotations?: { detections?: unknown[] } | null };
 
@@ -42,6 +48,10 @@ type ExportSample = { filepath?: unknown; tags?: unknown; provenance?: { video_a
  * The run's output is weights and metrics, not a model version. A person turns a run
  * into a candidate version, naming the commit and the licence position; the registry's
  * own rules then apply exactly as they do to a version registered by hand.
+ *
+ * Runs also share a monthly cap (`VISION_MONTHLY_TRAINING_BUDGET_USD_CENTS`). A run's
+ * own budget is checked per attempt, and a job gets up to three, so the month counts
+ * what every attempt actually ran rather than the budgets approved.
  */
 @Injectable()
 export class VisionTrainingService {
@@ -51,8 +61,57 @@ export class VisionTrainingService {
     @Inject(OBJECT_STORE) private readonly store: ObjectStore,
     @Inject(VisionJobsService) private readonly jobs: VisionJobsService,
     @Inject(RightsPolicyService) private readonly rights: RightsPolicyService,
-    @Inject(VisionModelsService) private readonly models: VisionModelsService
+    @Inject(VisionModelsService) private readonly models: VisionModelsService,
+    @Inject(VISION_CONFIG) private readonly config: VisionConfig
   ) {}
+
+  private readonly rateOverrides = parseRateOverrides(process.env);
+
+  /**
+   * This calendar month's (UTC) training spend against the cap.
+   *
+   * A finished run counts the time of every attempt, from each `claimed` event to the
+   * event that ended it, at the configured rate. A run still queued or running counts
+   * its finished attempts plus its whole budget, which the current or next attempt may
+   * still use.
+   */
+  async monthToDate(now = new Date()) {
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const runs = await this.prisma.visionJob.findMany({
+      where: { type: "train", queuedAt: { gte: monthStart } },
+      select: { id: true, state: true, resourceClass: true, budgetUsdCents: true },
+    });
+    const events = runs.length
+      ? await this.prisma.visionJobEvent.findMany({
+          where: { jobId: { in: runs.map((r) => r.id) }, kind: { in: ["claimed", ...ATTEMPT_ENDS] } },
+          select: { jobId: true, kind: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        })
+      : [];
+    let spentUsdCents = 0;
+    let reservedUsdCents = 0;
+    for (const run of runs) {
+      let closedSeconds = 0;
+      let openSince: Date | null = null;
+      for (const e of events) {
+        if (e.jobId !== run.id) continue;
+        if (e.kind === "claimed") openSince = e.createdAt;
+        else if (openSince) { closedSeconds += (e.createdAt.getTime() - openSince.getTime()) / 1000; openSince = null; }
+      }
+      const resourceClass = run.resourceClass as TrainResourceClass;
+      if (OPEN_STATES.has(run.state)) {
+        spentUsdCents += estimateUsdCents(resourceClass, closedSeconds, this.rateOverrides);
+        reservedUsdCents += run.budgetUsdCents;
+      } else {
+        // A run that ended without its closing event still ran until now, as far as the log shows.
+        const openSeconds = openSince ? (now.getTime() - openSince.getTime()) / 1000 : 0;
+        spentUsdCents += estimateUsdCents(resourceClass, closedSeconds + openSeconds, this.rateOverrides);
+      }
+    }
+    const capUsdCents = this.config.compute.monthlyTrainingBudgetUsdCents;
+    return { month: monthStart.toISOString().slice(0, 7), capUsdCents, spentUsdCents, reservedUsdCents,
+      remainingUsdCents: Math.max(0, capUsdCents - spentUsdCents - reservedUsdCents), runs: runs.length };
+  }
 
   async request(
     dto: { datasetVersionId: string; budgetUsdCents: number; resourceClass?: string; hyperparameters?: Partial<TrainHyperparameters> },
@@ -105,6 +164,14 @@ export class VisionTrainingService {
     }
     if (!labelled.train || !labelled.val) {
       throw refusal(409, "TrainingLabelsEmpty", `The export has ${labelled.train} approved label window(s) in train and ${labelled.val} in val; a run needs both.`, "Approve labelling work on footage in both splits, then export again.");
+    }
+
+    // Last, so the month is read as close to booking the run as it can be.
+    const month = await this.monthToDate();
+    if (dto.budgetUsdCents > month.remainingUsdCents) {
+      throw refusal(409, "TrainingMonthlyCapReached",
+        `This run's budget of ${usd(dto.budgetUsdCents)} would pass this month's training cap of ${usd(month.capUsdCents)}: ${usd(month.spentUsdCents)} spent and ${usd(month.reservedUsdCents)} held by runs still queued or running, so ${usd(month.remainingUsdCents)} is left.`,
+        "Ask for a smaller budget, wait for next month, or raise VISION_MONTHLY_TRAINING_BUDGET_USD_CENTS.", { month });
     }
 
     const params: TrainJobParams = {
@@ -179,3 +246,5 @@ export class VisionTrainingService {
     return merged;
   }
 }
+
+const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;

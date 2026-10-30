@@ -111,8 +111,30 @@ steps; the first real run will measure it.
   `otherSplitSamples`. An export with no gold sample is refused. The API side was
   already scoped to gold. It reaches a worker once the CPU image is rebuilt from this
   code.
-- **A training cap across runs:** doc 12's monthly training cap is not enforced. Each
-  run's own budget is, through the job budget.
+- **The monthly GPU cap** (`VISION_MONTHLY_BUDGET_USD_CENTS`) is shown on
+  `/vision/status` but nothing enforces it. Training has its own cap now (below).
+- **A run's budget is per attempt.** The reaper and the worker both measure from the
+  latest claim, and a job gets up to three attempts, so a run that keeps losing its
+  worker can spend up to three times its budget. The monthly cap counts every
+  attempt, so the month stays bounded.
+
+## The monthly training cap (29 Oct 2026)
+
+`VISION_MONTHLY_TRAINING_BUDGET_USD_CENTS`, $50 by default, is training's own cap for
+the UTC calendar month (doc 12: "Separate, higher cap").
+
+- **A finished run** counts the time of every attempt, from each `claimed` event to
+  the event that ended it, at the configured rate (with any
+  `VISION_RATE_*_USD_PER_HOUR` override).
+- **A run still queued or running** counts its finished attempts plus its whole
+  budget, which the current or next attempt may still use.
+- **A run never claimed**, such as one cancelled in the queue, counts nothing.
+- **A request** whose budget is more than what is left is refused with
+  `TrainingMonthlyCapReached`, giving spent, held and left. The check runs after
+  every other check, just before the run is queued. Two requests at the same moment
+  could both pass. Runs are rare and asked for by a person, so that is accepted.
+- `GET /vision/models/training/budget` (`vision.read`) returns the month: cap, spent,
+  held, left and the number of runs.
 
 ## Files
 
