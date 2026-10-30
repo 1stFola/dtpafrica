@@ -57,6 +57,7 @@
     "vision:routes": "tsx scripts/vision-routes.ts",
     "fairplay:cloudcheck": "tsx scripts/fairplay-cloud-check.ts",
     "fairplay:e2echeck": "tsx scripts/fairplay-e2e-check.ts",
+    "fairplay:securitycheck": "tsx scripts/fairplay-security-check.ts",
     "dev:tsx": "tsx watch src/main.ts",
     "db:sync:event-player-links": "tsx scripts/sync-event-player-links.ts",
     "db:sync:timeline-squad-numbers": "tsx scripts/sync-timeline-squad-numbers.ts",
