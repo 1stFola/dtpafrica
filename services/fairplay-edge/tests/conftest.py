@@ -94,7 +94,7 @@ def store(settings):
 def fake_probe(monkeypatch):
     """ffprobe replaced: every readable file probes as 10 s of 1280x720 H.264."""
 
-    def _probe(path: Path) -> Probe:
+    def _probe(path: Path, limit: int | None = None) -> Probe:
         return Probe(codec="h264", profile="High", width=1280, height=720, fps="25/1", time_base="1/90000",
                      start_pts=0, start_time_s=0.0, duration_ms=10_000, has_audio=True, raw={"fake": True})
 

@@ -11,8 +11,11 @@ from synthetic segment files. Nothing here is real footage.
 
 import json
 import os
+import re
+import socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -37,12 +40,71 @@ OUT = Path(os.environ.get("FAIRPLAY_E2E_OUT", "/tmp"))
 @pytest.fixture(scope="module")
 def relays():
     """The API and the S3 server live on the host; reach them as loopback, as the Edge's URL rule wants."""
-    procs = [subprocess.Popen([sys.executable, "-m", "fairplay_edge", "relay", "--listen", f"127.0.0.1:{p}", "--target", f"{E2E}:{p}"])
-             for p in (API_PORT, S3_PORT)]
+    procs = {p: subprocess.Popen([sys.executable, "-m", "fairplay_edge", "relay", "--listen", f"127.0.0.1:{p}", "--target", f"{E2E}:{p}"])
+             for p in (API_PORT, S3_PORT)}
     time.sleep(1.0)
-    yield
-    for p in procs:
+    yield procs
+    for p in procs.values():
         p.terminate()
+
+
+class CuttingRelay:
+    """TEST ONLY: stands in for the S3 relay. The first PUT whose path names `armed` gets half
+    its body forwarded, then both connections are dropped, as a WAN that fails mid-upload."""
+
+    def __init__(self, port: int, target: tuple[str, int], armed: str):
+        self.target, self.armed, self.cut = target, armed, None
+        self.server = socket.create_server(("127.0.0.1", port))
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.close()
+
+    def _accept(self) -> None:
+        while True:
+            try:
+                client, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._handle, args=(client,), daemon=True).start()
+
+    def _handle(self, client: socket.socket) -> None:
+        upstream = socket.create_connection(self.target)
+        head = b""
+        while b"\r\n\r\n" not in head and (data := client.recv(65536)):
+            head += data
+        line = head.split(b"\r\n", 1)[0].decode(errors="replace")
+        if self.armed and line.startswith("PUT ") and self.armed in line:
+            self.armed = None
+            headers, _, body = head.partition(b"\r\n\r\n")
+            length = int(re.search(rb"(?im)^content-length:\s*(\d+)", headers).group(1))
+            half = length // 2
+            upstream.sendall(headers + b"\r\n\r\n" + body[:half])
+            sent = min(len(body), half)
+            while sent < half and (data := client.recv(min(65536, half - sent))):
+                upstream.sendall(data)
+                sent += len(data)
+            self.cut = {"path": line.split(" ")[1].split("?")[0], "bytes": length, "forwarded": sent}
+            client.close()
+            upstream.close()
+            return
+        upstream.sendall(head)
+
+        def pipe(a: socket.socket, b: socket.socket) -> None:
+            try:
+                while data := a.recv(65536):
+                    b.sendall(data)
+            except OSError:
+                pass
+            finally:
+                for s in (a, b):
+                    try:
+                        s.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+
+        threading.Thread(target=pipe, args=(upstream, client), daemon=True).start()
+        pipe(client, upstream)
 
 
 def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fake_probe):
@@ -151,6 +213,33 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     row = store.one("SELECT state FROM uploads WHERE evidence_id = ? AND kind = 'clip'", (third["id"],))
     check("and the Edge's own upload of it then succeeds", row and row["state"] == "stored", dict(row) if row else None)
 
+    # ── an upload cut halfway through the transfer (5.3) ─────────────────
+    fourth = clip_for(20)
+    for _ in range(20):
+        if not restored.run_once(start + timedelta(hours=4)).attempted:
+            break
+    relays[S3_PORT].terminate()
+    relays[S3_PORT].wait(5)
+    cutter = CuttingRelay(int(S3_PORT), (E2E, int(S3_PORT)), fourth["id"])
+    try:
+        up_cut = cloud.Uploader(settings, store, cloud.CloudClient(base, token))  # its own connections
+        up_cut.run_once(start + timedelta(hours=4))
+        cut = cutter.cut or {}
+        rows = {r["kind"]: dict(r) for r in store.query(
+            "SELECT kind, state, attempts, last_error FROM uploads WHERE evidence_id = ?", (fourth["id"],))}
+        waiting = [r for r in rows.values() if r["state"] == "pending"]
+        check("an upload cut halfway fails mid-transfer, and the Edge keeps it to send again",
+              cut and 0 < cut["forwarded"] < cut["bytes"] and len(waiting) == 1 and waiting[0]["attempts"] == 1
+              and "upload" in (waiting[0]["last_error"] or ""), {"cut": cut, "rows": rows})
+        head = httpx.head(f"http://127.0.0.1:{S3_PORT}{cut.get('path', '/missing')}")
+        check("the half-sent object is not in the bucket", head.status_code == 404, head.status_code)
+        for _ in range(3):
+            up_cut.run_once(start + timedelta(hours=6))
+        rows = {r["kind"]: r["state"] for r in store.query("SELECT kind, state FROM uploads WHERE evidence_id = ?", (fourth["id"],))}
+        check("sent again whole and confirmed: the clip and its manifest are stored", rows == {"clip": "stored", "manifest": "stored"}, rows)
+    finally:
+        cutter.close()
+
     # ── the wrong match ──────────────────────────────────────────────────
     other = os.environ["FAIRPLAY_E2E_OTHER_SESSION"]
     payload = {"id": other, "label": "x", "match_ref": None, "mode": "shadow", "created_utc": "2026-10-28T00:00:00.000Z",
@@ -163,7 +252,8 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
                    headers={"x-fairplay-device-token": "f" * 64})
     check("an unknown device token is refused", r.status_code == 401, r.status_code)
 
-    results["evidence"] = [{"id": e["id"], "sha256": e["sha256"]} for e in (first, second, third)]
+    results["evidence"] = [{"id": e["id"], "sha256": e["sha256"]} for e in (first, second, third, fourth)]
+    results["cutEvidenceId"] = fourth["id"]
     results["sessionId"] = session["id"]
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "edge-results.json").write_text(json.dumps(results, indent=2))

@@ -222,6 +222,15 @@ uses the built console in `apps/fairplay-console/dist` when there is one.
 python -I fixtures/run_drills.py
 ```
 
+The storage drill (Phase 5.3) puts the recordings on a 1 GB tmpfs (`compose.storage.yaml`,
+TEST ONLY) and takes the disk under its soft and hard limits, then to full, then frees it.
+About 6 minutes; `--browser-pause 600` holds at each stage until `continue-<stage>` appears
+in the run's folder, for a look at the console.
+
+```bash
+python -I fixtures/run_drills.py storage
+```
+
 ## Native install (no Docker)
 
 Possible where Docker is unsuitable (for example UDP ingest on Windows): run MediaMTX's

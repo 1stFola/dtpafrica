@@ -321,3 +321,21 @@ def test_below_the_hard_limit_nothing_new_that_writes_files_starts(settings, fak
         assert disk["state"] == "hard_limit" and "minutesToHardLimit" in disk
         kinds = {a["kind"]: a["severity"] for a in c.get("/edge/v1/health", headers=AUTH).json()["openAlerts"]}
         assert kinds.get("disk_hard_limit") == "critical"
+
+
+def test_a_full_disk_is_said_and_no_source_is_recording(settings, fake_probe):
+    """F21: a full disk is its own state and alert, and no source is shown as recording."""
+    from dataclasses import replace
+    full = EdgeService(replace(settings, disk_soft_free_bytes=10**18, disk_hard_free_bytes=10**18,
+                               disk_full_free_bytes=10**18))
+    full.mediamtx = FakeMediaMtx()
+    full.mediamtx.ready = {"ground": True, "drone": True}
+    full.watchdog.mediamtx = full.mediamtx
+    with TestClient(create_app(full, run_loop=False)) as c:
+        full.run_once()
+        assert c.get("/edge/v1/disk", headers=AUTH).json()["state"] == "full"
+        health = c.get("/edge/v1/health", headers=AUTH).json()
+        assert {a["kind"]: a["severity"] for a in health["openAlerts"]}.get("disk_full") == "critical"
+        assert [s["recording"] for s in health["sources"]] == [False, False]
+        r = c.post("/edge/v1/sessions", json={"label": "x"}, headers=AUTH)
+        assert r.status_code == 507 and r.json()["error"] == "disk_hard_limit"

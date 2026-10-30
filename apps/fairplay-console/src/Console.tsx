@@ -6,7 +6,7 @@ import {
   type SessionDetail, type SourceView, type SourceWindow, type SyncTest,
 } from "./api";
 import { ShadowBanner } from "./Banner";
-import { diskMessage } from "./disk";
+import { diskCritical, diskMessage, freeLabel } from "./disk";
 import { can, IncidentPanel, RightsPanel } from "./Review";
 import { LivePlayer, type LiveState } from "./hls";
 import { actionFor, nextSpeed, SHORTCUTS, type Action } from "./keys";
@@ -399,8 +399,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
             </select>
           </label>
           {can(me, "fairplay.session.manage") && (
-            <button className="fp-btn" onClick={createSession} disabled={health?.disk.state === "hard_limit"}
-                    title={health?.disk.state === "hard_limit" ? "The disk is below its hard limit: free space first" : undefined}>New session</button>
+            <button className="fp-btn" onClick={createSession} disabled={diskCritical(health?.disk.state)}
+                    title={diskCritical(health?.disk.state) ? "The disk is below its hard limit: free space first" : undefined}>New session</button>
           )}
           {session && <span className="fp-chip">{session.mode === "shadow" ? "Shadow" : "Post-match"}</span>}
         </div>
@@ -410,14 +410,14 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
           <span className={`fp-chip fp-chip--${health?.status ?? "starting"}`}>Edge {health?.status ?? "…"}</span>
           <span className={`fp-chip ${cloud?.parked ? "fp-chip--critical" : "fp-chip--muted"}`}
                 title={cloud?.note ?? cloud?.lastError ?? undefined}>Cloud: {cloudLabel}</span>
-          <span className={`fp-chip ${health?.disk.state === "hard_limit" ? "fp-chip--critical" : health?.disk.state === "soft_limit" ? "fp-chip--warn" : ""}`}>Disk {health ? `${Math.round(health.disk.freeBytes / 1e9)} GB free` : "…"}</span>
+          <span className={`fp-chip ${diskCritical(health?.disk.state) ? "fp-chip--critical" : health?.disk.state === "soft_limit" ? "fp-chip--warn" : ""}`}>Disk {health ? freeLabel(health.disk.freeBytes) : "…"}</span>
           <span className="fp-me">{me.name}</span>
           <button className="fp-btn" onClick={onSignedOut}>Sign out</button>
         </div>
       </header>
 
       {diskWarning && (
-        <div className={`fp-disk-banner fp-disk-banner--${health!.disk.state === "hard_limit" ? "critical" : "warn"}`} role="alert">
+        <div className={`fp-disk-banner fp-disk-banner--${diskCritical(health!.disk.state) ? "critical" : "warn"}`} role="alert">
           {diskWarning}
         </div>
       )}

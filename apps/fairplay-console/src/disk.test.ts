@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diskMessage, roughly } from "./disk";
+import { diskCritical, diskMessage, freeLabel, roughly } from "./disk";
 
 const disk = (state: string, minutesToHardLimit: number | null = null, minutesToFull: number | null = null) =>
   ({ freeBytes: 4.2e9, state, minutesToHardLimit, minutesToFull });
@@ -22,5 +22,15 @@ describe("disk banner", () => {
     expect(text).toContain("New sessions, clips and exports are refused");
     expect(text).toContain("full in about 12 min, and recording then stops");
     expect(text).toContain("4.2 GB free");
+  });
+  it("says nothing is recording when the disk is full", () => {
+    const text = diskMessage({ ...disk("full"), freeBytes: 0 })!;
+    expect(text).toContain("Disk full (0.0 GB free)");
+    expect(text).toContain("Nothing is being recorded on any camera");
+    expect(diskCritical("full") && diskCritical("hard_limit") && !diskCritical("soft_limit")).toBe(true);
+  });
+  it("gives free space to one decimal place, never rounding 0.4 GB to 0", () => {
+    expect(freeLabel(0.4e9)).toBe("0.4 GB free");
+    expect(freeLabel(0)).toBe("0.0 GB free");
   });
 });

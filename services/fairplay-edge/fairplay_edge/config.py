@@ -67,6 +67,8 @@ class Settings:
     record_stall_seconds: float = 6.0
     disk_soft_free_bytes: int = 20 * 1024**3
     disk_hard_free_bytes: int = 5 * 1024**3
+    # Below this the recorder cannot write a part: every source is not recording (F21).
+    disk_full_free_bytes: int = 64 * 1024**2
     retention_days: int | None = None
     retention_max_deletions: int = 50
     device_label: str = "edge"
@@ -257,6 +259,7 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         record_stall_seconds=float(env.get("FAIRPLAY_RECORD_STALL_SECONDS", "6")),
         disk_soft_free_bytes=int(float(env.get("FAIRPLAY_DISK_SOFT_FREE_GB", "20")) * 1024**3),
         disk_hard_free_bytes=int(float(env.get("FAIRPLAY_DISK_HARD_FREE_GB", "5")) * 1024**3),
+        disk_full_free_bytes=int(float(env.get("FAIRPLAY_DISK_FULL_FREE_MB", "64")) * 1024**2),
         retention_days=retention_days,
         retention_max_deletions=int(env.get("FAIRPLAY_RETENTION_MAX_DELETIONS", "50")),
         device_label=env.get("FAIRPLAY_DEVICE_LABEL", "edge"),

@@ -137,16 +137,20 @@ async function main() {
   }
 
   console.log("\nFrom the cloud");
-  const results = JSON.parse(readFileSync(join(out, "edge-results.json"), "utf8")) as { evidence: { id: string; sha256: string }[] };
+  const results = JSON.parse(readFileSync(join(out, "edge-results.json"), "utf8")) as { evidence: { id: string; sha256: string }[]; cutEvidenceId: string };
   const report = await call<{ incidents: { finding: { result: string } | null; evidence: { id: string; stored: string; released: boolean }[] }[] }>(
     "GET", `/fairplay/sessions/${s1.id}/report`, undefined, jwt);
-  check("the report holds the three incidents with their findings", report.incidents.length === 3 && report.incidents.every((i) => i.finding?.result === "supports_original"));
+  check("the report holds the four incidents with their findings", report.incidents.length === results.evidence.length && report.incidents.every((i) => i.finding?.result === "supports_original"));
   check("and every clip released and stored", report.incidents.every((i) => i.evidence.length === 1 && i.evidence[0].released && i.evidence[0].stored === "stored"));
   for (const ev of results.evidence) {
     const read = await call<{ url: string }>("POST", `/fairplay/evidence/${ev.id}/read-url`, { kind: "clip", reason: "e2e check" }, jwt);
     const bytes = Buffer.from(await (await fetch(read.url)).arrayBuffer());
     check(`the read URL for ${ev.id.slice(0, 8)} serves the Edge's exact bytes`, createHash("sha256").update(bytes).digest("hex") === ev.sha256);
   }
+  const cutObjects = await prisma.fairPlayEvidenceObject.findMany({ where: { evidenceId: results.cutEvidenceId } });
+  check("the upload cut halfway left one stored object per kind, no second record",
+    cutObjects.length === 2 && new Set(cutObjects.map((o) => o.kind)).size === 2 && cutObjects.every((o) => o.state === "stored"),
+    cutObjects.map((o) => ({ kind: o.kind, state: o.state, attempts: o.attempts })));
   const reads = await prisma.fairPlayAuditLog.count({ where: { action: "evidence.read", actorId: assessor.id, reason: "e2e check" } });
   check("each read is in the audit log with its reason", reads === results.evidence.length, reads);
   const chain = await prisma.fairPlayEdgeAuditEntry.groupBy({ by: ["chainStatus"], _count: true });

@@ -1,8 +1,9 @@
 """Source, recorder, disk and media-server health, turned into alerts and feed intervals.
 
 "Recording" is decided from evidence, never from a connection: a source is recording only
-when it is publishing *and* its current segment file grew within `record_stall_seconds`.
-A connected publisher whose segment has stopped growing raises `recording_stalled`.
+when it is publishing, *and* media was written to its segments within `record_stall_seconds`
+(the scanner's `last_growth_utc`, which a new, empty file does not set), *and* the disk has
+room for a part. A connected publisher writing nothing raises `recording_stalled`.
 
 Alert kinds (one open alert per kind and source at a time):
   media_server_down   critical   MediaMTX's API unreachable or refusing the Edge
@@ -10,6 +11,7 @@ Alert kinds (one open alert per kind and source at a time):
   recording_stalled   critical   publishing, but nothing written
   disk_soft_limit     warning    free space below the soft threshold
   disk_hard_limit     critical   free space below the hard threshold
+  disk_full           critical   too little free space to write a part: nothing is recording
   publisher_address_changed  warning  a source publishing from an address it has not used before;
                       stays open until an Edge admin acknowledges it (the address is then known)
 plus the scanner's segment_partial / segment_corrupt / segment_missing / segment_mismatch.
@@ -60,6 +62,7 @@ class Watchdog:
         self._disk_samples: deque[tuple[float, int]] = deque(maxlen=600)
         # The publisher connection last checked per source, so each connection is looked up once.
         self._publisher_checked: dict[str, str] = {}
+        self.disk_full = False
 
     def poll(self) -> Snapshot:
         now = utcnow()
@@ -138,19 +141,29 @@ class Watchdog:
     def recording_state(self, source_name: str, publishing: bool, now=None) -> dict:
         now = now or utcnow()
         current = self.store.one(
-            "SELECT id, rel_path, last_size, last_growth_utc FROM segments"
+            "SELECT id, rel_path, last_size FROM segments"
             " WHERE source = ? AND state = 'recording' ORDER BY start_utc DESC LIMIT 1",
             (source_name,),
         )
+        # Media written to any of the latest segments: just after a segment switch the new
+        # file has not grown yet, but the last one just did. On a full disk the recorder opens
+        # a new, empty file every few seconds; those never set last_growth_utc (F21).
+        last = self.store.one(
+            "SELECT MAX(last_growth_utc) AS at FROM (SELECT last_growth_utc FROM segments"
+            " WHERE source = ? ORDER BY start_utc DESC LIMIT 5)",
+            (source_name,),
+        )
+        last_growth = last["at"] if last else None
         growing = False
-        if current and current["last_growth_utc"]:
-            age = now - parse_iso(current["last_growth_utc"])
+        if last_growth:
+            age = now - parse_iso(last_growth)
             growing = age <= timedelta(seconds=self.settings.record_stall_seconds)
         return {
-            "recording": bool(publishing and growing),
+            "recording": bool(publishing and growing and not self.disk_full),
+            "diskFull": self.disk_full,
             "currentSegmentId": current["id"] if current else None,
             "currentSegmentBytes": current["last_size"] if current else None,
-            "lastGrowthUtc": current["last_growth_utc"] if current else None,
+            "lastGrowthUtc": last_growth,
         }
 
     def _recording(self, source, publishing: bool, now) -> None:
@@ -209,6 +222,12 @@ class Watchdog:
 
     def _disk(self, free: int, at: str) -> None:
         s = self.settings
+        self.disk_full = free < s.disk_full_free_bytes
+        if self.disk_full:
+            if self.store.open_alert("disk_full", None, "critical", at, {"freeBytes": free}):
+                log.warning(json.dumps({"alert": "disk_full", "freeBytes": free}))
+        else:
+            self.store.resolve_alert("disk_full", None, at)
         if free < s.disk_hard_free_bytes:
             self.store.open_alert("disk_hard_limit", None, "critical", at, {"freeBytes": free})
         else:
