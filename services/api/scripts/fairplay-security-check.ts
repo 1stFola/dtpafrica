@@ -33,6 +33,7 @@ import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { REQUIRE_PERMISSIONS_KEY } from "../src/admin/decorators/require-permissions.decorator";
 import { canonical, sha256Hex } from "../src/fairplay/canonical";
+import { tokenHash } from "../src/fairplay/credentials";
 import { FairPlayAdminController } from "../src/fairplay/fairplay-admin.controller";
 import { seedRbac } from "../src/seed/seed-rbac";
 
@@ -52,6 +53,9 @@ const r2Secret = randomBytes(24).toString("hex");
 const prisma = new PrismaClient({ datasourceUrl: url });
 const secrets: { name: string; value: string }[] = [];
 const keep = (name: string, value: string) => (secrets.push({ name, value }), value);
+// The tokens the API issued, kept apart: their stored hashes are looked for too. Passwords and keys are not hashed here.
+const issued: string[] = [];
+const keepToken = (name: string, value: string) => (issued.push(value), keep(name, value));
 /** Every answer the API gave, to look for secrets in. */
 const answers: { method: string; path: string; status: number; text: string }[] = [];
 // The routes whose job is to hand out a credential, once, to whoever asked for it.
@@ -226,7 +230,7 @@ async function main() {
   const d1 = await ok<{ id: string; bootstrapToken: string }>("POST", "/fairplay/devices", admin, { label: "Sec Edge one" });
   const d2 = await ok<{ id: string; bootstrapToken: string }>("POST", "/fairplay/devices", admin, { label: "Sec Edge two" });
   const d3 = await ok<{ id: string; bootstrapToken: string }>("POST", "/fairplay/devices", admin, { label: "Sec Edge retired" });
-  for (const d of [d1, d2, d3]) keep("a bootstrap token", d.bootstrapToken);
+  for (const d of [d1, d2, d3]) keepToken("a bootstrap token", d.bootstrapToken);
   const edge1 = randomUUID();
   const edge2 = randomUUID();
 
@@ -239,8 +243,8 @@ async function main() {
   check("a retired device's bootstrap token is refused", (await register({ "x-fairplay-bootstrap-token": d3.bootstrapToken })).status === 401);
   const reg1 = await ok<{ deviceToken: string }>("POST", "/fairplay/device/register", { "x-fairplay-bootstrap-token": d1.bootstrapToken }, { edgeDeviceId: edge1 });
   const reg2 = await ok<{ deviceToken: string }>("POST", "/fairplay/device/register", { "x-fairplay-bootstrap-token": d2.bootstrapToken }, { edgeDeviceId: edge2 });
-  keep("a device token", reg1.deviceToken);
-  keep("a device token", reg2.deviceToken);
+  keepToken("a device token", reg1.deviceToken);
+  keepToken("a device token", reg2.deviceToken);
   check("a used bootstrap token is refused", (await register({ "x-fairplay-bootstrap-token": d1.bootstrapToken })).status === 401);
   check("a used bootstrap token is not a device token",
     (await http("GET", "/fairplay/device/bundle", { "x-fairplay-device-token": d1.bootstrapToken })).status === 401);
@@ -279,11 +283,11 @@ async function main() {
 
   console.log("\nToken rotation");
   const rePair = await ok<{ bootstrapToken: string }>("POST", `/fairplay/devices/${d1.id}/re-pair`, admin, { reason: "security check: rotate the token" });
-  keep("a bootstrap token", rePair.bootstrapToken);
+  keepToken("a bootstrap token", rePair.bootstrapToken);
   check("re-pairing stops the old device token at once",
     (await http("GET", "/fairplay/device/bundle", { "x-fairplay-device-token": reg1.deviceToken })).status === 401);
   const reg1b = await ok<{ deviceToken: string }>("POST", "/fairplay/device/register", { "x-fairplay-bootstrap-token": rePair.bootstrapToken }, { edgeDeviceId: edge1 });
-  keep("a device token", reg1b.deviceToken);
+  keepToken("a device token", reg1b.deviceToken);
   const tok1 = { "x-fairplay-device-token": reg1b.deviceToken };
   check("the new token works, and differs from the old", reg1b.deviceToken !== reg1.deviceToken
     && (await http("GET", "/fairplay/device/bundle", tok1)).status === 200);
@@ -383,7 +387,7 @@ async function main() {
   await http("POST", "/admin/auth/login", {}, { email: manager1.user.email, password: keep("a wrong password", randomBytes(12).toString("hex")) });
   for (const r of routes.filter((x) => x.method === "GET" && !x.path.includes(":"))) await http("GET", r.path, m1);
   for (const p of [`/fairplay/sessions/${s1.id}`, `/fairplay/sessions/${s1.id}/report`, `/fairplay/sessions/${s1.id}/sync`, "/health"]) await http("GET", p, admin);
-  const tokenHashes = secrets.filter((s) => /token/.test(s.name)).map((s) => ({ name: `the hash of ${s.name}`, value: sha256Hex(Buffer.from(s.value)) }));
+  const tokenHashes = issued.map((value) => ({ name: "the stored hash of an issued token", value: tokenHash(value) }));
   const leaks = (text: string) => [...secrets, ...tokenHashes].filter((s) => text.includes(s.value)).map((s) => s.name);
   const bundles = answers.filter((x) => x.path.startsWith("/fairplay/device/bundle"));
   const others = answers.filter((x) => !bundles.includes(x) && !(x.status < 300 && ISSUERS.test(`${x.method} ${x.path}`)));
