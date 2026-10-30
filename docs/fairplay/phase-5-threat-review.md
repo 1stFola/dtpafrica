@@ -750,6 +750,7 @@ console checked at each stage.
 | the same with `--browser-pause` (console checked) | soft and hard banners as described; F21 seen in the console |
 | Edge pytest in the Edge image; API `tsc` (incl. scripts), before the fixes | 255 passed, 1 skipped (the cloud e2e, run by `fairplay:e2echeck`); clean |
 | Edge pytest in the Edge image, after the fixes | 262 passed, 1 skipped (7 new: empty files, a segment switch, a full disk, the API's `full` state, F23 with a fake and with real ffmpeg) |
+| `fairplay:e2echeck` after the fixes, on a fresh scratch DB (`fp53b_e2e_scratch`) | 31/31 |
 | console `vitest run`, `tsc --noEmit`, `build` | 22 passed (2 new); clean; built |
 | `python -I fixtures/run_drills.py storage --browser-pause 900`, after the fixes | 21 passed, 0 failed; console checked at the soft limit and at full |
 
@@ -774,7 +775,7 @@ SECURITY + COST
 
 TEST EVIDENCE
 - Commands actually run: see the table above
-- Passed / failed / untested: e2e 31/31; storage 21/21 after the fixes (16 passed, 3 failed before them); Edge 262 passed, 1 skipped; console 22 passed. Untested: a real SSD, a shared disk, an upload of a full-size clip to R2
+- Passed / failed / untested: e2e 31/31, before and after the fixes; storage 21/21 after the fixes (16 passed, 3 failed before them); Edge 262 passed, 1 skipped; console 22 passed. Untested: a real SSD, a shared disk, an upload of a full-size clip to R2
 - Measured replay/CPU/RAM/SSD outcomes: fill 0.40 MB/s for two synthetic cameras; disk_full and recording_stalled on both cameras at a full disk; recording back 8.2 s after space was freed
 
 RISKS, ROLLBACK, NEXT GATE
