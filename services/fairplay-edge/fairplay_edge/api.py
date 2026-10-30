@@ -381,9 +381,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             return start, end
         return max(start or span[0], span[0]), min(end or span[1], span[1])
 
-    def incident_session(who: Principal, incident_id: str) -> dict:
+    def incident_session(who: Principal, incident_id: str, missing: tuple[str, str] = ("not_found", "no such record")) -> dict:
         row = lifecycle(incidents.get, service.store, incident_id)
-        check_session(who, row["session_id"], ("not_found", "no such record"))
+        check_session(who, row["session_id"], missing)
         return row
 
     # ── liveness and sign-in: no auth ────────────────────────────────────
@@ -1032,12 +1032,13 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         row = service.store.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
         if row is None:
             raise refusal(404, "not_found", "no such job")
-        incident_session(who, row["incident_id"])
+        # Another session's job gets the answer a guessed id gets.
+        incident_session(who, row["incident_id"], ("not_found", "no such job"))
         return row
 
     def evidence_or_404(evidence_id: str, who: Principal) -> dict:
         row = lifecycle(evidence.get, service.store, evidence_id)
-        check_session(who, row["session_id"], ("not_found", "no such evidence"))
+        check_session(who, row["session_id"], ("not_found", "no such record"))  # what a guessed id gets
         return row
 
     def readable(who: Principal, row: dict) -> str:
@@ -1046,8 +1047,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             return "staff"
         ok, why = evidence.released(service.store, row)
         if not ok:
-            # Not 403: an organiser is not told that withheld evidence exists.
-            raise refusal(404, "not_found", "no such evidence")
+            # Not 403, and the words a guessed id gets: an organiser is not told that withheld evidence exists.
+            raise refusal(404, "not_found", "no such record")
         return "organiser"
 
     @app.get("/edge/v1/evidence")

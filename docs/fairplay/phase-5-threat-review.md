@@ -38,11 +38,11 @@ decide (see "Proposed scope for 5.5").
 | Edge API restart; SQLite recovery; outbox resumes | **covered (synthetic), 5.2 D4** | WAL with `synchronous=FULL` (`store.py:541-542`). Phase 1: restart keeps all hashes. Phase 3: SIGKILL then replay of the incident window, audit chain whole. Phase 4 e2e: a restarted sender catches up. | Phase 1 found that `restart: unless-stopped` does not bring back a container that was `docker kill`ed. A crash inside the process does restart. A kill during an active sync batch was drilled in 5.2 (D4): the batch was sent again and answered replayed. |
 | SSD reaches soft and hard thresholds, with a conspicuous warning | **covered (synthetic), 5.3; F21, F22 and F23 fixed** | thresholds and alerts exist (`watchdog.py:160-167`, `test_disk_thresholds`) | F3 fixed in 5.5 part 1. 5.3 drilled both limits and a full disk: a full disk was shown as recording (F21), and a file torn in a fragment header was not repairable (F23). Both fixed in 5.3, and the drill passes 21/21 |
 | R2 upload begins, fails, resumes without duplicate evidence records | **covered (synthetic), 5.3** | Unique `(evidenceId, kind)` in the cloud (`schema.prisma`, `FairPlayEvidenceObject`). Unit tests: a corrupted upload is sent again; a cloud not ready yet is asked again later. Phase 4 e2e: a corrupted object is refused, removed and uploaded properly; a duplicate upload sends nothing. | cut halfway in 5.3's e2e: nothing in the bucket, sent again whole, one object per kind |
-| Invalid pairing token | **covered** | e2e: unknown token refused; the bootstrap token works once (`devices.service.ts:73-78`) | — |
-| Unauthorised user | **covered** | cloud access matrix (`fairplay-access.spec.ts`); Edge role tests (`test_auth.py`, `test_phase3_api.py`) | — |
-| Replay URL guessed | **covered** | Edge media and evidence need the session cookie. Organisers get a 404 for withheld evidence. Cloud evidence keys contain a UUID and are read only through a 5-minute audited URL. | — |
-| Actor role changed during the match | **open: F1** | — | see F1 |
-| Cross-match access blocked | **partly: F4, F5** | the cloud refuses a wrong-match or wrong-device sync (e2e; `sync.service.ts:186-215`) | see F4, F5 |
+| Invalid pairing token | **covered; tested over HTTP, 5.4** | e2e: unknown token refused; the bootstrap token works once (`devices.service.ts:73-78`). 5.4: no, a guessed, a used and a retired device's token refused | — |
+| Unauthorised user | **covered; every route walked, 5.4** | cloud access matrix (`fairplay-access.spec.ts`); Edge role tests (`test_auth.py`, `test_phase3_api.py`). 5.4: every Edge route for six people, every cloud route over HTTP | — |
+| Replay URL guessed | **covered** | Edge media and evidence need the session cookie. Organisers get a 404 for withheld evidence. Cloud evidence keys contain a UUID and are read only through a 5-minute audited URL. 5.4: a guessed id never errors, and another session's record answers as a guessed one (F24, fixed) | — |
+| Actor role changed during the match | **fixed (F1, 5.5); tested over HTTP, 5.4** | a permission dropped from a bundle is refused at the next request; in the cloud, a changed role or a deactivated account at the next request, and out of the next bundle | — |
+| Cross-match access blocked | **fixed (F4, F5, 5.5); tested, 5.4** | the cloud refuses a wrong-match or wrong-device sync (e2e; `sync.service.ts:186-215`). 5.4: another session or competition looks the same as a guessed id, on every route | — |
 | Console laptop sleeps or refreshes; recorder carries on | **covered (synthetic), 5.2 D1** | recording is MediaMTX's alone and never waits on the console. Sessions time out after 30 idle minutes, so a laptop that slept longer signs in again. | drilled in 5.2 (D1): a refresh kept the sign-in; after 34 min asleep the console signed in again; no gap |
 | No hardware time sync; gross drone offset | **partly: F11** | The console warns that clock sync is not confirmed. Clock steps over 1 s are raised (`timing.py:375`). Uncalibrated sources carry ±3 s and calibrations above 500 ms are flagged. | see F11 |
 | Power interruption and recovery (UPS) | **partly** | WAL `synchronous=FULL`; MediaMTX's recovery point is one part (1 s; 0.29 s measured in Phase 1); container kill and restart tested | No host power cut has been simulated. Whether Docker starts on boot is host configuration. UPS capability is unknown: a **hardware assumption, escalated**, not designed around (5.2 D5 simulated it with every container killed at once; a real drill needs the kit). |
@@ -52,9 +52,9 @@ decide (see "Proposed scope for 5.5").
 | Requirement (Prompt 6) | State | Evidence |
 |---|---|---|
 | No unauthenticated recordings, admin APIs, presign endpoints or event mutation | **met, except camera ingest (F2)** | Every Edge route except `healthz`, `auth/status` and `auth/login` needs a principal (`api.py`). MediaMTX has no anonymous user, and its API, playback and read user is limited to the Edge's own IP (`mediamtx_config.py:73-91`). Metrics, pprof and WebRTC are off. Cloud admin routes are guarded at class level, each with a named permission (`fairplay-admin.controller.ts:24`). Device routes have their own guard (`device.guard.ts`). FairPlay writes no ScoreBoard table. |
-| Secrets via secure local storage and environment, never committed, rendered or logged | **met, with F6 and F19** | Placeholder and length checks (`config.py:149-157`). Keys written 0600 (`tlsgen.py`). Edge sessions and cloud tokens stored as SHA-256, PINs as scrypt. Nothing secret is tracked in git. The console holds no token (HttpOnly cookie). Cloud list responses carry no hashes. |
+| Secrets via secure local storage and environment, never committed, rendered or logged | **met, with F6 and F19** | Placeholder and length checks (`config.py:149-157`). Keys written 0600 (`tlsgen.py`). Edge sessions and cloud tokens stored as SHA-256, PINs as scrypt. Nothing secret is tracked in git. The console holds no token (HttpOnly cookie). Cloud list responses carry no hashes. 5.4: no secret in any response, log, table, outbox or either web bundle. |
 | Secure local origin / HTTPS, or a documented pilot mitigation | **met in code; real reviewer device pending (B12); F10** | Binding beyond loopback requires TLS (`config.py:224-228`). Cookie HttpOnly, SameSite=Strict, Secure. CSRF header plus Origin check. CSP, HSTS. |
-| Minimal network exposure, rate limiting, input validation, every export audited | **partly: F7, F8, F19** | Compose publishes 8554 (cameras) and 8443 (console) only. SQL is parameterised. ffmpeg runs from an argv list. Source names are allowlisted. Sync batches are capped at 200 items and 2 MB. |
+| Minimal network exposure, rate limiting, input validation, every export audited | **partly: F7, F8, F19** | Compose publishes 8554 (cameras) and 8443 (console) only. SQL is parameterised. ffmpeg runs from an argv list. Source names are allowlisted. Sync batches are capped at 200 items and 2 MB. 5.4: every Edge route that serves footage or evidence is audited (the live preview aside); every cloud evidence read is audited. |
 | Authenticated machine-to-cloud sync, token rotation, least-privilege R2 | **partly: F6, F9, F17** | Device-token guard. The presigned PUT signs length, type and SHA-256. Confirm by HEAD checksum. Read URL ≤ 300 s, as an attachment. A bucket-scoped R2 token waits for the bucket. |
 | No camera or video feed to external AI or third-party analytics | **met** | CSP `connect-src 'self'`, no CDN. The only egress is cloud sync and the presigned PUT, and only released evidence is uploaded (`cloud.py:184-216`). |
 
@@ -783,6 +783,153 @@ RISKS, ROLLBACK, NEXT GATE
 - Steps to revert safely: revert the fix commit (no migration, no data change); the test commit is tests and docs only
 - Human approvals required: the open decisions as before
 - Proposed next phase: 5.4 security tests
+```
+
+---
+
+## 5.4: security tests
+
+Increment 5.4 of the plan: the plan's security list as automated tests, on both sides.
+Wherever it can, each test reads the routes from the code itself, so a route added later
+is held to the same rules without anyone remembering to list it. It found one defect on
+the Edge (F24, low), fixed here. The cloud passed every check.
+
+**The Edge** (`services/fairplay-edge/tests/test_security.py`, 13 tests):
+- **The guard table.** Every one of the 64 routes is listed with the guard it must carry:
+  public, any signed-in person, venue staff, any FairPlay permission, or one named
+  permission. The guard is read from each route's dependencies, so a new route without a
+  guard, or with a different one, fails the test.
+- **No sign-in.** Every route but liveness and sign-in refuses (401) no cookie, a forged
+  cookie, a guessed bearer token and Basic credentials.
+- **Each person, every route.** Six people (operator, assessor, a lead with everything but
+  Edge admin, admin, organiser, and a member with no permission) call all 64 routes. Each
+  is refused (403) exactly the routes their permissions do not allow, and reaches every
+  other. No route answers any of them with a server error.
+- **A changed bundle.** A permission dropped from a new bundle is refused at the next
+  request; a person dropped is signed out and cannot sign in again. A local disable signs
+  the person out at once.
+- **Requests from elsewhere.** Every state-changing route refuses a request without the
+  CSRF header, and one from another origin. The session cookie is HttpOnly and
+  SameSite=Strict.
+- **Guessed ids.** Every route with an id answers a random UUID, SQL text, a NUL byte and a
+  4,000-character id with 404 or 422: never a server error, never a traceback or SQLite
+  text.
+- **Another session's records.** For three people bound to their own session, every route
+  given another session's session, incident, clip job or evidence id answers exactly as it
+  does for a guessed id: the same status and the same words.
+- **Withheld evidence.** An organiser asking for evidence they may not see, in their own
+  session or another, gets exactly what a guessed id gets.
+- **The console's file server.** Path traversal (`..`, `%2e%2e`, `%2F`, a backslash, an
+  absolute path) gets the console's page or a 404, never the database or the bundle.
+- **Secrets.** After a failed sign-in, a clip and a sync attempt to a cloud that never
+  answers, no secret appears in any response (every list route, health, the sign-in
+  status), the logs at DEBUG, any table of the database, or the outbox. That covers the
+  camera and MediaMTX passwords, the API and cloud tokens, every session cookie and the
+  PIN. Nor does any PIN hash.
+- **Exports audited.** Each route that hands out footage or evidence (the replay window,
+  the evidence file, its manifest and the export package) is called, and must write its
+  audit entry with the caller as actor; the chain verifies afterwards. A second test reads
+  every route's source: any route that returns a file or proxies a stream must be in that
+  list. The one exception is the live preview, which shows the cameras now and records
+  nothing. It is not an export, but whether viewing it should be audited is a question for
+  Fola.
+
+**The cloud** (`services/api/scripts/fairplay-security-check.ts`, `pnpm fairplay:securitycheck`,
+53 checks). It runs the real API on a scratch database with the S3 server, and goes
+through the HTTP routes and their guards, not the services behind them.
+- **Pairing.** No bootstrap token, a guessed one, the admin API key, a used one, and a
+  retired device's are all refused. A used bootstrap token is not a device token.
+- **Device routes.** All four refuse no token, a guessed one, the admin API key (in either
+  header), an admin's session, and the device token sent as a bearer. One device cannot
+  ask for an upload of another's evidence. A retired device's token is refused on every
+  route.
+- **Rotation.** Re-pairing stops the old device token at once. The new token works, and the
+  re-pair is audited with its reason.
+- **Admin routes.** All fifteen, read from the controller, refuse no sign-in, a guessed
+  session, a device token in either header, and an account with no FairPlay role. An
+  organiser is refused every route not open to `report.view`, and reaches those that are.
+- **Another competition.** A manager scoped to one competition gets for another
+  competition's session, report, sync state and members exactly what a guessed id gets.
+  So do the manager and the organiser for its evidence. Their lists leave the other
+  competition out, and the manager cannot open a session for its match. An id that is not
+  a UUID is refused before the database. The other competition's own organiser reads the
+  same evidence, gets the Edge's exact bytes, through a URL that lasts at most 300 s.
+- **A role taken away mid-match.** With the assessor's role changed in the database, their
+  same sign-in is refused at the next request, and the next bundle leaves them out. A
+  deactivated account is signed out at the next request.
+- **Audited.** Three reads make three audit entries, each with the reader and their reason.
+  A refused read writes none. Each bundle handed to a device is audited.
+- **Secrets.** No secret, and no token's SHA-256, in any of 168 responses. The responses
+  whose job is to issue a credential are left out: adding a device, re-pairing, pairing,
+  signing in. The secrets checked are the signing key, the API key, the R2 secret, every
+  password, session, bootstrap and device token, and the PIN. No PIN hash is in any
+  response but a device's bundle, and no PIN in the bundle. None of these secrets is in the
+  API's log.
+- **The web bundles.** The admin web app and the venue console are built, and every file
+  is searched: no secret from this run, no private key, no connection string, no
+  server-only setting given a value, no AWS key, and neither header that only an Edge
+  sends.
+
+**F24 (low, new): another session's record, and withheld evidence, answered differently
+from a guessed id.** The Edge's own rule (F5) is that a record outside your session looks
+the same as one that does not exist. Two answers broke it, so the reply said that a
+record exists:
+- another session's clip job answered "no such record", a guessed one "no such job";
+- another session's evidence answered "no such evidence", a guessed one "no such record";
+- so did withheld evidence for an organiser, though the code's own comment says the
+  organiser is not told it exists.
+
+The ids are random UUIDs, so this tells someone only about an id they already hold:
+low. **Fixed:** both now give the words a guessed id gets (`api.py`, `job` and
+`evidence_or_404`/`readable`), and the tests above hold every route to it.
+
+**What this does not cover.**
+- Brute force and load (F7), the https-only check for cloud URLs (F9), the venue CA (F10)
+  and the unauthenticated sign-in status (F19) are still open, as in 5.1. These tests show
+  the sign-in status page leaks no secret, but it still shows the session and device
+  labels.
+- The camera network (F2's network half) needs the venue.
+- A real browser on a reviewer's device (B12) is pending.
+
+**Checks run** (30 Oct 2026):
+
+| Check | Result |
+|---|---|
+| Edge `tests/test_security.py`, before the fix | 11 passed, 2 failed: F24 (another session's job; another session's evidence) |
+| Edge pytest in the Edge image, after the fix | 275 passed, 1 skipped (13 new) |
+| `pnpm fairplay:securitycheck` on a fresh scratch DB (`fp54_sec_scratch`), first run | 49 passed, 4 failed: my checks (read-url answers 201, not 200; a sign-in message naming `ADMIN_API_KEY` matched a pattern meant for values) |
+| the same after correcting the checks, on a fresh scratch DB (`fp54_sec2_scratch`) | 53/53 |
+| API `vitest run src/fairplay`; `tsc -p tsconfig.typecheck.json` (incl. scripts) | 25 passed; clean |
+
+```text
+DTP FAIRPLAY | PHASE 5.4 DELIVERY
+STATUS: complete on synthetic data; found F24 (low), fixed
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: the cloud access matrix (fairplay-access.spec.ts) and Phase 4's e2e check (real API, s3mock); the Edge's role, F1, F5 and F8 tests
+- Hardware facts actually verified: none
+- Unknowns remaining: a real reviewer device and browser (B12); the camera network (B16)
+
+IMPLEMENTED
+- Code paths changed: tests/test_security.py (new); scripts/fairplay-security-check.ts (new) and its package script. Fix: api.py (another session's job and evidence, and withheld evidence, answer as a guessed id)
+- APIs and migrations: no migration. Two 404 messages changed to "no such record"
+- Local/Cloud config: none
+
+SECURITY + COST
+- Auth and evidence changes: none to who may do what; two refusals now say less
+- New dependencies and license: none
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: Edge 275 passed, 1 skipped; cloud security check 53/53; API vitest 25 passed. Untested: brute force and load (F7), a real browser (B12)
+- Measured replay/CPU/RAM/SSD outcomes: none (not a performance increment)
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: none found
+- Steps to revert safely: revert the commit (tests, a script and two messages; no data change)
+- Human approvals required: whether viewing the live preview should be audited; the open decisions as before
+- Proposed next phase: 5.6 time-sync warnings (5.5's remaining fixes wait on Fola's choice of findings)
 ```
 
 ---
