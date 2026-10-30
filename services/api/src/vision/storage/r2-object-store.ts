@@ -55,6 +55,11 @@ export class R2ObjectStore implements ObjectStore {
       },
       // R2 requires path-style addressing.
       forcePathStyle: true,
+      // The SDK's default checksums sign a CRC32 into every presigned PUT, computed
+      // when the URL is made, so it is the checksum of an empty body. A store that
+      // checks it refuses every real upload. Checksum only where the API requires one.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
   }
 
