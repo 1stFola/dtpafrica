@@ -151,6 +151,28 @@ def cmd_restore_accept(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_measure(args: argparse.Namespace) -> int:
+    from . import measure
+    from .store import Store
+
+    settings = _settings(need_api_token=False)
+    print(json.dumps(measure.report(settings, Store(settings.db_path), args.since_minutes), indent=2))
+    return 0
+
+
+def cmd_measure_disk(args: argparse.Namespace) -> int:
+    from . import measure
+    from .store import Store
+
+    settings = _settings(need_api_token=False)
+    try:
+        print(json.dumps(measure.disk(settings, Store(settings.db_path), args.seconds, force=args.force), indent=2))
+    except measure.DiskTestRefused as exc:
+        print(f"disk test refused: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_retention(args: argparse.Namespace) -> int:
     from . import retention
     from .service import EdgeService
@@ -420,6 +442,13 @@ def main(argv: list[str] | None = None) -> int:
     accept.add_argument("--by", required=True, help="who is accepting this")
     accept.add_argument("--why", required=True, help="why; name no player or requester")
     accept.set_defaults(fn=cmd_restore_accept)
+    measured = sub.add_parser("measure", help="what the cameras delivered, replay and clip times (deploy/measure.sh wraps this)")
+    measured.add_argument("--since-minutes", type=float)
+    measured.set_defaults(fn=cmd_measure)
+    written = sub.add_parser("measure-disk", help="sustained write beside the recordings; refused while a session is open")
+    written.add_argument("--seconds", type=int, default=300)
+    written.add_argument("--force", action="store_true", help="on a bench: run with a session open")
+    written.set_defaults(fn=cmd_measure_disk)
     egress = sub.add_parser("check-egress", help="report whether the internet is reachable")
     egress.add_argument("targets", nargs="*", default=["1.1.1.1:443", "8.8.8.8:53", "www.dtp.africa:443"])
     egress.add_argument("--timeout", type=float, default=3.0)

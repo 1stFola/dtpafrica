@@ -89,7 +89,7 @@ Times are before kick-off. Allow more time for the first few matches.
 ### 30 minutes
 - [ ] The header chip reads **Edge ok**. Read and clear any warning, or write down why it stays.
 - [ ] **Disk**: no disk banner. Budget about 1.1 GB per camera-hour, a figure from synthetic
-      feeds only; replace it with the venue's own from 6.4.
+      feeds only; replace it with the venue's own from [hardware validation](./hardware-validation.md), C3.
 - [ ] **Clock**: no clock banner. Compare the **Edge** time with the match console or a phone. If
       they differ by more than a second, write it down.
 - [ ] **Cloud** reads "in sync", or "local only" if there is no internet, which is fine.

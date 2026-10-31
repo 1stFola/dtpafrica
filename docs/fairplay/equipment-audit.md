@@ -76,5 +76,5 @@ frames from OBS's own stats.
 ## How to answer this
 
 A filled copy of the matrix with, per Gate row: the model number, a photo, and for E2/E5 a
-screenshot of the output settings. For E8, the output of a 5-minute sustained write test
-(Phase 1 supplies the command). Nothing needs to be bought before these answers exist.
+screenshot of the output settings. For E8, the output of a 5-minute sustained write test:
+`deploy/measure.sh <folder> --load-minutes 0 --disk-seconds 300` ([hardware-validation.md](./hardware-validation.md), B5). Nothing needs to be bought before these answers exist.
