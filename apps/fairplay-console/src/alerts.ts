@@ -18,6 +18,7 @@ const WORDS: Record<string, string> = {
   segment_video_gap: "Pictures are missing at the start of a recording file.",
   evidence_mismatch: "An evidence clip no longer matches its hash: cut it again. Report it, then acknowledge.",
   outbox_parked: "The cloud refused some sync items; they are kept. An Edge admin checks them, then acknowledges.",
+  restore_unchecked: "This Edge was restored from a backup. No clip can be viewed, approved, exported or uploaded until it has asked the cloud what was withdrawn since. Connect it to the internet; with no cloud to ask, an Edge admin decides (docs/fairplay/edge-backup.md).",
 };
 
 export function alertWords(kind: string): string {

@@ -360,6 +360,17 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     await refreshSession();
   };
 
+  const endSession = async () => {
+    if (!sessionId || !window.confirm("End this session? It cannot be undone. No more incidents or period marks can be added; review and evidence carry on.")) return;
+    try {
+      await post(`/edge/v1/sessions/${sessionId}/end`);
+      say("Session ended. Finish the reviews, then check Cloud says in sync.");
+      await refreshSession();
+    } catch (err) {
+      say(err instanceof ApiError ? err.message : "could not end the session");
+    }
+  };
+
   // ── keyboard ──────────────────────────────────────────────────────────
   useEffect(() => {
     const handlers: Record<Action, () => void> = {
@@ -406,6 +417,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   const tokenAlert = health?.openAlerts.find((a) => a.kind === "device_token_expired" || a.kind === "device_token_expiring");
   // Belongs to no camera, so it is not on a camera's card.
   const parked = health?.openAlerts.filter((a) => a.kind === "outbox_parked") ?? [];
+  const restoreWarning = health?.openAlerts.find((a) => a.kind === "restore_unchecked");
   const tokenWarning = !tokenAlert ? null : tokenAlert.kind === "device_token_expired"
     ? "This Edge's cloud token has expired: nothing reaches the cloud. An Edge admin re-pairs the device on the FairPlay page."
     : "This Edge's cloud token expires within 30 days. An Edge admin re-pairs the device on the FairPlay page.";
@@ -448,6 +460,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
       )}
 
       {clockWarning && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{clockWarning}</div>}
+
+      {restoreWarning && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{alertWords(restoreWarning.kind)}</div>}
 
       {(clockWarnings.length > 0 || health?.mediaServer.up === false || tokenWarning || parked.length > 0) && (
         <div className="fp-alerts" role="status">
@@ -581,6 +595,11 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
             ))}
           </div>
           <p className="fp-muted fp-small">{detail?.periods.map((p) => `P${p.period} ${p.edge} ≈ ${clockLabel(toMs(p.edge_utc))}`).join(" · ") || "No period marked."}</p>
+          {can(me, "fairplay.session.manage") && session && (
+            <button className="fp-btn" disabled={Boolean(session.ended_utc)} onClick={() => void endSession()}>
+              {session.ended_utc ? `Session ended ≈ ${clockLabel(toMs(session.ended_utc))}` : "End session"}
+            </button>
+          )}
           <ol className="fp-steps">
             <li>Pause a replay on a visible event (whistle, kick, the test marker).
               <div className="fp-row">

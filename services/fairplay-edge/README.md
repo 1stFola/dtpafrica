@@ -107,7 +107,7 @@ For development without the cloud, a **development** key and bundle can be made 
 `fairplay-edge dev-keygen` and `fairplay-edge dev-bundle`; the Edge refuses them unless
 `FAIRPLAY_ALLOW_DEV_BUNDLES=1`, and the console then shows *DEV CREDENTIALS — NOT FOR A REAL
 MATCH* on every screen. Keep the dev signing key off the Edge: only the public key belongs in
-`./auth`. Operators sign in with email and an 8-digit-or-longer matchday PIN (6 minimum).
+`./auth`. Operators sign in with email and a matchday PIN of 8 to 12 digits.
 
 **HTTPS on the venue LAN** (ADR-0004): `docker compose run --rm edge tls-init --host <edge-lan-ip>`
 writes the Edge's own CA and server certificate under the data volume; set
