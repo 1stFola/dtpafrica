@@ -173,7 +173,7 @@ def op(op_service):
         yield c
 
 
-def _login(c, email="op@dtp.test", pin="123456"):
+def _login(c, email="op@dtp.test", pin="12345678"):
     return c.post("/edge/v1/auth/login", json={"email": email, "pin": pin})
 
 
@@ -191,7 +191,7 @@ def test_login_sets_a_strict_httponly_cookie(op):
 
 
 def test_wrong_pin_is_refused(op):
-    assert _login(op, pin="000000").status_code == 401
+    assert _login(op, pin="00000000").status_code == 401
 
 
 def test_cookie_writes_need_the_csrf_header(op):
@@ -205,7 +205,7 @@ def test_cookie_writes_need_the_csrf_header(op):
 
 
 def test_permissions_are_enforced(op):
-    _login(op, "view@dtp.test", "654321")
+    _login(op, "view@dtp.test", "87654321")
     # Signed in, but with no venue permission: sees nothing (Phase 2 let any member look).
     assert op.get("/edge/v1/health").status_code == 403
     assert op.get("/edge/v1/auth/me").status_code == 200

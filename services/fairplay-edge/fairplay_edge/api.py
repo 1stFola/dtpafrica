@@ -33,7 +33,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__, audit, evidence, incidents, retention, timing
 from .audit import Actor
-from .auth import COOKIE, CSRF_HEADER, DEVICE, IDLE_MINUTES, STAFF_PERMISSIONS, AuthError, Principal, SignInBusy
+from .auth import COOKIE, CSRF_HEADER, DEVICE, IDLE_MINUTES, MIN_PIN, STAFF_PERMISSIONS, AuthError, Principal, SignInBusy
 from .mediamtx import MediaMtxUnavailable
 from .naming import iso, parse_iso, utcnow
 from .repair import RepairRefused, repair
@@ -119,7 +119,7 @@ class ReleaseIn(BaseModel):
 
 class LoginIn(BaseModel):
     email: str = Field(min_length=3, max_length=200)
-    pin: str = Field(min_length=6, max_length=32)
+    pin: str = Field(min_length=MIN_PIN, max_length=32)
 
 
 class SessionIn(BaseModel):
@@ -750,12 +750,14 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return FileResponse(target, media_type="video/mp4", headers={"Cache-Control": "no-store"})
 
     @app.get("/edge/v1/live/{name}/{file}")
-    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), _: Principal = staff):
+    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), who: Principal = staff):
         """Live preview: MediaMTX's HLS playlists and fMP4 parts, proxied after authorisation.
-        MediaMTX names its HLS session in `?session=`; that one parameter is passed through."""
+        MediaMTX names its HLS session in `?session=`; that one parameter is passed through.
+        Audited once per person and camera an hour: a player fetches a part every second."""
         source_or_404(name)
         if not HLS_FILE.match(file) or ".." in file:
             raise refusal(400, "bad_name", "not an HLS file name")
+        audit.record_once(service.store, f"live|{who.user_id}|{name}", actor_of(who), "media.live_viewed", "source", name, {})
         return await _proxy(f"{settings.mediamtx_hls_url}/{name}/{file}", {"session": session} if session else None,
                             ("not_live", "this source is not publishing"), shared=live_client())
 
@@ -1172,6 +1174,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         gone = evidence.withdrawal_of(service.store, evidence_id)
         if gone:
             raise refusal(410, "withdrawn", f"this clip was withdrawn on request at {gone['created_utc']}; its file is gone")
+        if evidence.restore_unchecked(settings):
+            raise refusal(409, "restore_unchecked", evidence.RESTORE_UNCHECKED)
         path = evidence.path_of(settings, row)
         if not path.exists():
             raise refusal(409, "evidence_missing", "the evidence file is missing from this Edge")

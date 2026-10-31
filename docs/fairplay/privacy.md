@@ -44,8 +44,9 @@ person. Write nothing about a player's age, health or conduct off the ball.
 ## Who can see what
 
 - **Venue staff** (any operate, review, admin or export permission) see the venue:
-  recordings, replay, live preview, incidents and draft evidence. Every replay window and
-  evidence view is audited (once an hour per person and item), and every export each time.
+  recordings, replay, live preview, incidents and draft evidence. Every replay window,
+  live preview and evidence view is audited (once an hour per person and item), and every
+  export each time.
 - **Organisers** (`fairplay.report.view` only) see completed findings and released evidence,
   and nothing else. They see no live view, no recordings, no draft evidence and no other
   incidents. Withheld evidence answers 404, not 403, so an organiser is not told it exists.
@@ -93,6 +94,10 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   deleted. Clips are sent separately, each read through the audited link.
 - **A withdrawn clip** is removed from the bucket at once and from the Edge when it next
   connects. It is never released again. Its hash, size, reason and requester are kept.
+- **Backups:** a backup taken before a withdrawal still holds the clip until that backup is
+  destroyed. After each withdrawal, take a new backup and destroy the older ones
+  ([edge-backup.md](./edge-backup.md)). A restored Edge asks the cloud what was withdrawn
+  before any clip can leave it.
 - **Not erased on request:** the full-match recordings. They are kept 14 days (D9), and
   the document says when they go.
 - **Names stay out of the audit log.** Requester names and player references are kept on

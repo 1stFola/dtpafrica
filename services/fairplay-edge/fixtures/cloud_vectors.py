@@ -50,7 +50,7 @@ def main() -> None:
         rows = store.query("SELECT payload, payload_hash FROM outbox WHERE entity_type = 'audit' ORDER BY seq")
         out["audit"] = {"deviceId": store.device_id, "payloads": [json.loads(r["payload"]) for r in rows]}
 
-    out["pin"] = {"pin": "482913", "saltHex": bytes(range(16)).hex(), "hash": hash_pin("482913", bytes(range(16)))}
+    out["pin"] = {"pin": "48291375", "saltHex": bytes(range(16)).hex(), "hash": hash_pin("48291375", bytes(range(16)))}
 
     seed = bytes(range(32))
     key = Ed25519PrivateKey.from_private_bytes(seed)

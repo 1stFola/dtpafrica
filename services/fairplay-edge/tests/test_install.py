@@ -30,6 +30,31 @@ def install(d: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
                           check=check)
 
 
+def script(d: Path, name: str, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", f"deploy/{name}", *args], cwd=d, capture_output=True, text=True)
+
+
+def test_backup_and_restore_refuse_before_touching_anything(tmp_path):
+    d = copy_of_the_release(tmp_path)
+    assert script(d, "backup.sh").returncode == 1
+    assert "no such folder" in script(d, "backup.sh", "no-such-folder").stderr
+    assert "install first" in script(d, "backup.sh", ".").stderr
+    assert script(d, "restore.sh").returncode == 2
+    assert script(d, "restore.sh", "no-such-file.tar.gz").returncode == 2
+    (d / "b.tar.gz").write_bytes(b"x")
+    assert "install first" in script(d, "restore.sh", "b.tar.gz").stderr
+
+    (d / ".env").write_text("FAIRPLAY_EDGE_TAG=x\n")
+    (d / "b.sha256").write_text("0" * 64 + "  b.tar.gz\n")
+    damaged = script(d, "restore.sh", "b.tar.gz")
+    assert damaged.returncode == 2 and "does not match" in damaged.stderr
+    (d / "b-config.tar.gz").write_bytes(b"x")
+    (d / "b.sha256").unlink()
+    unchecked = script(d, "restore.sh", "b.tar.gz", "--config", "b-config.tar.gz")
+    assert unchecked.returncode == 2 and "unchecked" in unchecked.stderr
+    assert not (d / ".maintenance").exists()  # none of this reached the stack
+
+
 def env_file(path: Path) -> dict[str, str]:
     out = {}
     for line in path.read_text("utf-8").splitlines():

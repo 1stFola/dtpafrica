@@ -46,7 +46,7 @@ from .test_evidence import FakeCutter
 from .test_phase3_api import ALL, CSRF
 
 OWN, OTHER = "s-own", "s-other"
-PIN = f"{secrets.randbelow(900_000) + 100_000}"
+PIN = f"{secrets.randbelow(90_000_000) + 10_000_000}"
 OPERATE, REVIEW, MANAGE, ADMIN, EXPORT = (f"fairplay.{p}" for p in (
     "incident.operate", "incident.review", "session.manage", "edge.admin", "evidence.export"))
 PEOPLE = {
@@ -415,7 +415,7 @@ def test_no_secret_in_any_response_the_logs_the_tables_or_the_outbox(app, servic
     cookies = [c.cookies.get("fp_session") for c in clients.values()]
     assert all(cookies)
     # Some work to log: a failed sign-in, an incident with a clip, a sync attempt the cloud never answers.
-    anon.post("/edge/v1/auth/login", json={"email": "admin@dtp.test", "pin": "000000"})
+    anon.post("/edge/v1/auth/login", json={"email": "admin@dtp.test", "pin": "00000000"})
     inc = admin.post("/edge/v1/incidents", headers=CSRF,
                      json={"sessionId": OWN, "eventUtc": iso(at(40)), "basis": "manual", "category": "foul"}).json()
     admin.post(f"/edge/v1/incidents/{inc['id']}/clips", headers=CSRF, json={"source": "ground"})
@@ -480,8 +480,21 @@ def test_every_route_that_hands_out_footage_or_evidence_is_audited(app, service,
     assert admin.get("/edge/v1/audit/verify").json()["ok"] is True
 
 
+def test_watching_a_camera_live_is_audited_once_per_person_and_camera_an_hour(clients):
+    """Residual risk R9. The player fetches a part every second; one entry says who watched."""
+    op, admin = clients["operator"], clients["admin"]
+    for _ in range(3):
+        op.get("/edge/v1/live/ground/index.m3u8")  # MediaMTX is not running here: asked for is what is audited
+    op.get("/edge/v1/live/drone/index.m3u8")
+    admin.get("/edge/v1/live/ground/index.m3u8")
+    seen = [(e["actor_id"], e["entity_id"]) for e in admin.get("/edge/v1/audit?limit=1000").json() if e["action"] == "media.live_viewed"]
+    assert sorted(seen) == [("u-admin", "ground"), ("u-operator", "drone"), ("u-operator", "ground")]
+    assert clients["organiser"].get("/edge/v1/live/ground/index.m3u8").status_code == 403
+
+
 def test_every_route_that_serves_bytes_is_in_the_exports_table(app):
-    """A route returning a file or a proxied stream must be listed (and so audited), or be the live preview."""
+    """A route returning a file or a proxied stream must be listed (and so audited), or be the
+    live preview, which has its own test above."""
     servers = set()
     for key, _, route in routes(app):
         source = inspect.getsource(route.endpoint)

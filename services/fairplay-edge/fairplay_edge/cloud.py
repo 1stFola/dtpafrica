@@ -101,8 +101,9 @@ class CloudClient:
     def confirm(self, evidence_id: str, kind: str) -> dict:
         return self._call("POST", f"/device/evidence/{evidence_id}/uploads/{kind}/confirm")
 
-    def withdrawals(self) -> list[dict]:
-        return self._call("GET", "/device/withdrawals")  # type: ignore[return-value]  (a JSON list)
+    def withdrawals(self, every: bool = False) -> list[dict]:
+        """Those not yet confirmed; `every` asks for all of them, after a restore."""
+        return self._call("GET", "/device/withdrawals", params={"all": "1"} if every else None)  # type: ignore[return-value]  (a JSON list)
 
     def put(self, upload: dict, path: Path) -> None:
         if upload.get("method") != "PUT" or not url_allowed(upload.get("url", ""), self.upload_hosts):
@@ -153,19 +154,27 @@ def pair(client: CloudClient, store: Store, bootstrap_token: str, token_file: Pa
 
 def apply_withdrawals(settings: Settings, store: Store, client: CloudClient) -> list[str]:
     """Remove here what the cloud withdrew. A clip this Edge does not hold, or holds with
-    another hash, is left for a person: the cloud keeps the withdrawal unconfirmed."""
-    done = []
-    for item in client.withdrawals():
+    another hash, is left for a person: the cloud keeps the withdrawal unconfirmed.
+
+    After a restore (6.2) it asks for every withdrawal, confirmed or not: a clip withdrawn
+    after the backup was taken has just come back, and the cloud would not otherwise say so."""
+    done, differs = [], 0
+    restored = evidence.restore_unchecked(settings)
+    for item in client.withdrawals(True) if restored else client.withdrawals():
         row = store.one("SELECT id, sha256 FROM evidence WHERE id = ?", (item.get("evidenceId"),))
         if row is None or row["sha256"] != item.get("clipSha256"):
             log.warning(json.dumps({"event": "withdrawal.not_applied", "id": item.get("id"), "evidenceId": item.get("evidenceId"),
                                     "why": "unknown evidence" if row is None else "hash differs"}))
+            differs += row is not None
             continue
         if evidence.withdrawal_of(store, row["id"]) is None:
             evidence.withdraw(store, settings, row["id"], str(item.get("reason", "")), str(item.get("requester", "")),
-                              CLOUD_ACTOR, origin="cloud", withdrawal_id=item["id"], request_ref=item.get("requestId"))
+                              CLOUD_ACTOR, origin=item.get("origin", "cloud"), withdrawal_id=item["id"],
+                              request_ref=item.get("requestId"), sync=not item.get("edgeConfirmed"))
         # Withdrawn here as well, first: that withdrawal's sync is what confirms it to the cloud.
         done.append(item["id"])
+    if restored and not differs:  # the clip this Edge holds with another hash is still a person's to settle
+        evidence.finish_restore_check(store, settings, CLOUD_ACTOR, "edge.restore_checked", {"withdrawals": len(done)})
     return done
 
 

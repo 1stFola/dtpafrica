@@ -64,12 +64,13 @@ EMAIL_FAILURES = 30
 # scrypt needs 32 MiB and most of a second: at most this many at once; the rest are told to retry.
 PIN_CHECKS = threading.BoundedSemaphore(2)
 PIN_CHECK_WAIT_S = 5.0
-MIN_PIN = 6
+# Eight digits (F16, residual-risks.md R5): a hundred times the offline work of six.
+MIN_PIN = 8
 COOKIE = "fp_session"
 CSRF_HEADER = "x-fairplay-request"
 
 # scrypt: N=2^15, r=8, p=1 is about 32 MiB and tens of milliseconds per check, which is
-# what makes a six-digit PIN expensive to guess offline if a bundle file leaks.
+# what makes an eight-digit PIN expensive to guess offline if a bundle file leaks.
 _SCRYPT = {"n": 2**15, "r": 8, "p": 1}
 
 

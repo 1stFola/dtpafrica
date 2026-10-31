@@ -32,11 +32,11 @@ Proposed decisions:
 | R2 | **No brute-force or load protection** (F7). The cloud's pairing and PIN routes are not throttled. The PIN check is a synchronous 32 MB scrypt that a member could loop to stall the API. Anyone on the venue LAN can lock a known operator out. | medium | Five-failure lock per account on the Edge; long random tokens; PINs as scrypt. | **fixed in 5.5 part 3**: both routes throttled, scrypt off the request thread, an Edge body limit, the lock keyed by email and address, PIN checks bounded |
 | R3 | **The "https only" check for cloud URLs can be bypassed** (F9) by a crafted URL in the Edge's configuration. | medium | The URLs come from the operator's configuration and the authenticated cloud. | **fixed in 5.5 part 3**: parsed by httpx, user parts refused, uploads only to `FAIRPLAY_UPLOAD_HOSTS` |
 | R4 | **The venue CA can sign for any name, and its key stays on the Edge** (F10). A stolen Edge could mint certificates that reviewer devices trust. | medium | The Edge is kept by DTP staff (D12). | fix before real footage: name constraints; move the key off the Edge |
-| R5 | **A 6-digit PIN can be recovered offline** from a bundle or the Edge's disk (F16). | low | scrypt N=2^15; bundles last 36 h; disk encryption (D12). | decide: accept, or require 8 digits |
+| R5 | **A short PIN can be recovered offline** from a bundle or the Edge's disk (F16). | low | scrypt N=2^15; bundles last 36 h; disk encryption (D12). | **fixed**: PINs are 8 to 12 digits, in the cloud and on the Edge |
 | R6 | **The sign-in status page shows labels to anyone on the LAN** (F19): the session label, the device label, the bundle error. There is no Host allowlist. | low | It shows no names, PINs or tokens (5.4 checked this). | **fixed in 5.5 part 3**: the status trimmed; with TLS, only the Edge's own host names answered |
 | R7 | **Nothing pages anyone.** Alerts show in the venue console and stay on the Edge. The cloud keeps no alerts and has no page for its audit log. | medium | The runbook says who looks where; the console's banners and chip are conspicuous. | accept for the pilot with a named person watching each match; build cloud alerting before a season |
 | R8 | **Other lows** (F12–F15, F17, F18, F20): sync edge cases (NUL bytes, a non-string label), the release gate's ordering, scoped staff seeing other competitions' refusal messages, audit triggers the app's role could drop, Vision's R2 key not refused, copies outliving retention, unhardened helper containers. | low | Each is listed in the threat review with its fix. | fix before real footage, in one or two small PRs |
-| R9 | **Viewing the live preview is not audited.** Every replay, clip, manifest and export is. | low | Only signed-in venue staff see it. | decide: accept, or audit once per person and camera an hour |
+| R9 | **Viewing the live preview was not audited.** Every replay, clip, manifest and export was. | low | Only signed-in venue staff see it. | **fixed**: audited once per person and camera an hour (`media.live_viewed`) |
 
 ## Operations
 
@@ -58,6 +58,15 @@ Proposed decisions:
 | R18 | **A player is found only by the reference staff record.** An incident with no reference, or another player's incident they appear in, is not found automatically. | low | Any clip in the competition can be withdrawn; staff are told to always record a reference. | accept, with the runbook's guidance for staff |
 | R19 | **Disk encryption and custody of the Edge are not done by this software** (D12). | medium | A decision; no code. | fix before real footage: full-disk encryption and a named custodian, in the Phase 6 hardware set-up |
 
+## Added by Phase 6.2, not yet decided
+
+These came after Fola's decisions of 31 Oct, so they have no decision yet.
+
+| # | Risk | Severity | In place now | Proposed |
+|---|---|---|---|---|
+| R23 | **A backup is not encrypted by this software, and an older backup still holds a clip withdrawn since.** It holds clips, the database and the Edge's private keys. | medium (high for real footage) | 0600 files; the rule in [edge-backup.md](./edge-backup.md): an encrypted disk, a new backup after each withdrawal, older ones destroyed. Nothing enforces it. | accept for synthetic rehearsals; fix with R19 before real footage: encrypted backup disk and a named custodian |
+| R24 | **Restoring to an older point leaves a seam with the other side.** A restored Edge's new audit entries collide with numbers the cloud already holds, so they are parked with a critical alert (R12: no re-send). A withdrawal made at the venue and not yet synced before the failure is lost with the disk. A cloud restore older than a withdrawal loses that withdrawal's record there, though the clip stays deleted from the bucket and the Edge. | medium | Nothing is overwritten and nothing is silent. Both are written up in [edge-backup.md](./edge-backup.md). | accept for the pilot, with a backup after each match and each withdrawal |
+
 ## Not yet done, and waiting for approval
 
 | # | Item | Waiting for |
@@ -70,26 +79,28 @@ Proposed decisions:
 
 For each risk, Fola's decision: accept, fix before the pilot, or fix before real footage.
 
+Fola gave these decisions in the session of 31 Oct 2026. The signature below is still Fola's to add.
+
 | # | Decision | Note |
 |---|---|---|
-| R1 | | |
+| R1 | fix before real footage | a closed camera network, with the venue |
 | R2 | | fixed in 5.5 part 3; no decision needed |
 | R3 | | fixed in 5.5 part 3; no decision needed |
-| R4 | | |
-| R5 | | |
+| R4 | fix before real footage | name constraints; the CA key off the Edge |
+| R5 | fix now | done: PINs are now 8 to 12 digits |
 | R6 | | fixed in 5.5 part 3; no decision needed |
-| R7 | | |
-| R8 | | |
-| R9 | | |
+| R7 | accept for the pilot | a named person watches each match; cloud alerting before a full season |
+| R8 | fix before real footage | one or two small PRs |
+| R9 | fix now | done: audited once per person and camera an hour |
 | R10 | | addressed in 6.1; confirm on the venue machine |
-| R11 | | |
-| R12 | | |
-| R13 | | |
-| R14 | | |
-| R15 | | |
-| R16 | | |
-| R17 | | |
-| R18 | | |
-| R19 | | |
+| R11 | test before the pilot | on the venue kit, with the 6.4 checklist; includes the systemd units |
+| R12 | accept for the pilot | revisit after the first rehearsal |
+| R13 | keep both for now | 36 h window and back-off unchanged; retune after the first rehearsal |
+| R14 | accept for the pilot | revisit after the first rehearsal |
+| R15 | accept for the pilot | revisit after the first rehearsal |
+| R16 | block minors only | nothing with minors until settled with the organisers and legal advice. Adult matches may go first, but still need a lawful basis and recorded rights; this decision does not settle those |
+| R17 | accept for the pilot | revisit with the legal advice in R16 |
+| R18 | accept for the pilot | staff always record a player reference |
+| R19 | fix before real footage | disk encryption and a named custodian, with the venue machine |
 
 Signed: ______________________ (Fola Sanni)  Date: ____________

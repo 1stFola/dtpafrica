@@ -139,6 +139,8 @@ class EdgeService:
                     log.info(json.dumps({"event": "withdrawals.applied", "ids": applied}))
             except CloudError as exc:
                 log.warning(json.dumps({"event": "withdrawals.failed", "error": str(exc)}))
+        if evidence.restore_unchecked(self.settings):
+            return False
         return bool(self.uploader.run_once())
 
     async def _every(self, name: str, fn, seconds: float) -> None:

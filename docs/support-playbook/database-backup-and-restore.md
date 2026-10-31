@@ -173,6 +173,13 @@ Then:
 
    Re-run the deploy so any migration newer than the backup is applied.
 
+### FairPlay after a restore
+
+The nightly dump includes the `fairplay_*` tables. A restore rolls them back with everything
+else, and a clip withdrawal made after the dump loses its record in the cloud, although the
+clip stays deleted from the bucket and from the Edge. Before and after a restore, follow
+[the FairPlay section](../fairplay/edge-backup.md#the-clouds-fairplay-tables).
+
 ## One-time setup
 
 All of this is by hand. None of it is done by a deploy, and each step costs nothing or
