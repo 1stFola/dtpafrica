@@ -11,7 +11,7 @@ Nothing here deploys anything to DTP's cloud. The Edge runs at the venue, on its
 ## Requirements
 
 - **The machine.** A Linux laptop or small PC with systemd. The scripts assume Ubuntu 24.04
-  LTS. The real hardware is still to be chosen (equipment-audit.md), and 6.4 checks it.
+  LTS. The real hardware is still to be chosen (equipment-audit.md), and [hardware-validation.md](./hardware-validation.md) checks it.
 - **Docker Engine** 24 or later with **Compose v2.24** or later, and the person installing
   in the `docker` group or using `sudo`.
 - **Disk.** About 1.1 GB per camera-hour at 2.5 Mbit/s (a real camera's bitrate decides
