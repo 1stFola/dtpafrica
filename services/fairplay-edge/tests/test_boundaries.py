@@ -22,10 +22,12 @@ def test_only_the_synthetic_generator_encodes():
 
 
 def test_recordings_are_only_probed_or_stream_copied():
-    """ffmpeg runs in two places: synth.py encodes test feeds, and evidence.py cuts clips
-    with `-c copy`, which never decodes or re-encodes a recording."""
+    """ffmpeg runs in two places that touch video: synth.py encodes test feeds, and evidence.py
+    cuts clips with `-c copy`, which never decodes or re-encodes a recording. licences.py only
+    asks the build about itself."""
     calls = re.compile(r"which\(\"ffmpeg\"\)|\[\s*\"ffmpeg\"")
-    assert sorted(name for name, text in SOURCES.items() if calls.search(text)) == ["evidence.py", "synth.py"]
+    assert sorted(name for name, text in SOURCES.items() if calls.search(text)) == ["evidence.py", "licences.py", "synth.py"]
+    assert re.findall(r'\["ffmpeg", ([^\]]*)\]', SOURCES["licences.py"]) == ['"-hide_banner", "-version"', '"-hide_banner", "-L"']
     cut = SOURCES["evidence.py"]
     assert '"-c", "copy"' in cut
     assert not re.search(r"-filter|\"-vf\"|\"-af\"|\"-crf\"|\"-b:v\"|\"-preset\"", cut)

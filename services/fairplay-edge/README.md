@@ -238,6 +238,13 @@ in the run's folder, for a look at the console.
 python -I fixtures/run_drills.py storage
 ```
 
+## Licences
+
+Every third-party part and its licence are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+`deploy/licences.sh <folder>` writes an installed Edge's inventory, SBOM and full licence texts. The
+installer refuses an image that differs from the review in
+[docs/fairplay/licences.md](../../docs/fairplay/licences.md). The Edge rows await Fola's rulings.
+
 ## Native install (no Docker)
 
 Possible where Docker is unsuitable (for example UDP ingest on Windows): run MediaMTX's

@@ -144,6 +144,7 @@ fi
 say "Building dtp-fairplay-edge:$TAG"
 # `init` carries the build; `edge` and the synthetic feeds run the same image.
 docker compose build init
+docker run --rm --network none "dtp-fairplay-edge:$TAG" licences --check || die "this image did not pass the licence check (docs/fairplay/licences.md): not installed"
 
 # ── 5. TLS, when the console is served on the LAN ────────────────────────────
 if [ -n "$LAN_IP" ]; then
