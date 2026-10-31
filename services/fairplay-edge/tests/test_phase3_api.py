@@ -34,7 +34,7 @@ def service(env, tmp_path, fake_probe):
     keys = tmp_path / "trusted-keys.json"
     keys.write_text(json.dumps({key_id(public): {"publicKey": public, "issuer": "dev-local"}}))
     members = [{"userId": f"u-{name}", "email": f"{name}@dtp.test", "name": name.title(), "permissions": perms,
-                "pinHash": hash_pin("246810")} for name, perms in PEOPLE.items()]
+                "pinHash": hash_pin("24681012")} for name, perms in PEOPLE.items()]
     bundle = tmp_path / "bundle.json"
     bundle.write_text(json.dumps(make_bundle(private, members=members)))
     env.update(FAIRPLAY_TRUSTED_KEYS_FILE=str(keys), FAIRPLAY_BUNDLE_FILE=str(bundle), FAIRPLAY_ALLOW_DEV_BUNDLES="1")
@@ -57,7 +57,7 @@ def clients(service):
     for name in PEOPLE:
         c = TestClient(app)
         c.__enter__()
-        assert c.post("/edge/v1/auth/login", json={"email": f"{name}@dtp.test", "pin": "246810"}).status_code == 200
+        assert c.post("/edge/v1/auth/login", json={"email": f"{name}@dtp.test", "pin": "24681012"}).status_code == 200
         out[name] = c
     yield out
     for c in out.values():

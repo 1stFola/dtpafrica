@@ -90,7 +90,7 @@ function SignIn({ status, onSignedIn }: { status: AuthStatus | null; onSignedIn:
         </label>
         <label>
           Matchday PIN
-          <input type="password" inputMode="numeric" autoComplete="current-password" minLength={6} value={pin}
+          <input type="password" inputMode="numeric" autoComplete="current-password" minLength={8} value={pin}
                  onChange={(e) => setPin(e.target.value)} required />
         </label>
         {error && <p className="fp-error" role="alert">{error}</p>}

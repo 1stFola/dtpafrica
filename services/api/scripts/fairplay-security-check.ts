@@ -252,7 +252,7 @@ async function main() {
   const s1 = await ok<{ id: string }>("POST", "/fairplay/sessions", admin, { matchId: matchA.id, deviceId: d1.id,
     members: [{ adminUserId: assessor.user.id, permissions: ["fairplay.incident.operate", "fairplay.incident.review"] }] });
   const sC = await ok<{ id: string }>("POST", "/fairplay/sessions", admin, { matchId: matchC.id, deviceId: d2.id });
-  const pin = keep("the matchday PIN", String(randomInt(100000, 1000000)));
+  const pin = keep("the matchday PIN", String(randomInt(10000000, 100000000)));
   await ok("PUT", `/fairplay/sessions/${s1.id}/members/me/pin`, assessor.auth, { pin });
   const ev1 = await syncReleasedEvidence(reg1.deviceToken, edge1, s1.id, matchA.id, assessor.user.id);
   const evC = await syncReleasedEvidence(reg2.deviceToken, edge2, sC.id, matchC.id, assessor.user.id);

@@ -114,7 +114,7 @@ async function main() {
   const s2 = await call<{ id: string }>("POST", "/fairplay/sessions", { matchId: match2.id, deviceId: d2.id });
   const login = await call<{ token?: string; accessToken?: string }>("POST", "/admin/auth/login", { email: assessor.email, password }, {});
   const jwt = { Authorization: `Bearer ${login.token ?? login.accessToken}` };
-  const pin = String(randomInt(100000, 1000000));
+  const pin = String(randomInt(10000000, 100000000));
   await call("PUT", `/fairplay/sessions/${s1.id}/members/me/pin`, { pin }, jwt);
   check("devices, sessions, a member and their PIN are set up through the API", true);
 

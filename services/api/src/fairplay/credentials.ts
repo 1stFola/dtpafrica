@@ -13,7 +13,7 @@ import { canonical } from "./canonical";
 
 export const BUNDLE_SCHEMA = "fairplay.credential-bundle/v1";
 export const BUNDLE_ISSUER = "dtp-cloud";
-export const MIN_PIN = 6;
+export const MIN_PIN = 8;
 const SCRYPT = { N: 2 ** 15, r: 8, p: 1, keylen: 32, maxmem: 64 * 1024 * 1024 };
 
 export function newToken(): string {

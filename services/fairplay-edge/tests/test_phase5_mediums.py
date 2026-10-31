@@ -48,7 +48,7 @@ def service(env, tmp_path, fake_probe):
               "expiresAt": iso(now + timedelta(hours=36)),
               "session": {"id": OWN, "label": "Lions v Eagles", "matchId": "m-own", "mode": "shadow"},
               "members": [{"userId": f"u-{name}", "email": f"{name}@dtp.test", "name": name.title(), "permissions": perms,
-                           "pinHash": hash_pin("246810")} for name, perms in PEOPLE.items()]}
+                           "pinHash": hash_pin("24681012")} for name, perms in PEOPLE.items()]}
     (tmp_path / "bundle.json").write_text(json.dumps(sign_bundle(bundle, private)))
     env.update(FAIRPLAY_TRUSTED_KEYS_FILE=str(keys), FAIRPLAY_BUNDLE_FILE=str(tmp_path / "bundle.json"),
                FAIRPLAY_ALLOW_DEV_BUNDLES="1")
@@ -71,7 +71,7 @@ def clients(service):
     for name in PEOPLE:
         c = TestClient(app)
         c.__enter__()
-        assert c.post("/edge/v1/auth/login", json={"email": f"{name}@dtp.test", "pin": "246810"}).status_code == 200
+        assert c.post("/edge/v1/auth/login", json={"email": f"{name}@dtp.test", "pin": "24681012"}).status_code == 200
         out[name] = c
     yield out
     for c in out.values():

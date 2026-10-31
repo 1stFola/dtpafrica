@@ -119,6 +119,10 @@ storage drill in 5.3, on synthetic feeds.
 when it stops abruptly (0.29 s measured in Phase 1). Finalised files are read-only and
 hashed, and re-hashed before any clip is cut or uploaded.
 
+**Load slows detection.** On 31 Oct the core fixture missed its 20 s limit for seeing a drone
+drop while the Edge's test suite and the type checks ran on the same laptop. Alone, it passed
+28 of 28. Don't run other heavy work on the Edge machine during a match.
+
 **Not measured:**
 - a real power cut with the disk's write cache;
 - a UPS;

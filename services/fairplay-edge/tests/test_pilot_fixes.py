@@ -98,10 +98,10 @@ def test_wrong_pins_from_another_device_do_not_lock_an_operator_out(store, bundl
     sessions = Sessions(store)
     for _ in range(10):
         with pytest.raises(AuthError):
-            sessions.login(bundle, "op@dtp.test", "000000", "10.0.0.66")  # someone else's laptop
+            sessions.login(bundle, "op@dtp.test", "00000000", "10.0.0.66")  # someone else's laptop
     with pytest.raises(AuthError, match="too many"):
-        sessions.login(bundle, "op@dtp.test", "123456", "10.0.0.66")
-    token, who = sessions.login(bundle, "op@dtp.test", "123456", "10.0.0.5")  # the operator's own
+        sessions.login(bundle, "op@dtp.test", "12345678", "10.0.0.66")
+    token, who = sessions.login(bundle, "op@dtp.test", "12345678", "10.0.0.5")  # the operator's own
     assert who.email == "op@dtp.test"
 
 
@@ -109,9 +109,9 @@ def test_a_guess_spread_over_many_devices_still_meets_a_ceiling(store, bundle): 
     sessions = Sessions(store)
     for i in range(auth.EMAIL_FAILURES):
         with pytest.raises(AuthError):
-            sessions.login(bundle, "op@dtp.test", "000000", f"10.0.1.{i}")
+            sessions.login(bundle, "op@dtp.test", "00000000", f"10.0.1.{i}")
     with pytest.raises(AuthError, match="too many"):
-        sessions.login(bundle, "op@dtp.test", "123456", "10.0.0.5")
+        sessions.login(bundle, "op@dtp.test", "12345678", "10.0.0.5")
 
 
 def test_pin_checks_are_bounded_and_a_busy_refusal_counts_against_no_one(store, bundle, monkeypatch):  # noqa: F811
@@ -120,11 +120,11 @@ def test_pin_checks_are_bounded_and_a_busy_refusal_counts_against_no_one(store, 
     auth.PIN_CHECKS.acquire()  # another sign-in is being checked
     try:
         with pytest.raises(SignInBusy):
-            Sessions(store).login(bundle, "op@dtp.test", "123456", "10.0.0.5")
+            Sessions(store).login(bundle, "op@dtp.test", "12345678", "10.0.0.5")
     finally:
         auth.PIN_CHECKS.release()
     assert store.query("SELECT * FROM login_attempts") == []
-    assert Sessions(store).login(bundle, "op@dtp.test", "123456", "10.0.0.5")[1].email == "op@dtp.test"
+    assert Sessions(store).login(bundle, "op@dtp.test", "12345678", "10.0.0.5")[1].email == "op@dtp.test"
 
 
 def test_a_busy_sign_in_is_a_429(clients, service, monkeypatch):  # noqa: F811
@@ -132,7 +132,7 @@ def test_a_busy_sign_in_is_a_429(clients, service, monkeypatch):  # noqa: F811
     held = [auth.PIN_CHECKS.acquire() for _ in range(2)]
     try:
         with TestClient(create_app(service, run_loop=False)) as c:
-            r = c.post("/edge/v1/auth/login", json={"email": "admin@dtp.test", "pin": "246810"})
+            r = c.post("/edge/v1/auth/login", json={"email": "admin@dtp.test", "pin": "24681012"})
         assert r.status_code == 429 and r.json()["error"] == "busy"
     finally:
         for _ in held:

@@ -163,7 +163,7 @@ export class FairPlaySessionsService {
   /** A member sets their own matchday PIN. Nobody can set anyone else's. */
   async setMyPin(id: string, pin: string, ctx: AdminAuthContext) {
     if (!ctx.userId) throw refusal(403, "PersonRequired", "Only a signed-in person may set a matchday PIN.", "Sign in as yourself.");
-    if (!validPin(pin)) throw refusal(400, "PinInvalid", "A matchday PIN is 6 to 12 digits.", "Choose a longer PIN, digits only.");
+    if (!validPin(pin)) throw refusal(400, "PinInvalid", "A matchday PIN is 8 to 12 digits.", "Choose a longer PIN, digits only.");
     const member = await this.prisma.fairPlaySessionMember.findUnique({ where: { sessionId_adminUserId: { sessionId: id, adminUserId: ctx.userId } } });
     if (!member) throw refusal(404, "NotFound", `You are not a member of session ${id}`, "Ask the session manager to add you.");
     const pinSetAt = new Date();

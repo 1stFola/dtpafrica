@@ -52,6 +52,8 @@ ACTIONS = (
     "calibration.large_offset_confirmed",
     # Phase 5.7 (D11): a clip withdrawn on request. The requester is on the withdrawal row.
     "evidence.withdrawn",
+    # Residual risk R9: who watched a camera live, once per person and camera an hour.
+    "media.live_viewed",
 )
 
 

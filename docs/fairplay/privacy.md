@@ -44,8 +44,9 @@ person. Write nothing about a player's age, health or conduct off the ball.
 ## Who can see what
 
 - **Venue staff** (any operate, review, admin or export permission) see the venue:
-  recordings, replay, live preview, incidents and draft evidence. Every replay window and
-  evidence view is audited (once an hour per person and item), and every export each time.
+  recordings, replay, live preview, incidents and draft evidence. Every replay window,
+  live preview and evidence view is audited (once an hour per person and item), and every
+  export each time.
 - **Organisers** (`fairplay.report.view` only) see completed findings and released evidence,
   and nothing else. They see no live view, no recordings, no draft evidence and no other
   incidents. Withheld evidence answers 404, not 403, so an organiser is not told it exists.

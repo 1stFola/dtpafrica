@@ -148,9 +148,9 @@ async function main() {
 
   console.log("\nThe signed bundle");
   check("no bundle names a member before they set a PIN", (await sessions.bundleFor(id1)).bundle?.bundle.members.length === 0);
-  await refusedWith("a PIN is six digits or more", () => sessions.setMyPin(s1.id, "1234", assessorCtx), "PinInvalid");
-  await refusedWith("only a member sets a PIN for a session", () => sessions.setMyPin(sC.id, "482913", assessorCtx), "NotFound");
-  await sessions.setMyPin(s1.id, "482913", assessorCtx);
+  await refusedWith("a PIN is eight digits or more", () => sessions.setMyPin(s1.id, "1234567", assessorCtx), "PinInvalid");
+  await refusedWith("only a member sets a PIN for a session", () => sessions.setMyPin(sC.id, "48291375", assessorCtx), "NotFound");
+  await sessions.setMyPin(s1.id, "48291375", assessorCtx);
   const issued = await sessions.bundleFor(id1);
   const signed = issued.bundle!;
   const pub = createPublicKey(privateKey);

@@ -161,7 +161,7 @@ class Drills(Run):
         if (CONSOLE_DIST / "index.html").exists():
             self.extra_env["FAIRPLAY_CONSOLE_PATH"] = str(CONSOLE_DIST)
         self.email = "drill.operator@dtp.test"
-        self.pin = f"{secrets.randbelow(10 ** 6):06d}"
+        self.pin = f"{secrets.randbelow(10 ** 8):08d}"
         device_token = secrets.token_urlsafe(32)
         with (self.out / "fixture.env").open("a", encoding="utf-8") as fh:
             fh.write(f"FAIRPLAY_CLOUD_SYNC_URL=https://{SINK_IP}:9443\nFAIRPLAY_CLOUD_DEVICE_TOKEN={device_token}\n"
