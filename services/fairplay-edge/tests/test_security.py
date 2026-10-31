@@ -116,6 +116,7 @@ GUARDS = {
     "GET /edge/v1/evidence/{evidence_id}/manifest": ORGANISER,
     "GET /edge/v1/evidence/{evidence_id}/file": ORGANISER,
     "POST /edge/v1/evidence/{evidence_id}/approve": EXPORT,
+    "POST /edge/v1/evidence/{evidence_id}/withdraw": ADMIN,
     "POST /edge/v1/evidence/{evidence_id}/export": EXPORT,
     "GET /edge/v1/sessions/{session_id}/rights": STAFF,
     "POST /edge/v1/sessions/{session_id}/rights": ADMIN,

@@ -8,7 +8,10 @@
                   cloud assigned to this device, verify it, and install it. A bundle that
                   does not verify is never written, so a bad answer cannot lock anyone out;
   Uploader        send released evidence clips and their manifests to the evidence bucket
-                  by presigned PUT, then ask the cloud to confirm what arrived.
+                  by presigned PUT, then ask the cloud to confirm what arrived;
+  apply_withdrawals  clips withdrawn on request in the cloud (decisions.md D11): each is
+                  removed here under the cloud's id, and the withdrawal syncs back as the
+                  confirmation.
 
 The Edge holds no storage credentials. Each upload URL is good for one object of exactly
 the size and SHA-256 the Edge declared, for a few minutes. What may go up is what may be
@@ -42,7 +45,9 @@ UPLOADS_PER_PASS = 4
 CHUNK = 1024 * 1024
 # Waits for answers that will not change soon: not releasable yet, storage not set up.
 LONG_WAIT = {"NotReleasable": timedelta(minutes=15), "EvidenceStorageOff": timedelta(hours=1),
-             "Deleted": timedelta(days=1), "HashMismatch": timedelta(hours=1)}
+             "Deleted": timedelta(days=1), "HashMismatch": timedelta(hours=1), "Withdrawn": timedelta(days=1)}
+# Who removes a clip the cloud withdrew: the person who did is in the cloud's audit log.
+CLOUD_ACTOR = audit.Actor(id="cloud", name="DTP cloud, on request", kind="system")
 
 
 class CloudError(RuntimeError):
@@ -94,6 +99,9 @@ class CloudClient:
     def confirm(self, evidence_id: str, kind: str) -> dict:
         return self._call("POST", f"/device/evidence/{evidence_id}/uploads/{kind}/confirm")
 
+    def withdrawals(self) -> list[dict]:
+        return self._call("GET", "/device/withdrawals")  # type: ignore[return-value]  (a JSON list)
+
     def put(self, upload: dict, path: Path) -> None:
         if upload.get("method") != "PUT" or not url_allowed(upload.get("url", "")):
             raise CloudError("the upload URL is not an https PUT")
@@ -139,6 +147,24 @@ def pair(client: CloudClient, store: Store, bootstrap_token: str, token_file: Pa
         load_trusted_keys(trusted_keys_file)  # refuses a key whose id does not match it
     return {"deviceId": answer["deviceId"], "label": answer["label"], "tokenExpires": answer["deviceTokenExpiresAt"],
             "trustedKeyId": key["keyId"] if key else None}
+
+
+def apply_withdrawals(settings: Settings, store: Store, client: CloudClient) -> list[str]:
+    """Remove here what the cloud withdrew. A clip this Edge does not hold, or holds with
+    another hash, is left for a person: the cloud keeps the withdrawal unconfirmed."""
+    done = []
+    for item in client.withdrawals():
+        row = store.one("SELECT id, sha256 FROM evidence WHERE id = ?", (item.get("evidenceId"),))
+        if row is None or row["sha256"] != item.get("clipSha256"):
+            log.warning(json.dumps({"event": "withdrawal.not_applied", "id": item.get("id"), "evidenceId": item.get("evidenceId"),
+                                    "why": "unknown evidence" if row is None else "hash differs"}))
+            continue
+        if evidence.withdrawal_of(store, row["id"]) is None:
+            evidence.withdraw(store, settings, row["id"], str(item.get("reason", "")), str(item.get("requester", "")),
+                              CLOUD_ACTOR, origin="cloud", withdrawal_id=item["id"], request_ref=item.get("requestId"))
+        # Withdrawn here as well, first: that withdrawal's sync is what confirms it to the cloud.
+        done.append(item["id"])
+    return done
 
 
 def check_token_expiry(store: Store, now: datetime | None = None) -> str | None:

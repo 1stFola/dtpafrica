@@ -35,6 +35,14 @@
   margin: 0.6rem 0;
 }
 
+.fairplay-form {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 34rem;
+}
+
+.fairplay-form .fairplay-btn { justify-self: start; }
+
 .fairplay-check {
   display: inline-flex;
   gap: 0.3rem;

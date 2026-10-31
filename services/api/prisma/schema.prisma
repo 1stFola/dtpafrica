@@ -2553,8 +2553,10 @@ model FairPlayEvidence {
   payload          Json
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  session FairPlaySession          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  objects FairPlayEvidenceObject[]
+  session    FairPlaySession          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  objects    FairPlayEvidenceObject[]
+  /// Set apart from the synced fields, so no later sync from the Edge can undo it.
+  withdrawal FairPlayWithdrawal?
 
   @@index([sessionId])
   @@index([incidentId])
@@ -2587,6 +2589,62 @@ model FairPlayEvidenceObject {
   @@unique([evidenceId, kind])
   @@index([state, deleteAfter])
   @@map("fairplay_evidence_objects")
+}
+
+/// A player's or a parent's request about what FairPlay holds on them (decisions.md D11):
+/// what is held is exported, and clips are withdrawn. The requester's name is kept here and
+/// nowhere else; audit rows name the request by id (D13).
+model FairPlayRequest {
+  id             String    @id @default(uuid())
+  competitionId  String    @map("competition_id")
+  /// As incidents record it: a shirt number with the side, or a register id. Never a name.
+  playerRef      String    @map("player_ref")
+  requesterName  String    @map("requester_name")
+  /// player, parent_or_guardian or representative.
+  relationship   String
+  /// The letter, email or ticket the request came by, and how the requester was verified.
+  reference      String?
+  /// open, completed or refused.
+  state          String    @default("open")
+  outcomeNote    String?   @map("outcome_note") @db.Text
+  createdById    String?   @map("created_by_id")
+  createdByEmail String?   @map("created_by_email")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  closedAt       DateTime? @map("closed_at")
+  closedByEmail  String?   @map("closed_by_email")
+
+  withdrawals FairPlayWithdrawal[]
+
+  @@index([competitionId, createdAt])
+  @@map("fairplay_requests")
+}
+
+/// A clip withdrawn on request. Its objects are removed from the bucket and its file from
+/// the Edge; this row keeps what it was (the hash and size), why, and at whose request.
+/// The id is the same on the Edge, whichever side withdrew it first.
+model FairPlayWithdrawal {
+  id             String    @id
+  evidenceId     String    @unique @map("evidence_id")
+  requestId      String?   @map("request_id")
+  /// cloud: withdrawn here, and the Edge follows; edge: withdrawn at the venue, and synced.
+  origin         String
+  reason         String    @db.Text
+  requester      String
+  clipSha256     String    @map("clip_sha256")
+  clipBytes      BigInt    @map("clip_bytes")
+  createdById    String?   @map("created_by_id")
+  createdByEmail String?   @map("created_by_email")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  /// When the Edge reported its file removed.
+  edgeAppliedAt  DateTime? @map("edge_applied_at")
+  edgeDetail     Json?     @map("edge_detail")
+
+  evidence FairPlayEvidence @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+  request  FairPlayRequest? @relation(fields: [requestId], references: [id], onDelete: Restrict)
+
+  @@index([requestId])
+  @@index([edgeAppliedAt])
+  @@map("fairplay_withdrawals")
 }
 
 /// The Edge's audit entries, as hash-chained there, and whether each one links to the one

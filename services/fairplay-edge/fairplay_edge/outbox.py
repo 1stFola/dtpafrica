@@ -36,7 +36,7 @@ from .store import Store
 log = logging.getLogger("fairplay.outbox")
 
 RANKS = {"session": 0, "rights": 1, "segment": 2, "period": 3, "calibration": 3, "incident": 4, "review": 5,
-         "job": 6, "evidence": 6, "audit": 7}
+         "job": 6, "evidence": 6, "audit": 7, "withdrawal": 7}
 BATCH = 50
 BASE_DELAY_S = 2.0
 MAX_DELAY_S = 300.0

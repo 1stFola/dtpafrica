@@ -28,6 +28,12 @@ export const FAIRPLAY_AUDIT_ACTIONS = [
   "evidence.read",
   "evidence.deleted",
   "report.read",
+  // Phase 5.7 (D11): a player's or a parent's request, by id; names stay on the request row.
+  "request.created",
+  "request.held_exported",
+  "request.closed",
+  "evidence.withdrawn",
+  "withdrawal.confirmed_by_edge",
 ] as const;
 
 export type FairPlayAuditAction = (typeof FAIRPLAY_AUDIT_ACTIONS)[number];

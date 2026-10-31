@@ -6,6 +6,7 @@ import { useAdminAuth } from "../AdminAuthContext";
 import { Field, Panel, Pill, formatWhen, short, useAction } from "../vision/vision-ui";
 import { AdminFairPlayMatchPage } from "./AdminFairPlayMatchPage";
 import { AdminFairPlayReportPage } from "./AdminFairPlayReportPage";
+import { AdminFairPlayRequestPage, AdminFairPlayRequestsPage } from "./AdminFairPlayRequestsPage";
 import { formatBytes, matchTitle } from "./fairplay-access";
 
 /**
@@ -19,6 +20,8 @@ export function AdminFairPlayApp() {
       <Route index element={<AdminFairPlayOverviewPage />} />
       <Route path="matches/:matchId" element={<AdminFairPlayMatchPage />} />
       <Route path="sessions/:id/report" element={<AdminFairPlayReportPage />} />
+      <Route path="requests" element={<AdminFairPlayRequestsPage />} />
+      <Route path="requests/:id" element={<AdminFairPlayRequestPage />} />
       <Route path="*" element={<Navigate to="/admin/fairplay" replace />} />
     </Routes>
   );
@@ -86,6 +89,14 @@ function AdminFairPlayOverviewPage() {
           </table>
         )}
       </Panel>
+      {manageDevices && (
+        <Panel title="Requests from players and parents">
+          <p>
+            What FairPlay holds about a player, and clips withdrawn at their request:{" "}
+            <Link to="/admin/fairplay/requests">open the requests</Link>.
+          </p>
+        </Panel>
+      )}
       {seeDevices && <DevicesPanel canManage={manageDevices} />}
       {seeDevices && <UsagePanel />}
     </div>
@@ -183,7 +194,8 @@ function UsagePanel() {
         <>
           {usage.backend === "off" && <p className="muted">Storage is off: nothing is uploaded until the evidence bucket exists.</p>}
           <p>
-            {usage.objects} objects, {formatBytes(usage.bytes)} held; {usage.deletedObjects} deleted under the {usage.retentionDays}-day rule.
+            {usage.objects} objects, {formatBytes(usage.bytes)} held; {usage.deletedObjects - (usage.withdrawnObjects ?? 0)} deleted under
+            the {usage.retentionDays}-day rule{usage.withdrawnObjects ? `, ${usage.withdrawnObjects} withdrawn on request` : ""}.
             This month: {usage.thisMonth.uploads} uploads, {usage.thisMonth.reads} reads. Estimated cost ${usage.estimatedMonthlyUsd.toFixed(2)} a month.
           </p>
           <p className="muted">{usage.note}</p>

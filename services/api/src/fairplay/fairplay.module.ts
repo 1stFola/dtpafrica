@@ -9,6 +9,7 @@ import { FairPlayAuditService } from "./fairplay-audit.service";
 import { FAIRPLAY_CONFIG, loadFairPlayConfig, type FairPlayConfig } from "./fairplay.config";
 import { FairPlayDeviceController } from "./fairplay-device.controller";
 import { FairPlayReportService } from "./report.service";
+import { FairPlayRequestsService } from "./requests.service";
 import { FairPlaySessionsService } from "./sessions.service";
 import { EVIDENCE_STORE, NoEvidenceStore, R2EvidenceStore } from "./storage/evidence-store";
 import { FairPlaySyncService } from "./sync.service";
@@ -31,6 +32,7 @@ const providers: Provider[] = [
   FairPlaySyncService,
   FairPlayEvidenceService,
   FairPlayReportService,
+  FairPlayRequestsService,
   FairPlayDeviceGuard,
   FairPlayBootstrapGuard,
 ];

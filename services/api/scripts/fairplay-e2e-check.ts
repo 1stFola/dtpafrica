@@ -13,7 +13,8 @@
  *      them in and sets their matchday PIN;
  *   3. runs services/fairplay-edge/tests/test_cloud_e2e.py in the Edge image: pairing, the
  *      bundle, the PIN at the venue, a match synced, a 30-minute outage, uploads, a
- *      corrupted object, the wrong match;
+ *      corrupted object, a clip withdrawn on request in the cloud and removed by the Edge,
+ *      the wrong match;
  *   4. checks from the cloud: the report, a read URL, the bytes behind it, the audit log.
  *
  * Every byte of "video" is synthetic test data. FairPlay's audit tables are insert-only, so
@@ -125,6 +126,7 @@ async function main() {
     "-e", "FAIRPLAY_E2E_TARGET=host.docker.internal", "-e", `FAIRPLAY_E2E_API_PORT=${API_PORT}`, "-e", `FAIRPLAY_E2E_S3_PORT=${S3_PORT}`,
     "-e", `FAIRPLAY_E2E_BUCKET=${BUCKET}`, "-e", `FAIRPLAY_E2E_BOOTSTRAP=${d1.bootstrapToken}`, "-e", `FAIRPLAY_E2E_SESSION=${s1.id}`,
     "-e", `FAIRPLAY_E2E_OTHER_SESSION=${s2.id}`, "-e", `FAIRPLAY_E2E_EMAIL=${assessor.email}`, "-e", `FAIRPLAY_E2E_PIN=${pin}`, "-e", "FAIRPLAY_E2E_OUT=/out",
+    "-e", `FAIRPLAY_E2E_ADMIN_KEY=${apiKey}`, "-e", `FAIRPLAY_E2E_COMPETITION=${comp.id}`,
     "fp-edge-test", "sh", "-c",
     "mkdir /tmp/w && tar -C /src --exclude=./fixtures/out -cf - . | tar -C /tmp/w -xf - && cd /tmp/w && python -m pytest -q -s -p no:cacheprovider tests/test_cloud_e2e.py"],
     { encoding: "utf8", env: { ...process.env, MSYS_NO_PATHCONV: "1" }, timeout: 600_000 });
@@ -137,11 +139,16 @@ async function main() {
   }
 
   console.log("\nFrom the cloud");
-  const results = JSON.parse(readFileSync(join(out, "edge-results.json"), "utf8")) as { evidence: { id: string; sha256: string }[]; cutEvidenceId: string };
-  const report = await call<{ incidents: { finding: { result: string } | null; evidence: { id: string; stored: string; released: boolean }[] }[] }>(
+  const results = JSON.parse(readFileSync(join(out, "edge-results.json"), "utf8")) as { evidence: { id: string; sha256: string }[]; cutEvidenceId: string;
+    withdrawnEvidenceId: string };
+  const report = await call<{ incidents: { finding: { result: string } | null; evidence: { id: string; stored: string; released: boolean; withheldBecause: string | null }[] }[] }>(
     "GET", `/fairplay/sessions/${s1.id}/report`, undefined, jwt);
-  check("the report holds the four incidents with their findings", report.incidents.length === results.evidence.length && report.incidents.every((i) => i.finding?.result === "supports_original"));
-  check("and every clip released and stored", report.incidents.every((i) => i.evidence.length === 1 && i.evidence[0].released && i.evidence[0].stored === "stored"));
+  const kept = report.incidents.filter((i) => i.evidence[0]?.id !== results.withdrawnEvidenceId);
+  const withdrawn = report.incidents.find((i) => i.evidence[0]?.id === results.withdrawnEvidenceId);
+  check("the report holds the five incidents with their findings", report.incidents.length === results.evidence.length + 1 && report.incidents.every((i) => i.finding?.result === "supports_original"));
+  check("and every clip released and stored, but the withdrawn one", kept.every((i) => i.evidence.length === 1 && i.evidence[0].released && i.evidence[0].stored === "stored"));
+  check("the withdrawn clip is shown withheld, its objects deleted", withdrawn?.evidence[0]?.released === false
+    && withdrawn.evidence[0].withheldBecause === "withdrawn on request" && withdrawn.evidence[0].stored === "deleted", withdrawn);
   for (const ev of results.evidence) {
     const read = await call<{ url: string }>("POST", `/fairplay/evidence/${ev.id}/read-url`, { kind: "clip", reason: "e2e check" }, jwt);
     const bytes = Buffer.from(await (await fetch(read.url)).arrayBuffer());

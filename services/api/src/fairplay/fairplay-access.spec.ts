@@ -53,6 +53,12 @@ const EXPECTED: Record<string, string[]> = {
   syncState: STAFF_READ.filter((p) => p !== "fairplay.report.view"),
   readUrl: ["fairplay.incident.review", "fairplay.evidence.export", "fairplay.session.manage", "fairplay.report.view"],
   usage: ["fairplay.edge.admin", "fairplay.session.manage"],
+  listRequests: ["fairplay.edge.admin"],
+  createRequest: ["fairplay.edge.admin"],
+  getRequest: ["fairplay.edge.admin"],
+  heldForRequest: ["fairplay.edge.admin"],
+  withdraw: ["fairplay.edge.admin"],
+  closeRequest: ["fairplay.edge.admin"],
 };
 
 describe("FairPlay authorization matrix", () => {

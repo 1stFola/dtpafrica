@@ -60,9 +60,42 @@ export type FairPlayReport = {
 };
 
 export type FairPlayUsage = {
-  backend: string; bucket: string | null; objects: number; bytes: number; deletedObjects: number; retentionDays: number;
+  backend: string; bucket: string | null; objects: number; bytes: number; deletedObjects: number; withdrawnObjects?: number; retentionDays: number;
   thisMonth: { uploads: number; reads: number; classAOperations: number; classBOperations: number };
   estimatedMonthlyUsd: number; note: string;
+};
+
+/** A player's or a parent's request (decisions.md D11). An Edge admin's job. */
+export type FairPlayRequestRow = {
+  id: string; competitionId: string; playerRef: string; requesterName: string; relationship: string; reference: string | null;
+  state: "open" | "completed" | "refused"; outcomeNote: string | null; createdByEmail: string | null; createdAt: string;
+  closedAt: string | null; closedByEmail: string | null; withdrawals?: number;
+};
+
+export type FairPlayWithdrawal = {
+  id: string; evidenceId: string; requestId: string | null; origin: "cloud" | "edge"; reason: string; requester: string;
+  clipSha256: string; clipBytes: number; withdrawnBy: string | null; withdrawnAt: string; edgeConfirmedAt: string | null;
+};
+
+export type RequestEvidence = {
+  id: string; source: string; sha256: string; bytes: number; windowStartUtc: string; windowDurationMs: number; footageKind: string;
+  withdrawn: { id: string; at: string; edgeConfirmedAt: string | null } | null; heldOnEdge: string | null;
+  inCloud: { kind: string; state: string; deleteAfter: string | null; deletedAt: string | null; deleteReason: string | null }[];
+};
+
+export type RequestIncident = {
+  id: string; sessionId: string; match: MatchSnapshot; eventUtc: string; period: string | null; matchMinute: number | null;
+  matchSecond: number | null; category: string; state: string; playerRef: string; note: string | null;
+  finding: { result: string | null; onFieldDecision: string | null; factualNotes: string | null; completedAt: string | null } | null;
+  evidence: RequestEvidence[];
+};
+
+export type FairPlayRequest = Omit<FairPlayRequestRow, "withdrawals"> & { incidents: RequestIncident[]; withdrawals: FairPlayWithdrawal[] };
+
+export const RELATIONSHIPS: Record<string, string> = {
+  player: "The player",
+  parent_or_guardian: "Parent or guardian",
+  representative: "Representative (club, school, lawyer)",
 };
 
 export const VENUE_PERMISSIONS = [
@@ -96,4 +129,14 @@ export const fairplayApi = {
     adminFetch<{ url: string; expiresAt: string; sha256: string; bytes: number }>(`/fairplay/evidence/${evidenceId}/read-url`,
       { method: "POST", body: JSON.stringify({ kind, reason }) }),
   usage: () => adminFetch<FairPlayUsage>("/fairplay/usage"),
+  requests: () => adminFetch<FairPlayRequestRow[]>("/fairplay/requests"),
+  createRequest: (input: { competitionId: string; playerRef: string; requesterName: string; relationship: string; reference?: string }) =>
+    adminFetch<FairPlayRequest>("/fairplay/requests", { method: "POST", body: JSON.stringify(input) }),
+  request: (id: string) => adminFetch<FairPlayRequest>(`/fairplay/requests/${id}`),
+  held: (id: string) => adminFetch<Record<string, unknown>>(`/fairplay/requests/${id}/held`),
+  withdraw: (id: string, evidenceId: string, reason: string) =>
+    adminFetch<FairPlayWithdrawal & { objectsRemoved: number }>(`/fairplay/requests/${id}/withdrawals`,
+      { method: "POST", body: JSON.stringify({ evidenceId, reason }) }),
+  closeRequest: (id: string, outcome: "completed" | "refused", note: string) =>
+    adminFetch<FairPlayRequest>(`/fairplay/requests/${id}/close`, { method: "POST", body: JSON.stringify({ outcome, note }) }),
 };

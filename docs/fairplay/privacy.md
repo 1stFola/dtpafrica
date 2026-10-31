@@ -81,6 +81,23 @@ encrypted by anything in this repository.** For a real match, the machine should
 disk encryption and be kept by DTP staff. That is a decision for the hardware set-up
 (equipment audit).
 
+## Requests from a player or a parent (5.7)
+
+An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
+([phase-5-threat-review.md](./phase-5-threat-review.md), "5.7").
+- **The request** records who asked (the player, a parent or guardian, or a
+  representative), how the request came and how the requester was checked. The player is
+  named only by the reference incidents record, a shirt number or a register id.
+- **What is held** is one document: every incident naming the player, its finding, each
+  clip's hash and where it is held until when, and when the match's recordings are
+  deleted. Clips are sent separately, each read through the audited link.
+- **A withdrawn clip** is removed from the bucket at once and from the Edge when it next
+  connects. It is never released again. Its hash, size, reason and requester are kept.
+- **Not erased on request:** the full-match recordings. They are kept 14 days (D9), and
+  the document says when they go.
+- **Names stay out of the audit log.** Requester names and player references are kept on
+  the request and withdrawal rows, never in audit entries (D13).
+
 ## Decisions still needed
 
 **Decided 28 Oct 2026** ([decisions.md](./decisions.md)): consent model direction (D8), recordings 14 days (D9), evidence on the Edge end of season + 12 months and in R2 90 days after the finding (D10), an audited request tool before the first real match (D11), disk encryption and a named custodian (D12), the audit log kept and minimised (D13), organiser admin accounts (D4). The list below is kept for the reasoning.

@@ -27,9 +27,13 @@ import { FairPlayAuditService, deviceActor } from "./fairplay-audit.service";
  * Ownership is the "wrong-match token" rule: a device may only send for sessions the cloud
  * assigned to it, and a session's match on the Edge must be the match the cloud provisioned.
  * The cloud never writes ScoreBoard events, sheets or scores from anything here (ADR-0001).
+ *
+ * A `withdrawal` (Phase 5.7, decisions.md D11) is a clip the Edge has withdrawn on request:
+ * its file is gone from the Edge. It confirms a withdrawal made here, or records one made at
+ * the venue, and the evidence sweep then removes any copy in the bucket.
  */
 
-export const ENTITY_TYPES = ["session", "rights", "segment", "period", "calibration", "incident", "review", "job", "evidence", "audit"] as const;
+export const ENTITY_TYPES = ["session", "rights", "segment", "period", "calibration", "incident", "review", "job", "evidence", "audit", "withdrawal"] as const;
 type EntityType = (typeof ENTITY_TYPES)[number];
 export type SyncStatus = "applied" | "replayed" | "stale" | "conflict" | "rejected";
 export type SyncItem = { idempotencyKey: string; entityType: string; entityId: string; version: number; payloadHash: string; payload: unknown };
@@ -178,6 +182,7 @@ export class FairPlaySyncService {
       }
       case "evidence": return this.evidence(tx, device, it, p);
       case "audit": return this.auditEntry(tx, device, it, p);
+      case "withdrawal": return this.withdrawal(tx, device, it, p);
     }
   }
 
@@ -271,6 +276,32 @@ export class FairPlaySyncService {
     if (held) await tx.fairPlayEvidence.update({ where: { id: it.entityId }, data });
     else await tx.fairPlayEvidence.create({ data: { id: it.entityId, ...data } });
     return { status: "applied" as const, sessionId: incident.sessionId };
+  }
+
+  private async withdrawal(tx: Tx, device: DeviceIdentity, it: SyncItem, p: Payload) {
+    const evidenceId = str(p, "evidence_id")!;
+    const ev = await tx.fairPlayEvidence.findUnique({ where: { id: evidenceId }, include: { session: { select: { deviceId: true } }, withdrawal: true } });
+    if (!ev || ev.session.deviceId !== device.deviceId) throw new Reject(`evidence ${evidenceId} has not been received from this device`);
+    const sha256 = str(p, "clip_sha256")!;
+    if (sha256 !== ev.sha256) throw new Reject("the withdrawn clip's hash is not the evidence's");
+    const edgeDetail = { withdrawalId: it.entityId, removedFiles: Array.isArray(p.removed_files) ? p.removed_files : [],
+      atUtc: str(p, "created_utc"), actorName: str(p, "actor_name"), requestRef: str(p, "request_ref", false) } as Prisma.InputJsonValue;
+    if (ev.withdrawal) {
+      if (ev.withdrawal.edgeAppliedAt) return { status: "stale" as const, sessionId: ev.sessionId };
+      // Withdrawn here first: the Edge has now removed its file. (If both sides withdrew it at
+      // once, the first withdrawal stands and the Edge's is noted with it.)
+      await tx.fairPlayWithdrawal.update({ where: { id: ev.withdrawal.id }, data: { edgeAppliedAt: new Date(), edgeDetail } });
+      await this.audit.record("withdrawal.confirmed_by_edge", { kind: "evidence", id: evidenceId }, deviceActor(device.deviceId),
+        { withdrawalId: ev.withdrawal.id, edgeWithdrawalId: it.entityId }, null, tx);
+      return { status: "applied" as const, sessionId: ev.sessionId };
+    }
+    const origin = str(p, "origin");
+    if (origin !== "edge") throw new Reject("a withdrawal made in the cloud is confirmed by its own id");
+    await tx.fairPlayWithdrawal.create({ data: { id: it.entityId, evidenceId, requestId: null, origin: "edge", reason: str(p, "reason")!,
+      requester: str(p, "requester")!, clipSha256: sha256, clipBytes: BigInt(int(p, "clip_bytes")!), edgeAppliedAt: new Date(), edgeDetail } });
+    await this.audit.record("evidence.withdrawn", { kind: "evidence", id: evidenceId }, deviceActor(device.deviceId),
+      { withdrawalId: it.entityId, sha256, origin: "edge" }, null, tx);
+    return { status: "applied" as const, sessionId: ev.sessionId };
   }
 
   /**
