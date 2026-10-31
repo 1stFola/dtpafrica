@@ -89,6 +89,11 @@ class Settings:
     # Cloud sync. Unset = nothing leaves the Edge; the outbox keeps every record.
     cloud_sync_url: str | None = None
     cloud_device_token: str | None = None
+    # Where presigned evidence uploads may go: the R2 endpoints, unless configured (F9).
+    upload_hosts: tuple[str, ...] = ("*.r2.cloudflarestorage.com",)
+    # Host names the Edge answers to when it serves beyond this machine; empty: the TLS
+    # certificate's own names (F19).
+    allowed_hosts: tuple[str, ...] = ()
     clip_max_attempts: int = 3
     extra: dict[str, str] = field(default_factory=dict)
 
@@ -194,10 +199,24 @@ def _device_token(env: dict[str, str]) -> str:
     return require_secret(env, "FAIRPLAY_CLOUD_DEVICE_TOKEN")
 
 
-def url_allowed(url: str) -> bool:
-    """https anywhere; plain http only to this machine, for tests."""
-    return url.startswith("https://") or (url.startswith("http://") and
-                                          is_loopback(url.removeprefix("http://").split("/")[0].rsplit(":", 1)[0].strip("[]")))
+def url_allowed(url: str, hosts: tuple[str, ...] | None = None) -> bool:
+    """https, to one of `hosts` when they are given; plain http only to this machine, for
+    tests. Parsed by httpx, which sends the request, so the check and the request cannot read
+    the URL differently; a user part (`http://127.0.0.1:1@elsewhere/`) is refused (F9)."""
+    import httpx
+
+    try:
+        parsed = httpx.URL(url)
+    except (httpx.InvalidURL, TypeError, ValueError):
+        return False
+    host = parsed.host.lower()
+    if parsed.userinfo or not host:
+        return False
+    if parsed.scheme == "http":
+        return is_loopback(host)
+    if parsed.scheme != "https":
+        return False
+    return hosts is None or any(host == h or (h.startswith("*.") and host.endswith(h[1:])) for h in hosts)
 
 
 def is_loopback(host: str) -> bool:
@@ -281,5 +300,8 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         extra_period_minutes=_whole(env, "FAIRPLAY_EXTRA_PERIOD_MINUTES", 15, 5, 30),
         cloud_sync_url=sync_url,
         cloud_device_token=_device_token(env) if sync_url else None,
+        upload_hosts=tuple(h.strip().lower() for h in env.get("FAIRPLAY_UPLOAD_HOSTS", "*.r2.cloudflarestorage.com").split(",")
+                           if h.strip()),
+        allowed_hosts=tuple(h.strip().lower() for h in env.get("FAIRPLAY_EDGE_HOSTNAMES", "").split(",") if h.strip()),
         clip_max_attempts=_whole(env, "FAIRPLAY_CLIP_MAX_ATTEMPTS", 3, 1, 10),
     )

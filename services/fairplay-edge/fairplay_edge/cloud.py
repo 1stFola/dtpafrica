@@ -58,9 +58,11 @@ class CloudError(RuntimeError):
 
 
 class CloudClient:
-    def __init__(self, base_url: str, device_token: str | None, client: httpx.Client | None = None, timeout: float = 30.0):
+    def __init__(self, base_url: str, device_token: str | None, client: httpx.Client | None = None, timeout: float = 30.0,
+                 upload_hosts: tuple[str, ...] | None = None):
         if not url_allowed(base_url):
             raise CloudError("the cloud URL must be https:// (plain http only to this machine, for tests)")
+        self.upload_hosts = upload_hosts
         self.base = base_url.rstrip("/") + "/api/v1/fairplay"
         self.token = device_token
         self.client = client or httpx.Client(timeout=timeout)
@@ -103,8 +105,8 @@ class CloudClient:
         return self._call("GET", "/device/withdrawals")  # type: ignore[return-value]  (a JSON list)
 
     def put(self, upload: dict, path: Path) -> None:
-        if upload.get("method") != "PUT" or not url_allowed(upload.get("url", "")):
-            raise CloudError("the upload URL is not an https PUT")
+        if upload.get("method") != "PUT" or not url_allowed(upload.get("url", ""), self.upload_hosts):
+            raise CloudError("the upload URL is not an https PUT to an allowed storage host (FAIRPLAY_UPLOAD_HOSTS)")
 
         def chunks():
             with path.open("rb") as fh:

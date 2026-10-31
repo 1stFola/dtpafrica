@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Headers, HttpCode, Inject, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { LoginThrottle } from "../shared/throttle";
 import { jsonSafe } from "../vision/shared/json-safe";
 import { FairPlayBootstrapGuard, FairPlayDeviceGuard, type DeviceRequest } from "./device.guard";
 import { FairPlayDevicesService, type DeviceIdentity } from "./devices.service";
@@ -22,8 +23,10 @@ export class FairPlayDeviceController {
     @Inject(FairPlayRequestsService) private readonly requests: FairPlayRequestsService
   ) {}
 
+  /** Throttled per address (F7): it is reachable without signing in, by anyone with the URL. */
   @Post("device/register")
   @HttpCode(200)
+  @LoginThrottle()
   @UseGuards(FairPlayBootstrapGuard)
   register(@Headers("x-fairplay-bootstrap-token") token: string, @Body() body: { edgeDeviceId?: string }) {
     return this.devices.register(token, String(body?.edgeDeviceId ?? ""));

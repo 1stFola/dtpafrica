@@ -76,11 +76,11 @@ function SignIn({ status, onSignedIn }: { status: AuthStatus | null; onSignedIn:
           {status?.secure ? "encrypted connection" : "this machine only"}
         </p>
         {status && !status.bundleLoaded && (
-          <p className="fp-warn" role="alert">No operator list is installed on this Edge: {status.problem}</p>
+          <p className="fp-warn" role="alert">Nobody can sign in: {status.problem ?? "no operator list is installed"}.</p>
         )}
         {status?.bundleLoaded && (
           <p className="fp-muted">
-            Operator list {status.sessionLabel ? `“${status.sessionLabel}” ` : ""}valid until{" "}
+            Operator list valid until{" "}
             {new Date(status.expiresUtc!).toLocaleString()}
           </p>
         )}

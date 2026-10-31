@@ -50,7 +50,8 @@ class EdgeService:
                      else NoDestination())
         self.outbox = Outbox(self.store, transport)
         # The same destination and token: the bundle and evidence uploads (cloud.py).
-        self.cloud = CloudClient(settings.cloud_sync_url, settings.cloud_device_token) if self.sync_configured else None
+        self.cloud = (CloudClient(settings.cloud_sync_url, settings.cloud_device_token, upload_hosts=settings.upload_hosts)
+                      if self.sync_configured else None)
         self.uploader = Uploader(settings, self.store, self.cloud) if self.cloud else None
         self.bundle_refresh: str | None = None
         self._last_bundle_fetch = -BUNDLE_EVERY_S
