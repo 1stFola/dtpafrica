@@ -174,7 +174,7 @@ function SessionPanel({ id }: { id: string }) {
           <Field label="Your matchday PIN" hint="8 to 12 digits. Only you can set it; it is stored hashed and reaches the Edge in the signed bundle.">
             <input type="password" inputMode="numeric" autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} maxLength={12} />
           </Field>
-          <button type="submit" className="fairplay-btn" disabled={busy || pin.length < 6}>Set PIN</button>
+          <button type="submit" className="fairplay-btn" disabled={busy || pin.length < 8}>Set PIN</button>
         </form>
       )}
       {sync && (

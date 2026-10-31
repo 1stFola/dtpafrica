@@ -12,6 +12,7 @@ describe("the Edge's alerts in the console", () => {
   it("words each alert, and falls back to its name", () => {
     expect(alertWords("segment_partial")).toContain("repaired");
     expect(alertWords("something_new")).toBe("something new");
+    expect(alertWords("restore_unchecked")).toContain("No clip can be viewed");
     expect(waitsForAdmin("segment_mismatch") && !waitsForAdmin("disk_full")).toBe(true);
   });
 });
