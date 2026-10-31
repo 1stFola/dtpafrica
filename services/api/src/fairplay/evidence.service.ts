@@ -26,6 +26,10 @@ import { EVIDENCE_STORE, type EvidenceStore } from "./storage/evidence-store";
  *
  * Read: a presigned GET of at most five minutes, after the permission, the competition
  * scope and the release rule are checked again at that moment, and every read is audited.
+ *
+ * Withdrawn (decisions.md D11, requests.service.ts): a clip withdrawn on request is never
+ * released, uploaded or confirmed again, and its objects are removed: at once when it is
+ * withdrawn here, by the next sweep when the Edge reports it withdrawn there.
  */
 
 export const KINDS = ["clip", "manifest"] as const;
@@ -34,6 +38,8 @@ const CONTENT_TYPE: Record<ObjectKind, string> = { clip: "video/mp4", manifest: 
 const RETENTION_SWEEP_MS = 60 * 60 * 1000;
 
 export type Releasable = { ok: boolean; reason: string };
+
+const WITHDRAWN_REASON = "withdrawn on request (decisions.md D11)";
 
 @Injectable()
 export class FairPlayEvidenceService implements OnModuleInit, OnModuleDestroy {
@@ -69,8 +75,9 @@ export class FairPlayEvidenceService implements OnModuleInit, OnModuleDestroy {
   }
 
   async releasable(evidenceId: string): Promise<Releasable> {
-    const ev = await this.prisma.fairPlayEvidence.findUnique({ where: { id: evidenceId } });
+    const ev = await this.prisma.fairPlayEvidence.findUnique({ where: { id: evidenceId }, include: { withdrawal: { select: { id: true } } } });
     if (!ev) return { ok: false, reason: "unknown evidence" };
+    if (ev.withdrawal) return { ok: false, reason: "withdrawn on request" };
     if (ev.state !== "approved") return { ok: false, reason: "not approved for release" };
     const incident = await this.prisma.fairPlayIncident.findUnique({ where: { id: ev.incidentId } });
     if (!incident || !["reviewed", "archived"].includes(incident.state)) {
@@ -126,9 +133,14 @@ export class FairPlayEvidenceService implements OnModuleInit, OnModuleDestroy {
     this.requireStore();
     const kind = kindRaw as ObjectKind;
     if (!KINDS.includes(kind)) throw refusal(400, "KindInvalid", "kind is clip or manifest", "Use clip or manifest.");
-    await this.ownEvidence(device, evidenceId);
+    const ev = await this.ownEvidence(device, evidenceId);
     const obj = await this.prisma.fairPlayEvidenceObject.findUnique({ where: { evidenceId_kind: { evidenceId, kind } } });
     if (!obj) throw refusal(404, "NotFound", `No upload was started for this ${kind}.`, "Ask for an upload URL first.");
+    if (await this.prisma.fairPlayWithdrawal.findUnique({ where: { evidenceId: ev.id }, select: { id: true } })) {
+      // An upload under way when the clip was withdrawn: whatever arrived is removed, not stored.
+      await this.removeWithdrawn(evidenceId);
+      throw refusal(409, "Withdrawn", "This clip was withdrawn on request; it is not stored.", "Nothing to upload: the Edge removes its copy.");
+    }
     if (obj.state === "stored") return { stored: true, key: obj.key, storedAt: obj.storedAt };
     const head = await this.store.head(obj.key);
     if (!head) throw refusal(409, "NotUploaded", "The bucket does not hold the object yet.", "Upload it, then confirm.");
@@ -193,19 +205,36 @@ export class FairPlayEvidenceService implements OnModuleInit, OnModuleDestroy {
 
   // ── retention ───────────────────────────────────────────────────────────
 
-  /** Deletes what is past its date. The row stays, with its hash, the date and the reason. */
+  /** Deletes what is past its date, and what was withdrawn. The row stays, with its hash, the date and the reason. */
   async sweep(now = new Date()): Promise<{ deleted: number }> {
     if (!this.store.configured) return { deleted: 0 };
     const due = await this.prisma.fairPlayEvidenceObject.findMany({ where: { state: "stored", deleteAfter: { lte: now } }, take: 500 });
     let deleted = 0;
     for (const obj of due) {
-      const reason = `retention: ${this.config.evidenceRetentionDays} days after the finding (decisions.md D10)`;
-      await this.store.remove(obj.key, reason);
-      await this.prisma.fairPlayEvidenceObject.update({ where: { id: obj.id }, data: { state: "deleted", deletedAt: now, deleteReason: reason } });
-      await this.audit.record("evidence.deleted", { kind: "evidence", id: obj.evidenceId }, SYSTEM_ACTOR,
-        { kind: obj.kind, key: obj.key, sha256: obj.sha256, bytes: Number(obj.bytes) }, reason);
+      await this.removeObject(obj, `retention: ${this.config.evidenceRetentionDays} days after the finding (decisions.md D10)`, now);
+      deleted += 1;
+    }
+    const withdrawn = await this.prisma.fairPlayEvidenceObject.findMany({
+      where: { state: { in: ["stored", "pending"] }, evidence: { withdrawal: { isNot: null } } }, take: 500 });
+    for (const obj of withdrawn) {
+      await this.removeObject(obj, WITHDRAWN_REASON, now);
       deleted += 1;
     }
     return { deleted };
+  }
+
+  /** A withdrawn clip's objects, removed now: stored ones, and any upload still under way. */
+  async removeWithdrawn(evidenceId: string, now = new Date()): Promise<number> {
+    if (!this.store.configured) return 0;
+    const objects = await this.prisma.fairPlayEvidenceObject.findMany({ where: { evidenceId, state: { in: ["stored", "pending"] } } });
+    for (const obj of objects) await this.removeObject(obj, WITHDRAWN_REASON, now);
+    return objects.length;
+  }
+
+  private async removeObject(obj: { id: string; evidenceId: string; kind: string; key: string; sha256: string; bytes: bigint }, reason: string, now: Date) {
+    await this.store.remove(obj.key, reason);
+    await this.prisma.fairPlayEvidenceObject.update({ where: { id: obj.id }, data: { state: "deleted", deletedAt: now, deleteReason: reason } });
+    await this.audit.record("evidence.deleted", { kind: "evidence", id: obj.evidenceId }, SYSTEM_ACTOR,
+      { kind: obj.kind, key: obj.key, sha256: obj.sha256, bytes: Number(obj.bytes) }, reason);
   }
 }

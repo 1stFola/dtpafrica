@@ -19,7 +19,7 @@ from .auth import AuthError, Bundle, Sessions, load_trusted_keys, verify_bundle
 from .config import Settings
 from .manifest import Scanner
 from .mediamtx import MediaMtx
-from .cloud import BUNDLE_EVERY_S, CloudClient, CloudError, Uploader, check_token_expiry, refresh_bundle
+from .cloud import BUNDLE_EVERY_S, CloudClient, CloudError, Uploader, apply_withdrawals, check_token_expiry, refresh_bundle
 from .outbox import HttpTransport, NoDestination, Outbox
 from .store import Store
 from .timing import ClockWatch
@@ -120,7 +120,7 @@ class EdgeService:
                                      "parked": report.parked, "error": report.error}))
 
     def cloud_once(self) -> bool:
-        """Fetch the bundle every few minutes, and send any released evidence."""
+        """Fetch the bundle and any withdrawals every few minutes, and send released evidence."""
         if self.cloud is None:
             return False
         if time.monotonic() - self._last_bundle_fetch >= BUNDLE_EVERY_S:
@@ -132,6 +132,12 @@ class EdgeService:
                 self.bundle_refresh = f"failed: {exc}"
             log.info(json.dumps({"event": "bundle.refresh", "result": self.bundle_refresh}))
             check_token_expiry(self.store)
+            try:
+                applied = apply_withdrawals(self.settings, self.store, self.cloud)
+                if applied:
+                    log.info(json.dumps({"event": "withdrawals.applied", "ids": applied}))
+            except CloudError as exc:
+                log.warning(json.dumps({"event": "withdrawals.failed", "error": str(exc)}))
         return bool(self.uploader.run_once())
 
     async def _every(self, name: str, fn, seconds: float) -> None:

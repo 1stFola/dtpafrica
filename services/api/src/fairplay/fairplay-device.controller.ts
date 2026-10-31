@@ -3,6 +3,7 @@ import { jsonSafe } from "../vision/shared/json-safe";
 import { FairPlayBootstrapGuard, FairPlayDeviceGuard, type DeviceRequest } from "./device.guard";
 import { FairPlayDevicesService, type DeviceIdentity } from "./devices.service";
 import { FairPlayEvidenceService } from "./evidence.service";
+import { FairPlayRequestsService } from "./requests.service";
 import { FairPlaySessionsService } from "./sessions.service";
 import { FairPlaySyncService } from "./sync.service";
 
@@ -17,7 +18,8 @@ export class FairPlayDeviceController {
     @Inject(FairPlayDevicesService) private readonly devices: FairPlayDevicesService,
     @Inject(FairPlaySessionsService) private readonly sessions: FairPlaySessionsService,
     @Inject(FairPlaySyncService) private readonly sync: FairPlaySyncService,
-    @Inject(FairPlayEvidenceService) private readonly evidence: FairPlayEvidenceService
+    @Inject(FairPlayEvidenceService) private readonly evidence: FairPlayEvidenceService,
+    @Inject(FairPlayRequestsService) private readonly requests: FairPlayRequestsService
   ) {}
 
   @Post("device/register")
@@ -45,6 +47,13 @@ export class FairPlayDeviceController {
   @UseGuards(FairPlayDeviceGuard)
   async presign(@Req() req: DeviceRequest, @Param("id", ParseUUIDPipe) id: string, @Body() body: { kind?: unknown; bytes?: unknown; sha256?: unknown }) {
     return jsonSafe(await this.evidence.presign(device(req), id, body ?? {}));
+  }
+
+  /** Clips withdrawn on request that this Edge still holds: it removes each, then syncs the withdrawal back. */
+  @Get("device/withdrawals")
+  @UseGuards(FairPlayDeviceGuard)
+  withdrawals(@Req() req: DeviceRequest) {
+    return this.requests.pendingFor(device(req));
   }
 
   @Post("device/evidence/:id/uploads/:kind/confirm")

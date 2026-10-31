@@ -147,8 +147,8 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     incidents.record_rights(store, session["id"], actor, footage_kind="synthetic", status="not_recorded", minors_present="no",
                             basis=None, consent_reference=None)
 
-    def clip_for(seconds):
-        inc = incidents.create(store, settings, session["id"], actor, event_utc=at(seconds), basis="manual", category="foul")
+    def clip_for(seconds, **kw):
+        inc = incidents.create(store, settings, session["id"], actor, event_utc=at(seconds), basis="manual", category="foul", **kw)
         job, _ = evidence.request_clip(store, settings, inc["id"], "ground", actor)
         ev_id = evidence.run_job(store, settings, FakeCutter(), job["id"])["evidence_id"]
         inc = incidents.start_review(store, inc["id"], 1, actor)
@@ -213,6 +213,36 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     row = store.one("SELECT state FROM uploads WHERE evidence_id = ? AND kind = 'clip'", (third["id"],))
     check("and the Edge's own upload of it then succeeds", row and row["state"] == "stored", dict(row) if row else None)
 
+    # ── a clip withdrawn on request in the cloud; the Edge follows (5.7, D11) ──
+    fifth = clip_for(10, player_ref="#4 away")
+    for _ in range(20):
+        if not restored.run_once(start + timedelta(hours=3, minutes=30)).attempted:
+            break
+    for _ in range(3):
+        up.run_once(start + timedelta(hours=3, minutes=30))
+    key = store.one("SELECT remote_key FROM uploads WHERE evidence_id = ? AND kind = 'clip' AND state = 'stored'", (fifth["id"],))
+    staff = {"x-admin-api-key": os.environ["FAIRPLAY_E2E_ADMIN_KEY"]}
+    api = f"{base}/api/v1/fairplay/requests"
+    req = httpx.post(api, headers=staff, json={"competitionId": os.environ["FAIRPLAY_E2E_COMPETITION"], "playerRef": "4 Away",
+                                              "requesterName": "E2E Parent", "relationship": "parent_or_guardian"}).json()
+    check("a request finds the incident naming the player", [i["id"] for i in req.get("incidents", [])] == [fifth["incident_id"]], req)
+    w = httpx.post(f"{api}/{req['id']}/withdrawals", headers=staff,
+                   json={"evidenceId": fifth["id"], "reason": "the parent asks for the clip to be removed"}).json()
+    in_bucket = httpx.head(f"http://127.0.0.1:{S3_PORT}/{os.environ['FAIRPLAY_E2E_BUCKET']}/{key['remote_key']}") if key else None
+    check("withdrawn in the cloud: both objects leave the bucket at once",
+          w.get("objectsRemoved") == 2 and in_bucket is not None and in_bucket.status_code == 404, {"w": w, "key": dict(key) if key else None})
+    applied = cloud.apply_withdrawals(settings, store, client)
+    held = evidence.withdrawal_of(store, fifth["id"])
+    check("the Edge removes its file under the cloud's id, keeping the hash and the requester",
+          applied == [w["id"]] and held and held["id"] == w["id"] and held["clip_sha256"] == fifth["sha256"]
+          and held["requester"] == "E2E Parent (parent_or_guardian)" and not evidence.path_of(settings, fifth).exists(), held)
+    for _ in range(20):
+        if not restored.run_once(start + timedelta(hours=3, minutes=40)).attempted:
+            break
+    after = httpx.get(f"{api}/{req['id']}", headers=staff).json()
+    check("its sync confirms the removal to the cloud, which asks no more",
+          after["withdrawals"][0]["edgeConfirmedAt"] is not None and client.withdrawals() == [], after.get("withdrawals"))
+
     # ── an upload cut halfway through the transfer (5.3) ─────────────────
     fourth = clip_for(20)
     for _ in range(20):
@@ -254,6 +284,7 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
 
     results["evidence"] = [{"id": e["id"], "sha256": e["sha256"]} for e in (first, second, third, fourth)]
     results["cutEvidenceId"] = fourth["id"]
+    results["withdrawnEvidenceId"] = fifth["id"]
     results["sessionId"] = session["id"]
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "edge-results.json").write_text(json.dumps(results, indent=2))

@@ -196,6 +196,10 @@ def request_clip(store: Store, settings: Settings, incident_id: str, source: str
     if incident["state"] not in CLIP_STATES:
         raise incidents.Conflict(f"evidence is gathered before the finding; this incident is {incident['state']}"
                                  " (reopen it to add evidence)")
+    if store.one("SELECT 1 FROM withdrawals w JOIN evidence e ON e.id = w.evidence_id WHERE e.incident_id = ?"
+                 " AND e.source = ?", (incident_id, source)):
+        # D11: what was withdrawn on request is not made again from the recordings.
+        raise incidents.Conflict(f"a clip of this incident from {source} was withdrawn on request; no new one is cut")
     window = window_for(store, settings, incident, source)
     key = f"{incident_id}:{source}:{window['startUtc']}:{window['durationMs']}"
     now = iso(utcnow())
@@ -605,7 +609,9 @@ def get(store: Store, evidence_id: str) -> dict:
 
 def released(store: Store, row: dict) -> tuple[bool, str]:
     """Visible outside the Edge's staff: approved, its incident's finding stands, and the
-    session's rights permit it, all checked at the moment of reading."""
+    session's rights permit it, all checked at the moment of reading. Never once withdrawn."""
+    if withdrawal_of(store, row["id"]):
+        return False, "withdrawn on request"
     if row["state"] != "approved":
         return False, "not approved for release"
     incident = incidents.get(store, row["incident_id"])
@@ -622,6 +628,8 @@ def approve(store: Store, settings: Settings, evidence_id: str, actor: Actor) ->
     ok, why = incidents.release_check(incidents.current_rights(store, row["session_id"]))
     if not ok:
         raise incidents.Conflict(why)
+    if withdrawal_of(store, evidence_id):
+        raise incidents.Conflict("this clip was withdrawn on request")
     if row["state"] == "approved":
         return row
     verify_file(store, settings, row)
@@ -640,8 +648,10 @@ def path_of(settings: Settings, row: dict, key: str = "rel_path") -> Path:
     return settings.evidence_dir / row[key]
 
 
-def verify_file(store: Store, settings: Settings, row: dict) -> None:
-    for key, digest in (("rel_path", row["sha256"]), ("manifest_rel_path", row["manifest_sha256"])):
+def verify_file(store: Store, settings: Settings, row: dict, clip: bool = True) -> None:
+    """Both files against their recorded hashes; only the manifest once the clip is withdrawn."""
+    files = (("rel_path", row["sha256"]), ("manifest_rel_path", row["manifest_sha256"]))
+    for key, digest in files if clip else files[1:]:
         path = path_of(settings, row, key)
         if not path.exists():
             raise ClipFailed("evidence_missing", f"{row[key]} is missing")
@@ -649,6 +659,50 @@ def verify_file(store: Store, settings: Settings, row: dict) -> None:
             store.open_alert("evidence_mismatch", row["source"], "critical", iso(utcnow()),
                              {"evidenceId": row["id"], "file": row[key]})
             raise ClipFailed("evidence_mismatch", f"{row[key]} no longer matches its recorded hash")
+
+
+# ── withdrawal on request (decisions.md D11) ──────────────────────────────
+
+def withdrawal_of(store: Store, evidence_id: str) -> dict | None:
+    return store.one("SELECT * FROM withdrawals WHERE evidence_id = ?", (evidence_id,))
+
+
+def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, requester: str, actor: Actor, *,
+             origin: str = "edge", withdrawal_id: str | None = None, request_ref: str | None = None) -> dict:
+    """Remove a clip at a player's or a parent's request: the clip file and any export
+    package of it are deleted, its uploads are cancelled, and it is never released, exported
+    or cut again. The evidence row, its manifest and a withdrawal row stay: the hash, the
+    size, the reason and the requester. Synced to the cloud, which removes its copies.
+
+    `origin` "cloud" applies a withdrawal made in the cloud, under the cloud's id."""
+    row = get(store, evidence_id)
+    held = withdrawal_of(store, evidence_id)
+    if held:
+        return held
+    reason, requester = reason.strip(), requester.strip()
+    if len(reason) < 5 or len(requester) < 2:
+        raise incidents.TimingError("a withdrawal needs its reason and the requester")
+    removed = []
+    exports = settings.data_dir / "exports"
+    for path in (path_of(settings, row), *sorted(exports.glob(f"fairplay-evidence-{evidence_id}.zip*"))):
+        if path.exists():
+            path.chmod(0o600)  # clips are made read-only when cut
+            path.unlink()
+            removed.append(path.relative_to(settings.data_dir).as_posix())
+    w = {"id": withdrawal_id or new_id(), "evidence_id": evidence_id, "origin": origin, "reason": reason,
+         "requester": requester, "request_ref": request_ref, "clip_sha256": row["sha256"], "clip_bytes": row["bytes"],
+         "removed_files": json.dumps(removed), "actor_id": actor.id, "actor_name": actor.name, "created_utc": iso(utcnow())}
+    with store.tx() as db:
+        db.execute("INSERT INTO withdrawals (id, evidence_id, origin, reason, requester, request_ref, clip_sha256, clip_bytes,"
+                   " removed_files, actor_id, actor_name, created_utc) VALUES (:id, :evidence_id, :origin, :reason,"
+                   " :requester, :request_ref, :clip_sha256, :clip_bytes, :removed_files, :actor_id, :actor_name,"
+                   " :created_utc)", w)
+        db.execute("DELETE FROM uploads WHERE evidence_id = ?", (evidence_id,))
+        # D13: ids and hashes in the chain; the requester and the reason stay on the withdrawal row.
+        audit.append(db, actor, "evidence.withdrawn", "evidence", evidence_id, None,
+                     {"withdrawalId": w["id"], "origin": origin, "sha256": row["sha256"], "removedFiles": len(removed)})
+        outbox.enqueue(db, "withdrawal", w["id"], 1, {**w, "removed_files": removed})
+    return withdrawal_of(store, evidence_id)
 
 
 def export_package(store: Store, settings: Settings, row: dict, actor: Actor, out_dir: Path) -> tuple[Path, str]:

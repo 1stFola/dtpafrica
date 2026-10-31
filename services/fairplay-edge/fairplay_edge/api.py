@@ -176,6 +176,12 @@ class ReplayMetricIn(BaseModel):
     note: str | None = Field(default=None, max_length=300)
 
 
+class WithdrawIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+    requester: str = Field(min_length=2, max_length=200)
+    requestRef: str | None = Field(default=None, max_length=100)
+
+
 class DisableIn(BaseModel):
     userId: str
     reason: str = Field(min_length=3, max_length=300)
@@ -1067,20 +1073,21 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def list_evidence(incidentId: str, who: Principal = staff):
         incident_session(who, incidentId)
         rows = service.store.query("SELECT * FROM evidence WHERE incident_id = ? ORDER BY created_utc", (incidentId,))
-        return [{**evidence.evidence_view(r), "release": dict(zip(("allowed", "reason"),
-                                                                 evidence.released(service.store, r)))} for r in rows]
+        return [{**evidence.evidence_view(r), "release": dict(zip(("allowed", "reason"), evidence.released(service.store, r))),
+                 "withdrawal": evidence.withdrawal_of(service.store, r["id"])} for r in rows]
 
     @app.get("/edge/v1/evidence/{evidence_id}")
     def evidence_detail(evidence_id: str, who: Principal = organiser):
         row = evidence_or_404(evidence_id, who)
         readable(who, row)
-        return row
+        return {**row, "withdrawal": evidence.withdrawal_of(service.store, evidence_id)}
 
     @app.get("/edge/v1/evidence/{evidence_id}/manifest")
     def evidence_manifest(evidence_id: str, who: Principal = organiser):
         row = evidence_or_404(evidence_id, who)
         as_role = readable(who, row)
-        lifecycle(evidence.verify_file, service.store, settings, row)
+        withdrawn = evidence.withdrawal_of(service.store, evidence_id) is not None
+        lifecycle(evidence.verify_file, service.store, settings, row, clip=not withdrawn)
         # One request, one file: every manifest download is in the chain (F8).
         audit.record(service.store, actor_of(who), "evidence.manifest_accessed", "evidence", evidence_id, None,
                      {"as": as_role, "manifestSha256": row["manifest_sha256"]})
@@ -1090,6 +1097,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def evidence_file(evidence_id: str, who: Principal = organiser):
         row = evidence_or_404(evidence_id, who)
         as_role = readable(who, row)
+        gone = evidence.withdrawal_of(service.store, evidence_id)
+        if gone:
+            raise refusal(410, "withdrawn", f"this clip was withdrawn on request at {gone['created_utc']}; its file is gone")
         path = evidence.path_of(settings, row)
         if not path.exists():
             raise refusal(409, "evidence_missing", "the evidence file is missing from this Edge")
@@ -1101,6 +1111,15 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def approve_evidence(evidence_id: str, who: Principal = exporter):
         evidence_or_404(evidence_id, who)
         return lifecycle(evidence.approve, service.store, settings, evidence_id, actor_of(who))
+
+    @app.post("/edge/v1/evidence/{evidence_id}/withdraw")
+    def withdraw_evidence(evidence_id: str, body: WithdrawIn, who: Principal = admin):
+        """D11: a clip withdrawn at a player's or a parent's request, here at the venue. The
+        cloud is told by sync and removes its copies. Requests made to DTP are handled on the
+        FairPlay page, and reach this Edge the next time it connects."""
+        evidence_or_404(evidence_id, who)
+        return lifecycle(evidence.withdraw, service.store, settings, evidence_id, body.reason, body.requester,
+                         actor_of(who), request_ref=body.requestRef)
 
     @app.post("/edge/v1/evidence/{evidence_id}/export")
     def export_evidence(evidence_id: str, who: Principal = exporter):

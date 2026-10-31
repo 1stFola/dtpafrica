@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -502,6 +502,34 @@ COMMIT;
 """
 
 
+# Phase 5.7: clips withdrawn on request (decisions.md D11). Additive: one table. A row keeps
+# what the clip was (hash and size), why, and at whose request; the file itself is removed.
+# Kept as written: triggers refuse UPDATE and DELETE, as on the audit log.
+_MIGRATE_V6 = """
+BEGIN IMMEDIATE;
+CREATE TABLE withdrawals (
+    id              TEXT PRIMARY KEY,
+    evidence_id     TEXT NOT NULL UNIQUE REFERENCES evidence(id),
+    origin          TEXT NOT NULL CHECK (origin IN ('edge','cloud')),
+    reason          TEXT NOT NULL,
+    requester       TEXT NOT NULL,
+    request_ref     TEXT,
+    clip_sha256     TEXT NOT NULL,
+    clip_bytes      INTEGER NOT NULL,
+    removed_files   TEXT NOT NULL,
+    actor_id        TEXT NOT NULL,
+    actor_name      TEXT NOT NULL,
+    created_utc     TEXT NOT NULL
+);
+CREATE TRIGGER withdrawals_no_update BEFORE UPDATE ON withdrawals
+BEGIN SELECT RAISE(ABORT, 'withdrawals are kept as written'); END;
+CREATE TRIGGER withdrawals_no_delete BEFORE DELETE ON withdrawals
+BEGIN SELECT RAISE(ABORT, 'withdrawals are kept'); END;
+UPDATE schema_version SET version = 6;
+COMMIT;
+"""
+
+
 def new_id() -> str:
     return str(uuid.uuid4())
 
@@ -535,7 +563,7 @@ class Store:
                 db.execute("INSERT INTO schema_version (version) VALUES (2)")
             elif start < 2:
                 db.execute("UPDATE schema_version SET version = 2")
-        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5)):
+        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6)):
             if start >= version:
                 continue
             db = self._connect()

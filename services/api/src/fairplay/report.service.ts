@@ -103,9 +103,11 @@ export class FairPlayReportService {
 
   /** What the evidence bucket holds and costs, from the cloud's own records of what it allowed. */
   async usage() {
-    const [stored, deleted, uploads, reads] = await Promise.all([
+    const [stored, deleted, withdrawn, uploads, reads] = await Promise.all([
       this.prisma.fairPlayEvidenceObject.aggregate({ where: { state: "stored" }, _count: true, _sum: { bytes: true } }),
       this.prisma.fairPlayEvidenceObject.count({ where: { state: "deleted" } }),
+      // Of those, removed because the clip was withdrawn on request (D11), not by the retention rule.
+      this.prisma.fairPlayEvidenceObject.count({ where: { state: "deleted", evidence: { withdrawal: { isNot: null } } } }),
       this.prisma.fairPlayAuditLog.count({ where: { action: "upload.presigned", createdAt: { gte: monthStart() } } }),
       this.prisma.fairPlayAuditLog.count({ where: { action: "evidence.read", createdAt: { gte: monthStart() } } }),
     ]);
@@ -120,7 +122,7 @@ export class FairPlayReportService {
     const estimate = gb * p.storagePerGbMonth + (classA / 1e6) * p.classAPerMillion + (classB / 1e6) * p.classBPerMillion;
     return {
       backend: this.config.storage.backend, bucket: this.config.storage.bucket,
-      objects: stored._count, bytes, deletedObjects: deleted, retentionDays: this.config.evidenceRetentionDays,
+      objects: stored._count, bytes, deletedObjects: deleted, withdrawnObjects: withdrawn, retentionDays: this.config.evidenceRetentionDays,
       thisMonth: { uploads, reads, classAOperations: classA, classBOperations: classB },
       estimatedMonthlyUsd: Math.round(estimate * 100) / 100,
       pricesUsd: p,

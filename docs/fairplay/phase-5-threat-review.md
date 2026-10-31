@@ -1060,6 +1060,134 @@ RISKS, ROLLBACK, NEXT GATE
 
 ---
 
+## 5.7: the request and erasure tool (D11, B15)
+
+Increment 5.7 of the plan, required before the first real match. A player, or a parent,
+can ask what FairPlay holds about the player, and ask for a clip to be removed (decisions.md
+D11). Fola chose where the tool lives and what the export holds (30 Oct 2026):
+- **Where:** in the cloud's admin pages, with each Edge following, plus a local
+  withdrawal at the Edge for evidence that never reached the cloud.
+- **The export:** the records plus a list of the clips, each clip then downloaded through
+  the existing audited link.
+
+**In the cloud** (`requests.service.ts`, `/admin/fairplay/requests`, Edge admins only,
+within the competitions their account may read):
+- **A request** records the competition, the player's reference and who asked: the
+  player, a parent or guardian, or a representative. It also records how the request came
+  and how the requester was checked. The reference is the one incidents record, a shirt
+  number with the side or a register id, never a name. "#7 home", "7 Home" and "7home"
+  match; "#17 home" does not.
+- **The request page** lists every incident in the competition that names the player,
+  with its finding and its clips. For each clip it shows the hash, the size, and where it
+  is held: in the bucket, and until when; on the Edge, until the end of the season plus 12
+  months (D10).
+- **"Download what is held"** gives one JSON document (`fairplay.held-about-a-player/v1`):
+  - the incidents and findings;
+  - each clip's hash and where it is held;
+  - when each match's recordings are deleted, 14 days after the match (D9);
+  - what has been withdrawn.
+
+  Clips are not in it. Staff download each one through the audited 5-minute link, with
+  the request as the reason. A clip held only on the Edge is fetched there by an Edge
+  admin.
+- **Withdraw a clip:**
+  - Both objects leave the bucket at once.
+  - The clip is never released, read or uploaded again, and an upload under way when it
+    is withdrawn is removed, not stored.
+  - A withdrawal row keeps the hash, the size, the reason and the requester. The database
+    refuses to delete a withdrawal row.
+  - The withdrawal is kept apart from the evidence the Edge syncs, so no later sync can
+    undo it.
+- **Close a request** as completed or refused, with a note.
+- **Audit.** Audit rows name the request and the clip by id and hash. The requester's
+  name, the player reference and the reason stay on the request and withdrawal rows
+  (D13).
+
+**On the Edge** (schema v6, the `withdrawals` table):
+- **Withdrawing** deletes the clip file and any export package of it, and cancels its
+  upload. The evidence row, its manifest and the withdrawal row stay, and the withdrawal
+  goes in the hash chain. It cannot be released, approved, exported or cut again from the
+  recordings, and its file route answers 410.
+- **Withdrawals made in the cloud.** The Edge fetches them each time it fetches its bundle
+  (`GET device/withdrawals`), and applies each one under the cloud's id. Syncing it back
+  confirms the removal: the cloud marks the withdrawal confirmed and stops asking.
+- **Withdrawals made at the Edge** (`POST /edge/v1/evidence/{id}/withdraw`, Edge admin
+  only) sync to the cloud. The cloud records them, makes the clip unreadable at once, and
+  the hourly sweep removes its objects.
+- **Unknown or changed clips.** A clip the Edge does not hold, or holds with another hash,
+  is left for a person: the cloud shows the withdrawal as not yet confirmed.
+
+**Checked in the browser** (the API on the end-to-end scratch database, the admin web app,
+signed in with a test key):
+- Recording a request from the form finds the player's incident.
+- Withdrawing a clip asks for the reason and a confirmation, then shows "withdrawn;
+  waiting for the Edge".
+- "Download what is held" produces the document described above.
+- Two wording bugs were found, both fixed:
+  - "held on the Edge until the end of the season" was shown for a clip already withdrawn;
+  - the storage panel counted objects removed by a withdrawal as "deleted under the
+    90-day rule".
+
+**Not covered.**
+- **Full-match recordings** are not erased on request. They are kept 14 days (D9), and
+  the export says when they go. Deleting a match's recordings early would remove every
+  other player's footage and any held evidence, so it is a decision for Fola, not a
+  button.
+- **Players are found only by the reference staff record.** An incident with no reference,
+  or another player's incident in which this player appears, is not found automatically.
+  The request page lists each clip, and any clip in the competition can be withdrawn.
+- **Who may make a request** under the Nigeria Data Protection Act 2023, and how the
+  requester's identity is checked, is for Fola and the organisers (B2, B7). The tool
+  records what was done.
+
+**Checks run** (30 Oct 2026):
+
+| Check | Result |
+|---|---|
+| Edge pytest in the Edge image | 297 passed, 1 skipped (5 new in `test_withdrawals.py`; the guard table now holds the withdraw route) |
+| `pnpm fairplay:cloudcheck`, fresh scratch DB (`fp57_cloud3_scratch`) | 108/108 (23 new: requests, matching, export, withdrawal, Edge confirmation, an Edge-made withdrawal swept, the delete trigger, no names in audit) |
+| `pnpm fairplay:e2echeck`, fresh scratch DB (`fp57_e2e2_scratch`) | 36/36 (5 new: in the Edge's run, a request, a withdrawal in the cloud, the real Edge code removing its file under the cloud's id, and its confirmation; in the cloud, the report showing it withheld) |
+| `pnpm fairplay:securitycheck`, fresh scratch DB (`fp57_sec2_scratch`) | 53/53 (21 admin routes walked, the 5th device route included) |
+| API `vitest run src/fairplay`; `tsc -p tsconfig.typecheck.json` | 25 passed; clean |
+| web `vitest run`; `tsc --noEmit`; `build` | 348 passed; clean; built |
+| browser, admin web app on the scratch API | as described above |
+
+The first end-to-end run failed: my Edge test ran its withdrawal after the cut-upload step,
+which closes the S3 relay. Moving it before that step, it passed.
+
+```text
+DTP FAIRPLAY | PHASE 5.7 DELIVERY
+STATUS: complete on synthetic data; B15 built (D11)
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: the evidence release gate and retention sweep (Phase 4); the sync contract; the Edge's audit chain and outbox; the admin FairPlay pages
+- Hardware facts actually verified: none needed
+- Unknowns remaining: the legal basis and identity checks for requests (B2, B7)
+
+IMPLEMENTED
+- Code paths changed: cloud requests.service.ts (new), evidence.service.ts (withdrawn never released, objects removed), sync.service.ts (withdrawal entity), admin and device controllers, audit actions, report usage; Edge store.py (v6), evidence.py (withdraw), api.py (route, 410), cloud.py (apply_withdrawals), service.py, outbox.py, audit.py; web AdminFairPlayRequestsPage.tsx (new), fairplay.ts, AdminFairPlayApp.tsx, admin-fairplay.css
+- APIs and migrations: migration 20261030000000_fairplay_requests, additive (two tables, checks, a delete-refusing trigger). Six admin routes under /fairplay/requests, GET /fairplay/device/withdrawals; Edge POST /edge/v1/evidence/{id}/withdraw; sync entity "withdrawal"
+- Local/Cloud config: none
+
+SECURITY + COST
+- Auth and evidence changes: Edge admin only, competition-scoped; withdrawal removes video and keeps the record; audit rows hold no names (D13)
+- New dependencies and license: none
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: Edge 297 passed, 1 skipped; cloudcheck 108/108; e2e 36/36; security 53/53; API 25 and web 348 passed. Untested: a real R2 bucket, a real request
+- Measured replay/CPU/RAM/SSD outcomes: none (not a performance increment)
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: none found
+- Steps to revert safely: revert the commit; the migration only adds tables (leave them, or drop them by hand if never used)
+- Human approvals required: the production migration with the next deploy; who may make a request and how they are checked; whether recordings should ever be erased early
+- Proposed next phase: 5.8, runbook and sign-off (or the 5.5 fixes Fola picks)
+```
+
+---
+
 ## Handover for 5.1 (prompt pack section K)
 
 ```text

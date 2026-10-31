@@ -264,6 +264,7 @@ async function main() {
     ["POST", "/fairplay/sync/batch"],
     ["POST", `/fairplay/device/evidence/${ev1.evidenceId}/uploads`],
     ["POST", `/fairplay/device/evidence/${ev1.evidenceId}/uploads/clip/confirm`],
+    ["GET", "/fairplay/device/withdrawals"],
   ] as const;
   const wrongCredentials: [string, Record<string, string>][] = [
     ["no token", {}],
@@ -296,7 +297,7 @@ async function main() {
 
   console.log("\nAdmin routes");
   const routes = adminRoutes();
-  check("the controller lists fifteen admin routes", routes.length === 15, routes.map((r) => r.name));
+  check("the controller lists twenty-one admin routes", routes.length === 21, routes.map((r) => r.name));
   const sendTo = (r: { method: string; path: string }, headers: Record<string, string>) =>
     http(r.method, fill(r.path), headers, r.method === "GET" ? undefined : {});
   for (const [what, headers] of [["no sign-in", {}], ["a guessed session", { Authorization: `Bearer ${randomBytes(32).toString("hex")}` }],

@@ -11,6 +11,7 @@ import { ANY_FAIRPLAY, assertCompetition, readerOf, STAFF_PERMISSIONS } from "./
 import { FairPlayDevicesService } from "./devices.service";
 import { FairPlayEvidenceService } from "./evidence.service";
 import { FairPlayReportService } from "./report.service";
+import { FairPlayRequestsService } from "./requests.service";
 import { FairPlaySessionsService, type MemberInput } from "./sessions.service";
 
 /**
@@ -28,7 +29,8 @@ export class FairPlayAdminController {
     @Inject(FairPlayDevicesService) private readonly devices: FairPlayDevicesService,
     @Inject(FairPlaySessionsService) private readonly sessions: FairPlaySessionsService,
     @Inject(FairPlayEvidenceService) private readonly evidence: FairPlayEvidenceService,
-    @Inject(FairPlayReportService) private readonly reports: FairPlayReportService
+    @Inject(FairPlayReportService) private readonly reports: FairPlayReportService,
+    @Inject(FairPlayRequestsService) private readonly requests: FairPlayRequestsService
   ) {}
 
   /** What this account may do here, for the web admin to decide what to show (it decides nothing). */
@@ -155,6 +157,46 @@ export class FairPlayAdminController {
   @RequirePermissions("fairplay.edge.admin", "fairplay.session.manage")
   usage() {
     return this.reports.usage();
+  }
+
+  // ── a player's or a parent's requests (D11) ─────────────────────────────
+  // An Edge admin's job, within the competitions their account may read.
+
+  @Get("requests")
+  @RequirePermissions("fairplay.edge.admin")
+  listRequests(@AdminAuth() ctx: AdminAuthContext) {
+    return this.requests.list(ctx);
+  }
+
+  @Post("requests")
+  @RequirePermissions("fairplay.edge.admin")
+  createRequest(@Body() body: Record<string, unknown>, @AdminAuth() ctx: AdminAuthContext) {
+    return this.requests.create(body ?? {}, ctx);
+  }
+
+  @Get("requests/:id")
+  @RequirePermissions("fairplay.edge.admin")
+  getRequest(@Param("id", ParseUUIDPipe) id: string, @AdminAuth() ctx: AdminAuthContext) {
+    return this.requests.get(id, ctx);
+  }
+
+  /** Everything held that names the player, as one document for the requester. Audited. */
+  @Get("requests/:id/held")
+  @RequirePermissions("fairplay.edge.admin")
+  heldForRequest(@Param("id", ParseUUIDPipe) id: string, @AdminAuth() ctx: AdminAuthContext) {
+    return this.requests.held(id, ctx);
+  }
+
+  @Post("requests/:id/withdrawals")
+  @RequirePermissions("fairplay.edge.admin")
+  withdraw(@Param("id", ParseUUIDPipe) id: string, @Body() body: Record<string, unknown>, @AdminAuth() ctx: AdminAuthContext) {
+    return this.requests.withdraw(id, body ?? {}, ctx);
+  }
+
+  @Post("requests/:id/close")
+  @RequirePermissions("fairplay.edge.admin")
+  closeRequest(@Param("id", ParseUUIDPipe) id: string, @Body() body: Record<string, unknown>, @AdminAuth() ctx: AdminAuthContext) {
+    return this.requests.close(id, body ?? {}, ctx);
   }
 }
 

@@ -20,6 +20,7 @@ import { FairPlayEvidenceService } from "../src/fairplay/evidence.service";
 import { FairPlayAuditService } from "../src/fairplay/fairplay-audit.service";
 import { loadFairPlayConfig } from "../src/fairplay/fairplay.config";
 import { FairPlayReportService } from "../src/fairplay/report.service";
+import { FairPlayRequestsService } from "../src/fairplay/requests.service";
 import { FairPlaySessionsService } from "../src/fairplay/sessions.service";
 import { InMemoryEvidenceStore } from "../src/fairplay/storage/in-memory-evidence-store";
 import { FairPlaySyncService, type SyncItem } from "../src/fairplay/sync.service";
@@ -386,6 +387,107 @@ async function main() {
 
   const usage = await reports.usage();
   check("usage counts what the bucket holds and what was asked of it", usage.objects === 0 && usage.deletedObjects === 2 && usage.thisMonth.uploads >= 3, usage);
+
+  console.log("\nA player's or a parent's request (D11)");
+  const requests = new FairPlayRequestsService(db, audit, evidence);
+  const idNow = await devices.verify(reg1c.deviceToken);
+  // Another incident naming the same player, with two clips released and stored.
+  const inc2 = randomUUID();
+  const rev2 = randomUUID();
+  const clipOf = (id: string) => Buffer.from(`clip ${id}`.repeat(700));
+  const manOf = (id: string) => Buffer.from(JSON.stringify({ schema: "fairplay.evidence-manifest/v1", id }));
+  const inc2p = (v: number, state: string, extra: Record<string, unknown> = {}) => ({ ...inc(v, state, extra), id: inc2, player_ref: "#7 Home" });
+  const rev2p = (v: number, state: string, extra: Record<string, unknown> = {}) => ({ ...review(v, state, extra), id: rev2, incident_id: inc2 });
+  const evOf = (id: string, source: string, state: string, extra: Record<string, unknown> = {}) => ({ ...ev(state, extra), id, incident_id: inc2, source,
+    rel_path: `x/${id}.mp4`, manifest_rel_path: `x/${id}.json`, bytes: clipOf(id).length, sha256: sha256Hex(clipOf(id)), manifest_sha256: sha256Hex(manOf(id)) });
+  const [ev2, ev3] = [randomUUID(), randomUUID()];
+  const approved = { approved_by: assessor.id, approved_name: "Assessor", approved_utc: "2026-10-28T16:00:00.000Z" };
+  const setup = await sync.receive(idNow, { deviceId: edge1, items: [
+    item("incident", inc2, 1, inc2p(1, "flagged")), item("incident", inc2, 2, inc2p(2, "reviewing", { current_review_id: rev2 })),
+    item("review", rev2, 1, rev2p(1, "open")),
+    item("review", rev2, 2, rev2p(2, "completed", { result: "supports_original", factual_notes: "Ball first.", completed_at: "2026-10-28T15:59:00.000Z" })),
+    item("incident", inc2, 3, inc2p(3, "reviewed", { current_review_id: rev2 })),
+    ...[ev2, ev3].flatMap((id, i) => [item("evidence", id, 1, evOf(id, i ? "drone" : "ground", "ready")),
+      item("evidence", id, 2, evOf(id, i ? "drone" : "ground", "approved", approved))]),
+  ] });
+  for (const id of [ev2, ev3]) {
+    for (const [kind, bytes] of [["clip", clipOf(id)], ["manifest", manOf(id)]] as const) {
+      const p = await evidence.presign(idNow, id, { kind, bytes: bytes.length, sha256: sha256Hex(bytes) });
+      store.put(p.key, bytes);
+      await evidence.confirm(idNow, id, kind);
+    }
+  }
+  check("a second incident naming the player, with two clips stored", setup.results.every((r) => r.status === "applied")
+    && (await prisma.fairPlayEvidenceObject.count({ where: { evidenceId: { in: [ev2, ev3] }, state: "stored" } })) === 4);
+
+  // A clip of another competition's match, from the other Edge.
+  const [incC, evidenceC] = [randomUUID(), randomUUID()];
+  await sync.receive(id2, { deviceId: edge2, items: [
+    item("incident", incC, 1, { ...inc(1, "reviewed"), id: incC, session_id: sC.id, match_id: matchC.id }),
+    item("evidence", evidenceC, 1, { ...evOf(evidenceC, "ground", "ready"), incident_id: incC, session_id: sC.id }),
+  ] });
+  const adminC2 = ctx("admin-2", ["fairplay.edge.admin"], [c2.id]);
+  const asked = { competitionId: c1.id, playerRef: "7 home", requesterName: "Jane Parent", relationship: "parent_or_guardian", reference: "email of 30 Oct; ID checked" };
+  await refusedWith("a request says who is asking", () => requests.create({ ...asked, relationship: "uncle" }, admin), "RelationshipInvalid");
+  await refusedWith("another competition's admin cannot open a request for this one", () => requests.create(asked, adminC2), "NotFound");
+  const req = await requests.create(asked, admin);
+  const named = await prisma.fairPlayIncident.findMany({ where: { session: { competitionId: c1.id } } });
+  const expected = named.filter((i) => ["#7home"].includes(String((i.payload as { player_ref?: string }).player_ref).toLowerCase().replace(/\s/g, "")));
+  check("a request finds every incident naming the player, however the number was written",
+    req.incidents.length === expected.length && [incidentId, inc2].every((id) => req.incidents.some((i) => i.id === id)), req.incidents.map((i) => i.playerRef));
+  check("and none naming another", (await requests.create({ ...asked, playerRef: "#17 home" }, admin)).incidents.length === 0);
+  await refusedWith("another competition's admin cannot read it", () => requests.get(req.id, adminC2), "NotFound");
+  const held = await requests.held(req.id, admin);
+  const heldInc = held.incidents.find((i) => i.id === inc2)!;
+  check("what is held: each incident, its finding, each clip's hash and copies, the recordings' deletion date",
+    held.schema === "fairplay.held-about-a-player/v1" && held.incidents.length === req.incidents.length && heldInc.finding?.factualNotes === "Ball first."
+      && heldInc.evidence.length === 2 && heldInc.evidence.every((e) => e.inCloud.length === 2 && e.inCloud.every((o) => o.state === "stored"))
+      && held.matches.length === 1 && held.matches[0].recordings.note.includes("14 days"), held);
+  const w = await requests.withdraw(req.id, { evidenceId: ev2, reason: "the parent asks for the clip to be removed" }, admin);
+  const ev2Objects = await prisma.fairPlayEvidenceObject.findMany({ where: { evidenceId: ev2 } });
+  check("withdrawing a clip removes both objects from the bucket at once, keeping the rows and the reason",
+    w.objectsRemoved === 2 && ev2Objects.every((o) => o.state === "deleted" && o.deleteReason?.includes("D11") && !store.objects.has(o.key)), ev2Objects);
+  check("the withdrawal keeps the hash, the size, the reason and the requester", w.clipSha256 === sha256Hex(clipOf(ev2)) && w.clipBytes === clipOf(ev2).length
+    && w.requester === "Jane Parent (parent_or_guardian)" && w.origin === "cloud");
+  check("a withdrawn clip is never released", (await evidence.releasable(ev2)).reason === "withdrawn on request");
+  await refusedWith("nor read", () => evidence.readUrl(ev2, "clip", "check", assessorCtx), "Withheld");
+  await refusedWith("nor uploaded again", () => evidence.presign(idNow, ev2, { kind: "clip", bytes: clipOf(ev2).length, sha256: sha256Hex(clipOf(ev2)) }), "NotReleasable");
+  check("withdrawing it again for the same request changes nothing", (await requests.withdraw(req.id, { evidenceId: ev2, reason: "again, by mistake" }, admin)).id === w.id);
+  const otherRequest = (await requests.list(admin)).find((r) => r.playerRef === "#17 home")!;
+  await refusedWith("another request cannot withdraw it a second time", () => requests.withdraw(otherRequest.id, { evidenceId: ev2, reason: "a second request" }, admin), "AlreadyWithdrawn");
+  await refusedWith("nor withdraw another competition's clip", () => requests.withdraw(req.id, { evidenceId: evidenceC, reason: "not this competition" }, admin), "NotFound");
+  const pending = await requests.pendingFor(idNow);
+  check("the Edge holding it is told; the other Edge is not", pending.length === 1 && pending[0].id === w.id && (await requests.pendingFor(id2)).length === 0);
+  const edgeSays = (id: string, evidenceId: string, origin: string) => ({ id, evidence_id: evidenceId, origin, reason: "the parent asks for the clip to be removed",
+    requester: "Jane Parent (parent_or_guardian)", request_ref: req.id, clip_sha256: sha256Hex(clipOf(evidenceId)), clip_bytes: clipOf(evidenceId).length,
+    removed_files: [`evidence/x/${evidenceId}.mp4`], actor_id: "cloud", actor_name: "DTP cloud, on request", created_utc: new Date().toISOString() });
+  const stolen = await sync.receive(id2, { deviceId: edge2, items: [item("withdrawal", w.id, 1, edgeSays(w.id, ev2, "cloud"))] });
+  check("another device cannot confirm it", stolen.results[0]?.status === "rejected", stolen.results);
+  const confirmedByEdge = await sync.receive(idNow, { deviceId: edge1, items: [item("withdrawal", w.id, 1, edgeSays(w.id, ev2, "cloud"))] });
+  const afterEdge = await prisma.fairPlayWithdrawal.findUniqueOrThrow({ where: { id: w.id } });
+  check("the Edge's sync of it confirms the file is gone there", confirmedByEdge.results[0]?.status === "applied" && afterEdge.edgeAppliedAt !== null
+    && (await requests.pendingFor(idNow)).length === 0
+    && (await prisma.fairPlayAuditLog.count({ where: { action: "withdrawal.confirmed_by_edge", targetId: ev2 } })) === 1);
+  const atVenue = randomUUID();
+  const fromEdge = await sync.receive(idNow, { deviceId: edge1, items: [item("withdrawal", atVenue, 1, edgeSays(atVenue, ev3, "edge"))] });
+  const swept2 = await evidence.sweep();
+  const ev3Objects = await prisma.fairPlayEvidenceObject.findMany({ where: { evidenceId: ev3 } });
+  check("a clip withdrawn at the venue is recorded here, unreadable at once, and the sweep removes its objects",
+    fromEdge.results[0]?.status === "applied" && (await prisma.fairPlayWithdrawal.findUniqueOrThrow({ where: { id: atVenue } })).origin === "edge"
+      && !(await evidence.releasable(ev3)).ok && swept2.deleted === 2 && ev3Objects.every((o) => o.state === "deleted" && !store.objects.has(o.key)), { fromEdge, swept2 });
+  let kept = false;
+  try {
+    await prisma.fairPlayWithdrawal.delete({ where: { id: w.id } });
+  } catch {
+    kept = true;
+  }
+  check("the database refuses to delete a withdrawal", kept);
+  const requestAudit = JSON.stringify(await prisma.fairPlayAuditLog.findMany({ where: { OR: [{ targetKind: "request" }, { action: { in: ["evidence.withdrawn", "withdrawal.confirmed_by_edge"] } }] } }));
+  check("audit rows name the request and the clip by id, never the requester, the player or the reason (D13)",
+    !/Jane|7 home|#7|ID checked|asks for the clip/i.test(requestAudit) && requestAudit.includes(req.id));
+  const closed = await requests.close(req.id, { outcome: "completed", note: "records sent; the clip withdrawn" }, admin);
+  check("a request is closed with its outcome", closed.state === "completed" && closed.closedAt !== null);
+  await refusedWith("and nothing more is withdrawn under it", () => requests.withdraw(req.id, { evidenceId: ev3, reason: "after closing" }, admin), "RequestClosed");
 
   console.log(`\n${passed}/${passed + failures.length} passed${failures.length ? ` — FAILED: ${failures.join("; ")}` : ""}`);
   process.exitCode = failures.length ? 1 : 0;

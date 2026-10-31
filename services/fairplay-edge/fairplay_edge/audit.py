@@ -50,6 +50,8 @@ ACTIONS = (
     "session.accessed_outside_bundle",
     # Phase 5.6 (F11): a calibration offset beyond the bound, kept on the operator's word.
     "calibration.large_offset_confirmed",
+    # Phase 5.7 (D11): a clip withdrawn on request. The requester is on the withdrawal row.
+    "evidence.withdrawn",
 )
 
 
