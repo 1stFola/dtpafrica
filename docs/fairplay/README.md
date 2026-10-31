@@ -23,6 +23,7 @@ decision or a score, or claim VAR/FVS status.
 | [phase-4-cloud.md](./phase-4-cloud.md) | **Phase 4 delivery**: the cloud module and migration, device pairing and signed bundles, the sync receiver, evidence in R2 by presigned URL, `/admin/fairplay`, the end-to-end run, cost and the approvals still needed |
 | [phase-5-threat-review.md](./phase-5-threat-review.md) | **Phase 5.1**: Prompt 6's failure scenarios and security requirements against the merged code; findings F1–F20 graded, and the proposed scope for the fixes |
 | [decisions.md](./decisions.md) | **Fola's decisions** on the gates, retention, rights, organiser access and Edge security (28 Oct 2026) |
+| [edge-backup.md](./edge-backup.md) | **Phase 6.2**: backing up and restoring the Edge, the cloud's FairPlay tables, and what a restore must not bring back |
 | [privacy.md](./privacy.md) | What the Edge holds about people, where it goes, who sees it, and the privacy decisions still open |
 | [adr/](./adr/) | 0001 shadow only · 0002 cloud in existing API · 0003 Edge stack · 0004 local console + TLS · 0005 pairing + offline identity · 0006 evidence storage · 0007 no Vision training path · 0008 single-angle mode · 0009 linking to ScoreBoard · 0010 admin placement · 0011 recording independent of the Edge · 0012 replay and live-preview delivery · 0013 evidence clips by stream copy · 0014 audit chain and sync outbox |
 

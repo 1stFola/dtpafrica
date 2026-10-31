@@ -467,6 +467,8 @@ async function main() {
   const afterEdge = await prisma.fairPlayWithdrawal.findUniqueOrThrow({ where: { id: w.id } });
   check("the Edge's sync of it confirms the file is gone there", confirmedByEdge.results[0]?.status === "applied" && afterEdge.edgeAppliedAt !== null
     && (await requests.pendingFor(idNow)).length === 0
+    && (await requests.pendingFor(idNow, true)).some((x) => x.id === w.id && x.edgeConfirmed && x.origin === "cloud")
+    && (await requests.pendingFor(id2, true)).every((x) => x.id !== w.id)
     && (await prisma.fairPlayAuditLog.count({ where: { action: "withdrawal.confirmed_by_edge", targetId: ev2 } })) === 1);
   const atVenue = randomUUID();
   const fromEdge = await sync.receive(idNow, { deviceId: edge1, items: [item("withdrawal", atVenue, 1, edgeSays(atVenue, ev3, "edge"))] });

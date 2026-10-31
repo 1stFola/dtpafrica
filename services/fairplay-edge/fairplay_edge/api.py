@@ -1174,6 +1174,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         gone = evidence.withdrawal_of(service.store, evidence_id)
         if gone:
             raise refusal(410, "withdrawn", f"this clip was withdrawn on request at {gone['created_utc']}; its file is gone")
+        if evidence.restore_unchecked(settings):
+            raise refusal(409, "restore_unchecked", evidence.RESTORE_UNCHECKED)
         path = evidence.path_of(settings, row)
         if not path.exists():
             raise refusal(409, "evidence_missing", "the evidence file is missing from this Edge")

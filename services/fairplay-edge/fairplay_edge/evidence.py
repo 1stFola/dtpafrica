@@ -49,6 +49,11 @@ GAP_TOLERANCE_MS = 50
 CLIP_STATES = ("flagged", "reviewing")
 
 
+RESTORE_MARKER = "restored.json"
+RESTORE_UNCHECKED = ("this Edge was restored from a backup and has not yet checked what was withdrawn since:"
+                     " connect it to the cloud, or see docs/fairplay/edge-backup.md")
+
+
 class ClipFailed(Exception):
     """The clip cannot be made from what is on disk. No retry will change that."""
 
@@ -648,8 +653,22 @@ def path_of(settings: Settings, row: dict, key: str = "rel_path") -> Path:
     return settings.evidence_dir / row[key]
 
 
+def restore_unchecked(settings: Settings) -> bool:
+    """A backup was restored and the cloud has not yet said what was withdrawn since it was
+    taken: until it does, or a person accepts the risk, no clip leaves this Edge."""
+    return (settings.data_dir / RESTORE_MARKER).exists()
+
+
+def finish_restore_check(store: Store, settings: Settings, actor: Actor, action: str, detail: dict) -> None:
+    (settings.data_dir / RESTORE_MARKER).unlink(missing_ok=True)
+    store.resolve_alert("restore_unchecked", None, iso(utcnow()))
+    audit.record(store, actor, action, "edge", None, None, detail)
+
+
 def verify_file(store: Store, settings: Settings, row: dict, clip: bool = True) -> None:
     """Both files against their recorded hashes; only the manifest once the clip is withdrawn."""
+    if clip and restore_unchecked(settings):
+        raise ClipFailed("restore_unchecked", RESTORE_UNCHECKED)
     files = (("rel_path", row["sha256"]), ("manifest_rel_path", row["manifest_sha256"]))
     for key, digest in files if clip else files[1:]:
         path = path_of(settings, row, key)
@@ -668,13 +687,16 @@ def withdrawal_of(store: Store, evidence_id: str) -> dict | None:
 
 
 def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, requester: str, actor: Actor, *,
-             origin: str = "edge", withdrawal_id: str | None = None, request_ref: str | None = None) -> dict:
+             origin: str = "edge", withdrawal_id: str | None = None, request_ref: str | None = None,
+             sync: bool = True) -> dict:
     """Remove a clip at a player's or a parent's request: the clip file and any export
     package of it are deleted, its uploads are cancelled, and it is never released, exported
     or cut again. The evidence row, its manifest and a withdrawal row stay: the hash, the
     size, the reason and the requester. Synced to the cloud, which removes its copies.
 
-    `origin` "cloud" applies a withdrawal made in the cloud, under the cloud's id."""
+    `origin` "cloud" applies a withdrawal made in the cloud, under the cloud's id. `sync` False
+    is for a withdrawal applied again after a restore: the cloud already holds its confirmation,
+    with a different time on it, and would call a second one a conflict."""
     row = get(store, evidence_id)
     held = withdrawal_of(store, evidence_id)
     if held:
@@ -684,7 +706,9 @@ def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, re
         raise incidents.TimingError("a withdrawal needs its reason and the requester")
     removed = []
     exports = settings.data_dir / "exports"
-    for path in (path_of(settings, row), *sorted(exports.glob(f"fairplay-evidence-{evidence_id}.zip*"))):
+    # A copy set aside by a restore goes too (6.2). A backup archive is out of reach: edge-backup.md.
+    aside = sorted((settings.data_dir / "backups").glob(f"before-restore-*/evidence/{row['rel_path']}"))
+    for path in (path_of(settings, row), *sorted(exports.glob(f"fairplay-evidence-{evidence_id}.zip*")), *aside):
         if path.exists():
             path.chmod(0o600)  # clips are made read-only when cut
             path.unlink()
@@ -701,7 +725,8 @@ def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, re
         # D13: ids and hashes in the chain; the requester and the reason stay on the withdrawal row.
         audit.append(db, actor, "evidence.withdrawn", "evidence", evidence_id, None,
                      {"withdrawalId": w["id"], "origin": origin, "sha256": row["sha256"], "removedFiles": len(removed)})
-        outbox.enqueue(db, "withdrawal", w["id"], 1, {**w, "removed_files": removed})
+        if sync:
+            outbox.enqueue(db, "withdrawal", w["id"], 1, {**w, "removed_files": removed})
     return withdrawal_of(store, evidence_id)
 
 

@@ -94,6 +94,10 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   deleted. Clips are sent separately, each read through the audited link.
 - **A withdrawn clip** is removed from the bucket at once and from the Edge when it next
   connects. It is never released again. Its hash, size, reason and requester are kept.
+- **Backups:** a backup taken before a withdrawal still holds the clip until that backup is
+  destroyed. After each withdrawal, take a new backup and destroy the older ones
+  ([edge-backup.md](./edge-backup.md)). A restored Edge asks the cloud what was withdrawn
+  before any clip can leave it.
 - **Not erased on request:** the full-match recordings. They are kept 14 days (D9), and
   the document says when they go.
 - **Names stay out of the audit log.** Requester names and player references are kept on

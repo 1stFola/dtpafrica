@@ -58,6 +58,15 @@ Proposed decisions:
 | R18 | **A player is found only by the reference staff record.** An incident with no reference, or another player's incident they appear in, is not found automatically. | low | Any clip in the competition can be withdrawn; staff are told to always record a reference. | accept, with the runbook's guidance for staff |
 | R19 | **Disk encryption and custody of the Edge are not done by this software** (D12). | medium | A decision; no code. | fix before real footage: full-disk encryption and a named custodian, in the Phase 6 hardware set-up |
 
+## Added by Phase 6.2, not yet decided
+
+These came after Fola's decisions of 31 Oct, so they have no decision yet.
+
+| # | Risk | Severity | In place now | Proposed |
+|---|---|---|---|---|
+| R23 | **A backup is not encrypted by this software, and an older backup still holds a clip withdrawn since.** It holds clips, the database and the Edge's private keys. | medium (high for real footage) | 0600 files; the rule in [edge-backup.md](./edge-backup.md): an encrypted disk, a new backup after each withdrawal, older ones destroyed. Nothing enforces it. | accept for synthetic rehearsals; fix with R19 before real footage: encrypted backup disk and a named custodian |
+| R24 | **Restoring to an older point leaves a seam with the other side.** A restored Edge's new audit entries collide with numbers the cloud already holds, so they are parked with a critical alert (R12: no re-send). A withdrawal made at the venue and not yet synced before the failure is lost with the disk. A cloud restore older than a withdrawal loses that withdrawal's record there, though the clip stays deleted from the bucket and the Edge. | medium | Nothing is overwritten and nothing is silent. Both are written up in [edge-backup.md](./edge-backup.md). | accept for the pilot, with a backup after each match and each withdrawal |
+
 ## Not yet done, and waiting for approval
 
 | # | Item | Waiting for |

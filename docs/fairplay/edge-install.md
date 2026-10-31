@@ -81,7 +81,7 @@ Nothing else listens. The camera network and the reviewers' LAN should be separa
 | Volume | Holds | Notes |
 |---|---|---|
 | `recordings` | every camera's recordings, `<source>/<UTC time>.mp4` | kept 14 days when retention is on (D9) |
-| `data` | `edge.sqlite3`, manifests, evidence clips, export packages, `tls/`, `backups/` | the Edge's record; 6.2 covers its backup and restore |
+| `data` | `edge.sqlite3`, manifests, evidence clips, export packages, `tls/`, `backups/` | the Edge's record; [edge-backup.md](./edge-backup.md) covers its backup and restore |
 | `mtxconfig` | MediaMTX's rendered configuration | rebuilt from `sources.toml` at each start |
 
 `docker compose down` keeps them. **`docker compose down -v` deletes every recording.**

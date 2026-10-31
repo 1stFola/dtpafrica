@@ -55,8 +55,8 @@ export class FairPlayDeviceController {
   /** Clips withdrawn on request that this Edge still holds: it removes each, then syncs the withdrawal back. */
   @Get("device/withdrawals")
   @UseGuards(FairPlayDeviceGuard)
-  withdrawals(@Req() req: DeviceRequest) {
-    return this.requests.pendingFor(device(req));
+  withdrawals(@Req() req: DeviceRequest, @Query("all") all?: string) {
+    return this.requests.pendingFor(device(req), all === "1");
   }
 
   @Post("device/evidence/:id/uploads/:kind/confirm")

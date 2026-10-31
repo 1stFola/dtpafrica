@@ -99,6 +99,58 @@ def cmd_verify_all(_: argparse.Namespace) -> int:
     return 0 if set(results) <= {"match"} else 1
 
 
+def cmd_backup(args: argparse.Namespace) -> int:
+    from . import backup
+
+    settings = _settings(need_api_token=False)
+    if args.out == "-":
+        summary = backup.create(settings, sys.stdout.buffer)
+    else:
+        with open(os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as out:
+            summary = backup.create(settings, out)
+    print(json.dumps(summary), file=sys.stderr)
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    from . import backup
+
+    settings = _settings(need_api_token=False)
+    try:
+        if args.file == "-":
+            result = backup.restore(settings, sys.stdin.buffer, replace=args.replace)
+        else:
+            with open(args.file, "rb") as stream:
+                result = backup.restore(settings, stream, replace=args.replace)
+    except backup.RestoreRefused as exc:
+        print(f"restore refused: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2))
+    return 0 if result["ok"] else 1
+
+
+def cmd_restore_verify(_: argparse.Namespace) -> int:
+    from . import backup
+
+    result = backup.verify(_settings(need_api_token=False))
+    print(json.dumps(result, indent=2))
+    return 0 if result["ok"] else 1
+
+
+def cmd_restore_accept(args: argparse.Namespace) -> int:
+    from . import audit, evidence
+    from .store import Store
+
+    settings = _settings(need_api_token=False)
+    if not evidence.restore_unchecked(settings):
+        print("nothing to accept: this Edge is not waiting on a restore check")
+        return 0
+    evidence.finish_restore_check(Store(settings.db_path), settings, audit.Actor("cli", args.by, "operator"),
+                                  "edge.restore_accepted", {"why": args.why})
+    print("accepted: clips may leave this Edge again, and the acceptance is in the audit chain")
+    return 0
+
+
 def cmd_retention(args: argparse.Namespace) -> int:
     from . import retention
     from .service import EdgeService
@@ -355,6 +407,19 @@ def main(argv: list[str] | None = None) -> int:
     relay.add_argument("--listen", required=True)
     relay.add_argument("--target", required=True)
     relay.set_defaults(fn=cmd_relay)
+    make = sub.add_parser("backup", help="write a backup of the Edge's record (deploy/backup.sh wraps this)")
+    make.add_argument("--out", default="-", help="a file, or - for stdout")
+    make.set_defaults(fn=cmd_backup)
+    back = sub.add_parser("restore", help="restore a backup; the Edge must be stopped (deploy/restore.sh wraps this)")
+    back.add_argument("--file", default="-", help="a file, or - for stdin")
+    back.add_argument("--replace", action="store_true", help="set aside the record this Edge holds, and replace it")
+    back.set_defaults(fn=cmd_restore)
+    check = sub.add_parser("restore-verify", help="audit chain, clips and withdrawals, as a restore checks them")
+    check.set_defaults(fn=cmd_restore_verify)
+    accept = sub.add_parser("restore-accept", help="let clips leave without the cloud's withdrawals check (edge-backup.md)")
+    accept.add_argument("--by", required=True, help="who is accepting this")
+    accept.add_argument("--why", required=True, help="why; name no player or requester")
+    accept.set_defaults(fn=cmd_restore_accept)
     egress = sub.add_parser("check-egress", help="report whether the internet is reachable")
     egress.add_argument("targets", nargs="*", default=["1.1.1.1:443", "8.8.8.8:53", "www.dtp.africa:443"])
     egress.add_argument("--timeout", type=float, default=3.0)

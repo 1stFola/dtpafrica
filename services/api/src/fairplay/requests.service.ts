@@ -190,12 +190,16 @@ export class FairPlayRequestsService {
 
   // ── the Edge ────────────────────────────────────────────────────────────
 
-  /** Withdrawals of this device's clips that it has not yet confirmed. */
-  async pendingFor(device: DeviceIdentity) {
+  /**
+   * Withdrawals of this device's clips that it has not yet confirmed. `every` is for an Edge
+   * restored from a backup (6.2): a clip it confirmed removing may be back on its disk.
+   */
+  async pendingFor(device: DeviceIdentity, every = false) {
     const rows = await this.prisma.fairPlayWithdrawal.findMany({
-      where: { edgeAppliedAt: null, evidence: { session: { deviceId: device.deviceId } } }, orderBy: { createdAt: "asc" }, take: 100 });
-    return rows.map((w) => ({ id: w.id, evidenceId: w.evidenceId, reason: w.reason, requester: w.requester, requestId: w.requestId,
-      clipSha256: w.clipSha256, createdAt: w.createdAt }));
+      where: { ...(every ? {} : { edgeAppliedAt: null }), evidence: { session: { deviceId: device.deviceId } } },
+      orderBy: { createdAt: "asc" }, ...(every ? {} : { take: 100 }) });
+    return rows.map((w) => ({ id: w.id, evidenceId: w.evidenceId, origin: w.origin, reason: w.reason, requester: w.requester, requestId: w.requestId,
+      clipSha256: w.clipSha256, createdAt: w.createdAt, edgeConfirmed: w.edgeAppliedAt !== null }));
   }
 }
 

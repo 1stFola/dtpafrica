@@ -54,6 +54,8 @@ ACTIONS = (
     "evidence.withdrawn",
     # Residual risk R9: who watched a camera live, once per person and camera an hour.
     "media.live_viewed",
+    # Phase 6.2: a restore, and the withdrawals check that must follow it.
+    "edge.restored", "edge.restore_checked", "edge.restore_accepted",
 )
 
 

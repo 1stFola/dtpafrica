@@ -9,6 +9,8 @@ bundle check, PIN check and uploader. What is not: the clip is made by the test 
 from synthetic segment files. Nothing here is real footage.
 """
 
+import dataclasses
+import io
 import json
 import os
 import re
@@ -23,10 +25,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from fairplay_edge import cloud, evidence, incidents, outbox, timing
+from fairplay_edge import backup, cloud, evidence, incidents, outbox, timing
 from fairplay_edge.audit import Actor
 from fairplay_edge.auth import Sessions, load_trusted_keys, verify_bundle
 from fairplay_edge.naming import utcnow
+from fairplay_edge.store import Store
 
 from .test_evidence import FakeCutter, finalise_all  # noqa: F401
 from .conftest import at, fmp4, write_segment
@@ -221,6 +224,8 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     for _ in range(3):
         up.run_once(start + timedelta(hours=3, minutes=30))
     key = store.one("SELECT remote_key FROM uploads WHERE evidence_id = ? AND kind = 'clip' AND state = 'stored'", (fifth["id"],))
+    before_withdrawal = io.BytesIO()  # the backup a restore at the end of this test goes back to (6.2)
+    backup.create(settings, before_withdrawal)
     staff = {"x-admin-api-key": os.environ["FAIRPLAY_E2E_ADMIN_KEY"]}
     api = f"{base}/api/v1/fairplay/requests"
     req = httpx.post(api, headers=staff, json={"competitionId": os.environ["FAIRPLAY_E2E_COMPETITION"], "playerRef": "4 Away",
@@ -281,6 +286,37 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     r = httpx.post(f"{base}/api/v1/fairplay/sync/batch", json={"deviceId": store.device_id, "items": []},
                    headers={"x-fairplay-device-token": "f" * 64})
     check("an unknown device token is refused", r.status_code == 401, r.status_code)
+
+    # ── restored from a backup older than that withdrawal (6.2) ───────────
+    # Last in this test: from here on this Edge's chain has forked from what the cloud holds.
+    clean = dataclasses.replace(settings, data_dir=tmp_path / "clean" / "data", recordings_dir=tmp_path / "clean" / "recordings")
+    (clean.recordings_dir).mkdir(parents=True)
+    before_withdrawal.seek(0)
+    back = backup.restore(clean, before_withdrawal)
+    again = Store(clean.db_path)
+    check("restored from before the withdrawal: the withdrawn clip is back on disk, and the gate is shut",
+          back["ok"] and evidence.path_of(clean, fifth).exists() and evidence.restore_unchecked(clean) and client.withdrawals() == [], back)
+    applied = cloud.apply_withdrawals(clean, again, client)
+    check("the cloud, asked for every withdrawal, removes it again", w["id"] in applied and not evidence.path_of(clean, fifth).exists()
+          and evidence.withdrawal_of(again, fifth["id"])["id"] == w["id"] and not evidence.restore_unchecked(clean), applied)
+    second_clip = evidence.get(again, second["id"])
+    evidence.verify_file(again, clean, second_clip)
+    check("the other clips were not touched, and may leave again", evidence.path_of(clean, second).exists())
+    sender = outbox.Outbox(again, outbox.HttpTransport(base, token))
+    for _ in range(40):
+        if not sender.run_once(start + timedelta(hours=8)).attempted:
+            break
+    outcome = {f"{r['entity_type']}/{r['state']}": r["n"] for r in again.query(
+        "SELECT entity_type, state, COUNT(*) AS n FROM outbox GROUP BY entity_type, state")}
+    parked = again.query("SELECT entity_type, entity_id, last_error FROM outbox WHERE state = 'parked'")
+    results["afterRestore"] = {"outbox": outcome, "parked": parked}
+    check("its sync sends no second confirmation of that withdrawal, so nothing there conflicts",
+          again.query("SELECT 1 FROM outbox WHERE entity_type = 'withdrawal' AND entity_id = ?", (w["id"],)) == [], outcome)
+    check("only audit entries the cloud already holds under the same number are parked, and an alert says so",
+          parked and {p["entity_type"] for p in parked} == {"audit"}
+          and again.one("SELECT 1 FROM alerts WHERE kind = 'outbox_parked' AND resolved_utc IS NULL") is not None, outcome)
+    final_w = httpx.get(f"{api}/{req['id']}", headers=staff).json()["withdrawals"][0]
+    check("the cloud still holds the withdrawal, confirmed once", final_w["id"] == w["id"] and final_w["edgeConfirmedAt"] is not None, final_w)
 
     results["evidence"] = [{"id": e["id"], "sha256": e["sha256"]} for e in (first, second, third, fourth)]
     results["cutEvidenceId"] = fourth["id"]
