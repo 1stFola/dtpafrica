@@ -6,6 +6,7 @@ import {
   type SessionDetail, type SourceView, type SourceWindow, type SyncTest,
 } from "./api";
 import { ShadowBanner } from "./Banner";
+import { alertWords, waitsForAdmin } from "./alerts";
 import { clockBanner, clockNote } from "./clock";
 import { diskCritical, diskMessage, freeLabel } from "./disk";
 import { can, IncidentPanel, RightsPanel } from "./Review";
@@ -340,6 +341,17 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     await post(`/edge/v1/alerts/${alertId}/acknowledge`, { reason });
   };
 
+  // F25: an alert about something that happened waits for an Edge admin to deal with it.
+  const acknowledge = async (alertId: string, what: string) => {
+    const reason = window.prompt(`${what}\n\nWhat was done about it? (recorded in the audit log)`)?.trim();
+    if (!reason || reason.length < 3) return;
+    try {
+      await post(`/edge/v1/alerts/${alertId}/acknowledge`, { reason });
+    } catch (err) {
+      say(err instanceof ApiError ? err.message : "could not acknowledge the alert");
+    }
+  };
+
   const createSession = async () => {
     const label = window.prompt("Session label (e.g. the fixture)")?.trim();
     if (!label) return;
@@ -392,6 +404,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   const diskWarning = health ? diskMessage(health.disk) : null;
   // The device token: an expired one sends nothing to the cloud; re-pair before it lapses.
   const tokenAlert = health?.openAlerts.find((a) => a.kind === "device_token_expired" || a.kind === "device_token_expiring");
+  // Belongs to no camera, so it is not on a camera's card.
+  const parked = health?.openAlerts.filter((a) => a.kind === "outbox_parked") ?? [];
   const tokenWarning = !tokenAlert ? null : tokenAlert.kind === "device_token_expired"
     ? "This Edge's cloud token has expired: nothing reaches the cloud. An Edge admin re-pairs the device on the FairPlay page."
     : "This Edge's cloud token expires within 30 days. An Edge admin re-pairs the device on the FairPlay page.";
@@ -435,9 +449,15 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
 
       {clockWarning && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{clockWarning}</div>}
 
-      {(clockWarnings.length > 0 || health?.mediaServer.up === false || tokenWarning) && (
+      {(clockWarnings.length > 0 || health?.mediaServer.up === false || tokenWarning || parked.length > 0) && (
         <div className="fp-alerts" role="status">
           {health?.mediaServer.up === false && <p className="fp-error">Recorder unreachable: {health.mediaServer.error}</p>}
+          {parked.map((a) => (
+            <p key={a.id} className="fp-error">
+              {alertWords(a.kind)}
+              {can(me, "fairplay.edge.admin") && <> <button className="fp-btn" onClick={() => void acknowledge(a.id, alertWords(a.kind))}>Acknowledge</button></>}
+            </p>
+          ))}
           {tokenWarning && <p className={tokenAlert?.kind === "device_token_expired" ? "fp-error" : "fp-warn"}>{tokenWarning}</p>}
           {clockWarnings.map((w) => <p key={w} className="fp-warn">{w}</p>)}
         </div>
@@ -466,11 +486,12 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
                 </div>
                 {s.openAlerts.map((a) => (
                   <p key={a.id} className={a.severity === "critical" ? "fp-error" : "fp-warn"}>
-                    {a.kind === "publisher_address_changed"
-                      ? "Publishing from a new address: someone else may be sending this feed. Check the camera before trusting new footage."
-                      : a.kind.replaceAll("_", " ")}
+                    {alertWords(a.kind)}
                     {a.kind === "publisher_address_changed" && can(me, "fairplay.edge.admin") && (
                       <> <button className="fp-btn" onClick={() => void confirmPublisher(a.id, s.label)}>Confirm address</button></>
+                    )}
+                    {a.kind !== "publisher_address_changed" && waitsForAdmin(a.kind) && can(me, "fairplay.edge.admin") && (
+                      <> <button className="fp-btn" onClick={() => void acknowledge(a.id, alertWords(a.kind))}>Acknowledge</button></>
                     )}
                   </p>
                 ))}
