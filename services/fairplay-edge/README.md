@@ -27,6 +27,13 @@ directly and to MediaMTX as a separate output, so nothing here can interrupt it.
 
 ## Install (Docker Compose)
 
+**At a venue, use the installer:** `sudo deploy/install.sh ...` generates every secret,
+issues the TLS certificate, pins the image, and installs the boot and watchdog units;
+`deploy/update.sh` updates with a database backup and rollback. Both are in
+[docs/fairplay/edge-install.md](../../docs/fairplay/edge-install.md), and every setting is in
+[docs/fairplay/edge-configuration.md](../../docs/fairplay/edge-configuration.md). By hand,
+for development:
+
 Requirements: Docker with Compose v2.24+, about 1 GB of images, and disk for recordings
 (about 1.1 GB per source-hour at 2.5 Mbit/s; a real camera's bitrate decides this).
 

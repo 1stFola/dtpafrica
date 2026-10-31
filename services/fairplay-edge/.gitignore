@@ -9,3 +9,8 @@ fixtures/out/
 __pycache__/
 *.egg-info/
 auth/
+# Written by deploy/ at run time.
+.maintenance
+.watchdog-unhealthy
+venue-ca.pem
+deploy/rendered/

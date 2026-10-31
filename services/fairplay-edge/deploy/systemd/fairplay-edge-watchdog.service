@@ -1,0 +1,11 @@
+# DTP FairPlay Edge: one watchdog pass (deploy/watchdog.sh), run by fairplay-edge-watchdog.timer.
+[Unit]
+Description=DTP FairPlay Edge watchdog pass
+Requires=docker.service
+After=docker.service fairplay-edge.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@DIR@
+ExecStart=/bin/bash @DIR@/deploy/watchdog.sh
+TimeoutStartSec=120

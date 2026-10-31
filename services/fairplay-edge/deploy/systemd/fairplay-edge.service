@@ -1,0 +1,21 @@
+# DTP FairPlay Edge: the Compose stack, started at boot (Phase 6.1; docs/fairplay/edge-install.md).
+# Installed by deploy/install.sh, which replaces @DIR@ with the install directory.
+[Unit]
+Description=DTP FairPlay Edge (recording, replay and evidence)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@DIR@
+# Containers are started, or left running when they already are; volumes are never touched.
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+# A clean stop at shutdown: MediaMTX closes the open segment, the Edge finishes its hash.
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=300
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target
