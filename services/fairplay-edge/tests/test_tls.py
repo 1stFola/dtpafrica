@@ -24,7 +24,22 @@ def _server_ctx(paths) -> ssl.SSLContext:
 def _client_ctx(cafile=None) -> ssl.SSLContext:
     ctx = ssl.create_default_context(cafile=str(cafile) if cafile else None)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    # As Python 3.13 and other strict clients verify: RFC 5280's key identifiers required (6.1).
+    ctx.verify_flags |= ssl.VERIFY_X509_STRICT
     return ctx
+
+
+def test_the_chain_carries_the_key_identifiers_strict_clients_require(tmp_path):
+    from cryptography import x509
+
+    paths = init(tmp_path / "tls", ["edge.venue.lan"], "test")
+    ca = x509.load_pem_x509_certificate(paths["ca"].read_bytes())
+    server = x509.load_pem_x509_certificate(paths["cert"].read_bytes())
+    ca_ski = ca.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+    aki = server.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value.key_identifier
+    assert aki == ca_ski
+    assert server.extensions.get_extension_for_class(x509.SubjectKeyIdentifier)
+    assert server.extensions.get_extension_for_class(x509.KeyUsage).value.digital_signature
 
 
 def test_ca_and_server_certificate(tmp_path):

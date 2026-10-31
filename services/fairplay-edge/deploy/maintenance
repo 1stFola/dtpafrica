@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# DTP FairPlay Edge — maintenance mode for the watchdog (Phase 6.1).
+#
+#   deploy/maintenance on "replacing the drone encoder"   # the watchdog leaves the stack alone
+#   deploy/maintenance off                                 # back to normal
+#   deploy/maintenance status
+#
+# Turn it on before stopping MediaMTX or the Edge on purpose; otherwise the watchdog starts
+# them again within a minute. update.sh turns it on and off itself.
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FLAG="$DIR/.maintenance"
+
+case "${1:-status}" in
+  on) printf '%s since %s\n' "${2:-maintenance}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$FLAG"; echo "maintenance on: $(cat "$FLAG")" ;;
+  off) rm -f "$FLAG"; echo "maintenance off: the watchdog keeps the stack running" ;;
+  status) if [ -e "$FLAG" ]; then echo "maintenance on: $(cat "$FLAG")"; else echo "maintenance off"; fi ;;
+  *) echo "usage: deploy/maintenance on [reason] | off | status" >&2; exit 2 ;;
+esac

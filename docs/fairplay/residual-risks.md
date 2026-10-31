@@ -42,7 +42,7 @@ Proposed decisions:
 
 | # | Risk | Severity | In place now | Proposed |
 |---|---|---|---|---|
-| R10 | **A killed container does not restart by itself, and the stack's start at boot is host configuration** (Phase 1, 5.2 D4 and D5). | medium | `restart: unless-stopped`; a crash inside a process restarts. | fix before the pilot: Docker enabled at boot, checked in the installer (Phase 6.1) |
+| R10 | **A killed container does not restart by itself, and the stack's start at boot is host configuration** (Phase 1, 5.2 D4 and D5). | medium | `restart: unless-stopped`; a crash inside a process restarts. | **addressed in 6.1**: the installer enables Docker and the stack at boot, and a watchdog brings back a killed container every minute ([edge-install.md](./edge-install.md)); still to be run under systemd on the venue machine |
 | R11 | **Power and disk untested on hardware.** No real power cut, UPS, SSD wear or disk shared with the database has been tested. | medium | WAL with full sync; 1 s recording parts; the full-disk path fixed (F21). | test before the pilot, on the venue kit (Phase 6 hardware checklist) |
 | R12 | **Parked sync items cannot be sent again from the console or the CLI.** It needs a developer. | low | They are kept, alerted, and listed with the cloud's answer. | accept for the pilot; add a re-send route if one happens |
 | R13 | **The offline window and the outbox back-off are untuned.** Bundles last 36 h. After a 30-minute outage the outbox takes 206 s to drain, and `outbox_stalled` does not fire within 30 minutes. | low | Nothing is lost; the console's cloud chip shows what waits. | decide: the 36 h window; whether to cap the back-off lower |
@@ -81,7 +81,7 @@ For each risk, Fola's decision: accept, fix before the pilot, or fix before real
 | R7 | | |
 | R8 | | |
 | R9 | | |
-| R10 | | |
+| R10 | | addressed in 6.1; confirm on the venue machine |
 | R11 | | |
 | R12 | | |
 | R13 | | |

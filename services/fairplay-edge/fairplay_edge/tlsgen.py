@@ -65,6 +65,7 @@ def init(folder: Path, hosts: list[str], label: str) -> dict[str, Path]:
             .add_extension(x509.KeyUsage(digital_signature=False, content_commitment=False, key_encipherment=False,
                                          data_encipherment=False, key_agreement=False, key_cert_sign=True,
                                          crl_sign=True, encipher_only=False, decipher_only=False), critical=True)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()), critical=False)
             .sign(ca_key, hashes.SHA256())
         )
         _write_key(ca_key_path, ca_key)
@@ -78,7 +79,13 @@ def init(folder: Path, hosts: list[str], label: str) -> dict[str, Path]:
         .not_valid_before(now - timedelta(minutes=5)).not_valid_after(now + timedelta(days=SERVER_DAYS))
         .add_extension(x509.SubjectAlternativeName(_sans(hosts)), critical=False)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=False, key_encipherment=False,
+                                     data_encipherment=False, key_agreement=False, key_cert_sign=False,
+                                     crl_sign=False, encipher_only=False, decipher_only=False), critical=True)
         .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        # RFC 5280 requires these; strict verifiers (Python 3.13's default) refuse a chain without them.
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False)
         .sign(ca_key, hashes.SHA256())
     )
     server_path, server_key_path = folder / "server.pem", folder / "server-key.pem"
