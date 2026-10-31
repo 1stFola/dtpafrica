@@ -42,6 +42,10 @@ from .store import Store
 MAX_WINDOW_MS = 10 * 60 * 1000
 SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+# Alerts that wait for a person (F25): something happened, and no later reading undoes it. The
+# rest are conditions (a feed, the disk, the clock, the sync), which clear when the cause goes.
+ACKNOWLEDGED_ALERTS = ("publisher_address_changed", "segment_partial", "segment_corrupt", "segment_missing",
+                       "segment_mismatch", "evidence_mismatch", "outbox_parked")
 HLS_FILE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 REPLAY_CACHE_FILES = 60
 REPLAY_CACHE_BYTES = 2 * 1024**3
@@ -790,21 +794,24 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/alerts/{alert_id}/acknowledge")
     def acknowledge(alert_id: str, body: ReleaseIn, who: Principal = admin):
-        """An admin confirms a camera's new publisher address is the camera's (and not someone
-        publishing in its place). Only that alert waits for a person; the others clear themselves."""
+        """An admin clears an alert that waits for a person: a camera's new publisher address
+        confirmed as the camera's, or something that happened to a file or a sync item, dealt
+        with (F25; docs/fairplay/runbook.md). Conditions clear themselves when their cause is gone."""
         row = service.store.one("SELECT * FROM alerts WHERE id = ? AND resolved_utc IS NULL", (alert_id,))
         if row is None:
             raise refusal(404, "unknown_alert", "no such open alert")
-        if row["kind"] != "publisher_address_changed":
+        if row["kind"] not in ACKNOWLEDGED_ALERTS:
             raise refusal(409, "not_acknowledgeable", "this alert clears itself when its cause is gone")
         detail = json.loads(row["detail"])
         at = iso(utcnow())
         with service.store.tx() as db:
             db.execute("UPDATE alerts SET resolved_utc = ? WHERE id = ? AND resolved_utc IS NULL", (at, alert_id))
-            Store.log_event(db, at, "source.publisher_address", None,
-                            {"source": row["source"], "address": detail["address"], "accepted": True, "by": who.user_id})
+            if row["kind"] == "publisher_address_changed":
+                Store.log_event(db, at, "source.publisher_address", None,
+                                {"source": row["source"], "address": detail["address"], "accepted": True, "by": who.user_id})
             audit.append(db, actor_of(who), "alert.acknowledged", "alert", alert_id, None,
-                         {"kind": row["kind"], "source": row["source"], "address": detail["address"], "reason": body.reason})
+                         {"kind": row["kind"], "source": row["source"], "reason": body.reason,
+                          **({"address": detail["address"]} if "address" in detail else {})})
         return service.store.one("SELECT * FROM alerts WHERE id = ?", (alert_id,))
 
     @app.post("/edge/v1/holds/{hold_id}/release")

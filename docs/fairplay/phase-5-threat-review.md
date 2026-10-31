@@ -1188,6 +1188,99 @@ RISKS, ROLLBACK, NEXT GATE
 
 ---
 
+## 5.8: runbook and sign-off
+
+Increment 5.8 of the plan, the last of Phase 5. It has three deliverables: the monitoring and
+alert runbook, the recovery time and recovery point table, and the residual risks for
+Fola to sign.
+- [runbook.md](./runbook.md):
+  - who looks where;
+  - what the Edge's health means;
+  - each of the Edge's 19 alerts, with what it means, what to do and how it clears;
+  - what to check in the cloud;
+  - the recovery time and recovery point of each failure drilled in 5.2, 5.3 and 5.6.
+- [residual-risks.md](./residual-risks.md): 22 risks (R1–R22), each with its severity,
+  what is in place now and a proposed decision, and a table for Fola's decision and
+  signature.
+
+Phase 7's acceptance review takes these with the rest.
+
+`tests/test_runbook.py` reads the Edge's code for every alert it can open. It fails when one
+is missing from the runbook, or when the runbook's "clears" column disagrees with which
+alerts wait for a person.
+
+**F25 (medium, new): six alerts could never clear.** Writing "how it clears" for each alert
+found that six had no way out:
+- `segment_partial`, `segment_corrupt`, `segment_missing` and `segment_mismatch`;
+- `evidence_mismatch` and `outbox_parked`.
+
+These are about something that happened, so no later reading resolves them. The acknowledge
+route refused them as alerts that "clear themselves", and neither the console nor the CLI
+had another way. So:
+- **Stuck health.** After any camera's first partial file (every feed drop, MediaMTX restart
+  or power cut makes one) the Edge said `degraded` for good. After any `segment_mismatch`
+  or `outbox_parked`, it said `critical` for good.
+- **No new alerts.** While one is open, no new alert of the same kind opens for that camera.
+  So a second corrupt or missing file on the same camera raised nothing.
+
+Operators would learn to ignore the health status, the same pattern as F11. The QA Edge
+showed it: a `segment_corrupt` from an earlier run was still open.
+
+**Fixed:**
+- **On the Edge.** The six now wait for an Edge admin, as `publisher_address_changed` already
+  did (`ACKNOWLEDGED_ALERTS`, `api.py`). The admin acknowledges each once it is dealt with,
+  with a reason, and the acknowledgement is in the audit chain. The next occurrence opens a
+  new alert. Conditions are still refused (409) and clear by themselves.
+- **In the console.** A camera's card has an "Acknowledge" button for these, for Edge
+  admins. Parked sync items, which belong to no camera, are shown in the alerts area with
+  the same button. Each alert is in plain words.
+
+**Checked in the browser** (the QA stack, the real Edge image): the ground camera's card
+showed the old `segment_corrupt`, worded, with an Acknowledge button. Acknowledging it with
+a reason closed it. The audit chain recorded the admin, the kind and the reason. Conditions
+on the same Edge (video gaps, publisher addresses) stayed as they were.
+
+**Checks run** (31 Oct 2026):
+
+| Check | Result |
+|---|---|
+| Edge pytest in the Edge image, with the repository's docs | 300 passed, 1 skipped (3 new: every alert in the runbook, an event acknowledged and raised again, a condition refused) |
+| console `vitest run`, `tsc --noEmit`, `build` | 28 passed (2 new, one checking the console's list against the Edge's); clean; built |
+| browser, the QA stack | as described above |
+
+```text
+DTP FAIRPLAY | PHASE 5.8 DELIVERY
+STATUS: complete; Phase 5 complete on synthetic data, awaiting Fola's sign-off of residual-risks.md; found and fixed F25 (medium)
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: the publisher-address acknowledgement (5.5); the drill measurements (5.2, 5.3); the threat review's findings and the blockers
+- Hardware facts actually verified: none
+- Unknowns remaining: as residual-risks.md R10, R11, R19, R21
+
+IMPLEMENTED
+- Code paths changed: docs runbook.md and residual-risks.md (new); Edge api.py (ACKNOWLEDGED_ALERTS); tests/test_runbook.py (new); console alerts.ts (new), Console.tsx
+- APIs and migrations: no migration. POST /edge/v1/alerts/{id}/acknowledge now takes the six event alerts too
+- Local/Cloud config: none
+
+SECURITY + COST
+- Auth and evidence changes: Edge admin only, audited, as before
+- New dependencies and license: none
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: Edge 300 passed, 1 skipped; console 28 passed. Untested: everything in residual-risks.md R11 and R22
+- Measured replay/CPU/RAM/SSD outcomes: none new; the runbook gathers 5.2, 5.3 and 5.6's
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: none found
+- Steps to revert safely: revert the commit (no data change)
+- Human approvals required: Fola's decision on each of R1–R19 and signature; the approvals in R20
+- Proposed next phase: the "fix before the pilot" items Fola picks, then Phase 6 (6.1 installer and configuration)
+```
+
+---
+
 ## Handover for 5.1 (prompt pack section K)
 
 ```text
