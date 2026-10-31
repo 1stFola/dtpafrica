@@ -29,11 +29,11 @@ Proposed decisions:
 | # | Risk | Severity | In place now | Proposed |
 |---|---|---|---|---|
 | R1 | **Camera ingest is plaintext RTSP on a LAN shared with spectators** (F2's network half, B16). Someone on the LAN could watch or publish a feed. | high | Publish passwords; publish only from allowed addresses; a feed from a new address raises `publisher_address_changed`, which an admin must confirm. | fix before real footage: a closed camera network (VLAN or a separate switch), decided with the venue |
-| R2 | **No brute-force or load protection** (F7). The cloud's pairing and PIN routes are not throttled. The PIN check is a synchronous 32 MB scrypt that a member could loop to stall the API. Anyone on the venue LAN can lock a known operator out. | medium | Five-failure lock per account on the Edge; long random tokens; PINs as scrypt. | fix before the pilot: throttle both routes, async scrypt, an Edge body limit, back-off instead of a lock |
-| R3 | **The "https only" check for cloud URLs can be bypassed** (F9) by a crafted URL in the Edge's configuration. | medium | The URLs come from the operator's configuration and the authenticated cloud. | fix before the pilot (small: parse the URL properly, allowlist the hosts) |
+| R2 | **No brute-force or load protection** (F7). The cloud's pairing and PIN routes are not throttled. The PIN check is a synchronous 32 MB scrypt that a member could loop to stall the API. Anyone on the venue LAN can lock a known operator out. | medium | Five-failure lock per account on the Edge; long random tokens; PINs as scrypt. | **fixed in 5.5 part 3**: both routes throttled, scrypt off the request thread, an Edge body limit, the lock keyed by email and address, PIN checks bounded |
+| R3 | **The "https only" check for cloud URLs can be bypassed** (F9) by a crafted URL in the Edge's configuration. | medium | The URLs come from the operator's configuration and the authenticated cloud. | **fixed in 5.5 part 3**: parsed by httpx, user parts refused, uploads only to `FAIRPLAY_UPLOAD_HOSTS` |
 | R4 | **The venue CA can sign for any name, and its key stays on the Edge** (F10). A stolen Edge could mint certificates that reviewer devices trust. | medium | The Edge is kept by DTP staff (D12). | fix before real footage: name constraints; move the key off the Edge |
 | R5 | **A 6-digit PIN can be recovered offline** from a bundle or the Edge's disk (F16). | low | scrypt N=2^15; bundles last 36 h; disk encryption (D12). | decide: accept, or require 8 digits |
-| R6 | **The sign-in status page shows labels to anyone on the LAN** (F19): the session label, the device label, the bundle error. There is no Host allowlist. | low | It shows no names, PINs or tokens (5.4 checked this). | fix before the pilot (small) |
+| R6 | **The sign-in status page shows labels to anyone on the LAN** (F19): the session label, the device label, the bundle error. There is no Host allowlist. | low | It shows no names, PINs or tokens (5.4 checked this). | **fixed in 5.5 part 3**: the status trimmed; with TLS, only the Edge's own host names answered |
 | R7 | **Nothing pages anyone.** Alerts show in the venue console and stay on the Edge. The cloud keeps no alerts and has no page for its audit log. | medium | The runbook says who looks where; the console's banners and chip are conspicuous. | accept for the pilot with a named person watching each match; build cloud alerting before a season |
 | R8 | **Other lows** (F12–F15, F17, F18, F20): sync edge cases (NUL bytes, a non-string label), the release gate's ordering, scoped staff seeing other competitions' refusal messages, audit triggers the app's role could drop, Vision's R2 key not refused, copies outliving retention, unhardened helper containers. | low | Each is listed in the threat review with its fix. | fix before real footage, in one or two small PRs |
 | R9 | **Viewing the live preview is not audited.** Every replay, clip, manifest and export is. | low | Only signed-in venue staff see it. | decide: accept, or audit once per person and camera an hour |
@@ -73,11 +73,11 @@ For each risk, Fola's decision: accept, fix before the pilot, or fix before real
 | # | Decision | Note |
 |---|---|---|
 | R1 | | |
-| R2 | | |
-| R3 | | |
+| R2 | | fixed in 5.5 part 3; no decision needed |
+| R3 | | fixed in 5.5 part 3; no decision needed |
 | R4 | | |
 | R5 | | |
-| R6 | | |
+| R6 | | fixed in 5.5 part 3; no decision needed |
 | R7 | | |
 | R8 | | |
 | R9 | | |

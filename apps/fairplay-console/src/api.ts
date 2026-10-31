@@ -79,7 +79,7 @@ export type AuthStatus = {
   bundleLoaded: boolean;
   dev: boolean | null;
   expiresUtc: string | null;
-  sessionLabel: string | null;
+  /** In outline only (F19): none installed, expired, or not valid. */
   problem: string | null;
   device: string;
   secure: boolean;

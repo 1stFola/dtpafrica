@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canonical, CanonicalError, sha256Hex } from "./canonical";
-import { hashPin, loadSigningKey, signBundle, type Bundle } from "./credentials";
+import { hashPin, hashPinAsync, loadSigningKey, signBundle, type Bundle } from "./credentials";
 
 /**
  * The cloud and the Edge must produce the same bytes for a signature or a hash, in two
@@ -53,6 +53,11 @@ describe("credentials in the Edge's formats", () => {
   it("hashes a PIN exactly as the Edge does, so the Edge's check_pin accepts it", () => {
     const { pin, saltHex, hash } = vectors.pin;
     expect(hashPin(pin, Buffer.from(saltHex, "hex"))).toBe(hash);
+  });
+
+  it("and so does the off-thread hash the PIN route uses (F7)", async () => {
+    const { pin, saltHex, hash } = vectors.pin;
+    expect(await hashPinAsync(pin, Buffer.from(saltHex, "hex"))).toBe(hash);
   });
 
   it("signs a bundle with the same key id and the same Ed25519 signature as the Edge", () => {

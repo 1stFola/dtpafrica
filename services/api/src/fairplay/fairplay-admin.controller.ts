@@ -5,6 +5,7 @@ import { RequirePermissions } from "../admin/decorators/require-permissions.deco
 import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
 import { PermissionsGuard } from "../admin/guards/permissions.guard";
 import { PrismaService } from "../prisma/prisma.service";
+import { LoginThrottle } from "../shared/throttle";
 import { jsonSafe } from "../vision/shared/json-safe";
 import { refusal } from "../vision/shared/refusals";
 import { ANY_FAIRPLAY, assertCompetition, readerOf, STAFF_PERMISSIONS } from "./access";
@@ -107,9 +108,11 @@ export class FairPlayAdminController {
     return this.sessions.setMembers(id, members(body?.members), ctx);
   }
 
-  /** The signed-in member's own matchday PIN. Any venue permission will do; membership is checked. */
+  /** The signed-in member's own matchday PIN. Any venue permission will do; membership is checked.
+   *  Throttled per address, as a login is (F7): each one is a 32 MB scrypt. */
   @Put("sessions/:id/members/me/pin")
   @RequirePermissions(...STAFF_PERMISSIONS)
+  @LoginThrottle()
   setMyPin(@Param("id", ParseUUIDPipe) id: string, @Body() body: { pin?: string }, @AdminAuth() ctx: AdminAuthContext) {
     return this.sessions.setMyPin(id, String(body?.pin ?? ""), ctx);
   }

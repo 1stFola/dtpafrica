@@ -164,7 +164,7 @@ span, with an audited override for admins.
 - Edge: the per-email lockout lets anyone on the LAN lock a known operator out
   repeatedly.
 
-*Fix:*
+*Fix* (done in 5.5 part 3, below):
 - `@LoginThrottle()` on register and on the PIN route;
 - async `scrypt`;
 - an Edge body limit and a semaphore around scrypt;
@@ -194,7 +194,7 @@ span, with an audited override for admins.
 
 The URLs come from the operator's configuration and from the authenticated cloud, so
 this is defence in depth.
-*Fix:*
+*Fix* (done in 5.5 part 3, below):
 - parse with `httpx.URL`, refuse userinfo, compare the host;
 - allowlist the sync host and the R2 endpoint.
 
@@ -230,7 +230,7 @@ certificate for any site that reviewer devices will trust.
 | F16 | A 6-digit PIN under scrypt N=2^15 can be recovered offline by anyone holding a bundle (device token or Edge disk). | `credentials.ts:33-35` | accept as a known limit, or require 8 digits |
 | F17 | Nothing stops FairPlay from being configured with Vision's R2 key; only the bucket name is checked. | `fairplay.config.ts:75` | refuse to boot when the key ids match |
 | F18 | Copies outlive retention: the replay cache is pruned by count and size only, and exported zips are never deleted. *(not re-checked)* | `api.py:552-576`, `evidence.py:660` | prune both by age, in `retention.apply` |
-| F19 | `/edge/v1/auth/status` (unauthenticated) shows the session label, the device label and the bundle error text to anyone on the LAN. The Origin check reads the Host header, and there is no Host allowlist. | `api.py:343-349`, `api.py:235` | trim the status to what sign-in needs; `TrustedHostMiddleware` |
+| F19 | `/edge/v1/auth/status` (unauthenticated) shows the session label, the device label and the bundle error text to anyone on the LAN. The Origin check reads the Host header, and there is no Host allowlist. | `api.py:343-349`, `api.py:235` | trim the status to what sign-in needs; `TrustedHostMiddleware`. **Fixed in 5.5 part 3** |
 | F20 | Hardening for the `init` and `synth-*` containers (`cap_drop`, `no-new-privileges`, `read_only`). apt `ffmpeg` not version-pinned; pip without `--require-hashes`. *(not re-checked; the FFmpeg part is B9)* | `compose.yaml:26-41, 118-146`, `Dockerfile:13-21` | pin, hash and harden; settle B9 |
 
 ## Proposed scope for 5.5
@@ -1277,6 +1277,99 @@ RISKS, ROLLBACK, NEXT GATE
 - Steps to revert safely: revert the commit (no data change)
 - Human approvals required: Fola's decision on each of R1–R19 and signature; the approvals in R20
 - Proposed next phase: the "fix before the pilot" items Fola picks, then Phase 6 (6.1 installer and configuration)
+```
+
+---
+
+## 5.5, part 3: fixed before the pilot (F7, F9, F19)
+
+The three software findings that residual-risks.md proposed to fix before the pilot: R2
+(F7), R3 (F9) and R6 (F19). Fola had not yet signed the list; asked to continue, I took
+these proposals as the go-ahead. Every other risk there still waits for a decision. R10
+(starting at boot) is the installer's, in 6.1.
+
+**F9, the "https only" check.**
+- **The check and the request now agree.** `url_allowed` parses the URL with `httpx.URL`,
+  the same parser that sends the request, instead of splitting the string. A URL with a
+  user part is refused: `http://127.0.0.1:1@evil.example/` passed as loopback before, and
+  was sent in plain HTTP to evil.example.
+- **Evidence uploads go only to allowlisted storage hosts.** `FAIRPLAY_UPLOAD_HOSTS`,
+  default `*.r2.cloudflarestorage.com`. An upload URL to any other host is refused,
+  whatever the cloud answers. Plain http still works only to this machine, for the test S3
+  server.
+
+**F19, the sign-in status.**
+- **What anyone on the LAN sees.** `GET /edge/v1/auth/status` now says only what the
+  sign-in page needs: whether a list is loaded, until when, whether it is DEV, and which
+  Edge this is. The session label is gone. A refused bundle's reason is given in outline:
+  none installed, expired, or not valid. Staff still see the detail in health.
+- **Which host names the Edge answers to.** An Edge serving beyond this machine (with TLS)
+  answers only to its own names: `FAIRPLAY_EDGE_HOSTNAMES`, or else its certificate's
+  names and addresses, plus localhost. So a page that points another name at the Edge (DNS
+  rebinding) gets nothing.
+- **In the console.** The sign-in page no longer shows the session label.
+
+**F7, brute force and load.**
+- **In the cloud:**
+  - **Throttling.** `POST device/register` and the PIN route carry `@LoginThrottle()`,
+    as the admin login does: 10 a minute and 30 an hour per address, except from the
+    machine itself.
+  - **PIN hashing off the request thread.** The PIN route hashes with the async scrypt,
+    so a member setting PINs in a loop no longer stalls every other route.
+- **On the Edge:**
+  - **No lockout from someone else's device.** Wrong PINs are counted per email *and*
+    address (5 in 5 minutes), per address (20), and per email from anywhere (30). Someone
+    else on the LAN can no longer lock an operator out of their own device. A guess spread
+    over many devices still meets the 30 ceiling.
+  - **Bounded PIN checks.** At most two run at once. Beyond that, the answer is 429
+    "busy", and a busy refusal counts against no one.
+  - **A body limit.** Bodies over 256 KiB are refused with 413, whether declared or
+    streamed.
+
+**Checks run** (31 Oct 2026):
+
+| Check | Result |
+|---|---|
+| Edge pytest in the Edge image, with the repository's docs | 319 passed, 1 skipped (19 new in `test_pilot_fixes.py`) |
+| API `vitest run src/fairplay`; `tsc -p tsconfig.typecheck.json` | 27 passed (2 new: register and the PIN route throttled; the async PIN hash identical to the Edge's vector); clean |
+| console `vitest run`, `tsc --noEmit` | 28 passed; clean |
+| `pnpm fairplay:cloudcheck`, fresh scratch DB (`fp55c_cloud_scratch`) | 108/108 |
+| `pnpm fairplay:e2echeck`, fresh scratch DB (`fp55c_e2e_scratch`) | 36/36 (the Edge in its container pairs through the throttled route) |
+| `pnpm fairplay:securitycheck`, fresh scratch DB (`fp55c_sec_scratch`) | 53/53 |
+
+The cloud's throttle skips requests from the machine itself, as the admin login's does. So
+the checks above show that the routes still work; that the throttle refuses is shown by the
+route metadata test, and by the admin login's own throttle tests.
+
+```text
+DTP FAIRPLAY | PHASE 5.5 PART 3 DELIVERY
+STATUS: complete; F7, F9, F19 fixed (residual-risks.md R2, R3, R6)
+
+REPOSITORY FACTS CONFIRMED
+- Existing patterns used: the admin login's @LoginThrottle; Starlette's TrustedHostMiddleware; the Edge's login_attempts table
+- Hardware facts actually verified: none needed
+- Unknowns remaining: the venue's host names and addresses (set by tls-init or FAIRPLAY_EDGE_HOSTNAMES)
+
+IMPLEMENTED
+- Code paths changed: Edge config.py (url_allowed, two settings), cloud.py, service.py, auth.py (lock, PIN check bound), api.py (status, host allowlist, body limit, 429); cloud credentials.ts (hashPinAsync), sessions.service.ts, the device and admin controllers; console App.tsx, api.ts
+- APIs and migrations: no migration. /edge/v1/auth/status drops sessionLabel and gives the problem in outline; sign-in may answer 429 busy; bodies over 256 KiB answer 413; register and the PIN route may answer 429
+- Local/Cloud config: FAIRPLAY_UPLOAD_HOSTS (default *.r2.cloudflarestorage.com), FAIRPLAY_EDGE_HOSTNAMES (default: the certificate's names), in .env.example
+
+SECURITY + COST
+- Auth and evidence changes: tighter as listed; no permission changed
+- New dependencies and license: none
+- New recurring cost: $0
+
+TEST EVIDENCE
+- Commands actually run: see the table above
+- Passed / failed / untested: Edge 319 passed, 1 skipped; API 27; console 28; cloudcheck 108/108; e2e 36/36; security 53/53. Untested: the throttle against a real attacker's address through the CDN
+- Measured replay/CPU/RAM/SSD outcomes: none
+
+RISKS, ROLLBACK, NEXT GATE
+- Blocking defects: none found
+- Steps to revert safely: revert the commit (no data change)
+- Human approvals required: Fola's sign-off of the remaining risks; at a venue, the Edge's host names
+- Proposed next phase: the other risks as Fola decides them, then Phase 6 (6.1 installer and configuration)
 ```
 
 ---

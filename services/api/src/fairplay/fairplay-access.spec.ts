@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import type { AdminAuthContext } from "../admin/auth/admin-auth.types";
 import { REQUIRE_PERMISSIONS_KEY } from "../admin/decorators/require-permissions.decorator";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import { AdminAuthGuard } from "../admin/guards/admin-auth.guard";
 import { DEFAULT_ROLES, FAIRPLAY_PERMISSION_SLUGS } from "../admin/rbac/permissions.catalog";
 import { assertCompetition, readerOf } from "./access";
@@ -69,13 +70,20 @@ describe("FairPlay authorization matrix", () => {
     expect(found).toEqual(Object.fromEntries(Object.entries(EXPECTED).map(([k, v]) => [k, [...v].sort()])));
   });
 
-  it("every device route has a device guard and no admin guard; only register takes a bootstrap token", () => {
+  it("every device route has a device guard and no admin guard; only register takes a bootstrap token, throttled", () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, FairPlayDeviceController)).toBeUndefined();
     for (const r of routes(FairPlayDeviceController)) {
       expect(r.guards).not.toContain(AdminAuthGuard);
       expect(r.perms).toBeUndefined();
-      expect(r.guards).toEqual([r.name === "register" ? FairPlayBootstrapGuard : FairPlayDeviceGuard]);
+      // F7: register is reachable without a session, so it is throttled per address as a login is.
+      expect([...r.guards].sort((a, b) => String(a).localeCompare(String(b))))
+        .toEqual((r.name === "register" ? [FairPlayBootstrapGuard, ThrottlerGuard] : [FairPlayDeviceGuard]).sort((a, b) => String(a).localeCompare(String(b))));
     }
+  });
+
+  it("setting a PIN is throttled as a login is (F7)", () => {
+    const pin = routes(FairPlayAdminController).find((r) => r.name === "setMyPin")!;
+    expect(pin.guards).toContain(ThrottlerGuard);
   });
 
   it("an organiser must be scoped to competitions; staff with no scope see all", () => {

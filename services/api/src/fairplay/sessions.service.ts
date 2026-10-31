@@ -9,7 +9,7 @@ import { canonical, sha256Hex } from "./canonical";
 import {
   BUNDLE_ISSUER,
   BUNDLE_SCHEMA,
-  hashPin,
+  hashPinAsync,
   isoSeconds,
   loadSigningKey,
   signBundle,
@@ -167,7 +167,7 @@ export class FairPlaySessionsService {
     const member = await this.prisma.fairPlaySessionMember.findUnique({ where: { sessionId_adminUserId: { sessionId: id, adminUserId: ctx.userId } } });
     if (!member) throw refusal(404, "NotFound", `You are not a member of session ${id}`, "Ask the session manager to add you.");
     const pinSetAt = new Date();
-    await this.prisma.fairPlaySessionMember.update({ where: { id: member.id }, data: { pinHash: hashPin(pin), pinSetAt } });
+    await this.prisma.fairPlaySessionMember.update({ where: { id: member.id }, data: { pinHash: await hashPinAsync(pin), pinSetAt } });
     await this.audit.record("member.pin.set", { kind: "session", id }, actorFields(ctx));
     return { sessionId: id, pinSetAt };
   }

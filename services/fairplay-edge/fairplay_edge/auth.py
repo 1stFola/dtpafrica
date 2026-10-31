@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -53,9 +54,16 @@ STAFF_PERMISSIONS = tuple(p for p in PERMISSIONS if p != "fairplay.report.view")
 ISSUERS = ("dev-local", "dtp-cloud")
 SESSION_HOURS = 8
 IDLE_MINUTES = 30
+# Wrong PINs in LOCK_WINDOW before sign-in is refused (F7). Counted per email *and* address,
+# so someone else on the LAN cannot lock an operator out from their own device; per address,
+# across emails; and per email from anywhere, at a ceiling only a spread-out guess reaches.
 LOCK_FAILURES = 5
 LOCK_WINDOW = timedelta(minutes=5)
 IP_FAILURES = 20
+EMAIL_FAILURES = 30
+# scrypt needs 32 MiB and most of a second: at most this many at once; the rest are told to retry.
+PIN_CHECKS = threading.BoundedSemaphore(2)
+PIN_CHECK_WAIT_S = 5.0
 MIN_PIN = 6
 COOKIE = "fp_session"
 CSRF_HEADER = "x-fairplay-request"
@@ -231,17 +239,30 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+class SignInBusy(AuthError):
+    """Too many PIN checks at once: nothing was checked, so nothing is counted against anyone."""
+
+
 class Sessions:
     def __init__(self, store: Store):
         self.store = store
 
+    @staticmethod
+    def _check(pin: str, pin_hash: str) -> bool:
+        if not PIN_CHECKS.acquire(timeout=PIN_CHECK_WAIT_S):
+            raise SignInBusy("the Edge is busy checking sign-ins; try again in a moment")
+        try:
+            return check_pin(pin, pin_hash)
+        finally:
+            PIN_CHECKS.release()
+
     def locked(self, email: str, ip: str, now: datetime) -> bool:
         since = iso(now - LOCK_WINDOW)
-        by_email = self.store.one("SELECT COUNT(*) AS n FROM login_attempts WHERE email = ? AND ok = 0 AND at_utc > ?",
-                                  (email, since))["n"]
-        by_ip = self.store.one("SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND ok = 0 AND at_utc > ?",
-                               (ip, since))["n"]
-        return by_email >= LOCK_FAILURES or by_ip >= IP_FAILURES
+        row = self.store.one(
+            "SELECT SUM(email = ? AND ip = ?) AS pair, SUM(ip = ?) AS by_ip, SUM(email = ?) AS by_email"
+            " FROM login_attempts WHERE ok = 0 AND at_utc > ?", (email, ip, ip, email, since))
+        return ((row["pair"] or 0) >= LOCK_FAILURES or (row["by_ip"] or 0) >= IP_FAILURES
+                or (row["by_email"] or 0) >= EMAIL_FAILURES)
 
     def login(self, bundle: Bundle | None, email: str, pin: str, ip: str, now: datetime | None = None) -> tuple[str, Principal]:
         now = now or utcnow()
@@ -250,7 +271,7 @@ class Sessions:
             raise AuthError("too many wrong attempts; try again in five minutes")
         member = bundle.member(email) if bundle else None
         disabled = member and self.store.one("SELECT 1 FROM local_disabled WHERE user_id = ?", (member.user_id,))
-        ok = bool(bundle and member and not disabled and bundle.expires_utc > now and check_pin(pin, member.pin_hash))
+        ok = bool(bundle and member and not disabled and bundle.expires_utc > now and self._check(pin, member.pin_hash))
         with self.store.tx() as db:
             db.execute("INSERT INTO login_attempts (email, ip, at_utc, ok) VALUES (?, ?, ?, ?)", (email, ip, iso(now), int(ok)))
             if not ok:

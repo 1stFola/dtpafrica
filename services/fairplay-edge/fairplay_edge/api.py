@@ -29,10 +29,11 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__, audit, evidence, incidents, retention, timing
 from .audit import Actor
-from .auth import COOKIE, CSRF_HEADER, DEVICE, IDLE_MINUTES, STAFF_PERMISSIONS, AuthError, Principal
+from .auth import COOKIE, CSRF_HEADER, DEVICE, IDLE_MINUTES, STAFF_PERMISSIONS, AuthError, Principal, SignInBusy
 from .mediamtx import MediaMtxUnavailable
 from .naming import iso, parse_iso, utcnow
 from .repair import RepairRefused, repair
@@ -42,6 +43,36 @@ from .store import Store
 MAX_WINDOW_MS = 10 * 60 * 1000
 SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+# No request to the Edge needs more (the largest is a finding's notes): bigger bodies are refused (F7).
+MAX_BODY_BYTES = 256 * 1024
+
+
+class BodyLimit:
+    """413 for a body over the limit, whether it declares its length or streams it."""
+
+    def __init__(self, app, limit: int):
+        self.app, self.limit = app, limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        declared = dict(scope.get("headers") or []).get(b"content-length")
+        if declared is not None and declared.isdigit() and int(declared) > self.limit:
+            return await JSONResponse({"statusCode": 413, "error": "too_large", "message": f"bodies over {self.limit} bytes are refused"},
+                                      status_code=413)(scope, receive, send)
+        seen = 0
+
+        async def counted():
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > self.limit:
+                    raise HTTPException(413, {"statusCode": 413, "error": "too_large",
+                                              "message": f"bodies over {self.limit} bytes are refused"})
+            return message
+
+        return await self.app(scope, counted, send)
 # Alerts that wait for a person (F25): something happened, and no later reading undoes it. The
 # rest are conditions (a feed, the disk, the clock, the sync), which clear when the cause goes.
 ACKNOWLEDGED_ALERTS = ("publisher_address_changed", "segment_partial", "segment_corrupt", "segment_missing",
@@ -191,6 +222,30 @@ class DisableIn(BaseModel):
     reason: str = Field(min_length=3, max_length=300)
 
 
+def problem_outline(error: str | None) -> str | None:
+    """A bundle's problem as the sign-in page may say it: no names, keys or file paths."""
+    if error is None:
+        return None
+    if error.startswith("no operator bundle"):
+        return "no operator list is installed"
+    if "expired" in error:
+        return "the operator list has expired"
+    return "the operator list is not valid"
+
+
+def allowed_hosts(settings) -> list[str]:
+    """The names the Edge answers to beyond this machine: configured, or its certificate's own."""
+    names = set(settings.allowed_hosts)
+    if not names and settings.tls_cert is not None:
+        from cryptography import x509
+
+        cert = x509.load_pem_x509_certificate(settings.tls_cert.read_bytes())
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        names = {str(n).lower() for n in san.get_values_for_type(x509.DNSName)}
+        names |= {str(ip) for ip in san.get_values_for_type(x509.IPAddress)}
+    return sorted(names | {"localhost", "127.0.0.1", "::1", settings.edge_ip})
+
+
 def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     settings = service.settings
     api_token = settings.api_token.encode()
@@ -214,6 +269,12 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         body = exc.detail if isinstance(exc.detail, dict) else {
             "statusCode": exc.status_code, "error": "error", "message": str(exc.detail)}
         return JSONResponse(body, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+    if secure_cookie:
+        # Serving beyond this machine: answer only to the Edge's own names, so a page that
+        # points another name at the Edge (DNS rebinding) gets nothing (F19).
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts(settings))
+    app.add_middleware(BodyLimit, limit=MAX_BODY_BYTES)
 
     @app.middleware("http")
     async def _headers(request: Request, call_next):
@@ -405,17 +466,21 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.get("/edge/v1/auth/status")
     def auth_status():
-        """What the sign-in page needs: is anyone able to sign in, and is it a DEV bundle. No names."""
+        """What the sign-in page needs, to anyone on the LAN: can anyone sign in, until when, is
+        it a DEV bundle, and which Edge this is. No session or match, and the reason a bundle is
+        refused only in outline; staff see the detail in health (F19)."""
         b = service.bundle
         return {"bundleLoaded": b is not None, "dev": b.dev if b else None,
-                "expiresUtc": iso(b.expires_utc) if b else None, "sessionLabel": b.session_label if b else None,
-                "problem": service.bundle_error, "device": settings.device_label, "secure": secure_cookie}
+                "expiresUtc": iso(b.expires_utc) if b else None, "problem": problem_outline(service.bundle_error),
+                "device": settings.device_label, "secure": secure_cookie}
 
     @app.post("/edge/v1/auth/login")
     def login(body: LoginIn, request: Request, response: Response):
         try:
             token, who = service.sessions.login(service.bundle, body.email, body.pin,
                                                 request.client.host if request.client else "unknown")
+        except SignInBusy as exc:
+            raise refusal(429, "busy", str(exc), "try again in a moment")
         except AuthError as exc:
             raise refusal(401, "sign_in_refused", str(exc))
         response.set_cookie(COOKIE, token, httponly=True, samesite="strict", secure=secure_cookie, path="/",

@@ -1,4 +1,4 @@
-import { createHash, createPrivateKey, createPublicKey, randomBytes, scryptSync, sign, timingSafeEqual, type KeyObject } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, randomBytes, scrypt, scryptSync, sign, timingSafeEqual, type KeyObject } from "node:crypto";
 import { canonical } from "./canonical";
 
 /**
@@ -37,6 +37,21 @@ export function validPin(pin: string): boolean {
 export function hashPin(pin: string, salt: Buffer = randomBytes(16)): string {
   if (!validPin(pin)) throw new Error(`a PIN is ${MIN_PIN} to 12 digits`);
   const digest = scryptSync(pin, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p, maxmem: SCRYPT.maxmem });
+  return pinRecord(salt, digest);
+}
+
+/**
+ * As `hashPin`, off the request thread: the 32 MB scrypt runs in libuv's pool, so a member
+ * setting PINs in a loop no longer stalls every other route (F7). Requests use this one.
+ */
+export async function hashPinAsync(pin: string, salt: Buffer = randomBytes(16)): Promise<string> {
+  if (!validPin(pin)) throw new Error(`a PIN is ${MIN_PIN} to 12 digits`);
+  const digest = await new Promise<Buffer>((resolve, reject) =>
+    scrypt(pin, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p, maxmem: SCRYPT.maxmem }, (e, d) => (e ? reject(e) : resolve(d))));
+  return pinRecord(salt, digest);
+}
+
+function pinRecord(salt: Buffer, digest: Buffer): string {
   return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString("base64")}$${digest.toString("base64")}`;
 }
 
