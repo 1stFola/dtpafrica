@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dtp.africa/schemas/fairplay/evidence-finding.v1.schema.json",
+  "title": "FairPlay evidence package: the finding",
+  "description": "finding.json in an exported package: what was found about the incident a clip belongs to, who found it, who approved the clip, and how it came to be. Written when the package is made; the clip's manifest is fixed earlier, when the clip is cut. V1 is shadow review only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "notice", "authorityMode", "evidenceId", "clipSha256", "manifestSha256", "incident", "finding", "approval", "earlierFindings", "custody"],
+  "properties": {
+    "schema": { "const": "fairplay.evidence-finding/v1" },
+    "notice": { "type": "string" },
+    "authorityMode": { "const": "shadow" },
+    "evidenceId": { "type": "string" },
+    "clipSha256": { "$ref": "#/$defs/sha256" },
+    "manifestSha256": { "$ref": "#/$defs/sha256" },
+    "incident": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "matchId", "category", "period", "matchMinute", "matchSecond", "eventUtc"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "matchId": { "type": ["string", "null"] },
+        "category": { "type": "string" },
+        "period": { "type": ["string", "null"] },
+        "matchMinute": { "type": ["integer", "null"] },
+        "matchSecond": { "type": ["integer", "null"] },
+        "eventUtc": { "type": "string" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewId", "result", "factualNotes", "onFieldDecision", "reviewer", "completedUtc", "footageStates", "reliedOnThisClip"],
+      "properties": {
+        "reviewId": { "type": "string" },
+        "result": { "$ref": "#/$defs/result" },
+        "factualNotes": { "type": "string" },
+        "onFieldDecision": { "type": ["string", "null"] },
+        "reviewer": { "$ref": "#/$defs/person" },
+        "completedUtc": { "type": "string" },
+        "footageStates": { "type": "object" },
+        "reliedOnThisClip": { "type": "boolean" }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["by", "approvedUtc"],
+      "properties": {
+        "by": { "$ref": "#/$defs/person" },
+        "approvedUtc": { "type": "string" }
+      }
+    },
+    "earlierFindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reviewId", "result", "reviewer", "completedUtc", "supersededReason"],
+        "properties": {
+          "reviewId": { "type": "string" },
+          "result": { "$ref": "#/$defs/result" },
+          "reviewer": { "$ref": "#/$defs/person" },
+          "completedUtc": { "type": "string" },
+          "supersededReason": { "type": "string" }
+        }
+      }
+    },
+    "custody": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["seq", "atUtc", "actorId", "actorName", "action", "entityType", "entityId", "entryHash"],
+        "properties": {
+          "seq": { "type": "integer", "minimum": 1 },
+          "atUtc": { "type": "string" },
+          "actorId": { "type": "string" },
+          "actorName": { "type": "string" },
+          "action": { "type": "string" },
+          "entityType": { "type": "string" },
+          "entityId": { "type": "string" },
+          "entryHash": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "person": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
+    },
+    "result": { "enum": ["supports_original", "supports_alternative", "inconclusive", "footage_unavailable"] }
+  }
+}

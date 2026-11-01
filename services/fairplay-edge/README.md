@@ -182,7 +182,7 @@ docker compose exec edge fairplay-edge api GET /edge/v1/health
 | `GET /edge/v1/incidents/{id}/audit` | every audit entry about the incident, its reviews, evidence and jobs |
 | `POST /edge/v1/incidents/{id}/clips`, `GET /jobs/{id}` | ask for an evidence clip of one camera (202 new, 200 the existing job); the job's state |
 | `GET /edge/v1/evidence?incidentId`, `/evidence/{id}`, `/evidence/{id}/file`, `/evidence/{id}/manifest` | evidence and its manifest; organisers see released evidence only (404 otherwise) |
-| `POST /edge/v1/evidence/{id}/approve`, `/export` | approve for release (needs the finding and the rights); download a zip of clip, manifest and `SHA256SUMS` |
+| `POST /edge/v1/evidence/{id}/approve`, `/export` | approve for release (needs the finding and the rights); download a zip of clip, manifest, `finding.json` (the finding, reviewer, approver and custody) and `SHA256SUMS` |
 | `GET/POST /edge/v1/sessions/{id}/rights` | the session's footage rights, appended and superseded, never edited |
 | `GET /edge/v1/report/sessions`, `/report/sessions/{id}` | the organiser's report: completed findings and released evidence |
 | `GET /edge/v1/audit`, `/audit/verify`, `GET /edge/v1/outbox` | the audit log and a walk of its hash chain (admin); the sync queue |

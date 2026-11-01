@@ -23,6 +23,7 @@ renamed only after it probes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -43,6 +44,12 @@ from .probe import Probe, ProbeError, probe, sha256_file, video_packets
 from .store import Store, new_id
 
 MANIFEST_SCHEMA = "fairplay.evidence-manifest/v1"
+FINDING_SCHEMA = "fairplay.evidence-finding/v1"
+FINDING_NOTICE = ("Shadow review only. This finding is not a decision of the match officials, does not change the"
+                  " match record, and is not a FIFA-authorised VAR or FVS review.")
+# Reads and copies of a clip: how many there were says nothing about how the finding came to be,
+# and leaving them out keeps a package the same until the finding or its approval changes.
+NOT_CUSTODY = ("evidence.accessed", "evidence.manifest_accessed", "evidence.exported", "evidence.uploaded")
 SCHEMA_FILE = Path(__file__).with_name("schemas") / "evidence-manifest.v1.schema.json"
 RETRY_WAIT = timedelta(seconds=15)
 GAP_TOLERANCE_MS = 50
@@ -730,23 +737,59 @@ def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, re
     return withdrawal_of(store, evidence_id)
 
 
+def finding_record(store: Store, row: dict) -> dict:
+    """What was found and who found it. The manifest is fixed when the clip is cut, before any
+    finding exists, so this is written when the package is made. Actors and hashes only from the
+    audit chain, never an entry's detail; the notes are the finding itself, for its recipient."""
+    incident = incidents.get(store, row["incident_id"])
+    reviews = incidents.reviews(store, incident["id"])
+    current = next((r for r in reviews if r["id"] == incident["current_review_id"] and r["state"] == "completed"), None)
+    if current is None:
+        raise incidents.Conflict("the incident has no completed finding to export")
+    return {
+        "schema": FINDING_SCHEMA,
+        "notice": FINDING_NOTICE,
+        "authorityMode": current["authority_mode"],
+        "evidenceId": row["id"],
+        "clipSha256": row["sha256"],
+        "manifestSha256": row["manifest_sha256"],
+        "incident": {"id": incident["id"], "version": incident["version"], "matchId": incident["match_id"],
+                     "category": incident["category"], "period": incident["period"], "matchMinute": incident["match_minute"],
+                     "matchSecond": incident["match_second"], "eventUtc": incident["event_utc"]},
+        "finding": {"reviewId": current["id"], "result": current["result"], "factualNotes": current["factual_notes"],
+                    "onFieldDecision": current["on_field_decision"],
+                    "reviewer": {"id": current["reviewer_id"], "name": current["reviewer_name"]},
+                    "completedUtc": current["completed_at"], "footageStates": current["footage_states"],
+                    "reliedOnThisClip": row["id"] in (current["evidence_ids"] or [])},
+        "approval": {"by": {"id": row["approved_by"], "name": row["approved_name"]}, "approvedUtc": row["approved_utc"]},
+        "earlierFindings": [{"reviewId": r["id"], "result": r["result"], "reviewer": {"id": r["reviewer_id"], "name": r["reviewer_name"]},
+                             "completedUtc": r["completed_at"], "supersededReason": r["superseded_reason"]}
+                            for r in reviews if r["state"] == "superseded"],
+        "custody": [{"seq": e["seq"], "atUtc": e["at_utc"], "actorId": e["actor_id"], "actorName": e["actor_name"],
+                     "action": e["action"], "entityType": e["entity_type"], "entityId": e["entity_id"], "entryHash": e["entry_hash"]}
+                    for e in audit.for_incident(store, incident["id"]) if e["action"] not in NOT_CUSTODY],
+    }
+
+
 def export_package(store: Store, settings: Settings, row: dict, actor: Actor, out_dir: Path) -> tuple[Path, str]:
-    """A zip of the clip, its manifest and a SHA256SUMS file, for handing to an organiser."""
+    """A zip of the clip, its manifest, the finding and a SHA256SUMS file, for handing to an organiser."""
     verify_file(store, settings, row)
     clip, manifest = path_of(settings, row), path_of(settings, row, "manifest_rel_path")
-    sums = f"{row['sha256']}  clip.mp4\n{row['manifest_sha256']}  manifest.json\n"
+    finding = (json.dumps(finding_record(store, row), indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode()
+    finding_sha = hashlib.sha256(finding).hexdigest()
+    sums = f"{row['sha256']}  clip.mp4\n{row['manifest_sha256']}  manifest.json\n{finding_sha}  finding.json\n"
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / f"fairplay-evidence-{row['id']}.zip"
     tmp = target.with_suffix(".zip.part")
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_STORED) as z:
         # Fixed dates, so the same evidence always makes byte-identical packages.
         for name, data in (("clip.mp4", clip.read_bytes()), ("manifest.json", manifest.read_bytes()),
-                           ("SHA256SUMS", sums.encode())):
+                           ("finding.json", finding), ("SHA256SUMS", sums.encode())):
             info = zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0))
             z.writestr(info, data)
     tmp.replace(target)
     package_sha = sha256_file(target)
     audit.record(store, actor, "evidence.exported", "evidence", row["id"], None,
                  {"incidentId": row["incident_id"], "packageSha256": package_sha, "clipSha256": row["sha256"],
-                  "manifestSha256": row["manifest_sha256"]})
+                  "manifestSha256": row["manifest_sha256"], "findingSha256": finding_sha})
     return target, package_sha
