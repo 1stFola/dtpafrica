@@ -240,7 +240,7 @@ def plan_cut(store: Store, settings: Settings, source: str, start: datetime, dur
     now = now or utcnow()
     end = start + timedelta(milliseconds=duration_ms)
     rows = store.query(
-        "SELECT * FROM segments WHERE source = ? AND state != 'deleted' AND start_utc < ?"
+        "SELECT * FROM segments INDEXED BY segments_on_disk WHERE source = ? AND state != 'deleted' AND start_utc < ?"
         " AND (end_utc IS NULL OR end_utc > ?) ORDER BY start_utc", (source, iso(end), iso(start)))
     if any(r["state"] == "recording" for r in rows):
         raise NotYet("a segment in this window is still being recorded")

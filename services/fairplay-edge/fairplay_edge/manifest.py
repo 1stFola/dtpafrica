@@ -65,6 +65,7 @@ class Scanner:
     def __init__(self, settings: Settings, store: Store):
         self.settings = settings
         self.store = store
+        self._came_back: set[str] = set()
 
     # ── discovery ─────────────────────────────────────────────────────────
     def scan(self, publishing: dict[str, bool]) -> list[str]:
@@ -83,11 +84,17 @@ class Scanner:
             start_s = iso(start)
             newest_start[source] = max(newest_start.get(source, start_s), start_s)
             if rel not in known:
+                if self.store.one("SELECT 1 AS gone FROM segments WHERE rel_path = ?", (rel,)):
+                    # Retention deleted this file and something put it back. It is not recorded twice.
+                    if rel not in self._came_back:
+                        self._came_back.add(rel)
+                        log.warning(json.dumps({"event": "segment.came_back", "rel_path": rel}))
+                    continue
                 size = path.stat().st_size
                 grown = iso(now) if size and media_written(path) else None
                 with self.store.tx() as db:
                     db.execute(
-                        "INSERT OR IGNORE INTO segments (id, source, rel_path, start_utc, state, discovered_utc, last_size,"
+                        "INSERT INTO segments (id, source, rel_path, start_utc, state, discovered_utc, last_size,"
                         " last_growth_utc) VALUES (?, ?, ?, ?, 'recording', ?, ?, ?)",
                         (new_id(), source, rel, start_s, iso(now), size, grown),
                     )

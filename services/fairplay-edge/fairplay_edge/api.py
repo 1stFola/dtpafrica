@@ -630,7 +630,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         items, basis = spans_for(name, s, e)
         covered = timing.coverage(items, s, e)
         segments = service.store.query(
-            "SELECT id, rel_path, state, start_utc, end_utc, sha256 FROM segments WHERE source = ?"
+            "SELECT id, rel_path, state, start_utc, end_utc, sha256 FROM segments INDEXED BY segments_on_disk WHERE source = ?"
             " AND start_utc < ? AND (end_utc IS NULL OR end_utc > ?) AND state != 'deleted' ORDER BY start_utc",
             (name, iso(e), iso(s)),
         )

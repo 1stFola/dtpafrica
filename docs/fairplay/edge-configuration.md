@@ -48,7 +48,7 @@ The Edge **refuses to start** in four cases:
 
 | Variable | Default | What it is | Set in |
 |---|---|---|---|
-| `FAIRPLAY_RECORD_SEGMENT_DURATION` | `20s` | The length of each recording file. A clip waits for the file holding its last moment to close, so this sets how soon a clip is ready. | `.env` |
+| `FAIRPLAY_RECORD_SEGMENT_DURATION` | `20s` | The length of each recording file. A clip waits for the file holding its last moment to close, so this sets how soon a clip is ready. A feed failing E17 loses up to 2 s at every file, about 10% at this length: lengthen it for that feed's sake only if E17 can't be fixed. An `.env` made earlier keeps its own value. | `.env` |
 | `FAIRPLAY_RECORD_PART_DURATION` | `1s` | The length of each part: the most an abrupt stop loses. | `.env` |
 | `FAIRPLAY_FINALIZE_QUIET_SECONDS` | `10` | A closed feed's last file is finalised after this many quiet seconds. | `.env` |
 | `FAIRPLAY_RECORD_STALL_SECONDS` | `6` | Publishing with nothing written for this long raises `recording_stalled`. | `.env` |
@@ -73,7 +73,7 @@ The Edge **refuses to start** in four cases:
 | Variable | Default | What it is | Set in |
 |---|---|---|---|
 | `FAIRPLAY_RETENTION_DAYS` | none (off) | Delete recordings older than this many days. Never deletes held footage, or footage behind evidence not yet synced. D9 says 14. | `.env` |
-| `FAIRPLAY_RETENTION_MAX_DELETIONS` | `200` | The most files one retention run deletes. | `.env` |
+| `FAIRPLAY_RETENTION_MAX_DELETIONS` | `600` | The most files one retention run deletes. | `.env` |
 
 ## Sign-in and identity
 

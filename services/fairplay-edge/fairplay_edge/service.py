@@ -60,7 +60,6 @@ class EdgeService:
         self._bundle_mtime: float | None = None
         self._stop = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
-        self._last_retention = 0.0
         self._last_clock = 0.0
         self.passes = 0
         self.last_pass_error: str | None = None
@@ -96,12 +95,13 @@ class EdgeService:
             self._last_clock = time.monotonic()
             self.clock.sample()
         self.reload_bundle()
-        if self.settings.retention_days is not None and time.monotonic() - self._last_retention > RETENTION_EVERY_SECONDS:
-            self._last_retention = time.monotonic()
-            deleted = retention.apply(self.settings, self.store, self.scanner)
-            if deleted:
-                log.info(json.dumps({"event": "retention.run", "deleted": len(deleted)}))
         self.passes += 1
+
+    def retention_once(self) -> None:
+        """In a loop of its own: a pass that waited on hundreds of deletions would look like a stalled recording."""
+        deleted = retention.apply(self.settings, self.store, self.scanner)
+        if deleted:
+            log.info(json.dumps({"event": "retention.run", "deleted": len(deleted)}))
 
     def run_jobs_once(self) -> bool:
         """Run one due clip job. True if there was one."""
@@ -169,6 +169,7 @@ class EdgeService:
             asyncio.create_task(self._every("jobs", self.run_jobs_once, 2.0), name="fairplay-edge-jobs"),
             asyncio.create_task(self._every("sync", self.sync_once, 2.0), name="fairplay-edge-sync"),
             asyncio.create_task(self._every("cloud", self.cloud_once, 10.0), name="fairplay-edge-cloud"),
+            asyncio.create_task(self._every("retention", self.retention_once, RETENTION_EVERY_SECONDS), name="fairplay-edge-retention"),
         ]
 
     async def stop(self) -> None:

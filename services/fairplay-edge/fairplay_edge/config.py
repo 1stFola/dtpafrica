@@ -76,7 +76,7 @@ class Settings:
     # A calibration offset beyond this must be confirmed by the operator (5.6, F11).
     calibration_confirm_ms: int = 5000
     retention_days: int | None = None
-    retention_max_deletions: int = 200
+    retention_max_deletions: int = 600
     device_label: str = "edge"
     mediamtx_hls_url: str = "http://127.0.0.1:8888"
     trusted_keys_file: Path | None = None
@@ -289,7 +289,7 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         clock_settle_seconds=float(env.get("FAIRPLAY_CLOCK_SETTLE_SECONDS", "120")),
         calibration_confirm_ms=int(env.get("FAIRPLAY_CALIBRATION_CONFIRM_MS", "5000")),
         retention_days=retention_days,
-        retention_max_deletions=int(env.get("FAIRPLAY_RETENTION_MAX_DELETIONS", "200")),
+        retention_max_deletions=int(env.get("FAIRPLAY_RETENTION_MAX_DELETIONS", "600")),
         device_label=env.get("FAIRPLAY_DEVICE_LABEL", "edge"),
         mediamtx_hls_url=env.get("FAIRPLAY_MEDIAMTX_HLS_URL", "http://127.0.0.1:8888").rstrip("/"),
         trusted_keys_file=Path(env["FAIRPLAY_TRUSTED_KEYS_FILE"]) if env.get("FAIRPLAY_TRUSTED_KEYS_FILE") else None,

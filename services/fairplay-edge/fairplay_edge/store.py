@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -542,6 +542,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+# A segment queues a row when it closes and when it is deleted, each time asking for the entity's
+# last version: with files of 20 seconds, a table scan inside that transaction holds up the Edge.
+_MIGRATE_V7 = """
+BEGIN IMMEDIATE;
+CREATE INDEX outbox_entity ON outbox (entity_type, entity_id, entity_version);
+UPDATE schema_version SET version = 7;
+COMMIT;
+"""
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = path
@@ -565,7 +575,7 @@ class Store:
                 db.execute("INSERT INTO schema_version (version) VALUES (2)")
             elif start < 2:
                 db.execute("UPDATE schema_version SET version = 2")
-        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6)):
+        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6), (7, _MIGRATE_V7)):
             if start >= version:
                 continue
             db = self._connect()

@@ -175,12 +175,18 @@ python -I fixtures/run_fixture.py wan --minutes 30 --keep
   took p50 655 ms, p95 2.3 s, and the Edge kept up. Three things changed so that it holds: a waiting
   clip looks again every 2 s, not 15; jobs take turns, so a waiting clip cannot hold back a ready
   one; and deleted rows, 190,000 of them after 18 months, no longer slow the Edge (a window lookup
-  took p50 13 s with them, 61 ms now). Retention may delete 200 files an hour, not 50: 67 minutes of
-  footage where 50 files of 5 minutes were 250.
+  took p50 13 s with them, 61 ms now). Retention may delete 600 files an hour, not 50: 200 minutes of
+  footage where 50 files of 5 minutes were 250. It runs in its own loop, and the outbox has an index
+  for the lookup each file makes (500,000 rows scanned for 2.5 s each).
+
+  **A feed that fails E17 is worse off:** it loses up to 2 s at every file switch, about 10% of the
+  footage where 5-minute files lost 0.7%. These runs used aligned synthetic feeds, so this is not
+  measured on real encoders. Hardware validation C5 must pass before 20 seconds is relied on.
 
   `recording_stalled` opened on both cameras in one 20-second and one 1-minute run, with no hole in
   the recording, and in neither the later 20-second run nor the 5-minute run. **Not explained.**
-  The check reads what the last pass saw, so a slow pass could raise it: watch for it at the
+  The check reads what the last pass saw, so a slow pass could raise it, and retention no longer
+  runs inside the pass, though nothing was old enough to delete in those runs: watch for it at the
   hardware validation.
 
 ## Acceptance checklist
