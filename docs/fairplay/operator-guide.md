@@ -62,7 +62,9 @@ Do these at least two days before. They need the internet.
 4. Bring the Edge online within 36 hours of the match, and for at least 5 minutes after the last
    PIN is set. It collects the operator list then, and the list lasts 36 hours.
 
-**Rights (Edge admin).** Have the agreement or licence and any consent reference ready.
+**Rights (Edge admin).** Have the agreement or licence and any consent reference ready. The
+[rights checklist](./rights-checklist.md) comes first: the Edge records whether or not rights exist, so
+Part B is done before the cameras are on.
 
 ## The matchday clock
 
@@ -89,7 +91,8 @@ Times are before kick-off. Allow more time for the first few matches.
 ### 30 minutes
 - [ ] The header chip reads **Edge ok**. Read and clear any warning, or write down why it stays.
 - [ ] **Disk**: no disk banner. Budget about 1.1 GB per camera-hour, a figure from synthetic
-      feeds only; replace it with the venue's own from [hardware validation](./hardware-validation.md), C3.
+      feeds only; replace it with the venue's own from [hardware validation](./hardware-validation.md), C3,
+      and work out what a season needs with the [cost worksheet](./cost-worksheet.md).
 - [ ] **Clock**: no clock banner. Compare the **Edge** time with the match console or a phone. If
       they differ by more than a second, write it down.
 - [ ] **Cloud** reads "in sync", or "local only" if there is no internet, which is fine.

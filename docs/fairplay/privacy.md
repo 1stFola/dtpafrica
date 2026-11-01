@@ -99,7 +99,8 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   ([edge-backup.md](./edge-backup.md)). A restored Edge asks the cloud what was withdrawn
   before any clip can leave it.
 - **Not erased on request:** the full-match recordings. They are kept 14 days (D9), and
-  the document says when they go.
+  the document says when they go. **That date is not true of the footage around an incident,**
+  which is kept with no end as built (R25, [rights-checklist.md](./rights-checklist.md#decisions-for-fola)).
 - **Names stay out of the audit log.** Requester names and player references are kept on
   the request and withdrawal rows, never in audit entries (D13).
 

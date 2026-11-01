@@ -67,6 +67,13 @@ These came after Fola's decisions of 31 Oct, so they have no decision yet.
 | R23 | **A backup is not encrypted by this software, and an older backup still holds a clip withdrawn since.** It holds clips, the database and the Edge's private keys. | medium (high for real footage) | 0600 files; the rule in [edge-backup.md](./edge-backup.md): an encrypted disk, a new backup after each withdrawal, older ones destroyed. Nothing enforces it. | accept for synthetic rehearsals; fix with R19 before real footage: encrypted backup disk and a named custodian |
 | R24 | **Restoring to an older point leaves a seam with the other side.** A restored Edge's new audit entries collide with numbers the cloud already holds, so they are parked with a critical alert (R12: no re-send). A withdrawal made at the venue and not yet synced before the failure is lost with the disk. A cloud restore older than a withdrawal loses that withdrawal's record there, though the clip stays deleted from the bucket and the Edge. | medium | Nothing is overwritten and nothing is silent. Both are written up in [edge-backup.md](./edge-backup.md). | accept for the pilot, with a backup after each match and each withdrawal |
 
+## Added by Phase 6.6, not yet decided
+
+| # | Risk | Severity | In place now | Proposed |
+|---|---|---|---|---|
+| R25 | **The footage around every incident is never deleted, and the request document says it is.** An incident's hold has no end, and a clip's sources are never marked as synced, so retention never reaches them: about 30% of a match at 10 incidents. D9 says "14 days", R17 says "kept 14 days", and a parent's request document gives a deletion date ([cost-worksheet.md](./cost-worksheet.md#what-the-worksheet-found)). | high (for real footage) | An admin can release a hold by hand, but that does not free what a clip was cut from. No real match has been recorded. | fix before real footage: Fola decides when a hold ends ([RC1, RC2](./rights-checklist.md#decisions-for-fola)); then build it |
+| R26 | **Three decided or implied periods have nothing behind them on the Edge:** clips at end of season + 12 months (D10), the audit log (D13), and exported zips and `before-restore-*` folders (F18). | medium (for real footage) | A withdrawal removes a clip and its zip. R2's 90 days is built. | fix before the first season ends; a dated reminder for the custodian until then ([RC3 to RC5](./rights-checklist.md#decisions-for-fola)) |
+
 ## Not yet done, and waiting for approval
 
 | # | Item | Waiting for |

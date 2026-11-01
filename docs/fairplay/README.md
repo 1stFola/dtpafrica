@@ -23,6 +23,8 @@ decision or a score, or claim VAR/FVS status.
 | [phase-4-cloud.md](./phase-4-cloud.md) | **Phase 4 delivery**: the cloud module and migration, device pairing and signed bundles, the sync receiver, evidence in R2 by presigned URL, `/admin/fairplay`, the end-to-end run, cost and the approvals still needed |
 | [phase-5-threat-review.md](./phase-5-threat-review.md) | **Phase 5.1**: Prompt 6's failure scenarios and security requirements against the merged code; findings F1–F20 graded, and the proposed scope for the fixes |
 | [decisions.md](./decisions.md) | **Fola's decisions** on the gates, retention, rights, organiser access and Edge security (28 Oct 2026) |
+| [cost-worksheet.md](./cost-worksheet.md) | **Phase 6.6**: a match's storage, upload and cost from measured bitrates, and the finding that incident footage is never deleted (R25) |
+| [rights-checklist.md](./rights-checklist.md) | **Phase 6.6**: footage rights and consent, the clip release checks, what is kept and what deletes it, with decisions for Fola |
 | [licences.md](./licences.md) | **Phase 6.5**: the dependency inventory, notices and FFmpeg build review, with the rulings B9 and B10 proposed for Fola |
 | [hardware-validation.md](./hardware-validation.md) | **Phase 6.4**: what to measure on the matchday kit, the pass marks, the measuring tool and a results sheet. Not yet run |
 | [operator-guide.md](./operator-guide.md) | **Phase 6.3**: running a match, the 90/60/30/15-minute checks, recovery pages for network, camera, power and storage, rehearsal and training |
