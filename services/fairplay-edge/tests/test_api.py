@@ -177,6 +177,10 @@ def _login(c, email="op@dtp.test", pin="12345678"):
     return c.post("/edge/v1/auth/login", json={"email": email, "pin": pin})
 
 
+def _login_to_watch(c):
+    return _login(c, "watch@dtp.test")
+
+
 def test_status_needs_no_auth_and_names_nobody(op):
     s = op.get("/edge/v1/auth/status").json()
     assert s["bundleLoaded"] and s["dev"] is True and "members" not in s
@@ -221,7 +225,7 @@ def test_logout_ends_the_session(op):
 
 def test_media_and_live_need_auth(op):
     assert op.get("/edge/v1/live/ground/index.m3u8").status_code == 401
-    _login(op)
+    _login_to_watch(op)
     assert op.get("/edge/v1/live/ground/..%2Fsecret").status_code in (400, 404)
     assert op.get("/edge/v1/live/nope/index.m3u8").status_code == 404
 
@@ -286,7 +290,7 @@ def test_media_windows_are_seekable_and_cached(op, op_service):
         return 200
 
     op.app.state.fetch_window = fake_fetch
-    _login(op)
+    _login_to_watch(op)
     path = "/edge/v1/media/ground?start=2026-10-27T14:00:00Z&durationMs=10000"
     whole = op.get(path)
     assert whole.status_code == 200 and whole.headers["content-type"] == "video/mp4"
@@ -302,7 +306,7 @@ def test_missing_recording_is_a_404(op):
         return 404
 
     op.app.state.fetch_window = none
-    _login(op)
+    _login_to_watch(op)
     r = op.get("/edge/v1/media/ground?start=2026-10-27T14:00:00Z&durationMs=10000")
     assert r.status_code == 404 and r.json()["error"] == "no_recording"
 

@@ -131,11 +131,13 @@ export const FAIRPLAY_ASSESSOR_PERMISSION_SLUGS = [
   "admin.session.read",
   "fairplay.incident.operate",
   "fairplay.incident.review",
+  "fairplay.evidence.view_original",
 ];
 
 export const FAIRPLAY_OPERATOR_PERMISSION_SLUGS = [
   "admin.session.read",
   "fairplay.incident.operate",
+  "fairplay.evidence.view_original",
 ];
 
 export const FAIRPLAY_ORGANISER_VIEWER_PERMISSION_SLUGS = [
@@ -294,13 +296,13 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
   {
     slug: "fairplay_assessor",
     name: "FairPlay Assessor",
-    description: "Flag incidents and record shadow-review findings at the venue",
+    description: "Flag incidents, watch recordings and record shadow-review findings at the venue",
     permissionSlugs: FAIRPLAY_ASSESSOR_PERMISSION_SLUGS,
   },
   {
     slug: "fairplay_operator",
     name: "FairPlay Operator",
-    description: "Flag incidents and mark calibrations at the venue; no findings",
+    description: "Flag incidents, watch recordings and mark calibrations at the venue; no findings",
     permissionSlugs: FAIRPLAY_OPERATOR_PERMISSION_SLUGS,
   },
   {

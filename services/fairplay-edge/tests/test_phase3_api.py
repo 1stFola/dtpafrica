@@ -21,7 +21,7 @@ CSRF = {"X-FairPlay-Request": "1"}
 ALL = ["fairplay.incident.operate", "fairplay.incident.review", "fairplay.session.manage", "fairplay.edge.admin",
        "fairplay.evidence.view_original", "fairplay.evidence.export"]
 PEOPLE = {
-    "operator": ["fairplay.incident.operate"],
+    "operator": ["fairplay.incident.operate", "fairplay.evidence.view_original"],
     "assessor": ["fairplay.incident.operate", "fairplay.incident.review"],
     "admin": ALL,
     "organiser": ["fairplay.report.view"],

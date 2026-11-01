@@ -19,6 +19,8 @@ def make_bundle(private_pem, *, issuer="dev-local", hours=36, members=None, issu
                    "permissions": ["fairplay.incident.operate"], "pinHash": hash_pin("12345678")},
                   {"userId": "u-view", "email": "view@dtp.test", "name": "Viewer", "permissions": [],
                    "pinHash": hash_pin("87654321")},
+                  {"userId": "u-watch", "email": "watch@dtp.test", "name": "Watcher",
+                   "permissions": ["fairplay.incident.operate", "fairplay.evidence.view_original"], "pinHash": hash_pin("12345678")},
               ]}
     return sign_bundle(bundle, private_pem)
 

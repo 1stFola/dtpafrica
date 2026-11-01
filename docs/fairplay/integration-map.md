@@ -71,11 +71,11 @@ New permission slugs (PID §3 names in brackets):
 | `fairplay.edge.admin` [can_admin_edge] | register, pair and retire Edge devices |
 | `fairplay.incident.operate` | flag incidents, mark calibrations, request clips |
 | `fairplay.incident.review` [can_review] | record findings, complete reviews |
-| `fairplay.evidence.view_original` [can_view_original] | read original segments; reason required, audited |
+| `fairplay.evidence.view_original` [can_view_original] | watch recordings and live feeds at the venue; audited. No effect in the cloud, which holds no originals |
 | `fairplay.evidence.export` [can_export] | approve and export an evidence package |
 | `fairplay.report.view` | read approved reports and approved evidence only |
 
-New roles: `fairplay_operator` (operate), `fairplay_assessor` (operate + review),
+New roles: `fairplay_operator` (operate + view_original), `fairplay_assessor` (operate + review + view_original),
 `fairplay_admin` (all), `fairplay_organiser_viewer` (report.view, scoped by
 `AdminUserCompetition`). Every check is competition-scoped through the existing
 `canAccessCompetition`, and session-scoped through `FairPlaySessionMember`.
@@ -106,7 +106,7 @@ repo's style (no Swagger exists); an OpenAPI file is generated for the Edge by F
 | POST | `/fairplay/evidence/:id/confirm` | device token | HEAD the object, check bytes, record the key |
 | GET | `/fairplay/incidents?sessionId=&cursor=` | JWT + scope | index |
 | GET | `/fairplay/incidents/:id` | JWT + scope | incident, reviews, lineage |
-| POST | `/fairplay/evidence/:id/read-url` | JWT + `report.view` or `view_original` (+ reason) | presigned GET ≤ 5 min; audited |
+| POST | `/fairplay/evidence/:id/read-url` | JWT + `report.view`, `incident.review`, `evidence.export` or `session.manage` | presigned GET ≤ 5 min; audited |
 | GET | `/fairplay/sessions/:id/report` | JWT + scope | JSON report; printable HTML in the web app |
 
 ### Edge (FastAPI, venue LAN, TLS terminated by Uvicorn)

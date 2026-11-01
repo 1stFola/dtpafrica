@@ -47,11 +47,13 @@ from .test_phase3_api import ALL, CSRF
 
 OWN, OTHER = "s-own", "s-other"
 PIN = f"{secrets.randbelow(90_000_000) + 10_000_000}"
-OPERATE, REVIEW, MANAGE, ADMIN, EXPORT = (f"fairplay.{p}" for p in (
-    "incident.operate", "incident.review", "session.manage", "edge.admin", "evidence.export"))
+OPERATE, REVIEW, MANAGE, ADMIN, EXPORT, ORIGINALS = (f"fairplay.{p}" for p in (
+    "incident.operate", "incident.review", "session.manage", "edge.admin", "evidence.export", "evidence.view_original"))
 PEOPLE = {
     "operator": [OPERATE],
-    "assessor": [OPERATE, REVIEW],
+    "viewer": [OPERATE, ORIGINALS],
+    "assessor": [OPERATE, REVIEW, ORIGINALS],
+    "releaser": [EXPORT],
     "lead": [p for p in ALL if p != ADMIN],  # everything but the Edge's own administration
     "admin": ALL,
     "organiser": ["fairplay.report.view"],
@@ -78,8 +80,8 @@ GUARDS = {
     "GET /edge/v1/sources/{name}/spans": STAFF,
     "GET /edge/v1/sources/{name}/gaps": STAFF,
     "GET /edge/v1/sources/{name}/window": STAFF,
-    "GET /edge/v1/media/{name}": STAFF,
-    "GET /edge/v1/live/{name}/{file}": STAFF,
+    "GET /edge/v1/media/{name}": ORIGINALS,
+    "GET /edge/v1/live/{name}/{file}": ORIGINALS,
     "GET /edge/v1/segments": STAFF,
     "GET /edge/v1/segments/{segment_id}": STAFF,
     "POST /edge/v1/segments/{segment_id}/verify": STAFF,
@@ -482,13 +484,13 @@ def test_every_route_that_hands_out_footage_or_evidence_is_audited(app, service,
 
 def test_watching_a_camera_live_is_audited_once_per_person_and_camera_an_hour(clients):
     """Residual risk R9. The player fetches a part every second; one entry says who watched."""
-    op, admin = clients["operator"], clients["admin"]
+    op, admin = clients["viewer"], clients["admin"]
     for _ in range(3):
         op.get("/edge/v1/live/ground/index.m3u8")  # MediaMTX is not running here: asked for is what is audited
     op.get("/edge/v1/live/drone/index.m3u8")
     admin.get("/edge/v1/live/ground/index.m3u8")
     seen = [(e["actor_id"], e["entity_id"]) for e in admin.get("/edge/v1/audit?limit=1000").json() if e["action"] == "media.live_viewed"]
-    assert sorted(seen) == [("u-admin", "ground"), ("u-operator", "drone"), ("u-operator", "ground")]
+    assert sorted(seen) == [("u-admin", "ground"), ("u-viewer", "drone"), ("u-viewer", "ground")]
     assert clients["organiser"].get("/edge/v1/live/ground/index.m3u8").status_code == 403
 
 
@@ -501,3 +503,20 @@ def test_every_route_that_serves_bytes_is_in_the_exports_table(app):
         if "FileResponse" in source or "_proxy(" in source:
             servers.add(key)
     assert servers - set(EXPORTS) == {"GET /edge/v1/live/{name}/{file}"}
+
+
+def test_watching_originals_takes_its_own_permission(clients, service):
+    """PID section 3: can_view_original is separate from exporting, reviewing and running the Edge."""
+    async def fetch(url, params, target):
+        target.write_bytes(b"footage")
+        return 200
+
+    clients["operator"].app.state.fetch_window = fetch
+    media = f"/edge/v1/media/ground?start={iso(at(10))}&durationMs=5000"
+    assert clients["viewer"].get(media).status_code == 200
+    for name in ("operator", "releaser", "organiser", "nobody"):
+        assert clients[name].get(media).status_code == 403, name
+        assert clients[name].get("/edge/v1/live/ground/index.m3u8").status_code == 403, name
+    # What a recording is and where it stands stays with venue staff: only the pictures are held back.
+    assert clients["operator"].get("/edge/v1/sources/ground/spans").status_code == 200
+    assert clients["releaser"].get(f"/edge/v1/sources/ground/window?start={iso(at(10))}&durationMs=5000").status_code == 200

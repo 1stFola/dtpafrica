@@ -202,7 +202,7 @@ paths:
       tags: [cloud]
       summary: Short-lived presigned GET; audited
       security: [{ adminJwt: [] }]
-      x-permission: fairplay.report.view (approved evidence) or fairplay.evidence.view_original (with reason)
+      x-permission: fairplay.report.view (released evidence), or fairplay.incident.review, fairplay.evidence.export or fairplay.session.manage
       parameters: [{ $ref: "#/components/parameters/EvidenceId" }]
       requestBody:
         content:

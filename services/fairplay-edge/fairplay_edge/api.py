@@ -336,6 +336,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     organiser = Depends(require_any(("fairplay.report.view", *STAFF_PERMISSIONS)))
     manager = Depends(require("fairplay.session.manage"))
     admin = Depends(require("fairplay.edge.admin"))
+    # The pictures themselves. Knowing what was recorded and when is `staff`.
+    originals = Depends(require("fairplay.evidence.view_original"))
 
     def source_or_404(name: str):
         source = settings.source(name)
@@ -724,7 +726,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                           "media.accessed", "source", source, {"startUtc": iso(start), "durationMs": duration_ms})
 
     @app.get("/edge/v1/media/{name}")
-    async def media(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), who: Principal = staff):
+    async def media(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), who: Principal = originals):
         source_or_404(name)
         s = _when(start, "start")
         end = s + timedelta(milliseconds=durationMs)
@@ -750,7 +752,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return FileResponse(target, media_type="video/mp4", headers={"Cache-Control": "no-store"})
 
     @app.get("/edge/v1/live/{name}/{file}")
-    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), who: Principal = staff):
+    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), who: Principal = originals):
         """Live preview: MediaMTX's HLS playlists and fMP4 parts, proxied after authorisation.
         MediaMTX names its HLS session in `?session=`; that one parameter is passed through.
         Audited once per person and camera an hour: a player fetches a part every second."""
