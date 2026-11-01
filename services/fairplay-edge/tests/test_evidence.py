@@ -9,6 +9,7 @@ import json
 import shutil
 import sqlite3
 import subprocess
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ import pytest
 from fairplay_edge import audit, evidence, incidents, timing
 from fairplay_edge.audit import Actor
 from fairplay_edge.manifest import Scanner
+from fairplay_edge.naming import parse_iso, utcnow
 from fairplay_edge.probe import Probe, sha256_file
 
 from .conftest import at, fmp4, segment_name, write_segment
@@ -172,6 +174,19 @@ def test_a_segment_still_recording_makes_the_job_wait(store, settings, session, 
     job, _ = evidence.request_clip(store, settings, inc["id"], "ground", OP)
     waiting = evidence.run_job(store, settings, FakeCutter(), job["id"])
     assert waiting["state"] == "queued" and waiting["attempts"] == 0 and "still being recorded" in waiting["error"]
+    # A clip waits for its footage, and no longer: it looks again on the job loop's next tick.
+    wait = parse_iso(waiting["next_attempt_utc"]) - utcnow()
+    assert timedelta(0) < wait <= evidence.NOT_YET_WAIT
+
+
+def test_a_waiting_clip_does_not_hold_back_one_that_is_ready(store, settings, session, ten_second_segments):
+    inc = flag(store, settings, session)
+    older, _ = evidence.request_clip(store, settings, inc["id"], "ground", OP)
+    newer, _ = evidence.request_clip(store, settings, inc["id"], "drone", OP)
+    with store.tx() as db:
+        db.execute("UPDATE jobs SET created_utc = '2026-01-01T00:00:00.000Z', next_attempt_utc = '2026-10-27T15:00:00.000Z' WHERE id = ?", (older["id"],))
+        db.execute("UPDATE jobs SET created_utc = '2026-01-02T00:00:00.000Z', next_attempt_utc = '2026-10-27T14:00:00.000Z' WHERE id = ?", (newer["id"],))
+    assert evidence.due_job(store, parse_iso("2026-10-27T16:00:00.000Z"))["id"] == newer["id"]
 
 
 def test_interrupted_job_is_rerun_after_a_restart(store, settings, session, ten_second_segments):

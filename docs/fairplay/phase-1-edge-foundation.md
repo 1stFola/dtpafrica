@@ -155,12 +155,33 @@ python -I fixtures/run_fixture.py wan --minutes 30 --keep
 ### Segment and part durations chosen
 
 - **Part 1 s** (MediaMTX's recovery point): the measured crash loss was 0.29 s.
-- **Segment 5 minutes** (default, `FAIRPLAY_RECORD_SEGMENT_DURATION`). Hashing and probing
-  are cheap, so the duration trades only the wait for a segment's hash against the number
-  of files: about 22 files per source per match at 5 minutes. Replay does not wait for
-  finalisation: the playback server served a window spanning a finalised segment and the
-  one still being written (15 s in 260 ms). The fixtures use 30 s so a run finalises many
-  segments; the drill's 121 segments behaved the same.
+- **Segment 20 seconds** (default, `FAIRPLAY_RECORD_SEGMENT_DURATION`; it was 5 minutes until the
+  Phase 7 review's H5). Hashing and probing are cheap, so the duration trades the wait for a
+  segment's hash against the number of files: about 540 files per source per match. Replay does
+  not wait for finalisation: the playback server served a window spanning a finalised segment
+  and the one still being written (15 s in 260 ms). The fixtures use 30 s.
+
+  A clip does wait: for the file holding its last moment to close. Measured on the real stack
+  with synthetic feeds on one laptop, flagging at random moments, from the flag to the finished clip:
+
+  | Files | Clips | p50 | p95 | Within 30 s | Holes |
+  |---|---|---|---|---|---|
+  | 5 minutes | 3 | 105 s | 243 s | 0 | 0 |
+  | 1 minute | 12 | 60 s | 76 s | 2 | 0 |
+  | **20 seconds** | 61, in two runs | 22 to 24 s | 35 to 36 s | 45 | 0 |
+
+  1 minute cannot meet the PID's "usually within 30 s", because most flags wait longer than that
+  for the file to close. With 2,700 files on a camera (5 matches of 3 h in retention) a 30 s replay
+  took p50 655 ms, p95 2.3 s, and the Edge kept up. Three things changed so that it holds: a waiting
+  clip looks again every 2 s, not 15; jobs take turns, so a waiting clip cannot hold back a ready
+  one; and deleted rows, 190,000 of them after 18 months, no longer slow the Edge (a window lookup
+  took p50 13 s with them, 61 ms now). Retention may delete 200 files an hour, not 50: 67 minutes of
+  footage where 50 files of 5 minutes were 250.
+
+  `recording_stalled` opened on both cameras in one 20-second and one 1-minute run, with no hole in
+  the recording, and in neither the later 20-second run nor the 5-minute run. **Not explained.**
+  The check reads what the last pass saw, so a slow pass could raise it: watch for it at the
+  hardware validation.
 
 ## Acceptance checklist
 

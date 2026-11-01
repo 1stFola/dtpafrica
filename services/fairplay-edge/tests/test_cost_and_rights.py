@@ -59,7 +59,7 @@ def test_the_disk_adds_up():
 
 def test_kept_footage_is_whole_segments_on_every_camera_and_never_more_than_the_recording():
     one = worksheet.work_out({"a": 8}, worksheet.Assumptions(incidents_per_match=1))["perMatch"]
-    assert one["keptPastRetentionGb"] == pytest.approx(330 * 8 / 8 / 1000, abs=0.01)  # a 5-minute segment and a 10% straddle
+    assert one["keptPastRetentionGb"] == pytest.approx(50 * 8 / 8 / 1000, abs=0.01)  # a 30 s window and a 20 s segment
     many = worksheet.work_out({"a": 8}, worksheet.Assumptions(incidents_per_match=1000))["perMatch"]
     assert many["keptPastRetentionGb"] == many["recordingGb"] and many["keptSharePercent"] == 100
 
@@ -115,7 +115,7 @@ def test_the_prices_are_the_clouds():
 def test_the_defaults_are_what_ships():
     example, a = example_env(), worksheet.Assumptions()
     assert int(example["FAIRPLAY_RETENTION_DAYS"]) == a.retention_days
-    assert example["FAIRPLAY_RECORD_SEGMENT_DURATION"] == f"{a.segment_minutes:.0f}m"
+    assert example["FAIRPLAY_RECORD_SEGMENT_DURATION"] == f"{a.segment_seconds:.0f}s"
     assert worksheet.REPLAY_CACHE_GB == api.REPLAY_CACHE_BYTES / 1e9
     assert '"FAIRPLAY_DISK_SOFT_FREE_GB", "20"' in (PACKAGE / "config.py").read_text("utf-8")
     assert "pre_roll_ms: int = 20_000, post_roll_ms: int = 10_000" in (PACKAGE / "incidents.py").read_text("utf-8")

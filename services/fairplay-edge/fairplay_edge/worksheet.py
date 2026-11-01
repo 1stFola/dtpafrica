@@ -31,7 +31,7 @@ class Assumptions:
     retention_days: int = 14  # D9
     r2_days: int = 90  # D10
     edge_evidence_months: float = 18  # D10: end of season + 12 months, for a season assumed to be 6 months
-    segment_minutes: float = 5  # FAIRPLAY_RECORD_SEGMENT_DURATION
+    segment_seconds: float = 20  # FAIRPLAY_RECORD_SEGMENT_DURATION
     soft_free_gb: float = 20  # FAIRPLAY_DISK_SOFT_FREE_GB
 
 
@@ -67,10 +67,9 @@ def work_out(rates: dict[str, float], a: Assumptions = Assumptions(), *, measure
 
     recording = gb(a.hours_per_match * 3600)
     clips = gb(a.incidents_per_match * a.clip_seconds)
-    # An incident's hold covers every camera and whole segments. A window straddles two segments
-    # in clip_seconds / segment_seconds of cases. Counted apart: never more than the recording.
-    segment = a.segment_minutes * 60
-    kept = min(recording, gb(a.incidents_per_match * (segment + a.clip_seconds)))
+    # An incident's hold covers every camera and whole segments: on average, a window plus one
+    # segment's length. Counted apart: never more than the recording.
+    kept = min(recording, gb(a.incidents_per_match * (a.segment_seconds + a.clip_seconds)))
     in_retention = a.matches_in_retention or math.ceil(a.matches_per_month * a.retention_days / 30)
 
     r2_months = a.r2_days / 30

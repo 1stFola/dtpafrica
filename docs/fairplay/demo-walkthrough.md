@@ -63,7 +63,7 @@ You need Docker Desktop, the local images `dtp-fairplay-edge:local` and `adobe/s
 | A pretend goal, with a finding that the footage supports a different outcome | that a finding is a record for afterwards, and changes no score |
 | A pretend penalty, inconclusive, with the drone stopped for 50 s on purpose | a real gap in a real recording, with an alert that opened and cleared |
 
-The demo records in 30-second files, so clips are ready quickly. An installed Edge uses 5 minutes.
+The demo records in 30-second files. An installed Edge uses 20 seconds.
 
 ## The 8 minutes
 

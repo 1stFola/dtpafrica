@@ -45,6 +45,7 @@ from .store import Store, new_id
 MANIFEST_SCHEMA = "fairplay.evidence-manifest/v1"
 SCHEMA_FILE = Path(__file__).with_name("schemas") / "evidence-manifest.v1.schema.json"
 RETRY_WAIT = timedelta(seconds=15)
+NOT_YET_WAIT = timedelta(seconds=2)  # the job loop's own tick: a waiting clip starts as soon as its footage is ready
 GAP_TOLERANCE_MS = 50
 CLIP_STATES = ("flagged", "reviewing")
 
@@ -506,7 +507,7 @@ def run_job(store: Store, settings: Settings, cutter: Cutter, job_id: str, now: 
         with store.tx() as db:
             # Waiting is not a failed attempt.
             db.execute("UPDATE jobs SET state = 'queued', attempts = attempts - 1, next_attempt_utc = ?, error = ?"
-                       " WHERE id = ?", (iso(utcnow() + RETRY_WAIT), str(exc), job_id))
+                       " WHERE id = ?", (iso(utcnow() + NOT_YET_WAIT), str(exc), job_id))
         return store.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
     except ClipFailed as exc:
         part.unlink(missing_ok=True)
@@ -593,7 +594,8 @@ def recover(store: Store, settings: Settings) -> list[str]:
 
 
 def due_job(store: Store, now: datetime | None = None) -> dict | None:
-    return store.one("SELECT * FROM jobs WHERE state = 'queued' AND next_attempt_utc <= ? ORDER BY created_utc LIMIT 1",
+    return store.one("SELECT * FROM jobs WHERE state = 'queued' AND next_attempt_utc <= ?"
+                     " ORDER BY next_attempt_utc, created_utc LIMIT 1",
                      (iso(now or utcnow()),))
 
 

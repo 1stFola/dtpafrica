@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS segments (
 );
 CREATE INDEX IF NOT EXISTS segments_source_start ON segments (source, start_utc);
 CREATE INDEX IF NOT EXISTS segments_state ON segments (state);
+-- Deleted rows stay for the record and soon outnumber the rest. Reads of what is on disk skip them.
+CREATE INDEX IF NOT EXISTS segments_on_disk ON segments (source, start_utc, end_utc) WHERE state != 'deleted';
 
 CREATE TABLE IF NOT EXISTS derivatives (
     id           TEXT PRIMARY KEY,

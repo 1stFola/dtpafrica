@@ -133,3 +133,19 @@ def test_repair_refuses_if_the_original_changed(settings, store, fake_probe):
     original.write_bytes(original.read_bytes() + b"\x00")
     with pytest.raises(RepairRefused, match="no longer matches"):
         repair(settings, store, scanner, row["id"])
+
+
+def test_a_deleted_row_costs_the_scan_nothing_and_its_file_cannot_come_back(settings, store, three_final):
+    paths, rows = three_final
+    s = replace(settings, retention_days=30, retention_max_deletions=1)
+    scanner = Scanner(s, store)
+    retention.apply(s, store, scanner, now=NOW)
+    paths[0].write_bytes(fmp4(2))  # restored from a backup, say
+    scanner.scan({"ground": True})
+    assert store.one("SELECT state FROM segments WHERE id = ?", (rows[0]["id"],))["state"] == "deleted"
+
+
+def test_looking_up_a_window_reads_only_what_is_on_disk(store):
+    plan = store.query("EXPLAIN QUERY PLAN SELECT id FROM segments WHERE source = 'ground' AND start_utc < 'b'"
+                       " AND (end_utc IS NULL OR end_utc > 'a') AND state != 'deleted'")
+    assert "segments_on_disk" in plan[0]["detail"]

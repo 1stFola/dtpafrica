@@ -73,7 +73,7 @@ class Scanner:
         now = utcnow()
         names = {s.name for s in self.settings.sources}
         files = list_segment_files(self.settings.recordings_dir, names)
-        known = {r["rel_path"]: r for r in self.store.query("SELECT * FROM segments")}
+        known = {r["rel_path"] for r in self.store.query("SELECT rel_path FROM segments WHERE state != 'deleted'")}
         newest_start: dict[str, str] = {}
         for rel, path in files:
             try:
@@ -87,7 +87,7 @@ class Scanner:
                 grown = iso(now) if size and media_written(path) else None
                 with self.store.tx() as db:
                     db.execute(
-                        "INSERT INTO segments (id, source, rel_path, start_utc, state, discovered_utc, last_size,"
+                        "INSERT OR IGNORE INTO segments (id, source, rel_path, start_utc, state, discovered_utc, last_size,"
                         " last_growth_utc) VALUES (?, ?, ?, ?, 'recording', ?, ?, ?)",
                         (new_id(), source, rel, start_s, iso(now), size, grown),
                     )
