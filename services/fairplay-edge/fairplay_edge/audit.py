@@ -14,6 +14,11 @@ against the last it holds), and makes any edit *inside* the file without a rebui
 
 Entries are written in the same transaction as the change they describe, so a change can
 never commit without its entry, or the entry without the change.
+
+What an entry may hold (decisions.md D13): ids, hashes, fixed terms and staff names. Never a
+player reference or free text someone typed: this log is insert-only here and in the cloud, so
+nothing in it can be erased on request. That text stays on its own row, where it can be, and the
+chain holds its `fingerprint`, which shows what was recorded and that it changed.
 """
 
 from __future__ import annotations
@@ -72,6 +77,15 @@ class Actor:
 
 def canonical(obj: dict) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def fingerprint(entity_id: str, text: str | None) -> str | None:
+    """A hash of free text, salted with the record it belongs to: anyone holding the text can
+    check it, and one player's reference does not match across incidents. A shirt number is
+    easy to guess, so this keeps it from being read or followed, not from being confirmed."""
+    if text is None:
+        return None
+    return hashlib.sha256(f"{entity_id}\0{text}".encode()).hexdigest()
 
 
 def _hash(entry: dict) -> str:

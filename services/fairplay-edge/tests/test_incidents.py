@@ -1,12 +1,14 @@
 """Phase 3: the incident and review lifecycle, the audit chain, rights, and the v2 → v3 migration."""
 
+import json
 import sqlite3
 from datetime import timedelta
 
 import pytest
 
-from fairplay_edge import audit, incidents, timing
+from fairplay_edge import audit, incidents, retention, timing
 from fairplay_edge.audit import Actor
+from fairplay_edge.auth import Sessions
 from fairplay_edge.naming import iso, utcnow
 from fairplay_edge.store import _SCHEMA, _SCHEMA_V2, Store
 
@@ -252,3 +254,60 @@ def test_a_phase_2_database_upgrades_in_place(tmp_path):
     assert (row["state"], row["version"], row["match_id"], row["reopened_count"]) == ("flagged", 3, "m-9", 0)
     assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 6}'
     assert Store(path).device_id == store.device_id  # opening again changes nothing
+
+
+# ── D13: what the chain may hold ──────────────────────────────────────────
+
+def test_no_player_reference_or_free_text_reaches_the_audit_chain(store, settings, session):
+    """The chain is insert-only here and in the cloud, so what enters it can never be erased."""
+    inc = incidents.create(store, settings, session["id"], OP, event_utc=at(600), basis="manual", category="foul",
+                           note="NOTE-AT-FLAG", player_ref="PLAYER-AT-FLAG")
+    inc = incidents.edit(store, settings, inc["id"], 1, OP, {"note": "NOTE-EDITED", "player_ref": "PLAYER-EDITED", "category": "goal"})
+    inc = incidents.start_review(store, inc["id"], inc["version"], ASSESSOR)
+    inc = incidents.complete_review(store, inc["id"], inc["version"], ASSESSOR, result="inconclusive", factual_notes="NOTES-OF-FINDING",
+                                    on_field_decision="DECISION-TEXT", evidence_ids=[], footage_states=SHOWN)
+    incidents.reopen(store, inc["id"], inc["version"], ADMIN, "REASON-FOR-REOPENING")
+    hold = retention.create_hold(store, None, at(0), at(10), "manual", None, ADMIN)
+    retention.release_hold(store, hold["id"], "REASON-FOR-RELEASE", ADMIN)
+    Sessions(store).disable("u-op", ADMIN, "REASON-FOR-DISABLING")
+    chain = json.dumps(audit.entries(store, limit=1000))
+    sent = json.dumps([r["payload"] for r in store.query("SELECT payload FROM outbox WHERE entity_type = 'audit'")])
+    for text in ("NOTE-AT-FLAG", "NOTE-EDITED", "PLAYER-AT-FLAG", "PLAYER-EDITED", "NOTES-OF-FINDING", "DECISION-TEXT",
+                 "REASON-FOR-REOPENING", "REASON-FOR-RELEASE", "REASON-FOR-DISABLING"):
+        assert text not in chain and text not in sent, text
+    assert audit.verify(store)["ok"]
+
+
+def test_the_chain_can_still_show_what_was_recorded_and_what_changed(store, settings, session):
+    inc = incidents.create(store, settings, session["id"], OP, event_utc=at(600), basis="manual", category="foul",
+                           note="first", player_ref="#7 home")
+    incidents.edit(store, settings, inc["id"], 1, OP, {"note": "second", "player_ref": None, "category": "goal"})
+    entries = audit.for_incident(store, inc["id"])
+    created = next(e for e in entries if e["action"] == "incident.created")["detail"]
+    assert created["player_ref_sha256"] == audit.fingerprint(inc["id"], "#7 home")
+    assert created["note_sha256"] == audit.fingerprint(inc["id"], "first")
+    changes = next(e for e in entries if e["action"] == "incident.edited")["detail"]["changes"]
+    assert changes["note"] == {"wasSha256": audit.fingerprint(inc["id"], "first"), "nowSha256": audit.fingerprint(inc["id"], "second")}
+    assert changes["category"] == {"was": "foul", "now": "goal"}  # a fixed term, not free text
+
+
+def test_the_same_player_cannot_be_followed_across_incidents_in_the_chain(store, settings, session):
+    made = [incidents.create(store, settings, session["id"], OP, event_utc=at(600 + i), basis="manual", category="foul",
+                             player_ref="#7 home") for i in range(2)]
+    prints = {next(e for e in audit.for_incident(store, m["id"]) if e["action"] == "incident.created")["detail"]["player_ref_sha256"]
+              for m in made}
+    assert len(prints) == 2
+
+
+def test_no_reference_means_no_fingerprint(store, settings, session):
+    inc = incidents.create(store, settings, session["id"], OP, event_utc=at(600), basis="manual", category="foul")
+    created = next(e for e in audit.for_incident(store, inc["id"]) if e["action"] == "incident.created")["detail"]
+    assert created["player_ref_sha256"] is None and created["note_sha256"] is None
+
+
+def test_the_event_log_names_what_changed_but_not_its_text(store, settings, session):
+    inc = incidents.create(store, settings, session["id"], OP, event_utc=at(600), basis="manual", category="foul")
+    incidents.edit(store, settings, inc["id"], 1, OP, {"note": "NOTE-EDITED", "player_ref": "PLAYER-EDITED"})
+    row = store.one("SELECT detail FROM events WHERE kind = 'incident.updated'")
+    assert "NOTE-EDITED" not in row["detail"] and "PLAYER-EDITED" not in row["detail"]
+    assert sorted(json.loads(row["detail"])["changed"]) == ["note", "player_ref"]

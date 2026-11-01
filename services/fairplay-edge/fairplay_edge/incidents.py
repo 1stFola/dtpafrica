@@ -166,15 +166,25 @@ def create(store: Store, settings: Settings, session_id: str, actor: Actor, *, e
                    " :hold_id, :created_by, :created_utc, :updated_utc)", row)
         Store.log_event(db, now, "incident.flagged", None, {"id": incident_id, "by": actor.id})
         audit.append(db, actor, "incident.created", "incident", incident_id, 1,
-                     {k: row[k] for k in ("session_id", "match_id", "event_utc", "basis", "category", "period",
-                                          "match_minute", "match_second", "sheet_event_id", "player_ref",
-                                          "pre_roll_ms", "post_roll_ms")})
+                     {**{k: row[k] for k in ("session_id", "match_id", "event_utc", "basis", "category", "period",
+                                             "match_minute", "match_second", "sheet_event_id", "pre_roll_ms",
+                                             "post_roll_ms")},
+                      "player_ref_sha256": audit.fingerprint(incident_id, player_ref),
+                      "note_sha256": audit.fingerprint(incident_id, note)})
         _sync_incident(db, incident_id)
     return get(store, incident_id)
 
 
 EDIT_FIELDS = {"pre_roll_ms", "post_roll_ms", "category", "note", "match_minute", "match_second", "period",
                "player_ref"}
+# Typed by a person, or naming a player: fingerprints only in the audit chain (D13).
+PRIVATE_FIELDS = {"note", "player_ref"}
+
+
+def _change(incident_id: str, field: str, was, now) -> dict:
+    if field in PRIVATE_FIELDS:
+        return {"wasSha256": audit.fingerprint(incident_id, was), "nowSha256": audit.fingerprint(incident_id, now)}
+    return {"was": was, "now": now}
 
 
 def edit(store: Store, settings: Settings, incident_id: str, version: int, actor: Actor, changes: dict) -> dict:
@@ -201,9 +211,9 @@ def edit(store: Store, settings: Settings, incident_id: str, version: int, actor
     with store.tx() as db:
         _save(db, incident_id, version, {**fields, "updated_utc": now})
         Store.log_event(db, now, "incident.updated", None, {"id": incident_id, "by": actor.id, "from": version,
-                                                            "changes": changes})
+                                                            "changed": sorted(changes)})
         audit.append(db, actor, "incident.edited", "incident", incident_id, version + 1,
-                     {"from": version, "changes": {k: {"was": row[k], "now": v} for k, v in changes.items()}})
+                     {"from": version, "changes": {k: _change(incident_id, k, row[k], v) for k, v in changes.items()}})
         _sync_incident(db, incident_id)
     return get(store, incident_id)
 
@@ -324,7 +334,8 @@ def reopen(store: Store, incident_id: str, version: int, actor: Actor, reason: s
         _save(db, incident_id, version, {"state": "reviewing", "current_review_id": new_review,
                                          "reopened_count": row["reopened_count"] + 1, "updated_utc": now})
         audit.append(db, actor, "incident.reopened", "incident", incident_id, version + 1,
-                     {"from": row["state"], "reason": reason, "supersededReview": old, "newReview": new_review})
+                     {"from": row["state"], "reasonSha256": audit.fingerprint(incident_id, reason),
+                      "supersededReview": old, "newReview": new_review})
         _sync_incident(db, incident_id)
     return get(store, incident_id)
 

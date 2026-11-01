@@ -162,6 +162,10 @@ async function main() {
   check("each read is in the audit log with its reason", reads === results.evidence.length, reads);
   const chain = await prisma.fairPlayEdgeAuditEntry.groupBy({ by: ["chainStatus"], _count: true });
   check("every Edge audit entry recomputed and chained in the cloud", chain.length === 1 && chain[0].chainStatus === "ok", chain);
+  const flagged = await prisma.fairPlayEdgeAuditEntry.findMany({ where: { action: "incident.created" }, select: { detail: true } });
+  check("the Edge's audit entries in the cloud hold a player reference only as a fingerprint (D13)",
+    flagged.some((e) => /^[0-9a-f]{64}$/.test(String((e.detail as { player_ref_sha256?: unknown }).player_ref_sha256)))
+      && !JSON.stringify(flagged).includes("#4 away"), flagged.length);
   const corrupt = await prisma.fairPlayAuditLog.count({ where: { action: "upload.corrupt" } });
   check("the corrupted object is in the cloud audit log", corrupt === 1, corrupt);
 
