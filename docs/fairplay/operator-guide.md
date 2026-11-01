@@ -6,7 +6,7 @@ to check and when, what to do when something fails, and how to train someone. Pr
 
 **Status.** Every step was walked on the real console and Edge with synthetic feeds. It has not
 been used at a venue or with real cameras, so expect corrections after the first rehearsal.
-Real footage waits for the [go/no-go checklist](./phase-plan.md) and for risks R1, R4, R8, R16
+Real footage waits for the [go/no-go checklist](./go-no-go.md) and for risks R1, R4, R8, R16
 and R19 ([residual-risks.md](./residual-risks.md)).
 
 ## The rules

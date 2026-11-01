@@ -238,6 +238,11 @@ in the run's folder, for a look at the console.
 python -I fixtures/run_drills.py storage
 ```
 
+## The stakeholder demo (test only)
+
+`fixtures/run_demo.py` and `compose.demo.yaml` run an 8-minute demo on synthetic feeds, on a Compose
+project of their own ([docs/fairplay/demo-walkthrough.md](../../docs/fairplay/demo-walkthrough.md)). Never at a venue.
+
 ## Cost and rights
 
 `fairplay-edge worksheet` works out a match's storage, upload and cost from measured bitrates

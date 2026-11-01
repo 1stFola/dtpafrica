@@ -235,9 +235,9 @@ def test_a_cloud_that_will_not_take_it_yet_is_asked_again_later(store, settings,
     up = Uploader(settings, store, fake.client())
     now = utcnow()
     assert up.run_once(now) == 0
-    assert up.run_once(now + timedelta(minutes=5)) == 0 and len(fake.calls) == 2  # waiting, not hammering
+    assert up.run_once(now + timedelta(minutes=1)) == 0 and len(fake.calls) == 2  # waiting, not hammering
     fake.refuse.clear()
-    assert up.run_once(now + timedelta(minutes=16)) == 2
+    assert up.run_once(now + timedelta(minutes=3)) == 2  # F27: an approval still in the outbox costs minutes, not a quarter of an hour
 
 
 def test_an_outage_keeps_every_upload_and_they_go_when_it_ends(store, settings, session, ten_second_segments):  # noqa: F811

@@ -44,7 +44,8 @@ TOKEN_WARN_DAYS = 30
 UPLOADS_PER_PASS = 4
 CHUNK = 1024 * 1024
 # Waits for answers that will not change soon: not releasable yet, storage not set up.
-LONG_WAIT = {"NotReleasable": timedelta(minutes=15), "EvidenceStorageOff": timedelta(hours=1),
+# NotReleasable is usually a clip whose approval the outbox has not delivered yet (F27), so it is not long.
+LONG_WAIT = {"NotReleasable": timedelta(minutes=2), "EvidenceStorageOff": timedelta(hours=1),
              "Deleted": timedelta(days=1), "HashMismatch": timedelta(hours=1), "Withdrawn": timedelta(days=1)}
 # Who removes a clip the cloud withdrew: the person who did is in the cloud's audit log.
 CLOUD_ACTOR = audit.Actor(id="cloud", name="DTP cloud, on request", kind="system")
