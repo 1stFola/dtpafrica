@@ -2,8 +2,10 @@
 
 **Status: partial.** Built and tested end to end against the real API, Postgres and an S3
 server, on synthetic data. Not done: a check against a real R2 bucket, because the bucket
-does not exist yet, and any production migration or deploy. Both need Fola's approval
-(see "Approvals needed").
+does not exist yet, which needs Fola's approval (see "Approvals needed").
+
+**Correction, 1 November 2026:** this page first said the production migration and deploy were
+not done. CD had deployed both when #310 merged, and Fola confirmed on 1 November 2026 that this stands ([decisions.md](./decisions.md)).
 
 Prompt 5 of the prompt pack ("PHASE 4: CLOUD INTEGRATION WITHOUT INCREASING EC2 VIDEO
 LOAD"), under decision D3: an additive migration only, behind permissions nobody holds
@@ -293,9 +295,8 @@ The cutter itself was tested with real ffmpeg in Phase 3.
    Then set `FAIRPLAY_STORAGE_BACKEND=r2` and the `FAIRPLAY_R2_*` values in the API's
    secrets, and run the bucket checks the S3 server cannot prove: a PUT with the wrong
    body is refused, `HEAD` returns `ChecksumSHA256`, and anonymous GET is refused.
-2. **The production migration and deploy.** The migration is additive. Deploying runs
-   `prisma migrate deploy` as usual. Nothing changes for anyone until an admin assigns a
-   FairPlay role.
+2. **The production migration and deploy: already done by CD** (see the correction above). The
+   migration is additive. Nothing changes for anyone until an admin assigns a FairPlay role.
 3. **A bundle signing key** (`FAIRPLAY_BUNDLE_SIGNING_KEY`), generated on the server and
    kept in its secrets, never in the repo.
 

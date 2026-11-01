@@ -107,7 +107,8 @@ Status: **new** was found by this review; **known** is already in the docs, regr
   defaults should hold, and the migrations are additive. Unauthenticated routes such as `device/register` are
   on the public API, behind token guards and a throttle. **I could not read the live database or environment,**
   so the applied state rests on the CD logs. I found no record of the approval; Fola may have known.
-- *Fix:* Fola decides whether this stands. Correct the four documents. Either put `FairPlayModule` behind an
+- *Decided, 1 November 2026:* Fola: "It stands, fix docs". The documents are corrected, so this no longer blocks on its own; the flag below remains a suggestion. The verdict rests on the other reasons in section 1.
+- *Fix as first proposed:* Fola decides whether this stands. Correct the four documents. Either put `FairPlayModule` behind an
   off-by-default flag, or accept that merging to `main` is the production decision and say so in `go-no-go.md`.
 
 ### High
@@ -320,7 +321,7 @@ reports no difference. No further migration step is needed unless a fix adds one
 
 ## 9. Files changed and full test results
 
-**Files changed:** this file only. No code, no signature, no licence status.
+**Files changed:** this file only, for the review. No code, no signature, no licence status. On Fola's later word about C1, a separate commit corrected the deployment statements in `README.md`, `blockers.md`, `decisions.md`, `go-no-go.md`, `phase-4-cloud.md`, `phase-plan.md`, `release-notes.md` and `residual-risks.md`, and the one line of `tests/test_demo_and_gonogo.py` that held the old wording.
 
 Run from an LF export of `497d3c6`. Cloud checks each used a new `fpreview_scratch_*` database in `dtp-postgres`, dropped
 afterwards. API and web suites ran in the shared checkout, whose tree matches `497d3c6` apart from uncommitted
@@ -370,7 +371,7 @@ Reviewer's scripts and logs: session notes folder `phase-7-review/`, outside the
 
 **FairPlay V1 is not recommended for release.** Fola, please decide:
 
-1. Does the production state in C1 stand, and who corrects the documents?
+1. ~~Does the production state in C1 stand, and who corrects the documents?~~ Decided 1 November 2026: it stands, and the documents are corrected.
 2. Which of C1 and H1 to H5 are fixed, in what order?
 3. Release sign-off stays open until then. Nothing here has activated production, and nothing here should be read as
    approval to do so. `residual-risks.md` and `go-no-go.md` remain unsigned by this review.

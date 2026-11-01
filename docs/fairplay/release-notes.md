@@ -2,7 +2,7 @@
 
 ## 0.1.0: pilot candidate, not released
 
-**Not deployed anywhere.** No production migration has run, no R2 bucket exists, no signing key has been made, and no Git tag has been cut.
+**The cloud side is on the live server; nothing else is deployed.** CD deploys every green merge on `main` to the box serving the live site, so FairPlay's API routes and both migrations, `20261028000000_fairplay_cloud` and `20261030000000_fairplay_requests`, have been there since #310 and #324 merged. Fola confirmed on 1 November 2026 that this stands ([decisions.md](./decisions.md)). As far as the repository records, no R2 bucket exists, no signing key has been made and no FairPlay role has been assigned; the live environment was not read to check. No Edge is installed at a venue and no Git tag has been cut.
 Whether this goes further is on the [go/no-go checklist](./go-no-go.md). The version is the Edge's own, `0.1.0`.
 
 **V1 is shadow review and post-match evidence only.** It does not contact referees, change a decision or a score, or claim FIFA-authorised VAR or FVS status.
@@ -30,16 +30,15 @@ Whether this goes further is on the [go/no-go checklist](./go-no-go.md). The ver
 
 ### What it needs if it goes further
 
-Each is Fola's explicit approval, and none is done.
+Each is Fola's explicit approval, and none is done. A merge to `main` that passes CI is itself a production deploy, and runs any new migration.
 
-1. **Production migrations,** both additive: `20261028000000_fairplay_cloud` and `20261030000000_fairplay_requests`. A deploy runs them.
 2. **A private R2 bucket** ([phase-4-cloud.md](./phase-4-cloud.md#approvals-needed)), and `FAIRPLAY_STORAGE_BACKEND=r2` with its values.
 3. **`FAIRPLAY_BUNDLE_SIGNING_KEY`,** generated on the server and never in the repository.
 4. An Edge machine, installed by [edge-install.md](./edge-install.md).
 
 Nothing changes for anyone until an admin assigns a FairPlay role.
 
-**To roll back:** an Edge goes back by hand to its previous tag, with its backup after a schema change ([edge-install.md](./edge-install.md)). In the cloud, stop assigning FairPlay roles and set `FAIRPLAY_STORAGE_BACKEND=off`. FairPlay's audit tables are insert-only by design, so the migrations stay in place.
+**To roll back:** an Edge goes back by hand to its previous tag, with its backup after a schema change ([edge-install.md](./edge-install.md)). In the cloud, stop assigning FairPlay roles and set `FAIRPLAY_STORAGE_BACKEND=off`. FairPlay's audit tables are insert-only by design, so the migrations stay in place, and the routes stay on the API unless a code change removes the module.
 
 ### Known limits
 
