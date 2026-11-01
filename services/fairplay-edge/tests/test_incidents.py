@@ -245,7 +245,7 @@ def test_a_phase_2_database_upgrades_in_place(tmp_path):
     db.commit()
     db.close()
     store = Store(path)
-    assert store.one("SELECT version FROM schema_version")["version"] == 6  # v3, v4 (uploads), v5 (pairing, access), v6 (withdrawals)
+    assert store.one("SELECT version FROM schema_version")["version"] == 7  # v3, v4 (uploads), v5 (pairing, access), v6 (withdrawals), v7 (outbox index)
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'uploads'")
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'withdrawals'")
     row = store.one("SELECT * FROM incidents WHERE id = 'i1'")
