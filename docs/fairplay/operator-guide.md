@@ -36,6 +36,8 @@ Each person gets only what their job needs, on the match's FairPlay page.
 | Edge admin | Edge admin | records rights, acknowledges alerts, withdraws clips, runs the machine's commands |
 | Organiser | report only (`fairplay.report.view`) | reads the findings and approved clips of their own competitions |
 
+A session opened before this permission mattered needs each member's Watch originals ticked: a role gaining it does not change a place already given.
+
 Without Watch originals the console plays no live feed or replay, and says so. Tick it for anyone who
 needs the pictures, and for no one else: a releaser can approve a clip and read the clip itself without it.
 
