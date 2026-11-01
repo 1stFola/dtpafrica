@@ -49,3 +49,5 @@ Nothing changes for anyone until an admin assigns a FairPlay role.
 - **F28:** a report can say "single angle" with two cameras, until gate 1 is decided.
 - **An unexplained 12 s recording gap** in one laptop rehearsal ([demo-walkthrough.md](./demo-walkthrough.md#what-the-rehearsal-found)).
 - Open risks and decisions are all in [residual-risks.md](./residual-risks.md), and its signature is still Fola's.
+
+**One more production migration:** `20261101000000_fairplay_view_original_roles` gives the existing operator and assessor roles `fairplay.evidence.view_original`. It is additive and changes no schema. A deploy runs it.
