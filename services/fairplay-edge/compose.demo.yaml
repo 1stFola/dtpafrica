@@ -1,0 +1,27 @@
+# TEST ONLY: the stakeholder demo (fixtures/run_demo.py), layered on compose.yaml with the
+# synthetic feeds. Never used at a venue.
+#
+# The demo's cloud runs on this machine, outside Docker (`pnpm fairplay:democloud`). The Edge only
+# speaks plain http to its own loopback, so two relays share the Edge's network and forward
+# 127.0.0.1 to the host. Stopping them is the demo's WAN cut. Needs Docker Desktop's
+# host.docker.internal; a Linux host has not been tried.
+x-link: &link
+  image: dtp-fairplay-edge:${FAIRPLAY_EDGE_TAG:-local}
+  network_mode: "service:edge"
+  depends_on: { edge: { condition: service_started } }
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  edge:
+    environment:
+      FAIRPLAY_TRUSTED_KEYS_FILE: /var/lib/fairplay/data/trusted-keys.json
+      FAIRPLAY_BUNDLE_FILE: /var/lib/fairplay/data/bundle.json
+  demo-link-api:
+    <<: *link
+    command: ["relay", "--listen", "127.0.0.1:3190", "--target", "host.docker.internal:3190"]
+  demo-link-s3:
+    <<: *link
+    command: ["relay", "--listen", "127.0.0.1:9190", "--target", "host.docker.internal:9190"]

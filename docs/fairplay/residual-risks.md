@@ -17,7 +17,7 @@ critical.
 - The request and erasure tool: 5.7.
 
 **What it did not:** real cameras, a real venue network, real footage, real hardware or a
-real R2 bucket. Those are Phase 6, and the pilot's go/no-go.
+real R2 bucket. Those are Phase 6, and the pilot's [go/no-go](./go-no-go.md).
 
 Proposed decisions:
 - **Accept for the pilot:** a known limit, stated to the venue and the organisers.

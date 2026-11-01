@@ -23,6 +23,10 @@ decision or a score, or claim VAR/FVS status.
 | [phase-4-cloud.md](./phase-4-cloud.md) | **Phase 4 delivery**: the cloud module and migration, device pairing and signed bundles, the sync receiver, evidence in R2 by presigned URL, `/admin/fairplay`, the end-to-end run, cost and the approvals still needed |
 | [phase-5-threat-review.md](./phase-5-threat-review.md) | **Phase 5.1**: Prompt 6's failure scenarios and security requirements against the merged code; findings F1–F20 graded, and the proposed scope for the fixes |
 | [decisions.md](./decisions.md) | **Fola's decisions** on the gates, retention, rights, organiser access and Edge security (28 Oct 2026) |
+| [go-no-go.md](./go-no-go.md) | **Phase 6.7**: what must be true before a real match, where each item stands, and the decision for Fola |
+| [demo-walkthrough.md](./demo-walkthrough.md) | **Phase 6.7**: the 8-minute stakeholder demo on synthetic feeds, its setup and what it cannot prove |
+| [demo-report-draft.md](./demo-report-draft.md) | **Phase 6.7**: a draft organiser report from the demo, for Fola to review before anyone sees it |
+| [release-notes.md](./release-notes.md) | **Phase 6.7**: 0.1.0, a pilot candidate, not released |
 | [cost-worksheet.md](./cost-worksheet.md) | **Phase 6.6**: a match's storage, upload and cost from measured bitrates, and the finding that incident footage is never deleted (R25) |
 | [rights-checklist.md](./rights-checklist.md) | **Phase 6.6**: footage rights and consent, the clip release checks, what is kept and what deletes it, with decisions for Fola |
 | [licences.md](./licences.md) | **Phase 6.5**: the dependency inventory, notices and FFmpeg build review, with the rulings B9 and B10 proposed for Fola |
