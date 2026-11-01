@@ -315,4 +315,4 @@ before it is used, in the register's existing format and status values:
 | SQLite | public domain | |
 | Video.js, rclone | Apache-2.0, MIT | only if adopted; neither is needed by this design |
 
-The Edge build generates an SBOM (CycloneDX) and ships a `NOTICES` file in Phase 1.
+An installed Edge writes its SBOM (CycloneDX) with `deploy/licences.sh`, and the parts and their licences are in `THIRD_PARTY_NOTICES.md` ([licences.md](./licences.md), Phase 6.5).

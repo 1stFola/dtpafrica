@@ -151,6 +151,23 @@ def cmd_restore_accept(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_licences(args: argparse.Namespace) -> int:
+    from . import licences
+
+    if args.notices:
+        for text in licences.notices():
+            sys.stdout.write(text)
+        return 0
+    found = licences.report()
+    if args.check:
+        problems = licences.check(found)
+        for problem in problems:
+            print(f"licence review: {problem}", file=sys.stderr)
+        return 2 if problems else 0
+    print(json.dumps(licences.sbom(found) if args.sbom else found, indent=2))
+    return 0
+
+
 def cmd_measure(args: argparse.Namespace) -> int:
     from . import measure
     from .store import Store
@@ -442,6 +459,12 @@ def main(argv: list[str] | None = None) -> int:
     accept.add_argument("--by", required=True, help="who is accepting this")
     accept.add_argument("--why", required=True, help="why; name no player or requester")
     accept.set_defaults(fn=cmd_restore_accept)
+    held = sub.add_parser("licences", help="what this image is made of (deploy/licences.sh wraps this)")
+    shown = held.add_mutually_exclusive_group()
+    shown.add_argument("--check", action="store_true", help="exit 2 if the image differs from the reviewed list")
+    shown.add_argument("--sbom", action="store_true", help="print it as CycloneDX")
+    shown.add_argument("--notices", action="store_true", help="print every licence text this image holds")
+    held.set_defaults(fn=cmd_licences)
     measured = sub.add_parser("measure", help="what the cameras delivered, replay and clip times (deploy/measure.sh wraps this)")
     measured.add_argument("--since-minutes", type=float)
     measured.set_defaults(fn=cmd_measure)

@@ -81,6 +81,8 @@ PY
 say "Building and starting :$NEW_TAG"
 set_env .env FAIRPLAY_EDGE_TAG "$NEW_TAG"
 docker compose build init || { set_env .env FAIRPLAY_EDGE_TAG "$OLD_TAG"; die "the build failed: still on :$OLD_TAG"; }
+# Not `compose run`: the Edge has a fixed address, and the running one holds it.
+docker run --rm --network none "dtp-fairplay-edge:$NEW_TAG" licences --check || { set_env .env FAIRPLAY_EDGE_TAG "$OLD_TAG"; die "the new image did not pass the licence check (docs/fairplay/licences.md): still on :$OLD_TAG"; }
 docker compose up -d --no-deps init >/dev/null 2>&1 || true
 docker compose up -d --no-deps edge
 [ "$MTX_CHANGES" = 1 ] && docker compose up -d --no-deps mediamtx
