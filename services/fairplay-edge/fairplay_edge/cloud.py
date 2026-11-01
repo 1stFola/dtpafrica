@@ -6,7 +6,8 @@
                   same command; the Edge warns 30 days before its device token expires;
   refresh_bundle  while online, fetch the signed credential bundle for the session the
                   cloud assigned to this device, verify it, and install it. A bundle that
-                  does not verify is never written, so a bad answer cannot lock anyone out;
+                  does not verify is never written, so a bad answer cannot lock anyone out,
+                  and one for another session waits while a session is in progress here;
   Uploader        send released evidence clips and their manifests to the evidence bucket
                   by presigned PUT, then ask the cloud to confirm what arrived;
   apply_withdrawals  clips withdrawn on request in the cloud (decisions.md D11): each is
@@ -40,6 +41,9 @@ from .store import Store
 log = logging.getLogger("fairplay.cloud")
 
 BUNDLE_EVERY_S = 300
+# How long a session opened here and not ended keeps the operator list: longer than any match,
+# so a session nobody ended cannot keep the next match's people out for good.
+SESSION_HOLD = timedelta(hours=12)
 TOKEN_WARN_DAYS = 30
 UPLOADS_PER_PASS = 4
 CHUNK = 1024 * 1024
@@ -91,8 +95,8 @@ class CloudClient:
         return self._call("POST", "/device/register", json_body={"edgeDeviceId": edge_device_id},
                           headers={"x-fairplay-bootstrap-token": bootstrap_token})
 
-    def bundle(self, have: str | None, expires: str | None) -> dict:
-        params = {k: v for k, v in (("have", have), ("expires", expires)) if v}
+    def bundle(self, have: str | None, expires: str | None, running: str | None = None) -> dict:
+        params = {k: v for k, v in (("have", have), ("expires", expires), ("running", running)) if v}
         return self._call("GET", "/device/bundle", params=params)
 
     def presign(self, evidence_id: str, kind: str, size: int, sha256: str) -> dict:
@@ -208,30 +212,49 @@ def content_hash(bundle: dict) -> str:
     return hashlib.sha256(canonical({"session": bundle["session"], "members": bundle["members"]})).hexdigest()
 
 
-def refresh_bundle(settings: Settings, client: CloudClient) -> str:
+def session_in_progress(store: Store, held: dict, now: datetime | None = None) -> str | None:
+    """The session of the bundle held here, if it is under way: opened on this Edge, not ended,
+    within SESSION_HOLD, and the bundle still good. Replacing the list then would sign its people
+    out of the match they are working."""
+    now = now or utcnow()
+    session_id = held["session"]["id"]
+    row = store.one("SELECT created_utc, ended_utc FROM match_sessions WHERE id = ?", (session_id,))
+    if row is None or row["ended_utc"] or parse_iso(held["expiresAt"]) <= now:
+        return None
+    return session_id if now - parse_iso(row["created_utc"]) < SESSION_HOLD else None
+
+
+def refresh_bundle(settings: Settings, store: Store, client: CloudClient) -> str:
     """Fetch and install this device's bundle. Returns what happened, for the log."""
     path = settings.bundle_file
     if path is None:
         return "no FAIRPLAY_BUNDLE_FILE configured"
-    have = expires = None
+    have = expires = running = None
     if path.exists():
         try:
             held = json.loads(path.read_text(encoding="utf-8"))["bundle"]
             if held.get("issuer") == "dtp-cloud":
                 have, expires = content_hash(held), held["expiresAt"]
+                running = session_in_progress(store, held)
         except (OSError, ValueError, KeyError, TypeError):
             pass
-    answer = client.bundle(have, expires)
+    answer = client.bundle(have, expires, running)
+    signed = None if answer.get("unchanged") else answer.get("bundle")
+    if signed:
+        try:
+            verify_bundle(signed, load_trusted_keys(settings.trusted_keys_file), allow_dev=False)
+        except AuthError as exc:
+            # Never install what this Edge cannot check; the bundle it has keeps working.
+            raise CloudError(f"the cloud's bundle does not verify here: {exc}") from exc
+        offered = signed["bundle"]["session"]["id"]
+        if running and offered != running:
+            store.open_alert("bundle_held_back", None, "warning", iso(utcnow()), {"running": running, "offered": offered})
+            return f"held back: session {running} is in progress; the bundle for {offered} waits until it ends"
+    store.resolve_alert("bundle_held_back", None, iso(utcnow()))
     if answer.get("unchanged"):
         return "unchanged"
-    signed = answer.get("bundle")
     if not signed:
         return f"none: {answer.get('reason')}"
-    try:
-        verify_bundle(signed, load_trusted_keys(settings.trusted_keys_file), allow_dev=False)
-    except AuthError as exc:
-        # Never install what this Edge cannot check; the bundle it has keeps working.
-        raise CloudError(f"the cloud's bundle does not verify here: {exc}") from exc
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")

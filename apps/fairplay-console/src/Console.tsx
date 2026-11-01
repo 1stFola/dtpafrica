@@ -418,6 +418,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   // Belongs to no camera, so it is not on a camera's card.
   const parked = health?.openAlerts.filter((a) => a.kind === "outbox_parked") ?? [];
   const restoreWarning = health?.openAlerts.find((a) => a.kind === "restore_unchecked");
+  const nextListWaiting = health?.openAlerts.find((a) => a.kind === "bundle_held_back");
   const tokenWarning = !tokenAlert ? null : tokenAlert.kind === "device_token_expired"
     ? "This Edge's cloud token has expired: nothing reaches the cloud. An Edge admin re-pairs the device on the FairPlay page."
     : "This Edge's cloud token expires within 30 days. An Edge admin re-pairs the device on the FairPlay page.";
@@ -462,6 +463,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
       {clockWarning && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{clockWarning}</div>}
 
       {restoreWarning && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{alertWords(restoreWarning.kind)}</div>}
+
+      {nextListWaiting && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{alertWords(nextListWaiting.kind)}</div>}
 
       {(clockWarnings.length > 0 || health?.mediaServer.up === false || tokenWarning || parked.length > 0) && (
         <div className="fp-alerts" role="status">

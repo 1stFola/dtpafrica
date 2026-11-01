@@ -34,8 +34,8 @@ export class FairPlayDeviceController {
 
   @Get("device/bundle")
   @UseGuards(FairPlayDeviceGuard)
-  bundle(@Req() req: DeviceRequest, @Query("have") have?: string, @Query("expires") expires?: string) {
-    return this.sessions.bundleFor(device(req), { contentHash: have, expiresAt: expires });
+  bundle(@Req() req: DeviceRequest, @Query("have") have?: string, @Query("expires") expires?: string, @Query("running") running?: string) {
+    return this.sessions.bundleFor(device(req), { contentHash: have, expiresAt: expires, runningSessionId: running });
   }
 
   @Post("sync/batch")

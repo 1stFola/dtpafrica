@@ -127,7 +127,7 @@ class EdgeService:
         if time.monotonic() - self._last_bundle_fetch >= BUNDLE_EVERY_S:
             self._last_bundle_fetch = time.monotonic()
             try:
-                self.bundle_refresh = refresh_bundle(self.settings, self.cloud)
+                self.bundle_refresh = refresh_bundle(self.settings, self.store, self.cloud)
                 self.reload_bundle()
             except CloudError as exc:
                 self.bundle_refresh = f"failed: {exc}"
