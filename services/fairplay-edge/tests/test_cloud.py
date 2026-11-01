@@ -38,6 +38,7 @@ class FakeCloud:
         self.calls: list[str] = []
         self.params: list[dict] = []
         self.bundle: dict | None = None
+        self.hold_ended = False
         self.refuse: dict[str, tuple[int, str]] = {}
         self.tamper_next_put = False
 
@@ -55,7 +56,9 @@ class FakeCloud:
             self.params.append(dict(request.url.params))
             if self.bundle and have == cloud.content_hash(self.bundle["bundle"]):
                 return httpx.Response(200, json={"unchanged": True})
-            return httpx.Response(200, json={"bundle": self.bundle} if self.bundle else {"bundle": None, "reason": "none"})
+            if self.bundle:
+                return httpx.Response(200, json={"bundle": self.bundle, **({"holdEnded": True} if self.hold_ended else {})})
+            return httpx.Response(200, json={"bundle": None, "reason": "none"})
         if path.endswith("/uploads"):
             body = json.loads(request.content)
             key = f"{path.split('/')[-2]}/{body['kind']}"
@@ -319,14 +322,22 @@ def test_ending_the_session_lets_the_next_list_in_and_clears_the_alert(running, 
     assert json.loads(settings.bundle_file.read_text())["bundle"]["session"]["id"] == "s-second"
 
 
-def test_a_session_nobody_ended_stops_holding_the_list_back(running, store):
+def test_a_session_nobody_ended_stops_holding_the_list_when_the_cloud_says(running, store):
     fake, private, settings = running
     fake.bundle = cloud_bundle(private, "s-second", "m-2")
-    long_ago = iso(utcnow() - cloud.SESSION_HOLD - timedelta(minutes=1))
-    with store.tx() as db:
-        db.execute("UPDATE match_sessions SET created_utc = ? WHERE id = 's-first'", (long_ago,))
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("held back")
+    fake.hold_ended = True
     assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
     assert open_alerts(store) == []
+
+
+def test_a_session_opened_long_ago_still_holds_until_the_cloud_says(running, store):
+    """A rehearsal the day before opens the session early: age alone must not end the hold."""
+    fake, private, settings = running
+    fake.bundle = cloud_bundle(private, "s-second", "m-2")
+    with store.tx() as db:
+        db.execute("UPDATE match_sessions SET created_utc = ? WHERE id = 's-first'", (iso(utcnow() - timedelta(days=2)),))
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("held back")
 
 
 def test_a_bundle_for_a_session_not_yet_opened_here_can_be_replaced(tmp_path, paired, settings, store):

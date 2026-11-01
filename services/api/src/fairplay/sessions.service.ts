@@ -44,6 +44,10 @@ export type CreateSessionInput = {
   members?: MemberInput[];
 };
 
+// How long a running session keeps a device's operator list: longer than any match.
+const HOLD_AFTER_KICKOFF_MS = 4 * 3600_000;
+const HOLD_WITHOUT_KICKOFF_MS = 12 * 3600_000;
+
 @Injectable()
 export class FairPlaySessionsService {
   constructor(
@@ -175,7 +179,8 @@ export class FairPlaySessionsService {
   /**
    * The signed bundle for the session this device should run now, of those assigned to it and
    * not ended: the one the Edge says is in progress there, or else the one whose kickoff is
-   * nearest. A second match's nearer kickoff must not take the list from a match under way. Members without a PIN, or whose account is
+   * nearest. A second match's nearer kickoff must not take the list from a match under way, but a
+   * session nobody ended must not keep the next match out: see `holdLasts`. Members without a PIN, or whose account is
    * disabled, are left out. `have` is the content hash of the bundle the Edge holds: when it
    * still matches and that bundle has more than half its life left, nothing is re-signed.
    */
@@ -190,11 +195,27 @@ export class FairPlaySessionsService {
     });
     if (!sessions.length) return { bundle: null, reason: "no open session is assigned to this device" };
     const now = Date.now();
-    const kickoff = (s: (typeof sessions)[number]) => {
+    const kickoffAt = (s: (typeof sessions)[number]) => {
       const at = (s.matchSnapshot as { kickoffAt?: string | null }).kickoffAt;
-      return at ? Math.abs(new Date(at).getTime() - now) : Number.MAX_SAFE_INTEGER;
+      return at ? new Date(at).getTime() : null;
     };
-    const session = sessions.find((s) => s.id === have?.runningSessionId)
+    const kickoff = (s: (typeof sessions)[number]) => {
+      const at = kickoffAt(s);
+      return at === null ? Number.MAX_SAFE_INTEGER : Math.abs(at - now);
+    };
+    // The Edge says which session is under way, and holds that list until this says otherwise.
+    const holdLasts = (s: (typeof sessions)[number]) => {
+      const at = kickoffAt(s);
+      if (now >= (at === null ? s.createdAt.getTime() + HOLD_WITHOUT_KICKOFF_MS : at + HOLD_AFTER_KICKOFF_MS)) return false;
+      return !sessions.some((other) => {
+        const next = other.id === s.id ? null : kickoffAt(other);
+        return next !== null && next <= now && (at === null || at > now || next > at);
+      });
+    };
+    const running = sessions.find((s) => s.id === have?.runningSessionId);
+    const holding = running && holdLasts(running) ? running : undefined;
+    const holdEnded = Boolean(running && !holding);
+    const session = holding
       ?? [...sessions].sort((a, b) => kickoff(a) - kickoff(b) || b.createdAt.getTime() - a.createdAt.getTime())[0];
     // The venue never gets more than the account holds now, not just when the member was added:
     // a permission taken off the role since is left out of the next bundle, and so is an
@@ -222,7 +243,7 @@ export class FairPlaySessionsService {
     const signed: SignedBundle = signBundle(bundle, loadSigningKey(this.config.bundleSigningKeyPem));
     await this.audit.record("bundle.issued", { kind: "session", id: session.id }, deviceActor(device.deviceId),
       { bundleId: bundle.bundleId, members: members.map((m) => m.userId), expiresAt: bundle.expiresAt });
-    return { bundle: signed, contentHash, sessionId: session.id };
+    return { bundle: signed, contentHash, sessionId: session.id, ...(holdEnded ? { holdEnded } : {}) };
   }
 
   /**

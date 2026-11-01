@@ -189,6 +189,21 @@ async function main() {
     (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sFirst.id);
   check("a running session that is not this device's changes nothing",
     (await sessions.bundleFor(dhId, { runningSessionId: sC.id })).sessionId === sSecond.id);
+  const setKickoff = async (id: string, minutes: number) => {
+    const row = await prisma.fairPlaySession.findUniqueOrThrow({ where: { id } });
+    await prisma.fairPlaySession.update({ where: { id }, data: { matchSnapshot: { ...(row.matchSnapshot as object), kickoffAt: kickoff(minutes).toISOString() } } });
+  };
+  await setKickoff(sSecond.id, -5);
+  const nextKickedOff = await sessions.bundleFor(dhId, { runningSessionId: sFirst.id });
+  check("once the next match has kicked off, a session nobody ended stops holding its list",
+    nextKickedOff.sessionId === sSecond.id && "holdEnded" in nextKickedOff && nextKickedOff.holdEnded === true);
+  await setKickoff(sSecond.id, 60);
+  await setKickoff(sFirst.id, -241);
+  check("nor does it hold past four hours from its own kickoff", (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sSecond.id);
+  await setKickoff(sFirst.id, 2880);
+  check("a session opened days ahead, for a match not yet played, still holds",
+    (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sFirst.id);
+  await setKickoff(sFirst.id, -65);
   await prisma.fairPlaySession.update({ where: { id: sFirst.id }, data: { endedAt: new Date() } });
   check("nor does one that has ended", (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sSecond.id);
 

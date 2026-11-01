@@ -41,9 +41,6 @@ from .store import Store
 log = logging.getLogger("fairplay.cloud")
 
 BUNDLE_EVERY_S = 300
-# How long a session opened here and not ended keeps the operator list: longer than any match,
-# so a session nobody ended cannot keep the next match's people out for good.
-SESSION_HOLD = timedelta(hours=12)
 TOKEN_WARN_DAYS = 30
 UPLOADS_PER_PASS = 4
 CHUNK = 1024 * 1024
@@ -214,14 +211,14 @@ def content_hash(bundle: dict) -> str:
 
 def session_in_progress(store: Store, held: dict, now: datetime | None = None) -> str | None:
     """The session of the bundle held here, if it is under way: opened on this Edge, not ended,
-    within SESSION_HOLD, and the bundle still good. Replacing the list then would sign its people
-    out of the match they are working."""
+    and the bundle still good. Replacing the list then would sign its people out of the match they
+    are working. The cloud, which knows the kickoffs, says when a session nobody ended stops holding."""
     now = now or utcnow()
     session_id = held["session"]["id"]
     row = store.one("SELECT created_utc, ended_utc FROM match_sessions WHERE id = ?", (session_id,))
     if row is None or row["ended_utc"] or parse_iso(held["expiresAt"]) <= now:
         return None
-    return session_id if now - parse_iso(row["created_utc"]) < SESSION_HOLD else None
+    return session_id
 
 
 def refresh_bundle(settings: Settings, store: Store, client: CloudClient) -> str:
@@ -247,7 +244,7 @@ def refresh_bundle(settings: Settings, store: Store, client: CloudClient) -> str
             # Never install what this Edge cannot check; the bundle it has keeps working.
             raise CloudError(f"the cloud's bundle does not verify here: {exc}") from exc
         offered = signed["bundle"]["session"]["id"]
-        if running and offered != running:
+        if running and offered != running and not answer.get("holdEnded"):
             store.open_alert("bundle_held_back", None, "warning", iso(utcnow()), {"running": running, "offered": offered})
             return f"held back: session {running} is in progress; the bundle for {offered} waits until it ends"
     store.resolve_alert("bundle_held_back", None, iso(utcnow()))

@@ -83,6 +83,8 @@ export type AuthStatus = {
   problem: string | null;
   device: string;
   secure: boolean;
+  /** A session not yet ended here is holding the next match's operator list back. */
+  nextListWaiting: boolean;
 };
 
 export type Me = {
