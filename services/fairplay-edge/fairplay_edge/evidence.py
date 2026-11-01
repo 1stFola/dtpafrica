@@ -49,7 +49,7 @@ FINDING_NOTICE = ("Shadow review only. This finding is not a decision of the mat
                   " match record, and is not a FIFA-authorised VAR or FVS review.")
 # Reads and copies of a clip: how many there were says nothing about how the finding came to be,
 # and leaving them out keeps a package the same until the finding or its approval changes.
-NOT_CUSTODY = ("evidence.accessed", "evidence.manifest_accessed", "evidence.exported", "evidence.uploaded")
+NOT_CUSTODY = ("evidence.accessed", "evidence.manifest_accessed", "evidence.exported", "evidence.uploaded", "outbox.parked")
 SCHEMA_FILE = Path(__file__).with_name("schemas") / "evidence-manifest.v1.schema.json"
 RETRY_WAIT = timedelta(seconds=15)
 GAP_TOLERANCE_MS = 50
@@ -761,13 +761,18 @@ def finding_record(store: Store, row: dict) -> dict:
                     "reviewer": {"id": current["reviewer_id"], "name": current["reviewer_name"]},
                     "completedUtc": current["completed_at"], "footageStates": current["footage_states"],
                     "reliedOnThisClip": row["id"] in (current["evidence_ids"] or [])},
-        "approval": {"by": {"id": row["approved_by"], "name": row["approved_name"]}, "approvedUtc": row["approved_utc"]},
+        "approval": {"by": {"id": row["approved_by"], "name": row["approved_name"]}, "approvedUtc": row["approved_utc"],
+                     # A reopened finding keeps its clip's approval, so say which finding was approved.
+                     "afterCurrentFinding": parse_iso(row["approved_utc"]) >= parse_iso(current["completed_at"])},
         "earlierFindings": [{"reviewId": r["id"], "result": r["result"], "reviewer": {"id": r["reviewer_id"], "name": r["reviewer_name"]},
-                             "completedUtc": r["completed_at"], "supersededReason": r["superseded_reason"]}
+                             "completedUtc": r["completed_at"]}
                             for r in reviews if r["state"] == "superseded"],
         "custody": [{"seq": e["seq"], "atUtc": e["at_utc"], "actorId": e["actor_id"], "actorName": e["actor_name"],
                      "action": e["action"], "entityType": e["entity_type"], "entityId": e["entity_id"], "entryHash": e["entry_hash"]}
-                    for e in audit.for_incident(store, incident["id"]) if e["action"] not in NOT_CUSTODY],
+                    for e in audit.for_incident(store, incident["id"]) if e["action"] not in NOT_CUSTODY
+                    # This clip's own story: another camera's clip is not part of it.
+                    and (e["entity_type"] not in ("evidence", "job")
+                         or e["entity_id"] == (row["id"] if e["entity_type"] == "evidence" else row["job_id"]))],
     }
 
 

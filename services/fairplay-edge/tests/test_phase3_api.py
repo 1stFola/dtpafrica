@@ -10,7 +10,7 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from fairplay_edge import evidence
+from fairplay_edge import audit, evidence
 from fairplay_edge.api import create_app
 from fairplay_edge.auth import generate_key, hash_pin, key_id
 from fairplay_edge.config import load_settings
@@ -324,6 +324,18 @@ def test_exporting_the_same_finding_twice_gives_the_same_bytes(clients, service,
     assert first == second
 
 
+def test_another_clip_of_the_incident_does_not_change_this_ones_package(clients, service, session_id, monkeypatch):
+    _, ev = released_clip(clients, service, session_id)
+    first, package = exported(clients, ev)
+    assert json.loads(package.read("finding.json"))["approval"]["afterCurrentFinding"] is True
+    real = audit.for_incident
+    sibling = [dict(real(service.store, service.store.one("SELECT incident_id FROM evidence WHERE id = ?", (ev["id"],))["incident_id"])[0], entity_type=kind, entity_id="another", action="evidence.approved", seq=10**6)
+               for kind in ("evidence", "job")]
+    monkeypatch.setattr(audit, "for_incident", lambda store, incident_id: real(store, incident_id) + sibling)
+    second, _ = exported(clients, ev)
+    assert first == second
+
+
 def test_a_later_finding_replaces_the_earlier_and_says_there_was_one(clients, service, session_id):
     done, ev = released_clip(clients, service, session_id)
     assessor = clients["assessor"]
@@ -338,5 +350,7 @@ def test_a_later_finding_replaces_the_earlier_and_says_there_was_one(clients, se
     assert finding["finding"]["result"] == "inconclusive" and finding["finding"]["reliedOnThisClip"] is False
     earlier = finding["earlierFindings"]
     assert len(earlier) == 1 and earlier[0]["result"] == "supports_original"
-    assert earlier[0]["reviewer"]["name"] == "Assessor" and earlier[0]["supersededReason"] == "a second look at the angle"
-    assert "factualNotes" not in earlier[0]
+    assert earlier[0]["reviewer"]["name"] == "Assessor"
+    # Why it was reopened, and what the earlier finding said, are free text and stay at the venue.
+    assert "factualNotes" not in earlier[0] and "a second look" not in package.read("finding.json").decode()
+    assert finding["approval"]["afterCurrentFinding"] is False

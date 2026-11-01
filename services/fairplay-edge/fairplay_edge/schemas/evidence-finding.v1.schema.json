@@ -46,10 +46,11 @@
     "approval": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["by", "approvedUtc"],
+      "required": ["by", "approvedUtc", "afterCurrentFinding"],
       "properties": {
         "by": { "$ref": "#/$defs/person" },
-        "approvedUtc": { "type": "string" }
+        "approvedUtc": { "type": "string" },
+        "afterCurrentFinding": { "type": "boolean" }
       }
     },
     "earlierFindings": {
@@ -57,13 +58,12 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["reviewId", "result", "reviewer", "completedUtc", "supersededReason"],
+        "required": ["reviewId", "result", "reviewer", "completedUtc"],
         "properties": {
           "reviewId": { "type": "string" },
           "result": { "$ref": "#/$defs/result" },
           "reviewer": { "$ref": "#/$defs/person" },
-          "completedUtc": { "type": "string" },
-          "supersededReason": { "type": "string" }
+          "completedUtc": { "type": "string" }
         }
       }
     },
