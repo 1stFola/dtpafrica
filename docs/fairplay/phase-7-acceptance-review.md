@@ -1,15 +1,20 @@
 # FairPlay V1 — Phase 7 acceptance review
 
 Independent review under Prompt 8 of the prompt pack, 1 November 2026, of `origin/main` at `497d3c6`. The
-reviewer did not build FairPlay. Nothing was fixed, signed, deployed or pushed. Every claim in `docs/fairplay/`
-was treated as something to test.
+reviewer did not build FairPlay. Every claim in `docs/fairplay/` was treated as something to test. Nothing was
+signed, deployed or pushed.
+
+Sections 2 to 7 describe `497d3c6`, as reviewed. On Fola's word, the same reviewer then fixed H1 to H5 on local
+branches; "Where the fixes stand", below, is the current position. **Those fixes are not on `main`, and nobody
+independent has read them.**
 
 ## 1. Executive release recommendation
 
 # NO GO
 
-**Do not record a real match and do not activate FairPlay in production on this build.** The decision is
-Fola's; explicit release sign-off is requested in section 10.
+**Do not record a real match and do not activate FairPlay in production on this build.** The fixes below do not
+change that: reasons 1 to 5 are numbered as first found, and reason 6, FP-12, FP-13 and FP-15 stand whether or
+not they merge. The decision is Fola's; explicit release sign-off is requested in section 10.
 
 The engineering underneath is good. Every suite the builder ran gave the count the builder reported, on fresh
 scratch databases, and the 30-minute WAN cut, the crash recovery and the audit chain held up. The docs are
@@ -31,6 +36,23 @@ candid about many limits. The verdict rests on these:
 
 **Showing the synthetic demo** to a stakeholder is not a release, and nothing here blocks it: `run_demo.py up`
 passed 29 of 29. Fola should know C1 first, and should not repeat "not deployed" in that room.
+
+### Where the fixes stand, 1 November 2026
+
+| Finding | Status | Branch, local and not pushed | What changed |
+|---|---|---|---|
+| C1 | Decided: it stands. Documents corrected | `review/fairplay-phase-7-acceptance` | Docs only. FairPlay's API stays on the live box |
+| H1 | Fixed, not merged | `fix/fairplay-h1-bundle-hold` `323929a` | The cloud keeps serving the session in progress. The Edge refuses another session's bundle and raises `bundle_held_back`, for at most 12 hours |
+| H2 | Fixed, not merged | `fix/fairplay-h2-audit-minimised` `b456637` | The chain holds a salted fingerprint of a player reference, note or reason. Applies only to new rows, so it must land before any real incident |
+| H3 | Fixed, not merged | `fix/fairplay-h3-view-original` `cf3b9fd` | `/media` and `/live` need `view_original`. Operator and assessor roles gain it, which Fola should confirm. **Live roles need a manual edit or a seed run, or those people lose replay** |
+| H4 | Fixed, not merged | `fix/fairplay-h4-export-finding` `2fb4d8a` | A package holds `finding.json`, listed in `SHA256SUMS`: result, reviewer, approver, earlier findings. The clip's manifest is unchanged |
+| H5 | Fixed, not merged, synthetic only | `fix/fairplay-h5-segment-length` `c19c9b3` | Files of 20 s: p50 22 to 24 s, p95 35 to 36 s, 45 of 61 clips within 30 s. See H5 in section 3 |
+
+H1 to H5 merge with no conflict on `scratch/fairplay-h1-h5-merge` (`d831cfc`), and every check run on that merge
+passes (section 9). That branch only tests the combination. **Merging anything to `main` deploys it (C1).**
+
+**What still stands in the way, fixes or no fixes:** an independent read of the fixes; FP-12 and FP-13, not built;
+FP-15 and the rest of M4, which is Fola's rule; the other medium defects, M1 to M13; and everything in reason 6.
 
 ### Evaluation against Prompt 8
 
@@ -58,10 +80,10 @@ Commands and full results are in section 9. "Synthetic" means no real camera, ve
 | FP-05 Calibration | P0 | **PASS, synthetic** | `tests/test_timing.py`, `run_fixture.py evidence` 30/30. Offsets are per source. Caveats M3, M11 |
 | FP-06 Incident state machine | P0 | **PASS** | `tests/test_incidents.py`, `test_phase3_api.py`; versions enforced; reopening keeps the old review |
 | FP-07 Four outcomes | P0 | **PASS** | Same tests; the sync receiver and a database check constraint refuse any other value |
-| FP-08 Audit and lineage on export | P0 | **FAIL** | Segments and hashes are there, but the export names **no reviewer, no finding and no approver** (H4) |
+| FP-08 Audit and lineage on export | P0 | **FAIL** at `497d3c6`; passes on H4's branch, not merged | Segments and hashes are there, but the export names **no reviewer, no finding and no approver** (H4) |
 | FP-09 Offline 30 minutes | P0 | **PASS, synthetic** | `run_drills.py` D1: a real 30-minute cut, 5/5, nothing lost, outbox drained in 194.8 s |
 | FP-10 Sync idempotency | P0 | **PASS** with a defect | The same batch 10 times on real Postgres: `applied` once, then `replayed` nine times; one incident, one review. Drill D4: 50 in flight, 50 replayed, 0 doubled. See M9 |
-| FP-11 Access controls | P0 | **FAIL** | Anonymous, organiser and cross-session access is refused (53/53). But anyone with any staff permission can watch originals (H3). Real bucket privacy NOT TESTED |
+| FP-11 Access controls | P0 | **FAIL** at `497d3c6`; passes on H3's branch, not merged | Anonymous, organiser and cross-session access is refused (53/53). But anyone with any staff permission can watch originals (H3). Real bucket privacy NOT TESTED |
 | FP-12 Side-by-side angles | P1 | **FAIL: not built** | No such view in the console. `phase-plan.md:111` defers it past the pilot; the sync test only tabulates windows |
 | FP-13 Frame diagnostics | P1 | **FAIL: not built** | No route exists. Same deferral |
 | FP-14 Monitoring | P1 | **PASS at the API**, console NOT TESTED | Health and alerts verified in drills; storage drill 21/21 |
@@ -73,7 +95,7 @@ Commands and full results are in section 9. "Synthetic" means no real camera, ve
 |---|---|---|---|
 | Replay availability | ≥99.5% across a shadow match | No match. An 833 ms hole in a drill, cause unknown (M13) | NOT TESTED |
 | Retrieve an incident | p95 ≤15 s on the reference laptop | p95 3.7 s, inside the Edge container, not a browser and not the reference laptop | synthetic only |
-| 30 s clip | usually ≤30 s | **167, 245, 262 s** at the shipped 5-minute segment (H5) | **FAIL** |
+| 30 s clip | usually ≤30 s | **167, 245, 262 s** at the shipped 5-minute segment (H5). On H5's branch: 45 of 61 within 30 s, p50 22 to 24 s | **FAIL** at `497d3c6`; synthetic only on the branch |
 | Two-angle sync | ≤500 ms or flagged | Flagging works; the 500 ms itself needs real cameras | NOT TESTED |
 | Offline | 30 minutes, no corruption | D1 passed; every segment re-hashed clean | synthetic only |
 | Data fidelity | 100% hashed | `146/146`, `150/150` in drills | synthetic only |
@@ -122,7 +144,8 @@ Status: **new** was found by this review; **known** is already in the docs, regr
   match 1 gets 401. No alert opens. Recording is unaffected. With a two-hour gap between kickoffs the flip comes
   about 60 minutes into the first match, and only while the WAN is up. The same swap ends post-match review of
   the first match.
-- *Fix:* never replace the list for a session in progress: prefer a session the Edge has started and not ended,
+- *Fixed, not merged:* see section 1. A session nobody ended holds the next match out for at most 12 hours.
+- *Fix as first proposed:* never replace the list for a session in progress: prefer a session the Edge has started and not ended,
   have the Edge refuse a bundle for a different session while one is open, and raise an alert either way.
 
 **H2. The audit chain holds player references and note text, against D13.** new, run.
@@ -132,7 +155,8 @@ Status: **new** was found by this review; **known** is already in the docs, regr
   are insert-only by trigger, so a player's request cannot remove them. `privacy.md:104-105` says references are
   "never in audit entries (D13)". The cloud check's D13 assertion covers the cloud's own audit rows only, and
   the `held` document does not report these copies.
-- *Fix:* chain hashes of `note` and `player_ref`, as `review.completed` already does for notes. Do this before
+- *Fixed, not merged:* see section 1.
+- *Fix as first proposed:* chain hashes of `note` and `player_ref`, as `review.completed` already does for notes. Do this before
   any real incident exists, because existing rows cannot be rewritten.
 
 **H3. `fairplay.evidence.view_original` gates nothing.** new, run.
@@ -141,7 +165,9 @@ Status: **new** was found by this review; **known** is already in the docs, regr
 - *Observed:* `GET /edge/v1/media/ground` returned 200 for members holding only `incident.operate`,
   `evidence.export` or `session.manage`. Only `report.view` gets 403. The PID asks for these to be separate
   (section 3), and no test holds them apart.
-- *Fix:* require `view_original` on `/media`, `/live` and the window routes, grant it in the operator and
+- *Fixed, not merged:* see section 1. The window route stays with venue staff, unlike the proposal below: it gives
+  times and hashes, not pictures.
+- *Fix as first proposed:* require `view_original` on `/media`, `/live` and the window routes, grant it in the operator and
   assessor roles, and add the row to the guard table in `tests/test_security.py`. Fola should confirm who gets it.
 
 **H4. An exported evidence package names no reviewer and no finding.** new, run.
@@ -150,7 +176,8 @@ Status: **new** was found by this review; **known** is already in the docs, regr
 - *Observed:* the export of a reviewed, approved clip holds `clip.mp4`, `manifest.json`, `SHA256SUMS`. Custody lists
   only `incident.created` and `evidence.requested`. The reviewer's name, the result, the notes and the approver
   are all absent. FP-08 says each export lists the reviewer; PID 5.3 says a package includes the review report.
-- *Fix:* keep the clip's manifest immutable, and add a generated `finding.json` to the package with the result,
+- *Fixed, not merged:* see section 1.
+- *Fix as first proposed:* keep the clip's manifest immutable, and add a generated `finding.json` to the package with the result,
   reviewer, approver, audit head and its own line in `SHA256SUMS`.
 
 **H5. A clip flagged live takes minutes at the shipped settings.** new, run.
@@ -158,8 +185,23 @@ Status: **new** was found by this review; **known** is already in the docs, regr
 - *Observed:* three clips flagged live at shipped `5m`, with real MediaMTX and ffmpeg: **167, 245, 262 s**.
   `go-no-go.md:77` reports "p50 2.0 s, p95 11 s", measured at 30 s segments. `demo-walkthrough.md:66` does say the
   demo uses 30-second files; the go/no-go row, which is what gets read, does not.
-- *Fix:* decide with evidence: shorter segments, measured for disk and recovery, or cutting from
+- *Fix as first proposed:* decide with evidence: shorter segments, measured for disk and recovery, or cutting from
   finalised parts, or restate the KPI. Correct the row either way. Replay is unaffected and is the live tool.
+- *Fixed, not merged:* Fola asked to try 1 minute. It misses the target, so the branch uses 20 seconds. From the flag
+  to the finished clip, flagging at random moments, on one laptop with synthetic feeds:
+
+  | Files | Clips | p50 | p95 | Within 30 s | Recording holes |
+  |---|---|---|---|---|---|
+  | 5 minutes | 3 | 105 s | 243 s | 0 | 0 |
+  | 1 minute | 12 | 60 s | 76 s | 2 | 0 |
+  | 20 seconds | 61, in two runs | 22 to 24 s | 35 to 36 s | 45 | 0 |
+
+  The same branch retries a waiting clip every 2 s instead of 15, stops a waiting clip holding back a ready one, makes
+  the scan and window lookups skip deleted rows, and lets retention delete 200 files an hour instead of 50. Footage
+  kept around incidents falls from about 30% of a match to about 5%. R25 still stands: it has no end.
+- *Still unexplained:* `recording_stalled` opened twice in each of two runs, one at 20 s and one at 1 minute, with no
+  hole in the recording. It did not recur in the later 20-second or 5-minute run. It may share a cause with L7.
+  Disk and recovery at 20 s were not measured on real kit.
 
 **Known and still open, confirmed at high:** R25 (`evidence_refs.synced` is never set; holds never end), R1/B16
 (plaintext RTSP), R16/B2 (lawful basis). These are accurately written up by the builder.
@@ -227,7 +269,7 @@ matches a month, 10 incidents a match.
 | R2, a month, gross | **$0.056** (3.62 GB; prices the worksheet records as checked 1 Nov, not rechecked here). Above D1's about $0.12 at higher bitrates, by the builder's figure |
 | AWS | $0 new resource. Added memory on the live box unmeasured (C1). **No bill read** |
 | GPU, video compute, third-party AI | None found |
-| Edge disk | 65.6 GB if holds end; **304.7 GB as built, growing 13.3 GB a month** (R25) |
+| Edge disk | 65.6 GB if holds end; **304.7 GB as built, growing 13.3 GB a month** (R25). With H5's branch, at the worksheet's synthetic rates: 101.3 GB as built, growing 2 GB a month |
 
 **Observed usage: none available.** No bucket exists, and I had no AWS or Cloudflare access. Whole-match upload is not
 built: `KINDS` is clip and manifest only (`evidence.service.ts:35`).
@@ -274,7 +316,8 @@ reports no difference. No further migration step is needed unless a fix adds one
 
 **Rollout, if Fola signs, in this order. Each step is a separate approval, and I have done none:**
 
-1. Close C1, and every other critical and high above. Merging those fixes deploys them.
+1. Have someone independent read the fixes for H1 to H5, and settle how they land. Merging them deploys them.
+   Give live operators and assessors `view_original` by a manual edit or a seed run (H3).
 2. Settle rights, the lawful basis and RC1 to RC8, and B9, B10, B10a.
 3. Create the private R2 bucket and scoped token; verify its checksum refusal, `HEAD` checksum and anonymous refusal,
    none of which the stand-in S3 can prove. Set `FAIRPLAY_STORAGE_BACKEND=r2` and its values.
@@ -315,13 +358,13 @@ reports no difference. No further migration step is needed unless a fix adds one
 
 | From | What |
 |---|---|
-| Fola | C1: does the current state stand? Release sign-off; residual-risk signature (R23 to R26 undecided); B9, B10, B10a; RC1 to RC8; M4's rule on findings; who holds `view_original`; R2 bucket; signing key; any purchase |
+| Fola | Release sign-off; how the fixes land; residual-risk signature (R23 to R26 undecided); B9, B10, B10a; RC1 to RC8; M4's rule on findings; confirm who holds `view_original` (the H3 branch gives it to operators and assessors); confirm 20-second files (H5); R2 bucket; signing key; any purchase |
 | Organisers, with legal advice | Competition agreement, lawful basis and consent under the NDPA 2023, no minors until settled (R16); who may see findings; retention periods; people in shot who are not players (RC7); footage ownership (RC8) |
 | Matchday crew | Equipment audit, hardware validation, cost sheet from measured bitrates |
 
 ## 9. Files changed and full test results
 
-**Files changed:** this file only, for the review. No code, no signature, no licence status. On Fola's later word about C1, a separate commit corrected the deployment statements in `README.md`, `blockers.md`, `decisions.md`, `go-no-go.md`, `phase-4-cloud.md`, `phase-plan.md`, `release-notes.md` and `residual-risks.md`, and the one line of `tests/test_demo_and_gonogo.py` that held the old wording.
+**Files changed:** this file only, for the review. No code, no signature, no licence status. On Fola's later word about C1, a separate commit corrected the deployment statements in `README.md`, `blockers.md`, `decisions.md`, `go-no-go.md`, `phase-4-cloud.md`, `phase-plan.md`, `release-notes.md` and `residual-risks.md`, and the one line of `tests/test_demo_and_gonogo.py` that held the old wording. The fixes for H1 to H5 are on their own branches, listed in section 1; this report was then updated to say so.
 
 Run from an LF export of `497d3c6`. Cloud checks each used a new `fpreview_scratch_*` database in `dtp-postgres`, dropped
 afterwards. API and web suites ran in the shared checkout, whose tree matches `497d3c6` apart from uncommitted
@@ -352,6 +395,24 @@ drill D1 is the same cut with more going on.
 
 Reviewer's scripts and logs: session notes folder `phase-7-review/`, outside the repository.
 
+**After the fixes:** H1 to H5 merged together, `d831cfc`, from an export of that branch. Cloud checks each used a new
+`fpmerge_scratch_*` database, dropped afterwards. The stack and the temporary image tag were removed.
+
+| Command | Result |
+|---|---|
+| `python -m pytest -q -p no:cacheprovider` (in `fp-edge-test`) | 466 passed, 1 skipped |
+| `run_fixture.py evidence` * | 30/30 |
+| `fairplay:cloudcheck` | 112/112 |
+| `fairplay:restorecheck` | 30/30 |
+| `fairplay:securitycheck` | 53/53 |
+| `fairplay:e2echeck` | 44/44 |
+| `vitest run src/fairplay` in `services/api`; `tsc` | 28 passed; clean |
+| `pnpm --filter @dtp/fairplay-console` tests; `tsc` | 29 passed; clean |
+| `apps/web` tests | 348 passed |
+
+Not run on the merge: `run_demo.py`, `run_drills.py`, `run_fixture.py core` and the whole API suite. The evidence
+fixture sets 30-second files, so 20 seconds on the real stack rests on H5's runs, before the merge.
+
 **NOT TESTED, and why:**
 
 | What | Why |
@@ -372,6 +433,7 @@ Reviewer's scripts and logs: session notes folder `phase-7-review/`, outside the
 **FairPlay V1 is not recommended for release.** Fola, please decide:
 
 1. ~~Does the production state in C1 stand, and who corrects the documents?~~ Decided 1 November 2026: it stands, and the documents are corrected.
-2. Which of C1 and H1 to H5 are fixed, in what order?
+2. ~~Which of C1 and H1 to H5 are fixed, in what order?~~ Fola asked for all of them, and they are fixed on local
+   branches (section 1). How they land, and who reads them first, is still to decide.
 3. Release sign-off stays open until then. Nothing here has activated production, and nothing here should be read as
    approval to do so. `residual-risks.md` and `go-no-go.md` remain unsigned by this review.
