@@ -238,6 +238,12 @@ in the run's folder, for a look at the console.
 python -I fixtures/run_drills.py storage
 ```
 
+## Cost and rights
+
+`fairplay-edge worksheet` works out a match's storage, upload and cost from measured bitrates
+([docs/fairplay/cost-worksheet.md](../../docs/fairplay/cost-worksheet.md)). Before a real match, see
+[docs/fairplay/rights-checklist.md](../../docs/fairplay/rights-checklist.md).
+
 ## Licences
 
 Every third-party part and its licence are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

@@ -6,7 +6,7 @@ measurement so far is from synthetic feeds on a development laptop.
 
 Allow two days: a day to set up and run sections A to E, and a day for the soak, the failures and
 anything that failed the first time. The results go in the [sheet at the end](#results-sheet), and
-6.6's storage and cost worksheet takes its bitrates from them.
+the [cost worksheet](./cost-worksheet.md) takes its bitrates from them.
 
 ## Before you start
 
@@ -83,7 +83,7 @@ Install it ([edge-install.md](./edge-install.md)) with the `--lan-ip`, `--ingest
 | B3 | Disk encrypted (D12, R19) | `machine.txt` shows a `crypt` row under the data disk | encrypted, with a named custodian |
 | B4 | The data disk is an SSD, internal or known USB | `machine.txt`; the model | `ROTA` 0, the model noted |
 | B5 | Sustained write | `sudo deploy/measure.sh /mnt/results --load-minutes 0 --disk-seconds 300`, with no session open | slowest window at least **3×** all cameras' combined rate *(proposed)*. Note the mean as well |
-| B6 | Free space | `df`, and C's `gbPerHour` | enough for 14 days of matches, plus the 20 GB soft limit *(proposed)* |
+| B6 | Free space | `df`, and the [cost worksheet](./cost-worksheet.md) from C's `edge.json` | what the worksheet says is needed *(proposed)* |
 | B7 | Clock has a time source (R21, B5) | `machine.txt`, and on the console | "synchronized: yes", or a recorded decision. Compare with the match console: within 1 s (R14) |
 | B8 | The stack starts at boot (R10, R11) | reboot with no one touching it | every card reads **● Recording** without a command. Note how long |
 | B9 | The watchdog brings a stopped service back | `docker kill` the Edge, then MediaMTX; don't touch anything | each is back within 2 minutes *(proposed)* |
@@ -100,7 +100,7 @@ With the real cameras, on an empty pitch, for at least 10 minutes. `--since-minu
 | C3 | The real bitrate, per camera | `mbitPerSecond`, `gbPerHour` | written down. This replaces the 1.1 GB per camera-hour from synthetic feeds |
 | C4 | Keyframe interval | `keyframeIntervalS` | at most **2 s** *(proposed)*. Seeking lands on keyframes, so a longer interval means coarser review |
 | C5 | Audio and video stay aligned (E17) | `alertsOpened`, no `segment_video_gap` | none. MediaMTX discards video at segment switches when audio leads by more than 1 s |
-| C6 | Audio (E15) | `hasAudio` | written down, with whose voices it could catch. That is a privacy question for the rights checklist |
+| C6 | Audio (E15) | `hasAudio` | written down, with whose voices it could catch. That is a privacy question for the [rights checklist](./rights-checklist.md), RC6 |
 | C7 | Each publish address and password work; no other does | publish from another address or with a wrong password | refused. The Edge's card does not change |
 | C8 | A camera dropped and returned | pull its cable for 60 s | "Unavailable — no feed", then **● Recording** again within 10 s of its return *(proposed)*; a gap shown of about that length |
 | C9 | The drone, if used (E3) | fly it, or run its link at full range | the same checks. Note its real delay; a large one needs the offset confirmed |
@@ -204,7 +204,7 @@ Recording mode (E16), per camera: ____________  Topology: ____  Single or two an
  B3   disk encrypted, custodian named     yes               ____________    ___
  B4   SSD and its model                   ROTA 0            ____________    ___
  B5   sustained write, slowest window     3x all cameras*   ____________    ___
- B6   free space                          14 days + 20 GB*  ____________    ___
+ B6   free space                          the worksheet*    ____________    ___
  B7   clock source; difference            within 1 s        ____________    ___
  B8   starts at boot, unaided; time       recording         ____________    ___
  B9   watchdog restores each service      2 min*            ____________    ___

@@ -168,6 +168,29 @@ def cmd_licences(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_worksheet(args: argparse.Namespace) -> int:
+    from . import worksheet
+
+    try:
+        if args.from_file:
+            text = sys.stdin.read() if args.from_file == "-" else Path(args.from_file).read_text(encoding="utf-8")
+            try:
+                rates = worksheet.rates_from_report(json.loads(text))
+            except json.JSONDecodeError as exc:
+                raise worksheet.WorksheetError("that is not the output of `fairplay-edge measure`") from exc
+        else:
+            rates = dict(worksheet.parse_rate(item) for item in args.mbit)
+        out = worksheet.work_out(rates, worksheet.Assumptions(
+            hours_per_match=args.hours, matches_per_month=args.matches_per_month, matches_in_retention=args.matches_in_retention,
+            incidents_per_match=args.incidents, clip_seconds=args.clip_seconds, edge_evidence_months=args.evidence_months),
+            measured_at_venue=args.measured_at_venue)
+    except (OSError, worksheet.WorksheetError) as exc:
+        print(f"fairplay-edge: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(out, indent=2) if args.json else worksheet.render(out))
+    return 0
+
+
 def cmd_measure(args: argparse.Namespace) -> int:
     from . import measure
     from .store import Store
@@ -465,6 +488,19 @@ def main(argv: list[str] | None = None) -> int:
     shown.add_argument("--sbom", action="store_true", help="print it as CycloneDX")
     shown.add_argument("--notices", action="store_true", help="print every licence text this image holds")
     held.set_defaults(fn=cmd_licences)
+    costed = sub.add_parser("worksheet", help="a match's storage and cost, from measured bitrates (docs/fairplay/cost-worksheet.md)")
+    rates = costed.add_mutually_exclusive_group(required=True)
+    rates.add_argument("--from", dest="from_file", help="the output of `measure` (deploy/measure.sh's edge.json), or - for standard input")
+    rates.add_argument("--mbit", action="append", help="camera=rate in Mbit/s, once for each camera")
+    costed.add_argument("--measured-at-venue", action="store_true", help="say these bitrates came from the real cameras")
+    costed.add_argument("--hours", type=float, default=3.0, help="hours the cameras record for one match")
+    costed.add_argument("--matches-per-month", type=float, default=10)
+    costed.add_argument("--matches-in-retention", type=int, help="the most matches inside one retention period")
+    costed.add_argument("--incidents", type=float, default=10, help="incidents a match, with a clip from every camera")
+    costed.add_argument("--clip-seconds", type=float, default=30)
+    costed.add_argument("--evidence-months", type=float, default=18, help="months clips stay on the Edge (D10)")
+    costed.add_argument("--json", action="store_true")
+    costed.set_defaults(fn=cmd_worksheet)
     measured = sub.add_parser("measure", help="what the cameras delivered, replay and clip times (deploy/measure.sh wraps this)")
     measured.add_argument("--since-minutes", type=float)
     measured.set_defaults(fn=cmd_measure)
