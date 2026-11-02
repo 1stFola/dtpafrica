@@ -79,7 +79,7 @@ def release_hold(store: Store, hold_id: str, reason: str, actor: Actor | None = 
         )
         if not cur.rowcount:
             return None
-        Store.log_event(db, now, "hold.released", None, {"id": hold_id, "reason": reason})
+        Store.log_event(db, now, "hold.released", None, {"id": hold_id})
         audit.append(db, actor or Actor.system(), "hold.released", "hold", hold_id, None,
                      {"reasonSha256": audit.fingerprint(hold_id, reason)})
     return store.one("SELECT * FROM holds WHERE id = ?", (hold_id,))

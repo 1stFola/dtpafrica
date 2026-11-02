@@ -108,8 +108,9 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   earlier wording of a note is kept only in the Edge's own outbox. A shirt number is easy to guess,
   so the hash keeps it from being read or followed across incidents, not from being confirmed.
 - **Free text that is still in the chain:** the reason an alert was acknowledged, an evidence job's
-  error message, and a rights record's Basis and Consent reference. Staff must not name a player in
-  them, and nothing checks this.
+  error message, and a rights record's Basis. Staff must not name a player in them, and nothing checks
+  this. A rights record's Consent reference stays on its own row, and the chain holds only its hash.
+  The event log, which all staff can read, says a hold was released or a member disabled, not why.
 
 ## Decisions still needed
 

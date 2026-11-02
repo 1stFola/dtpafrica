@@ -386,8 +386,10 @@ def record_rights(store: Store, session_id: str, actor: Actor, *, footage_kind: 
                    " :footage_kind, :status, :minors_present, :basis, :consent_reference, :recorded_by,"
                    " :recorded_name, :created_utc, :supersedes)", row)
         audit.append(db, actor, "rights.recorded", "rights", row["id"], 1,
-                     {k: row[k] for k in ("session_id", "footage_kind", "status", "minors_present", "basis",
-                                          "consent_reference", "supersedes")})
+                     {**{k: row[k] for k in ("session_id", "footage_kind", "status", "minors_present", "basis",
+                                             "supersedes")},
+                      # It may name a parent, and the chain cannot be edited.
+                      "consentReferenceSha256": audit.fingerprint(row["id"], row["consent_reference"])})
         outbox.enqueue(db, "rights", row["id"], 1, row)
     return row
 

@@ -311,3 +311,11 @@ def test_the_event_log_names_what_changed_but_not_its_text(store, settings, sess
     row = store.one("SELECT detail FROM events WHERE kind = 'incident.updated'")
     assert "NOTE-EDITED" not in row["detail"] and "PLAYER-EDITED" not in row["detail"]
     assert sorted(json.loads(row["detail"])["changed"]) == ["note", "player_ref"]
+
+
+def test_a_consent_reference_is_kept_out_of_the_chain(store, session): 
+    row = incidents.record_rights(store, session["id"], OP, footage_kind="real", status="internal_review_only",
+                                  minors_present="yes", basis=None, consent_reference="Parent A. Person, form 12")
+    entry = store.one("SELECT detail FROM audit_log WHERE action = 'rights.recorded' AND entity_id = ?", (row["id"],))
+    assert "Person" not in entry["detail"] and audit.fingerprint(row["id"], "Parent A. Person, form 12") in entry["detail"]
+    assert store.one("SELECT consent_reference FROM session_rights WHERE id = ?", (row["id"],))["consent_reference"] == "Parent A. Person, form 12"
