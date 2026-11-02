@@ -84,7 +84,7 @@ Install it ([edge-install.md](./edge-install.md)) with the `--lan-ip`, `--ingest
 | B4 | The data disk is an SSD, internal or known USB | `machine.txt`; the model | `ROTA` 0, the model noted |
 | B5 | Sustained write | `sudo deploy/measure.sh /mnt/results --load-minutes 0 --disk-seconds 300`, with no session open | slowest window at least **3×** all cameras' combined rate *(proposed)*. Note the mean as well |
 | B6 | Free space | `df`, and the [cost worksheet](./cost-worksheet.md) from C's `edge.json` | what the worksheet says is needed *(proposed)* |
-| B7 | Clock has a time source (R21, B5) | `machine.txt`, and on the console | "synchronized: yes", or a recorded decision. Compare with the match console: within 1 s (R14) |
+| B7 | Clock has a time source (R21, B5) | `machine.txt`, and on the console | "synchronized: yes", or a recorded decision, knowing that with no time source old recordings are not deleted. Compare with the match console: within 1 s (R14) |
 | B8 | The stack starts at boot (R10, R11) | reboot with no one touching it | every card reads **● Recording** without a command. Note how long |
 | B9 | The watchdog brings a stopped service back | `docker kill` the Edge, then MediaMTX; don't touch anything | each is back within 2 minutes *(proposed)* |
 | B10 | The units are enabled | `machine.txt`, "Boot units" | `enabled` three times |
