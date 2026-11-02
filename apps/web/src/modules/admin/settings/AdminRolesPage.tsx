@@ -146,8 +146,9 @@ export function AdminRolesPage() {
 
               {isSuperAdmin && (
                 <p className="admin-rbac-note muted">
-                  Super Admin always has all permissions. Use API key login or assign
-                  other roles to limit access.
+                  Super Admin is given every permission each time the API starts, and
+                  can't be edited here. The ticks show what it holds now. Assign other
+                  roles to limit access.
                 </p>
               )}
 
@@ -161,7 +162,7 @@ export function AdminRolesPage() {
                           <label className="admin-sb-field admin-sb-field--checkbox">
                             <input
                               type="checkbox"
-                              checked={isSuperAdmin || draft.has(perm.slug)}
+                              checked={draft.has(perm.slug)}
                               onChange={() => togglePermission(perm.slug)}
                             />
                             <span>

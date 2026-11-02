@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, type OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { seedRbac } from "../seed/seed-rbac";
 import { AdminAuthService } from "./auth/admin-auth.service";
 import { ADMIN_PERMISSIONS, DEFAULT_ROLES } from "./rbac/permissions.catalog";
 
@@ -42,11 +43,28 @@ export function isCompetitionScopedRole(roleSlug: string | null | undefined): bo
 }
 
 @Injectable()
-export class AdminRbacService {
+export class AdminRbacService implements OnModuleInit {
+  private readonly logger = new Logger(AdminRbacService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AdminAuthService) private readonly adminAuth: AdminAuthService
   ) {}
+
+  /**
+   * A permission added to the catalogue reaches super_admin when the release
+   * that adds it starts, with no step on the server. Additive, and other roles
+   * keep their grants (seed-rbac.ts). A failure leaves the old grants in place,
+   * which is not worth keeping the API down for, so it is logged and the API
+   * carries on; `seed:rbac` does the same thing by hand.
+   */
+  async onModuleInit() {
+    try {
+      await seedRbac(this.prisma);
+    } catch (err) {
+      this.logger.error(`Could not top up the role catalogue: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   listPermissions() {
     return ADMIN_PERMISSIONS.map((p) => ({
