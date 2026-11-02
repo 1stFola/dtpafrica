@@ -124,3 +124,32 @@ def test_a_cloud_withdrawal_is_applied_under_the_clouds_id(service, released):
     assert cloud.apply_withdrawals(settings, s, FakeCloud([item])) == [item["id"]]
     assert len(s.query("SELECT * FROM withdrawals")) == 1
     assert len(s.query("SELECT * FROM outbox WHERE entity_type = 'withdrawal'")) == 1
+
+
+def test_withdrawn_footage_is_not_cut_again_through_a_new_incident(clients, service, released):  # noqa: F811
+    assert withdraw(clients["admin"], released["id"]).status_code == 200
+    incident = service.store.one("SELECT session_id, event_utc FROM incidents WHERE id = ?", (released["incident_id"],))
+    made = clients["operator"].post("/edge/v1/incidents", headers=CSRF, json={
+        "sessionId": incident["session_id"], "basis": "manual", "eventUtc": incident["event_utc"], "category": "other"})
+    assert made.status_code == 201, made.text
+    r = clients["operator"].post(f"/edge/v1/incidents/{made.json()['id']}/clips", headers=CSRF, json={"source": "ground"})
+    assert r.status_code == 409 and "withdrawn on request" in r.json()["message"]
+
+
+def test_a_clip_queued_before_a_withdrawal_is_not_cut_after_it(clients, service, session_id, released):  # noqa: F811
+    incident = service.store.one("SELECT event_utc FROM incidents WHERE id = ?", (released["incident_id"],))
+    made = clients["operator"].post("/edge/v1/incidents", headers=CSRF, json={
+        "sessionId": session_id, "basis": "manual", "eventUtc": incident["event_utc"], "category": "other"})
+    assert made.status_code == 201, made.text
+    job = clients["operator"].post(f"/edge/v1/incidents/{made.json()['id']}/clips", headers=CSRF, json={"source": "ground"}).json()
+    assert withdraw(clients["admin"], released["id"]).status_code == 200
+    done = evidence.run_job(service.store, service.settings, service.cutter, job["id"])
+    assert done["state"] == "failed" and done["error_code"] == "source_withdrawn"
+
+
+def test_a_withdrawal_empties_the_replay_cache(clients, service, released):  # noqa: F811
+    cache = service.settings.data_dir / "replay-cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "window.mp4").write_bytes(b"a copy of a recording")
+    assert withdraw(clients["admin"], released["id"]).status_code == 200
+    assert not list(cache.iterdir())

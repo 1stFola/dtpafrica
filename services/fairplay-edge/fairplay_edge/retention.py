@@ -31,6 +31,7 @@ from .store import Store, new_id
 log = logging.getLogger("fairplay.retention")
 
 HOLD_REASONS = ("incident", "evidence", "manual")
+LARGE_STEP_MS = 3600_000
 
 _ELIGIBLE = """
 SELECT s.* FROM segments s
@@ -92,10 +93,36 @@ def plan(store: Store, days: int, now: datetime | None = None, limit: int | None
     return rows[:limit] if limit is not None else rows
 
 
+def clock_doubt(store: Store, days: int, now: datetime) -> str | None:
+    """Why the clock cannot be trusted to say what is old. A step's own alert closes at the next
+    sample, so a large one is looked for over the whole retention period: after that, everything
+    that looked old because of it really is old."""
+    if store.one("SELECT 1 AS open FROM alerts WHERE kind IN ('clock_stepped', 'clock_not_synced') AND resolved_utc IS NULL"):
+        return "the clock is stepping or not synchronised"
+    since = iso(now - timedelta(days=days))
+    if store.one("SELECT 1 AS big FROM clock_samples WHERE ABS(step_ms) >= ? AND edge_utc >= ?", (LARGE_STEP_MS, since)):
+        return "the clock jumped by an hour or more within the retention period"
+    return None
+
+
+def clear_replay_cache(settings: Settings) -> None:
+    """The cache holds copies of recordings and is named by a hash of the window, so when footage
+    goes, all of it goes. A window watched again is fetched again, from what remains."""
+    for path in (settings.data_dir / "replay-cache").glob("*"):
+        path.unlink(missing_ok=True)
+
+
 def apply(settings: Settings, store: Store, scanner: Scanner, now: datetime | None = None) -> list[dict]:
     if settings.retention_days is None:
         return []
     now = now or utcnow()
+    doubt = clock_doubt(store, settings.retention_days, now)
+    if doubt:
+        # Keeping footage too long is a breach to fix. Deleting it too early cannot be fixed.
+        if store.open_alert("retention_paused", None, "warning", iso(now), {"why": doubt}):
+            log.warning(json.dumps({"alert": "retention_paused", "why": doubt}))
+        return []
+    store.resolve_alert("retention_paused", None, iso(now))
     cutoff = iso(now - timedelta(days=settings.retention_days))
     deleted = []
     for row in plan(store, settings.retention_days, now, settings.retention_max_deletions):
@@ -118,4 +145,6 @@ def apply(settings: Settings, store: Store, scanner: Scanner, now: datetime | No
         scanner.sync(row["id"], scanner.write_sidecar(row["id"]))
         log.info(json.dumps({"event": "segment.deleted.retention", "rel_path": row["rel_path"]}))
         deleted.append({"id": row["id"], "relPath": row["rel_path"], "endUtc": row["end_utc"]})
+    if deleted:
+        clear_replay_cache(settings)
     return deleted

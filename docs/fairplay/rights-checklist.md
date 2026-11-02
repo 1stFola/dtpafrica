@@ -125,7 +125,7 @@ audited. **Prefer that to an export,** which is out of reach once sent.
 
 | What | Where | Period | Decided | What deletes it | Status |
 |---|---|---|---|---|---|
-| Recordings | Edge | 14 days | D9 | the hourly sweep, at most 600 files a run | **built**, on in the installer's `.env` |
+| Recordings | Edge | 14 days | D9 | the hourly sweep, at most 600 files a run, and none while the clock is in doubt | **built**, on in the installer's `.env` |
 | Recordings around an incident | Edge | **no end, as built** | RC1 | an admin's manual hold release, and then only if no clip was cut from them | **gap (R25)** |
 | Clips | Edge | end of season + 12 months | D10 | nothing | **gap (R26)**: RC3 |
 | Clips | R2 | 90 days after the finding | D10 | the cloud's sweep, with a 120-day bucket rule as backstop | built; **no bucket exists yet** |
