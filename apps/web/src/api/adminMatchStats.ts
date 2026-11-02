@@ -135,7 +135,9 @@ export type SheetLogAction =
   | "correction_approved"
   | "correction_declined"
   | "idle_locked"
-  | "idle_released";
+  | "idle_released"
+  | "total_stoppage"
+  | "rescheduled";
 
 export type SheetLogEntry = {
   id: string;
@@ -217,6 +219,8 @@ export type MatchStatsSheet = {
   correctionRequest: CorrectionRequest | null;
   /** Set when the idle sweep stopped this recording: no event for twenty minutes. */
   idleLock?: { lockedAt: string; quietSinceAt: string; quietMinutes: number } | null;
+  /** Stopped outright and waiting on a new date. */
+  totalStoppage?: TotalStoppage | null;
   autoApproval?: AutoApproval;
   events: RecordedEvent[];
   /** Live scoreline implied by the logged goal events. */
@@ -319,6 +323,26 @@ const base = "/admin/scoreboard/match-stats";
  * who was recording, and how long it had been quiet -- twenty minutes of silence in a cup
  * final reads very differently from twenty minutes in a friendly nobody was watching.
  */
+/** What is kept about a match stopped outright. */
+export type TotalStoppage = {
+  at: string;
+  note: string;
+  half: 1 | 2;
+  minute: number | null;
+  byName: string | null;
+  events: number;
+  score: { home: number; away: number };
+};
+
+export type TotalStoppageRow = TotalStoppage & {
+  matchId: string;
+  matchSlug: string | null;
+  competitionName: string;
+  homeTeam: string;
+  awayTeam: string;
+  kickoffAt: string | null;
+};
+
 export type IdleLockedRecording = {
   matchId: string;
   matchSlug: string | null;
@@ -380,6 +404,22 @@ export const matchStatsApi = {
 
   /** Every recording the idle sweep stopped, newest first. */
   idleLocked: () => adminFetch<IdleLockedRecording[]>(`${base}/idle-locked`),
+
+  totalStoppages: () => adminFetch<TotalStoppageRow[]>(`${base}/total-stoppages`),
+
+  /** The match cannot go on: resets it and tells the admins. The note is required. */
+  declareTotalStoppage: (matchId: string, note: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/total-stoppage`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+
+  /** Give a stopped match its new kick-off, as a date and a West Africa Time. */
+  rescheduleStoppage: (matchId: string, kickoffDate: string, kickoffTime: string) =>
+    adminFetch<MatchStatsSheet>(`${base}/${matchId}/reschedule-stoppage`, {
+      method: "POST",
+      body: JSON.stringify({ kickoffDate, kickoffTime }),
+    }),
 
   /** Release a stopped recording. The note is required — it is the only record of why. */
   releaseIdleLock: (matchId: string, note: string) =>

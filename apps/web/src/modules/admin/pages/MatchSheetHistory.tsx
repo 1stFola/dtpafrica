@@ -11,6 +11,8 @@ const ACTION_COPY: Record<SheetLogAction, string> = {
   correction_declined: "Correction declined — record stays locked",
   idle_locked: "Recording stopped — twenty minutes with no event",
   idle_released: "Stopped recording released",
+  total_stoppage: "Total stoppage: match stopped and reset",
+  rescheduled: "Match rescheduled",
 };
 
 const ACTION_TONE: Record<SheetLogAction, string> = {
@@ -23,6 +25,8 @@ const ACTION_TONE: Record<SheetLogAction, string> = {
   correction_declined: "bad",
   idle_locked: "bad",
   idle_released: "good",
+  total_stoppage: "bad",
+  rescheduled: "good",
 };
 
 /* "sheet" is what whole-sheet actions record now that statistics and events are

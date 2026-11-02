@@ -24,7 +24,7 @@ import {
   type TallyValue,
 } from "../../../api/adminMatchStats";
 import { MatchEventsTab } from "./MatchEventsTab";
-import { BreakBar, BreakReasonPrompt } from "./MatchBreakControls";
+import { BreakBar, BreakReasonPrompt, TotalStoppagePrompt } from "./MatchBreakControls";
 import {
   matchBreakComment,
   matchBreakEventType,
@@ -1215,6 +1215,7 @@ export function AdminMatchStatsConsolePage() {
   /* The step-3 Official button: a card for a coach or other official, filed in its own modal. */
   const [officialOpen, setOfficialOpen] = useState(false);
   const [breakPromptOpen, setBreakPromptOpen] = useState(false);
+  const [stoppagePromptOpen, setStoppagePromptOpen] = useState(false);
   const [kitPicker, setKitPicker] = useState<Side | null>(null);
   const [showKickoffStarter, setShowKickoffStarter] = useState(false);
   const [kickoffSide, setKickoffSide] = useState<Side | null>(null);
@@ -2003,6 +2004,10 @@ export function AdminMatchStatsConsolePage() {
             onResume={matchClock.resumeFromBreak}
             onChange={matchClock.updateBreak}
             onCancel={matchClock.discardBreak}
+            onTotalStoppage={() => {
+              setError(null);
+              setStoppagePromptOpen(true);
+            }}
           />
         )}
 
@@ -2185,6 +2190,18 @@ export function AdminMatchStatsConsolePage() {
         <div className={`mcx-banner mcx-banner--${banner.tone}`}>
           <span className="mcx-banner__text">{banner.text}</span>
           {banner.note && <span className="mcx-banner__note">“{banner.note}”</span>}
+        </div>
+      )}
+
+      {sheet.totalStoppage && (
+        <div className="mcx-callout mcx-callout--danger" role="alert">
+          <strong>
+            Match stopped
+            {sheet.totalStoppage.minute != null ? ` at ${sheet.totalStoppage.minute}'` : ""}.
+          </strong>{" "}
+          It has been reset and shows as postponed. A ScoreBoard admin has been told, and it can
+          kick off again once they reschedule it. What was recorded is kept in the submission
+          history below. “{sheet.totalStoppage.note}”
         </div>
       )}
 
@@ -2436,6 +2453,10 @@ export function AdminMatchStatsConsolePage() {
             playerNumber={playerNumber}
             officialOpen={officialOpen}
             onOfficialClose={() => setOfficialOpen(false)}
+            onTotalStoppage={() => {
+              setError(null);
+              setStoppagePromptOpen(true);
+            }}
             onCapturedUsed={() => {
               // Reset the whole entry: the next event starts at step 1 with no
               // side pre-selected, so a side is never inherited by accident.
@@ -2581,7 +2602,32 @@ export function AdminMatchStatsConsolePage() {
             matchClock.startBreak(reason);
             setBreakPromptOpen(false);
           }}
+          onTotalStoppage={() => {
+            setBreakPromptOpen(false);
+            setError(null);
+            setStoppagePromptOpen(true);
+          }}
           onCancel={() => setBreakPromptOpen(false)}
+        />
+      )}
+
+      {stoppagePromptOpen && (
+        <TotalStoppagePrompt
+          busy={busy}
+          error={error}
+          onConfirm={async (note) => {
+            /* needsSync, so the copy kept in the history holds everything recorded here. */
+            const stopped = await act(() => matchStatsApi.declareTotalStoppage(matchId, note), {
+              needsSync: true,
+            });
+            if (!stopped) return;
+            setStoppagePromptOpen(false);
+            setCaptured(null);
+            setSide(null);
+            setPlayerNumber("");
+            setOfficialOpen(false);
+          }}
+          onCancel={() => setStoppagePromptOpen(false)}
         />
       )}
 

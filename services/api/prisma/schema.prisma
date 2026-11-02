@@ -709,6 +709,17 @@ model SbMatchStatistics {
   idleReleasedAt     DateTime? @map("idle_released_at")
   idleReleaseNote    String?   @map("idle_release_note") @db.Text
 
+  /**
+   * A total stoppage waiting on a new date: set when a recorder stops the match outright,
+   * cleared when a ScoreBoard admin reschedules it. While set, the sheet refuses saves.
+   */
+  totalStoppageAt DateTime? @map("total_stoppage_at")
+  /**
+   * What happened, kept after rescheduling so a device still holding the abandoned attempt
+   * can be told apart from the rearranged game. See `total-stoppage.ts`.
+   */
+  totalStoppage   Json?     @map("total_stoppage")
+
   recorderId   String? @map("recorder_id")
   recorderName String? @map("recorder_name")
 
@@ -735,6 +746,7 @@ model SbMatchStatistics {
   @@index([eventsStatus])
   @@index([correctionRequestedAt])
   @@index([idleLockedAt])
+  @@index([totalStoppageAt])
   @@map("sb_match_statistics")
 }
 

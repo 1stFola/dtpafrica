@@ -42,6 +42,18 @@ import {
 } from "@dtp/engines";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
 import { assessAutoApprove, danglingNumbers } from "./sheet-auto-approve";
+import {
+  STOPPAGE_PENDING_MESSAGE,
+  STOPPAGE_STALE_MESSAGE,
+  TOTAL_STOPPAGE_NOTE_MAX,
+  clockAfterStoppage,
+  isStaleAfterStoppage,
+  minuteOfStoppage,
+  rescheduleRefusal,
+  stoppageRefusal,
+  type TotalStoppage,
+} from "./total-stoppage";
+import { parseWatKickoff } from "../shared/wat-datetime";
 import { mergeRecordedEvents } from "./sheet-event-merge";
 import {
   canAccessCompetition,
@@ -777,7 +789,11 @@ export type SheetLogAction =
      Logged like every other change of state so the sheet history tells the whole story
      rather than showing an unexplained gap in the middle of a match. */
   | "idle_locked"
-  | "idle_released";
+  | "idle_released"
+  /* A recorder stopping the match outright, and an admin giving it a new date. The first
+     carries a full copy of what the sheet held, because the reset clears the sheet. */
+  | "total_stoppage"
+  | "rescheduled";
 
 /**
  * A sheet locks itself at full time.
@@ -1241,6 +1257,11 @@ export class AdminMatchStatsService {
       throw new BadRequestException(idleLockMessage(quietMs));
     }
 
+    /* Stopped outright: nothing is saved until an admin gives the fixture a new date. */
+    if (sheet.totalStoppageAt) {
+      throw new BadRequestException(STOPPAGE_PENDING_MESSAGE);
+    }
+
     /* The sheet locks as one. Statistics and events are approved together, so
        there is no longer a state where half of it accepts edits. */
     if (sheetStatus(sheet) === "approved") {
@@ -1263,6 +1284,16 @@ export class AdminMatchStatsService {
     const nextClock = sentClock !== undefined ? sentClock : storedClock;
     if (storedClock?.firstHalfStartedAt && !nextClock?.firstHalfStartedAt) {
       throw new BadRequestException("Kickoff cannot be cleared after recording has started.");
+    }
+    /* A device that missed the stoppage still holds the abandoned attempt. Letting it save
+       would put a finished-with clock and its events back on the rearranged fixture. */
+    if (
+      isStaleAfterStoppage(
+        sentClock?.firstHalfStartedAt,
+        (sheet.totalStoppage as TotalStoppage | null)?.at
+      )
+    ) {
+      throw new BadRequestException(STOPPAGE_STALE_MESSAGE);
     }
     const kickedOff = Boolean(nextClock?.firstHalfStartedAt);
     /* Merged by id, never replaced: a console that has not seen everything on the server
@@ -1882,6 +1913,170 @@ export class AdminMatchStatsService {
     return this.present(match, updated, ctx);
   }
   /**
+   * Stop a match that cannot go on, and reset it. See `total-stoppage.ts`.
+   *
+   * The note is required: it is what the admin reads to decide what happens next. A practice
+   * match resets the same way but troubles nobody, and stays as it was on the calendar.
+   */
+  async declareTotalStoppage(matchId: string, note: string | undefined, ctx: AdminAuthContext) {
+    this.assertCanRecord(ctx);
+    const match = await this.loadMatch(matchId, ctx);
+    const sheet = await this.requireSheet(matchId);
+    this.assertOwnsSheet(sheet, ctx, match);
+
+    const clock = readClock(sheet.clock);
+    const refusal = stoppageRefusal(clock, sheetStatus(sheet as SheetRow), Boolean(sheet.totalStoppageAt));
+    if (refusal) throw new BadRequestException(refusal);
+    const trimmed = note?.trim().slice(0, TOTAL_STOPPAGE_NOTE_MAX);
+    if (!trimmed) throw new BadRequestException("Say what stopped the match.");
+
+    const now = new Date();
+    const training = isTrainingCompetition(match.competition);
+    const summary = this.summarise(sheet);
+    const incident: TotalStoppage = {
+      at: now.toISOString(),
+      note: trimmed,
+      half: clock!.half,
+      minute: minuteOfStoppage(clock!, now.getTime()),
+      byName: actorName(ctx),
+      events: summary.events,
+      score: summary.score,
+    };
+
+    /* The copy first, on its own: if the reset below then fails, a spare history entry is
+       harmless, and the other order could lose the record. */
+    await this.log(sheet, WHOLE_SHEET, "total_stoppage", ctx, {
+      note: trimmed,
+      summary: {
+        ...summary,
+        minute: incident.minute,
+        half: incident.half,
+        snapshot: {
+          tallies: sheet.tallies,
+          events: sheet.events,
+          clock: sheet.clock,
+          kits: sheet.kits,
+          recorderId: sheet.recorderId,
+          recorderName: sheet.recorderName,
+        },
+      } as Prisma.InputJsonValue,
+    });
+
+    const reset = this.prisma.sbMatchStatistics.updateMany({
+      /* A save landing at the same moment must not slip in behind the copy. */
+      where: { matchId, updatedAt: sheet.updatedAt },
+      data: {
+        tallies: emptyTallies() as Prisma.InputJsonValue,
+        events: [] as Prisma.InputJsonValue,
+        clock: clockAfterStoppage(clock) as Prisma.InputJsonValue,
+        lastEventAt: null,
+        fullTimeAt: null,
+        autoSubmittedAt: null,
+        idleLockedAt: null,
+        idleLockedSinceAt: null,
+        recorderId: null,
+        recorderName: null,
+        correctionRequestedSection: null,
+        correctionRequestedById: null,
+        correctionRequestedByName: null,
+        correctionRequestedAt: null,
+        correctionRequestNote: null,
+        totalStoppage: incident as unknown as Prisma.InputJsonValue,
+        totalStoppageAt: training ? null : now,
+      },
+    });
+    const [result] = training
+      ? await this.prisma.$transaction([reset])
+      : await this.prisma.$transaction([
+          reset,
+          this.prisma.sbMatch.update({
+            where: { id: matchId },
+            data: { status: "postponed", minute: null, homeScore: 0, awayScore: 0 },
+          }),
+        ]);
+    if (result.count !== 1) {
+      throw new BadRequestException("This sheet changed while stopping it. Reload and try again.");
+    }
+    this.logger.warn(`Total stoppage declared on match ${matchId} by ${incident.byName}.`);
+
+    const fresh = await this.loadMatch(matchId, ctx);
+    return this.present(fresh, await this.requireSheet(matchId), ctx);
+  }
+
+  /** Every match stopped outright and still waiting on a new date. */
+  async listTotalStoppages(ctx: AdminAuthContext) {
+    this.assertCanApprove(ctx);
+    const rows = await this.prisma.sbMatchStatistics.findMany({
+      where: { totalStoppageAt: { not: null } },
+      orderBy: { totalStoppageAt: "desc" },
+      select: {
+        matchId: true,
+        totalStoppage: true,
+        match: {
+          select: {
+            slug: true,
+            kickoffAt: true,
+            homeTeam: { select: { name: true } },
+            awayTeam: { select: { name: true } },
+            competition: { select: { name: true } },
+          },
+        },
+      },
+    });
+    return rows.map((row) => ({
+      ...(row.totalStoppage as unknown as TotalStoppage),
+      matchId: row.matchId,
+      matchSlug: row.match.slug,
+      competitionName: row.match.competition.name,
+      homeTeam: row.match.homeTeam.name,
+      awayTeam: row.match.awayTeam.name,
+      kickoffAt: row.match.kickoffAt,
+    }));
+  }
+
+  /** Give a stopped match its new kick-off, which lets it be recorded again. */
+  async rescheduleStoppage(
+    matchId: string,
+    kickoffDate: string,
+    kickoffTime: string,
+    ctx: AdminAuthContext
+  ) {
+    this.assertCanApprove(ctx);
+    const sheet = await this.requireSheet(matchId);
+    if (!sheet.totalStoppageAt) {
+      throw new BadRequestException("This match is not waiting to be rescheduled.");
+    }
+    const kickoff = parseWatKickoff(kickoffDate, kickoffTime);
+    const refusal = rescheduleRefusal(kickoff, Date.now());
+    if (refusal) throw new BadRequestException(refusal);
+
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.sbMatch.update({
+        where: { id: matchId },
+        data: { status: "scheduled", kickoffAt: kickoff },
+      }),
+      this.prisma.sbMatchStatistics.update({
+        where: { matchId },
+        data: {
+          totalStoppageAt: null,
+          totalStoppage: {
+            ...(sheet.totalStoppage as unknown as TotalStoppage),
+            rescheduledTo: kickoff.toISOString(),
+            rescheduledAt: now.toISOString(),
+            rescheduledByName: actorName(ctx),
+          } as unknown as Prisma.InputJsonValue,
+        },
+      }),
+    ]);
+    await this.log(sheet, WHOLE_SHEET, "rescheduled", ctx, {
+      note: `New kick-off ${kickoffDate} ${kickoffTime} WAT`,
+    });
+    const match = await this.loadMatch(matchId, ctx);
+    return this.present(match, await this.requireSheet(matchId), ctx);
+  }
+
+  /**
    * Send back for edits, returning the sheet to `live`. Only a submitted sheet
    * can be sent back, so nothing already published to the public site is
    * affected — approved figures are withdrawn by re-approving a corrected
@@ -2239,6 +2434,7 @@ export class AdminMatchStatsService {
     const idleSince = idleLockedAt ? sheet?.idleLockedSinceAt ?? idleLockedAt : null;
     const lockedForEditing = !isTrainingCompetition(match.competition) &&
       (isFullTime(readClock(sheet?.clock)) || Boolean(idleLockedAt));
+    const stoppagePending = Boolean(sheet?.totalStoppageAt);
 
     return {
       matchId: match.id,
@@ -2283,6 +2479,8 @@ export class AdminMatchStatsService {
       },
       /** Full time locks the record until a correction is approved. */
       lockedAtFullTime: isFullTime(readClock(sheet?.clock)),
+      /** Stopped outright and waiting on a new date. Null once rescheduled. */
+      totalStoppage: stoppagePending ? (sheet?.totalStoppage as unknown as TotalStoppage) : null,
       correctionRequest: sheet?.correctionRequestedSection
         ? {
             byName: sheet.correctionRequestedByName,
@@ -2312,8 +2510,9 @@ export class AdminMatchStatsService {
       permissions: {
         canRecord,
         canApprove,
-        canEdit: canRecord && status !== "approved" && ownsSheet && !lockedForEditing,
-        canSubmit: canRecord && status !== "approved" && ownsSheet,
+        canEdit:
+          canRecord && status !== "approved" && ownsSheet && !lockedForEditing && !stoppagePending,
+        canSubmit: canRecord && status !== "approved" && ownsSheet && !stoppagePending,
         canApproveThis: canApprove && status === "submitted",
         canReleaseIdleLock: canApprove && Boolean(idleLockedAt),
       },
