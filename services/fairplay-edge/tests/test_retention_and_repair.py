@@ -133,3 +133,25 @@ def test_repair_refuses_if_the_original_changed(settings, store, fake_probe):
     original.write_bytes(original.read_bytes() + b"\x00")
     with pytest.raises(RepairRefused, match="no longer matches"):
         repair(settings, store, scanner, row["id"])
+
+
+def test_a_deleted_file_put_back_is_not_recorded_again(settings, store, three_final, caplog):
+    paths, rows = three_final
+    s = replace(settings, retention_days=30, retention_max_deletions=1)
+    scanner = Scanner(s, store)
+    retention.apply(s, store, scanner, now=NOW)
+    paths[0].write_bytes(fmp4(2))  # restored from a backup, say
+    with caplog.at_level("WARNING", logger="fairplay.manifest"):
+        scanner.scan({"ground": True})
+        scanner.scan({"ground": True})
+    assert store.one("SELECT state FROM segments WHERE id = ?", (rows[0]["id"],))["state"] == "deleted"
+    assert store.one("SELECT COUNT(*) AS n FROM segments")["n"] == len(rows)
+    assert sum("segment.came_back" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_the_lookups_the_edge_makes_often_have_their_index(store):
+    plan = store.query("EXPLAIN QUERY PLAN SELECT MAX(entity_version) FROM outbox WHERE entity_type = 'segment' AND entity_id = 'a'")
+    assert "outbox_entity" in plan[0]["detail"]
+    # INDEXED BY raises if the index cannot serve the query: plan_cut and the window route would fail.
+    store.query("SELECT id FROM segments INDEXED BY segments_on_disk WHERE source = 'ground' AND start_utc < 'b'"
+                " AND (end_utc IS NULL OR end_utc > 'a') AND state != 'deleted' ORDER BY start_utc")

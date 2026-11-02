@@ -65,6 +65,7 @@ class Scanner:
     def __init__(self, settings: Settings, store: Store):
         self.settings = settings
         self.store = store
+        self._came_back: set[str] = set()
 
     # ── discovery ─────────────────────────────────────────────────────────
     def scan(self, publishing: dict[str, bool]) -> list[str]:
@@ -73,7 +74,7 @@ class Scanner:
         now = utcnow()
         names = {s.name for s in self.settings.sources}
         files = list_segment_files(self.settings.recordings_dir, names)
-        known = {r["rel_path"]: r for r in self.store.query("SELECT * FROM segments")}
+        known = {r["rel_path"] for r in self.store.query("SELECT rel_path FROM segments WHERE state != 'deleted'")}
         newest_start: dict[str, str] = {}
         for rel, path in files:
             try:
@@ -83,6 +84,12 @@ class Scanner:
             start_s = iso(start)
             newest_start[source] = max(newest_start.get(source, start_s), start_s)
             if rel not in known:
+                if self.store.one("SELECT 1 AS gone FROM segments WHERE rel_path = ?", (rel,)):
+                    # Retention deleted this file and something put it back. It is not recorded twice.
+                    if rel not in self._came_back:
+                        self._came_back.add(rel)
+                        log.warning(json.dumps({"event": "segment.came_back", "rel_path": rel}))
+                    continue
                 size = path.stat().st_size
                 grown = iso(now) if size and media_written(path) else None
                 with self.store.tx() as db:

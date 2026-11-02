@@ -52,6 +52,7 @@ FINDING_NOTICE = ("Shadow review only. This finding is not a decision of the mat
 NOT_CUSTODY = ("evidence.accessed", "evidence.manifest_accessed", "evidence.exported", "evidence.uploaded", "outbox.parked")
 SCHEMA_FILE = Path(__file__).with_name("schemas") / "evidence-manifest.v1.schema.json"
 RETRY_WAIT = timedelta(seconds=15)
+NOT_YET_WAIT = timedelta(seconds=2)  # the job loop's own tick: a waiting clip starts as soon as its footage is ready
 GAP_TOLERANCE_MS = 50
 CLIP_STATES = ("flagged", "reviewing")
 
@@ -246,7 +247,7 @@ def plan_cut(store: Store, settings: Settings, source: str, start: datetime, dur
     now = now or utcnow()
     end = start + timedelta(milliseconds=duration_ms)
     rows = store.query(
-        "SELECT * FROM segments WHERE source = ? AND state != 'deleted' AND start_utc < ?"
+        "SELECT * FROM segments INDEXED BY segments_on_disk WHERE source = ? AND state != 'deleted' AND start_utc < ?"
         " AND (end_utc IS NULL OR end_utc > ?) ORDER BY start_utc", (source, iso(end), iso(start)))
     if any(r["state"] == "recording" for r in rows):
         raise NotYet("a segment in this window is still being recorded")
@@ -513,7 +514,7 @@ def run_job(store: Store, settings: Settings, cutter: Cutter, job_id: str, now: 
         with store.tx() as db:
             # Waiting is not a failed attempt.
             db.execute("UPDATE jobs SET state = 'queued', attempts = attempts - 1, next_attempt_utc = ?, error = ?"
-                       " WHERE id = ?", (iso(utcnow() + RETRY_WAIT), str(exc), job_id))
+                       " WHERE id = ?", (iso(utcnow() + NOT_YET_WAIT), str(exc), job_id))
         return store.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
     except ClipFailed as exc:
         part.unlink(missing_ok=True)
@@ -600,7 +601,8 @@ def recover(store: Store, settings: Settings) -> list[str]:
 
 
 def due_job(store: Store, now: datetime | None = None) -> dict | None:
-    return store.one("SELECT * FROM jobs WHERE state = 'queued' AND next_attempt_utc <= ? ORDER BY created_utc LIMIT 1",
+    return store.one("SELECT * FROM jobs WHERE state = 'queued' AND next_attempt_utc <= ?"
+                     " ORDER BY next_attempt_utc, created_utc LIMIT 1",
                      (iso(now or utcnow()),))
 
 

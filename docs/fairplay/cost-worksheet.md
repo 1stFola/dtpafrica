@@ -17,10 +17,11 @@ The rights and retention decisions are in [rights-checklist.md](./rights-checkli
 - **A clip's sources are never marked as synced.** Cutting a clip writes `evidence_refs` with `synced = 0`,
   retention refuses any segment with such a row, and nothing in the Edge ever sets it to 1.
 
-Retention deletes whole files, so each incident keeps a 5-minute segment or two from every camera. At
-10 incidents a match that is **about 30% of each match, kept with no end**. It is the largest figure
-below, and it is not only a cost: see R25 in [residual-risks.md](./residual-risks.md) and the
-[rights checklist](./rights-checklist.md#decisions-for-fola). I changed none of this, because a rule that
+Retention deletes whole files, so each incident keeps about 50 s from every camera: its 30 s window and
+the rest of the 20-second files at each end. At 10 incidents a match that is **about 5% of each match, kept
+with no end** (it was about 30% with 5-minute files). It is the largest figure below, and it is not only a
+cost: see R25 in [residual-risks.md](./residual-risks.md) and the
+[rights checklist](./rights-checklist.md#decisions-for-fola). The rule is unchanged, because a rule that
 deletes footage is Fola's decision.
 
 `tests/test_cost_and_rights.py` holds this description to the code, and fails when a rule is built.
@@ -57,7 +58,7 @@ docker compose exec -T edge fairplay-edge worksheet --mbit ground=2.6 --mbit dro
 | Months clips stay on the Edge (`--evidence-months`) | 18 | D10 is end of season + 12 months. **The 6-month season is assumed** |
 | Recordings kept | 14 days | D9; `FAIRPLAY_RETENTION_DAYS` in `.env.example` |
 | Clips in R2 | 90 days | D10; `FAIRPLAY_EVIDENCE_RETENTION_DAYS` |
-| Segment length | 5 minutes | `FAIRPLAY_RECORD_SEGMENT_DURATION` in `.env.example`. Not an option: a shorter one would keep less |
+| Segment length | 20 seconds | `FAIRPLAY_RECORD_SEGMENT_DURATION` in `.env.example`. Not an option: a shorter one would keep less |
 | Free space to keep | 20 GB | `FAIRPLAY_DISK_SOFT_FREE_GB`, whose alert is the first warning |
 | R2 prices | $0.015 per GB-month, $4.50 and $0.36 per million operations | [Cloudflare's price page](https://developers.cloudflare.com/r2/pricing/), read 1 November 2026, and unchanged from `fairplay.config.ts` |
 
@@ -87,7 +88,7 @@ Assumed: 3.0 h a match; 10 matches a month, at most 5 in 14 days; 10 incidents a
 One match
   recordings                        4.32 GB
   clips (also the upload)           0.12 GB
-  kept past retention, as built     1.32 GB (30.6% of the recording)
+  kept past retention, as built     0.2 GB (4.6% of the recording)
 
 The Edge's disk
   recordings inside retention       21.6 GB
@@ -95,8 +96,8 @@ The Edge's disk
   replay cache, at most             2.1 GB
   free space to keep                20 GB
   NEEDED, if incident holds end     65.3 GB
-  footage kept, as built            237.6 GB, growing 13.2 GB a month with no end
-  NEEDED, as built                  302.9 GB
+  footage kept, as built            36.0 GB, growing 2.0 GB a month with no end
+  NEEDED, as built                  101.3 GB
   sustained write: all cameras 0.4 MB/s; target at 3x 1.2 MB/s
 
 Backup disk: at least 21.6 GB (clips and the record; recordings are not in a backup)
@@ -116,9 +117,9 @@ measurement or an expectation.**
 |---|---|---|
 | One match's recordings | 4.32 GB | 21.6 GB |
 | One match's upload | 0.12 GB | 0.6 GB |
-| Kept past retention, each match | 1.32 GB | 6.6 GB |
+| Kept past retention, each match | 0.2 GB | 1 GB |
 | Disk needed, if incident holds end | 65.3 GB | 238.1 GB |
-| Disk needed, as built, after 18 months | 302.9 GB | 1,426.1 GB |
+| Disk needed, as built, after 18 months | 101.3 GB | 418.1 GB |
 | Backup disk | 21.6 GB | 108 GB |
 
 The money is small either way. **The disk, and the venue's upload, are the real costs.**

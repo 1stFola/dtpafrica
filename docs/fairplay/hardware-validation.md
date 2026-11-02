@@ -99,7 +99,7 @@ With the real cameras, on an empty pitch, for at least 10 minutes. `--since-minu
 | C2 | Resolution and frame rate | `width`, `height`, `fps` | what the audit said was used on matchday |
 | C3 | The real bitrate, per camera | `mbitPerSecond`, `gbPerHour` | written down. This replaces the 1.1 GB per camera-hour from synthetic feeds |
 | C4 | Keyframe interval | `keyframeIntervalS` | at most **2 s** *(proposed)*. Seeking lands on keyframes, so a longer interval means coarser review |
-| C5 | Audio and video stay aligned (E17) | `alertsOpened`, no `segment_video_gap` | none. MediaMTX discards video at segment switches when audio leads by more than 1 s |
+| C5 | Audio and video stay aligned (E17) | `alertsOpened`, no `segment_video_gap` | none. MediaMTX discards video at segment switches when audio leads by more than 1 s: up to 2 s of every 20-second file |
 | C6 | Audio (E15) | `hasAudio` | written down, with whose voices it could catch. That is a privacy question for the [rights checklist](./rights-checklist.md), RC6 |
 | C7 | Each publish address and password work; no other does | publish from another address or with a wrong password | refused. The Edge's card does not change |
 | C8 | A camera dropped and returned | pull its cable for 60 s | "Unavailable — no feed", then **● Recording** again within 10 s of its return *(proposed)*; a gap shown of about that length |
