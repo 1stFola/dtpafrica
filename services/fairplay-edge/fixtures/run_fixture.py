@@ -607,8 +607,8 @@ class Run:
         listing = self.compose("exec", "-T", "edge", "python", "-c",
                                "import zipfile,sys;print(sorted(zipfile.ZipFile('/tmp/package.zip').namelist()))",
                                check=False).strip()
-        self.check("P3: approved and exported as a package with the clip, manifest and SHA256SUMS",
-                   sa == 200 and "['SHA256SUMS', 'clip.mp4', 'manifest.json']" in listing, approve=sa, export=export.strip(),
+        self.check("P3: approved and exported as a package with the clip, manifest, finding and SHA256SUMS",
+                   sa == 200 and "['SHA256SUMS', 'clip.mp4', 'finding.json', 'manifest.json']" in listing, approve=sa, export=export.strip(),
                    contents=listing)
 
         # Missing source: one original vanishes before its clip is cut. Refused, no file.

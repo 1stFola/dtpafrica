@@ -36,7 +36,7 @@ person. Write nothing about a player's age, health or conduct off the ball.
   (ADR-0006) but not built, and is gated on the bucket (B5) and the rights rule below.
 - **No third-party AI service** sees any of it. Nothing in the Edge calls one
   (`tests/test_boundaries.py` fails the build on a cloud or GPU SDK import).
-- **Export packages** (clip, manifest, `SHA256SUMS`) are the one way video leaves today: an
+- **Export packages** (clip, manifest, `finding.json` with the finding's notes and the staff who made and approved it, `SHA256SUMS`) are the one way video leaves today: an
   admin with `fairplay.evidence.export` downloads a zip. Each export is audited with the
   package's SHA-256. After that the package is outside FairPlay's control, so whoever
   receives it must be told it is not for publication.

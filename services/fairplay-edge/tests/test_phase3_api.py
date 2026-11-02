@@ -1,12 +1,16 @@
 """Phase 3 through the API: who may do what, double submission, the rights gate, and what an
 organiser can and cannot see."""
 
+import hashlib
+import io
 import json
 import uuid
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
 
+from fairplay_edge import audit, evidence
 from fairplay_edge.api import create_app
 from fairplay_edge.auth import generate_key, hash_pin, key_id
 from fairplay_edge.config import load_settings
@@ -14,6 +18,7 @@ from fairplay_edge.service import EdgeService
 
 from .conftest import at, fmp4, write_segment
 from .fakes import FakeMediaMtx
+from .schema_check import errors
 from .test_auth import make_bundle
 from .test_evidence import FakeCutter
 
@@ -275,3 +280,95 @@ def test_only_an_admin_confirms_a_cameras_new_address_and_it_is_audited(clients,
     down = next(a for a in clients["admin"].get("/edge/v1/alerts").json() if a["kind"] == "media_server_down")
     assert clients["admin"].post(f"/edge/v1/alerts/{down['id']}/acknowledge", headers=CSRF,
                                  json={"reason": "known"}).status_code == 409
+
+
+# ── what an exported package says (FP-08, PID 5.3) ───────────────────────
+
+def released_clip(clients, service, session_id):
+    done, ev = to_reviewed(clients, service, session_id)
+    assert clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 200
+    return done, ev
+
+
+def exported(clients, ev):
+    r = clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/export", headers=CSRF)
+    assert r.status_code == 200, r.text
+    return r.content, zipfile.ZipFile(io.BytesIO(r.content))
+
+
+def test_an_export_names_the_finding_the_reviewer_and_who_approved_it(clients, service, session_id):
+    done, ev = released_clip(clients, service, session_id)
+    _, package = exported(clients, ev)
+    assert sorted(package.namelist()) == ["SHA256SUMS", "clip.mp4", "finding.json", "manifest.json"]
+    finding = json.loads(package.read("finding.json"))
+    assert finding["authorityMode"] == "shadow" and "Shadow review only" in finding["notice"]
+    assert finding["evidenceId"] == ev["id"] and finding["clipSha256"] == ev["sha256"] and finding["manifestSha256"] == ev["manifest_sha256"]
+    assert finding["incident"] == {"id": done["id"], "version": done["version"], "matchId": "m-1", "category": "foul",
+                                   "period": None, "matchMinute": None, "matchSecond": None, "eventUtc": done["event_utc"]}
+    current = finding["finding"]
+    assert current["result"] == "supports_original" and current["factualNotes"] == "Clean tackle; ball first."
+    assert current["onFieldDecision"] == "play on" and current["reviewer"] == {"id": "u-assessor", "name": "Assessor"}
+    assert current["completedUtc"] and current["reliedOnThisClip"] is True
+    assert finding["approval"]["by"] == {"id": "u-admin", "name": "Admin"} and finding["approval"]["approvedUtc"]
+    assert finding["earlierFindings"] == []
+    actions = [e["action"] for e in finding["custody"]]
+    assert {"incident.created", "evidence.created", "review.completed", "evidence.approved"} <= set(actions)
+    assert all(len(e["entryHash"]) == 64 and e["actorName"] for e in finding["custody"])
+
+
+def test_the_finding_is_in_the_sums_and_its_schema(clients, service, session_id):
+    _, ev = released_clip(clients, service, session_id)
+    _, package = exported(clients, ev)
+    lines = dict(reversed(line.split("  ")) for line in package.read("SHA256SUMS").decode().splitlines())
+    for name in ("clip.mp4", "manifest.json", "finding.json"):
+        assert lines[name] == hashlib.sha256(package.read(name)).hexdigest(), name
+    schema = json.loads((evidence.SCHEMA_FILE.parent / "evidence-finding.v1.schema.json").read_text(encoding="utf-8"))
+    assert errors(json.loads(package.read("finding.json")), schema) == []
+
+
+def test_the_export_is_in_the_audit_chain_with_the_findings_hash(clients, service, session_id):
+    _, ev = released_clip(clients, service, session_id)
+    _, package = exported(clients, ev)
+    entry = next(e for e in clients["admin"].get("/edge/v1/audit?limit=1000").json() if e["action"] == "evidence.exported")
+    assert entry["detail"]["findingSha256"] == hashlib.sha256(package.read("finding.json")).hexdigest()
+
+
+def test_exporting_the_same_finding_twice_gives_the_same_bytes(clients, service, session_id):
+    _, ev = released_clip(clients, service, session_id)
+    first, _ = exported(clients, ev)
+    # Reading the clip adds to the audit chain, and is not part of how the finding came to be.
+    assert clients["organiser"].get(f"/edge/v1/evidence/{ev['id']}/file").status_code == 200
+    second, _ = exported(clients, ev)
+    assert first == second
+
+
+def test_another_clip_of_the_incident_does_not_change_this_ones_package(clients, service, session_id, monkeypatch):
+    _, ev = released_clip(clients, service, session_id)
+    first, package = exported(clients, ev)
+    assert json.loads(package.read("finding.json"))["approval"]["afterCurrentFinding"] is True
+    real = audit.for_incident
+    sibling = [dict(real(service.store, service.store.one("SELECT incident_id FROM evidence WHERE id = ?", (ev["id"],))["incident_id"])[0], entity_type=kind, entity_id="another", action="evidence.approved", seq=10**6)
+               for kind in ("evidence", "job")]
+    monkeypatch.setattr(audit, "for_incident", lambda store, incident_id: real(store, incident_id) + sibling)
+    second, _ = exported(clients, ev)
+    assert first == second
+
+
+def test_a_later_finding_replaces_the_earlier_and_says_there_was_one(clients, service, session_id):
+    done, ev = released_clip(clients, service, session_id)
+    assessor = clients["assessor"]
+    r = assessor.post(f"/edge/v1/incidents/{done['id']}/reopen", headers={**CSRF, "If-Match": str(done["version"])},
+                      json={"reason": "a second look at the angle"})
+    assert r.status_code == 200, r.text
+    r = assessor.post(f"/edge/v1/incidents/{done['id']}/review/complete", headers={**CSRF, "If-Match": str(r.json()["version"])},
+                      json={"result": "inconclusive", "factualNotes": "The angle does not show the contact."})
+    assert r.status_code == 200, r.text
+    _, package = exported(clients, ev)
+    finding = json.loads(package.read("finding.json"))
+    assert finding["finding"]["result"] == "inconclusive" and finding["finding"]["reliedOnThisClip"] is False
+    earlier = finding["earlierFindings"]
+    assert len(earlier) == 1 and earlier[0]["result"] == "supports_original"
+    assert earlier[0]["reviewer"]["name"] == "Assessor"
+    # Why it was reopened, and what the earlier finding said, are free text and stay at the venue.
+    assert "factualNotes" not in earlier[0] and "a second look" not in package.read("finding.json").decode()
+    assert finding["approval"]["afterCurrentFinding"] is False
