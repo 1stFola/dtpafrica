@@ -342,5 +342,5 @@ class Sessions:
             db.execute("INSERT OR REPLACE INTO local_disabled (user_id, at_utc, by_user, reason) VALUES (?, ?, ?, ?)",
                        (user_id, at, by.id, reason))
             db.execute("UPDATE operator_sessions SET revoked_utc = ? WHERE user_id = ? AND revoked_utc IS NULL", (at, user_id))
-            Store.log_event(db, at, "auth.member.disabled", None, {"userId": user_id, "by": by.id, "reason": reason})
-            audit.append(db, by, "member.disabled", "member", user_id, None, {"reason": reason})
+            Store.log_event(db, at, "auth.member.disabled", None, {"userId": user_id, "by": by.id})
+            audit.append(db, by, "member.disabled", "member", user_id, None, {"reasonSha256": audit.fingerprint(user_id, reason)})

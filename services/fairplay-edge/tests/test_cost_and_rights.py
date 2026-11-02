@@ -169,7 +169,7 @@ def test_the_rights_page_matches_the_gate():
 
 
 def test_what_the_page_says_goes_into_the_audit_log_does():
-    assert '"basis",' in (PACKAGE / "incidents.py").read_text("utf-8") and '"consent_reference", "supersedes")' in (PACKAGE / "incidents.py").read_text("utf-8")
+    assert '"basis",' in (PACKAGE / "incidents.py").read_text("utf-8") and '"consentReferenceSha256"' in (PACKAGE / "incidents.py").read_text("utf-8")
 
 
 def test_the_retention_table_matches_the_decisions():

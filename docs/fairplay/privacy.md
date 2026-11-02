@@ -102,7 +102,15 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   the document says when they go. **That date is not true of the footage around an incident,**
   which is kept with no end as built (R25, [rights-checklist.md](./rights-checklist.md#decisions-for-fola)).
 - **Names stay out of the audit log.** Requester names and player references are kept on
-  the request and withdrawal rows, never in audit entries (D13).
+  the request, withdrawal and incident rows, never in audit entries (D13). The Edge's chain holds
+  a salted hash of a player reference, an incident's note, a reopening reason, and the reason a
+  hold was released or a member disabled. The hash shows what was recorded and that it changed; an
+  earlier wording of a note is kept only in the Edge's own outbox. A shirt number is easy to guess,
+  so the hash keeps it from being read or followed across incidents, not from being confirmed.
+- **Free text that is still in the chain:** the reason an alert was acknowledged, an evidence job's
+  error message, and a rights record's Basis. Staff must not name a player in them, and nothing checks
+  this. A rights record's Consent reference stays on its own row, and the chain holds only its hash.
+  The event log, which all staff can read, says a hold was released or a member disabled, not why.
 
 ## Decisions still needed
 
