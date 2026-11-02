@@ -44,11 +44,11 @@ passed 29 of 29. Fola should know C1 first, and should not repeat "not deployed"
 | C1 | Decided: it stands. Documents corrected | `review/fairplay-phase-7-acceptance` | Docs only. FairPlay's API stays on the live box |
 | H1 | Fixed, not merged | `fix/fairplay-h1-bundle-hold` `3748119` | The cloud keeps serving the session in progress, and the Edge refuses another session's bundle and raises `bundle_held_back`. The hold ends when the next match kicks off, or 4 hours after its own kickoff, or 12 hours after opening if it has none. The sign-in page says when a list is waiting |
 | H2 | Fixed, not merged | `fix/fairplay-h2-audit-minimised` `b456637` | The chain holds a salted fingerprint of a player reference, note or reason. Applies only to new rows, so it must land before any real incident |
-| H3 | Fixed, not merged | `fix/fairplay-h3-view-original` `870f990` | `/media` and `/live` need `view_original`. Operator and assessor roles gain it, which Fola should confirm, by a new additive migration, because seeding leaves existing roles alone. **Merging runs that migration on live. Places already given in an open session need Watch originals ticked** |
+| H3 | Fixed, not merged | `fix/fairplay-h3-view-original` `65b38ea` | `/media`, `/live` and any clip not yet released need `view_original`. Operator and assessor roles gain it, which Fola should confirm, by a new additive migration, because seeding leaves existing roles alone. **Merging runs that migration on live. Places already given in an open session need Watch originals ticked** |
 | H4 | Fixed, not merged | `fix/fairplay-h4-export-finding` `2bd8995` | A package holds `finding.json`, listed in `SHA256SUMS`: result, reviewer, approver and whether that approval came after the current finding, earlier findings, this clip's custody. The clip's manifest is unchanged |
 | H5 | Fixed, not merged, synthetic only | `fix/fairplay-h5-segment-length` `16b2dd7` | Files of 20 s: p50 22 to 24 s, p95 34 to 36 s, 68 of 92 clips within 30 s. See H5 in section 3 |
 
-H1 to H5 and this branch merge with no conflict on `scratch/fairplay-h1-h5-merge` (`83e5f52`), which only tests the
+H1 to H5 and this branch merge with no conflict on `scratch/fairplay-h1-h5-merge` (`f5c010c`), which only tests the
 combination. Section 9 gives the checks, and the one failure, which is not FairPlay's. **Merging anything to `main`
 deploys it (C1).**
 
@@ -66,9 +66,10 @@ the follow-ups after they were written.
 | Another clip changed a package's bytes; an old approval looked current; the reopening reason reached organisers | Fixed: H4 above |
 | A deleted file put back was retried on every pass | Fixed: logged once, and still not removed |
 
+**Decided, 1 November 2026:** `/evidence/{id}/file` took any staff permission, so a member holding session.manage, review or admin alone could watch an unreleased clip. Fola: only `view_original` holders. It is built on H3's branch. Once released, any member or organiser can open a clip. A releaser without it can still approve a clip they cannot watch, so the operator guide says to tick it for them; nothing enforces that.
+
 **Left for Fola, not changed:**
 
-- `/evidence/{id}/file` takes any staff permission, so members holding session.manage, review or admin alone can watch an unreleased clip without `view_original`. The rule is who may see a clip.
 - A rights record's Consent reference and Basis stay in the insert-only chain, and a consent reference may name a parent. `privacy.md` says so; it sits badly with D13.
 - Hold and disable reasons are in `events`, readable by all staff.
 
@@ -418,12 +419,12 @@ drill D1 is the same cut with more going on.
 
 Reviewer's scripts and logs: session notes folder `phase-7-review/`, outside the repository.
 
-**After the fixes:** the final merge is `83e5f52`, of H1 to H5, their follow-ups and this branch. Cloud checks each
+**After the fixes:** the final merge is `f5c010c`, of H1 to H5, their follow-ups and this branch. Cloud checks each
 used a new `fpmerge_scratch_*` database, dropped afterwards. Stacks and temporary image tags were removed.
 
 | Command | Result |
 |---|---|
-| `python -m pytest -q -p no:cacheprovider` (in `fp-edge-test`) | 468 passed, 1 skipped |
+| `python -m pytest -q -p no:cacheprovider` (in `fp-edge-test`) | 469 passed, 1 skipped |
 | `run_fixture.py evidence` * | 30/30 |
 | 20 s for 20 minutes on the real stack, then with 190,000 deleted rows * | 31 clips, 23 within 30 s, p50 23 s, p95 34 s; no holes or alerts; window lookup p50 45 ms, replay p50 416 ms |
 | H3's migration on a scratch database, empty, then with the roles, then again | no error; the two roles granted, a third not |
@@ -432,10 +433,10 @@ used a new `fpmerge_scratch_*` database, dropped afterwards. Stacks and temporar
 | `fairplay:securitycheck` | 53/53 |
 | `fairplay:e2echeck` | 44/44 |
 | `vitest run src/fairplay` in `services/api`; `tsc` | 28 passed; clean |
-| `pnpm --filter @dtp/fairplay-console` tests; `tsc` | 29 passed; clean |
+| `pnpm --filter @dtp/fairplay-console` tests; `tsc` | 30 passed; clean |
 | `apps/web` tests | 348 passed |
 
-Before the follow-ups, on `d831cfc`: `run_fixture.py core` * 28/28, `run_drills.py` * 34/34 with the 30-minute WAN cut,
+The evidence fixture, the 20 s run and the migration ran just before the rule on unreleased clips, on `83e5f52`; the rule changes one route, and the checks above cover it. Before the follow-ups, on `d831cfc`: `run_fixture.py core` * 28/28, `run_drills.py` * 34/34 with the 30-minute WAN cut,
 `run_drills.py storage` * 21/21, and the whole API suite, **1 failed**, 2295 passed, 1 skipped. The failure is the same
 `scripts/gates.spec.ts` CRLF check on a Vision file as above. These were not repeated after the follow-ups, so the
 drills have not seen H1's new hold, retention's own loop or the new indexes, and they set 30-second files.
