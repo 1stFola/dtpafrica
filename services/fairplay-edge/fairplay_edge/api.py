@@ -1247,7 +1247,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.get("/edge/v1/report/sessions/{session_id}")
     def report(session_id: str, who: Principal = organiser):
-        """What an organiser may see: completed findings and the evidence released with them."""
+        """What an organiser may see: completed findings and the evidence released with them. A finding
+        with nothing released is staff's until something is (Fola, 2 November 2026)."""
+        as_organiser = not any(who.can(p) for p in STAFF_PERMISSIONS)
         check_session(who, session_id)
         session = session_or_404(session_id)
         out = []
@@ -1258,6 +1260,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             released = [evidence.evidence_view(e) for e in service.store.query(
                 "SELECT * FROM evidence WHERE incident_id = ? AND state = 'approved'", (inc["id"],))
                 if evidence.released(service.store, e)[0]]
+            if as_organiser and not released:
+                continue
             out.append({"incidentId": inc["id"], "period": inc["period"], "matchMinute": inc["match_minute"],
                         "matchSecond": inc["match_second"], "category": inc["category"], "finding": finding,
                         "evidence": [{k: e[k] for k in ("id", "source", "sha256", "bytes", "duration_ms",

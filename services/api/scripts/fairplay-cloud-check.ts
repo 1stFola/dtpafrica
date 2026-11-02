@@ -367,7 +367,7 @@ async function main() {
   check("the report has no field for a ruling or a score change", !/"(ruling|score|homeScore|awayScore|decision_override)"/.test(JSON.stringify(report)));
   await sync.receive(id1, { deviceId: edge1, items: [item("incident", incidentId, 4, inc(4, "reviewing", { reopened_count: 1 }))] });
   await refusedWith("reopening the incident withholds its evidence at once", () => evidence.readUrl(evidenceId, "clip", undefined, orgC1), "Withheld");
-  check("and the organiser's report leaves it out", ((await reports.report(s1.id, orgC1)).incidents[0] as { evidence: unknown[] }).evidence.length === 0);
+  check("and the organiser's report leaves out the incident and its finding", (await reports.report(s1.id, orgC1)).incidents.length === 0);
   await refusedWith("and nothing more of it is uploaded", () => evidence.presign(id1, evidenceId, { kind: "clip", bytes: clip.length, sha256: sha256Hex(clip) }), "NotReleasable");
   await sync.receive(id1, { deviceId: edge1, items: [item("incident", incidentId, 5, inc(5, "reviewed", { reopened_count: 1, current_review_id: reviewId }))] });
 

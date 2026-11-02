@@ -34,7 +34,7 @@ Each person gets only what their job needs, on the match's FairPlay page.
 | Session lead | Run the session | opens and ends the session |
 | Releaser | Approve and export | approves clips for release and exports them |
 | Edge admin | Edge admin | records rights, acknowledges alerts, withdraws clips, runs the machine's commands |
-| Organiser | report only (`fairplay.report.view`) | reads the findings and approved clips of their own competitions |
+| Organiser | report only (`fairplay.report.view`) | reads the released clips of their own competitions and the findings that go with them |
 
 A session opened before this permission mattered needs each member's Watch originals ticked: a role gaining it does not change a place already given.
 

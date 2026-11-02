@@ -76,6 +76,8 @@ export class FairPlayReportService {
           released: release.ok, withheldBecause: release.ok ? null : release.reason,
           stored: clip?.state ?? "not_uploaded", deleteAfter: clip?.deleteAfter ?? null, deletedAt: clip?.deletedAt ?? null });
       }
+      // A finding with nothing released is staff's until something is (Fola, 2 November 2026).
+      if (organiser && !evidence.length) continue;
       incidents.push({
         id: inc.id, category: inc.category, eventUtc: inc.eventUtc, period: inc.period, matchMinute: inc.matchMinute,
         matchSecond: inc.matchSecond, state: inc.state, version: inc.version,
