@@ -40,8 +40,9 @@ No matches with minors until that is settled (R16). An adult match still needs a
   camera publishes, with or without a session ([ADR-0011](./adr/0011-recording-independent-of-the-edge.md)).
   So Part B comes **before the cameras are switched on.**
 - **It takes any words as a basis or a consent reference.** It checks they are there, not that they are true.
-- **"Synthetic test feed" opens every gate,** with no basis and no consent. An admin who picks it for a real
-  match releases it, and the audit log is the only trace (F13). Never pick it for a match.
+- **"Synthetic test feed" opens every gate on a test Edge,** with no basis and no consent, for clips cut after
+  it was recorded. An Edge takes it only with `FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE=1` or DEV bundles set, so never
+  set either on an Edge with real cameras: nothing else tells real pictures from test ones (F13, M6).
 - **"Minors: no" removes the need for a consent reference.** It is the admin's word, not a check.
 - **"Nothing leaves this Edge" means video.** With the cloud on, incident notes, player references,
   findings and operator names still sync to DTP's API ([privacy.md](./privacy.md#where-it-goes)).
@@ -87,7 +88,7 @@ this step is not where it gets agreed.
 
 | Field | Value | Say this when |
 |---|---|---|
-| Footage | `real` | every match. `synthetic` only for the test feeds |
+| Footage | `real` | every match. `synthetic` only for the test feeds, on an Edge set up for them |
 | Status | `not_recorded` | nothing is agreed: treat as a stop |
 | | `internal_review_only` | staff may review; nothing goes outside. The right default for a first rehearsal |
 | | `external_release_permitted` | the agreement allows clips to go to the organiser |

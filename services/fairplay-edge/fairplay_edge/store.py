@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -551,6 +551,14 @@ UPDATE schema_version SET version = 7;
 COMMIT;
 """
 
+# Version 8: what a clip's window was worked out from, kept with the job when it is asked for.
+_MIGRATE_V8 = """
+BEGIN IMMEDIATE;
+ALTER TABLE jobs ADD COLUMN window_basis TEXT;
+UPDATE schema_version SET version = 8;
+COMMIT;
+"""
+
 
 class Store:
     def __init__(self, path: Path):
@@ -575,7 +583,7 @@ class Store:
                 db.execute("INSERT INTO schema_version (version) VALUES (2)")
             elif start < 2:
                 db.execute("UPDATE schema_version SET version = 2")
-        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6), (7, _MIGRATE_V7)):
+        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6), (7, _MIGRATE_V7), (8, _MIGRATE_V8)):
             if start >= version:
                 continue
             db = self._connect()

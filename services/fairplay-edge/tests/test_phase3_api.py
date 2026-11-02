@@ -6,6 +6,7 @@ import io
 import json
 import uuid
 import zipfile
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -83,6 +84,9 @@ def flag(c, session_id, **extra):
 
 
 def to_reviewed(clients, service, session_id, release_rights=True):
+    if release_rights:  # before the cut: a clip keeps the kind it was cut as
+        clients["admin"].post(f"/edge/v1/sessions/{session_id}/rights", headers=CSRF, json={
+            "footageKind": "synthetic", "status": "not_recorded", "minorsPresent": "no"})
     inc = flag(clients["operator"], session_id).json()
     job = clients["operator"].post(f"/edge/v1/incidents/{inc['id']}/clips", headers=CSRF, json={"source": "ground"})
     assert job.status_code == 202
@@ -95,9 +99,6 @@ def to_reviewed(clients, service, session_id, release_rights=True):
                                  json={"result": "supports_original", "factualNotes": "Clean tackle; ball first.",
                                        "onFieldDecision": "play on", "evidenceIds": [ev["id"]]})
     assert r.status_code == 200, r.text
-    if release_rights:
-        clients["admin"].post(f"/edge/v1/sessions/{session_id}/rights", headers=CSRF, json={
-            "footageKind": "synthetic", "status": "not_recorded", "minorsPresent": "no"})
     return r.json(), ev
 
 
@@ -374,3 +375,29 @@ def test_a_later_finding_replaces_the_earlier_and_says_there_was_one(clients, se
     # Why it was reopened, and what the earlier finding said, are free text and stay at the venue.
     assert "factualNotes" not in earlier[0] and "a second look" not in package.read("finding.json").decode()
     assert finding["approval"]["afterCurrentFinding"] is False
+
+
+def test_calling_a_session_synthetic_does_not_open_footage_cut_as_real(clients, service, session_id):
+    _, ev = to_reviewed(clients, service, session_id, release_rights=False)
+    assert ev["footage_kind"] == "real"
+    r = clients["admin"].post(f"/edge/v1/sessions/{session_id}/rights", headers=CSRF, json={
+        "footageKind": "synthetic", "status": "not_recorded", "minorsPresent": "yes"})
+    assert r.status_code == 201, r.text
+    approved = clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF)
+    assert approved.status_code == 409 and "rights and consent" in approved.json()["message"]
+    assert clients["organiser"].get(f"/edge/v1/evidence/{ev['id']}/file").status_code != 200
+
+
+def test_an_edge_not_set_up_for_it_refuses_synthetic_footage(clients, service, session_id, monkeypatch):
+    monkeypatch.setattr(service, "settings", replace(service.settings, allow_synthetic_footage=False))
+    r = clients["admin"].post(f"/edge/v1/sessions/{session_id}/rights", headers=CSRF, json={
+        "footageKind": "synthetic", "status": "not_recorded", "minorsPresent": "no"})
+    assert r.status_code == 409 and r.json()["error"] == "synthetic_not_allowed"
+    assert service.store.one("SELECT 1 AS any_row FROM session_rights WHERE session_id = ?", (session_id,)) is None
+
+
+@pytest.mark.parametrize("set_vars, allowed", [
+    ({}, False), ({"FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE": "1"}, True), ({"FAIRPLAY_ALLOW_DEV_BUNDLES": "1"}, True)])
+def test_synthetic_footage_is_off_unless_set(env, set_vars, allowed):
+    env.pop("FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE")
+    assert load_settings({**env, **set_vars}).allow_synthetic_footage is allowed

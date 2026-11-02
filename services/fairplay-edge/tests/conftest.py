@@ -77,6 +77,7 @@ def env(tmp_path: Path) -> dict[str, str]:
         "FAIRPLAY_PUBLISH_ALLOWED_CIDRS": "172.31.250.0/24,192.168.1.0/24",
         "FAIRPLAY_EDGE_IP": "172.31.250.10",
         "FAIRPLAY_FINALIZE_QUIET_SECONDS": "0",
+        "FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE": "1",
     }
 
 

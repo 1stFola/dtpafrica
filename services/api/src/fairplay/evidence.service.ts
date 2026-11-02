@@ -85,7 +85,8 @@ export class FairPlayEvidenceService implements OnModuleInit, OnModuleDestroy {
     }
     const rights = await this.currentRights(ev.sessionId);
     if (!rights) return { ok: false, reason: "no rights record has been received for this session" };
-    if (rights.footage_kind === "synthetic") return { ok: true, reason: "synthetic test footage: no player is shown" };
+    // The clip's own kind too: calling the session synthetic later does not open footage cut as real.
+    if (rights.footage_kind === "synthetic" && ev.footageKind === "synthetic") return { ok: true, reason: "synthetic test footage: no player is shown" };
     if (rights.status !== "external_release_permitted") return { ok: false, reason: "the session's rights do not permit release" };
     if (rights.minors_present !== "no" && !rights.consent_reference) return { ok: false, reason: "players may be minors and no consent reference is recorded" };
     return { ok: true, reason: "release permitted by the recorded rights" };

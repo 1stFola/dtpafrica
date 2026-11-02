@@ -216,7 +216,10 @@ def test_real_footage_with_minors_needs_a_consent_reference(store, session):
 def test_synthetic_footage_may_be_released(store, session):
     incidents.record_rights(store, session["id"], ADMIN, footage_kind="synthetic", status="not_recorded",
                             minors_present="no", basis=None, consent_reference=None)
-    assert incidents.release_check(incidents.current_rights(store, session["id"]))[0]
+    rights = incidents.current_rights(store, session["id"])
+    assert incidents.release_check(rights, "synthetic")[0]
+    # Footage cut as real is not opened by calling the session synthetic afterwards.
+    assert not incidents.release_check(rights, "real")[0]
 
 
 # ── idempotent requests ───────────────────────────────────────────────────
@@ -247,12 +250,12 @@ def test_a_phase_2_database_upgrades_in_place(tmp_path):
     db.commit()
     db.close()
     store = Store(path)
-    assert store.one("SELECT version FROM schema_version")["version"] == 7  # v3, v4 (uploads), v5 (pairing, access), v6 (withdrawals), v7 (outbox index)
+    assert store.one("SELECT version FROM schema_version")["version"] == 8  # v3, v4 (uploads), v5 (pairing, access), v6 (withdrawals), v7 (outbox index)
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'uploads'")
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'withdrawals'")
     row = store.one("SELECT * FROM incidents WHERE id = 'i1'")
     assert (row["state"], row["version"], row["match_id"], row["reopened_count"]) == ("flagged", 3, "m-9", 0)
-    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 7}'
+    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 8}'
     assert Store(path).device_id == store.device_id  # opening again changes nothing
 
 

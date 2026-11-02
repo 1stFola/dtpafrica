@@ -82,6 +82,7 @@ class Settings:
     trusted_keys_file: Path | None = None
     bundle_file: Path | None = None
     allow_dev_bundles: bool = False
+    allow_synthetic_footage: bool = False
     console_dir: Path | None = None
     # Match clock: where each period starts, for bookmarks made from a match minute.
     period_minutes: int = 45
@@ -295,6 +296,7 @@ def load_settings(env: dict[str, str] | None = None, *, need_api_token: bool = T
         trusted_keys_file=Path(env["FAIRPLAY_TRUSTED_KEYS_FILE"]) if env.get("FAIRPLAY_TRUSTED_KEYS_FILE") else None,
         bundle_file=Path(env["FAIRPLAY_BUNDLE_FILE"]) if env.get("FAIRPLAY_BUNDLE_FILE") else None,
         allow_dev_bundles=env.get("FAIRPLAY_ALLOW_DEV_BUNDLES", "") == "1",
+        allow_synthetic_footage="1" in (env.get("FAIRPLAY_ALLOW_DEV_BUNDLES"), env.get("FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE")),
         console_dir=Path(env["FAIRPLAY_CONSOLE_DIR"]) if env.get("FAIRPLAY_CONSOLE_DIR") else None,
         period_minutes=_whole(env, "FAIRPLAY_PERIOD_MINUTES", 45, 10, 60),
         extra_period_minutes=_whole(env, "FAIRPLAY_EXTRA_PERIOD_MINUTES", 15, 5, 30),
