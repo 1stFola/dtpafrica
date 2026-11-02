@@ -5,11 +5,62 @@ import { AdminPageHeader } from "../components/AdminPageHeader";
 import { adminRbacApi, type AdminRole, type AdminUser } from "./admin-rbac-api";
 import { fetchCompetitions, type SbCompetition } from "../../../api/scoreboard";
 
-/** Contracted roles are competition-scoped and grouped away from staff. */
-const RECORDER_ROLES = new Set(["match_recorder"]);
-const SCOPED_ROLE = "match_recorder";
+/**
+ * Roles whose accounts are limited to competitions, mirroring the rule the API
+ * enforces (admin-rbac.service.ts). Everywhere else in admin "no competitions"
+ * means every competition, which is right for staff and wrong for an outsider.
+ *
+ *   - A Match Recorder may hold named competitions or all of them, and sees
+ *     only those fixtures in the recorder console.
+ *   - A FairPlay Organiser may hold named competitions only: FairPlay refuses an
+ *     organiser with no scope, and "all competitions" signs in with none.
+ */
+type ScopedRole = { allowAll: boolean; sees: string };
+const SCOPED_ROLES: Record<string, ScopedRole> = {
+  match_recorder: { allowAll: true, sees: "fixtures" },
+  fairplay_organiser_viewer: { allowAll: false, sees: "FairPlay reports and released evidence" },
+};
+const scopedRole = (slug: string | null | undefined): ScopedRole | undefined =>
+  slug ? SCOPED_ROLES[slug] : undefined;
 
-type Tab = "staff" | "recorders";
+/** Accounts from outside DTP are grouped away from staff, one tab per kind. */
+type Tab = "staff" | "recorders" | "organisers";
+const TABS: {
+  id: Tab;
+  label: string;
+  roles: string[] | null;
+  defaultRole: string;
+  singular: string;
+  empty: string;
+}[] = [
+  {
+    id: "staff",
+    label: "Internal staff",
+    roles: null,
+    defaultRole: "read_only",
+    singular: "staff account",
+    empty: "No staff accounts yet.",
+  },
+  {
+    id: "recorders",
+    label: "Match recorders",
+    roles: ["match_recorder"],
+    defaultRole: "match_recorder",
+    singular: "match recorder",
+    empty: "No match recorders yet. Create one on the left.",
+  },
+  {
+    id: "organisers",
+    label: "FairPlay organisers",
+    roles: ["fairplay_organiser_viewer"],
+    defaultRole: "fairplay_organiser_viewer",
+    singular: "FairPlay organiser",
+    empty: "No FairPlay organisers yet. Create one on the left.",
+  },
+];
+const EXTERNAL_ROLES = new Set(TABS.flatMap((t) => t.roles ?? []));
+const tabOf = (roleSlug: string | null | undefined): Tab =>
+  TABS.find((t) => t.roles?.includes(roleSlug ?? ""))?.id ?? "staff";
 
 /**
  * A password shown exactly once.
@@ -102,16 +153,18 @@ export function AdminUsersPage() {
     load().finally(() => setLoading(false));
   }, []);
 
-  const staffRoles = useMemo(() => roles.filter((r) => !RECORDER_ROLES.has(r.slug)), [roles]);
-  const recorderRoles = useMemo(() => roles.filter((r) => RECORDER_ROLES.has(r.slug)), [roles]);
+  const current = TABS.find((t) => t.id === tab) ?? TABS[0];
+  const roleOptions = useMemo(
+    () =>
+      roles.filter((r) =>
+        current.roles ? current.roles.includes(r.slug) : !EXTERNAL_ROLES.has(r.slug)
+      ),
+    [roles, current]
+  );
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const inTab = users.filter((u) =>
-      tab === "recorders"
-        ? RECORDER_ROLES.has(u.roleSlug ?? "")
-        : !RECORDER_ROLES.has(u.roleSlug ?? "")
-    );
+    const inTab = users.filter((u) => tabOf(u.roleSlug) === tab);
     if (!q) return inTab;
     return inTab.filter((u) =>
       [u.email, u.name, u.roleName, ...(u.competitionNames ?? [])]
@@ -120,13 +173,17 @@ export function AdminUsersPage() {
     );
   }, [users, tab, search]);
 
-  const counts = useMemo(
-    () => ({
-      staff: users.filter((u) => !RECORDER_ROLES.has(u.roleSlug ?? "")).length,
-      recorders: users.filter((u) => RECORDER_ROLES.has(u.roleSlug ?? "")).length,
-    }),
-    [users]
-  );
+  const counts = useMemo(() => {
+    const out: Record<Tab, number> = { staff: 0, recorders: 0, organisers: 0 };
+    for (const u of users) out[tabOf(u.roleSlug)] += 1;
+    return out;
+  }, [users]);
+
+  const selectTab = (next: Tab) => {
+    const def = TABS.find((t) => t.id === next) ?? TABS[0];
+    setTab(next);
+    setForm((f) => ({ ...f, roleSlug: def.defaultRole, competitionIds: [], allCompetitions: false }));
+  };
 
   const generate = async () => {
     try {
@@ -147,7 +204,7 @@ export function AdminUsersPage() {
         // Omitted entirely when blank, so the server generates one.
         password: form.password.trim() || undefined,
         roleSlug: form.roleSlug,
-        ...(form.roleSlug === SCOPED_ROLE
+        ...(scopedRole(form.roleSlug)
           ? { competitionIds: form.competitionIds, allCompetitions: form.allCompetitions }
           : {}),
       });
@@ -222,13 +279,13 @@ export function AdminUsersPage() {
     }
   };
 
-  const roleOptions = tab === "recorders" ? recorderRoles : staffRoles;
+  const formScope = scopedRole(form.roleSlug);
 
   return (
     <div className="admin-rbac-page">
       <AdminPageHeader
         title="Admin users"
-        description="Internal staff and contracted match recorders. Recorders are scoped to a single competition and see only their own match sheets."
+        description="Internal staff, contracted match recorders and FairPlay organisers. Recorders and organisers are limited to the competitions assigned to them: recorders see only their own match sheets, organisers only the FairPlay reports of their competitions."
       />
 
       {revealed && (
@@ -240,37 +297,23 @@ export function AdminUsersPage() {
       )}
 
       <div className="aup-tabs" role="tablist" aria-label="Account groups">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "staff"}
-          className={tab === "staff" ? "aup-tab is-active" : "aup-tab"}
-          onClick={() => {
-            setTab("staff");
-            setForm((f) => ({ ...f, roleSlug: "read_only", competitionIds: [], allCompetitions: false }));
-          }}
-        >
-          Internal staff <span className="aup-tab__count">{counts.staff}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "recorders"}
-          className={tab === "recorders" ? "aup-tab is-active" : "aup-tab"}
-          onClick={() => {
-            setTab("recorders");
-            setForm((f) => ({ ...f, roleSlug: SCOPED_ROLE }));
-          }}
-        >
-          Match recorders <span className="aup-tab__count">{counts.recorders}</span>
-        </button>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? "aup-tab is-active" : "aup-tab"}
+            onClick={() => selectTab(t.id)}
+          >
+            {t.label} <span className="aup-tab__count">{counts[t.id]}</span>
+          </button>
+        ))}
       </div>
 
       <div className="admin-rbac-layout">
         <div className="admin-sb-panel">
-          <h2 className="admin-sb-panel__title">
-            New {tab === "recorders" ? "match recorder" : "staff account"}
-          </h2>
+          <h2 className="admin-sb-panel__title">New {current.singular}</h2>
           <form className="admin-sb-form" onSubmit={handleCreate}>
             <label className="admin-sb-field">
               <span>Email</span>
@@ -322,25 +365,29 @@ export function AdminUsersPage() {
               </select>
             </label>
 
-            {form.roleSlug === SCOPED_ROLE && (
+            {formScope && (
               <fieldset className="admin-sb-field admin-scopeset">
                 <legend>Competitions</legend>
 
-                <label className="admin-scopeset__all">
-                  <input
-                    type="checkbox"
-                    checked={form.allCompetitions}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, allCompetitions: e.target.checked }))
-                    }
-                  />
-                  <span>
-                    <strong>All competitions</strong>
-                    <small className="muted">
-                      Includes any competition added later, friendlies among them.
-                    </small>
-                  </span>
-                </label>
+                {/* An organiser is never offered everything: FairPlay refuses an
+                    account with no scope, and that is what "all" signs in with. */}
+                {formScope.allowAll && (
+                  <label className="admin-scopeset__all">
+                    <input
+                      type="checkbox"
+                      checked={form.allCompetitions}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, allCompetitions: e.target.checked }))
+                      }
+                    />
+                    <span>
+                      <strong>All competitions</strong>
+                      <small className="muted">
+                        Includes any competition added later, friendlies among them.
+                      </small>
+                    </span>
+                  </label>
+                )}
 
                 {/* Named picks are pointless once everything is granted, so they
                     are disabled rather than left to contradict the toggle. */}
@@ -371,8 +418,10 @@ export function AdminUsersPage() {
                   {form.allCompetitions
                     ? "This recorder will see every fixture."
                     : form.competitionIds.length === 0
-                      ? "Pick at least one competition, or grant them all."
-                      : `Sees fixtures from ${form.competitionIds.length} competition${form.competitionIds.length === 1 ? "" : "s"}.`}
+                      ? formScope.allowAll
+                        ? "Pick at least one competition, or grant them all."
+                        : "Pick at least one competition. An organiser with none is refused."
+                      : `Sees ${formScope.sees} from ${form.competitionIds.length} competition${form.competitionIds.length === 1 ? "" : "s"}.`}
                 </small>
               </fieldset>
             )}
@@ -386,7 +435,7 @@ export function AdminUsersPage() {
         <div className="admin-sb-panel admin-rbac-users-table-wrap">
           <div className="aup-listhead">
             <h2 className="admin-sb-panel__title">
-              {tab === "recorders" ? "Match recorders" : "Internal staff"} ({visible.length})
+              {current.label} ({visible.length})
             </h2>
             <input
               type="search"
@@ -402,11 +451,7 @@ export function AdminUsersPage() {
             <p className="muted">Loading accounts…</p>
           ) : visible.length === 0 ? (
             <p className="muted">
-              {search
-                ? "No accounts match that filter."
-                : tab === "recorders"
-                  ? "No match recorders yet. Create one on the left."
-                  : "No staff accounts yet."}
+              {search ? "No accounts match that filter." : current.empty}
             </p>
           ) : (
             <ul className="aup-list">
@@ -460,7 +505,7 @@ export function AdminUsersPage() {
                       ))}
                     </select>
 
-                    {user.roleSlug === SCOPED_ROLE && (
+                    {scopedRole(user.roleSlug) && (
                       <details className="admin-scoperow">
                         <summary>
                           {user.allCompetitions
@@ -472,14 +517,16 @@ export function AdminUsersPage() {
                                 : `${(user.competitionNames ?? []).length} competitions`}
                         </summary>
 
-                        <label className="admin-scoperow__all">
-                          <input
-                            type="checkbox"
-                            checked={user.allCompetitions ?? false}
-                            onChange={(e) => patch(user, { allCompetitions: e.target.checked })}
-                          />
-                          <span>All competitions</span>
-                        </label>
+                        {scopedRole(user.roleSlug)?.allowAll && (
+                          <label className="admin-scoperow__all">
+                            <input
+                              type="checkbox"
+                              checked={user.allCompetitions ?? false}
+                              onChange={(e) => patch(user, { allCompetitions: e.target.checked })}
+                            />
+                            <span>All competitions</span>
+                          </label>
+                        )}
 
                         <div className={user.allCompetitions ? "is-disabled" : undefined}>
                           {competitions.map((competition) => {

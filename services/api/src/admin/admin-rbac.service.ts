@@ -22,8 +22,24 @@ function generatePassword(length = 16): string {
   return out;
 }
 
-/** Roles that must be pinned to exactly one competition. */
-const COMPETITION_SCOPED_ROLE = "match_recorder";
+/**
+ * Roles whose accounts must be limited to competitions. Everywhere else in admin
+ * "no competitions" means every competition, which is right for DTP staff and
+ * wrong for someone from outside.
+ *
+ *   - A Match Recorder may hold named competitions or all of them.
+ *   - A FairPlay Organiser may hold named competitions only: FairPlay refuses an
+ *     organiser account with no scope (fairplay/access.ts, decisions.md D4), and
+ *     "all competitions" carries no scope at all once signed in.
+ */
+const COMPETITION_SCOPED_ROLES: Record<string, { noun: string; allowAll: boolean }> = {
+  match_recorder: { noun: "A Match Recorder", allowAll: true },
+  fairplay_organiser_viewer: { noun: "A FairPlay Organiser", allowAll: false },
+};
+
+export function isCompetitionScopedRole(roleSlug: string | null | undefined): boolean {
+  return Boolean(roleSlug && roleSlug in COMPETITION_SCOPED_ROLES);
+}
 
 @Injectable()
 export class AdminRbacService {
@@ -236,18 +252,29 @@ export class AdminRbacService {
   }
 
   /**
-   * A recorder with no competitions would fall back to unscoped and see every
-   * fixture, so a scope is mandatory for that role — either an explicit grant
-   * of everything, or at least one named competition.
+   * A scoped account with no competitions would fall back to unscoped and see
+   * every fixture (a recorder) or be refused outright (an organiser), so a scope
+   * is mandatory for those roles. A recorder may be granted everything; an
+   * organiser must name the competitions, since FairPlay treats "no scope" as
+   * "not yours to read".
    */
   private assertScopeRequired(
     roleSlug: string | null,
     competitionIds: string[],
     allCompetitions: boolean
   ) {
-    if (roleSlug === COMPETITION_SCOPED_ROLE && !allCompetitions && competitionIds.length === 0) {
+    const scoped = roleSlug ? COMPETITION_SCOPED_ROLES[roleSlug] : undefined;
+    if (!scoped) return;
+    if (allCompetitions && !scoped.allowAll) {
       throw new BadRequestException(
-        "A Match Recorder must be assigned at least one competition, or all of them"
+        `${scoped.noun} must be limited to named competitions; it cannot be granted all of them`
+      );
+    }
+    if (!allCompetitions && competitionIds.length === 0) {
+      throw new BadRequestException(
+        scoped.allowAll
+          ? `${scoped.noun} must be assigned at least one competition, or all of them`
+          : `${scoped.noun} must be assigned at least one competition`
       );
     }
   }
@@ -365,9 +392,10 @@ export class AdminRbacService {
         ? await this.resolveCompetitionScope(input.competitionIds)
         : currentIds;
 
-    /* Moving off the scoped role drops the scope with it, so a stale grant
-       cannot outlive the role that needed it. */
-    const leavingScopedRole = nextRole?.slug !== COMPETITION_SCOPED_ROLE;
+    /* Moving off a scoped role drops the scope with it, so a stale grant
+       cannot outlive the role that needed it. Moving between scoped roles
+       (recorder to organiser, say) keeps the named competitions. */
+    const leavingScopedRole = !isCompetitionScopedRole(nextRole?.slug);
     this.assertScopeRequired(nextRole?.slug ?? null, nextIds, nextAll);
 
     const passwordHash = input.password

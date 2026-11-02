@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Link, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BrandLogo } from "../../components/BrandLogo";
 import { adminApi, type SupportSummary } from "../../api/admin";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -46,6 +46,41 @@ export function AdminLayout() {
   const isScoreboard = location.pathname.startsWith("/admin/scoreboard");
   const { collapsed, toggle } = useCollapsedMenu("dtp.admin.menu.collapsed");
   const [supportSummary, setSupportSummary] = useState<SupportSummary | null>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const topbarRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+
+  /* Lets the stylesheet tell the public site nav to scroll away on desktop
+     while the admin bar is the thing that sticks (global.css, .admin-topbar). */
+  useLayoutEffect(() => {
+    document.documentElement.classList.add("admin-active");
+    return () => document.documentElement.classList.remove("admin-active");
+  }, []);
+
+  /* The top bar stays put while the page scrolls, and the sidebar sits under it
+     with its own scrollbar (global.css, .admin-sb-sidebar). The bar's height is
+     not fixed — it wraps on narrow screens and grows with the role badge — so it
+     is measured and handed to the CSS as --admin-topbar-h. */
+  useLayoutEffect(() => {
+    const shell = shellRef.current;
+    const topbar = topbarRef.current;
+    if (!shell || !topbar) return;
+    const apply = () => shell.style.setProperty("--admin-topbar-h", `${topbar.offsetHeight}px`);
+    apply();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(apply);
+    observer.observe(topbar);
+    return () => observer.disconnect();
+  }, []);
+
+  /* A long menu scrolls inside the sidebar, so the current section could sit
+     below the fold of the menu itself. Bring it into view on arrival and when
+     the menu is reopened; "nearest" leaves the page's own scroll alone. */
+  useEffect(() => {
+    if (collapsed) return;
+    const active = navRef.current?.querySelector<HTMLElement>(".admin-sb-sidebar-link.active");
+    active?.scrollIntoView({ block: "nearest" });
+  }, [location.pathname, collapsed]);
 
   const visibleLinks = links.filter((l) =>
     canAccessNav(
@@ -86,8 +121,8 @@ export function AdminLayout() {
   }, [session?.method, session?.permissions]);
 
   return (
-    <div className="admin-shell">
-      <header className="admin-topbar">
+    <div className="admin-shell" ref={shellRef}>
+      <header className="admin-topbar" ref={topbarRef}>
         <div className="admin-topbar__brand">
           {!isScoreboard && <button type="button" className="admin-menu-toggle" onClick={toggle} aria-expanded={!collapsed} aria-controls="admin-sections">
             {collapsed ? "Show main menu" : "Hide main menu"}
@@ -113,7 +148,7 @@ export function AdminLayout() {
       <div className={`admin-cms-shell ${isScoreboard || collapsed ? "admin-cms-shell--full" : ""}`}>
         {!isScoreboard && (
           <aside id="admin-sections" hidden={collapsed} className="admin-sb-sidebar admin-cms-sidebar" aria-label="Admin sections">
-            <nav className="admin-sb-sidebar-nav">
+            <nav className="admin-sb-sidebar-nav" ref={navRef}>
               {visibleLinks.map((l) => (
                 <NavLink
                   key={l.to}

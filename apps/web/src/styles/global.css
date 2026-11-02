@@ -9556,6 +9556,30 @@ a {
   border-bottom: 1px solid var(--color-border);
 }
 
+/* The bar holds the menu toggle and sign-out, so it stays put while a long
+   page scrolls; its measured height (--admin-topbar-h, set by AdminLayout)
+   is what the sticky sidebar sits under. Pickers' dropdowns (z 30) live
+   below it and modals (80+) above. On phones the bar wraps to two rows and
+   would eat the screen, so it scrolls away there and the menu is a strip at
+   the top of the content instead.
+
+   The public site nav (dtp-figma.css, .dtp-nav-wrap) is sticky too, 140px
+   of it, with a see-through inset the admin bar would show through. While
+   the admin shell is mounted (html.admin-active, set by AdminLayout) the
+   site nav scrolls away on desktop and the admin bar is the chrome; the
+   nav is still there at the top of the page, and "View site" in the bar. */
+@media (min-width: 901px) {
+  .admin-shell > .admin-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 35;
+  }
+
+  html.admin-active .dtp-nav-wrap {
+    position: static;
+  }
+}
+
 .admin-topbar__brand {
   display: flex;
   align-items: center;
@@ -12269,6 +12293,11 @@ a {
   }
 }
 
+/* Sticky under the top bar, and never taller than what is left of the
+   viewport: a menu longer than the screen scrolls on its own, independently
+   of the page, instead of forcing the reader to scroll the page to reach the
+   last sections. overscroll-behavior keeps a flick at the end of the menu
+   from carrying on into the page. */
 .admin-sb-sidebar {
   align-self: start;
   background: rgba(15, 23, 42, 0.5);
@@ -12276,7 +12305,22 @@ a {
   border-radius: 12px;
   padding: 0.75rem;
   position: sticky;
-  top: 1rem;
+  top: calc(var(--admin-topbar-h, 0px) + 1rem);
+  max-height: calc(100vh - var(--admin-topbar-h, 0px) - 2rem);
+  max-height: calc(100dvh - var(--admin-topbar-h, 0px) - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.admin-sb-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-sb-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
 }
 
 .admin-sb-sidebar-nav {
@@ -13772,6 +13816,8 @@ a {
 @media (max-width: 900px) {
   .admin-sb-sidebar {
     position: static;
+    max-height: none;
+    overflow: visible;
   }
 
   .admin-sb-sidebar-nav {
