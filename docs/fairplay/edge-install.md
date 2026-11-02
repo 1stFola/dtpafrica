@@ -71,7 +71,7 @@ is added. A source added to `sources.toml` gets its publish password on the next
 | 8443/tcp (HTTPS) | `--lan-ip` | reviewers' devices on the venue LAN | the console and the API; TLS; only the certificate's host names answered |
 | 9997, 9996, 8888 | not published | the Edge's container only | MediaMTX's API, playback and HLS, on the stack's own network |
 | outbound 443 | — | the Edge to the DTP API and the R2 bucket | only when the cloud is configured; uploads only to `FAIRPLAY_UPLOAD_HOSTS` |
-| outbound 123/udp | — | the host's time daemon | NTP; offline, the Edge warns (5.6) |
+| outbound 123/udp | — | the host's time daemon | NTP; offline, the Edge warns (5.6) and deletes no old recordings until it has time again |
 
 Nothing else listens. The camera network and the reviewers' LAN should be separate networks
 (residual-risks.md R1).

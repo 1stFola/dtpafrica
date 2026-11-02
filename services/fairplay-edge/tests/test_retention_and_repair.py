@@ -3,7 +3,7 @@ from datetime import timedelta
 
 import pytest
 
-from fairplay_edge import mp4, retention
+from fairplay_edge import mp4, retention, timing
 from fairplay_edge.manifest import Scanner
 from fairplay_edge.probe import sha256_file
 from fairplay_edge.repair import RepairRefused, repair
@@ -155,3 +155,38 @@ def test_the_lookups_the_edge_makes_often_have_their_index(store):
     # INDEXED BY raises if the index cannot serve the query: plan_cut and the window route would fail.
     store.query("SELECT id FROM segments INDEXED BY segments_on_disk WHERE source = 'ground' AND start_utc < 'b'"
                 " AND (end_utc IS NULL OR end_utc > 'a') AND state != 'deleted' ORDER BY start_utc")
+
+
+def test_retention_deletes_nothing_when_the_clock_jumped(settings, store, three_final):
+    paths, _ = three_final
+    s = replace(settings, retention_days=30)
+    watch = timing.ClockWatch(store)
+    watch.sample(now=NOW - timedelta(days=40), mono=0)
+    watch.sample(now=NOW, mono=60 * 10**9)  # 40 days on the wall clock in one minute
+    watch.sample(now=NOW + timedelta(seconds=60), mono=120 * 10**9)  # and its own alert has closed
+    assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'clock_stepped' AND resolved_utc IS NULL") is None
+    assert retention.apply(s, store, Scanner(s, store), now=NOW + timedelta(seconds=60)) == []
+    assert all(p.exists() for p in paths)
+    assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'retention_paused' AND resolved_utc IS NULL")
+    # A retention period on, what looked old really is old.
+    later = NOW + timedelta(days=31)
+    assert retention.apply(s, store, Scanner(s, store), now=later)
+    assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'retention_paused' AND resolved_utc IS NULL") is None
+
+
+@pytest.mark.parametrize("kind", ["clock_stepped", "clock_not_synced"])
+def test_retention_waits_while_the_clock_is_in_doubt(settings, store, three_final, kind):
+    s = replace(settings, retention_days=30)
+    store.open_alert(kind, None, "warning", "t", {})
+    assert retention.apply(s, store, Scanner(s, store), now=NOW) == []
+    store.resolve_alert(kind, None, "t")
+    assert retention.apply(s, store, Scanner(s, store), now=NOW)
+
+
+def test_deleting_recordings_empties_the_replay_cache(settings, store, three_final):
+    s = replace(settings, retention_days=30)
+    cache = settings.data_dir / "replay-cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "window.mp4").write_bytes(b"a copy of a recording")
+    assert retention.apply(s, store, Scanner(s, store), now=NOW)
+    assert not list(cache.iterdir())

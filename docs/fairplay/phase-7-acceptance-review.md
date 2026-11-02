@@ -48,6 +48,7 @@ passed 29 of 29. Fola should know C1 first, and should not repeat "not deployed"
 | H4 | Merged, #338 | `fix/fairplay-h4-export-finding` `2bd8995` | A package holds `finding.json`, listed in `SHA256SUMS`: result, reviewer, approver and whether that approval came after the current finding, earlier findings, this clip's custody. The clip's manifest is unchanged |
 | FP-15, M4 | Merged, #340 | `fix/fairplay-fp15-findings-held` `6f34980` | An organiser's report leaves out an incident with no released evidence, on the Edge and in the cloud. Staff still read every finding |
 | H5 | Merged, #339. Edge code, synthetic only | `fix/fairplay-h5-segment-length` `16b2dd7` | Files of 20 s: p50 22 to 24 s, p95 34 to 36 s, 68 of 92 clips within 30 s. See H5 in section 3 |
+| M1, M2, M10 | Fixed, not merged | `fix/fairplay-m1-m2-m10-footage` | Retention deletes nothing while the clock is in doubt, or for a retention period after a jump of an hour or more (`retention_paused`). A window touching withdrawn footage of that camera is refused, with no override. The replay cache empties whenever footage goes. A clock set wrong while the Edge is off and marked synchronised after restart is not caught |
 
 These reached `main` as #334 to #340 between 02:53 and 02:56 UTC on 2 November 2026, merged by Fola with no
 review recorded. FairPlay's code on `main` at `db13f96` is the same as the merge tested in section 9. CD run 41381143259
@@ -77,9 +78,10 @@ the follow-ups after they were written.
 - A consent reference is only a hash in the chain. A rights record's Basis is still there as text.
 - The event log says a hold was released or a member disabled, not why. The reason stays on its own row, which staff can still read.
 - 20-second files, and `view_original` for operators and assessors, confirmed.
+- Retention stays paused on an Edge with no time source. Its recordings stay past D9 until it has one, with the alert showing.
 
 **What still stands in the way:** FP-12 and FP-13, not built; the other
-medium defects, M1 to M3 and M5 to M13; and everything in reason 6.
+medium defects, M3, M5 to M9 and M11 to M13, with M1, M2 and M10 until their branch merges; and everything in reason 6.
 
 ### Evaluation against Prompt 8
 

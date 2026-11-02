@@ -36,7 +36,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
-from . import __version__, audit, incidents, outbox
+from . import __version__, audit, incidents, outbox, retention
 from .audit import Actor
 from .config import Settings
 from .naming import iso, parse_iso, utcnow
@@ -201,6 +201,15 @@ def _sync_job(db, job_id: str) -> None:
     outbox.enqueue(db, "job", job_id, None, row)
 
 
+def withdrawn_over(store: Store, source: str, start: datetime, duration_ms: int) -> bool:
+    """Does this window touch a clip of this camera that was withdrawn, under any incident?"""
+    end = start + timedelta(milliseconds=duration_ms)
+    return any(parse_iso(r["window_start_utc"]) < end
+               and start < parse_iso(r["window_start_utc"]) + timedelta(milliseconds=r["window_duration_ms"])
+               for r in store.query("SELECT e.window_start_utc, e.window_duration_ms FROM withdrawals w"
+                                    " JOIN evidence e ON e.id = w.evidence_id WHERE e.source = ?", (source,)))
+
+
 def request_clip(store: Store, settings: Settings, incident_id: str, source: str, actor: Actor) -> tuple[dict, bool]:
     """(job, created). Asking twice for the same window returns the first job."""
     incident = incidents.get(store, incident_id)
@@ -214,6 +223,8 @@ def request_clip(store: Store, settings: Settings, incident_id: str, source: str
         # D11: what was withdrawn on request is not made again from the recordings.
         raise incidents.Conflict(f"a clip of this incident from {source} was withdrawn on request; no new one is cut")
     window = window_for(store, settings, incident, source)
+    if withdrawn_over(store, source, parse_iso(window["startUtc"]), window["durationMs"]):
+        raise incidents.Conflict(f"this window overlaps a clip from {source} that was withdrawn on request; no new one is cut")
     key = f"{incident_id}:{source}:{window['startUtc']}:{window['durationMs']}"
     now = iso(utcnow())
     with store.tx() as db:
@@ -483,6 +494,8 @@ def run_job(store: Store, settings: Settings, cutter: Cutter, job_id: str, now: 
     evidence_id = new_id()
     part = target_dir / f"{evidence_id}.mp4.part"
     try:
+        if withdrawn_over(store, job["source"], parse_iso(job["window_start_utc"]), job["window_duration_ms"]):
+            raise ClipFailed("source_withdrawn", "a clip overlapping this window was withdrawn on request after this was asked for")
         plan = plan_cut(store, settings, job["source"], parse_iso(job["window_start_utc"]), job["window_duration_ms"],
                         now)
         fit_to_keyframes(plan, cutter)
@@ -736,6 +749,7 @@ def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, re
                      {"withdrawalId": w["id"], "origin": origin, "sha256": row["sha256"], "removedFiles": len(removed)})
         if sync:
             outbox.enqueue(db, "withdrawal", w["id"], 1, {**w, "removed_files": removed})
+    retention.clear_replay_cache(settings)
     return withdrawal_of(store, evidence_id)
 
 
