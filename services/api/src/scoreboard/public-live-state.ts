@@ -20,6 +20,7 @@
  * switch says, which is the point: the capture is the record, and the feed is a decision
  * about publishing it.
  */
+import { breakMsInHalf } from "@dtp/engines";
 import type { ClockState } from "../admin/admin-match-stats.service";
 
 /**
@@ -116,7 +117,10 @@ export function publicLiveState(input: PublicLiveInput): PublicLiveState | null 
      contradict it. */
   if (!Number.isFinite(anchor)) return { status: "live", minute: input.minute };
 
-  const played = Math.max(0, Math.floor(((input.now ?? Date.now()) - anchor) / 60000)) + 1;
+  /* A break keeps the game live: the status stays, and the minute holds where play stopped. */
+  const now = input.now ?? Date.now();
+  const stopped = breakMsInHalf(clock.breaks, clock.half, now);
+  const played = Math.max(0, Math.floor((now - anchor - stopped) / 60000)) + 1;
   const minute = clock.half === 2 ? halfLength + played : played;
   return { status: "live", minute };
 }

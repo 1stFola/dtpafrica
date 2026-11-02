@@ -1871,6 +1871,101 @@
 .mcx-same__q { margin: 0 0 0.6rem; color: #fecaca; font-size: 0.88rem; line-height: 1.35; }
 .mcx-same__actions { display: flex; flex-direction: column; gap: 0.45rem; }
 
+/* A break in play: the button on the clock, and the bar pinned while it lasts. */
+.mcx-breakbtn {
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.7rem;
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.mcx-breakbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  border-radius: 12px;
+  background: rgba(250, 204, 21, 0.1);
+}
+.mcx-breakbar__main { display: flex; align-items: center; gap: 0.5rem; }
+.mcx-breakbar__who { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.mcx-breakbar__resume {
+  flex: none;
+  width: auto;
+  min-height: 40px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.mcx-breakbar__who strong { color: #fde68a; font-size: 0.92rem; }
+.mcx-breakbar__who span { color: var(--color-muted); font-size: 0.72rem; }
+.mcx-breakbar__timer {
+  color: #fde68a;
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.mcx-breakbar__more,
+.mcx-breakbar__mistake {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mcx-breakbar__details { display: flex; flex-direction: column; gap: 0.6rem; text-align: left; }
+.mcx-breakbar__details label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.mcx-breakbar__details input,
+.mcx-breakbar__details select {
+  min-height: 38px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--mcx-line);
+  border-radius: 10px;
+  background: var(--mcx-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+.mcx-breakbar__details option { color: #0b1220; }
+
+.mcx-breaks { margin-bottom: 0.9rem; }
+.mcx-breaks__total {
+  margin-left: 0.5rem;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.mcx-breaks__list { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+.mcx-breaks__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--mcx-line);
+  border-left: 3px solid #facc15;
+  border-radius: 10px;
+}
+.mcx-breaks__what { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 0.85rem; }
+.mcx-breaks__len { flex: none; font-size: 0.8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* Step 4 when the event types live in the full-screen picker. */
 .mcx-step__labelrow {
   display: flex;

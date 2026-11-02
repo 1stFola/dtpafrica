@@ -1,3 +1,5 @@
+import { breakMsWithin, type MatchBreak } from "@dtp/engines";
+
 /**
  * When a live recording has been left running with nobody at it.
  *
@@ -16,6 +18,11 @@
  * deliberate choice and it has a sharp edge worth stating: a recorder who taps shot counts
  * for twenty minutes without filing an event is treated as absent and locked out. The
  * alert says which it was, so a wrong lock reads as a wrong lock rather than a mystery.
+ *
+ * **A break is not somebody leaving.** A stoppage for a water break or a medical emergency
+ * can run long with nothing to file, so the clock's `on_break` phase is not a running one,
+ * and break time does not count towards the quiet time once play resumes. Without that, a
+ * fifteen-minute medical stoppage and six quiet minutes after it would stop the broadcast.
  *
  * Nothing here reads a clock or a database. The caller supplies `now`, which is what makes
  * every boundary in this file testable without waiting twenty minutes.
@@ -40,6 +47,8 @@ export type IdleCandidate = {
   idleLockedAt: Date | null;
   /** A training sandbox is somebody practising and is never locked. */
   isTraining: boolean;
+  /** Stoppages on the clock, whose time is not the recorder being quiet. */
+  breaks?: readonly MatchBreak[];
 };
 
 export type IdleVerdict =
@@ -65,9 +74,12 @@ export function assessIdle(candidate: IdleCandidate, now: Date): IdleVerdict {
   const since = candidate.lastEventAt ?? candidate.halfStartedAt;
   if (!since) return { idle: false, reason: "not_running" };
 
-  const quietMs = now.getTime() - since.getTime();
+  const quietMs =
+    now.getTime() - since.getTime() - breakMsWithin(candidate.breaks, since.getTime(), now.getTime());
   if (quietMs < IDLE_LIMIT_MS) return { idle: false, reason: "within_limit" };
-  return { idle: true, since, quietMs };
+  /* `since` moves up by the breaks, so what the lock later reports as its quiet time is the
+     recorder's and not the stoppage's. With no breaks it is the same instant. */
+  return { idle: true, since: new Date(now.getTime() - quietMs), quietMs };
 }
 
 /** How long a lock has been quiet, in whole minutes, for an alert to read out. */
@@ -160,3 +172,7 @@ export function canSubmitYet(clock: { half: 1 | 2; phase: string } | null): bool
 /** Why the button is off, said the way the recorder would ask it. */
 export const SUBMIT_TOO_EARLY =
   "The sheet can be sent for approval once the second half is under way.";
+
+/** Play is paused, not over. */
+export const SUBMIT_ON_BREAK =
+  "Play is stopped for a break. Resume play before sending the sheet for approval.";

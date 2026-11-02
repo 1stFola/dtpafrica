@@ -19,6 +19,12 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { AdPlacement } from "../../../components/AdPlacement";
 import { liveAudioSocketUrl } from "../../../api/liveAudio";
 import { serverNow, syncServerClock } from "../../../lib/server-clock";
+import {
+  MATCH_BREAK_REASON_LABELS,
+  breakMsInHalf,
+  matchBreakSeconds,
+  openMatchBreak,
+} from "@dtp/engines/match-breaks";
 
 type MatchTab = "timeline" | "stats" | "video" | "photos" | "squads";
 
@@ -227,6 +233,8 @@ function liveClockSeconds(
   clock: NonNullable<SbMatchDetail["liveSheet"]>["clock"] | null | undefined
 ): number | null {
   if (!clock || clock.phase === "pre_kickoff") return null;
+  /* Time stopped in this half, which an open break holds the clock still with. */
+  const stoppedMs = breakMsInHalf(clock.breaks, clock.half, serverNow());
   const halfLengthSeconds = clock.halfLength * 60;
   const addedFirstSeconds = (clock.addedFirst ?? 0) * 60;
   const addedSecondSeconds = (clock.addedSecond ?? 0) * 60;
@@ -248,15 +256,29 @@ function liveClockSeconds(
     return halfLengthSeconds * 2 + addedSecondSeconds;
   }
   if (clock.half === 2 && Number.isFinite(secondStarted)) {
-    return halfLengthSeconds + Math.max(0, Math.floor((serverNow() - secondStarted) / 1000));
+    return (
+      halfLengthSeconds +
+      Math.max(0, Math.floor((serverNow() - secondStarted - stoppedMs) / 1000))
+    );
   }
   if (!Number.isFinite(firstStarted)) return null;
-  return Math.max(0, Math.floor((serverNow() - firstStarted) / 1000));
+  return Math.max(0, Math.floor((serverNow() - firstStarted - stoppedMs) / 1000));
+}
+
+/** "Water break 02:13" while play is stopped, ticking with the live clock. */
+function liveBreakLabel(
+  clock: NonNullable<SbMatchDetail["liveSheet"]>["clock"] | null | undefined
+): string | null {
+  const current = clock?.phase === "on_break" ? openMatchBreak(clock.breaks) : null;
+  if (!current) return null;
+  return `${MATCH_BREAK_REASON_LABELS[current.reason]} ${formatClockSeconds(
+    matchBreakSeconds(current, serverNow())
+  )}`;
 }
 
 function useLiveClockLabel(
   clock: NonNullable<SbMatchDetail["liveSheet"]>["clock"] | null | undefined
-): string | null {
+): { clock: string | null; onBreak: string | null } {
   const [tick, setTick] = useState(0);
   // The anchors were stamped on the server's clock; count from them on it too.
   useEffect(() => {
@@ -271,7 +293,10 @@ function useLiveClockLabel(
   return useMemo(() => {
     void tick;
     const seconds = liveClockSeconds(clock);
-    return seconds == null ? null : formatClockSeconds(seconds);
+    return {
+      clock: seconds == null ? null : formatClockSeconds(seconds),
+      onBreak: liveBreakLabel(clock),
+    };
   }, [clock, tick]);
 }
 
@@ -759,7 +784,12 @@ function LiveMatchModal({
             <span className="sbm-live-kicker">
               <span className="sbm-live-dot" aria-hidden="true" />
               Live Match Feed
-              {liveClockLabel && <strong className="sbm-live-clock">{liveClockLabel}</strong>}
+              {liveClockLabel.clock && (
+                <strong className="sbm-live-clock">{liveClockLabel.clock}</strong>
+              )}
+              {liveClockLabel.onBreak && (
+                <span className="sbm-live-break">{liveClockLabel.onBreak}</span>
+              )}
             </span>
             <h2 id="sbm-live-title">
               {match.homeTeam.shortName ?? match.homeTeam.name} {liveSheet.score.home}
@@ -1126,7 +1156,12 @@ export function MatchCenterPage() {
             <span className="sbm-live-kicker">
               <span className="sbm-live-dot" aria-hidden="true" />
               Live Feed
-              {liveClockLabel && <strong className="sbm-live-clock">{liveClockLabel}</strong>}
+              {liveClockLabel.clock && (
+                <strong className="sbm-live-clock">{liveClockLabel.clock}</strong>
+              )}
+              {liveClockLabel.onBreak && (
+                <span className="sbm-live-break">{liveClockLabel.onBreak}</span>
+              )}
             </span>
             <strong>
               {match.homeTeam.name} {liveSheet.score.home}

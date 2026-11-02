@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import {
+  SUBMIT_ON_BREAK,
   SUBMIT_TOO_EARLY,
   canSubmitYet,
   idleLockMessage,
@@ -27,8 +28,16 @@ import {
   squadNumberLabel,
 } from "../scoreboard/squad-number-lookup";
 import {
+  MATCH_BREAK_REASON_LABELS,
   OFFICIAL_EVENT_TYPES,
+  matchBreakComment,
+  matchBreakEventType,
+  matchBreakSeconds,
+  openMatchBreak,
+  readMatchBreaks,
   readTeamOfficial,
+  sequenceWithBreaks,
+  type MatchBreak,
   type TeamOfficial,
 } from "@dtp/engines";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
@@ -283,6 +292,10 @@ export type ClockPhase =
   | "running"
   | "awaiting_added"
   | "added_running"
+  /* Play is stopped for a water break, a medical emergency or the like. The half's clock
+     holds still and the break keeps its own time: see `match-breaks.ts`. Reached from
+     `running` or `added_running`, and it goes back to whichever it came from. */
+  | "on_break"
   | "awaiting_second_half"
   | "awaiting_full_time"
   | "penalty_shootout"
@@ -300,6 +313,8 @@ export type ClockState = {
   addedSecond: number | null;
   firstHalfStartedAt: string | null;
   secondHalfStartedAt: string | null;
+  /** Stoppages so far, in the order they happened. Left off when there are none. */
+  breaks?: MatchBreak[];
 };
 
 /** Kit colours the recorder picked for each side today. */
@@ -413,6 +428,7 @@ const CLOCK_PHASES = new Set<string>([
   "running",
   "awaiting_added",
   "added_running",
+  "on_break",
   "awaiting_second_half",
   "awaiting_full_time",
   "penalty_shootout",
@@ -425,18 +441,34 @@ export function readClock(input: unknown): ClockState | null {
   const c = input as Record<string, unknown>;
   const halfLength =
     typeof c.halfLength === "number" && c.halfLength > 0 ? Math.floor(c.halfLength) : 45;
-  const phase =
+  const half: 1 | 2 = c.half === 2 ? 2 : 1;
+  const addedFirst =
+    typeof c.addedFirst === "number" ? Math.max(0, Math.floor(c.addedFirst)) : null;
+  const addedSecond =
+    typeof c.addedSecond === "number" ? Math.max(0, Math.floor(c.addedSecond)) : null;
+  const sentPhase =
     typeof c.phase === "string" && CLOCK_PHASES.has(c.phase)
       ? (c.phase as ClockPhase)
       : "pre_kickoff";
+  const breaks = readMatchBreaks(c.breaks, sentPhase === "on_break");
+  /* On a break with none open would freeze nothing and read as stopped for ever, so the
+     clock goes back to what it was playing. */
+  const phase: ClockPhase =
+    sentPhase === "on_break" && !openMatchBreak(breaks)
+      ? (half === 1 ? addedFirst : addedSecond) != null
+        ? "added_running"
+        : "running"
+      : sentPhase;
   return {
     halfLength,
-    half: c.half === 2 ? 2 : 1,
+    half,
     phase,
-    addedFirst: typeof c.addedFirst === "number" ? Math.max(0, Math.floor(c.addedFirst)) : null,
-    addedSecond: typeof c.addedSecond === "number" ? Math.max(0, Math.floor(c.addedSecond)) : null,
+    addedFirst,
+    addedSecond,
     firstHalfStartedAt: readAnchor(c.firstHalfStartedAt),
     secondHalfStartedAt: readAnchor(c.secondHalfStartedAt),
+    /* Only when there are some, so a clock with none reads back exactly as it was sent. */
+    ...(breaks.length ? { breaks } : {}),
   };
 }
 
@@ -1315,6 +1347,10 @@ export class AdminMatchStatsService {
     if (!canSubmitYet(readClock(sheet.clock)) && !isTrainingCompetition(match.competition)) {
       throw new BadRequestException(SUBMIT_TOO_EARLY);
     }
+    /* Play is only paused, so the record is not finished and the break has no length yet. */
+    if (readClock(sheet.clock)?.phase === "on_break") {
+      throw new BadRequestException(SUBMIT_ON_BREAK);
+    }
 
     const stamp: Record<string, unknown> = {};
     for (const section of SHEET_SECTIONS) {
@@ -1534,7 +1570,10 @@ export class AdminMatchStatsService {
     /* Re-approval must not duplicate the timeline, so this sheet's previously
        published events are cleared first. Only rows this console wrote are
        touched — anything logged by the spotter or match centre is left alone. */
-    const eventRows = recorded.map((event, index) => ({
+    const breaks = readClock(sheet.clock)?.breaks ?? [];
+    const { eventSequence, breakSequence } = sequenceWithBreaks(recorded, breaks);
+    const publishedAt = Date.now();
+    const recordedRows = recorded.map((event, index) => ({
       matchId,
       teamId: teamIdFor(event.side),
       playerId: squadFor(event)?.playerId ?? null,
@@ -1557,12 +1596,38 @@ export class AdminMatchStatsService {
         half: event.half,
         playerNumber: event.playerNumber,
         secondaryPlayerNumber: event.secondaryPlayerNumber,
-        recorderSequence: index,
+        recorderSequence: eventSequence[index],
         /* Here and in the comment, never in `playerLabel`: player history matches a
            player by the name on that label. */
         ...(event.official ? { official: event.official } : {}),
       } as Prisma.InputJsonValue,
     }));
+    /* The stoppages go on the timeline too, as neutral rows with no team or player. Built
+       from the reason, so the recorder's note stays on the sheet. */
+    const breakRows = breaks.map((b, index) => ({
+      matchId,
+      teamId: null,
+      playerId: null,
+      playerLabel: null,
+      playerLabel2: null,
+      assistPlayerId: null,
+      assistLabel: null,
+      type: matchBreakEventType(b),
+      minute: b.minute,
+      detail: matchBreakComment(b, publishedAt),
+      metadata: {
+        source: "match_recorder",
+        sheetId: sheet.id,
+        addedMinute: b.addedMinute,
+        half: b.half,
+        recorderSequence: breakSequence[index],
+        breakId: b.id,
+        breakReason: b.reason,
+        breakLabel: MATCH_BREAK_REASON_LABELS[b.reason],
+        breakSeconds: matchBreakSeconds(b, publishedAt),
+      } as Prisma.InputJsonValue,
+    }));
+    const eventRows = [...recordedRows, ...breakRows];
 
     const stamp: Record<string, unknown> = {};
     for (const section of SHEET_SECTIONS) {

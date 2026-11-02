@@ -1,3 +1,4 @@
+import type { MatchBreak } from "@dtp/engines/match-breaks";
 import type { TeamOfficial } from "@dtp/engines/team-officials";
 import { adminFetch } from "./admin";
 
@@ -167,6 +168,8 @@ export type ClockPhase =
   | "running"
   | "awaiting_added"
   | "added_running"
+  /** Play is stopped for a break: the half's clock holds still and the break keeps its own time. */
+  | "on_break"
   | "awaiting_second_half"
   | "awaiting_full_time"
   | "penalty_shootout"
@@ -188,6 +191,8 @@ export type ClockState = {
   addedSecond: number | null;
   firstHalfStartedAt: string | null;
   secondHalfStartedAt: string | null;
+  /** Stoppages so far, in the order they happened. */
+  breaks?: MatchBreak[];
 };
 
 /** Kit colours the recorder picked for each side today. */
