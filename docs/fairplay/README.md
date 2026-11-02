@@ -1,7 +1,7 @@
 # DTP FairPlay
 
 Venue-local match replay, shadow review and verifiable video evidence, linked to ScoreBoard
-matches. **Built on the Edge through Phase 3 and in the cloud in Phase 4, tested on synthetic data only; the evidence bucket and the production deploy await approval.** Source of truth is the *DTP FairPlay
+matches. **Built on the Edge through Phase 3 and in the cloud in Phase 4, tested on synthetic data only; the cloud side is on the live server (CD deployed it on merge, and Fola confirmed on 1 Nov 2026 that this stands), and the evidence bucket awaits approval.** Source of truth is the *DTP FairPlay
 Product Implementation Document v1.0* (23 Oct 2026) and its coding-agent prompt pack; where
 this folder departs from them, an ADR says why.
 

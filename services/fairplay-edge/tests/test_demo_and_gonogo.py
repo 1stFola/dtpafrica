@@ -119,7 +119,7 @@ def test_every_risk_still_unsigned_stays_unsigned():
 
 def test_the_release_notes_are_honest_about_the_release():
     page = text_of(*FP, "release-notes.md")
-    assert "not released" in page and "**Not deployed anywhere.**" in page
+    assert "not released" in page and "**The cloud side is on the live server; nothing else is deployed.**" in page
     version = re.search(r'^version = "(.+)"', (EDGE / "pyproject.toml").read_text("utf-8"), flags=re.M)[1]
     assert f"## {version}:" in page
     migrations = [p.name for p in (REPO / "services" / "api" / "prisma" / "migrations").glob("*fairplay*")]

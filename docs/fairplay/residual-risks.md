@@ -78,7 +78,7 @@ These came after Fola's decisions of 31 Oct, so they have no decision yet.
 
 | # | Item | Waiting for |
 |---|---|---|
-| R20 | The R2 bucket, the production migrations (Phase 4 and 5.7), the production deploy, and `FAIRPLAY_BUNDLE_SIGNING_KEY` | Fola's explicit approval, each |
+| R20 | The R2 bucket and `FAIRPLAY_BUNDLE_SIGNING_KEY`. The production migrations (Phase 4 and 5.7) and the deploy are already done by CD, and Fola confirmed on 1 Nov 2026 that this stands | Fola's explicit approval, each |
 | R21 | A hardware time source (B5), a real reviewer device and browser (B12), FFmpeg's licence review (B9) | the venue kit and Phase 6 |
 | R22 | Every test and drill used synthetic footage; nothing has been tested with real cameras or real matches | the pilot rehearsal |
 

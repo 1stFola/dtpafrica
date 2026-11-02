@@ -9,7 +9,7 @@ says where each item stands today, from the repository's own records, and propos
 |---|---|---|
 | Show the synthetic demo to a stakeholder? | **Go, once Fola has read the draft report** | it uses no real footage, and nothing leaves DTP unless Fola sends it |
 | Record a real match, even privately? | **No-go** | sections A to E below are open, starting with rights, legal advice and the kit |
-| Deploy the cloud side to production? | **No-go until approved** | needs the approvals in section D. It would not by itself allow real footage |
+| Deploy the cloud side to production? | **Already done; it stands** | CD put it on the live box when it merged, and Fola confirmed this on 1 November 2026. Using it still needs the approvals in section D, and does not by itself allow real footage |
 
 The acceptance review (Phase 7) comes next, and is run by a reviewer who did not build this. Its verdict goes beside this page, not in place of it.
 
@@ -59,8 +59,8 @@ Each is Fola's, one by one. The [release notes](./release-notes.md#what-it-needs
 | # | Item | Today |
 |---|---|---|
 | D1 | The R2 bucket, and its checks that the stand-in S3 server cannot prove | 🔒 |
-| D2 | The production migrations | 🔒 |
-| D3 | The production deploy | 🔒 |
+| D2 | The production migrations | ✅ applied by CD; Fola confirmed it stands, 1 Nov 2026 |
+| D3 | The production deploy | ✅ done by CD; Fola confirmed it stands, 1 Nov 2026 |
 | D4 | `FAIRPLAY_BUNDLE_SIGNING_KEY` | 🔒 |
 | D5 | Licences: B9, B10, B10a, and whether an organiser's staff operating DTP's machine stays inside DTP ([licences.md](./licences.md)) | 🔒 |
 | D6 | A hardware time source (B5), and HTTPS on a real reviewer device (B12) | ⬜ |
@@ -91,7 +91,7 @@ These are not gates. If any stops being true, stop.
 - Not VAR, and not FIFA-authorised VAR or FVS.
 - No public or anonymous access to footage, and no dispute clip published.
 - No real youth video sent to a third-party AI service.
-- No new recurring cloud charge, EC2 change, paid GPU, DNS change or production deploy without Fola's approval.
+- No new recurring cloud charge, EC2 change, paid GPU, DNS change or production deploy without Fola's approval. A merge to `main` that passes CI is a production deploy, and runs any new migration.
 
 ## The decision
 

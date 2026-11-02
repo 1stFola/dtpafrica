@@ -20,6 +20,8 @@ between options, with a recommendation, on **28 October 2026**. Gate numbers ref
 | D12 | Edge machine security | **Full-disk encryption (BitLocker or LUKS) and a named DTP custodian**, on matchday and between matches | B14 |
 | D13 | The audit log | **Kept, minimised**: for as long as any evidence it describes is kept, plus 12 months; entries hold ids, hashes and staff names, never player names or note text | privacy decision 2 |
 
+**1 November 2026, on D3:** D3 said the cloud side would be "deployed only on a separate approval". The Phase 7 review ([C1](./phase-7-acceptance-review.md)) found CD had already deployed it to the box serving the live site, migrations included, when it merged. Asked whether that stands, Fola answered: "It stands, fix docs". A merge to `main` that passes CI is a production deploy.
+
 **Still open:** gate 1 (single- or multi-angle), which needs the equipment audit answered
 by the matchday crew; B8 (sheet event ids on approval); B9/B10 (licence rows); B12 (HTTPS
 on a real reviewer device). D8 sets the direction for rights but needs the organisers and
