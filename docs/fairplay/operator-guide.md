@@ -165,6 +165,10 @@ Do these in order. The cameras keep recording until you turn them off, so turn t
    mark can be added.
 3. **Press End session** (session lead), and confirm. It cannot be undone. Reviews, clips, approval
    and export all carry on afterwards.
+   - If another match follows on this Edge, do steps 4 to 6 first, or leave them to the Edge
+     admin. Once the session has ended and the Edge is online, the next match's operator list
+     arrives within minutes, and only an Edge admin can then open this match. Keep the Edge online
+     for 5 minutes after ending, or the next match's people cannot sign in.
 4. **Request clips.** Open each incident and press **Make ground clip** or **Make drone clip**. Read
    the coverage column: "partial" means part of that window was not recorded.
 5. **Review (assessor).** Press **Start review**, enter the **On-field decision** as it was given,
@@ -269,6 +273,7 @@ and all recordings.
 | "An evidence clip no longer matches its hash" | do not release it. Cut it again, report it, and have the Edge admin acknowledge it. |
 | "A recording file no longer matches its hash" | do not use it as evidence. Report it, and have the Edge admin acknowledge it. |
 | "This Edge was restored from a backup" | clips are held back until it has spoken to the cloud ([edge-backup.md](./edge-backup.md)). |
+| "The operator list for the next match on this Edge is waiting" | carry on with this match: nobody is signed out. When it is over, follow the steps for after the match, and keep the Edge online until the next list arrives. |
 | A request from a player or parent | don't handle it at the venue. Pass it to DTP, who record it in `/admin/fairplay/requests`. |
 
 ## Rehearsal

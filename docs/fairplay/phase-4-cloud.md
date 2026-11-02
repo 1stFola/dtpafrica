@@ -90,7 +90,7 @@ ScoreBoard, admin nor Vision modules, and writes no ScoreBoard row (a test check
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/fairplay/device/register` | bootstrap token (`x-fairplay-bootstrap-token`) → device token and the key to trust for bundles |
-| GET | `/fairplay/device/bundle?have=&expires=` | the signed credential bundle for this device's session; `unchanged` if it already has it |
+| GET | `/fairplay/device/bundle?have=&expires=&running=` | the signed credential bundle for this device's session: `running`, the session in progress on the Edge, if it is this device's and not ended; otherwise the nearest kickoff. `unchanged` if it already has it |
 | POST | `/fairplay/sync/batch` | the outbox: up to 200 items, with a 2 MB body limit on this route only |
 | POST | `/fairplay/device/evidence/:id/uploads` | a presigned PUT for a clip or its manifest, for exactly the declared size and SHA-256 |
 | POST | `/fairplay/device/evidence/:id/uploads/:kind/confirm` | the cloud HEADs the object and checks size and SHA-256 |

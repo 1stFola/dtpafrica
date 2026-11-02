@@ -78,6 +78,11 @@ function SignIn({ status, onSignedIn }: { status: AuthStatus | null; onSignedIn:
         {status && !status.bundleLoaded && (
           <p className="fp-warn" role="alert">Nobody can sign in: {status.problem ?? "no operator list is installed"}.</p>
         )}
+        {status?.nextListWaiting && (
+          <p className="fp-warn" role="alert">
+            The operator list for the next match is waiting, so its people can't sign in yet. Someone on the last match must sign in and press End session.
+          </p>
+        )}
         {status?.bundleLoaded && (
           <p className="fp-muted">
             Operator list valid until{" "}

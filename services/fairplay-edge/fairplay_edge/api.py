@@ -472,7 +472,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         b = service.bundle
         return {"bundleLoaded": b is not None, "dev": b.dev if b else None,
                 "expiresUtc": iso(b.expires_utc) if b else None, "problem": problem_outline(service.bundle_error),
-                "device": settings.device_label, "secure": secure_cookie}
+                "device": settings.device_label, "secure": secure_cookie,
+                "nextListWaiting": service.store.one("SELECT 1 AS held FROM alerts WHERE kind = 'bundle_held_back'"
+                                                     " AND resolved_utc IS NULL") is not None}
 
     @app.post("/edge/v1/auth/login")
     def login(body: LoginIn, request: Request, response: Response):

@@ -68,7 +68,7 @@ def test_the_service_uses_the_configured_storage_hosts(env):
 def test_the_sign_in_status_says_only_what_sign_in_needs(clients, service):  # noqa: F811
     with TestClient(create_app(service, run_loop=False)) as anon:
         status = anon.get("/edge/v1/auth/status").json()
-    assert set(status) == {"bundleLoaded", "dev", "expiresUtc", "problem", "device", "secure"}
+    assert set(status) == {"bundleLoaded", "dev", "expiresUtc", "problem", "device", "secure", "nextListWaiting"}
     assert problem_outline(None) is None
     assert problem_outline("no operator bundle installed") == "no operator list is installed"
     assert problem_outline("bundle expired at 2026-10-29T12:58:11Z") == "the operator list has expired"

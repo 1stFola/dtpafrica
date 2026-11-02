@@ -176,6 +176,37 @@ async function main() {
     (await sessions.bundleFor(id1)).bundle?.bundle.members.length === 0);
   await prisma.adminUserCompetition.deleteMany({ where: { adminUserId: assessor.id } });
 
+  console.log("\nTwo sessions on one device: a double-header");
+  const dh = await devices.create("Edge laptop double-header", admin);
+  const dhId = await devices.verify((await devices.register(dh.bootstrapToken, randomUUID())).deviceToken);
+  const kickoff = (minutes: number) => new Date(Date.now() + minutes * 60_000);
+  const dhFirst = await prisma.sbMatch.create({ data: { competitionId: c1.id, homeTeamId: lions.id, awayTeamId: eagles.id, kickoffAt: kickoff(-65) } });
+  const dhSecond = await prisma.sbMatch.create({ data: { competitionId: c1.id, homeTeamId: eagles.id, awayTeamId: lions.id, kickoffAt: kickoff(60) } });
+  const sFirst = await sessions.create({ matchId: dhFirst.id, deviceId: dh.id }, admin);
+  const sSecond = await sessions.create({ matchId: dhSecond.id, deviceId: dh.id }, admin);
+  check("with nothing running, the bundle is for the nearest kickoff", (await sessions.bundleFor(dhId)).sessionId === sSecond.id);
+  check("the session the Edge says it is running keeps its bundle, however near the next kickoff",
+    (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sFirst.id);
+  check("a running session that is not this device's changes nothing",
+    (await sessions.bundleFor(dhId, { runningSessionId: sC.id })).sessionId === sSecond.id);
+  const setKickoff = async (id: string, minutes: number) => {
+    const row = await prisma.fairPlaySession.findUniqueOrThrow({ where: { id } });
+    await prisma.fairPlaySession.update({ where: { id }, data: { matchSnapshot: { ...(row.matchSnapshot as object), kickoffAt: kickoff(minutes).toISOString() } } });
+  };
+  await setKickoff(sSecond.id, -5);
+  const nextKickedOff = await sessions.bundleFor(dhId, { runningSessionId: sFirst.id });
+  check("once the next match has kicked off, a session nobody ended stops holding its list",
+    nextKickedOff.sessionId === sSecond.id && "holdEnded" in nextKickedOff && nextKickedOff.holdEnded === true);
+  await setKickoff(sSecond.id, 60);
+  await setKickoff(sFirst.id, -241);
+  check("nor does it hold past four hours from its own kickoff", (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sSecond.id);
+  await setKickoff(sFirst.id, 2880);
+  check("a session opened days ahead, for a match not yet played, still holds",
+    (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sFirst.id);
+  await setKickoff(sFirst.id, -65);
+  await prisma.fairPlaySession.update({ where: { id: sFirst.id }, data: { endedAt: new Date() } });
+  check("nor does one that has ended", (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sSecond.id);
+
   console.log("\nSync: idempotent, ordered, owned");
   const t0 = "2026-10-28T15:00:00.000Z";
   const sessionPayload = { id: s1.id, label: s1.label, match_ref: matchA.id, mode: "shadow", created_utc: t0, created_by: assessor.id, ended_utc: null };

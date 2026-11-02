@@ -133,17 +133,18 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     except cloud.CloudError as exc:
         check("the bootstrap token works once", exc.status == 401, str(exc))
     client = cloud.CloudClient(base, token)
-    check("fetches and installs the cloud-signed bundle", cloud.refresh_bundle(settings, client).startswith("installed"))
+    check("fetches and installs the cloud-signed bundle", cloud.refresh_bundle(settings, store, client).startswith("installed"))
     bundle = verify_bundle(json.loads(bundle_file.read_text()), load_trusted_keys(keys), allow_dev=False)
     check("the bundle is the provisioned session, issued by the cloud",
           bundle.issuer == "dtp-cloud" and bundle.session_id == os.environ["FAIRPLAY_E2E_SESSION"], bundle.session_id)
-    check("an unchanged bundle is not fetched again", cloud.refresh_bundle(settings, client) == "unchanged")
+    check("an unchanged bundle is not fetched again", cloud.refresh_bundle(settings, store, client) == "unchanged")
     _, who = Sessions(store).login(bundle, os.environ["FAIRPLAY_E2E_EMAIL"], os.environ["FAIRPLAY_E2E_PIN"], "127.0.0.1")
     check("the member signs in at the venue with the PIN they set in the cloud", "fairplay.incident.review" in who.permissions)
     actor = Actor(who.user_id, who.name, "operator")
 
     # ── a match: session, rights, an incident, its finding, an approved clip ──
     session = timing.create_session(store, "Lions v Eagles", bundle.match_ref, "shadow", who.user_id, session_id=bundle.session_id)
+    check("the cloud keeps serving the session running here", cloud.refresh_bundle(settings, store, client) == "unchanged")
     for t in range(0, 60, 10):
         write_segment(settings.recordings_dir, "ground", at(t), fmp4(3))
     finalise_all(settings, store)

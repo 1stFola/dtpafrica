@@ -36,7 +36,9 @@ class FakeCloud:
         self.bucket: dict[str, bytes] = {}
         self.signed: dict[str, tuple[int, str]] = {}
         self.calls: list[str] = []
+        self.params: list[dict] = []
         self.bundle: dict | None = None
+        self.hold_ended = False
         self.refuse: dict[str, tuple[int, str]] = {}
         self.tamper_next_put = False
 
@@ -51,9 +53,12 @@ class FakeCloud:
                                              "deviceTokenExpiresAt": "2027-10-28T00:00:00Z", "trustedKey": self.trusted()})
         if path == "/api/v1/fairplay/device/bundle":
             have = request.url.params.get("have")
+            self.params.append(dict(request.url.params))
             if self.bundle and have == cloud.content_hash(self.bundle["bundle"]):
                 return httpx.Response(200, json={"unchanged": True})
-            return httpx.Response(200, json={"bundle": self.bundle} if self.bundle else {"bundle": None, "reason": "none"})
+            if self.bundle:
+                return httpx.Response(200, json={"bundle": self.bundle, **({"holdEnded": True} if self.hold_ended else {})})
+            return httpx.Response(200, json={"bundle": None, "reason": "none"})
         if path.endswith("/uploads"):
             body = json.loads(request.content)
             key = f"{path.split('/')[-2]}/{body['kind']}"
@@ -97,12 +102,12 @@ class FakeCloud:
         return CloudClient("https://dtp.example", token, httpx.Client(transport=httpx.MockTransport(self.handler)))
 
 
-def cloud_bundle(private_pem: str, session_id: str, match_id: str | None, hours: float = 36) -> dict:
+def cloud_bundle(private_pem: str, session_id: str, match_id: str | None, hours: float = 36, member: str = "u-1") -> dict:
     now = utcnow()
     bundle = {"schema": "fairplay.credential-bundle/v1", "issuer": "dtp-cloud", "bundleId": str(uuid.uuid4()),
               "issuedAt": iso(now), "expiresAt": iso(now + timedelta(hours=hours)),
               "session": {"id": session_id, "label": "Lions v Eagles", "matchId": match_id, "mode": "shadow"},
-              "members": [{"userId": "u-1", "email": "ade@example.org", "name": "Adé", "pinHash": "scrypt$1$1$1$AA==$AA==",
+              "members": [{"userId": member, "email": "ade@example.org", "name": "Adé", "pinHash": "scrypt$1$1$1$AA==$AA==",
                            "permissions": ["fairplay.incident.operate"]}]}
     return sign_bundle(bundle, private_pem)
 
@@ -127,26 +132,26 @@ def test_pairing_writes_an_owner_only_token_and_trusts_the_cloud_key(tmp_path, p
     assert fake.calls == ["POST /api/v1/fairplay/device/register"]
 
 
-def test_a_verified_cloud_bundle_is_installed_and_not_refetched(tmp_path, paired, settings):
+def test_a_verified_cloud_bundle_is_installed_and_not_refetched(tmp_path, paired, settings, store):
     fake, private, keys, _ = paired
     settings = dataclasses.replace(settings, trusted_keys_file=keys, bundle_file=tmp_path / "bundle.json")
     fake.bundle = cloud_bundle(private, "s-cloud", "m-1")
-    assert cloud.refresh_bundle(settings, fake.client()).startswith("installed")
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
     installed = verify_bundle(json.loads(settings.bundle_file.read_text()), load_trusted_keys(keys), allow_dev=False)
     assert (installed.session_id, installed.match_ref, installed.issuer) == ("s-cloud", "m-1", "dtp-cloud")
-    assert cloud.refresh_bundle(settings, fake.client()) == "unchanged"
+    assert cloud.refresh_bundle(settings, store, fake.client()) == "unchanged"
 
 
-def test_a_bundle_that_does_not_verify_is_never_installed(tmp_path, paired, settings):
+def test_a_bundle_that_does_not_verify_is_never_installed(tmp_path, paired, settings, store):
     fake, private, keys, _ = paired
     settings = dataclasses.replace(settings, trusted_keys_file=keys, bundle_file=tmp_path / "bundle.json")
     fake.bundle = cloud_bundle(private, "s-cloud", "m-1")
-    cloud.refresh_bundle(settings, fake.client())
+    cloud.refresh_bundle(settings, store, fake.client())
     before = settings.bundle_file.read_bytes()
     other, _ = generate_key()
     fake.bundle = cloud_bundle(other, "s-evil", None)
     with pytest.raises(CloudError, match="does not verify"):
-        cloud.refresh_bundle(settings, fake.client())
+        cloud.refresh_bundle(settings, store, fake.client())
     assert settings.bundle_file.read_bytes() == before  # the working bundle stays
 
 
@@ -256,11 +261,89 @@ def test_an_outage_keeps_every_upload_and_they_go_when_it_ends(store, settings, 
     assert up.run_once(now + timedelta(hours=1)) == 2
 
 
-def test_a_bundle_that_cannot_be_written_is_a_refresh_failure_not_a_crash(tmp_path, paired, settings):
+def test_a_bundle_that_cannot_be_written_is_a_refresh_failure_not_a_crash(tmp_path, paired, settings, store):
     fake, private, keys, _ = paired
     blocked = tmp_path / "read-only"
     blocked.write_text("a file, so nothing can be created under it")
     settings = dataclasses.replace(settings, trusted_keys_file=keys, bundle_file=blocked / "bundle.json")
     fake.bundle = cloud_bundle(private, "s-cloud", "m-1")
     with pytest.raises(CloudError, match="cannot write the bundle"):
-        cloud.refresh_bundle(settings, fake.client())
+        cloud.refresh_bundle(settings, store, fake.client())
+
+
+# ── a second session on the same Edge (a double-header) ───────────────────
+
+@pytest.fixture
+def running(tmp_path, paired, settings, store):
+    """The first match's session: its bundle installed and the session opened on this Edge."""
+    fake, private, keys, _ = paired
+    settings = dataclasses.replace(settings, trusted_keys_file=keys, bundle_file=tmp_path / "bundle.json")
+    fake.bundle = cloud_bundle(private, "s-first", "m-1")
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
+    timing.create_session(store, "First match", "m-1", "shadow", "u-1", session_id="s-first")
+    return fake, private, settings
+
+
+def open_alerts(store, kind="bundle_held_back"):
+    return store.query("SELECT * FROM alerts WHERE kind = ? AND resolved_utc IS NULL", (kind,))
+
+
+def test_the_edge_tells_the_cloud_which_session_it_is_running(running, store):
+    fake, _, settings = running
+    cloud.refresh_bundle(settings, store, fake.client())
+    assert fake.params[-1]["running"] == "s-first"
+
+
+def test_a_bundle_for_the_next_match_does_not_replace_a_session_in_progress(running, store):
+    fake, private, settings = running
+    before = settings.bundle_file.read_bytes()
+    fake.bundle = cloud_bundle(private, "s-second", "m-2")
+    result = cloud.refresh_bundle(settings, store, fake.client())
+    assert result.startswith("held back") and settings.bundle_file.read_bytes() == before
+    alert = open_alerts(store)
+    assert len(alert) == 1 and alert[0]["severity"] == "warning"
+    assert json.loads(alert[0]["detail"]) == {"running": "s-first", "offered": "s-second"}
+
+
+def test_the_running_sessions_own_new_bundle_is_still_installed(running, store):
+    fake, private, settings = running
+    fake.bundle = cloud_bundle(private, "s-first", "m-1", member="u-2")  # say a member was replaced
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
+    assert open_alerts(store) == []
+
+
+def test_ending_the_session_lets_the_next_list_in_and_clears_the_alert(running, store):
+    fake, private, settings = running
+    fake.bundle = cloud_bundle(private, "s-second", "m-2")
+    cloud.refresh_bundle(settings, store, fake.client())
+    timing.end_session(store, "s-first", "u-1")
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
+    assert "running" not in fake.params[-1] and open_alerts(store) == []
+    assert json.loads(settings.bundle_file.read_text())["bundle"]["session"]["id"] == "s-second"
+
+
+def test_a_session_nobody_ended_stops_holding_the_list_when_the_cloud_says(running, store):
+    fake, private, settings = running
+    fake.bundle = cloud_bundle(private, "s-second", "m-2")
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("held back")
+    fake.hold_ended = True
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
+    assert open_alerts(store) == []
+
+
+def test_a_session_opened_long_ago_still_holds_until_the_cloud_says(running, store):
+    """A rehearsal the day before opens the session early: age alone must not end the hold."""
+    fake, private, settings = running
+    fake.bundle = cloud_bundle(private, "s-second", "m-2")
+    with store.tx() as db:
+        db.execute("UPDATE match_sessions SET created_utc = ? WHERE id = 's-first'", (iso(utcnow() - timedelta(days=2)),))
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("held back")
+
+
+def test_a_bundle_for_a_session_not_yet_opened_here_can_be_replaced(tmp_path, paired, settings, store):
+    fake, private, keys, _ = paired
+    settings = dataclasses.replace(settings, trusted_keys_file=keys, bundle_file=tmp_path / "bundle.json")
+    fake.bundle = cloud_bundle(private, "s-first", "m-1")
+    cloud.refresh_bundle(settings, store, fake.client())
+    fake.bundle = cloud_bundle(private, "s-second", "m-2")
+    assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
