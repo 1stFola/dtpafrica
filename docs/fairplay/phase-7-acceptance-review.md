@@ -49,10 +49,10 @@ passed 29 of 29. Fola should know C1 first, and should not repeat "not deployed"
 | FP-15, M4 | Merged, #340 | `fix/fairplay-fp15-findings-held` `6f34980` | An organiser's report leaves out an incident with no released evidence, on the Edge and in the cloud. Staff still read every finding |
 | H5 | Merged, #339. Edge code, synthetic only | `fix/fairplay-h5-segment-length` `16b2dd7` | Files of 20 s: p50 22 to 24 s, p95 34 to 36 s, 68 of 92 clips within 30 s. See H5 in section 3 |
 
-These reached `main` as #334 to #340 between 02:53 and 02:56 UTC on 2 November 2026, merged by `1stFola` with no
+These reached `main` as #334 to #340 between 02:53 and 02:56 UTC on 2 November 2026, merged by Fola with no
 review recorded. FairPlay's code on `main` at `db13f96` is the same as the merge tested in section 9. CD run 41381143259
-deployed it to the box serving the live site: restore point taken, health check 200. Its logs show the schema before that
-deploy's migration step, so they do not themselves show the H3 migration applied; the next deploy's restore point will.
+deployed it to the box serving the live site: restore point taken, health check 200. The next deploy, run 41384509995 for #341, records the live schema as
+`20261101000000_fairplay_view_original_roles`, so H3's migration has applied.
 FairPlay is still not switched on for anyone: this review did not change the storage backend, signing key or role grants
 beyond that migration. **Merging anything to `main` deploys it (C1).**
 
