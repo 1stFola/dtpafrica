@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  breakMsInHalf,
+  matchBreakSeconds,
+  openMatchBreak,
+  type MatchBreak,
+  type MatchBreakReason,
+} from "@dtp/engines/match-breaks";
 import type { ClockState } from "../../../api/adminMatchStats";
 import { serverNow, syncServerClock } from "../../../lib/server-clock";
 
@@ -63,7 +70,12 @@ export function useMatchClock(
      would sit frozen at 00:00. */
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    if (phase !== "running" && phase !== "added_running" && phase !== "awaiting_full_time") {
+    if (
+      phase !== "running" &&
+      phase !== "added_running" &&
+      phase !== "awaiting_full_time" &&
+      phase !== "on_break"
+    ) {
       return;
     }
     const id = setInterval(() => setTick((n) => n + 1), TICK_MS);
@@ -72,12 +84,17 @@ export function useMatchClock(
 
   const anchor = half === 1 ? state.firstHalfStartedAt : state.secondHalfStartedAt;
   const addedAllowance = (half === 1 ? state.addedFirst : state.addedSecond) ?? 0;
+  const breaks = state.breaks;
+  const currentBreak = openMatchBreak(breaks);
 
   const elapsed = useMemo(() => {
     if (!anchor) return 0;
     const started = new Date(anchor).getTime();
     if (!Number.isFinite(started)) return 0;
-    const raw = Math.floor((serverNow() - started) / 1000);
+    /* Less the time stopped in this half. An open break counts up to now, so the two
+       cancel out and the reading holds still until play resumes. */
+    const now = serverNow();
+    const raw = Math.floor((now - started - breakMsInHalf(breaks, half, now)) / 1000);
     const ceiling =
       phase === "awaiting_added"
         ? halfLength * 60
@@ -88,7 +105,7 @@ export function useMatchClock(
           ? (halfLength + addedAllowance) * 60
           : Number.POSITIVE_INFINITY;
     return Math.max(0, Math.min(raw, ceiling));
-  }, [anchor, halfLength, phase, addedAllowance, tick]);
+  }, [anchor, halfLength, phase, addedAllowance, breaks, half, tick]);
 
   const patch = useCallback(
     (next: Partial<ClockState>) => onClockChange({ ...state, ...next }),
@@ -176,6 +193,52 @@ export function useMatchClock(
 
   const endGame = useCallback(() => patch({ phase: "finished" }), [patch]);
 
+  /** Stop the clock for a water break, a medical emergency or the like. */
+  const startBreak = useCallback(
+    (reason: MatchBreakReason) => {
+      if (phase !== "running" && phase !== "added_running") return;
+      const started = new Date(serverNow()).toISOString();
+      const next: MatchBreak = {
+        id: `break-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        reason,
+        note: null,
+        half,
+        minute: liveMinute,
+        addedMinute: liveAdded,
+        startedAt: started,
+        endedAt: null,
+      };
+      patch({ phase: "on_break", breaks: [...(breaks ?? []), next] });
+    },
+    [phase, half, liveMinute, liveAdded, breaks, patch]
+  );
+
+  /* Back to what the clock was doing: added time is running once this half's is set. */
+  const playingPhase = (half === 1 ? state.addedFirst : state.addedSecond) != null
+    ? "added_running"
+    : "running";
+
+  const resumeFromBreak = useCallback(() => {
+    if (phase !== "on_break") return;
+    const ended = new Date(serverNow()).toISOString();
+    patch({
+      phase: playingPhase,
+      breaks: (breaks ?? []).map((b) => (b.endedAt ? b : { ...b, endedAt: ended })),
+    });
+  }, [phase, playingPhase, breaks, patch]);
+
+  const updateBreak = useCallback(
+    (change: { reason?: MatchBreakReason; note?: string | null }) =>
+      patch({ breaks: (breaks ?? []).map((b) => (b.endedAt ? b : { ...b, ...change })) }),
+    [breaks, patch]
+  );
+
+  /** A break tapped by mistake: gone, and the clock reads as if it never stopped. */
+  const discardBreak = useCallback(() => {
+    if (phase !== "on_break") return;
+    patch({ phase: playingPhase, breaks: (breaks ?? []).filter((b) => b.endedAt) });
+  }, [phase, playingPhase, breaks, patch]);
+
   const startPenaltyShootout = useCallback(
     () => patch({ phase: "penalty_shootout" }),
     [patch]
@@ -191,6 +254,17 @@ export function useMatchClock(
     liveMinute,
     liveAdded,
     started: phase !== "pre_kickoff",
+    onBreak: phase === "on_break",
+    /** A break can start only while the match clock is actually running. */
+    canBreak: phase === "running" || phase === "added_running",
+    breaks: breaks ?? [],
+    currentBreak,
+    /** The break's own timer, in seconds. */
+    breakSeconds: currentBreak ? matchBreakSeconds(currentBreak, serverNow()) : 0,
+    startBreak,
+    resumeFromBreak,
+    updateBreak,
+    discardBreak,
     /** Reopened after full time: the clock stays stopped and every minute is typed. */
     correcting: phase === "correction",
     kickOff,

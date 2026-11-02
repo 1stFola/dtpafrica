@@ -38,4 +38,5 @@ export {
 export * from "./scoreboard/placeholder-names";
 export * from "./scoreboard/squad-number-lookup";
 export * from "./scoreboard/team-officials";
+export * from "./scoreboard/match-breaks";
 export * from "./media-url";

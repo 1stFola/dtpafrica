@@ -1,3 +1,4 @@
+import type { MatchBreak } from "@dtp/engines/match-breaks";
 import { getAdminApiKey, getAdminJwt } from "./admin";
 import { ApiError, apiGet } from "./client";
 import { parseApiErrorMessage } from "./error-message";
@@ -241,6 +242,8 @@ export type SbMatchDetail = Omit<SbMatchListItem, "homeTeam" | "awayTeam"> & {
       addedSecond: number | null;
       firstHalfStartedAt: string | null;
       secondHalfStartedAt: string | null;
+      /** Stoppages in play, without the recorder's notes. */
+      breaks?: MatchBreak[];
     } | null;
     kits: { home: string; away: string };
   } | null;
@@ -711,6 +714,7 @@ export const EVENT_LABELS: Record<string, string> = {
   throw_in: "Throw-in",
   through_ball: "Through ball",
   volley_missed: "Volley missed",
+  match_break: "Match stopped",
   water_break: "Water break",
   woodwork: "Hit woodwork",
   yellow_card: "Yellow card",

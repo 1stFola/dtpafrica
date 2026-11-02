@@ -62,6 +62,7 @@ async function main() {
         lastEventAt: sheet.lastEventAt,
         halfStartedAt: halfStartedAt ? new Date(halfStartedAt) : null,
         idleLockedAt: null,
+        breaks: clock.breaks,
         isTraining: Boolean(
           cfg && typeof cfg === "object" && (cfg as Record<string, unknown>).isTraining
         ),

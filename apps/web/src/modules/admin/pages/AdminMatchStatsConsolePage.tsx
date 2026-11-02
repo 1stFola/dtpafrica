@@ -24,6 +24,14 @@ import {
   type TallyValue,
 } from "../../../api/adminMatchStats";
 import { MatchEventsTab } from "./MatchEventsTab";
+import { BreakBar, BreakReasonPrompt } from "./MatchBreakControls";
+import {
+  matchBreakComment,
+  matchBreakEventType,
+  sequenceWithBreaks,
+  type MatchBreak,
+} from "@dtp/engines/match-breaks";
+import { serverNow } from "../../../lib/server-clock";
 import {
   OFFICIAL_EVENT_TYPES,
   teamOfficialPhrase,
@@ -363,9 +371,29 @@ function previewOfficialComment(
 
 function previewEvents(
   events: RecordedEvent[],
-  match: MatchStatsSheet["match"]
+  match: MatchStatsSheet["match"],
+  breaks: readonly MatchBreak[]
 ): SbMatchEvent[] {
-  return events.map((event, index) => {
+  const { eventSequence, breakSequence } = sequenceWithBreaks(events, breaks);
+  const breakRows: SbMatchEvent[] = breaks.map((b, index) => ({
+    id: `training-live-${b.id}`,
+    type: matchBreakEventType(b),
+    minute: b.minute,
+    teamId: null,
+    playerId: null,
+    playerLabel: null,
+    playerLabel2: null,
+    assistPlayerId: null,
+    assistLabel: null,
+    detail: matchBreakComment(b, serverNow()),
+    metadata: {
+      source: "training_live_preview",
+      addedMinute: b.addedMinute,
+      half: b.half,
+      recorderSequence: breakSequence[index],
+    },
+  }));
+  const eventRows: SbMatchEvent[] = events.map((event, index) => {
     const team = event.side === "home" ? match.homeTeam : match.awayTeam;
     const opponent = event.side === "home" ? match.awayTeam : match.homeTeam;
     const primary = playerLabelForNumber(match, team.id, event.playerNumber);
@@ -389,11 +417,12 @@ function previewEvents(
         source: "training_live_preview",
         addedMinute: event.addedMinute,
         half: event.half,
-        recorderSequence: index,
+        recorderSequence: eventSequence[index],
         ...(official ? { official } : {}),
       },
     };
   });
+  return [...eventRows, ...breakRows];
 }
 
 function TrainingLivePreviewModal({
@@ -401,19 +430,21 @@ function TrainingLivePreviewModal({
   totals,
   score,
   events,
+  breaks,
   onClose,
 }: {
   sheet: MatchStatsSheet;
   totals: Record<string, SidePair>;
   score: { home: number; away: number };
   events: RecordedEvent[];
+  breaks: readonly MatchBreak[];
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<TrainingPreviewTab>("timeline");
   const stats: SbMatchStats = { ...totals, goals: score };
   const homeTeam = teamRef(sheet.match.homeTeam);
   const awayTeam = teamRef(sheet.match.awayTeam);
-  const timeline = previewEvents(events, sheet.match);
+  const timeline = previewEvents(events, sheet.match, breaks);
 
   return (
     <div className="mcx-live-preview" role="dialog" aria-modal="true" aria-label="Training live preview">
@@ -1017,6 +1048,8 @@ function SheetActions({
      it too -- a disabled button is a suggestion, not a rule -- so this is here to explain
      rather than to enforce. */
   const secondHalfStarted = clock?.half === 2 || correcting;
+  /* Play is paused, not over: the server refuses this too, and the break has no length yet. */
+  const onBreak = clock?.phase === "on_break";
 
   return (
     <footer className="mcx-actions">
@@ -1025,12 +1058,14 @@ function SheetActions({
           <button
             type="button"
             className="mcx-btn mcx-btn--primary"
-            disabled={busy || !secondHalfStarted}
+            disabled={busy || !secondHalfStarted || onBreak}
             onClick={onSubmit}
             title={
-              secondHalfStarted
-                ? undefined
-                : "Available once the second half is under way"
+              onBreak
+                ? "Resume play first"
+                : secondHalfStarted
+                  ? undefined
+                  : "Available once the second half is under way"
             }
           >
             {correcting
@@ -1042,6 +1077,9 @@ function SheetActions({
               Corrections to a finished match are never approved automatically. Nothing changed
               here reaches the public site until a ScoreBoard admin reviews and approves it.
             </p>
+          )}
+          {onBreak && secondHalfStarted && (
+            <p className="mcx-hint muted">Play is stopped. Resume play before submitting.</p>
           )}
           {!secondHalfStarted && (
             <p className="mcx-hint muted">
@@ -1176,6 +1214,7 @@ export function AdminMatchStatsConsolePage() {
   const [playerNumber, setPlayerNumber] = useState("");
   /* The step-3 Official button: a card for a coach or other official, filed in its own modal. */
   const [officialOpen, setOfficialOpen] = useState(false);
+  const [breakPromptOpen, setBreakPromptOpen] = useState(false);
   const [kitPicker, setKitPicker] = useState<Side | null>(null);
   const [showKickoffStarter, setShowKickoffStarter] = useState(false);
   const [kickoffSide, setKickoffSide] = useState<Side | null>(null);
@@ -1854,6 +1893,15 @@ export function AdminMatchStatsConsolePage() {
                     )}`
                   : "Not started"}
             </span>
+            {matchClock.canBreak && editable && (
+              <button
+                type="button"
+                className="mcx-breakbtn"
+                onClick={() => setBreakPromptOpen(true)}
+              >
+                Break
+              </button>
+            )}
           </div>
 
           {correcting ? (
@@ -1946,6 +1994,17 @@ export function AdminMatchStatsConsolePage() {
             )
           )}
         </div>
+
+        {matchClock.currentBreak && (
+          <BreakBar
+            current={matchClock.currentBreak}
+            seconds={matchClock.breakSeconds}
+            matchMinute={displayMinute(matchClock.liveMinute, matchClock.liveAdded)}
+            onResume={matchClock.resumeFromBreak}
+            onChange={matchClock.updateBreak}
+            onCancel={matchClock.discardBreak}
+          />
+        )}
 
         <div className="mcx-tabs" role="tablist" aria-label="Match sheet sections">
           <button
@@ -2516,12 +2575,23 @@ export function AdminMatchStatsConsolePage() {
         />
       )}
 
+      {breakPromptOpen && matchClock.canBreak && editable && (
+        <BreakReasonPrompt
+          onChoose={(reason) => {
+            matchClock.startBreak(reason);
+            setBreakPromptOpen(false);
+          }}
+          onCancel={() => setBreakPromptOpen(false)}
+        />
+      )}
+
       {showTrainingLive && (
         <TrainingLivePreviewModal
           sheet={sheet}
           totals={totals}
           score={liveScore}
           events={events}
+          breaks={matchClock.breaks}
           onClose={() => setShowTrainingLive(false)}
         />
       )}

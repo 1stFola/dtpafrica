@@ -13,9 +13,13 @@ import { buildNumberLookup, squadNumberLabel } from "./squad-number-lookup";
 import { UpdateMatchDto } from "./dto/update-match.dto";
 import type { PatchMatchScoreDto } from "../admin/dto/patch-match-score.dto";
 import {
+  matchBreakComment,
+  matchBreakEventType,
   normalizeClubName,
   normalizePlayerName,
   playerLookupKey,
+  publicMatchBreaks,
+  sequenceWithBreaks,
 } from "@dtp/engines";
 import {
   buildSkeletonProfile,
@@ -1737,6 +1741,8 @@ export class ScoreboardService {
       lookup.find(teamIdFor(event.side), event.secondaryPlayerNumber);
     const playerLabel = squadNumberLabel;
 
+    const breaks = clock.breaks ?? [];
+    const { eventSequence, breakSequence } = sequenceWithBreaks(events, breaks);
     const comments = generateEventComments(events as RecordedEventInput[], (event) => {
       const isHome = event.side === "home";
       return {
@@ -1752,13 +1758,15 @@ export class ScoreboardService {
       updatedAt: sheet.updatedAt,
       recorderName: sheet.recorderName,
       score,
-      clock,
+      /* The public sees that play stopped and why. The recorder's note stays on the sheet. */
+      clock: { ...clock, ...(clock.breaks ? { breaks: publicMatchBreaks(clock.breaks) } : {}) },
       kits: readKits(sheet.kits) ?? { home: "#4c9ffe", away: "#f5a524" },
       stats: {
         ...totals,
         goals: score,
       },
-      events: events.map((event, index) => ({
+      events: [
+        ...events.map((event, index) => ({
         id: `live-${event.id}`,
         type: event.type,
         minute: event.minute,
@@ -1778,10 +1786,30 @@ export class ScoreboardService {
           half: event.half,
           playerNumber: event.playerNumber,
           secondaryPlayerNumber: event.secondaryPlayerNumber,
-          recorderSequence: index,
+          recorderSequence: eventSequence[index],
           ...(event.official ? { official: event.official } : {}),
         },
       })),
+        ...breaks.map((b, index) => ({
+          id: `live-${b.id}`,
+          type: matchBreakEventType(b),
+          minute: b.minute,
+          teamId: null,
+          playerId: null,
+          playerLabel: null,
+          playerLabel2: null,
+          assistPlayerId: null,
+          assistLabel: null,
+          detail: matchBreakComment(b, Date.now()),
+          metadata: {
+            source: "live_match_stats",
+            addedMinute: b.addedMinute,
+            half: b.half,
+            recorderSequence: breakSequence[index],
+            breakReason: b.reason,
+          },
+        })),
+      ],
     });
   }
 

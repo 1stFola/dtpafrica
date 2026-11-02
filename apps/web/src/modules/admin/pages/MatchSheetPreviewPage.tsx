@@ -9,6 +9,7 @@ import {
   type TallyValue,
 } from "../../../api/adminMatchStats";
 import { teamOfficialLabel } from "@dtp/engines/team-officials";
+import { BreaksLog } from "./MatchBreakControls";
 import { displayMinute } from "./useMatchClock";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 
@@ -173,6 +174,8 @@ export function MatchSheetPreviewPage() {
             </ol>
           )}
         </section>
+
+        <BreaksLog breaks={sheet.clock?.breaks ?? []} />
 
         <footer className="mpv-foot">
           <span>

@@ -8,6 +8,7 @@ import type {
 } from "../../../api/adminMatchStats";
 import { displayMinute, type useMatchClock } from "./useMatchClock";
 import { EventGrid } from "./EventGrid";
+import { BreaksLog } from "./MatchBreakControls";
 import { soundFor, useFeedbackPrefs } from "./useFeedbackPrefs";
 import { useUISound } from "./useUISound";
 import {
@@ -715,6 +716,8 @@ export function MatchEventsTab({
           </div>
         </section>
       )}
+
+      <BreaksLog breaks={clock.breaks} />
 
       {/* ---- Log ---- */}
       <section className="mcx-log">

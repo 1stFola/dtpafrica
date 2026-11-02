@@ -16,6 +16,11 @@
       "import": "./dist/scoreboard/squad-number-lookup.js",
       "default": "./dist/scoreboard/squad-number-lookup.js"
     },
+    "./match-breaks": {
+      "types": "./dist/scoreboard/match-breaks.d.ts",
+      "import": "./dist/scoreboard/match-breaks.js",
+      "default": "./dist/scoreboard/match-breaks.js"
+    },
     "./team-officials": {
       "types": "./dist/scoreboard/team-officials.d.ts",
       "import": "./dist/scoreboard/team-officials.js",

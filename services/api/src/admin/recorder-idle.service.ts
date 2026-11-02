@@ -89,6 +89,7 @@ export class RecorderIdleService implements OnModuleDestroy {
           halfStartedAt: halfStartedAt ? new Date(halfStartedAt) : null,
           idleLockedAt: null,
           isTraining: isTrainingConfig(sheet.match.competition?.formatConfig),
+          breaks: clock.breaks,
         };
 
         const verdict = assessIdle(candidate, now);
