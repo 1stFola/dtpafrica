@@ -163,7 +163,9 @@ def test_organiser_sees_only_released_evidence(clients, service, session_id):
     reviewed, ev = to_reviewed(clients, service, session_id)
     org = clients["organiser"]
     assert org.get(f"/edge/v1/evidence/{ev['id']}/file").status_code == 404  # not yet approved: not even "exists"
-    assert org.get(f"/edge/v1/report/sessions/{session_id}").json()["incidents"][0]["evidence"] == []
+    # Nothing released: not the finding either, though staff read it.
+    assert org.get(f"/edge/v1/report/sessions/{session_id}").json()["incidents"] == []
+    assert clients["admin"].get(f"/edge/v1/report/sessions/{session_id}").json()["incidents"][0]["finding"]["result"] == "supports_original"
     assert clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 200
     got = org.get(f"/edge/v1/evidence/{ev['id']}/file")
     assert got.status_code == 200 and got.headers["content-type"] == "video/mp4"

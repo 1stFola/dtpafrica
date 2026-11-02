@@ -47,8 +47,8 @@ person. Write nothing about a player's age, health or conduct off the ball.
   recordings, replay, live preview, incidents and draft evidence. Every replay window,
   live preview and evidence view is audited (once an hour per person and item), and every
   export each time.
-- **Organisers** (`fairplay.report.view` only) see completed findings and released evidence,
-  and nothing else. They see no live view, no recordings, no draft evidence and no other
+- **Organisers** (`fairplay.report.view` only) see released evidence and the findings that go with it,
+  and nothing else. A finding with nothing released stays with staff, including one with no clip at all. They see no live view, no recordings, no draft evidence and no other
   incidents. Withheld evidence answers 404, not 403, so an organiser is not told it exists.
 - **Released** means all three of these, checked each time it is read:
   1. an admin approved it;
