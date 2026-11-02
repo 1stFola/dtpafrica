@@ -267,7 +267,7 @@ function EvidenceSection({ detail, sources, me, act, say }: {
               <td className="fp-row">
                 <button className="fp-btn" disabled={!mayWatchAll && ev.state !== "approved"} title={!mayWatchAll && ev.state !== "approved" ? "Watching a clip before it is released needs Watch originals" : undefined}
                   onClick={() => setPlaying(playing === ev.id ? null : ev.id)}>{playing === ev.id ? "Close" : "View"}</button>
-                {exporter && ev.state !== "approved" && <button className="fp-btn" onClick={() => void act(() => post(`/edge/v1/evidence/${ev.id}/approve`), "Approved for release.")}>Approve</button>}
+                {exporter && mayWatchAll && ev.state !== "approved" && <button className="fp-btn" onClick={() => void act(() => post(`/edge/v1/evidence/${ev.id}/approve`), "Approved for release.")}>Approve</button>}
                 {exporter && ev.state === "approved" && <button className="fp-btn" onClick={() => void download(`/edge/v1/evidence/${ev.id}/export`).then((sha) => say(`Exported. Package SHA-256 ${sha}.`), (err) => say(problem(err, "export refused")))}>Export</button>}
               </td>
             </tr>

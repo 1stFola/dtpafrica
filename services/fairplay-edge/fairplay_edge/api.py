@@ -1191,6 +1191,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.post("/edge/v1/evidence/{evidence_id}/approve")
     def approve_evidence(evidence_id: str, who: Principal = exporter):
         evidence_or_404(evidence_id, who)
+        # Fola, 2 November 2026: nobody releases a clip they could not watch.
+        if not who.can("fairplay.evidence.view_original"):
+            raise refusal(403, "forbidden", "approving a clip also needs fairplay.evidence.view_original, to watch what is released")
         return lifecycle(evidence.approve, service.store, settings, evidence_id, actor_of(who))
 
     @app.post("/edge/v1/evidence/{evidence_id}/withdraw")

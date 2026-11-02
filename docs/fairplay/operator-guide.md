@@ -39,8 +39,8 @@ Each person gets only what their job needs, on the match's FairPlay page.
 A session opened before this permission mattered needs each member's Watch originals ticked: a role gaining it does not change a place already given.
 
 Without Watch originals the console plays no live feed or replay, and says so. Tick it for anyone who
-needs the pictures, and for no one else. It also covers a clip until it is released. A releaser can approve
-without it but cannot watch what they approve, so tick it for anyone who releases. Once released, any member can open the clip.
+needs the pictures, and for no one else. It also covers a clip until it is released, and approving a clip needs it, so tick it for anyone
+who releases. Once released, any member can open the clip.
 
 One person can hold several jobs, but they should not review and release the same clip alone if a
 second person is there.

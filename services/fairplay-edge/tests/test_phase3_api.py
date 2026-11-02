@@ -25,6 +25,7 @@ PEOPLE = {
     "assessor": ["fairplay.incident.operate", "fairplay.incident.review"],
     "admin": ALL,
     "organiser": ["fairplay.report.view"],
+    "exporter": ["fairplay.evidence.export"],
 }
 
 
@@ -166,6 +167,14 @@ def test_an_unreleased_clip_takes_view_original_and_a_released_one_does_not(clie
     assert clients["assessor"].get(path).status_code == 403
     assert clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 200
     assert clients["assessor"].get(path).status_code == 200
+
+
+def test_nobody_approves_a_clip_they_could_not_watch(clients, service, session_id):
+    _, ev = to_reviewed(clients, service, session_id)
+    with_export_alone = clients["exporter"]
+    assert with_export_alone.post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 403
+    assert clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 200
+    assert with_export_alone.post(f"/edge/v1/evidence/{ev['id']}/export", headers=CSRF).status_code == 200
 
 
 def test_organiser_sees_only_released_evidence(clients, service, session_id):
