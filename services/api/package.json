@@ -75,8 +75,8 @@
     "db:report:player-stat-drift": "tsx scripts/report-player-stat-drift.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1156.0",
-    "@aws-sdk/s3-request-presigner": "^3.1156.0",
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/s3-request-presigner": "^3.1161.0",
     "@dtp/engines": "workspace:*",
     "@dtp/vision-contracts": "workspace:*",
     "@nestjs/common": "^10.4.15",
