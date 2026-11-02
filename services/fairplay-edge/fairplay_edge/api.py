@@ -1178,6 +1178,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             raise refusal(410, "withdrawn", f"this clip was withdrawn on request at {gone['created_utc']}; its file is gone")
         if evidence.restore_unchecked(settings):
             raise refusal(409, "restore_unchecked", evidence.RESTORE_UNCHECKED)
+        # Fola, 1 November 2026: until a clip is released, watching it takes the same permission as the recording.
+        if not who.can("fairplay.evidence.view_original") and not evidence.released(service.store, row)[0]:
+            raise refusal(403, "forbidden", "this clip is not released, and watching it needs fairplay.evidence.view_original")
         path = evidence.path_of(settings, row)
         if not path.exists():
             raise refusal(409, "evidence_missing", "the evidence file is missing from this Edge")

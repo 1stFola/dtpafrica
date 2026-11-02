@@ -159,6 +159,15 @@ def test_rights_gate_blocks_release_of_real_footage(clients, service, session_id
     assert clients["admin"].post(approve, headers=CSRF).json()["state"] == "approved"
 
 
+def test_an_unreleased_clip_takes_view_original_and_a_released_one_does_not(clients, service, session_id):
+    _, ev = to_reviewed(clients, service, session_id)
+    path = f"/edge/v1/evidence/{ev['id']}/file"
+    assert clients["operator"].get(path).status_code == 200
+    assert clients["assessor"].get(path).status_code == 403
+    assert clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 200
+    assert clients["assessor"].get(path).status_code == 200
+
+
 def test_organiser_sees_only_released_evidence(clients, service, session_id):
     reviewed, ev = to_reviewed(clients, service, session_id)
     org = clients["organiser"]

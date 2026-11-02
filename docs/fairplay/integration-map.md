@@ -71,7 +71,7 @@ New permission slugs (PID §3 names in brackets):
 | `fairplay.edge.admin` [can_admin_edge] | register, pair and retire Edge devices |
 | `fairplay.incident.operate` | flag incidents, mark calibrations, request clips |
 | `fairplay.incident.review` [can_review] | record findings, complete reviews |
-| `fairplay.evidence.view_original` [can_view_original] | watch recordings and live feeds at the venue; audited. No effect in the cloud, which holds no originals |
+| `fairplay.evidence.view_original` [can_view_original] | watch recordings, live feeds and clips not yet released, at the venue; audited. No effect in the cloud, which holds no originals |
 | `fairplay.evidence.export` [can_export] | approve and export an evidence package |
 | `fairplay.report.view` | read approved reports and approved evidence only |
 
