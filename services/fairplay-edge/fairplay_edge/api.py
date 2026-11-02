@@ -336,6 +336,8 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     organiser = Depends(require_any(("fairplay.report.view", *STAFF_PERMISSIONS)))
     manager = Depends(require("fairplay.session.manage"))
     admin = Depends(require("fairplay.edge.admin"))
+    # The pictures themselves. Knowing what was recorded and when is `staff`.
+    originals = Depends(require("fairplay.evidence.view_original"))
 
     def source_or_404(name: str):
         source = settings.source(name)
@@ -726,7 +728,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
                           "media.accessed", "source", source, {"startUtc": iso(start), "durationMs": duration_ms})
 
     @app.get("/edge/v1/media/{name}")
-    async def media(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), who: Principal = staff):
+    async def media(name: str, start: str, durationMs: int = Query(..., gt=0, le=MAX_WINDOW_MS), who: Principal = originals):
         source_or_404(name)
         s = _when(start, "start")
         end = s + timedelta(milliseconds=durationMs)
@@ -752,7 +754,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         return FileResponse(target, media_type="video/mp4", headers={"Cache-Control": "no-store"})
 
     @app.get("/edge/v1/live/{name}/{file}")
-    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), who: Principal = staff):
+    async def live(name: str, file: str, session: str | None = Query(None, pattern=UUID_PATTERN), who: Principal = originals):
         """Live preview: MediaMTX's HLS playlists and fMP4 parts, proxied after authorisation.
         MediaMTX names its HLS session in `?session=`; that one parameter is passed through.
         Audited once per person and camera an hour: a player fetches a part every second."""
@@ -1178,6 +1180,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
             raise refusal(410, "withdrawn", f"this clip was withdrawn on request at {gone['created_utc']}; its file is gone")
         if evidence.restore_unchecked(settings):
             raise refusal(409, "restore_unchecked", evidence.RESTORE_UNCHECKED)
+        # Fola, 1 November 2026: until a clip is released, watching it takes the same permission as the recording.
+        if not who.can("fairplay.evidence.view_original") and not evidence.released(service.store, row)[0]:
+            raise refusal(403, "forbidden", "this clip is not released, and watching it needs fairplay.evidence.view_original")
         path = evidence.path_of(settings, row)
         if not path.exists():
             raise refusal(409, "evidence_missing", "the evidence file is missing from this Edge")
@@ -1188,6 +1193,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     @app.post("/edge/v1/evidence/{evidence_id}/approve")
     def approve_evidence(evidence_id: str, who: Principal = exporter):
         evidence_or_404(evidence_id, who)
+        # Fola, 2 November 2026: nobody releases a clip they could not watch.
+        if not who.can("fairplay.evidence.view_original"):
+            raise refusal(403, "forbidden", "approving a clip also needs fairplay.evidence.view_original, to watch what is released")
         return lifecycle(evidence.approve, service.store, settings, evidence_id, actor_of(who))
 
     @app.post("/edge/v1/evidence/{evidence_id}/withdraw")

@@ -21,10 +21,11 @@ CSRF = {"X-FairPlay-Request": "1"}
 ALL = ["fairplay.incident.operate", "fairplay.incident.review", "fairplay.session.manage", "fairplay.edge.admin",
        "fairplay.evidence.view_original", "fairplay.evidence.export"]
 PEOPLE = {
-    "operator": ["fairplay.incident.operate"],
+    "operator": ["fairplay.incident.operate", "fairplay.evidence.view_original"],
     "assessor": ["fairplay.incident.operate", "fairplay.incident.review"],
     "admin": ALL,
     "organiser": ["fairplay.report.view"],
+    "exporter": ["fairplay.evidence.export"],
 }
 
 
@@ -157,6 +158,23 @@ def test_rights_gate_blocks_release_of_real_footage(clients, service, session_id
         "footageKind": "real", "status": "external_release_permitted", "minorsPresent": "yes",
         "basis": "UFC 2026 media terms", "consentReference": "CF-2026-118"})
     assert clients["admin"].post(approve, headers=CSRF).json()["state"] == "approved"
+
+
+def test_an_unreleased_clip_takes_view_original_and_a_released_one_does_not(clients, service, session_id):
+    _, ev = to_reviewed(clients, service, session_id)
+    path = f"/edge/v1/evidence/{ev['id']}/file"
+    assert clients["operator"].get(path).status_code == 200
+    assert clients["assessor"].get(path).status_code == 403
+    assert clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 200
+    assert clients["assessor"].get(path).status_code == 200
+
+
+def test_nobody_approves_a_clip_they_could_not_watch(clients, service, session_id):
+    _, ev = to_reviewed(clients, service, session_id)
+    with_export_alone = clients["exporter"]
+    assert with_export_alone.post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 403
+    assert clients["admin"].post(f"/edge/v1/evidence/{ev['id']}/approve", headers=CSRF).status_code == 200
+    assert with_export_alone.post(f"/edge/v1/evidence/{ev['id']}/export", headers=CSRF).status_code == 200
 
 
 def test_organiser_sees_only_released_evidence(clients, service, session_id):

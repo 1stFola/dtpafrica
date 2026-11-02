@@ -137,14 +137,15 @@ read-only report of completed findings and released evidence, and nothing of the
 
 | | operate | review | edge.admin | evidence.export | report.view only |
 |---|---|---|---|---|---|
-| sources, recordings, replay, live, incidents | ✓ | ✓ | ✓ | ✓ | — |
+| sources, recordings' times and hashes, incidents | ✓ | ✓ | ✓ | ✓ | — |
 | flag and edit incidents, request clips, mark periods, calibrate | ✓ | | | | — |
 | start, complete, archive and reopen reviews | | ✓ | | | — |
 | record footage rights, read the whole audit log | | | ✓ | | — |
 | approve evidence for release, export a package | | | | ✓ | — |
 | completed findings and released evidence | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-A member with no permission sees nothing (Phase 2 let any member look).
+**Replay, live pictures and clips not yet released take `evidence.view_original`, on its own:** none of the
+columns above gives them. A member with no permission sees nothing (Phase 2 let any member look).
 
 ## Using the API
 

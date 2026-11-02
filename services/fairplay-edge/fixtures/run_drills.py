@@ -76,7 +76,7 @@ now = utcnow()
 bundle = {"schema": BUNDLE_SCHEMA, "bundleId": str(uuid.uuid4()), "issuer": "dev-local", "issuedAt": iso(now),
           "expiresAt": iso(now + timedelta(hours=36)),
           "members": [{"userId": "u-drill-operator", "email": cfg["email"], "name": "Drill operator",
-                       "permissions": ["fairplay.incident.operate"], "pinHash": hash_pin(cfg["pin"])}]}
+                       "permissions": ["fairplay.incident.operate", "fairplay.evidence.view_original"], "pinHash": hash_pin(cfg["pin"])}]}
 (auth / "bundle.json").write_text(json.dumps(sign_bundle(bundle, private)))
 paths = tlsgen.init(Path("/out/cloud/tls"), [cfg["sinkIp"]], "drill cloud")
 (auth / "drill-ca.pem").write_bytes(paths["ca"].read_bytes())

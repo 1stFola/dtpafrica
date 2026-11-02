@@ -24,6 +24,17 @@ describe("console guards", () => {
     expect(offenders.map(([f]) => f)).toEqual([]);
   });
 
+  it("asks for view_original before it plays a recording or a live feed", () => {
+    const text = sources["Console.tsx"];
+    expect(text).toContain('const mayWatch = can(me, "fairplay.evidence.view_original")');
+    expect(text).toMatch(/if \(!liveVideo\.current \|\| !mayWatch\) return;/);
+    expect(text).toMatch(/if \(!video\) return;\s+if \(!mayWatch\)/);
+  });
+
+  it("asks for view_original before it plays a clip that is not approved", () => {
+    expect(sources["Review.tsx"]).toContain('disabled={!mayWatchAll && ev.state !== "approved"}');
+  });
+
   it("shows the shadow banner text", () => {
     expect(sources["Banner.tsx"]).toContain("SHADOW REVIEW — NOT VAR.");
   });

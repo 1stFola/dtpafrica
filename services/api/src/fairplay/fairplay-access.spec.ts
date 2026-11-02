@@ -99,6 +99,13 @@ describe("FairPlay authorization matrix", () => {
     expect(() => assertCompetition(organiser, "c-1", "session", "s-9")).not.toThrow();
   });
 
+  it("the roles that replay footage hold view_original, and the organiser's does not", () => {
+    for (const slug of ["fairplay_operator", "fairplay_assessor", "fairplay_admin"]) {
+      expect(DEFAULT_ROLES.find((r) => r.slug === slug)!.permissionSlugs).toContain("fairplay.evidence.view_original");
+    }
+    expect(DEFAULT_ROLES.find((r) => r.slug === "fairplay_organiser_viewer")!.permissionSlugs).not.toContain("fairplay.evidence.view_original");
+  });
+
   it("the organiser role holds report.view and nothing else of FairPlay or ScoreBoard", () => {
     const role = DEFAULT_ROLES.find((r) => r.slug === "fairplay_organiser_viewer")!;
     expect(role.permissionSlugs).toEqual(["admin.session.read", "fairplay.report.view"]);

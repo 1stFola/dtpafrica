@@ -33,6 +33,8 @@ type Replay = {
   toPlayableMs?: number | null;
 };
 
+const NO_WATCHING = "You can't watch recordings or live feeds: this needs Watch originals on your place in this match. Ask the session lead.";
+
 export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const [health, setHealth] = useState<Health | null>(null);
   const [sources, setSources] = useState<SourceView[]>([]);
@@ -66,6 +68,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
 
   const edgeNow = useCallback(() => Date.now() + skewMs, [skewMs]);
   const say = useCallback((text: string) => setMessage(text), []);
+  const mayWatch = can(me, "fairplay.evidence.view_original");
 
   // ── polling ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -111,7 +114,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
 
   // ── live preview ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!liveVideo.current) return;
+    if (!liveVideo.current || !mayWatch) return;
     livePlayer.current?.stop();
     const player = new LivePlayer(liveVideo.current, setLive, edgeNow);
     livePlayer.current = player;
@@ -119,7 +122,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     return () => player.stop();
     // edgeNow changes every poll; restarting the stream for that would be wrong.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveSource]);
+  }, [liveSource, mayWatch]);
 
   // ── replay ────────────────────────────────────────────────────────────
   const calibrationFor = useCallback(
@@ -130,6 +133,10 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   const load = useCallback(async (next: Omit<Replay, "status">, note: string) => {
     const video = replayVideo.current;
     if (!video) return;
+    if (!mayWatch) {
+      say(NO_WATCHING);
+      return;
+    }
     setReplay({ ...next, status: "loading" });
     const result = await loadWindow(video, next.source, next.startIngestMs, next.durationMs);
     void report(next.source, toIso(next.startIngestMs), next.durationMs, result, note);
@@ -141,7 +148,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
     } else {
       setReplay({ ...next, status: "error", error: result.error });
     }
-  }, [speed, quarter]);
+  }, [speed, quarter, mayWatch, say]);
 
   /** Free replay: the moment `edgeMs` on `source`, with that source's own calibration applied. */
   const replayAt = useCallback(async (source: string, edgeMs: number, note: string) => {
@@ -497,8 +504,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
                 <p className="fp-muted">Offset {cal ? `${signedMs(cal.offsetMs)} ± ${cal.uncertaintyMs} ms` : "—"}
                   {cal?.flags.map((f) => <span key={f} className="fp-flag">{f.replaceAll("_", " ")}</span>)}</p>
                 <div className="fp-row">
-                  <button className="fp-btn" disabled={!s.publishing} onClick={() => setLiveSource(s.name)} aria-pressed={liveSource === s.name}>Live</button>
-                  <button className="fp-btn" onClick={() => void switchSource(s.name)} aria-pressed={replay?.source === s.name}
+                  <button className="fp-btn" disabled={!s.publishing || !mayWatch} onClick={() => setLiveSource(s.name)} aria-pressed={liveSource === s.name}>Live</button>
+                  <button className="fp-btn" disabled={!mayWatch} onClick={() => void switchSource(s.name)} aria-pressed={replay?.source === s.name}
                           aria-keyshortcuts={s.role === "ground" ? "G" : s.role === "drone" ? "D" : "P"}>Replay</button>
                 </div>
                 {s.openAlerts.map((a) => (
@@ -523,7 +530,8 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
           <h2 id="live-title">LIVE · {sources.find((s) => s.name === liveSource)?.label ?? liveSource}</h2>
           <div className="fp-video">
             <video ref={liveVideo} muted playsInline aria-label="Live preview" />
-            {live.status !== "playing" && <p className="fp-overlay">{live.status === "connecting" ? "Connecting…" : `Live preview unavailable: ${live.message ?? live.status}`}</p>}
+            {!mayWatch && <p className="fp-overlay">{NO_WATCHING}</p>}
+            {mayWatch && live.status !== "playing" && <p className="fp-overlay">{live.status === "connecting" ? "Connecting…" : `Live preview unavailable: ${live.message ?? live.status}`}</p>}
           </div>
           <p className="fp-muted">{live.behindMs !== null ? `≈ ${(live.behindMs / 1000).toFixed(1)} s behind live (measured)` : "delay not yet measured"} · preview only, muted</p>
         </section>
@@ -534,7 +542,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
             <video ref={replayVideo} playsInline controls={false} aria-label="Replay" />
             {replay?.status === "loading" && <p className="fp-overlay">Loading the recording…</p>}
             {replay?.status === "error" && <p className="fp-overlay fp-error">{replay.error}</p>}
-            {!replay && <p className="fp-overlay">No replay loaded. Jump back, or open an incident.</p>}
+            {!replay && <p className="fp-overlay">{mayWatch ? "No replay loaded. Jump back, or open an incident." : NO_WATCHING}</p>}
           </div>
           {replayWarnings.map((w) => <p key={w} className="fp-warn" role="alert">{w}</p>)}
           <p className="fp-position">
@@ -628,7 +636,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
               <div className="fp-sync__grid">
                 {sync.windows.map((w) => (
                   <figure key={w.source}>
-                    <video src={w.playbackPath} muted controls playsInline aria-label={`${w.source} at the test moment`} />
+                    {mayWatch && <video src={w.playbackPath} muted controls playsInline aria-label={`${w.source} at the test moment`} />}
                     <figcaption>{w.source}: {signedMs(w.offsetMs)} ± {w.uncertaintyMs} ms · {w.state.replaceAll("_", " ")}</figcaption>
                   </figure>
                 ))}

@@ -29,12 +29,18 @@ Each person gets only what their job needs, on the match's FairPlay page.
 
 | Job | Permission | What they do |
 |---|---|---|
-| Operator | Flag incidents | marks the periods, flags incidents, requests clips |
-| Assessor | Record findings | reviews incidents and records what the footage shows |
+| Operator | Flag incidents, Watch originals | marks the periods, flags incidents, requests clips, watches live and replay |
+| Assessor | Record findings, Watch originals | reviews incidents and records what the footage shows |
 | Session lead | Run the session | opens and ends the session |
 | Releaser | Approve and export | approves clips for release and exports them |
 | Edge admin | Edge admin | records rights, acknowledges alerts, withdraws clips, runs the machine's commands |
 | Organiser | report only (`fairplay.report.view`) | reads the findings and approved clips of their own competitions |
+
+A session opened before this permission mattered needs each member's Watch originals ticked: a role gaining it does not change a place already given.
+
+Without Watch originals the console plays no live feed or replay, and says so. Tick it for anyone who
+needs the pictures, and for no one else. It also covers a clip until it is released, and approving a clip needs it, so tick it for anyone
+who releases. Once released, any member can open the clip.
 
 One person can hold several jobs, but they should not review and release the same clip alone if a
 second person is there.
