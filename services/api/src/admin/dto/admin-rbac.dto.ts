@@ -33,15 +33,15 @@ export class CreateAdminUserDto {
   roleSlug!: string;
 
   /**
-   * Competitions a Match Recorder may work in. Ignored when `allCompetitions`
-   * is set, since that already grants everything.
+   * Competitions a Match Recorder may work in, or a FairPlay Organiser may read.
+   * Ignored when `allCompetitions` is set, since that already grants everything.
    */
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   competitionIds?: string[];
 
-  /** Grants every competition, present and future. */
+  /** Grants every competition, present and future. Refused for a FairPlay Organiser. */
   @IsOptional()
   @IsBoolean()
   allCompetitions?: boolean;
