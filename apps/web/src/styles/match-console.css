@@ -1924,6 +1924,19 @@
   text-decoration: underline;
   cursor: pointer;
 }
+.mcx-breakbar__links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.35rem 0.75rem; }
+.mcx-breakbar__stop {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fca5a5;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mcx-stoppage-btn { width: 100%; margin-top: 0.75rem; }
 .mcx-breakbar__details { display: flex; flex-direction: column; gap: 0.6rem; text-align: left; }
 .mcx-breakbar__details label {
   display: flex;

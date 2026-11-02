@@ -42,6 +42,17 @@ export class SaveMatchStatsDto {
   kits?: Record<string, unknown>;
 }
 
+/** A new kick-off for a stopped match, as a date and a West Africa Time. */
+export class RescheduleStoppageDto {
+  @IsString()
+  @MaxLength(10)
+  kickoffDate!: string;
+
+  @IsString()
+  @MaxLength(5)
+  kickoffTime!: string;
+}
+
 export class SendBackMatchStatsDto {
   @IsOptional()
   @IsString()

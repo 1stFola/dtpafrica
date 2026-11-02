@@ -9,6 +9,7 @@ import {
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useAdminAuth } from "../AdminAuthContext";
 import { StoppedRecordingsPanel } from "../components/StoppedRecordingsPanel";
+import { TotalStoppagesPanel } from "../components/TotalStoppagesPanel";
 import { FeedbackSettings } from "./FeedbackSettings";
 
 /** Fixtures worth offering a sheet for: recent enough to have been played,
@@ -143,6 +144,7 @@ export function AdminMatchStatsPage() {
 
       {/* Same panel as the dashboard. Match supervisors can release a stopped recording
           but land here rather than on the dashboard, so without it they never see one. */}
+      {hasPermission("scoreboard.stats.approve") && <TotalStoppagesPanel />}
       {hasPermission("scoreboard.stats.approve") && <StoppedRecordingsPanel />}
 
       <FeedbackSettings />

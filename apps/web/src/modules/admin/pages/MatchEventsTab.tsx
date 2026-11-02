@@ -171,6 +171,7 @@ export function MatchEventsTab({
   playerNumber,
   officialOpen,
   onOfficialClose,
+  onTotalStoppage,
   onCapturedUsed,
   clock,
   addedInput,
@@ -196,6 +197,8 @@ export function MatchEventsTab({
    */
   officialOpen: boolean;
   onOfficialClose: () => void;
+  /** The match cannot go on, which can be decided at half-time as well as in play. */
+  onTotalStoppage: () => void;
   onCapturedUsed: () => void;
   clock: ReturnType<typeof useMatchClock>;
   addedInput: string;
@@ -1228,6 +1231,9 @@ export function MatchEventsTab({
               }}
             >
               Start Second Half
+            </button>
+            <button type="button" className="mcx-prompt__cancel" onClick={onTotalStoppage}>
+              Total stoppage: the match cannot go on
             </button>
           </div>
         </div>

@@ -16,7 +16,11 @@ import { AdminAuthGuard } from "./guards/admin-auth.guard";
 import { PermissionsGuard } from "./guards/permissions.guard";
 import { RequirePermissions } from "./decorators/require-permissions.decorator";
 import { AdminMatchStatsService, type SheetSection } from "./admin-match-stats.service";
-import { SaveMatchStatsDto, SendBackMatchStatsDto } from "./dto/match-stats.dto";
+import {
+  RescheduleStoppageDto,
+  SaveMatchStatsDto,
+  SendBackMatchStatsDto,
+} from "./dto/match-stats.dto";
 import type { AdminAuthContext } from "./auth/admin-auth.types";
 import { LiveAudioCommentaryService } from "../scoreboard/live-audio-commentary.service";
 
@@ -77,6 +81,13 @@ export class AdminMatchStatsController {
   @RequirePermissions("scoreboard.stats.approve")
   listIdleLocked(@Req() req: AdminRequest) {
     return this.stats.listIdleLocked(req.adminAuth);
+  }
+
+  /** Matches a recorder stopped outright, waiting on a new date. Above `GET :matchId` too. */
+  @Get("total-stoppages")
+  @RequirePermissions("scoreboard.stats.approve")
+  listTotalStoppages(@Req() req: AdminRequest) {
+    return this.stats.listTotalStoppages(req.adminAuth);
   }
 
   /* Practice matches. Declared above the ":matchId" routes so "training" is
@@ -218,6 +229,28 @@ export class AdminMatchStatsController {
     @Req() req: AdminRequest
   ) {
     return this.stats.releaseIdleLock(matchId, dto.note, req.adminAuth);
+  }
+
+  /** The match cannot go on: reset it and tell the admins. The note says what happened. */
+  @Post(":matchId/total-stoppage")
+  @RequirePermissions("scoreboard.stats.record")
+  declareTotalStoppage(
+    @Param("matchId") matchId: string,
+    @Body() dto: SendBackMatchStatsDto,
+    @Req() req: AdminRequest
+  ) {
+    return this.stats.declareTotalStoppage(matchId, dto.note, req.adminAuth);
+  }
+
+  /** Give a stopped match its new kick-off, which lets it be recorded again. */
+  @Post(":matchId/reschedule-stoppage")
+  @RequirePermissions("scoreboard.stats.approve")
+  rescheduleStoppage(
+    @Param("matchId") matchId: string,
+    @Body() dto: RescheduleStoppageDto,
+    @Req() req: AdminRequest
+  ) {
+    return this.stats.rescheduleStoppage(matchId, dto.kickoffDate, dto.kickoffTime, req.adminAuth);
   }
 
   @Post(":matchId/approve")

@@ -6,6 +6,7 @@ import { useAdminAuth } from "../AdminAuthContext";
 import { ADMIN_NAV_PERMISSIONS, canAccessNav } from "../admin-permissions";
 import { AdminPageHeader } from "../components/AdminPageHeader";
 import { StoppedRecordingsPanel } from "../components/StoppedRecordingsPanel";
+import { TotalStoppagesPanel } from "../components/TotalStoppagesPanel";
 
 const cards: Array<{ to: string; title: string; desc: string; tag: string }> = [
   {
@@ -98,6 +99,7 @@ export function AdminDashboardPage() {
           that is losing something while it sits there: the match is off the public
           ScoreBoard and its recorder is locked out. It renders nothing when there is
           nothing stopped. */}
+      <TotalStoppagesPanel />
       <StoppedRecordingsPanel />
 
       {loading ? (

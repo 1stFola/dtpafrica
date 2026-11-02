@@ -14,9 +14,11 @@ import { displayMinute, mmss } from "./useMatchClock";
 /** What stopped play. One tap stops the clock, because that is when the whistle went. */
 export function BreakReasonPrompt({
   onChoose,
+  onTotalStoppage,
   onCancel,
 }: {
   onChoose: (reason: MatchBreakReason) => void;
+  onTotalStoppage: () => void;
   onCancel: () => void;
 }) {
   return (
@@ -33,8 +35,72 @@ export function BreakReasonPrompt({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          className="mcx-btn mcx-btn--danger mcx-stoppage-btn"
+          onClick={onTotalStoppage}
+        >
+          Total stoppage: the match cannot go on
+        </button>
         <button type="button" className="mcx-prompt__cancel" onClick={onCancel}>
           Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Confirm a total stoppage. It clears the sheet, so it takes a second, deliberate step and a
+ * reason: one stray tap in a hurried moment must not end a match.
+ */
+export function TotalStoppagePrompt({
+  busy,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  busy: boolean;
+  error: string | null;
+  onConfirm: (note: string) => void;
+  onCancel: () => void;
+}) {
+  const [note, setNote] = useState("");
+  return (
+    <div className="mcx-prompt" role="alertdialog" aria-modal="true" aria-labelledby="mcx-stoppage-title">
+      <div className="mcx-prompt__card mcx-breakbar__details">
+        <h3 id="mcx-stoppage-title">Stop this match for good?</h3>
+        <p className="mcx-error">
+          The clock, events and statistics on this sheet are cleared, and the fixture shows as
+          postponed. An admin is told, so they can reschedule it. What you recorded is kept in the
+          sheet's history.
+        </p>
+        <p className="muted">If play may still resume, use a break instead.</p>
+        <label>
+          <span>What stopped the match?</span>
+          <input
+            type="text"
+            maxLength={500}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            autoFocus
+          />
+        </label>
+        {error && (
+          <p className="mcx-error" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          type="button"
+          className="mcx-btn mcx-btn--danger"
+          disabled={busy || !note.trim()}
+          onClick={() => onConfirm(note.trim())}
+        >
+          {busy ? "Stopping…" : "Stop the match and reset"}
+        </button>
+        <button type="button" className="mcx-btn" onClick={onCancel} disabled={busy}>
+          Go back
         </button>
       </div>
     </div>
@@ -54,6 +120,7 @@ export function BreakBar({
   onResume,
   onChange,
   onCancel,
+  onTotalStoppage,
 }: {
   current: MatchBreak;
   seconds: number;
@@ -61,6 +128,8 @@ export function BreakBar({
   onResume: () => void;
   onChange: (patch: { reason?: MatchBreakReason; note?: string | null }) => void;
   onCancel: () => void;
+  /** The usual way a stoppage turns out: a break that cannot be resumed. */
+  onTotalStoppage: () => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   return (
@@ -81,9 +150,14 @@ export function BreakBar({
           Resume play
         </button>
       </div>
-      <button type="button" className="mcx-breakbar__more" onClick={() => setShowDetails(true)}>
-        Change reason or add a note
-      </button>
+      <div className="mcx-breakbar__links">
+        <button type="button" className="mcx-breakbar__more" onClick={() => setShowDetails(true)}>
+          Change reason or add a note
+        </button>
+        <button type="button" className="mcx-breakbar__stop" onClick={onTotalStoppage}>
+          Total stoppage
+        </button>
+      </div>
       {/* A pop-up rather than more of the bar: the bar is pinned, and on a small phone these
           fields would push the pinned area past the bottom of the screen. */}
       {showDetails && (
