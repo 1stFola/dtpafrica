@@ -74,7 +74,7 @@ From the PID's section 14. Synthetic results show the software can do it. **Only
 |---|---|---|
 | At least 99.5% of intended recording across a shadow match | 100% over 6 minutes; 97.17% in one demo rehearsal, unexplained | 🟡 |
 | Replay: p95 at most 15 s on the reference laptop and LAN | 1.5 s, same machine as the Edge | 🟡 |
-| A 30 s clip usually ready within 30 s | from the flag: p50 22 to 24 s, p95 35 to 36 s, 45 of 61 within 30 s, on synthetic feeds with 20-second files. Not measured at a venue | 🟡 |
+| A 30 s clip usually ready within 30 s | from the flag: p50 22 to 24 s, p95 34 to 36 s, 68 of 92 within 30 s, on synthetic feeds with 20-second files. Not measured at a venue | 🟡 |
 | Two angles within 500 ms after calibration, or the uncertainty flagged | offset steady to 25 ms on synthetic feeds; uncertainty flagged when uncalibrated | 🟡 |
 | Offline: a 30-minute WAN outage, with review carrying on and no corruption | passed in the failure drills | 🟡 |
 | Data fidelity: every final original has a hash, source and time range | every file re-hashed clean in each run | 🟡 |

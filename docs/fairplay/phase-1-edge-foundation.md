@@ -168,7 +168,7 @@ python -I fixtures/run_fixture.py wan --minutes 30 --keep
   |---|---|---|---|---|---|
   | 5 minutes | 3 | 105 s | 243 s | 0 | 0 |
   | 1 minute | 12 | 60 s | 76 s | 2 | 0 |
-  | **20 seconds** | 61, in two runs | 22 to 24 s | 35 to 36 s | 45 | 0 |
+  | **20 seconds** | 92, in three runs | 22 to 24 s | 34 to 36 s | 68 | 0 |
 
   1 minute cannot meet the PID's "usually within 30 s", because most flags wait longer than that
   for the file to close. With 2,700 files on a camera (5 matches of 3 h in retention) a 30 s replay

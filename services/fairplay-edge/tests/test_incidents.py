@@ -250,5 +250,5 @@ def test_a_phase_2_database_upgrades_in_place(tmp_path):
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'withdrawals'")
     row = store.one("SELECT * FROM incidents WHERE id = 'i1'")
     assert (row["state"], row["version"], row["match_id"], row["reopened_count"]) == ("flagged", 3, "m-9", 0)
-    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 6}'
+    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 7}'
     assert Store(path).device_id == store.device_id  # opening again changes nothing
