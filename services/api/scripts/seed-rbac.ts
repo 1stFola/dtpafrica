@@ -12,7 +12,9 @@
  * topped up with a permission the catalogue added since; any other existing
  * role is given a new permission by hand, in Settings, Roles.
  *
- * On the live box, inside the API container:
+ * The API also runs this each time it starts (AdminRbacService.onModuleInit), so
+ * a new permission reaches `super_admin` by itself. By hand, on the live box,
+ * inside the API container:
  *
  *   sudo docker exec dtp-staging-api-1 pnpm --filter @dtp/api seed:rbac
  */

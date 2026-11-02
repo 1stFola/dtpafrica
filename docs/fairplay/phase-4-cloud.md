@@ -197,7 +197,7 @@ The nav entry appears only with a FairPlay permission.
 | `fairplay_operator` | operate |
 | `fairplay_organiser_viewer` | `report.view` only, and must be scoped to named competitions (Settings → Users, the FairPlay organisers tab; "all competitions" is refused for this role) |
 
-`super_admin` holds everything, as for every other permission. No other account holds a
+`super_admin` holds everything, as for every other permission, topped up each time the API starts. No other account holds a
 FairPlay permission until an admin assigns a role. None of these roles holds a ScoreBoard
 or Vision permission.
 

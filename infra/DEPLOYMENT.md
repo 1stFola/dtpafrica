@@ -408,8 +408,9 @@ empty until the secret holds it, so a deploy without them changes nothing.
    ```
 2. Seed the role catalogue (migrations are applied by the deploy itself):
    `sudo docker exec dtp-staging-api-1 pnpm --filter @dtp/api seed:rbac`.
-   Run it again after a deploy that adds a permission. It tops up `super_admin` only; any
-   other role that already exists is given a new permission by hand in Settings, Roles
+   The API does the same each time it starts, so a deploy that adds a permission needs no
+   step for `super_admin`. It tops up `super_admin` only; any other role that already
+   exists is given a new permission by hand in Settings, Roles
    (for example `vision.audit.read`, docs/vision/69).
 3. Re-run the deploy (manual trigger). `GET /api/v1/vision/status` then reports `enabled: true`
    and the storage backend `r2`.
