@@ -961,7 +961,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def period(session_id: str, body: PeriodIn, who: Principal = operator):
         check_session(who, session_id)
         at = _when(body.atUtc, "atUtc") if body.atUtc else None
-        return timing_call(timing.mark_period, service.store, session_id, body.period, body.edge, actor(who),
+        return timing_call(timing.mark_period, service.store, session_id, body.period, body.edge, actor_of(who),
                            at=at, supersedes=body.supersedes, console_anchor=body.consoleAnchorUtc)
 
     @app.get("/edge/v1/sessions/{session_id}/calibrations")
@@ -978,7 +978,7 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
         try:
             row = timing_call(timing.calibrate, service.store, settings, session_id, body.source,
                               _when(body.referenceUtc, "referenceUtc"), _when(body.observedIngestUtc, "observedIngestUtc"),
-                              body.uncertaintyMs, body.method, actor(who), period=body.period,
+                              body.uncertaintyMs, body.method, actor_of(who), period=body.period,
                               reference_source=body.referenceSource, evidence_segment_id=body.evidenceSegmentId,
                               note=body.note, supersedes=body.supersedes, confirm_large=body.confirmLargeOffset)
         except timing.LargeOffset as exc:

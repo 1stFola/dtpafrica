@@ -61,6 +61,8 @@ ACTIONS = (
     "media.live_viewed",
     # Phase 6.2: a restore, and the withdrawals check that must follow it.
     "edge.restored", "edge.restore_checked", "edge.restore_accepted",
+    # Phase 7 (M11): the timing a clip is cut from, and every correction of it.
+    "calibration.added", "period.marked",
 )
 
 

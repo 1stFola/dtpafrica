@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 
-from fairplay_edge import incidents, retention, timing
+from fairplay_edge import audit, incidents, retention, timing
 from fairplay_edge.audit import Actor
 from fairplay_edge.naming import iso, parse_iso
 from fairplay_edge.store import new_id
@@ -224,3 +224,44 @@ def test_incident_hold_protects_footage_from_retention(store, settings, session)
                    " VALUES ('seg', 'ground', 'ground/x.mp4', ?, ?, 'finalized', 't')", (iso(at(590)), iso(at(620))))
     incidents.create(store, settings, session["id"], OP, event_utc=at(600))
     assert retention.plan(store, 1, at(600) + timedelta(days=30)) == []
+
+
+# ── corrections and the audit chain (M11) ──────────────────────────────
+
+def test_a_calibration_corrects_only_the_same_camera_in_the_same_session(store, settings, session):
+    ground = timing.calibrate(store, settings, session["id"], "ground", at(0), at(0.8), 80, "marker", "u")
+    with pytest.raises(timing.TimingError, match="source drone"):
+        timing.calibrate(store, settings, session["id"], "drone", at(0), at(0.5), 80, "marker", "u", supersedes=ground["id"])
+    other = timing.create_session(store, "Other match", "match-9", "shadow", "u")
+    with pytest.raises(timing.TimingError, match="this session"):
+        timing.calibrate(store, settings, other["id"], "ground", at(0), at(0.5), 80, "marker", "u", supersedes=ground["id"])
+    with pytest.raises(timing.TimingError):
+        timing.calibrate(store, settings, session["id"], "ground", at(0), at(0.5), 80, "marker", "u", supersedes="nothing")
+    assert timing.current_calibration(store, session["id"], "ground")["id"] == ground["id"]
+    fixed = timing.calibrate(store, settings, session["id"], "ground", at(0), at(0.5), 80, "marker", "u", supersedes=ground["id"])
+    with pytest.raises(timing.Conflict, match="already been corrected"):
+        timing.calibrate(store, settings, session["id"], "ground", at(0), at(0.6), 80, "marker", "u", supersedes=ground["id"])
+    assert timing.current_calibration(store, session["id"], "ground")["id"] == fixed["id"]
+
+
+def test_a_period_mark_corrects_only_the_same_mark(store, session):
+    first = timing.mark_period(store, session["id"], "1", "start", "u", at=at(0))
+    with pytest.raises(timing.TimingError, match="period 1 and edge end"):
+        timing.mark_period(store, session["id"], "1", "end", "u", at=at(2), supersedes=first["id"])
+    timing.mark_period(store, session["id"], "1", "start", "u", at=at(2), supersedes=first["id"])
+    with pytest.raises(timing.Conflict):
+        timing.mark_period(store, session["id"], "1", "start", "u", at=at(3), supersedes=first["id"])
+
+
+def test_calibrations_and_period_marks_are_in_the_audit_chain(store, settings, session):
+    op = Actor("u-op", "Ola Operator", "operator")
+    cal = timing.calibrate(store, settings, session["id"], "ground", at(0), at(0.8), 80, "marker", op,
+                           note="whistle on the far touchline, #7 in shot")
+    mark = timing.mark_period(store, session["id"], "1", "start", op, at=at(0))
+    entries = {e["action"]: e for e in store.query("SELECT * FROM audit_log WHERE action IN ('calibration.added', 'period.marked')")}
+    assert entries["calibration.added"]["entity_id"] == cal["id"] and entries["calibration.added"]["actor_name"] == "Ola Operator"
+    detail = entries["calibration.added"]["detail"]
+    assert '"offsetMs": 800' in detail.replace(":800", ": 800") or '"offsetMs":800' in detail
+    assert "touchline" not in detail and "#7" not in detail
+    assert entries["period.marked"]["entity_id"] == mark["id"]
+    assert audit.verify(store)["ok"]

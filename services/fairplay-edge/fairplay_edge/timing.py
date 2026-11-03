@@ -34,7 +34,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Callable
 
-from . import outbox, timesync
+from . import audit, outbox, timesync
+from .audit import Actor
 from .config import Settings
 from .naming import iso, parse_iso, utcnow
 from .store import Store, new_id
@@ -122,6 +123,21 @@ def end_session(store: Store, session_id: str, actor: str) -> dict:
     return get_session(store, session_id)
 
 
+def _who(actor: str | Actor) -> Actor:
+    return actor if isinstance(actor, Actor) else Actor(id=actor, name=actor, kind="operator")
+
+
+def _correcting(db, table: str, noun: str, row_id: str, session_id: str, **same: str) -> None:
+    """A correction replaces one record of the same session and kind, and only the latest:
+    otherwise it could undo another camera's calibration, or fork the history in two."""
+    old = db.execute(f"SELECT * FROM {table} WHERE id = ?", (row_id,)).fetchone()
+    if old is None or old["session_id"] != session_id or any(old[k] != v for k, v in same.items()):
+        kind = " and ".join(f"{k} {v}" for k, v in same.items())
+        raise TimingError(f"supersedes must name a {noun} of this session with {kind}")
+    if db.execute(f"SELECT 1 FROM {table} WHERE supersedes = ?", (row_id,)).fetchone():
+        raise Conflict(f"that {noun} has already been corrected: correct the latest one")
+
+
 def _open(store: Store, session_id: str) -> dict:
     session = get_session(store, session_id)
     if session["ended_utc"]:
@@ -131,7 +147,7 @@ def _open(store: Store, session_id: str) -> dict:
 
 # ── period marks ──────────────────────────────────────────────────────────
 
-def mark_period(store: Store, session_id: str, period: str, edge: str, actor: str,
+def mark_period(store: Store, session_id: str, period: str, edge: str, actor: str | Actor,
                 at: datetime | None = None, supersedes: str | None = None, console_anchor: str | None = None) -> dict:
     _open(store, session_id)
     if period not in PERIODS or edge not in ("start", "end"):
@@ -142,13 +158,18 @@ def mark_period(store: Store, session_id: str, period: str, edge: str, actor: st
         delta = round((when - parse_iso(console_anchor)).total_seconds() * 1000)
     row = {"id": new_id(), "session_id": session_id, "period": period, "edge": edge, "edge_utc": iso(when),
            "edge_mono_ns": mono_ns(), "console_anchor_utc": console_anchor, "console_delta_ms": delta,
-           "actor_id": actor, "supersedes": supersedes, "created_utc": iso(utcnow())}
+           "actor_id": _who(actor).id, "supersedes": supersedes, "created_utc": iso(utcnow())}
     with store.tx() as db:
+        if supersedes is not None:
+            _correcting(db, "period_marks", "period mark", supersedes, session_id, period=period, edge=edge)
         db.execute("INSERT INTO period_marks (id, session_id, period, edge, edge_utc, edge_mono_ns, console_anchor_utc,"
                    " console_delta_ms, actor_id, supersedes, created_utc) VALUES (:id, :session_id, :period, :edge,"
                    " :edge_utc, :edge_mono_ns, :console_anchor_utc, :console_delta_ms, :actor_id, :supersedes,"
                    " :created_utc)", row)
         Store.log_event(db, row["created_utc"], "period.marked", None, row)
+        audit.append(db, _who(actor), "period.marked", "period", row["id"], 1,
+                     {"sessionId": session_id, "period": period, "edge": edge, "edgeUtc": row["edge_utc"],
+                      "consoleDeltaMs": delta, "supersedes": supersedes}, at_utc=row["created_utc"])
         outbox.enqueue(db, "period", row["id"], 1, row)
     return row
 
@@ -174,7 +195,7 @@ def _frame_ms(store: Store, source: str) -> int:
 
 
 def calibrate(store: Store, settings: Settings, session_id: str, source: str, reference_utc: datetime,
-              observed_ingest_utc: datetime, uncertainty_ms: int, method: str, actor: str, *,
+              observed_ingest_utc: datetime, uncertainty_ms: int, method: str, actor: str | Actor, *,
               period: str | None = None, reference_source: str | None = None, evidence_segment_id: str | None = None,
               note: str | None = None, supersedes: str | None = None, confirm_large: bool = False) -> dict:
     _open(store, session_id)
@@ -196,15 +217,24 @@ def calibrate(store: Store, settings: Settings, session_id: str, source: str, re
     row = {"id": new_id(), "session_id": session_id, "source": source, "period": period,
            "reference_utc": iso(reference_utc), "observed_ingest_utc": iso(observed_ingest_utc), "offset_ms": offset,
            "uncertainty_ms": int(uncertainty_ms), "method": method, "reference_source": reference_source,
-           "evidence_segment_id": evidence_segment_id, "note": note, "actor_id": actor, "supersedes": supersedes,
+           "evidence_segment_id": evidence_segment_id, "note": note, "actor_id": _who(actor).id, "supersedes": supersedes,
            "created_utc": iso(utcnow())}
     with store.tx() as db:
+        if supersedes is not None:
+            _correcting(db, "calibrations", "calibration", supersedes, session_id, source=source)
         db.execute("INSERT INTO calibrations (id, session_id, source, period, reference_utc, observed_ingest_utc,"
                    " offset_ms, uncertainty_ms, method, reference_source, evidence_segment_id, note, actor_id,"
                    " supersedes, created_utc) VALUES (:id, :session_id, :source, :period, :reference_utc,"
                    " :observed_ingest_utc, :offset_ms, :uncertainty_ms, :method, :reference_source,"
                    " :evidence_segment_id, :note, :actor_id, :supersedes, :created_utc)", row)
         Store.log_event(db, row["created_utc"], "calibration.added", None, row)
+        # The note is free text, so the chain holds its fingerprint (D13).
+        audit.append(db, _who(actor), "calibration.added", "calibration", row["id"], 1,
+                     {"sessionId": session_id, "source": source, "period": period, "offsetMs": offset,
+                      "uncertaintyMs": row["uncertainty_ms"], "method": method, "referenceSource": reference_source,
+                      "referenceUtc": row["reference_utc"], "observedIngestUtc": row["observed_ingest_utc"],
+                      "evidenceSegmentId": evidence_segment_id, "supersedes": supersedes,
+                      "note": audit.fingerprint(row["id"], note)}, at_utc=row["created_utc"])
         outbox.enqueue(db, "calibration", row["id"], 1, row)
     return row
 
