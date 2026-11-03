@@ -447,9 +447,9 @@ def test_no_secret_in_any_response_the_logs_the_tables_or_the_outbox(app, servic
 
 def test_every_route_that_hands_out_footage_or_evidence_is_audited(app, service, clients):
     admin = clients["admin"]
-    other = other_records(service)
     admin.post(f"/edge/v1/sessions/{OTHER}/rights", headers=CSRF, json={
         "footageKind": "synthetic", "status": "not_recorded", "minorsPresent": "no"})
+    other = other_records(service)
     inc = other["incident_id"]
     assert admin.post(f"/edge/v1/incidents/{inc}/review/start", headers={**CSRF, "If-Match": "1"}).status_code == 200
     r = admin.post(f"/edge/v1/incidents/{inc}/review/complete", headers={**CSRF, "If-Match": "2"},

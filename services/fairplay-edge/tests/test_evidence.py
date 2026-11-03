@@ -450,3 +450,25 @@ def test_real_segment_opening_mid_gop_is_cut_and_reported_honestly(store, settin
     check = manifest["coverage"]["videoCheck"]
     assert abs(check["frames"] * 40 - (check["leadInMs"] + 30_000 - lead_ms)) <= 80, check
     assert abs(check["missingMs"] - lead_ms) <= 80, check
+
+
+def test_a_recalibration_while_queued_does_not_change_what_the_manifest_says(store, settings, session, ten_second_segments):
+    first = timing.calibrate(store, settings, session["id"], "ground", at(0), at(0.8), 80, "marker", "u-op")
+    inc = flag(store, settings, session)
+    job, _ = evidence.request_clip(store, settings, inc["id"], "ground", OP)
+    later = timing.calibrate(store, settings, session["id"], "ground", at(0), at(4.5), 80, "marker", "u-op")
+    assert later["id"] != first["id"]
+    done = evidence.run_job(store, settings, FakeCutter(), job["id"])
+    assert done["state"] == "succeeded"
+    ev = evidence.get(store, done["evidence_id"])
+    window = json.loads(evidence.path_of(settings, ev, "manifest_rel_path").read_text(encoding="utf-8"))["window"]
+    assert (window["calibrationId"], window["offsetMs"]) == (first["id"], first["offset_ms"])
+    assert window["requestedStartUtc"] == job["window_start_utc"]
+
+
+def test_a_job_queued_before_the_basis_was_kept_still_makes_a_manifest(store, settings, session, ten_second_segments):
+    inc = flag(store, settings, session)
+    job, _ = evidence.request_clip(store, settings, inc["id"], "ground", OP)
+    with store.tx() as db:
+        db.execute("UPDATE jobs SET window_basis = NULL WHERE id = ?", (job["id"],))
+    assert evidence.run_job(store, settings, FakeCutter(), job["id"])["state"] == "succeeded"

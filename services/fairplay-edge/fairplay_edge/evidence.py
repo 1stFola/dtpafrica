@@ -192,6 +192,10 @@ def window_for(store: Store, settings: Settings, incident: dict, source: str) ->
             "eventAtMs": incident["pre_roll_ms"]}
 
 
+def window_basis(window: dict) -> str:
+    return json.dumps({k: window[k] for k in ("offsetMs", "uncertaintyMs", "calibrationId", "eventAtMs")}, sort_keys=True)
+
+
 def job_view(row: dict) -> dict:
     return dict(row)
 
@@ -236,12 +240,12 @@ def request_clip(store: Store, settings: Settings, incident_id: str, source: str
                "incident_version": incident["version"], "source": source, "window_start_utc": window["startUtc"],
                "window_duration_ms": window["durationMs"], "dedupe_key": key, "state": "queued", "attempts": 0,
                "max_attempts": settings.clip_max_attempts, "next_attempt_utc": now, "requested_by": actor.id,
-               "requested_name": actor.name, "created_utc": now}
+               "requested_name": actor.name, "created_utc": now, "window_basis": window_basis(window)}
         db.execute("INSERT INTO jobs (id, kind, incident_id, incident_version, source, window_start_utc,"
                    " window_duration_ms, dedupe_key, state, attempts, max_attempts, next_attempt_utc, requested_by,"
-                   " requested_name, created_utc) VALUES (:id, :kind, :incident_id, :incident_version, :source,"
-                   " :window_start_utc, :window_duration_ms, :dedupe_key, :state, :attempts, :max_attempts,"
-                   " :next_attempt_utc, :requested_by, :requested_name, :created_utc)", job)
+                   " requested_name, created_utc, window_basis) VALUES (:id, :kind, :incident_id, :incident_version,"
+                   " :source, :window_start_utc, :window_duration_ms, :dedupe_key, :state, :attempts, :max_attempts,"
+                   " :next_attempt_utc, :requested_by, :requested_name, :created_utc, :window_basis)", job)
         audit.append(db, actor, "evidence.requested", "job", job["id"], 1,
                      {"incidentId": incident_id, "incidentVersion": incident["version"], "source": source,
                       "windowStartUtc": window["startUtc"], "windowDurationMs": window["durationMs"],
@@ -549,7 +553,8 @@ def run_job(store: Store, settings: Settings, cutter: Cutter, job_id: str, now: 
     derivative = {"relPath": rel, "container": "mp4", "bytes": clip.stat().st_size, "sha256": sha256_file(clip),
                   "durationMs": probed.duration_ms, "codec": probed.codec, "width": probed.width,
                   "height": probed.height, "fps": probed.fps, "hasAudio": probed.has_audio}
-    window = window_for(store, settings, incident, job["source"])
+    # What the job was cut from, not what the calibration says now. A job queued before this was kept has none.
+    window = json.loads(job["window_basis"]) if job.get("window_basis") else window_for(store, settings, incident, job["source"])
     footage_kind = incidents.current_rights(store, incident["session_id"])["footage_kind"]
     manifest = build_manifest(store, settings, job, incident, window, plan, derivative, cutter, args, evidence_id,
                               footage_kind, created)
@@ -644,7 +649,7 @@ def released(store: Store, row: dict) -> tuple[bool, str]:
     incident = incidents.get(store, row["incident_id"])
     if incident["state"] not in ("reviewed", "archived"):
         return False, "the incident has been reopened; its evidence is withheld until the new finding"
-    return incidents.release_check(incidents.current_rights(store, row["session_id"]))
+    return incidents.release_check(incidents.current_rights(store, row["session_id"]), row["footage_kind"])
 
 
 def approve(store: Store, settings: Settings, evidence_id: str, actor: Actor) -> dict:
@@ -652,7 +657,7 @@ def approve(store: Store, settings: Settings, evidence_id: str, actor: Actor) ->
     incident = incidents.get(store, row["incident_id"])
     if incident["state"] not in ("reviewed", "archived"):
         raise incidents.Conflict("evidence is approved for release only after the incident's finding is complete")
-    ok, why = incidents.release_check(incidents.current_rights(store, row["session_id"]))
+    ok, why = incidents.release_check(incidents.current_rights(store, row["session_id"]), row["footage_kind"])
     if not ok:
         raise incidents.Conflict(why)
     if withdrawal_of(store, evidence_id):

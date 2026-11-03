@@ -250,7 +250,7 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
           after["withdrawals"][0]["edgeConfirmedAt"] is not None and client.withdrawals() == [], after.get("withdrawals"))
 
     # ── an upload cut halfway through the transfer (5.3) ─────────────────
-    fourth = clip_for(20)
+    fourth = clip_for(45)  # clear of the withdrawn clip's window: footage near it is not cut again (M1)
     for _ in range(20):
         if not restored.run_once(start + timedelta(hours=4)).attempted:
             break

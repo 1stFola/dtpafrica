@@ -83,6 +83,7 @@ The Edge **refuses to start** in four cases:
 | `FAIRPLAY_TRUSTED_KEYS_FILE` | none | The public keys an operator bundle must be signed by. | Compose (`./auth/trusted-keys.json`, read-only) |
 | `FAIRPLAY_BUNDLE_FILE` | none | Where the operator bundle is read from. | Compose, from `FAIRPLAY_BUNDLE_PATH` |
 | `FAIRPLAY_ALLOW_DEV_BUNDLES` | off | `1` accepts DEV bundles: development and rehearsal only. | `.env` |
+| `FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE` | off | `1` lets rights call footage synthetic, which DEV bundles also do. Synthetic clips skip the rights check, so test feeds only, never real cameras. | `.env` |
 
 ## Set by Compose and the image (leave alone)
 

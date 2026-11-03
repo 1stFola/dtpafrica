@@ -354,9 +354,10 @@ def current_rights(store: Store, session_id: str) -> dict:
     return row
 
 
-def release_check(rights: dict) -> tuple[bool, str]:
-    """May footage of this session be made available outside the Edge's own staff?"""
-    if rights["footage_kind"] == "synthetic":
+def release_check(rights: dict, clip_kind: str = "synthetic") -> tuple[bool, str]:
+    """May footage of this session be made available outside the Edge's own staff? A clip's own
+    kind says what it was cut as, so calling the session synthetic later does not open it."""
+    if rights["footage_kind"] == "synthetic" and clip_kind == "synthetic":
         return True, "synthetic test footage: no player is shown"
     if rights["status"] != "external_release_permitted":
         return False, ("rights and consent for this match are not recorded as permitting release; an admin must"

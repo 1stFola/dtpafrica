@@ -177,14 +177,14 @@ def test_the_cloud_url_must_be_https_except_to_this_machine():
 # ── uploads ──────────────────────────────────────────────────────────────
 
 def approved_clip(store, settings, session):  # noqa: F811
+    incidents.record_rights(store, session["id"], OP, footage_kind="synthetic", status="not_recorded", minors_present="no",
+                            basis=None, consent_reference=None)
     inc = flag(store, settings, session)
     job, _ = evidence.request_clip(store, settings, inc["id"], "ground", OP)
     ev_id = evidence.run_job(store, settings, FakeCutter(), job["id"])["evidence_id"]
     inc = incidents.start_review(store, inc["id"], 1, OP)
     incidents.complete_review(store, inc["id"], inc["version"], OP, result="inconclusive", factual_notes="Blocked view.",
                               on_field_decision=None, evidence_ids=[ev_id], footage_states={"ground": "ok"})
-    incidents.record_rights(store, session["id"], OP, footage_kind="synthetic", status="not_recorded", minors_present="no",
-                            basis=None, consent_reference=None)
     evidence.approve(store, settings, ev_id, OP)
     return incidents.get(store, inc["id"]), evidence.get(store, ev_id)
 

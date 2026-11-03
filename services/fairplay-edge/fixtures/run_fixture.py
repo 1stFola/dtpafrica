@@ -111,6 +111,7 @@ class Run:
             "FAIRPLAY_DISK_SOFT_FREE_GB=2",
             "FAIRPLAY_DISK_HARD_FREE_GB=1",
             "FAIRPLAY_DEVICE_LABEL=fixture",
+            "FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE=1",
         ]) + "\n", encoding="utf-8")
         (self.out / "fixture-publish.env").write_text(
             f"FAIRPLAY_PUBLISH_PASSWORD_GROUND={secrets.token_urlsafe(32)}\n"

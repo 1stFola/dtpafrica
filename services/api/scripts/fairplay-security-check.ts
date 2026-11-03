@@ -350,6 +350,9 @@ async function main() {
   const bytes = own2.status === 201 ? Buffer.from(await (await fetch(String(own2.body?.url))).arrayBuffer()) : Buffer.alloc(0);
   check("the other competition's organiser reads it, and gets the Edge's exact bytes",
     createHash("sha256").update(bytes).digest("hex") === evC.sha256, own2.status);
+  await prisma.fairPlayEvidence.update({ where: { id: evC.evidenceId }, data: { footageKind: "real" } });
+  check("rights calling the session synthetic do not open a clip cut as real", (await read(org2.auth, evC.evidenceId)).status === 409);
+  await prisma.fairPlayEvidence.update({ where: { id: evC.evidenceId }, data: { footageKind: "synthetic" } });
   const urlTtl = new URL(String(own2.body?.url ?? "http://x/")).searchParams.get("X-Amz-Expires");
   check("the read URL lasts at most five minutes", Number(urlTtl) > 0 && Number(urlTtl) <= 300, urlTtl);
 

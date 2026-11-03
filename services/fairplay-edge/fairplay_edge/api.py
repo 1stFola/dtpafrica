@@ -1234,6 +1234,9 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
     def record_rights(session_id: str, body: RightsIn, who: Principal = admin):
         check_session(who, session_id)
         session_or_404(session_id)
+        if body.footageKind == "synthetic" and not service.settings.allow_synthetic_footage:
+            raise refusal(409, "synthetic_not_allowed", "this Edge does not take synthetic footage: its feeds count as real",
+                          "record the footage as real, or set FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE=1 on a test Edge")
         return lifecycle(incidents.record_rights, service.store, session_id, actor_of(who),
                          footage_kind=body.footageKind, status=body.status, minors_present=body.minorsPresent,
                          basis=body.basis, consent_reference=body.consentReference)

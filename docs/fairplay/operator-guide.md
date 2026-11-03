@@ -288,7 +288,8 @@ Do one before every first match at a venue, and after any change of kit. Allow 9
 a real pitch if you can, with no real match on it.
 
 **With no real cameras.** Start the synthetic feeds with `COMPOSE_PROFILES=synthetic docker compose up -d`.
-They are marked `SYNTHETIC ... NOT REAL FOOTAGE` in the picture.
+They are marked `SYNTHETIC ... NOT REAL FOOTAGE` in the picture. Set `FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE=1` in
+the Edge's `.env` for the rehearsal, and take it out before real cameras are connected.
 
 **With DEV credentials,** where no cloud session exists, the banner reads *DEV CREDENTIALS — NOT FOR A
 REAL MATCH* on every screen. See [the Edge's README](../../services/fairplay-edge/README.md). A DEV
@@ -297,7 +298,7 @@ signing key stays off the Edge, and a real match never runs on one.
 **Run the whole of this guide:** the 90/60/30/15 checks, all four period marks, at least three
 incidents (one by `F`, one at the replay position, one by minute), every step after the match, and
 one failure from each recovery table: pull a camera's cable for a minute, unplug the internet, restart
-MediaMTX. Record the rights as `synthetic test feed`.
+MediaMTX. Record the rights as `synthetic test feed` before the first clip: a clip cut earlier counts as real.
 
 **Write down** anything in this guide that was wrong. Measure what 6.4 asks for while you are there.
 
