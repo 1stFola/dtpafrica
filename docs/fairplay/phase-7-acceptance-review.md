@@ -53,7 +53,8 @@ passed 29 of 29. Fola should know C1 first, and should not repeat "not deployed"
 | M11 | Merged, #349. Edge code, synthetic only | `fix/fairplay-m11-calibration-audit` | Every calibration and period mark is in the audit chain, with a calibration's note as a fingerprint. A correction must name the latest record of the same session, and the same camera, or the same period and edge. Records made before this have no chain entry |
 | M8, M9 | Merged, #350. Edge and cloud code | `fix/fairplay-m8-m9-sync` | The cloud answers an item holding a NUL character `rejected`, so it is parked and nothing behind it waits, and the Edge refuses such text when it is typed. A rejected key sent again is tried again, never reported `replayed`, and applies once its cause is fixed. An item that fails for any other unexpected reason still gets no answer and still holds back its rank |
 | M7 | Merged, #351. Edge code | `fix/fairplay-m7-pairing` | `pair` checks both folders are writable and the trusted keys readable before it spends the bootstrap token, and records the pairing only after both files are written. A failure after the cloud's answer says to re-pair for a new token; running `pair` again then works. The README gives `./auth` to uid 10001 first. Tried on a root-owned Docker volume, not on a Linux host |
-| M5, M12 | Fixed, not merged | `fix/fairplay-m5-m12-operator-list` | With no open session on a device, the cloud keeps issuing the list of the one that ended last, for 7 days after it ended (Fola's decision), so its reviews can be finished. `operator_list_expiring` warns 12 hours before the list lapses and turns critical at 2, with a banner in the console. Offline, the list still lapses: the alert says to connect |
+| M5, M12 | Merged, #352. Cloud, Edge and console code | `fix/fairplay-m5-m12-operator-list` | With no open session on a device, the cloud keeps issuing the list of the one that ended last, for 7 days after it ended (Fola's decision), so its reviews can be finished. `operator_list_expiring` warns 12 hours before the list lapses and turns critical at 2, with a banner in the console. Offline, the list still lapses: the alert says to connect |
+| M13 | Investigated, not reproduced; open until the venue kit is measured | `docs/fairplay-m13-finding` | The 30-minute drills on `main` at `e9c90f8` passed 34 of 34 on 5 November 2026: no camera lost footage in D4 or the outage. Every container's log and the load every 10 s were kept. Four `recording_stalled` alerts of 2 to 4 s opened on both cameras at once during the outage, each straight after the Edge's 2-second poll of MediaMTX went silent for 7 to 19 s, while every container's CPU rose together and MediaMTX logged nothing but INF. That is the Docker Desktop VM freezing on a 4-thread laptop already about 60% busy, not FairPlay's code. The synthetic cameras run inside the same VM, so they froze too and nothing was lost; a real camera outside it keeps sending, so a freeze there loses pictures. The 833 ms and the 7 to 15 s losses in loaded runs fit this, but it is an inference, not a reproduction |
 
 These reached `main` as #334 to #340 between 02:53 and 02:56 UTC on 2 November 2026, merged by Fola with no
 review recorded. FairPlay's code on `main` at `db13f96` is the same as the merge tested in section 9. CD run 41381143259
@@ -87,7 +88,7 @@ the follow-ups after they were written.
 - Retention stays paused on an Edge with no time source. Its recordings stay past D9 until it has one, with the alert showing.
 
 **What still stands in the way:** FP-12 and FP-13, not built; the other
-medium defect M13, with M5 and M12 until their branch merges; and everything in reason 6.
+medium defect M13, open until the venue kit is measured on Linux without Docker Desktop (C5, D7 on the hardware sheet); and everything in reason 6.
 
 ### Evaluation against Prompt 8
 
@@ -128,7 +129,7 @@ Commands and full results are in section 9. "Synthetic" means no real camera, ve
 
 | KPI | Target | Measured here | Result |
 |---|---|---|---|
-| Replay availability | ≥99.5% across a shadow match | No match. An 833 ms hole in a drill, cause unknown (M13) | NOT TESTED |
+| Replay availability | ≥99.5% across a shadow match | No match. An 833 ms hole in a drill, most likely the test VM freezing (M13) | NOT TESTED |
 | Retrieve an incident | p95 ≤15 s on the reference laptop | p95 3.7 s, inside the Edge container, not a browser and not the reference laptop | synthetic only |
 | 30 s clip | usually ≤30 s | **167, 245, 262 s** at the shipped 5-minute segment (H5). On `main`: 68 of 92 within 30 s, p50 22 to 24 s | **FAIL** at `497d3c6`; synthetic only on `main` |
 | Two-angle sync | ≤500 ms or flagged | Flagging works; the 500 ms itself needs real cameras | NOT TESTED |
