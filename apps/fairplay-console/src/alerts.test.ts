@@ -13,6 +13,7 @@ describe("the Edge's alerts in the console", () => {
     expect(alertWords("segment_partial")).toContain("repaired");
     expect(alertWords("something_new")).toBe("something new");
     expect(alertWords("restore_unchecked")).toContain("No clip can be viewed");
+    expect(alertWords("operator_list_expiring")).toContain("signed out");
     expect(waitsForAdmin("segment_mismatch") && !waitsForAdmin("disk_full")).toBe(true);
   });
 });

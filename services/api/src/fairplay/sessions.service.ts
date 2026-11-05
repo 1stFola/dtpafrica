@@ -47,6 +47,8 @@ export type CreateSessionInput = {
 // How long a running session keeps a device's operator list: longer than any match.
 const HOLD_AFTER_KICKOFF_MS = 4 * 3600_000;
 const HOLD_WITHOUT_KICKOFF_MS = 12 * 3600_000;
+/** How long an ended session keeps its list, so its people can finish reviews (M5; Fola, 4 November 2026). */
+export const REVIEW_AFTER_END_MS = 7 * 24 * 3600_000;
 
 @Injectable()
 export class FairPlaySessionsService {
@@ -178,7 +180,9 @@ export class FairPlaySessionsService {
 
   /**
    * The signed bundle for the session this device should run now, of those assigned to it and
-   * not ended: the one the Edge says is in progress there, or else the one whose kickoff is
+   * not ended. With none open, the one that ended most recently, for 7 days after it ended, so
+   * its assessors can still sign in and finish reviews that exist only on the Edge (M5). Of the
+   * open ones: the one the Edge says is in progress there, or else the one whose kickoff is
    * nearest. A second match's nearer kickoff must not take the list from a match under way, but a
    * session nobody ended must not keep the next match out: see `holdLasts`. Members without a PIN, or whose account is
    * disabled, are left out. `have` is the content hash of the bundle the Edge holds: when it
@@ -188,13 +192,16 @@ export class FairPlaySessionsService {
     if (!this.config.bundleSigningKeyPem) {
       throw refusal(409, "SigningKeyMissing", "The cloud has no bundle signing key.", "Set FAIRPLAY_BUNDLE_SIGNING_KEY on the API.");
     }
-    const sessions = await this.prisma.fairPlaySession.findMany({
-      where: { deviceId: device.deviceId, endedAt: null },
+    const now = Date.now();
+    const assigned = await this.prisma.fairPlaySession.findMany({
+      where: { deviceId: device.deviceId, OR: [{ endedAt: null }, { endedAt: { gte: new Date(now - REVIEW_AFTER_END_MS) } }] },
       include: { members: { include: { adminUser: { select: { email: true, name: true, isActive: true, ...ACCOUNT_SCOPE,
         role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } } } } } },
     });
-    if (!sessions.length) return { bundle: null, reason: "no open session is assigned to this device" };
-    const now = Date.now();
+    const open = assigned.filter((s) => !s.endedAt);
+    const recentlyEnded = assigned.filter((s) => s.endedAt).sort((a, b) => b.endedAt!.getTime() - a.endedAt!.getTime()).slice(0, 1);
+    const sessions = open.length ? open : recentlyEnded;
+    if (!sessions.length) return { bundle: null, reason: "no session on this device is open or ended within 7 days" };
     const kickoffAt = (s: (typeof sessions)[number]) => {
       const at = (s.matchSnapshot as { kickoffAt?: string | null }).kickoffAt;
       return at ? new Date(at).getTime() : null;
