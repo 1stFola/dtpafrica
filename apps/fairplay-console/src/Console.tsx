@@ -426,6 +426,7 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
   const parked = health?.openAlerts.filter((a) => a.kind === "outbox_parked") ?? [];
   const restoreWarning = health?.openAlerts.find((a) => a.kind === "restore_unchecked");
   const nextListWaiting = health?.openAlerts.find((a) => a.kind === "bundle_held_back");
+  const listExpiring = health?.openAlerts.find((a) => a.kind === "operator_list_expiring");
   const tokenWarning = !tokenAlert ? null : tokenAlert.kind === "device_token_expired"
     ? "This Edge's cloud token has expired: nothing reaches the cloud. An Edge admin re-pairs the device on the FairPlay page."
     : "This Edge's cloud token expires within 30 days. An Edge admin re-pairs the device on the FairPlay page.";
@@ -472,6 +473,13 @@ export function Console({ me, onSignedOut }: { me: Me; onSignedOut: () => void }
       {restoreWarning && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{alertWords(restoreWarning.kind)}</div>}
 
       {nextListWaiting && <div className="fp-disk-banner fp-disk-banner--warn" role="alert">{alertWords(nextListWaiting.kind)}</div>}
+
+      {listExpiring && (
+        <div className={`fp-disk-banner fp-disk-banner--${listExpiring.severity === "critical" ? "critical" : "warn"}`} role="alert">
+          {alertWords(listExpiring.kind)}
+          {listExpiring.severity === "critical" ? " Less than 2 hours left." : " Less than 12 hours left."}
+        </div>
+      )}
 
       {(clockWarnings.length > 0 || health?.mediaServer.up === false || tokenWarning || parked.length > 0) && (
         <div className="fp-alerts" role="status">

@@ -206,6 +206,12 @@ async function main() {
   await setKickoff(sFirst.id, -65);
   await prisma.fairPlaySession.update({ where: { id: sFirst.id }, data: { endedAt: new Date() } });
   check("nor does one that has ended", (await sessions.bundleFor(dhId, { runningSessionId: sFirst.id })).sessionId === sSecond.id);
+  await prisma.fairPlaySession.update({ where: { id: sSecond.id }, data: { endedAt: new Date(Date.now() + 1000) } });
+  check("with every session ended, the one that ended last keeps its list, for its reviews (M5)",
+    (await sessions.bundleFor(dhId)).sessionId === sSecond.id);
+  await prisma.fairPlaySession.updateMany({ where: { id: { in: [sFirst.id, sSecond.id] } }, data: { endedAt: new Date(Date.now() - 8 * 24 * 3600_000) } });
+  const lapsed = await sessions.bundleFor(dhId);
+  check("but not more than 7 days after it ended", "bundle" in lapsed && lapsed.bundle === null && /7 days/.test(lapsed.reason ?? ""), lapsed);
 
   console.log("\nSync: idempotent, ordered, owned");
   const t0 = "2026-10-28T15:00:00.000Z";

@@ -13,11 +13,13 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime, timedelta
 
 from . import evidence, retention
 from .auth import AuthError, Bundle, Sessions, load_trusted_keys, verify_bundle
 from .config import Settings
 from .manifest import Scanner
+from .naming import iso, utcnow
 from .mediamtx import MediaMtx
 from .cloud import BUNDLE_EVERY_S, CloudClient, CloudError, Uploader, apply_withdrawals, check_token_expiry, refresh_bundle
 from .outbox import HttpTransport, NoDestination, Outbox
@@ -28,6 +30,9 @@ from .watchdog import Watchdog
 log = logging.getLogger("fairplay.service")
 
 RETENTION_EVERY_SECONDS = 3600
+# Warn before the operator list lapses and signs everyone out (M12): offline, nothing renews it.
+LIST_WARN = timedelta(hours=12)
+LIST_CRITICAL = timedelta(hours=2)
 CLOCK_EVERY_SECONDS = 60
 
 
@@ -95,7 +100,22 @@ class EdgeService:
             self._last_clock = time.monotonic()
             self.clock.sample()
         self.reload_bundle()
+        self.check_list_expiry()
         self.passes += 1
+
+    def check_list_expiry(self, now: datetime | None = None) -> None:
+        """`operator_list_expiring`: a warning 12 hours before the list lapses, critical at 2."""
+        now = now or utcnow()
+        at = iso(now)
+        left = self.bundle.expires_utc - now if self.bundle else None
+        if left is None or left > LIST_WARN:
+            self.store.resolve_alert("operator_list_expiring", None, at)
+            return
+        severity = "critical" if left <= LIST_CRITICAL else "warning"
+        held = self.store.one("SELECT severity FROM alerts WHERE kind = 'operator_list_expiring' AND resolved_utc IS NULL")
+        if held and held["severity"] != severity:
+            self.store.resolve_alert("operator_list_expiring", None, at)
+        self.store.open_alert("operator_list_expiring", None, severity, at, {"expiresUtc": iso(self.bundle.expires_utc)})
 
     def retention_once(self) -> None:
         """In a loop of its own: a pass that waited on hundreds of deletions would look like a stalled recording."""

@@ -52,7 +52,8 @@ passed 29 of 29. Fola should know C1 first, and should not repeat "not deployed"
 | M3, M6 | Merged, #347. Edge and cloud code, synthetic only | `fix/fairplay-m3-m6-evidence` | A job keeps the calibration, offset and pre-roll it was asked for with, and the manifest uses those. A clip skips the rights check only if it was cut as synthetic and the session is still called synthetic, on the Edge and in the cloud; an Edge takes the label only with `FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE=1` or DEV bundles. On an Edge with that set, nothing tells real pictures from test ones. The cloud trusts the kind on the Edge's clip row |
 | M11 | Merged, #349. Edge code, synthetic only | `fix/fairplay-m11-calibration-audit` | Every calibration and period mark is in the audit chain, with a calibration's note as a fingerprint. A correction must name the latest record of the same session, and the same camera, or the same period and edge. Records made before this have no chain entry |
 | M8, M9 | Merged, #350. Edge and cloud code | `fix/fairplay-m8-m9-sync` | The cloud answers an item holding a NUL character `rejected`, so it is parked and nothing behind it waits, and the Edge refuses such text when it is typed. A rejected key sent again is tried again, never reported `replayed`, and applies once its cause is fixed. An item that fails for any other unexpected reason still gets no answer and still holds back its rank |
-| M7 | Fixed, not merged | `fix/fairplay-m7-pairing` | `pair` checks both folders are writable and the trusted keys readable before it spends the bootstrap token, and records the pairing only after both files are written. A failure after the cloud's answer says to re-pair for a new token; running `pair` again then works. The README gives `./auth` to uid 10001 first. Tried on a root-owned Docker volume, not on a Linux host |
+| M7 | Merged, #351. Edge code | `fix/fairplay-m7-pairing` | `pair` checks both folders are writable and the trusted keys readable before it spends the bootstrap token, and records the pairing only after both files are written. A failure after the cloud's answer says to re-pair for a new token; running `pair` again then works. The README gives `./auth` to uid 10001 first. Tried on a root-owned Docker volume, not on a Linux host |
+| M5, M12 | Fixed, not merged | `fix/fairplay-m5-m12-operator-list` | With no open session on a device, the cloud keeps issuing the list of the one that ended last, for 7 days after it ended (Fola's decision), so its reviews can be finished. `operator_list_expiring` warns 12 hours before the list lapses and turns critical at 2, with a banner in the console. Offline, the list still lapses: the alert says to connect |
 
 These reached `main` as #334 to #340 between 02:53 and 02:56 UTC on 2 November 2026, merged by Fola with no
 review recorded. FairPlay's code on `main` at `db13f96` is the same as the merge tested in section 9. CD run 41381143259
@@ -82,10 +83,11 @@ the follow-ups after they were written.
 - A consent reference is only a hash in the chain. A rights record's Basis is still there as text.
 - The event log says a hold was released or a member disabled, not why. The reason stays on its own row, which staff can still read.
 - 20-second files, and `view_original` for operators and assessors, confirmed.
+- An ended session keeps its operator list for 7 days (M5).
 - Retention stays paused on an Edge with no time source. Its recordings stay past D9 until it has one, with the alert showing.
 
 **What still stands in the way:** FP-12 and FP-13, not built; the other
-medium defects, M5, M12 and M13, with M7 until its branch merges; and everything in reason 6.
+medium defect M13, with M5 and M12 until their branch merges; and everything in reason 6.
 
 ### Evaluation against Prompt 8
 

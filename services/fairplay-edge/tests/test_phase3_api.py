@@ -409,3 +409,22 @@ def test_text_holding_a_nul_character_is_refused_at_the_door(clients, session_id
         "note": "contact\u0000then a fall"})
     assert r.status_code == 422 and "NUL" in r.text
     assert flag(clients["operator"], session_id, note="contact, then a fall").status_code == 201
+
+
+def test_the_edge_warns_before_the_operator_list_lapses(service):
+    from datetime import timedelta
+    from fairplay_edge.naming import utcnow
+
+    def open_one():
+        return service.store.query("SELECT severity FROM alerts WHERE kind = 'operator_list_expiring' AND resolved_utc IS NULL")
+
+    expires = service.bundle.expires_utc
+    service.check_list_expiry(now=expires - timedelta(hours=13))
+    assert open_one() == []
+    service.check_list_expiry(now=expires - timedelta(hours=11))
+    assert [a["severity"] for a in open_one()] == ["warning"]
+    service.check_list_expiry(now=expires - timedelta(hours=1))
+    assert [a["severity"] for a in open_one()] == ["critical"]
+    service.check_list_expiry(now=expires - timedelta(hours=30))  # a fresh list arrived
+    assert open_one() == []
+    assert utcnow() < expires
