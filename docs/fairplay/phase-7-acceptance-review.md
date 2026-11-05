@@ -50,7 +50,8 @@ passed 29 of 29. Fola should know C1 first, and should not repeat "not deployed"
 | H5 | Merged, #339. Edge code, synthetic only | `fix/fairplay-h5-segment-length` `16b2dd7` | Files of 20 s: p50 22 to 24 s, p95 34 to 36 s, 68 of 92 clips within 30 s. See H5 in section 3 |
 | M1, M2, M10 | Merged, #345. Edge code, synthetic only | `fix/fairplay-m1-m2-m10-footage` | Retention deletes nothing while the clock is in doubt, or for a retention period after a jump of an hour or more (`retention_paused`). A window touching withdrawn footage of that camera is refused, with no override. The replay cache empties whenever footage goes. A clock set wrong while the Edge is off and marked synchronised after restart is not caught |
 | M3, M6 | Merged, #347. Edge and cloud code, synthetic only | `fix/fairplay-m3-m6-evidence` | A job keeps the calibration, offset and pre-roll it was asked for with, and the manifest uses those. A clip skips the rights check only if it was cut as synthetic and the session is still called synthetic, on the Edge and in the cloud; an Edge takes the label only with `FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE=1` or DEV bundles. On an Edge with that set, nothing tells real pictures from test ones. The cloud trusts the kind on the Edge's clip row |
-| M11 | Fixed, not merged | `fix/fairplay-m11-calibration-audit` | Every calibration and period mark is in the audit chain, with a calibration's note as a fingerprint. A correction must name the latest record of the same session, and the same camera, or the same period and edge. Records made before this have no chain entry |
+| M11 | Merged, #349. Edge code, synthetic only | `fix/fairplay-m11-calibration-audit` | Every calibration and period mark is in the audit chain, with a calibration's note as a fingerprint. A correction must name the latest record of the same session, and the same camera, or the same period and edge. Records made before this have no chain entry |
+| M8, M9 | Fixed, not merged | `fix/fairplay-m8-m9-sync` | The cloud answers an item holding a NUL character `rejected`, so it is parked and nothing behind it waits, and the Edge refuses such text when it is typed. A rejected key sent again is tried again, never reported `replayed`, and applies once its cause is fixed. An item that fails for any other unexpected reason still gets no answer and still holds back its rank |
 
 These reached `main` as #334 to #340 between 02:53 and 02:56 UTC on 2 November 2026, merged by Fola with no
 review recorded. FairPlay's code on `main` at `db13f96` is the same as the merge tested in section 9. CD run 41381143259
@@ -83,7 +84,7 @@ the follow-ups after they were written.
 - Retention stays paused on an Edge with no time source. Its recordings stay past D9 until it has one, with the alert showing.
 
 **What still stands in the way:** FP-12 and FP-13, not built; the other
-medium defects, M5, M7 to M9, M12 and M13, with M11 until its branch merges; and everything in reason 6.
+medium defects, M5, M7, M12 and M13, with M8 and M9 until their branch merges; and everything in reason 6.
 
 ### Evaluation against Prompt 8
 

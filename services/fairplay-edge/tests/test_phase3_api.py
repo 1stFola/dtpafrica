@@ -401,3 +401,11 @@ def test_an_edge_not_set_up_for_it_refuses_synthetic_footage(clients, service, s
 def test_synthetic_footage_is_off_unless_set(env, set_vars, allowed):
     env.pop("FAIRPLAY_ALLOW_SYNTHETIC_FOOTAGE")
     assert load_settings({**env, **set_vars}).allow_synthetic_footage is allowed
+
+
+def test_text_holding_a_nul_character_is_refused_at_the_door(clients, session_id):
+    r = clients["operator"].post("/edge/v1/incidents", headers=CSRF, json={
+        "sessionId": session_id, "eventUtc": "2026-10-27T14:00:40.000Z", "basis": "manual", "category": "foul",
+        "note": "contact\u0000then a fall"})
+    assert r.status_code == 422 and "NUL" in r.text
+    assert flag(clients["operator"], session_id, note="contact, then a fall").status_code == 201
