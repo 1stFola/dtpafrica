@@ -222,7 +222,9 @@ def cmd_retention(args: argparse.Namespace) -> int:
         if service.settings.retention_days is None:
             print("fairplay-edge: retention is off (FAIRPLAY_RETENTION_DAYS unset); nothing applied", file=sys.stderr)
             return 2
-        print(json.dumps({"deleted": retention.apply(service.settings, service.store, service.scanner)}, indent=2))
+        service.clock.observe()  # good news counts at once; a doubtful clock deletes nothing
+        print(json.dumps({"deleted": retention.apply(service.settings, service.store, service.scanner,
+                                                     clock_confirmed=service.clock_confirmed())}, indent=2))
         return 0
     rows = retention.plan(service.store, args.days or service.settings.retention_days or 30)
     print(json.dumps([{k: r[k] for k in ("id", "source", "rel_path", "state", "end_utc")} for r in rows], indent=2))

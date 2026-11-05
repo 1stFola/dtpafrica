@@ -463,7 +463,9 @@ class ClockWatch:
             self._bad_since = None
             self.sync = reading
         bad = self.ntp_state in ("unsynced", "drifting")
-        if bad != self._alerted:
+        # While the first reading settles, say nothing either way: an alert left open before a
+        # restart stays open until the clock is known to be good.
+        if bad != self._alerted and not self.sync.get("settling"):
             at = iso(now or utcnow())
             if bad:
                 self.store.open_alert("clock_not_synced", None, "warning", at, self.sync)

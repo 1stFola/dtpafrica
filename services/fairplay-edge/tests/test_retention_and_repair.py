@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import timedelta
 
@@ -25,7 +26,7 @@ def three_final(settings, store, fake_probe):
 
 
 def test_retention_is_off_by_default(settings, store, three_final):
-    assert retention.apply(settings, store, Scanner(settings, store), now=NOW) == []
+    assert retention.apply(settings, store, Scanner(settings, store), now=NOW, clock_confirmed=True) == []
 
 
 def test_plan_never_includes_an_open_segment(store, three_final):
@@ -70,7 +71,7 @@ def test_unsynced_evidence_protects_its_segment(store, three_final):
 def test_apply_deletes_files_keeps_manifest_and_is_bounded(settings, store, three_final):
     paths, rows = three_final
     s = replace(settings, retention_days=30, retention_max_deletions=2)
-    deleted = retention.apply(s, store, Scanner(s, store), now=NOW)
+    deleted = retention.apply(s, store, Scanner(s, store), now=NOW, clock_confirmed=True)
     assert [d["id"] for d in deleted] == [rows[0]["id"], rows[1]["id"]]
     assert not paths[0].exists() and not paths[1].exists() and paths[2].exists()
     row = store.one("SELECT state, sha256, deleted_utc FROM segments WHERE id = ?", (rows[0]["id"],))
@@ -84,7 +85,7 @@ def test_hold_added_after_planning_still_wins(settings, store, three_final, monk
     stale_plan = retention.plan(store, 30, NOW)
     retention.create_hold(store, "ground", at(0), at(1), "incident", "late")
     monkeypatch.setattr(retention, "plan", lambda *a, **k: stale_plan)
-    deleted = retention.apply(s, store, Scanner(s, store), now=NOW)
+    deleted = retention.apply(s, store, Scanner(s, store), now=NOW, clock_confirmed=True)
     assert rows[0]["id"] not in {d["id"] for d in deleted} and paths[0].exists()
 
 
@@ -139,7 +140,7 @@ def test_a_deleted_file_put_back_is_not_recorded_again(settings, store, three_fi
     paths, rows = three_final
     s = replace(settings, retention_days=30, retention_max_deletions=1)
     scanner = Scanner(s, store)
-    retention.apply(s, store, scanner, now=NOW)
+    retention.apply(s, store, scanner, now=NOW, clock_confirmed=True)
     paths[0].write_bytes(fmp4(2))  # restored from a backup, say
     with caplog.at_level("WARNING", logger="fairplay.manifest"):
         scanner.scan({"ground": True})
@@ -165,12 +166,12 @@ def test_retention_deletes_nothing_when_the_clock_jumped(settings, store, three_
     watch.sample(now=NOW, mono=60 * 10**9)  # 40 days on the wall clock in one minute
     watch.sample(now=NOW + timedelta(seconds=60), mono=120 * 10**9)  # and its own alert has closed
     assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'clock_stepped' AND resolved_utc IS NULL") is None
-    assert retention.apply(s, store, Scanner(s, store), now=NOW + timedelta(seconds=60)) == []
+    assert retention.apply(s, store, Scanner(s, store), now=NOW + timedelta(seconds=60), clock_confirmed=True) == []
     assert all(p.exists() for p in paths)
     assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'retention_paused' AND resolved_utc IS NULL")
     # A retention period on, what looked old really is old.
     later = NOW + timedelta(days=31)
-    assert retention.apply(s, store, Scanner(s, store), now=later)
+    assert retention.apply(s, store, Scanner(s, store), now=later, clock_confirmed=True)
     assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'retention_paused' AND resolved_utc IS NULL") is None
 
 
@@ -178,9 +179,9 @@ def test_retention_deletes_nothing_when_the_clock_jumped(settings, store, three_
 def test_retention_waits_while_the_clock_is_in_doubt(settings, store, three_final, kind):
     s = replace(settings, retention_days=30)
     store.open_alert(kind, None, "warning", "t", {})
-    assert retention.apply(s, store, Scanner(s, store), now=NOW) == []
+    assert retention.apply(s, store, Scanner(s, store), now=NOW, clock_confirmed=True) == []
     store.resolve_alert(kind, None, "t")
-    assert retention.apply(s, store, Scanner(s, store), now=NOW)
+    assert retention.apply(s, store, Scanner(s, store), now=NOW, clock_confirmed=True)
 
 
 def test_deleting_recordings_empties_the_replay_cache(settings, store, three_final):
@@ -188,5 +189,33 @@ def test_deleting_recordings_empties_the_replay_cache(settings, store, three_fin
     cache = settings.data_dir / "replay-cache"
     cache.mkdir(parents=True, exist_ok=True)
     (cache / "window.mp4").write_bytes(b"a copy of a recording")
-    assert retention.apply(s, store, Scanner(s, store), now=NOW)
+    assert retention.apply(s, store, Scanner(s, store), now=NOW, clock_confirmed=True)
     assert not list(cache.iterdir())
+
+
+def test_retention_waits_for_a_confirmed_clock_after_a_restart(settings, store, three_final):
+    # A power cut, and the box comes back 40 days fast with no time source yet: nothing is
+    # open and no step was seen while it was off. Found by the independent review, 5 Nov 2026.
+    paths, _ = three_final
+    s = replace(settings, retention_days=30)
+    watch = timing.ClockWatch(store, read=lambda ms: {"state": "unsynced", "maxErrorMs": 16000, "estErrorMs": 16000,
+                                                      "source": "kernel"})
+    jumped = NOW + timedelta(days=40)
+    watch.observe(now=jumped, at_mono=0.0)
+    watch.sample(now=jumped, mono=5 * 10**9)
+    confirmed = watch.ntp_state == "synced" and not watch.sync.get("settling")
+    assert retention.apply(s, store, Scanner(s, store), now=jumped, clock_confirmed=confirmed) == []
+    assert all(p.exists() for p in paths)
+    assert "confirmed" in json.loads(store.one(
+        "SELECT detail FROM alerts WHERE kind = 'retention_paused' AND resolved_utc IS NULL")["detail"])["why"]
+
+
+def test_a_clock_alert_left_open_survives_the_restart_while_the_clock_settles(store):
+    store.open_alert("clock_not_synced", None, "warning", "t", {})
+    watch = timing.ClockWatch(store, read=lambda ms: {"state": "unsynced", "maxErrorMs": 16000, "estErrorMs": 16000,
+                                                      "source": "kernel"})
+    watch.observe(at_mono=0.0)
+    assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'clock_not_synced' AND resolved_utc IS NULL")
+    synced = timing.ClockWatch(store, read=lambda ms: {"state": "synced", "maxErrorMs": 5, "estErrorMs": 1, "source": "kernel"})
+    synced.observe(at_mono=0.0)
+    assert store.one("SELECT 1 AS open FROM alerts WHERE kind = 'clock_not_synced' AND resolved_utc IS NULL") is None

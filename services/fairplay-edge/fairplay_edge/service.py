@@ -117,9 +117,13 @@ class EdgeService:
             self.store.resolve_alert("operator_list_expiring", None, at)
         self.store.open_alert("operator_list_expiring", None, severity, at, {"expiresUtc": iso(self.bundle.expires_utc)})
 
+    def clock_confirmed(self) -> bool:
+        """Has the kernel said, since this Edge started, that the clock is synchronised?"""
+        return self.clock.ntp_state == "synced" and not self.clock.sync.get("settling")
+
     def retention_once(self) -> None:
         """In a loop of its own: a pass that waited on hundreds of deletions would look like a stalled recording."""
-        deleted = retention.apply(self.settings, self.store, self.scanner)
+        deleted = retention.apply(self.settings, self.store, self.scanner, clock_confirmed=self.clock_confirmed())
         if deleted:
             log.info(json.dumps({"event": "retention.run", "deleted": len(deleted)}))
 

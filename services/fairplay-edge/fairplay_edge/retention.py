@@ -112,11 +112,16 @@ def clear_replay_cache(settings: Settings) -> None:
         path.unlink(missing_ok=True)
 
 
-def apply(settings: Settings, store: Store, scanner: Scanner, now: datetime | None = None) -> list[dict]:
+def apply(settings: Settings, store: Store, scanner: Scanner, now: datetime | None = None, *,
+          clock_confirmed: bool) -> list[dict]:
+    """`clock_confirmed`: the kernel has said, since this Edge started, that the clock is
+    synchronised. Until it has, a clock that came up wrong after a power cut looks like any other:
+    no alert is open yet and no step was seen while the Edge was off."""
     if settings.retention_days is None:
         return []
     now = now or utcnow()
-    doubt = clock_doubt(store, settings.retention_days, now)
+    doubt = None if clock_confirmed else "the clock has not been confirmed synchronised since the Edge started"
+    doubt = doubt or clock_doubt(store, settings.retention_days, now)
     if doubt:
         # Keeping footage too long is a breach to fix. Deleting it too early cannot be fixed.
         if store.open_alert("retention_paused", None, "warning", iso(now), {"why": doubt}):
