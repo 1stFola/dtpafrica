@@ -347,3 +347,40 @@ def test_a_bundle_for_a_session_not_yet_opened_here_can_be_replaced(tmp_path, pa
     cloud.refresh_bundle(settings, store, fake.client())
     fake.bundle = cloud_bundle(private, "s-second", "m-2")
     assert cloud.refresh_bundle(settings, store, fake.client()).startswith("installed")
+
+
+def _unwritable(folder):
+    """A folder this process cannot create files in, however it runs (root ignores permissions)."""
+    folder.mkdir()
+    blocker = folder / "keys"
+    blocker.write_text("not a folder", encoding="utf-8")
+    return blocker  # a "folder" that is a file: nothing can be created inside it
+
+
+def test_pairing_into_an_unwritable_folder_fails_before_the_token_is_spent(tmp_path, settings, store):
+    private, _ = generate_key()
+    fake = FakeCloud(private)
+    blocked = _unwritable(tmp_path / "auth")
+    with pytest.raises(cloud.CloudError, match="has not been used"):
+        cloud.pair(fake.client(None), store, "b" * 64, tmp_path / "device-token", blocked / "trusted-keys.json")
+    with pytest.raises(cloud.CloudError, match="has not been used"):
+        cloud.pair(fake.client(None), store, "b" * 64, blocked / "device-token", tmp_path / "trusted-keys.json")
+    keys = tmp_path / "trusted-keys.json"
+    keys.write_text("{ not json", encoding="utf-8")
+    with pytest.raises(cloud.CloudError, match="has not been used"):
+        cloud.pair(fake.client(None), store, "b" * 64, tmp_path / "device-token", keys)
+    assert fake.calls == [] and store.one("SELECT 1 AS paired FROM cloud_pairing") is None
+
+
+def test_a_pairing_that_cannot_be_saved_records_nothing_and_can_run_again(tmp_path, settings, store, monkeypatch):
+    private, _ = generate_key()
+    fake = FakeCloud(private)
+    keys = tmp_path / "trusted-keys.json"
+    real = cloud.load_trusted_keys
+    monkeypatch.setattr(cloud, "load_trusted_keys", lambda path: (_ for _ in ()).throw(ValueError("disk full")))
+    with pytest.raises(cloud.CloudError, match="re-pair the device"):
+        cloud.pair(fake.client(None), store, "b" * 64, tmp_path / "device-token", keys)
+    assert store.one("SELECT 1 AS paired FROM cloud_pairing") is None
+    monkeypatch.setattr(cloud, "load_trusted_keys", real)
+    result = cloud.pair(fake.client(None), store, "c" * 64, tmp_path / "device-token", keys)
+    assert result["deviceId"] == "d-1" and store.one("SELECT cloud_device_id FROM cloud_pairing")["cloud_device_id"] == "d-1"

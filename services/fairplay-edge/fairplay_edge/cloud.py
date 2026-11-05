@@ -126,10 +126,42 @@ class CloudClient:
 
 # ── pairing ──────────────────────────────────────────────────────────────
 
+def _can_write(folder: Path) -> None:
+    """Fail before the bootstrap token is spent, not after."""
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        probe = folder / f".pair-probe-{os.getpid()}"
+        fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(fd)
+        probe.unlink()
+    except OSError as exc:
+        raise CloudError(f"cannot write to {folder} ({exc.strerror or exc}). The Edge runs as uid 10001: give it that folder"
+                         " (for example `sudo chown 10001:10001 auth`) and pair again. The bootstrap token has not been used")
+
+
 def pair(client: CloudClient, store: Store, bootstrap_token: str, token_file: Path, trusted_keys_file: Path) -> dict:
-    """Register this Edge, write its device token (owner-only) and trust the cloud's key."""
+    """Register this Edge, write its device token (owner-only) and trust the cloud's key.
+
+    The cloud spends the bootstrap token on the first call, so everything that could fail here
+    is checked first: both folders writable and the trusted keys readable. After the call, the
+    files are written before the pairing is recorded, so a failure leaves no pairing row; an
+    admin re-pairs the device for a new bootstrap token and `pair` runs again over the top (M7)."""
+    _can_write(token_file.parent)
+    _can_write(trusted_keys_file.parent)
+    try:
+        keys = json.loads(trusted_keys_file.read_text(encoding="utf-8")) if trusted_keys_file.exists() else {}
+    except (OSError, ValueError) as exc:
+        raise CloudError(f"cannot read {trusted_keys_file}: {exc}. Fix or move it and pair again."
+                         " The bootstrap token has not been used")
     answer = client.register(bootstrap_token.strip(), store.device_id)
-    token_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        return _keep(store, answer, keys, token_file, trusted_keys_file)
+    except (OSError, ValueError) as exc:
+        raise CloudError(f"the cloud paired this Edge, but it could not be saved here: {exc}. The bootstrap token is spent:"
+                         " ask a DTP admin to re-pair the device under /admin/fairplay for a new one, and pair again")
+
+
+def _keep(store: Store, answer: dict, keys: dict, token_file: Path, trusted_keys_file: Path) -> dict:
     tmp = token_file.with_suffix(".tmp")
     tmp.unlink(missing_ok=True)
     # Owner-only from the moment it exists: never written first and narrowed after.
@@ -137,19 +169,18 @@ def pair(client: CloudClient, store: Store, bootstrap_token: str, token_file: Pa
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(answer["deviceToken"] + "\n")
     tmp.replace(token_file)
-    now = iso(utcnow())
-    with store.tx() as db:
-        db.execute("INSERT OR REPLACE INTO cloud_pairing (id, cloud_device_id, label, token_expires_utc, paired_utc)"
-                   " VALUES (1, ?, ?, ?, ?)", (answer["deviceId"], answer["label"], answer["deviceTokenExpiresAt"], now))
-        Store.log_event(db, now, "cloud.paired", None, {"deviceId": answer["deviceId"], "tokenExpires": answer["deviceTokenExpiresAt"]})
     key = answer.get("trustedKey")
     if key:
-        keys = json.loads(trusted_keys_file.read_text(encoding="utf-8")) if trusted_keys_file.exists() else {}
         keys[key["keyId"]] = {"issuer": key["issuer"], "publicKey": key["publicKey"]}
         tmp = trusted_keys_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(keys, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         tmp.replace(trusted_keys_file)
         load_trusted_keys(trusted_keys_file)  # refuses a key whose id does not match it
+    now = iso(utcnow())
+    with store.tx() as db:
+        db.execute("INSERT OR REPLACE INTO cloud_pairing (id, cloud_device_id, label, token_expires_utc, paired_utc)"
+                   " VALUES (1, ?, ?, ?, ?)", (answer["deviceId"], answer["label"], answer["deviceTokenExpiresAt"], now))
+        Store.log_event(db, now, "cloud.paired", None, {"deviceId": answer["deviceId"], "tokenExpires": answer["deviceTokenExpiresAt"]})
     return {"deviceId": answer["deviceId"], "label": answer["label"], "tokenExpires": answer["deviceTokenExpiresAt"],
             "trustedKeyId": key["keyId"] if key else None}
 

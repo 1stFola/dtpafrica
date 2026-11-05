@@ -89,7 +89,14 @@ Compose mounts `apps/fairplay-console/dist` read-only (`FAIRPLAY_CONSOLE_PATH` t
 `./auth` (`FAIRPLAY_AUTH_DIR`): `trusted-keys.json` (public keys only) and `bundle.json`.
 **Pairing with the DTP cloud** (Phase 4, `docs/fairplay/phase-4-cloud.md`). An admin adds the
 device under `/admin/fairplay` and is shown a one-time bootstrap token. Save it to a file next
-to `compose.yaml`, then, once:
+to `compose.yaml`. Pairing writes the cloud's key into `./auth`, and the Edge runs as uid 10001,
+so on Linux give it that folder first (`pair` checks before it spends the token):
+
+```bash
+mkdir -p auth && sudo chown 10001:10001 auth
+```
+
+Then, once:
 
 ```bash
 docker compose run --rm -v "$PWD/auth:/pair-auth" -v "$PWD/bootstrap-token:/pair-token:ro" edge pair --url https://www.dtp.africa --bootstrap-token-file /pair-token --token-file /var/lib/fairplay/data/cloud-device-token --trusted-keys /pair-auth/trusted-keys.json
