@@ -161,7 +161,7 @@ def test_holds_disables_and_repairs_are_in_the_audit_chain(settings, store, fake
 def test_retention_deletion_is_in_the_audit_chain(settings, store, three_final):  # noqa: F811
     _, rows = three_final
     s = replace(settings, retention_days=30, retention_max_deletions=1)
-    retention.apply(s, store, Scanner(s, store), now=NOW)
+    retention.apply(s, store, Scanner(s, store), now=NOW, clock_confirmed=True)
     deleted = [e for e in audit.entries(store) if e["action"] == "segment.deleted"]
     assert len(deleted) == 1 and deleted[0]["entity_id"] == rows[0]["id"] and deleted[0]["actor_kind"] == "system"
     sha = store.one("SELECT sha256 FROM segments WHERE id = ?", (rows[0]["id"],))["sha256"]

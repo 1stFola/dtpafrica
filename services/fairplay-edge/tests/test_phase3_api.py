@@ -428,3 +428,14 @@ def test_the_edge_warns_before_the_operator_list_lapses(service):
     service.check_list_expiry(now=expires - timedelta(hours=30))  # a fresh list arrived
     assert open_one() == []
     assert utcnow() < expires
+
+
+def test_the_retention_loop_deletes_nothing_until_the_clock_is_confirmed(service, monkeypatch):
+    from fairplay_edge import retention
+    seen = []
+    monkeypatch.setattr(retention, "apply", lambda *a, **kw: seen.append(kw["clock_confirmed"]) or [])
+    monkeypatch.setattr(service.clock, "sync", {"state": "unknown", "settling": True})
+    service.retention_once()
+    monkeypatch.setattr(service.clock, "sync", {"state": "synced", "maxErrorMs": 5})
+    service.retention_once()
+    assert seen == [False, True]
