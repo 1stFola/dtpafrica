@@ -19,7 +19,9 @@ import { FairPlayAuditService, deviceActor } from "./fairplay-audit.service";
  *   conflict   this key was seen with a different hash; nothing is overwritten. The Edge
  *              parks it for a person
  *   rejected   not this device's to send (another device's session, another match, an
- *              unknown session) or not well formed. Also parked
+ *              unknown session) or not well formed, including text Postgres cannot hold (a
+ *              NUL character). Also parked. Nothing of it is stored, so the same key sent
+ *              again is tried again, never answered `replayed`
  *
  * An item that fails for an unexpected reason gets no answer, so the Edge retries it.
  * Every item is applied in its own transaction, so one bad item cannot undo the others.
@@ -44,6 +46,8 @@ const GENESIS = "0".repeat(64);
 const HEX64 = /^[0-9a-f]{64}$/;
 
 class Reject extends Error {}
+/** Another request settled this key first: answer from its receipt. */
+class Raced extends Error {}
 
 type Tx = Prisma.TransactionClient;
 type Payload = Record<string, unknown>;
@@ -74,6 +78,14 @@ function time(p: Payload, key: string, required = true): Date | null {
   const d = new Date(v);
   if (Number.isNaN(d.getTime()) || !/(Z|[+-]\d\d:\d\d)$/.test(v)) throw new Reject(`payload.${key} is not a UTC timestamp`);
   return d;
+}
+
+/** Postgres refuses U+0000 in text and jsonb. Unanswered, such an item would hold back the Edge's outbox. */
+function hasNul(v: unknown): boolean {
+  if (typeof v === "string") return v.includes("\u0000");
+  if (Array.isArray(v)) return v.some(hasNul);
+  if (v && typeof v === "object") return Object.entries(v).some(([k, x]) => k.includes("\u0000") || hasNul(x));
+  return false;
 }
 
 function json(p: Payload): Prisma.InputJsonValue {
@@ -121,7 +133,8 @@ export class FairPlaySyncService {
     const it = item as SyncItem;
 
     const seen = await this.prisma.fairPlaySyncReceipt.findUnique({ where: { deviceId_idempotencyKey: { deviceId: device.deviceId, idempotencyKey: key } } });
-    if (seen) {
+    // A rejected key stored nothing: try it again, as a re-send of a parked item or a restore expects.
+    if (seen && seen.status !== "rejected") {
       if (seen.payloadHash === it.payloadHash) return { idempotencyKey: key, status: "replayed" };
       await this.audit.record("sync.conflict", { kind: it.entityType, id: it.entityId }, deviceActor(device.deviceId),
         { key, held: seen.payloadHash, sent: it.payloadHash });
@@ -131,24 +144,47 @@ export class FairPlaySyncService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const { status, sessionId } = await this.apply(tx, device, it);
-        await tx.fairPlaySyncReceipt.create({ data: { deviceId: device.deviceId, idempotencyKey: key, entityType: it.entityType,
-          entityId: it.entityId, version: it.version, payloadHash: it.payloadHash, status } });
+        await this.receipt(tx, device, it, status, null, Boolean(seen));
         if (sessionId) touched.add(sessionId);
         return { idempotencyKey: key, status };
       });
     } catch (error) {
       if (error instanceof Reject) {
-        await this.prisma.fairPlaySyncReceipt.create({ data: { deviceId: device.deviceId, idempotencyKey: key, entityType: it.entityType,
-          entityId: it.entityId, version: it.version, payloadHash: it.payloadHash, status: "rejected", message: error.message.slice(0, 500) } });
+        try {
+          await this.receipt(this.prisma, device, it, "rejected", error.message.slice(0, 500), Boolean(seen));
+        } catch (raced) {
+          if (raced instanceof Raced || (raced instanceof Prisma.PrismaClientKnownRequestError && raced.code === "P2002")) {
+            return this.one(device, raw, touched);
+          }
+          throw raced;
+        }
         await this.audit.record("sync.rejected", { kind: it.entityType, id: it.entityId }, deviceActor(device.deviceId), { key, message: error.message });
         return { idempotencyKey: key, status: "rejected", message: error.message };
       }
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      if (error instanceof Raced || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
         // The same key arriving twice at once: the loser's answer comes from the winner's receipt.
         return this.one(device, raw, touched);
       }
       throw error;
     }
+  }
+
+  /**
+   * A new key gets a receipt; two at once collide on the unique key (P2002). A key that was
+   * rejected has its receipt rewritten, but only while it still says rejected: the row lock
+   * makes a second request wait, then find it settled, so one request's answer is never
+   * overwritten by another's.
+   */
+  private async receipt(db: Tx | PrismaService, device: DeviceIdentity, it: SyncItem, status: SyncStatus, message: string | null,
+    wasRejected: boolean) {
+    const data = { entityType: it.entityType, entityId: it.entityId, version: it.version, payloadHash: it.payloadHash, status, message };
+    if (!wasRejected) {
+      await db.fairPlaySyncReceipt.create({ data: { deviceId: device.deviceId, idempotencyKey: it.idempotencyKey, ...data } });
+      return;
+    }
+    const { count } = await db.fairPlaySyncReceipt.updateMany({
+      where: { deviceId: device.deviceId, idempotencyKey: it.idempotencyKey, status: "rejected" }, data });
+    if (count === 0) throw new Raced();
   }
 
   private shape(item: Partial<SyncItem>): string | null {
@@ -159,6 +195,7 @@ export class FairPlaySyncService {
     if (item.idempotencyKey !== `${item.entityType}:${item.entityId}:${item.version}`) return "idempotencyKey must be type:id:version";
     if (typeof item.payloadHash !== "string" || !HEX64.test(item.payloadHash)) return "payloadHash must be a SHA-256";
     if (!item.payload || typeof item.payload !== "object" || Array.isArray(item.payload)) return "payload must be an object";
+    if (hasNul(item.payload)) return "payload holds a NUL character, which cannot be stored";
     return null;
   }
 

@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__, audit, evidence, incidents, retention, timing
@@ -105,7 +105,28 @@ def _when(value: str, name: str) -> datetime:
         raise refusal(400, "bad_timestamp", f"{name} must be RFC 3339 with a time zone, e.g. 2026-10-27T14:03:11.250Z")
 
 
-class HoldIn(BaseModel):
+def _has_nul(value) -> bool:
+    if isinstance(value, str):
+        return "\x00" in value
+    if isinstance(value, dict):
+        return any(_has_nul(k) or _has_nul(v) for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(_has_nul(v) for v in value)
+    return False
+
+
+class EdgeIn(BaseModel):
+    """Every request body. Postgres cannot hold a NUL character, so text holding one would be
+    refused when it synced, after the person who typed it had gone (M8)."""
+
+    @model_validator(mode="after")
+    def _no_nul(self):
+        if _has_nul(self.model_dump()):
+            raise ValueError("text may not hold a NUL character")
+        return self
+
+
+class HoldIn(EdgeIn):
     source: str | None = None
     fromUtc: str
     toUtc: str
@@ -113,22 +134,22 @@ class HoldIn(BaseModel):
     ref: str | None = Field(default=None, max_length=200)
 
 
-class ReleaseIn(BaseModel):
+class ReleaseIn(EdgeIn):
     reason: str = Field(min_length=3, max_length=500)
 
 
-class LoginIn(BaseModel):
+class LoginIn(EdgeIn):
     email: str = Field(min_length=3, max_length=200)
     pin: str = Field(min_length=MIN_PIN, max_length=32)
 
 
-class SessionIn(BaseModel):
+class SessionIn(EdgeIn):
     label: str = Field(min_length=1, max_length=120)
     matchRef: str | None = Field(default=None, max_length=120)
     mode: str = Field(default="shadow", pattern="^(shadow|post_match)$")
 
 
-class PeriodIn(BaseModel):
+class PeriodIn(EdgeIn):
     period: str = Field(pattern="^(1|2|3|4|penalties)$")
     edge: str = Field(pattern="^(start|end)$")
     atUtc: str | None = None
@@ -136,7 +157,7 @@ class PeriodIn(BaseModel):
     consoleAnchorUtc: str | None = None
 
 
-class CalibrationIn(BaseModel):
+class CalibrationIn(EdgeIn):
     source: str
     referenceUtc: str
     observedIngestUtc: str
@@ -151,7 +172,7 @@ class CalibrationIn(BaseModel):
     confirmLargeOffset: bool = False
 
 
-class IncidentIn(BaseModel):
+class IncidentIn(EdgeIn):
     sessionId: str
     eventUtc: str | None = None
     basis: str = Field(default="operator_now", pattern="^(operator_now|period_mark|manual|sheet_event|match_clock)$")
@@ -166,7 +187,7 @@ class IncidentIn(BaseModel):
     playerRef: str | None = Field(default=None, max_length=120)
 
 
-class IncidentPatch(BaseModel):
+class IncidentPatch(EdgeIn):
     preRollMs: int | None = None
     postRollMs: int | None = None
     category: str | None = None
@@ -177,22 +198,22 @@ class IncidentPatch(BaseModel):
     playerRef: str | None = Field(default=None, max_length=120)
 
 
-class ReviewIn(BaseModel):
+class ReviewIn(EdgeIn):
     result: str = Field(pattern="^(supports_original|supports_alternative|inconclusive|footage_unavailable)$")
     factualNotes: str = Field(min_length=3, max_length=5000)
     onFieldDecision: str | None = Field(default=None, max_length=500)
     evidenceIds: list[str] = Field(default_factory=list, max_length=20)
 
 
-class ReopenIn(BaseModel):
+class ReopenIn(EdgeIn):
     reason: str = Field(min_length=5, max_length=1000)
 
 
-class ClipIn(BaseModel):
+class ClipIn(EdgeIn):
     source: str
 
 
-class RightsIn(BaseModel):
+class RightsIn(EdgeIn):
     footageKind: str = Field(pattern="^(synthetic|real)$")
     status: str = Field(pattern="^(not_recorded|internal_review_only|external_release_permitted)$")
     minorsPresent: str = Field(pattern="^(yes|no|unknown)$")
@@ -200,7 +221,7 @@ class RightsIn(BaseModel):
     consentReference: str | None = Field(default=None, max_length=300)
 
 
-class ReplayMetricIn(BaseModel):
+class ReplayMetricIn(EdgeIn):
     source: str
     windowStartUtc: str
     durationMs: int = Field(gt=0, le=MAX_WINDOW_MS)
@@ -211,13 +232,13 @@ class ReplayMetricIn(BaseModel):
     note: str | None = Field(default=None, max_length=300)
 
 
-class WithdrawIn(BaseModel):
+class WithdrawIn(EdgeIn):
     reason: str = Field(min_length=5, max_length=500)
     requester: str = Field(min_length=2, max_length=200)
     requestRef: str | None = Field(default=None, max_length=100)
 
 
-class DisableIn(BaseModel):
+class DisableIn(EdgeIn):
     userId: str
     reason: str = Field(min_length=3, max_length=300)
 

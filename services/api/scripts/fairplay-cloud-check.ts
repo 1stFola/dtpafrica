@@ -225,8 +225,26 @@ async function main() {
   const other = (await sync.receive(id2, { deviceId: edge2, items: [item("session", s1.id, 3, sessionPayload)] })).results[0];
   check("another device's token cannot send for this session", other?.status === "rejected", other);
   await refusedWith("a batch naming another Edge than its token is refused whole", () => sync.receive(id2, { deviceId: edge1, items: [] }), "DeviceMismatch");
-  const unknownSession = (await sync.receive(id1, { deviceId: edge1, items: [item("session", randomUUID(), 1, { ...sessionPayload })] })).results[0];
+  const lateId = randomUUID();
+  const lateItem = item("session", lateId, 1, { ...sessionPayload, id: lateId });
+  const unknownSession = (await sync.receive(id1, { deviceId: edge1, items: [lateItem] })).results[0];
   check("a session the cloud never provisioned is rejected", unknownSession?.status === "rejected");
+  const resent = (await sync.receive(id1, { deviceId: edge1, items: [lateItem] })).results[0];
+  check("sent again, a rejected item is rejected again with its reason, never replayed (M9)",
+    resent?.status === "rejected" && /not assigned/.test(resent.message ?? ""), resent);
+  await prisma.fairPlaySession.create({ data: { id: lateId, matchId: matchA.id, competitionId: matchA.competitionId, matchSnapshot: {},
+    deviceId: d1.id, label: "provisioned after the Edge sent it", mode: "shadow" } });
+  const fixedAll = await Promise.all(Array.from({ length: 4 }, () => sync.receive(id1, { deviceId: edge1, items: [lateItem] })));
+  const fixedStatuses = fixedAll.map((r) => r.results[0]?.status).sort();
+  const lateReceipt = await prisma.fairPlaySyncReceipt.findMany({ where: { idempotencyKey: lateItem.idempotencyKey } });
+  check("once its cause is fixed, the same rejected item sent four times at once applies once, under one receipt",
+    JSON.stringify(fixedStatuses) === JSON.stringify(["applied", "replayed", "replayed", "replayed"])
+    && lateReceipt.length === 1 && lateReceipt[0].status === "applied", { fixedStatuses, lateReceipt });
+  const nulItem = item("session", s1.id, 4, { ...sessionPayload, label: "Lions\u0000Eagles" });
+  const nul = await sync.receive(id1, { deviceId: edge1, items: [nulItem, item("session", s1.id, 5, sessionPayload)] });
+  check("a NUL character is rejected with an answer, and the item after it still applies (M8)",
+    nul.results.length === 2 && nul.results[0]?.status === "rejected" && /NUL/.test(nul.results[0]?.message ?? "")
+    && nul.results[1]?.status === "applied", nul.results);
 
   const rightsPayload = { id: randomUUID(), session_id: s1.id, footage_kind: "synthetic", status: "not_recorded", minors_present: "no",
     basis: null, consent_reference: null, recorded_by: assessor.id, recorded_name: "assessor", created_utc: t0, supersedes: null };
