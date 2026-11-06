@@ -21,6 +21,7 @@ from .config import Settings
 from .manifest import Scanner
 from .naming import iso, utcnow
 from .mediamtx import MediaMtx
+from . import tlsgen
 from .cloud import BUNDLE_EVERY_S, CloudClient, CloudError, Uploader, apply_withdrawals, check_token_expiry, refresh_bundle
 from .outbox import HttpTransport, NoDestination, Outbox
 from .store import Store
@@ -34,6 +35,7 @@ RETENTION_EVERY_SECONDS = 3600
 LIST_WARN = timedelta(hours=12)
 LIST_CRITICAL = timedelta(hours=2)
 CLOCK_EVERY_SECONDS = 60
+VENUE_CA_EVERY_PASSES = 1800  # the R4 check: at start, then about hourly at the 2-second pass
 
 
 class EdgeService:
@@ -101,7 +103,23 @@ class EdgeService:
             self.clock.sample()
         self.reload_bundle()
         self.check_list_expiry()
+        if self.passes % VENUE_CA_EVERY_PASSES == 0:
+            self.check_venue_ca()
         self.passes += 1
+
+    def check_venue_ca(self, now: datetime | None = None) -> list[str]:
+        """`venue_ca` (R4): a warning while the venue CA's key is on this Edge, or the CA has no
+        name constraints. Only where the Edge serves its own CA's certificate."""
+        at = iso(now or utcnow())
+        found = tlsgen.problems(self.settings.tls_cert.parent) if self.settings.tls_cert else []
+        if found:
+            self.store.open_alert("venue_ca", None, "warning", at, {
+                "problems": found,
+                "remedy": "before real footage, make a new venue CA with its key off this Edge (docs/fairplay/edge-install.md,"
+                          " 'The venue CA and its key') and install the new venue-ca.pem on every reviewer device"})
+        else:
+            self.store.resolve_alert("venue_ca", None, at)
+        return found
 
     def check_list_expiry(self, now: datetime | None = None) -> None:
         """`operator_list_expiring`: a warning 12 hours before the list lapses, critical at 2."""

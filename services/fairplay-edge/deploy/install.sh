@@ -13,7 +13,10 @@
 #   3. copies config/sources.example.toml to config/sources.toml if there is none;
 #   4. builds dtp-fairplay-edge:<version>-<commit> and pins FAIRPLAY_EDGE_TAG to it;
 #   5. with --lan-ip: issues the Edge's TLS certificate for every --host, and serves the
-#      console on that address (venue-ca.pem is the CA reviewer devices must trust);
+#      console on that address (venue-ca.pem is the CA reviewer devices must trust). The CA's
+#      private key is written once to --ca-key-to (default venue-ca-key.pem here), never into
+#      the Edge's data: move it to removable media kept by DTP's custodian and delete it from
+#      this machine (residual-risks.md R4). --renew-ca makes a new CA (reinstall it on devices);
 #   6. installs and enables the systemd units: Docker and the stack at boot, the watchdog
 #      every minute;
 #   7. starts the stack and waits until the Edge is healthy.
@@ -27,12 +30,14 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
-LABEL="" LAN_IP="" INGEST_IP="" CAMERAS="" HOSTS=() SYSTEMD=1 RENDER_ONLY=0
+LABEL="" LAN_IP="" INGEST_IP="" CAMERAS="" HOSTS=() SYSTEMD=1 RENDER_ONLY=0 CA_KEY_TO="" RENEW_CA=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --label) LABEL="$2"; shift 2 ;;
     --lan-ip) LAN_IP="$2"; shift 2 ;;
     --host) HOSTS+=("$2"); shift 2 ;;
+    --ca-key-to) CA_KEY_TO="$2"; shift 2 ;;
+    --renew-ca) RENEW_CA=1; shift ;;
     --ingest-ip) INGEST_IP="$2"; shift 2 ;;
     --cameras) CAMERAS="$2"; shift 2 ;;
     --no-systemd) SYSTEMD=0; shift ;;
@@ -149,11 +154,19 @@ docker run --rm --network none "dtp-fairplay-edge:$TAG" licences --check || die 
 # ── 5. TLS, when the console is served on the LAN ────────────────────────────
 if [ -n "$LAN_IP" ]; then
   say "TLS for ${HOSTS[*]:-$LAN_IP}"
-  if [ -z "$(get_env .env FAIRPLAY_EDGE_TLS_CERT)" ]; then
+  if [ "$RENEW_CA" = 1 ]; then
+    docker compose run --rm --no-deps -T --entrypoint sh edge -c 'rm -f /var/lib/fairplay/data/tls/ca.pem /var/lib/fairplay/data/tls/ca-key.pem'
+  fi
+  if [ -z "$(get_env .env FAIRPLAY_EDGE_TLS_CERT)" ] || [ "$RENEW_CA" = 1 ]; then
     host_args=(); for h in "${HOSTS[@]:-$LAN_IP}"; do host_args+=(--host "$h"); done
-    docker compose run --rm --no-deps -T edge tls-init "${host_args[@]}" >/dev/null
+    # The CA's key comes out once, on stdout, into a 0600 file here: it never stays in the Edge's data (R4).
+    ca_key_file="${CA_KEY_TO:-$DIR/venue-ca-key.pem}"
+    ( umask 077; docker compose run --rm --no-deps -T edge tls-init "${host_args[@]}" --ca-key-out - > "$ca_key_file" )
+    [ -s "$ca_key_file" ] || die "the venue CA's key was not written to $ca_key_file"
     set_env .env FAIRPLAY_EDGE_TLS_CERT /var/lib/fairplay/data/tls/server.pem
     set_env .env FAIRPLAY_EDGE_TLS_KEY /var/lib/fairplay/data/tls/server-key.pem
+    echo "$ca_key_file: the venue CA's private key, 0600. Move it to removable media kept by DTP's custodian (D12),"
+    echo "  then delete it from this machine. It is needed again only to reissue the certificate (edge-install.md)."
   fi
   set_env .env FAIRPLAY_EDGE_HOST_BIND "$LAN_IP"
   docker compose run --rm --no-deps -T --entrypoint cat edge /var/lib/fairplay/data/tls/ca.pem > venue-ca.pem

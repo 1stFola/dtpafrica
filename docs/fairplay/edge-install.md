@@ -37,7 +37,9 @@ sudo deploy/install.sh --label "Edge laptop 1" \
 |---|---|
 | `--label` | the Edge's name on the sign-in page and in reports |
 | `--lan-ip` | the address reviewers' devices reach the console on; turns on TLS |
-| `--host` | each name and address in the Edge's certificate; repeatable |
+| `--host` | each name and address in the Edge's certificate; repeatable. The venue CA can sign for these and no others |
+| `--ca-key-to` | where the venue CA's private key is written, once, as a 0600 file (default `venue-ca-key.pem` in the checkout): a path on removable media is best |
+| `--renew-ca` | make a new venue CA (an Edge installed before 6 November 2026 has one with no name constraints and its key on the machine); reinstall `venue-ca.pem` on every reviewer device after |
 | `--ingest-ip` | the address cameras publish to: the Edge's address on the camera network |
 | `--cameras` | the camera network: MediaMTX refuses a publisher from anywhere else |
 | `--no-systemd` | start with `docker compose` only, with no boot units (tests) |
@@ -49,7 +51,8 @@ sudo deploy/install.sh --label "Edge laptop 1" \
 3. Writes `config/sources.toml` from the example, if there is none. Check the sources.
 4. Builds `dtp-fairplay-edge:<version>-<commit>` and pins `FAIRPLAY_EDGE_TAG` to it.
 5. With `--lan-ip`, issues the Edge's TLS certificate and writes `venue-ca.pem`. Install that
-   on every reviewer device as a trusted CA.
+   on every reviewer device as a trusted CA. The CA's private key is written once to
+   `--ca-key-to` and never into the Edge's data: see "The venue CA and its key" below.
 6. Installs and enables `fairplay-edge.service` (the stack at boot) and
    `fairplay-edge-watchdog.timer` (every minute), and enables Docker at boot.
 7. Starts the stack and waits until the Edge is healthy.
@@ -62,6 +65,38 @@ is added. A source added to `sources.toml` gets its publish password on the next
   or install a DEV bundle for a rehearsal.
 - Give each camera its publish URL, `rtsp://pub-<source>:<password>@<ingest-ip>:8554/<source>`.
   The password is in `publish.env`.
+
+## The venue CA and its key
+
+Reviewer devices trust the venue CA for everything it signs, so what it can sign matters
+([residual-risks.md](./residual-risks.md) R4). Since 6 November 2026:
+
+- **Name constraints.** The CA may sign only for `localhost`, `127.0.0.1` and the `--host`
+  names and addresses given when it was made. A browser that trusts it refuses a certificate
+  for any other site, whoever signed it.
+- **The key leaves the machine.** `tls-init` hands the key out once, and the installer writes
+  it to `--ca-key-to` (default `venue-ca-key.pem` in the checkout, mode 0600). Move that file to
+  removable media kept by DTP's custodian (D12) and delete it from the machine. The Edge does
+  not need it to run.
+- **The Edge checks.** While the key is still under `data/tls/`, or the CA has no name
+  constraints, the Edge opens the `venue_ca` warning (runbook.md) and the console says so.
+
+**Reissuing the certificate** (a new address, or the certificate's 397 days running out). The
+key is read from the medium and goes nowhere else:
+
+```bash
+docker compose run --rm --no-deps -T edge tls-init --host 192.168.10.2 --host edge.venue.lan --ca-key - < /media/usb/venue-ca-key.pem
+docker compose restart edge
+```
+
+A name outside the CA's constraints is refused with the names it permits. For a new name,
+make a new CA: `sudo deploy/install.sh ... --renew-ca`, then install the new `venue-ca.pem` on
+every reviewer device; the old one can be removed from them.
+
+**An Edge installed before 6 November 2026** has a CA with no name constraints and its key in
+`data/tls/ca-key.pem`. Before real footage, run the installer again with `--renew-ca` and
+reinstall `venue-ca.pem` on the reviewer devices. (`tls-init --ca-key-out FILE` alone moves the
+old key off the machine but leaves the unconstrained CA; the warning stays until it is renewed.)
 
 ## Ports
 

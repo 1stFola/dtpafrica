@@ -287,13 +287,42 @@ def cmd_api(args: argparse.Namespace) -> int:
 
 
 def cmd_tls_init(args: argparse.Namespace) -> int:
-    from .tlsgen import init
+    """The CA's key goes off this Edge (R4): to --ca-key-out, once, when the CA is made or when
+    an older install still holds it. A reissue brings it back with --ca-key. --keep-ca-key
+    leaves it here, for rehearsals and tests, and says so."""
+    from .tlsgen import TlsError, init, problems
 
     settings = _settings(need_api_token=False)
-    paths = init(settings.data_dir / "tls", args.host, settings.device_label)
-    print(json.dumps({k: str(v) for k, v in paths.items()}, indent=2))
+    folder = settings.data_dir / "tls"
+    needs_out = not args.keep_ca_key and (not (folder / "ca.pem").exists() or (folder / "ca-key.pem").exists())
+    if needs_out and not args.ca_key_out:
+        print("fairplay-edge: the venue CA's key must go off this Edge: say where with --ca-key-out FILE (or - for stdout),"
+              " or pass --keep-ca-key for a rehearsal", file=sys.stderr)
+        return 2
+    ca_key_pem = None
+    if args.ca_key:
+        ca_key_pem = sys.stdin.buffer.read() if args.ca_key == "-" else Path(args.ca_key).read_bytes()
+    try:
+        paths = init(folder, args.host, settings.device_label, ca_key_pem=ca_key_pem, keep_ca_key=args.keep_ca_key)
+    except TlsError as exc:
+        print(f"fairplay-edge: {exc}", file=sys.stderr)
+        return 2
+    key = paths.pop("ca_key_pem", None)
+    to_stdout = bool(key) and args.ca_key_out == "-"
+    if key:
+        if to_stdout:
+            sys.stdout.buffer.write(key)
+            sys.stdout.flush()
+        else:
+            fd = os.open(args.ca_key_out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(key)
+        print("the venue CA's key is no longer on this Edge: keep it on removable media with DTP's custodian (R4)", file=sys.stderr)
+    print(json.dumps({k: str(v) for k, v in paths.items()}, indent=2), file=sys.stderr if to_stdout else sys.stdout)
     print("set FAIRPLAY_EDGE_TLS_CERT and FAIRPLAY_EDGE_TLS_KEY to cert and key; install ca on reviewer devices",
           file=sys.stderr)
+    for problem in problems(folder):
+        print(f"warning: {problem} (R4); make a new CA before real footage", file=sys.stderr)
     return 0
 
 
@@ -448,8 +477,11 @@ def main(argv: list[str] | None = None) -> int:
     api.add_argument("--out")
     api.add_argument("--timeout", type=float, default=60)
     api.set_defaults(fn=cmd_api)
-    tls = sub.add_parser("tls-init", help="create the Edge's CA and a server certificate")
+    tls = sub.add_parser("tls-init", help="create the Edge's CA and a server certificate, or reissue the certificate")
     tls.add_argument("--host", action="append", default=[], help="LAN address or name; repeatable")
+    tls.add_argument("--ca-key-out", metavar="FILE", help="where the CA's key goes, off this Edge: a file, or - for stdout")
+    tls.add_argument("--ca-key", metavar="FILE", help="the CA's key, brought back to reissue: a file, or - for stdin")
+    tls.add_argument("--keep-ca-key", action="store_true", help="leave the CA's key on this Edge (rehearsals and tests only)")
     tls.set_defaults(fn=cmd_tls_init)
     keygen = sub.add_parser("dev-keygen", help="DEVELOPMENT ONLY: a bundle signing key")
     keygen.add_argument("--out", required=True)
