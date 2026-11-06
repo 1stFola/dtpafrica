@@ -27,7 +27,9 @@ was released only by hand, so the footage around every incident was kept for goo
 an incident's hold ends, Fola answered: "14 days after finding". Built as: the hold ends 14 days after
 the incident's finding unless a manual hold stands over the same footage, the sources of its clips
 are released at the same moment, the clips stay under D10, and the request document states the date
-per incident (RC2). An incident with no finding keeps its hold; when that ends is not yet decided.
+per incident (RC2). Asked the same day about an incident with no finding, Fola answered: "14 days
+after session end". Built as: such a hold ends 14 days after the match's session ended; a session
+nobody ended keeps it.
 
 **Still open:** gate 1 (single- or multi-angle), which needs the equipment audit answered
 by the matchday crew; B8 (sheet event ids on approval); B9/B10 (licence rows); B12 (HTTPS

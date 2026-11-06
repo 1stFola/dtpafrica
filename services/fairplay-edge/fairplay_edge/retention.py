@@ -17,8 +17,9 @@ the record that a segment existed outlives the segment.
 An incident's hold ends by itself 14 days after its finding (RC1, Fola, 6 November 2026),
 unless a manual hold stands over the same footage, and the sources of its clips stop
 counting as evidence the recordings must keep at the same moment (`evidence_refs.synced`).
-The clips themselves stay (D10). An incident with no finding keeps its hold. This runs at
-the start of each retention pass, so under the same clock checks.
+The clips themselves stay (D10). An incident with no finding holds until 14 days after its
+match's session ended. This runs at the start of each retention pass, so under the same
+clock checks.
 """
 
 from __future__ import annotations
@@ -125,25 +126,33 @@ def release_evidence_refs(store: Store, incident_id: str) -> int:
 
 def release_finished_incident_holds(store: Store, now: datetime | None = None, days: int = INCIDENT_HOLD_DAYS) -> list[dict]:
     """RC1 (Fola, 6 November 2026): an incident's hold ends `days` after its finding, and the
-    sources of its clips are released at the same moment. A manual hold over the same footage
-    still keeps it; an incident with no finding keeps its own hold. Each release is in the
-    audit chain, as the system, with the rule and the incident named."""
+    sources of its clips are released at the same moment. An incident with no finding (flagged,
+    or a review nobody finished) holds until `days` after its match's session ended (Fola, the
+    same day); a session nobody ended keeps it. A manual hold over the same footage still keeps
+    it. Each release is in the audit chain, as the system, with the rule and the incident named."""
     now = now or utcnow()
     cutoff = iso(now - timedelta(days=days))
-    due = store.query(
-        "SELECT h.id AS hold_id, i.id AS incident_id, r.completed_at FROM holds h"
+    found = store.query(
+        "SELECT h.id AS hold_id, i.id AS incident_id, r.completed_at AS since, 'finding' AS what FROM holds h"
         " JOIN incidents i ON i.hold_id = h.id JOIN reviews r ON r.id = i.current_review_id"
         " WHERE h.reason = 'incident' AND h.released_utc IS NULL AND i.state IN ('reviewed', 'archived')"
         " AND r.state = 'completed' AND r.completed_at <= ? ORDER BY r.completed_at", (cutoff,))
+    unfound = store.query(
+        "SELECT h.id AS hold_id, i.id AS incident_id, s.ended_utc AS since, 'session_end' AS what FROM holds h"
+        " JOIN incidents i ON i.hold_id = h.id JOIN match_sessions s ON s.id = i.session_id"
+        " WHERE h.reason = 'incident' AND h.released_utc IS NULL AND i.state IN ('flagged', 'reviewing')"
+        " AND s.ended_utc IS NOT NULL AND s.ended_utc <= ? ORDER BY s.ended_utc", (cutoff,))
     released = []
-    for row in due:
-        detail = {"rule": "RC1", "days": days, "incidentId": row["incident_id"], "findingUtc": row["completed_at"]}
-        if release_hold(store, row["hold_id"], f"the finding is {days} days old (RC1)", Actor.system(), detail) is None:
+    for row in (*found, *unfound):
+        by_finding = row["what"] == "finding"
+        detail = {"rule": "RC1", "days": days, "incidentId": row["incident_id"],
+                  "findingUtc" if by_finding else "sessionEndedUtc": row["since"]}
+        why = f"the finding is {days} days old (RC1)" if by_finding else f"no finding, and the session ended {days} days ago (RC1)"
+        if release_hold(store, row["hold_id"], why, Actor.system(), detail) is None:
             continue
         freed = release_evidence_refs(store, row["incident_id"])
         released.append({**detail, "holdId": row["hold_id"], "refsReleased": freed})
-        log.info(json.dumps({"event": "hold.released.rc1", "incidentId": row["incident_id"], "holdId": row["hold_id"],
-                             "findingUtc": row["completed_at"], "refsReleased": freed}))
+        log.info(json.dumps({"event": "hold.released.rc1", "holdId": row["hold_id"], "refsReleased": freed, **detail}))
     return released
 
 

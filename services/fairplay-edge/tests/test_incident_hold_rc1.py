@@ -1,7 +1,8 @@
 """RC1 (Fola, 6 November 2026; rights-checklist.md): an incident's hold ends 14 days after its
 finding, unless a manual hold stands over the same footage, and the sources of its clips are
-released at the same moment. The clips themselves stay (D10). An incident with no finding keeps
-its hold, and a reopened incident holds its footage again. Closes R25."""
+released at the same moment. The clips themselves stay (D10). An incident with no finding holds
+until 14 days after its session ended (Fola, the same day), and a reopened incident holds its
+footage again. Closes R25."""
 
 from dataclasses import replace
 from datetime import timedelta
@@ -68,6 +69,31 @@ def test_an_incident_hold_ends_14_days_after_its_finding_and_frees_its_clip_sour
     a_hold = _hold(store, a)
     retention.create_hold(store, None, parse_iso(a_hold["from_utc"]), parse_iso(a_hold["to_utc"]), "manual", "the parent asked", ADMIN)
     assert not (set(ev_a["source_segment_ids"]) & _eligible(store))
+
+
+def test_an_incident_with_no_finding_holds_until_14_days_after_its_session_ended(clients, service, session_id):  # noqa: F811
+    store = service.store
+    a, _ = to_reviewed(clients, service, session_id)  # found today: its own 14 days run from the finding
+    b = flag(clients["operator"], session_id, eventUtc="2026-10-27T14:00:05.000Z").json()  # flagged, never reviewed
+    c = flag(clients["operator"], session_id, eventUtc="2026-10-27T14:00:35.000Z").json()  # a review nobody finished
+    assert clients["assessor"].post(f"/edge/v1/incidents/{c['id']}/review/start", headers={**CSRF, "If-Match": "1"}).status_code == 200
+
+    def ended(days_ago):
+        with store.tx() as db:
+            db.execute("UPDATE match_sessions SET ended_utc = ? WHERE id = ?",
+                       (iso(utcnow() - timedelta(days=days_ago)) if days_ago is not None else None, session_id))
+
+    ended(None)
+    assert retention.release_finished_incident_holds(store) == []  # a session nobody ended keeps them
+    ended(13)
+    assert retention.release_finished_incident_holds(store) == []
+    ended(15)
+    released = retention.release_finished_incident_holds(store)
+    assert {r["incidentId"] for r in released} == {b["id"], c["id"]} and all(r["sessionEndedUtc"] for r in released)
+    assert _hold(store, b)["released_utc"] and _hold(store, c)["released_utc"] and _hold(store, a)["released_utc"] is None
+    entry = [e for e in audit.entries(store) if e["action"] == "hold.released"][-1]
+    assert entry["actor_kind"] == "system" and entry["detail"]["rule"] == "RC1" and entry["detail"]["sessionEndedUtc"]
+    assert "session ended 14 days ago" not in str(entry) and audit.verify(store)["ok"]
 
 
 def test_the_retention_pass_releases_the_hold_then_deletes_the_footage_and_keeps_the_clip(clients, service, session_id):  # noqa: F811

@@ -119,8 +119,8 @@ export class FairPlayRequestsService {
           footage: current?.state === "completed" && current.completedAt
             ? { heldOn: `the Edge "${s.device.label}"`, until: new Date(current.completedAt.getTime() + INCIDENT_FOOTAGE_KEPT_DAYS * 86_400_000),
                 note: `The recordings around this incident, on every camera, are kept on the Edge until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after its finding (rights-checklist.md RC1), then deleted by the next retention pass, unless a DTP admin has placed a manual hold on that footage.` }
-            : { heldOn: `the Edge "${s.device.label}"`, until: null,
-                note: `The recordings around this incident, on every camera, are kept on the Edge until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after a finding is recorded (rights-checklist.md RC1); none is recorded yet.` },
+            : { heldOn: `the Edge "${s.device.label}"`, until: s.endedAt ? new Date(s.endedAt.getTime() + INCIDENT_FOOTAGE_KEPT_DAYS * 86_400_000) : null,
+                note: `The recordings around this incident, on every camera, are kept on the Edge until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after a finding is recorded, or until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after the match's session ended if none is (rights-checklist.md RC1); none is recorded yet.` },
           evidence: s.evidence.filter((e) => e.incidentId === inc.id).map((e) => ({
             id: e.id, source: e.source, sha256: e.sha256, bytes: Number(e.bytes), windowStartUtc: e.windowStartUtc,
             windowDurationMs: e.windowDurationMs, footageKind: e.footageKind,

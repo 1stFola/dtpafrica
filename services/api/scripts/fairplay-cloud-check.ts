@@ -503,7 +503,8 @@ async function main() {
       && new Date(heldInc.footage.until).getTime() === new Date(heldInc.finding.completedAt!).getTime() + 14 * 86_400_000
       && heldInc.footage.note.includes("14 days after its finding") && held.matches[0].recordings.note.includes("RC1"), heldInc.footage);
   const unfound = held.incidents.find((i) => i.finding === null);
-  check("an incident with no finding yet says so, with no date", !unfound || (unfound.footage.until === null && unfound.footage.note.includes("none is recorded yet")), unfound?.footage);
+  check("an incident with no finding yet says so, and that the session's end then counts", !unfound
+    || (unfound.footage.note.includes("none is recorded yet") && unfound.footage.note.includes("session ended")), unfound?.footage);
   const w = await requests.withdraw(req.id, { evidenceId: ev2, reason: "the parent asks for the clip to be removed" }, admin);
   const ev2Objects = await prisma.fairPlayEvidenceObject.findMany({ where: { evidenceId: ev2 } });
   check("withdrawing a clip removes both objects from the bucket at once, keeping the rows and the reason",

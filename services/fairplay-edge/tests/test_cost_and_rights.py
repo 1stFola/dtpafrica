@@ -147,7 +147,7 @@ def test_the_pages_describe_the_rule_that_ends_an_incident_hold():
     cost = text_of("docs", "fairplay", "cost-worksheet.md")
     assert "Fixed on 6 November 2026" in cost and "14 days after its finding" in cost
     r25 = text_of("docs", "fairplay", "residual-risks.md").split("| R25 |")[1].split("\n")[0]
-    assert "In code since 6 November 2026" in r25 and "never reviewed keeps its hold" in r25
+    assert "In code since 6 November 2026" in r25 and "no finding releases 14 days after its session ended" in r25
     assert "until 14 days after that incident's finding" in text_of("docs", "fairplay", "privacy.md")
     assert "6 November 2026, on D9 (RC1)" in text_of("docs", "fairplay", "decisions.md")
 
