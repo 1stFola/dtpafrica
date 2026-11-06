@@ -47,6 +47,8 @@ export type CreateSessionInput = {
 // How long a running session keeps a device's operator list: longer than any match.
 const HOLD_AFTER_KICKOFF_MS = 4 * 3600_000;
 const HOLD_WITHOUT_KICKOFF_MS = 12 * 3600_000;
+/** The next match's list is issued from this long before its kickoff; until then an ended match keeps its list for its reviews (M5). */
+export const NEXT_LIST_BEFORE_KICKOFF_MS = 12 * 3600_000;
 /** How long an ended session keeps its list, so its people can finish reviews (M5; Fola, 4 November 2026). */
 export const REVIEW_AFTER_END_MS = 7 * 24 * 3600_000;
 
@@ -179,14 +181,16 @@ export class FairPlaySessionsService {
   }
 
   /**
-   * The signed bundle for the session this device should run now, of those assigned to it and
-   * not ended. With none open, the one that ended most recently, for 7 days after it ended, so
-   * its assessors can still sign in and finish reviews that exist only on the Edge (M5). Of the
-   * open ones: the one the Edge says is in progress there, or else the one whose kickoff is
-   * nearest. A second match's nearer kickoff must not take the list from a match under way, but a
-   * session nobody ended must not keep the next match out: see `holdLasts`. Members without a PIN, or whose account is
-   * disabled, are left out. `have` is the content hash of the bundle the Edge holds: when it
-   * still matches and that bundle has more than half its life left, nothing is re-signed.
+   * The signed bundle for the session this device should run now. Of the open sessions assigned
+   * to it: the one the Edge says is in progress there, or else the one whose kickoff is nearest
+   * among those due (kicking off within 12 hours, or with no kickoff time). A match that ended
+   * within 7 days keeps its list until the next one is due, so its assessors can still sign in
+   * and finish reviews that exist only on the Edge (M5), even where the next match is provisioned
+   * days ahead. A second match's nearer kickoff must not take the list from a match under way, but
+   * a session nobody ended must not keep the next match out: see `holdLasts`. Members without a
+   * PIN, or whose account is disabled, are left out. `have` is the content hash of the bundle the
+   * Edge holds: when it still matches and that bundle has more than half its life left, nothing
+   * is re-signed.
    */
   async bundleFor(device: DeviceIdentity, have?: { contentHash?: string; expiresAt?: string; runningSessionId?: string }) {
     if (!this.config.bundleSigningKeyPem) {
@@ -198,32 +202,45 @@ export class FairPlaySessionsService {
       include: { members: { include: { adminUser: { select: { email: true, name: true, isActive: true, ...ACCOUNT_SCOPE,
         role: { include: { permissions: { include: { permission: { select: { slug: true } } } } } } } } } } },
     });
+    if (!assigned.length) return { bundle: null, reason: "no session on this device is open or ended within 7 days" };
+    type Assigned = (typeof assigned)[number];
     const open = assigned.filter((s) => !s.endedAt);
     const recentlyEnded = assigned.filter((s) => s.endedAt).sort((a, b) => b.endedAt!.getTime() - a.endedAt!.getTime()).slice(0, 1);
-    const sessions = open.length ? open : recentlyEnded;
-    if (!sessions.length) return { bundle: null, reason: "no session on this device is open or ended within 7 days" };
-    const kickoffAt = (s: (typeof sessions)[number]) => {
+    const kickoffAt = (s: Assigned) => {
       const at = (s.matchSnapshot as { kickoffAt?: string | null }).kickoffAt;
       return at ? new Date(at).getTime() : null;
     };
-    const kickoff = (s: (typeof sessions)[number]) => {
+    const kickoff = (s: Assigned) => {
       const at = kickoffAt(s);
       return at === null ? Number.MAX_SAFE_INTEGER : Math.abs(at - now);
     };
-    // The Edge says which session is under way, and holds that list until this says otherwise.
-    const holdLasts = (s: (typeof sessions)[number]) => {
+    // The Edge says which session is under way, and holds that list until this says otherwise:
+    // 4 hours after its own kickoff, 12 hours after it was opened when it has none, or when the
+    // next match kicks off. The next match is one that kicked off after this one did, or, while
+    // this one has no kickoff or has not kicked off, after this one was opened (H1): a stale
+    // session from an earlier day that nobody ended is not the next match.
+    const holdLasts = (s: Assigned) => {
+      if (s.endedAt) return false;
       const at = kickoffAt(s);
       if (now >= (at === null ? s.createdAt.getTime() + HOLD_WITHOUT_KICKOFF_MS : at + HOLD_AFTER_KICKOFF_MS)) return false;
-      return !sessions.some((other) => {
+      const since = at !== null && at <= now ? at : s.createdAt.getTime();
+      return !open.some((other) => {
         const next = other.id === s.id ? null : kickoffAt(other);
-        return next !== null && next <= now && (at === null || at > now || next > at);
+        return next !== null && next <= now && next > since;
       });
     };
-    const running = sessions.find((s) => s.id === have?.runningSessionId);
+    const running = assigned.find((s) => s.id === have?.runningSessionId);
     const holding = running && holdLasts(running) ? running : undefined;
     const holdEnded = Boolean(running && !holding);
+    // With nothing held: an open session that is due, else the match that ended within 7 days,
+    // else whatever is open (provisioned ahead, with nothing to review meanwhile).
+    const due = open.filter((s) => {
+      const at = kickoffAt(s);
+      return at === null || at - now <= NEXT_LIST_BEFORE_KICKOFF_MS;
+    });
+    const candidates = due.length ? due : recentlyEnded.length ? recentlyEnded : open;
     const session = holding
-      ?? [...sessions].sort((a, b) => kickoff(a) - kickoff(b) || b.createdAt.getTime() - a.createdAt.getTime())[0];
+      ?? [...candidates].sort((a, b) => kickoff(a) - kickoff(b) || b.createdAt.getTime() - a.createdAt.getTime())[0];
     // The venue never gets more than the account holds now, not just when the member was added:
     // a permission taken off the role since is left out of the next bundle, and so is an
     // account no longer given the match's competition.

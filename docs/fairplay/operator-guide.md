@@ -173,8 +173,11 @@ Do these in order. The cameras keep recording until you turn them off, so turn t
    and export all carry on afterwards.
    - If another match follows on this Edge, do steps 4 to 6 first, or leave them to the Edge
      admin. Once the session has ended and the Edge is online, the next match's operator list
-     arrives within minutes, and only an Edge admin can then open this match. Keep the Edge online
-     for 5 minutes after ending, or the next match's people cannot sign in.
+     arrives within minutes if that match is due (it kicks off within 12 hours, or has no kickoff
+     time), and only an Edge admin can then open this match. Keep the Edge online for 5 minutes
+     after ending, or the next match's people cannot sign in. A match provisioned days ahead does
+     not take the list: this match's stays for its reviews, for 7 days, and the next match's
+     arrives 12 hours before its kickoff.
 4. **Request clips.** Open each incident and press **Make ground clip** or **Make drone clip**. Read
    the coverage column: "partial" means part of that window was not recorded.
 5. **Review (assessor).** Press **Start review**, enter the **On-field decision** as it was given,
