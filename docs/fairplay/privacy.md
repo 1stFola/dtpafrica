@@ -93,7 +93,11 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   clip's hash and where it is held until when, and when the match's recordings are
   deleted. Clips are sent separately, each read through the audited link.
 - **A withdrawn clip** is removed from the bucket at once and from the Edge when it next
-  connects. It is never released again. Its hash, size, reason and requester are kept.
+  connects. It is never released again. Its hash, size, reason and requester are kept. Any
+  other clip of the same camera whose window overlaps it holds the same pictures, so the Edge
+  withdraws it too, under the same request, each with its own record and each reported to
+  the cloud, which then removes its copy (6 November 2026; before this, a second clip of the
+  same moment cut under another incident stayed). Nothing new is cut over withdrawn footage.
 - **Backups:** a backup taken before a withdrawal still holds the clip until that backup is
   destroyed. After each withdrawal, take a new backup and destroy the older ones
   ([edge-backup.md](./edge-backup.md)). A restored Edge asks the cloud what was withdrawn
