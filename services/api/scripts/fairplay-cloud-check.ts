@@ -213,6 +213,35 @@ async function main() {
   const lapsed = await sessions.bundleFor(dhId);
   check("but not more than 7 days after it ended", "bundle" in lapsed && lapsed.bundle === null && /7 days/.test(lapsed.reason ?? ""), lapsed);
 
+  console.log("\nA venue that provisions ahead (M5), and a running session with no kickoff time (H1)");
+  const mkMatch = (kickoffAt: Date | null) => prisma.sbMatch.create({ data: { competitionId: c1.id, homeTeamId: lions.id, awayTeamId: eagles.id, kickoffAt } });
+  const sEnded = await sessions.create({ matchId: (await mkMatch(kickoff(-180))).id, deviceId: dh.id }, admin);
+  await prisma.fairPlaySession.update({ where: { id: sEnded.id }, data: { endedAt: new Date() } });
+  const sNext = await sessions.create({ matchId: (await mkMatch(kickoff(5 * 24 * 60))).id, deviceId: dh.id }, admin);
+  check("a match that ended keeps its list while the next, provisioned days ahead, is not yet due", (await sessions.bundleFor(dhId)).sessionId === sEnded.id);
+  await setKickoff(sNext.id, 11 * 60);
+  check("the next match's list is issued 12 hours before its kickoff", (await sessions.bundleFor(dhId)).sessionId === sNext.id);
+  await setKickoff(sNext.id, 5 * 24 * 60);
+  const sNoKick = await sessions.create({ matchId: (await mkMatch(null)).id, deviceId: dh.id }, admin);
+  check("a session with no kickoff time is due at once", (await sessions.bundleFor(dhId)).sessionId === sNoKick.id);
+  // Opened an hour ago and under way on the Edge; a session from three days ago that nobody ended is still open.
+  await prisma.fairPlaySession.update({ where: { id: sNoKick.id }, data: { createdAt: new Date(Date.now() - 3600_000) } });
+  const sStale = await sessions.create({ matchId: (await mkMatch(kickoff(-3 * 24 * 60))).id, deviceId: dh.id }, admin);
+  const heldNoKick = await sessions.bundleFor(dhId, { runningSessionId: sNoKick.id });
+  check("a running session with no kickoff time holds its list against a stale session nobody ended (H1)",
+    heldNoKick.sessionId === sNoKick.id && !("holdEnded" in heldNoKick && heldNoKick.holdEnded), heldNoKick);
+  const sToday = await sessions.create({ matchId: (await mkMatch(kickoff(-5))).id, deviceId: dh.id }, admin);
+  const displaced = await sessions.bundleFor(dhId, { runningSessionId: sNoKick.id });
+  check("but a match that kicked off after it was opened ends the hold", displaced.sessionId === sToday.id && "holdEnded" in displaced && displaced.holdEnded === true, displaced);
+  await prisma.fairPlaySession.update({ where: { id: sToday.id }, data: { endedAt: new Date() } });
+  await prisma.fairPlaySession.update({ where: { id: sNoKick.id }, data: { createdAt: new Date(Date.now() - 13 * 3600_000) } });
+  const tooLong = await sessions.bundleFor(dhId, { runningSessionId: sNoKick.id });
+  check("and so does 12 hours from opening, without a kickoff time", "holdEnded" in tooLong && tooLong.holdEnded === true, tooLong);
+  const endedByCloud = await sessions.bundleFor(dhId, { runningSessionId: sToday.id });
+  check("a session the cloud ended, which the Edge still calls running, does not hold", "holdEnded" in endedByCloud && endedByCloud.holdEnded === true, endedByCloud);
+  await prisma.fairPlaySession.updateMany({ where: { id: { in: [sEnded.id, sNext.id, sNoKick.id, sStale.id, sToday.id] } },
+    data: { endedAt: new Date(Date.now() - 8 * 24 * 3600_000) } });
+
   console.log("\nSync: idempotent, ordered, owned");
   const t0 = "2026-10-28T15:00:00.000Z";
   const sessionPayload = { id: s1.id, label: s1.label, match_ref: matchA.id, mode: "shadow", created_utc: t0, created_by: assessor.id, ended_utc: null };
