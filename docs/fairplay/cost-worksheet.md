@@ -8,6 +8,11 @@ The rights and retention decisions are in [rights-checklist.md](./rights-checkli
 
 ## What the worksheet found
 
+**Fixed on 6 November 2026** (`fix/fairplay-r25-incident-hold`, RC1 as Fola decided): an incident's hold now
+ends 14 days after its finding unless a manual hold stands, and its clips' sources are released with it, so
+the figure below falls to about 14 to 21 days of each incident's window instead of "with no end". What
+follows describes the code as it was when the worksheet was written.
+
 **As built, the footage around every incident is never deleted.** D9 says recordings go after 14 days,
 "held and unsynced-evidence footage never". Two things in the code turn that "never" into forever:
 

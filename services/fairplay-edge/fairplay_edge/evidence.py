@@ -586,9 +586,10 @@ def run_job(store: Store, settings: Settings, cutter: Cutter, job_id: str, now: 
                    " :duration_ms, :rel_path, :bytes, :sha256, :manifest_rel_path, :manifest_sha256,"
                    " :source_segment_ids, :created_by, :created_utc)", row)
         # Retention already refuses to delete a segment that unsynced evidence references.
+        # Named with the clip they were cut for, so RC1 can free them when its incident's hold ends.
         for u in plan["used"]:
-            db.execute("INSERT INTO evidence_refs (id, segment_id, synced, created_utc) VALUES (?, ?, 0, ?)",
-                       (new_id(), u["segmentId"], created))
+            db.execute("INSERT INTO evidence_refs (id, segment_id, synced, created_utc, evidence_id) VALUES (?, ?, 0, ?, ?)",
+                       (new_id(), u["segmentId"], created, evidence_id))
         db.execute("UPDATE jobs SET state = 'succeeded', evidence_id = ?, finished_utc = ?, error = NULL,"
                    " error_code = NULL WHERE id = ?", (evidence_id, created, job_id))
         audit.append(db, Actor.system(), "evidence.created", "evidence", evidence_id, 1,

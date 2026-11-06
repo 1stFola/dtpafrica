@@ -22,6 +22,13 @@ between options, with a recommendation, on **28 October 2026**. Gate numbers ref
 
 **1 November 2026, on D3:** D3 said the cloud side would be "deployed only on a separate approval". The Phase 7 review ([C1](./phase-7-acceptance-review.md)) found CD had already deployed it to the box serving the live site, migrations included, when it merged. Asked whether that stands, Fola answered: "It stands, fix docs". A merge to `main` that passes CI is a production deploy.
 
+**6 November 2026, on D9 (RC1):** D9's "held ... footage never" had no end at all: an incident's hold
+was released only by hand, so the footage around every incident was kept for good (R25). Asked when
+an incident's hold ends, Fola answered: "14 days after finding". Built as: the hold ends 14 days after
+the incident's finding unless a manual hold stands over the same footage, the sources of its clips
+are released at the same moment, the clips stay under D10, and the request document states the date
+per incident (RC2). An incident with no finding keeps its hold; when that ends is not yet decided.
+
 **Still open:** gate 1 (single- or multi-angle), which needs the equipment audit answered
 by the matchday crew; B8 (sheet event ids on approval); B9/B10 (licence rows); B12 (HTTPS
 on a real reviewer device). D8 sets the direction for rights but needs the organisers and

@@ -498,6 +498,12 @@ async function main() {
     held.schema === "fairplay.held-about-a-player/v1" && held.incidents.length === req.incidents.length && heldInc.finding?.factualNotes === "Ball first."
       && heldInc.evidence.length === 2 && heldInc.evidence.every((e) => e.inCloud.length === 2 && e.inCloud.every((o) => o.state === "stored"))
       && held.matches.length === 1 && held.matches[0].recordings.note.includes("14 days"), held);
+  check("and, per incident, until when the recordings around it are held: 14 days after its finding (RC1)",
+    heldInc.footage.until !== null && heldInc.finding !== null
+      && new Date(heldInc.footage.until).getTime() === new Date(heldInc.finding.completedAt!).getTime() + 14 * 86_400_000
+      && heldInc.footage.note.includes("14 days after its finding") && held.matches[0].recordings.note.includes("RC1"), heldInc.footage);
+  const unfound = held.incidents.find((i) => i.finding === null);
+  check("an incident with no finding yet says so, with no date", !unfound || (unfound.footage.until === null && unfound.footage.note.includes("none is recorded yet")), unfound?.footage);
   const w = await requests.withdraw(req.id, { evidenceId: ev2, reason: "the parent asks for the clip to be removed" }, admin);
   const ev2Objects = await prisma.fairPlayEvidenceObject.findMany({ where: { evidenceId: ev2 } });
   check("withdrawing a clip removes both objects from the bucket at once, keeping the rows and the reason",

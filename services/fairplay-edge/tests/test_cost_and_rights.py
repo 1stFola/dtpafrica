@@ -133,14 +133,23 @@ def sources() -> dict[str, str]:
     return {p.name: p.read_text("utf-8") for p in PACKAGE.glob("*.py")}
 
 
-def test_the_page_describes_why_incident_footage_is_kept():
-    """If this fails, someone built a rule: update cost-worksheet.md, rights-checklist.md and R25."""
+def test_the_pages_describe_the_rule_that_ends_an_incident_hold():
+    """RC1 was built on 6 November 2026 (test_incident_hold_rc1.py). If this fails, the rule moved:
+    update cost-worksheet.md, privacy.md, decisions.md and R25, and tell Fola, whose rights sheet
+    records the decision."""
     code = sources()
     callers = {name for name, text in code.items() if "release_hold(" in text}
     assert callers == {"retention.py", "api.py", "incidents.py"}
     assert code["incidents.py"].count("release_hold(") == 1 and "incident window changed" in code["incidents.py"]
-    assert not any(re.search(r"UPDATE\s+evidence_refs", text) for text in code.values())
-    assert "synced, created_utc) VALUES (?, ?, 0, ?)" in code["evidence.py"]
+    assert "INCIDENT_HOLD_DAYS = 14" in code["retention.py"] and "release_finished_incident_holds(store, now)" in code["retention.py"]
+    assert {name for name, text in code.items() if re.search(r"UPDATE\s+evidence_refs", text)} == {"retention.py"}
+    assert "created_utc, evidence_id) VALUES (?, ?, 0, ?, ?)" in code["evidence.py"]
+    cost = text_of("docs", "fairplay", "cost-worksheet.md")
+    assert "Fixed on 6 November 2026" in cost and "14 days after its finding" in cost
+    r25 = text_of("docs", "fairplay", "residual-risks.md").split("| R25 |")[1].split("\n")[0]
+    assert "In code since 6 November 2026" in r25 and "never reviewed keeps its hold" in r25
+    assert "until 14 days after that incident's finding" in text_of("docs", "fairplay", "privacy.md")
+    assert "6 November 2026, on D9 (RC1)" in text_of("docs", "fairplay", "decisions.md")
 
 
 def test_retention_really_keeps_it(store, settings, session, ten_second_segments):  # noqa: F811
