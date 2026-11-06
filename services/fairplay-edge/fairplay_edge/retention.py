@@ -62,8 +62,10 @@ def create_hold(store: Store, source: str | None, from_utc: datetime, to_utc: da
             " VALUES (:id, :source, :from_utc, :to_utc, :reason, :ref, :created_utc)", hold,
         )
         Store.log_event(db, hold["created_utc"], "hold.created", None, hold)
+        # `ref` is an incident id from incidents.py, but free text from the manual route (D13).
         audit.append(db, actor or Actor.system(), "hold.created", "hold", hold["id"], None,
-                     {k: hold[k] for k in ("source", "from_utc", "to_utc", "reason", "ref")})
+                     {**{k: hold[k] for k in ("source", "from_utc", "to_utc", "reason")},
+                      "refSha256": audit.fingerprint(store, hold["id"], ref)})
     return hold
 
 
@@ -82,7 +84,7 @@ def release_hold(store: Store, hold_id: str, reason: str, actor: Actor | None = 
             return None
         Store.log_event(db, now, "hold.released", None, {"id": hold_id})
         audit.append(db, actor or Actor.system(), "hold.released", "hold", hold_id, None,
-                     {"reasonSha256": audit.fingerprint(hold_id, reason)})
+                     {"reasonSha256": audit.fingerprint(store, hold_id, reason)})
     return store.one("SELECT * FROM holds WHERE id = ?", (hold_id,))
 
 

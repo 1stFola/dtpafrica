@@ -234,7 +234,7 @@ def calibrate(store: Store, settings: Settings, session_id: str, source: str, re
                       "uncertaintyMs": row["uncertainty_ms"], "method": method, "referenceSource": reference_source,
                       "referenceUtc": row["reference_utc"], "observedIngestUtc": row["observed_ingest_utc"],
                       "evidenceSegmentId": evidence_segment_id, "supersedes": supersedes,
-                      "note": audit.fingerprint(row["id"], note)}, at_utc=row["created_utc"])
+                      "note": audit.fingerprint(store, row["id"], note)}, at_utc=row["created_utc"])
         outbox.enqueue(db, "calibration", row["id"], 1, row)
     return row
 
