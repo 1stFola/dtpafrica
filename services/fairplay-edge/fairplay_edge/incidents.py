@@ -169,8 +169,8 @@ def create(store: Store, settings: Settings, session_id: str, actor: Actor, *, e
                      {**{k: row[k] for k in ("session_id", "match_id", "event_utc", "basis", "category", "period",
                                              "match_minute", "match_second", "sheet_event_id", "pre_roll_ms",
                                              "post_roll_ms")},
-                      "player_ref_sha256": audit.fingerprint(incident_id, player_ref),
-                      "note_sha256": audit.fingerprint(incident_id, note)})
+                      "player_ref_sha256": audit.fingerprint(store, incident_id, player_ref),
+                      "note_sha256": audit.fingerprint(store, incident_id, note)})
         _sync_incident(db, incident_id)
     return get(store, incident_id)
 
@@ -181,9 +181,9 @@ EDIT_FIELDS = {"pre_roll_ms", "post_roll_ms", "category", "note", "match_minute"
 PRIVATE_FIELDS = {"note", "player_ref"}
 
 
-def _change(incident_id: str, field: str, was, now) -> dict:
+def _change(store: Store, incident_id: str, field: str, was, now) -> dict:
     if field in PRIVATE_FIELDS:
-        return {"wasSha256": audit.fingerprint(incident_id, was), "nowSha256": audit.fingerprint(incident_id, now)}
+        return {"wasSha256": audit.fingerprint(store, incident_id, was), "nowSha256": audit.fingerprint(store, incident_id, now)}
     return {"was": was, "now": now}
 
 
@@ -213,7 +213,7 @@ def edit(store: Store, settings: Settings, incident_id: str, version: int, actor
         Store.log_event(db, now, "incident.updated", None, {"id": incident_id, "by": actor.id, "from": version,
                                                             "changed": sorted(changes)})
         audit.append(db, actor, "incident.edited", "incident", incident_id, version + 1,
-                     {"from": version, "changes": {k: _change(incident_id, k, row[k], v) for k, v in changes.items()}})
+                     {"from": version, "changes": {k: _change(store, incident_id, k, row[k], v) for k, v in changes.items()}})
         _sync_incident(db, incident_id)
     return get(store, incident_id)
 
@@ -334,7 +334,7 @@ def reopen(store: Store, incident_id: str, version: int, actor: Actor, reason: s
         _save(db, incident_id, version, {"state": "reviewing", "current_review_id": new_review,
                                          "reopened_count": row["reopened_count"] + 1, "updated_utc": now})
         audit.append(db, actor, "incident.reopened", "incident", incident_id, version + 1,
-                     {"from": row["state"], "reasonSha256": audit.fingerprint(incident_id, reason),
+                     {"from": row["state"], "reasonSha256": audit.fingerprint(store, incident_id, reason),
                       "supersededReview": old, "newReview": new_review})
         _sync_incident(db, incident_id)
     return get(store, incident_id)
@@ -390,7 +390,7 @@ def record_rights(store: Store, session_id: str, actor: Actor, *, footage_kind: 
                      {**{k: row[k] for k in ("session_id", "footage_kind", "status", "minors_present", "basis",
                                              "supersedes")},
                       # It may name a parent, and the chain cannot be edited.
-                      "consentReferenceSha256": audit.fingerprint(row["id"], row["consent_reference"])})
+                      "consentReferenceSha256": audit.fingerprint(store, row["id"], row["consent_reference"])})
         outbox.enqueue(db, "rights", row["id"], 1, row)
     return row
 

@@ -1,5 +1,6 @@
 """Phase 3: the incident and review lifecycle, the audit chain, rights, and the v2 → v3 migration."""
 
+import hashlib
 import json
 import sqlite3
 from datetime import timedelta
@@ -250,13 +251,16 @@ def test_a_phase_2_database_upgrades_in_place(tmp_path):
     db.commit()
     db.close()
     store = Store(path)
-    assert store.one("SELECT version FROM schema_version")["version"] == 8  # v3, v4 (uploads), v5 (pairing, access), v6 (withdrawals), v7 (outbox index)
+    assert store.one("SELECT version FROM schema_version")["version"] == 9  # v3, v4 (uploads), v5 (pairing, access), v6 (withdrawals), v7 (outbox index), v8 (window basis), v9 (audit salt)
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'uploads'")
     assert store.one("SELECT name FROM sqlite_master WHERE name = 'withdrawals'")
     row = store.one("SELECT * FROM incidents WHERE id = 'i1'")
     assert (row["state"], row["version"], row["match_id"], row["reopened_count"]) == ("flagged", 3, "m-9", 0)
-    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 8}'
-    assert Store(path).device_id == store.device_id  # opening again changes nothing
+    assert store.one("SELECT detail FROM events WHERE kind = 'store.migrated'")["detail"] == '{"from": 2, "to": 9}'
+    again = Store(path)
+    assert again.device_id == store.device_id  # opening again changes nothing
+    # An Edge from before version 9 is given its audit salt once, and keeps it.
+    assert len(store.audit_salt) == 64 and again.audit_salt == store.audit_salt
 
 
 # ── D13: what the chain may hold ──────────────────────────────────────────
@@ -270,14 +274,16 @@ def test_no_player_reference_or_free_text_reaches_the_audit_chain(store, setting
     inc = incidents.complete_review(store, inc["id"], inc["version"], ASSESSOR, result="inconclusive", factual_notes="NOTES-OF-FINDING",
                                     on_field_decision="DECISION-TEXT", evidence_ids=[], footage_states=SHOWN)
     incidents.reopen(store, inc["id"], inc["version"], ADMIN, "REASON-FOR-REOPENING")
-    hold = retention.create_hold(store, None, at(0), at(10), "manual", None, ADMIN)
+    hold = retention.create_hold(store, None, at(0), at(10), "manual", "HOLD-REF-TEXT", ADMIN)
     retention.release_hold(store, hold["id"], "REASON-FOR-RELEASE", ADMIN)
     Sessions(store).disable("u-op", ADMIN, "REASON-FOR-DISABLING")
     chain = json.dumps(audit.entries(store, limit=1000))
     sent = json.dumps([r["payload"] for r in store.query("SELECT payload FROM outbox WHERE entity_type = 'audit'")])
     for text in ("NOTE-AT-FLAG", "NOTE-EDITED", "PLAYER-AT-FLAG", "PLAYER-EDITED", "NOTES-OF-FINDING", "DECISION-TEXT",
-                 "REASON-FOR-REOPENING", "REASON-FOR-RELEASE", "REASON-FOR-DISABLING"):
+                 "REASON-FOR-REOPENING", "REASON-FOR-RELEASE", "REASON-FOR-DISABLING", "HOLD-REF-TEXT"):
         assert text not in chain and text not in sent, text
+    # The salt that makes the fingerprints is not in the chain either, nor in anything sent.
+    assert store.audit_salt not in chain and store.audit_salt not in sent
     assert audit.verify(store)["ok"]
 
 
@@ -287,11 +293,28 @@ def test_the_chain_can_still_show_what_was_recorded_and_what_changed(store, sett
     incidents.edit(store, settings, inc["id"], 1, OP, {"note": "second", "player_ref": None, "category": "goal"})
     entries = audit.for_incident(store, inc["id"])
     created = next(e for e in entries if e["action"] == "incident.created")["detail"]
-    assert created["player_ref_sha256"] == audit.fingerprint(inc["id"], "#7 home")
-    assert created["note_sha256"] == audit.fingerprint(inc["id"], "first")
+    assert created["player_ref_sha256"] == audit.fingerprint(store, inc["id"], "#7 home")
+    assert created["note_sha256"] == audit.fingerprint(store, inc["id"], "first")
     changes = next(e for e in entries if e["action"] == "incident.edited")["detail"]["changes"]
-    assert changes["note"] == {"wasSha256": audit.fingerprint(inc["id"], "first"), "nowSha256": audit.fingerprint(inc["id"], "second")}
+    assert changes["note"] == {"wasSha256": audit.fingerprint(store, inc["id"], "first"), "nowSha256": audit.fingerprint(store, inc["id"], "second")}
     assert changes["category"] == {"was": "foul", "now": "goal"}  # a fixed term, not free text
+
+
+def test_a_shirt_number_cannot_be_recovered_from_the_chain_alone(store, settings, session, tmp_path):
+    """The chain, and the cloud's copy of it, hold the record's id next to the fingerprint. With the
+    id as the only salt, every shirt number could be tried against it (review of #336, 5 Nov 2026).
+    The salt is a secret this Edge keeps, so the chain alone is not enough; the Edge's own
+    database, which holds the text anyway, is."""
+    inc = incidents.create(store, settings, session["id"], OP, event_utc=at(600), basis="manual", category="foul",
+                           player_ref="#7 home")
+    entry = next(e for e in audit.for_incident(store, inc["id"]) if e["action"] == "incident.created")
+    held = entry["detail"]["player_ref_sha256"]
+    from_the_chain_alone = {hashlib.sha256(f"{inc['id']}\0#{n} home".encode()).hexdigest() for n in range(1, 100)}
+    assert held not in from_the_chain_alone
+    assert held == audit.fingerprint(store, inc["id"], "#7 home")  # checkable here, with the salt
+    other_edge = Store(tmp_path / "other-edge.sqlite3")
+    assert other_edge.audit_salt != store.audit_salt
+    assert audit.fingerprint(other_edge, inc["id"], "#7 home") != held  # and not with another Edge's
 
 
 def test_the_same_player_cannot_be_followed_across_incidents_in_the_chain(store, settings, session):
@@ -320,5 +343,5 @@ def test_a_consent_reference_is_kept_out_of_the_chain(store, session):
     row = incidents.record_rights(store, session["id"], OP, footage_kind="real", status="internal_review_only",
                                   minors_present="yes", basis=None, consent_reference="Parent A. Person, form 12")
     entry = store.one("SELECT detail FROM audit_log WHERE action = 'rights.recorded' AND entity_id = ?", (row["id"],))
-    assert "Person" not in entry["detail"] and audit.fingerprint(row["id"], "Parent A. Person, form 12") in entry["detail"]
+    assert "Person" not in entry["detail"] and audit.fingerprint(store, row["id"], "Parent A. Person, form 12") in entry["detail"]
     assert store.one("SELECT consent_reference FROM session_rights WHERE id = ?", (row["id"],))["consent_reference"] == "Parent A. Person, form 12"

@@ -153,7 +153,7 @@ def test_holds_disables_and_repairs_are_in_the_audit_chain(settings, store, fake
     chained = {e["action"]: e for e in audit.entries(store)}
     for action in ("hold.created", "hold.released", "member.disabled", "segment.repaired"):
         assert chained[action]["actor_id"] == "u-admin", action
-    assert chained["hold.released"]["detail"] == {"reasonSha256": audit.fingerprint(hold["id"], "the incident was withdrawn")}
+    assert chained["hold.released"]["detail"] == {"reasonSha256": audit.fingerprint(store, hold["id"], "the incident was withdrawn")}
     assert chained["member.disabled"]["entity_id"] == "u-op"
     assert audit.verify(store)["ok"]
 
