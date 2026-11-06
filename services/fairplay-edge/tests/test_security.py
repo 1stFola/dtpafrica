@@ -441,6 +441,11 @@ def test_no_secret_in_any_response_the_logs_the_tables_or_the_outbox(app, servic
         assert not pin.search(text), f"the PIN is in the {where}"
         # PIN hashes stay in the bundle file: they can be attacked offline (F16).
         assert "scrypt$" not in text, f"a PIN hash is in the {where}"
+    # The audit salt lives on edge_identity and nowhere else: not in a response, a log line, the
+    # outbox or any other table, so the chain's fingerprints cannot be tried against with what leaves.
+    salt = service.store.audit_salt
+    elsewhere = json.dumps({name: rows for name, rows in tables.items() if name != "edge_identity"}, default=str)
+    assert len(salt) == 64 and salt not in places["responses"] and salt not in places["logs"] and salt not in elsewhere
 
 
 # ── exports ──────────────────────────────────────────────────────────────

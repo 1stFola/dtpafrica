@@ -81,13 +81,15 @@ def canonical(obj: dict) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
-def fingerprint(entity_id: str, text: str | None) -> str | None:
-    """A hash of free text, salted with the record it belongs to: anyone holding the text can
-    check it, and one player's reference does not match across incidents. A shirt number is
-    easy to guess, so this keeps it from being read or followed, not from being confirmed."""
+def fingerprint(store: Store, entity_id: str, text: str | None) -> str | None:
+    """A hash of free text, salted with a secret this Edge keeps (`Store.audit_salt`) and with
+    the record it belongs to. Someone holding the text and this Edge's database can check it;
+    one player's reference does not match across incidents; and nobody holding only the chain
+    (which the cloud keeps, insert-only) can recover a shirt number by trying every number,
+    which the record's id alone, being in the same entry, did not prevent."""
     if text is None:
         return None
-    return hashlib.sha256(f"{entity_id}\0{text}".encode()).hexdigest()
+    return hashlib.sha256(f"{store.audit_salt}\0{entity_id}\0{text}".encode()).hexdigest()
 
 
 def _hash(entry: dict) -> str:

@@ -343,4 +343,4 @@ class Sessions:
                        (user_id, at, by.id, reason))
             db.execute("UPDATE operator_sessions SET revoked_utc = ? WHERE user_id = ? AND revoked_utc IS NULL", (at, user_id))
             Store.log_event(db, at, "auth.member.disabled", None, {"userId": user_id, "by": by.id})
-            audit.append(db, by, "member.disabled", "member", user_id, None, {"reasonSha256": audit.fingerprint(user_id, reason)})
+            audit.append(db, by, "member.disabled", "member", user_id, None, {"reasonSha256": audit.fingerprint(self.store, user_id, reason)})

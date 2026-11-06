@@ -9,13 +9,14 @@ copy: if this file is lost, the manifests on disk still describe every segment.
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -559,6 +560,17 @@ UPDATE schema_version SET version = 8;
 COMMIT;
 """
 
+# Version 9: a secret this Edge keeps, which salts the audit chain's fingerprints of free text
+# (audit.fingerprint). The chain is insert-only here and in the cloud, and the record's own id
+# was the only salt before, so a shirt number could be recovered by trying every number. The
+# value is filled in by `Store.__init__`, never by SQL, and it never leaves this database.
+_MIGRATE_V9 = """
+BEGIN IMMEDIATE;
+ALTER TABLE edge_identity ADD COLUMN audit_salt TEXT;
+UPDATE schema_version SET version = 9;
+COMMIT;
+"""
+
 
 class Store:
     def __init__(self, path: Path):
@@ -583,7 +595,8 @@ class Store:
                 db.execute("INSERT INTO schema_version (version) VALUES (2)")
             elif start < 2:
                 db.execute("UPDATE schema_version SET version = 2")
-        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6), (7, _MIGRATE_V7), (8, _MIGRATE_V8)):
+        for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6), (7, _MIGRATE_V7), (8, _MIGRATE_V8),
+                                (9, _MIGRATE_V9)):
             if start >= version:
                 continue
             db = self._connect()
@@ -600,8 +613,14 @@ class Store:
                 self.log_event(db, _now(), "store.migrated", None, {"from": start, "to": SCHEMA_VERSION})
         with self.tx() as db:
             if db.execute("SELECT 1 FROM edge_identity").fetchone() is None:
-                db.execute("INSERT INTO edge_identity (device_id, created_utc) VALUES (?, ?)", (new_id(), _now()))
-            self.device_id = db.execute("SELECT device_id FROM edge_identity").fetchone()["device_id"]
+                db.execute("INSERT INTO edge_identity (device_id, created_utc, audit_salt) VALUES (?, ?, ?)",
+                           (new_id(), _now(), secrets.token_hex(32)))
+            # An Edge from before version 9 gets its salt once, here, and keeps it from then on.
+            db.execute("UPDATE edge_identity SET audit_salt = ? WHERE audit_salt IS NULL", (secrets.token_hex(32),))
+            identity = db.execute("SELECT device_id, audit_salt FROM edge_identity").fetchone()
+            self.device_id = identity["device_id"]
+            # Secret: never in a response, a log line, the outbox or a sidecar. test_security checks.
+            self.audit_salt: str = identity["audit_salt"]
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)

@@ -103,10 +103,14 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   which is kept with no end as built (R25, [rights-checklist.md](./rights-checklist.md#decisions-for-fola)).
 - **Names stay out of the audit log.** Requester names and player references are kept on
   the request, withdrawal and incident rows, never in audit entries (D13). The Edge's chain holds
-  a salted hash of a player reference, an incident's note, a reopening reason, and the reason a
-  hold was released or a member disabled. The hash shows what was recorded and that it changed; an
-  earlier wording of a note is kept only in the Edge's own outbox. A shirt number is easy to guess,
-  so the hash keeps it from being read or followed across incidents, not from being confirmed.
+  a salted hash of a player reference, an incident's note, a reopening reason, a manual hold's
+  reference, and the reason a hold was released or a member disabled. The hash shows what was
+  recorded and that it changed; an earlier wording of a note is kept only in the Edge's own outbox.
+  The salt is a secret each Edge makes for itself and keeps in its own database, never in the
+  chain, the outbox or a response: a shirt number is easy to guess, and with the record's id as the
+  only salt (as until 6 November 2026) anyone holding the chain, which the cloud keeps and nothing
+  can erase, could have tried every number against it. Someone holding the Edge's database can
+  still check a hash, and that database holds the text itself anyway.
 - **Free text that is still in the chain:** the reason an alert was acknowledged, an evidence job's
   error message, and a rights record's Basis. Staff must not name a player in them, and nothing checks
   this. A rights record's Consent reference stays on its own row, and the chain holds only its hash.
