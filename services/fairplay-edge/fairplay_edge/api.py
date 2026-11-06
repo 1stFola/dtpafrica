@@ -1221,9 +1221,10 @@ def create_app(service: EdgeService, *, run_loop: bool = True) -> FastAPI:
 
     @app.post("/edge/v1/evidence/{evidence_id}/withdraw")
     def withdraw_evidence(evidence_id: str, body: WithdrawIn, who: Principal = admin):
-        """D11: a clip withdrawn at a player's or a parent's request, here at the venue. The
-        cloud is told by sync and removes its copies. Requests made to DTP are handled on the
-        FairPlay page, and reach this Edge the next time it connects."""
+        """D11: a clip withdrawn at a player's or a parent's request, here at the venue, and
+        with it every clip of that camera over the same moment (`twins_withdrawn` in the
+        answer). The cloud is told by sync and removes its copies. Requests made to DTP are
+        handled on the FairPlay page, and reach this Edge the next time it connects."""
         evidence_or_404(evidence_id, who)
         return lifecycle(evidence.withdraw, service.store, settings, evidence_id, body.reason, body.requester,
                          actor_of(who), request_ref=body.requestRef)

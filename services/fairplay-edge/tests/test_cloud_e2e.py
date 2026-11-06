@@ -248,9 +248,16 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     after = httpx.get(f"{api}/{req['id']}", headers=staff).json()
     check("its sync confirms the removal to the cloud, which asks no more",
           after["withdrawals"][0]["edgeConfirmedAt"] is not None and client.withdrawals() == [], after.get("withdrawals"))
+    # The third clip's window (10 s to 40 s) holds the withdrawn moment: it went with it (Review M2).
+    twin = evidence.withdrawal_of(store, third["id"])
+    check("the clip of another incident over the same pictures went with it, under the Edge's own id and the same request",
+          twin is not None and twin["id"] != w["id"] and twin["origin"] == "edge" and twin["request_ref"] == req["id"]
+          and not evidence.path_of(settings, third).exists() and evidence.withdrawal_of(store, first["id"]) is None, twin)
+    sent = store.one("SELECT state FROM outbox WHERE entity_type = 'withdrawal' AND entity_id = ?", (twin["id"],)) if twin else None
+    check("and its own withdrawal has reached the cloud", sent is not None and sent["state"] == "sent", dict(sent) if sent else None)
 
     # ── an upload cut halfway through the transfer (5.3) ─────────────────
-    fourth = clip_for(45)  # clear of the withdrawn clip's window: footage near it is not cut again (M1)
+    fourth = clip_for(45, pre_roll_ms=4000)  # 41 s to 55 s: clear of the withdrawn clip's window and of the third's, which went with it
     for _ in range(20):
         if not restored.run_once(start + timedelta(hours=4)).attempted:
             break
@@ -319,9 +326,10 @@ def test_the_edge_and_the_cloud_end_to_end(relays, tmp_path, settings, store, fa
     final_w = httpx.get(f"{api}/{req['id']}", headers=staff).json()["withdrawals"][0]
     check("the cloud still holds the withdrawal, confirmed once", final_w["id"] == w["id"] and final_w["edgeConfirmedAt"] is not None, final_w)
 
-    results["evidence"] = [{"id": e["id"], "sha256": e["sha256"]} for e in (first, second, third, fourth)]
+    results["evidence"] = [{"id": e["id"], "sha256": e["sha256"]} for e in (first, second, fourth)]
     results["cutEvidenceId"] = fourth["id"]
     results["withdrawnEvidenceId"] = fifth["id"]
+    results["twinEvidenceId"] = third["id"]
     results["sessionId"] = session["id"]
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "edge-results.json").write_text(json.dumps(results, indent=2))

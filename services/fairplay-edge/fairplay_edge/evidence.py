@@ -713,6 +713,23 @@ def withdrawal_of(store: Store, evidence_id: str) -> dict | None:
     return store.one("SELECT * FROM withdrawals WHERE evidence_id = ?", (evidence_id,))
 
 
+def twins_of(store: Store, row: dict) -> list[dict]:
+    """The other clips of this camera whose window overlaps this clip's, not yet withdrawn:
+    the same pictures cut under another incident, or cut again for this one after a reopen.
+    What is withdrawn on request goes with every copy of it, as `withdrawn_over` already
+    refuses to cut a new one; the overlap test is the same."""
+    start = parse_iso(row["window_start_utc"])
+    end = start + timedelta(milliseconds=row["window_duration_ms"])
+    twins = []
+    for r in store.query("SELECT e.* FROM evidence e LEFT JOIN withdrawals w ON w.evidence_id = e.id"
+                         " WHERE e.source = ? AND e.id != ? AND w.id IS NULL ORDER BY e.created_utc, e.id",
+                         (row["source"], row["id"])):
+        other = parse_iso(r["window_start_utc"])
+        if other < end and start < other + timedelta(milliseconds=r["window_duration_ms"]):
+            twins.append(evidence_view(r))
+    return twins
+
+
 def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, requester: str, actor: Actor, *,
              origin: str = "edge", withdrawal_id: str | None = None, request_ref: str | None = None,
              sync: bool = True) -> dict:
@@ -720,6 +737,11 @@ def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, re
     package of it are deleted, its uploads are cancelled, and it is never released, exported
     or cut again. The evidence row, its manifest and a withdrawal row stay: the hash, the
     size, the reason and the requester. Synced to the cloud, which removes its copies.
+
+    Any other clip of the same camera whose window overlaps this one holds the same pictures
+    (`twins_of`), so it is withdrawn with it under the same request: its own withdrawal row,
+    made here under a new id whatever this one's origin, and synced on its own, with the two
+    linked in the audit chain. The returned row carries `twins_withdrawn`, their ids.
 
     `origin` "cloud" applies a withdrawal made in the cloud, under the cloud's id. `sync` False
     is for a withdrawal applied again after a restore: the cloud already holds its confirmation,
@@ -731,6 +753,22 @@ def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, re
     reason, requester = reason.strip(), requester.strip()
     if len(reason) < 5 or len(requester) < 2:
         raise incidents.TimingError("a withdrawal needs its reason and the requester")
+    twins = twins_of(store, row)
+    twin_ids = [t["id"] for t in twins]
+    first = _withdraw_one(store, settings, row, reason, requester, actor, origin=origin, withdrawal_id=withdrawal_id,
+                          request_ref=request_ref, sync=sync, linked={"twinsWithdrawn": twin_ids} if twins else {})
+    for twin in twins:
+        _withdraw_one(store, settings, twin, reason, requester, actor, request_ref=request_ref, linked={"twinOf": evidence_id})
+    retention.clear_replay_cache(settings)
+    return {**first, "twins_withdrawn": twin_ids}
+
+
+def _withdraw_one(store: Store, settings: Settings, row: dict, reason: str, requester: str, actor: Actor, *,
+                  origin: str = "edge", withdrawal_id: str | None = None, request_ref: str | None = None,
+                  sync: bool = True, linked: dict) -> dict:
+    """One clip's files, withdrawal row, audit entry and outbox item. `linked` goes into the
+    chain entry: the twins withdrawn with this clip, or the clip this one is a twin of."""
+    evidence_id = row["id"]
     removed = []
     exports = settings.data_dir / "exports"
     # A copy set aside by a restore goes too (6.2). A backup archive is out of reach: edge-backup.md.
@@ -751,10 +789,9 @@ def withdraw(store: Store, settings: Settings, evidence_id: str, reason: str, re
         db.execute("DELETE FROM uploads WHERE evidence_id = ?", (evidence_id,))
         # D13: ids and hashes in the chain; the requester and the reason stay on the withdrawal row.
         audit.append(db, actor, "evidence.withdrawn", "evidence", evidence_id, None,
-                     {"withdrawalId": w["id"], "origin": origin, "sha256": row["sha256"], "removedFiles": len(removed)})
+                     {"withdrawalId": w["id"], "origin": origin, "sha256": row["sha256"], "removedFiles": len(removed), **linked})
         if sync:
             outbox.enqueue(db, "withdrawal", w["id"], 1, {**w, "removed_files": removed})
-    retention.clear_replay_cache(settings)
     return withdrawal_of(store, evidence_id)
 
 
