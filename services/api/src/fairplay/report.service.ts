@@ -103,8 +103,16 @@ export class FairPlayReportService {
     };
   }
 
-  /** What the evidence bucket holds and costs, from the cloud's own records of what it allowed. */
-  async usage() {
+  /**
+   * What the evidence bucket holds and costs, from the cloud's own records of what it allowed.
+   * The bucket is one for every competition, so an account limited to a competition is not
+   * shown it (F14).
+   */
+  async usage(ctx: AdminAuthContext) {
+    if (readerOf(ctx).competitions !== null) {
+      throw refusal(403, "UsageUnscopedOnly", "Storage usage covers every competition's evidence.",
+        "It is read by a DTP account that is not limited to a competition.");
+    }
     const [stored, deleted, withdrawn, uploads, reads] = await Promise.all([
       this.prisma.fairPlayEvidenceObject.aggregate({ where: { state: "stored" }, _count: true, _sum: { bytes: true } }),
       this.prisma.fairPlayEvidenceObject.count({ where: { state: "deleted" } }),

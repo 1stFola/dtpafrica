@@ -92,11 +92,19 @@ export class FairPlayEvidenceService implements OnModuleInit, OnModuleDestroy {
     return { ok: true, reason: "release permitted by the recorded rights" };
   }
 
+  /**
+   * The rights record received last, by the cloud's own clock, not the device's `created_utc`
+   * string (F13): the Edge appends and never edits, so the order it sends them in is the order
+   * they were recorded, and a record with no `created_utc` is not one the Edge made.
+   */
   private async currentRights(sessionId: string) {
     const rows = await this.prisma.fairPlayRecord.findMany({ where: { sessionId, entityType: "rights" } });
     type Rights = { footage_kind?: string; status?: string; minors_present?: string; consent_reference?: string | null; created_utc?: string };
-    const all = rows.map((r) => r.payload as Rights).sort((a, b) => String(a.created_utc).localeCompare(String(b.created_utc)));
-    return all.at(-1) ?? null;
+    const dated = rows.filter((r) => { const c = (r.payload as Rights).created_utc; return typeof c === "string" && c.length > 0; });
+    // Last received first; two received in the same millisecond fall back to the device's own order.
+    dated.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime() || b.receivedAt.getTime() - a.receivedAt.getTime()
+      || String((b.payload as Rights).created_utc).localeCompare(String((a.payload as Rights).created_utc)));
+    return (dated[0]?.payload as Rights | undefined) ?? null;
   }
 
   // ── uploads, by the Edge ────────────────────────────────────────────────

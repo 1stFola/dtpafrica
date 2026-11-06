@@ -38,6 +38,11 @@ services:
       - data:/var/lib/fairplay/data
     networks: [edge]
     restart: "no"
+    # Hardened as the Edge is (F20): it only renders a file into the mtxconfig volume.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     logging: *logging
 
   mediamtx:
@@ -128,6 +133,8 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     logging: *logging
 
   synth-drone:
@@ -143,6 +150,8 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     logging: *logging
 
 networks:

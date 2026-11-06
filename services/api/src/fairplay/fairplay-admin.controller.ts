@@ -158,8 +158,8 @@ export class FairPlayAdminController {
 
   @Get("usage")
   @RequirePermissions("fairplay.edge.admin", "fairplay.session.manage")
-  usage() {
-    return this.reports.usage();
+  usage(@AdminAuth() ctx: AdminAuthContext) {
+    return this.reports.usage(ctx);
   }
 
   // ── a player's or a parent's requests (D11) ─────────────────────────────
