@@ -21,6 +21,7 @@ const WORDS: Record<string, string> = {
   retention_paused: "Old recordings are not being deleted, because the Edge's clock can't be trusted. Check the clock is right; it starts again by itself.",
   operator_list_expiring: "The operator list on this Edge expires soon, and everyone is signed out when it does. Connect the Edge to the internet for 5 minutes to fetch a new one.",
   bundle_held_back: "The operator list for the next match on this Edge is waiting: this session is still in progress. When this match is over, press End session, and keep the Edge online for 5 minutes so the list arrives.",
+  venue_ca: "The venue's certificate authority is not yet locked down: its key is on this Edge, or it could sign for any site. Before real footage, an Edge admin makes a new one and installs it on every reviewer device (docs/fairplay/edge-install.md).",
   restore_unchecked: "This Edge was restored from a backup. No clip can be viewed, approved, exported or uploaded until it has asked the cloud what was withdrawn since. Connect it to the internet; with no cloud to ask, an Edge admin decides (docs/fairplay/edge-backup.md).",
 };
 
