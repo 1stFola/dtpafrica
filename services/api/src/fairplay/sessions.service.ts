@@ -85,6 +85,9 @@ export class FairPlaySessionsService {
       home: match.homeTeam.name, away: match.awayTeam.name, kickoffAt: match.kickoffAt?.toISOString() ?? null,
       venue: match.venue, roundLabel: match.roundLabel,
     };
+    if (input.label !== undefined && input.label !== null && typeof input.label !== "string") {
+      throw refusal(400, "LabelInvalid", "label must be text.", "Send the session's label as a string, or leave it out.");
+    }
     const label = (input.label?.trim() || `${match.homeTeam.name} v ${match.awayTeam.name}`).slice(0, 120);
     const session = await this.prisma.$transaction(async (tx) => {
       const row = await tx.fairPlaySession.create({
@@ -173,8 +176,12 @@ export class FairPlaySessionsService {
     const member = await this.prisma.fairPlaySessionMember.findUnique({ where: { sessionId_adminUserId: { sessionId: id, adminUserId: ctx.userId } } });
     if (!member) throw refusal(404, "NotFound", `You are not a member of session ${id}`, "Ask the session manager to add you.");
     const pinSetAt = new Date();
-    await this.prisma.fairPlaySessionMember.update({ where: { id: member.id }, data: { pinHash: await hashPinAsync(pin), pinSetAt } });
-    await this.audit.record("member.pin.set", { kind: "session", id }, actorFields(ctx));
+    const pinHash = await hashPinAsync(pin);
+    // The change and its audit entry land together or not at all (F15).
+    await this.prisma.$transaction(async (tx) => {
+      await tx.fairPlaySessionMember.update({ where: { id: member.id }, data: { pinHash, pinSetAt } });
+      await this.audit.record("member.pin.set", { kind: "session", id }, actorFields(ctx), undefined, null, tx);
+    });
     return { sessionId: id, pinSetAt };
   }
 

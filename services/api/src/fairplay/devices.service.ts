@@ -116,9 +116,12 @@ export class FairPlayDevicesService {
     const device = await this.visible(id, ctx);
     if (device.retiredAt) return { id, retiredAt: device.retiredAt };
     const retiredAt = new Date();
-    await this.prisma.fairPlayEdgeDevice.update({ where: { id },
-      data: { retiredAt, retiredById: ctx.userId ?? null, tokenHash: tokenHash(newToken()) } });
-    await this.audit.record("device.retired", { kind: "device", id }, actorFields(ctx));
+    // The change and its audit entry land together or not at all (F15).
+    await this.prisma.$transaction(async (tx) => {
+      await tx.fairPlayEdgeDevice.update({ where: { id },
+        data: { retiredAt, retiredById: ctx.userId ?? null, tokenHash: tokenHash(newToken()) } });
+      await this.audit.record("device.retired", { kind: "device", id }, actorFields(ctx), undefined, null, tx);
+    });
     return { id, retiredAt };
   }
 

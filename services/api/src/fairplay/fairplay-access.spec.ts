@@ -147,6 +147,14 @@ describe("FairPlay configuration", () => {
       FAIRPLAY_R2_SECRET_ACCESS_KEY: "b", FAIRPLAY_R2_BUCKET: "dtp-vision-clips" })).toThrow(/looks like a Vision bucket/);
   });
 
+  it("refuses Vision's R2 key for evidence (F17)", () => {
+    const own = { FAIRPLAY_STORAGE_BACKEND: "r2", FAIRPLAY_R2_ENDPOINT: "https://x", FAIRPLAY_R2_ACCESS_KEY_ID: "a",
+      FAIRPLAY_R2_SECRET_ACCESS_KEY: "b", FAIRPLAY_R2_BUCKET: "dtp-fairplay-evidence" };
+    expect(loadFairPlayConfig({ ...own, VISION_R2_ACCESS_KEY_ID: "v", VISION_R2_SECRET_ACCESS_KEY: "w" }).storage.backend).toBe("r2");
+    expect(() => loadFairPlayConfig({ ...own, VISION_R2_ACCESS_KEY_ID: "a" })).toThrow(/is Vision's R2 key/);
+    expect(() => loadFairPlayConfig({ ...own, VISION_R2_SECRET_ACCESS_KEY: "b" })).toThrow(/is Vision's R2 secret/);
+  });
+
   it("never issues a read URL longer than five minutes", () => {
     expect(loadFairPlayConfig({ FAIRPLAY_READ_URL_TTL_SECONDS: "3600" }).readUrlTtlSeconds).toBe(300);
   });

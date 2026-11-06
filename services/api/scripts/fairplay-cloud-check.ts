@@ -122,6 +122,8 @@ async function main() {
     { adminUserId: assessor.id, permissions: ["fairplay.incident.operate", "fairplay.incident.review"] },
     { adminUserId: operator.id, permissions: ["fairplay.incident.operate"] }] }, admin);
   const sC = await sessions.create({ matchId: matchC.id, deviceId: d2.id }, admin);
+  await refusedWith("a non-string label is refused, not a 500 (F12)",
+    () => sessions.create({ matchId: matchA.id, deviceId: d1.id, label: 7 as unknown as string }, admin), "LabelInvalid");
   check("the label defaults to the fixture", s1.label === "Lions v Eagles", s1.label);
   await refusedWith("an organiser cannot see another competition's session", () => sessions.get(sC.id, orgC1), "NotFound");
   const orgView = await sessions.get(s1.id, orgC1);
@@ -131,6 +133,9 @@ async function main() {
 
   console.log("\nCompetition scope of devices and members (F4)");
   const managerC1 = ctx("mgr-1", ["fairplay.session.manage", "fairplay.edge.admin"], [c1.id]);
+  await refusedWith("storage usage, which covers every competition, is not shown to a competition-scoped account (F14)",
+    () => reports.usage(managerC1), "UsageUnscopedOnly");
+  check("an unscoped account reads it", typeof (await reports.usage(admin)).objects === "number");
   const listed = await devices.list(managerC1);
   check("a competition's manager is not shown a device serving another competition's open session",
     listed.some((d) => d.id === d1.id) && !listed.some((d) => d.id === d2.id), listed.map((d) => d.label));
@@ -404,6 +409,18 @@ async function main() {
   await refusedWith("once the rights say real footage for internal review only, nothing is released",
     () => evidence.readUrl(evidenceId, "clip", undefined, assessorCtx), "Withheld");
   await sync.receive(id1, { deviceId: edge1, items: [item("rights", rightsPayload.id as string, 2, { ...rightsPayload, created_utc: "2026-10-28T18:00:00.000Z" })] });
+  check("re-sent with a later time, the synthetic rights govern again", (await evidence.releasable(evidenceId)).ok);
+  // F13: the record received last governs, whatever device-written time it carries; one with no created_utc is ignored.
+  const laterRightsId = randomUUID();
+  await sync.receive(id1, { deviceId: edge1, items: [item("rights", laterRightsId, 1,
+    { ...rightsPayload, id: laterRightsId, footage_kind: "real", status: "internal_review_only", created_utc: "2026-10-28T16:00:00.000Z" })] });
+  await refusedWith("the rights record received last governs, not the one with the latest device-written time (F13)",
+    () => evidence.readUrl(evidenceId, "clip", undefined, assessorCtx), "Withheld");
+  const blankId = randomUUID();
+  await sync.receive(id1, { deviceId: edge1, items: [item("rights", blankId, 1, { ...rightsPayload, id: blankId, created_utc: undefined })] });
+  await refusedWith("and a rights record with no created_utc changes nothing", () => evidence.readUrl(evidenceId, "clip", undefined, assessorCtx), "Withheld");
+  await sync.receive(id1, { deviceId: edge1, items: [item("rights", rightsPayload.id as string, 3, { ...rightsPayload, created_utc: "2026-10-28T19:00:00.000Z" })] });
+  check("the synthetic rights, received last again, govern", (await evidence.releasable(evidenceId)).ok);
 
   console.log("\nRetention and deleted matches");
   const swept = await evidence.sweep(new Date(Date.now() + 91 * 86_400_000));
@@ -440,7 +457,7 @@ async function main() {
   check("the same machine pairs again with a new token, good for another year",
     (await devices.verify(reg1c.deviceToken)).deviceId === d1.id && new Date(reg1c.deviceTokenExpiresAt).getTime() > Date.now() + 300 * 86_400_000);
 
-  const usage = await reports.usage();
+  const usage = await reports.usage(admin);
   check("usage counts what the bucket holds and what was asked of it", usage.objects === 0 && usage.deletedObjects === 2 && usage.thisMonth.uploads >= 3, usage);
 
   console.log("\nA player's or a parent's request (D11)");

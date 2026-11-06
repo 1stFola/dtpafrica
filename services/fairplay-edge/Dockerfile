@@ -10,9 +10,15 @@
 # extension of that clearance to the Edge is an open decision (docs/licenses/OSS_REGISTER.md).
 FROM python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016
 
+# ffmpeg comes from the pinned base image's Debian release: 7:7.1.5-0+deb13u1 on 6 November
+# 2026. An exact apt pin would break the build at Debian's next point release, so the build
+# refuses a different line instead (F20): a base-image bump that changes ffmpeg's major or
+# minor version is a decision (B9, the licence clearance), not a surprise.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
+RUN dpkg-query -W -f='${Version}\n' ffmpeg | grep -q '^7:7\.1\.' \
+ || { echo "ffmpeg is not the 7.1 line this image was cleared for: $(dpkg-query -W -f='${Version}' ffmpeg)" >&2; exit 1; }
 
 WORKDIR /app
 COPY pyproject.toml constraints.txt ./

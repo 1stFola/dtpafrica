@@ -75,6 +75,15 @@ export function loadFairPlayConfig(env: NodeJS.ProcessEnv = process.env): FairPl
     if (storage.bucket && /^vision|-(master|derived|models|clips)$/.test(storage.bucket)) {
       problems.push(`FAIRPLAY_R2_BUCKET "${storage.bucket}" looks like a Vision bucket; evidence has its own`);
     }
+    // Vision's key reaches every Vision bucket; evidence is read under its own, least-privilege key (F17).
+    const visionKey = env.VISION_R2_ACCESS_KEY_ID?.trim();
+    if (storage.accessKeyId && visionKey && storage.accessKeyId === visionKey) {
+      problems.push("FAIRPLAY_R2_ACCESS_KEY_ID is Vision's R2 key (VISION_R2_ACCESS_KEY_ID); evidence needs a key of its own");
+    }
+    const visionSecret = env.VISION_R2_SECRET_ACCESS_KEY?.trim();
+    if (storage.secretAccessKey && visionSecret && storage.secretAccessKey === visionSecret) {
+      problems.push("FAIRPLAY_R2_SECRET_ACCESS_KEY is Vision's R2 secret; evidence needs a key of its own");
+    }
   }
   // Secrets Manager and .env files both carry a PEM more safely with literal "\n".
   const pem = env.FAIRPLAY_BUNDLE_SIGNING_KEY?.trim().replace(/\\n/g, "\n") || null;
