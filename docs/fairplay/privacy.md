@@ -103,8 +103,14 @@ An Edge admin handles them on the FairPlay page, `/admin/fairplay/requests`
   ([edge-backup.md](./edge-backup.md)). A restored Edge asks the cloud what was withdrawn
   before any clip can leave it.
 - **Not erased on request:** the full-match recordings. They are kept 14 days (D9), and
-  the document says when they go. **That date is not true of the footage around an incident,**
-  which is kept with no end as built (R25, [rights-checklist.md](./rights-checklist.md#decisions-for-fola)).
+  the document says when they go. The footage around an incident, on every camera, is kept
+  longer: until 14 days after that incident's finding, unless a DTP admin has placed a manual
+  hold on it (RC1, Fola's decision of 6 November 2026, closing R25). The Edge releases the
+  hold and the clip's sources at that moment, by itself and in the audit chain, and the next
+  retention pass deletes the footage; the clip stays under D10. The document states the date
+  with each incident, or that none is set until a finding is recorded. An incident with no
+  finding holds its footage until 14 days after its match's session ended (Fola, the same
+  day); a session nobody ended keeps it.
 - **Names stay out of the audit log.** Requester names and player references are kept on
   the request, withdrawal and incident rows, never in audit entries (D13). The Edge's chain holds
   a salted hash of a player reference, an incident's note, a reopening reason, a manual hold's

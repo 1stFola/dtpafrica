@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 SEGMENT_STATES = ("recording", "finalized", "partial", "corrupt", "missing", "deleted")
 
@@ -571,6 +571,15 @@ UPDATE schema_version SET version = 9;
 COMMIT;
 """
 
+# Version 10 (RC1): an evidence reference names the clip it was cut for, so the sources of an
+# incident's clips can be released when its hold ends. Rows from before are released by segment.
+_MIGRATE_V10 = """
+BEGIN IMMEDIATE;
+ALTER TABLE evidence_refs ADD COLUMN evidence_id TEXT;
+UPDATE schema_version SET version = 10;
+COMMIT;
+"""
+
 
 class Store:
     def __init__(self, path: Path):
@@ -596,7 +605,7 @@ class Store:
             elif start < 2:
                 db.execute("UPDATE schema_version SET version = 2")
         for version, script in ((3, _MIGRATE_V3), (4, _MIGRATE_V4), (5, _MIGRATE_V5), (6, _MIGRATE_V6), (7, _MIGRATE_V7), (8, _MIGRATE_V8),
-                                (9, _MIGRATE_V9)):
+                                (9, _MIGRATE_V9), (10, _MIGRATE_V10)):
             if start >= version:
                 continue
             db = self._connect()

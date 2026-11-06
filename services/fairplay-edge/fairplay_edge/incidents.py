@@ -323,6 +323,11 @@ def reopen(store: Store, incident_id: str, version: int, actor: Actor, reason: s
     reason = (reason or "").strip()
     if len(reason) < 5:
         raise TimingError("reopening needs a reason")
+    # RC1: if the hold ended with the finding, the new review holds the footage again, where it is still there.
+    hold_id = row["hold_id"]
+    if hold_id is None or store.one("SELECT 1 FROM holds WHERE id = ? AND released_utc IS NULL", (hold_id,)) is None:
+        lo, hi = timing._hold_window(parse_iso(row["event_utc"]), row["pre_roll_ms"], row["post_roll_ms"])
+        hold_id = retention.create_hold(store, None, lo, hi, "incident", incident_id, actor)["id"]
     now = iso(utcnow())
     with store.tx() as db:
         old = row["current_review_id"]
@@ -331,7 +336,7 @@ def reopen(store: Store, incident_id: str, version: int, actor: Actor, reason: s
             db.execute("UPDATE reviews SET state = 'superseded', superseded_by = ?, superseded_reason = ?,"
                        " version = version + 1 WHERE id = ? AND state = 'completed'", (new_review, reason, old))
             _sync_review(db, old)
-        _save(db, incident_id, version, {"state": "reviewing", "current_review_id": new_review,
+        _save(db, incident_id, version, {"state": "reviewing", "current_review_id": new_review, "hold_id": hold_id,
                                          "reopened_count": row["reopened_count"] + 1, "updated_utc": now})
         audit.append(db, actor, "incident.reopened", "incident", incident_id, version + 1,
                      {"from": row["state"], "reasonSha256": audit.fingerprint(store, incident_id, reason),

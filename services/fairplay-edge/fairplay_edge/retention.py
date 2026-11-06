@@ -8,11 +8,18 @@ A segment may be deleted only if ALL of these hold:
   - it is final (finalized, partial or corrupt), never `recording`;
   - it ended before the cut-off;
   - no unreleased hold overlaps it (a hold with no source covers every source);
-  - no evidence row references it that has not been synced;
+  - no evidence row references it that has not been released;
   - the run has not reached `FAIRPLAY_RETENTION_MAX_DELETIONS`.
 Each rule is re-checked inside the delete's own transaction, so a hold added between
 planning and deleting still wins. The manifest row and sidecar are kept and marked deleted:
 the record that a segment existed outlives the segment.
+
+An incident's hold ends by itself 14 days after its finding (RC1, Fola, 6 November 2026),
+unless a manual hold stands over the same footage, and the sources of its clips stop
+counting as evidence the recordings must keep at the same moment (`evidence_refs.synced`).
+The clips themselves stay (D10). An incident with no finding holds until 14 days after its
+match's session ended. This runs at the start of each retention pass, so under the same
+clock checks.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ log = logging.getLogger("fairplay.retention")
 
 HOLD_REASONS = ("incident", "evidence", "manual")
 LARGE_STEP_MS = 3600_000
+INCIDENT_HOLD_DAYS = 14  # RC1: after the finding (rights-checklist.md); the same period as D9
 
 _ELIGIBLE = """
 SELECT s.* FROM segments s
@@ -69,9 +77,11 @@ def create_hold(store: Store, source: str | None, from_utc: datetime, to_utc: da
     return hold
 
 
-def release_hold(store: Store, hold_id: str, reason: str, actor: Actor | None = None) -> dict | None:
+def release_hold(store: Store, hold_id: str, reason: str, actor: Actor | None = None,
+                 detail: dict | None = None) -> dict | None:
     """Release a hold, with a reason. Who released it is in the audit chain: a released hold
-    lets retention delete the footage, so this act is never only in the mutable event log."""
+    lets retention delete the footage, so this act is never only in the mutable event log.
+    `detail` goes into the chain entry too: ids and rule names only (D13)."""
     if not reason.strip():
         raise ValueError("releasing a hold needs a reason")
     now = iso(utcnow())
@@ -82,10 +92,68 @@ def release_hold(store: Store, hold_id: str, reason: str, actor: Actor | None = 
         )
         if not cur.rowcount:
             return None
-        Store.log_event(db, now, "hold.released", None, {"id": hold_id})
+        Store.log_event(db, now, "hold.released", None, {"id": hold_id, **(detail or {})})
         audit.append(db, actor or Actor.system(), "hold.released", "hold", hold_id, None,
-                     {"reasonSha256": audit.fingerprint(store, hold_id, reason)})
+                     {"reasonSha256": audit.fingerprint(store, hold_id, reason), **(detail or {})})
     return store.one("SELECT * FROM holds WHERE id = ?", (hold_id,))
+
+
+def release_evidence_refs(store: Store, incident_id: str) -> int:
+    """The sources of this incident's clips stop counting as evidence the recordings must keep.
+    A reference from before schema 10 names no clip: it is released by segment, and only where
+    no other incident whose hold still stands has a clip cut from that segment."""
+    now = iso(utcnow())
+    with store.tx() as db:
+        clips = db.execute("SELECT id, source_segment_ids FROM evidence WHERE incident_id = ?", (incident_id,)).fetchall()
+        freed = 0
+        for clip in clips:
+            freed += db.execute("UPDATE evidence_refs SET synced = 1 WHERE evidence_id = ? AND synced = 0", (clip["id"],)).rowcount
+        mine = {s for clip in clips for s in json.loads(clip["source_segment_ids"])}
+        legacy = db.execute("SELECT id, segment_id FROM evidence_refs WHERE evidence_id IS NULL AND synced = 0").fetchall()
+        for ref in legacy:
+            if ref["segment_id"] not in mine:
+                continue
+            still_held = db.execute(
+                "SELECT 1 FROM evidence e JOIN incidents i ON i.id = e.incident_id JOIN holds h ON h.id = i.hold_id"
+                " WHERE e.incident_id != ? AND h.released_utc IS NULL AND e.source_segment_ids LIKE ?",
+                (incident_id, f'%"{ref["segment_id"]}"%')).fetchone()
+            if still_held is None:
+                freed += db.execute("UPDATE evidence_refs SET synced = 1 WHERE id = ?", (ref["id"],)).rowcount
+        if freed:
+            Store.log_event(db, now, "evidence_refs.released", None, {"incident_id": incident_id, "count": freed})
+    return freed
+
+
+def release_finished_incident_holds(store: Store, now: datetime | None = None, days: int = INCIDENT_HOLD_DAYS) -> list[dict]:
+    """RC1 (Fola, 6 November 2026): an incident's hold ends `days` after its finding, and the
+    sources of its clips are released at the same moment. An incident with no finding (flagged,
+    or a review nobody finished) holds until `days` after its match's session ended (Fola, the
+    same day); a session nobody ended keeps it. A manual hold over the same footage still keeps
+    it. Each release is in the audit chain, as the system, with the rule and the incident named."""
+    now = now or utcnow()
+    cutoff = iso(now - timedelta(days=days))
+    found = store.query(
+        "SELECT h.id AS hold_id, i.id AS incident_id, r.completed_at AS since, 'finding' AS what FROM holds h"
+        " JOIN incidents i ON i.hold_id = h.id JOIN reviews r ON r.id = i.current_review_id"
+        " WHERE h.reason = 'incident' AND h.released_utc IS NULL AND i.state IN ('reviewed', 'archived')"
+        " AND r.state = 'completed' AND r.completed_at <= ? ORDER BY r.completed_at", (cutoff,))
+    unfound = store.query(
+        "SELECT h.id AS hold_id, i.id AS incident_id, s.ended_utc AS since, 'session_end' AS what FROM holds h"
+        " JOIN incidents i ON i.hold_id = h.id JOIN match_sessions s ON s.id = i.session_id"
+        " WHERE h.reason = 'incident' AND h.released_utc IS NULL AND i.state IN ('flagged', 'reviewing')"
+        " AND s.ended_utc IS NOT NULL AND s.ended_utc <= ? ORDER BY s.ended_utc", (cutoff,))
+    released = []
+    for row in (*found, *unfound):
+        by_finding = row["what"] == "finding"
+        detail = {"rule": "RC1", "days": days, "incidentId": row["incident_id"],
+                  "findingUtc" if by_finding else "sessionEndedUtc": row["since"]}
+        why = f"the finding is {days} days old (RC1)" if by_finding else f"no finding, and the session ended {days} days ago (RC1)"
+        if release_hold(store, row["hold_id"], why, Actor.system(), detail) is None:
+            continue
+        freed = release_evidence_refs(store, row["incident_id"])
+        released.append({**detail, "holdId": row["hold_id"], "refsReleased": freed})
+        log.info(json.dumps({"event": "hold.released.rc1", "holdId": row["hold_id"], "refsReleased": freed, **detail}))
+    return released
 
 
 def plan(store: Store, days: int, now: datetime | None = None, limit: int | None = None) -> list[dict]:
@@ -130,6 +198,7 @@ def apply(settings: Settings, store: Store, scanner: Scanner, now: datetime | No
             log.warning(json.dumps({"alert": "retention_paused", "why": doubt}))
         return []
     store.resolve_alert("retention_paused", None, iso(now))
+    release_finished_incident_holds(store, now)
     cutoff = iso(now - timedelta(days=settings.retention_days))
     deleted = []
     for row in plan(store, settings.retention_days, now, settings.retention_max_deletions):

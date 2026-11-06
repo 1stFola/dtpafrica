@@ -30,6 +30,8 @@ import { FairPlayAuditService } from "./fairplay-audit.service";
 export const RELATIONSHIPS = ["player", "parent_or_guardian", "representative"] as const;
 /** D9: full-match recordings are kept on the Edge for 14 days. */
 export const RECORDINGS_KEPT_DAYS = 14;
+/** RC1 (Fola, 6 November 2026): the recordings around an incident are held until this long after its finding. */
+export const INCIDENT_FOOTAGE_KEPT_DAYS = 14;
 
 type Payload = Record<string, unknown>;
 
@@ -113,6 +115,12 @@ export class FairPlayRequestsService {
           finding: current?.state === "completed"
             ? { result: current.result, onFieldDecision: rp.on_field_decision ?? null, factualNotes: rp.factual_notes ?? null, completedAt: current.completedAt }
             : null,
+          // RC1: the recordings around the incident, on every camera, outlive the match's 14 days by this much.
+          footage: current?.state === "completed" && current.completedAt
+            ? { heldOn: `the Edge "${s.device.label}"`, until: new Date(current.completedAt.getTime() + INCIDENT_FOOTAGE_KEPT_DAYS * 86_400_000),
+                note: `The recordings around this incident, on every camera, are kept on the Edge until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after its finding (rights-checklist.md RC1), then deleted by the next retention pass, unless a DTP admin has placed a manual hold on that footage.` }
+            : { heldOn: `the Edge "${s.device.label}"`, until: s.endedAt ? new Date(s.endedAt.getTime() + INCIDENT_FOOTAGE_KEPT_DAYS * 86_400_000) : null,
+                note: `The recordings around this incident, on every camera, are kept on the Edge until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after a finding is recorded, or until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after the match's session ended if none is (rights-checklist.md RC1); none is recorded yet.` },
           evidence: s.evidence.filter((e) => e.incidentId === inc.id).map((e) => ({
             id: e.id, source: e.source, sha256: e.sha256, bytes: Number(e.bytes), windowStartUtc: e.windowStartUtc,
             windowDurationMs: e.windowDurationMs, footageKind: e.footageKind,
@@ -136,7 +144,7 @@ export class FairPlayRequestsService {
       const ended = s.endedAt ?? s.edgeCreatedAt ?? s.createdAt;
       return { sessionId: s.id, match: s.matchSnapshot,
         recordings: { heldOn: `the Edge "${s.device.label}"`, deletedBy: new Date(ended.getTime() + RECORDINGS_KEPT_DAYS * 86_400_000),
-          note: `Full-match recordings are kept ${RECORDINGS_KEPT_DAYS} days (decisions.md D9) and are not exported here.` } };
+          note: `Full-match recordings are kept ${RECORDINGS_KEPT_DAYS} days (decisions.md D9) and are not exported here. The recordings around each incident naming the player are kept longer: until ${INCIDENT_FOOTAGE_KEPT_DAYS} days after that incident's finding (RC1), as stated with each incident.` } };
     });
     const clips = request.incidents.reduce((n, i) => n + i.evidence.length, 0);
     await this.audit.record("request.held_exported", { kind: "request", id }, actorFields(ctx), { incidents: request.incidents.length, clips });
