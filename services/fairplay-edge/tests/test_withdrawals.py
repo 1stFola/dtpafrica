@@ -153,3 +153,73 @@ def test_a_withdrawal_empties_the_replay_cache(clients, service, released):  # n
     (cache / "window.mp4").write_bytes(b"a copy of a recording")
     assert withdraw(clients["admin"], released["id"]).status_code == 200
     assert not list(cache.iterdir())
+
+
+# ── the same pictures under another incident go with the withdrawn clip ──
+
+def _another_clip(clients, service, released, event_utc=None, **roll):
+    """A clip of the same camera cut now for a new incident: at the withdrawn clip's moment
+    unless another is given."""
+    incident = service.store.one("SELECT session_id, event_utc FROM incidents WHERE id = ?", (released["incident_id"],))
+    made = clients["operator"].post("/edge/v1/incidents", headers=CSRF, json={
+        "sessionId": incident["session_id"], "basis": "manual", "eventUtc": event_utc or incident["event_utc"],
+        "category": "other", **roll})
+    assert made.status_code == 201, made.text
+    r = clients["operator"].post(f"/edge/v1/incidents/{made.json()['id']}/clips", headers=CSRF, json={"source": "ground"})
+    assert r.status_code == 202, r.text
+    assert service.run_jobs_once()
+    return clients["assessor"].get(f"/edge/v1/evidence?incidentId={made.json()['id']}").json()[0]
+
+
+def test_withdrawing_a_clip_takes_every_overlapping_clip_of_that_camera_with_it(clients, service, released):  # noqa: F811
+    s, settings = service.store, service.settings
+    twin = _another_clip(clients, service, released)
+    apart = _another_clip(clients, service, released, event_utc="2026-10-27T14:00:08.000Z", preRollMs=5000, postRollMs=5000)
+    assert [t["id"] for t in evidence.twins_of(s, released)] == [twin["id"]]
+    r = withdraw(clients["admin"], released["id"], requestRef="req-7")
+    assert r.status_code == 200, r.text
+    assert r.json()["twins_withdrawn"] == [twin["id"]]
+    for row in (released, twin):
+        assert not evidence.path_of(settings, row).exists()
+        assert evidence.path_of(settings, row, "manifest_rel_path").exists()
+        assert evidence.released(s, row) == (False, "withdrawn on request")
+        assert clients["admin"].get(f"/edge/v1/evidence/{row['id']}/file").status_code == 410
+    w, t = evidence.withdrawal_of(s, released["id"]), evidence.withdrawal_of(s, twin["id"])
+    assert t["id"] != w["id"]
+    assert (t["origin"], t["reason"], t["requester"], t["request_ref"], t["actor_id"], t["clip_sha256"]) == (
+        "edge", w["reason"], w["requester"], "req-7", "u-admin", twin["sha256"])
+    # The clip of another moment stays.
+    assert evidence.path_of(settings, apart).exists() and evidence.withdrawal_of(s, apart["id"]) is None
+    # Linked in the chain, by id only, and each synced on its own.
+    entries = {e["entity_id"]: e for e in audit.entries(s) if e["action"] == "evidence.withdrawn"}
+    assert set(entries) == {released["id"], twin["id"]}
+    assert entries[released["id"]]["detail"]["twinsWithdrawn"] == [twin["id"]]
+    assert entries[twin["id"]]["detail"]["twinOf"] == released["id"]
+    assert "Doe" not in json.dumps(entries[twin["id"]]) and audit.verify(s)["ok"]
+    sent = {x["entity_id"] for x in s.query("SELECT entity_id FROM outbox WHERE entity_type = 'withdrawal'")}
+    assert sent == {w["id"], t["id"]}
+    # Neither incident is cut a new clip from that camera.
+    r = clients["operator"].post(f"/edge/v1/incidents/{twin['incident_id']}/clips", headers=CSRF, json={"source": "ground"})
+    assert r.status_code == 409 and "withdrawn on request" in r.json()["message"]
+    # Asking again changes nothing and names no twins: they are on their own rows.
+    again = withdraw(clients["admin"], released["id"]).json()
+    assert again["id"] == w["id"] and "twins_withdrawn" not in again
+    assert len(s.query("SELECT * FROM withdrawals")) == 2
+
+
+def test_a_cloud_withdrawal_takes_the_twins_with_it_under_the_edges_own_ids(clients, service, released):  # noqa: F811
+    s, settings = service.store, service.settings
+    twin = _another_clip(clients, service, released)
+    item = {"id": "8c0b2b7e-2f0e-4d5e-9d8b-7b1d1f2c3a4b", "evidenceId": released["id"], "reason": "parent's request (ticket 17)",
+            "requester": "J. Doe (parent_or_guardian)", "requestId": "r-1", "clipSha256": released["sha256"]}
+    assert cloud.apply_withdrawals(settings, s, FakeCloud([item])) == [item["id"]]
+    t = evidence.withdrawal_of(s, twin["id"])
+    assert t is not None and t["id"] != item["id"]
+    assert (t["origin"], t["actor_id"], t["request_ref"], t["reason"]) == ("edge", "cloud", "r-1", item["reason"])
+    assert not evidence.path_of(settings, twin).exists()
+    sent = {x["entity_id"] for x in s.query("SELECT entity_id FROM outbox WHERE entity_type = 'withdrawal'")}
+    assert sent == {item["id"], t["id"]}
+    # The cloud later withdraws the twin itself: done already, nothing more is written.
+    own = {**item, "id": "x-3", "evidenceId": twin["id"], "clipSha256": twin["sha256"]}
+    assert cloud.apply_withdrawals(settings, s, FakeCloud([own])) == ["x-3"]
+    assert len(s.query("SELECT * FROM withdrawals")) == 2

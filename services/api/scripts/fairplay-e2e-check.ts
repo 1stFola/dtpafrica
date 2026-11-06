@@ -140,15 +140,24 @@ async function main() {
 
   console.log("\nFrom the cloud");
   const results = JSON.parse(readFileSync(join(out, "edge-results.json"), "utf8")) as { evidence: { id: string; sha256: string }[]; cutEvidenceId: string;
-    withdrawnEvidenceId: string };
+    withdrawnEvidenceId: string; twinEvidenceId: string };
   const report = await call<{ incidents: { finding: { result: string } | null; evidence: { id: string; stored: string; released: boolean; withheldBecause: string | null }[] }[] }>(
     "GET", `/fairplay/sessions/${s1.id}/report`, undefined, jwt);
-  const kept = report.incidents.filter((i) => i.evidence[0]?.id !== results.withdrawnEvidenceId);
+  const gone = [results.withdrawnEvidenceId, results.twinEvidenceId];
+  const kept = report.incidents.filter((i) => !gone.includes(i.evidence[0]?.id));
   const withdrawn = report.incidents.find((i) => i.evidence[0]?.id === results.withdrawnEvidenceId);
-  check("the report holds the five incidents with their findings", report.incidents.length === results.evidence.length + 1 && report.incidents.every((i) => i.finding?.result === "supports_original"));
-  check("and every clip released and stored, but the withdrawn one", kept.every((i) => i.evidence.length === 1 && i.evidence[0].released && i.evidence[0].stored === "stored"));
+  const twin = report.incidents.find((i) => i.evidence[0]?.id === results.twinEvidenceId);
+  check("the report holds the five incidents with their findings", report.incidents.length === results.evidence.length + 2 && report.incidents.every((i) => i.finding?.result === "supports_original"));
+  check("and every clip released and stored, but the withdrawn one and its twin", kept.length === results.evidence.length
+    && kept.every((i) => i.evidence.length === 1 && i.evidence[0].released && i.evidence[0].stored === "stored"));
   check("the withdrawn clip is shown withheld, its objects deleted", withdrawn?.evidence[0]?.released === false
     && withdrawn.evidence[0].withheldBecause === "withdrawn on request" && withdrawn.evidence[0].stored === "deleted", withdrawn);
+  // The Edge withdrew the twin and synced that; the cloud's hourly sweep removes its objects (evidence.service.ts).
+  check("the twin the Edge withdrew with it is shown withheld too", twin?.evidence[0]?.released === false
+    && twin.evidence[0].withheldBecause === "withdrawn on request" && ["stored", "deleted"].includes(twin.evidence[0].stored), twin);
+  const twinRead = await call("POST", `/fairplay/evidence/${results.twinEvidenceId}/read-url`, { kind: "clip", reason: "e2e check" }, jwt)
+    .then(() => "served", (e: Error) => e.message);
+  check("and no read URL is signed for it", twinRead !== "served" && /409|withdrawn/i.test(twinRead), twinRead);
   for (const ev of results.evidence) {
     const read = await call<{ url: string }>("POST", `/fairplay/evidence/${ev.id}/read-url`, { kind: "clip", reason: "e2e check" }, jwt);
     const bytes = Buffer.from(await (await fetch(read.url)).arrayBuffer());

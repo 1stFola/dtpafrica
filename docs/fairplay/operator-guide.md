@@ -332,7 +332,7 @@ someone who has already passed. Keep the signed page.
 |---|---|---|
 | 12 | Try to approve a clip with no rights recorded | they read the refusal and record the rights properly, or stop |
 | 13 | Approve and export a clip, and check its hash | the hash matches the one in the package |
-| 14 | Withdraw a clip on a pretend request | the file is gone and the record remains; no name is put in a reason |
+| 14 | Withdraw a clip on a pretend request, with a second incident flagged at the same moment and clipped from the same camera first | both files are gone and both records remain, the second marked as withdrawn with the first; no name is put in a reason |
 | 15 | Run a backup, then restore it to a second machine | [edge-backup.md](./edge-backup.md)'s checks all read sound |
 | 16 | Free space using the retention preview, then `--apply` | nothing was deleted by hand |
 
